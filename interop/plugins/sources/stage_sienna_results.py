@@ -11,6 +11,7 @@ from pydantic import BaseModel, DirectoryPath
 from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
+from interop.plugins.shared.input_files import read_first_readable
 from interop.plugins.shared.results_constants import ResultsUnit
 from interop.plugins.shared.sienna_results_constants import (
     OBJECTIVE_VALUE_COLUMN,
@@ -82,21 +83,11 @@ class StageSiennaResults(StagesExtensionsSidecar, StagedSource):
     ) -> dict[tuple[str, str], pl.LazyFrame]:
         frames: dict[tuple[str, str], pl.LazyFrame] = {}
         for series in WIDE_RESULT_SERIES:
-            raw = self._read_first_existing(results_dir, series.candidate_csvs)
+            raw = read_first_readable(self._fs, results_dir, series.candidate_csvs)
             if raw is None:
                 continue
             frames[series.key] = self._stage_series_from_wide_csv(raw, staging_dir, series.key)
         return frames
-
-    def _read_first_existing(
-        self, results_dir: Path, candidate_paths: tuple[str, ...]
-    ) -> bytes | None:
-        for candidate in candidate_paths:
-            try:
-                return self._fs.read_bytes(results_dir / candidate)
-            except FileNotFoundError:
-                continue
-        return None
 
     def _stage_series_from_wide_csv(
         self, raw: bytes, staging_dir: Path, key: ResultSeriesKey
@@ -123,7 +114,7 @@ class StageSiennaResults(StagesExtensionsSidecar, StagedSource):
         return pl.scan_parquet(out)
 
     def _stage_objective_value(self, results_dir: Path, staging_dir: Path) -> pl.LazyFrame | None:
-        raw = self._read_first_existing(results_dir, (OPTIMIZER_STATS_CSV,))
+        raw = read_first_readable(self._fs, results_dir, (OPTIMIZER_STATS_CSV,))
         if raw is None:
             return None
         stats = pl.read_csv(io.BytesIO(raw))

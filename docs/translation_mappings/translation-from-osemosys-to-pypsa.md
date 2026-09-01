@@ -80,7 +80,9 @@ CapacityFactor:
 
 An index column of a parameter must name a set the config declares, because the set gives
 that column its type. A config that indexes a parameter by a name it declares no set for
-stops the run.
+stops the run. A parameter must also name each of its index columns once: a config that
+indexes a parameter by the same set twice stops the run, because the translator cannot give
+one column name to two columns.
 
 ## Which OSeMOSYS parameter list the translator targets
 
@@ -89,8 +91,8 @@ and a model can add to it: a model that runs a variant model file states the par
 variant needs. The translator reads whatever the config declares, so it reads those too.
 
 A parameter the config declares and the folder does not hold is left out. The run carries on
-and stages the rest of the model. The translator gives a warning that names the first few, and
-it marks each one in the [declarations table](#the-declarations-table).
+and stages the rest of the model. The translator gives a warning that names the first few and
+the reason for each, and it marks each one in the [declarations table](#the-declarations-table).
 
 ## The column layout
 
@@ -101,7 +103,8 @@ it marks each one in the [declarations table](#the-declarations-table).
 
 The translator reads the header of each CSV against the columns the config declares. A CSV
 whose header is different is left out, in the same way as a CSV the folder does not hold. So
-is a CSV that holds a value that does not fit the type the config declares.
+is a CSV that holds a value that does not fit the type the config declares, and a CSV the
+reader cannot parse at all.
 
 The translator keeps each column name as your CSV writes it, and it keeps each value whole.
 A model can put more in a name than its sets do: `REGION` can have one member while a
@@ -158,7 +161,7 @@ parameter the config declares.
 | `indices` | The index columns, in order. Empty for a set. |
 | `default` | The default the config gives. Empty for a set. |
 | `short_name` | The short name, where the config gives one. |
-| `is_staged` | False where the config declared the entry and the folder did not hold it. |
+| `is_staged` | False where the config declared the entry and the source could not read it. |
 
 This table is how a later step learns a default it must apply, and which parameters the model
 did not deliver.

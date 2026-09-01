@@ -12,6 +12,7 @@ solve output rather than an input.
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -174,10 +175,24 @@ def _column_dtypes(
     entry: _ConfigEntry, dtype_by_set: dict[str, pl.DataType]
 ) -> dict[str, pl.DataType]:
     """The type of each column of the entry's CSV: the index columns, then VALUE."""
+    _reject_unknown_indices(entry, dtype_by_set)
+    _reject_repeated_indices(entry)
+    indices = {index: dtype_by_set[index] for index in entry.indices}
+    return {**indices, OSEMOSYS_VALUE_COLUMN: POLARS_DTYPES[entry.dtype]}
+
+
+def _reject_unknown_indices(entry: _ConfigEntry, dtype_by_set: dict[str, pl.DataType]) -> None:
     unknown = [index for index in entry.indices if index not in dtype_by_set]
     if unknown:
         raise OtooleConfigError(
             f"{entry.name!r} is indexed by {unknown}, which the config declares no set for"
         )
-    indices = {index: dtype_by_set[index] for index in entry.indices}
-    return {**indices, OSEMOSYS_VALUE_COLUMN: POLARS_DTYPES[entry.dtype]}
+
+
+def _reject_repeated_indices(entry: _ConfigEntry) -> None:
+    """A column name stands for one column, so a repeated index loses one of the CSV's."""
+    repeated = [index for index, count in Counter(entry.indices).items() if count > 1]
+    if repeated:
+        raise OtooleConfigError(
+            f"{entry.name!r} repeats the index {repeated}, which the reader cannot name twice"
+        )

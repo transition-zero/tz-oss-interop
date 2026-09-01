@@ -82,7 +82,7 @@ Six AETOS parameters carry a `TIMESLICE` column. The rule splits them as the siz
 | `CapacityFactor` | 269,920 | `source_time_series` |
 | `SpecifiedDemandProfile` | 43,680 | `source_time_series` |
 | `YearSplit` | 560 | `source_topology` |
-| `Conversionld` / `Conversionlh` / `Conversionls` | 64 each | `source_topology` |
+| `Conversionld` / `Conversionlh` / `Conversionls` | 16 each | `source_topology` |
 
 The simpler rule, "anything with a `TIMESLICE` column goes to `source_time_series`", puts
 `YearSplit` out of reach. A step needs all of `YearSplit` to work out how many hours of the

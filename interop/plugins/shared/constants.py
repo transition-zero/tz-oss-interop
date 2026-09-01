@@ -24,7 +24,11 @@ ALL_COMPONENTS = "all"
 
 
 class StagedTimeSeriesCol:
-    """Long-format columns of a staged time-series Parquet, shared by source and sink."""
+    """Long-format columns of a staged time-series Parquet, shared by source and sink.
+
+    A source that has not yet fixed its snapshots stages its own columns instead. The
+    mapping step for that framework converts them to this shape.
+    """
 
     SNAPSHOT = "snapshot"
     COMPONENT = "component"

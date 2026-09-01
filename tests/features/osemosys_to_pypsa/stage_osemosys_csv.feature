@@ -63,7 +63,17 @@ Feature: stage_osemosys_csv reads an otoole CSV folder into State
     Then the state dump "outputs/state.json" stages no topology table "CapitalCost"
     And the declarations in "outputs/state.json" mark "CapitalCost" as not staged
     And the state dump "outputs/state.json" stages topology table "TECHNOLOGY"
-    And the log contains "the config declares 1 set(s) or parameter(s) the folder does not give"
+    And the log contains "the config declares 1 set(s) or parameter(s) the source cannot read"
+    And the log contains "CapitalCost (the folder holds no CSV for it)"
+
+  Scenario: a CSV the reader cannot parse is left out and the rest of the model still stages
+    Given the model has parameter "CapitalCost" indexed by "REGION, TECHNOLOGY, YEAR" with rows "R1, COAL, 2030, 1500, 7"
+    And the model is saved in "inputs/model"
+    When I stage the folder "inputs/model/CSVFiles" with config "inputs/model/config.yaml" through "osemosys-stage" dumping to "outputs/state.json" with system output "outputs/system.json"
+    Then the state dump "outputs/state.json" stages no topology table "CapitalCost"
+    And the declarations in "outputs/state.json" mark "CapitalCost" as not staged
+    And the state dump "outputs/state.json" stages topology table "TECHNOLOGY"
+    And the log contains "CapitalCost (its CSV does not parse"
 
   Scenario: a parameter filed under the short name the config gives is still read
     Given the model has parameter "TotalAnnualMaxCapacityInvestment" short named "TotalAnnualMaxCapacityInvestmen" indexed by "REGION, TECHNOLOGY, YEAR" with rows "R1, COAL, 2030, 25"
@@ -97,3 +107,10 @@ Feature: stage_osemosys_csv reads an otoole CSV folder into State
     Then the pipeline exit code is 1
     And the log contains "stage_osemosys_csv"
     And the log contains "otoole config YAML"
+
+  Scenario: a config that indexes a parameter by the same set twice stops the run
+    Given the model has parameter "Trade" indexed by "REGION, REGION, YEAR" with rows "R1, R1, 2030, 5"
+    And the model is saved in "inputs/model"
+    When I run the pipeline "osemosys-stage" with overrides "source.path=inputs/model/CSVFiles source.config_path=inputs/model/config.yaml step[0].out=outputs/state.json sink[0].output_path=outputs/system.json"
+    Then the pipeline exit code is 1
+    And the log contains "'Trade' repeats the index ['REGION']"

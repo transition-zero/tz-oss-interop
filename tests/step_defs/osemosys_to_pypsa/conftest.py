@@ -4,9 +4,8 @@ Each ``test_<topic>.py`` here binds ``tests/features/osemosys_to_pypsa/<topic>.f
 Model-building steps come from the ``interop_testing`` harness; this module holds the
 translate driver and the assertions on what the source staged.
 
-There is no OSeMOSYS mapping step and no OSeMOSYS sink yet, so a scenario drives a
-project-local pipeline that stages the model, dumps the staged state to JSON, and writes the
-dump path through the shipped ``emit_json`` sink.
+A scenario drives a project-local pipeline that stages the model, dumps the staged state to
+JSON, and writes the dump path through the shipped ``emit_json`` sink.
 """
 
 from __future__ import annotations

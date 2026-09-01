@@ -1,8 +1,7 @@
 """pytest-bdd Given steps for building an OSeMOSYS model fixture.
 
 Every step operates on the ``osemosys_model_builder`` fixture that ``Given an OSeMOSYS
-model`` creates. Nothing translates *to* OSeMOSYS yet, so there is no matching assertion
-vocabulary.
+model`` creates.
 
 A step states a parameter's rows as one string: a comma separates the values within a row and
 a semicolon separates the rows, so ``"R1, COAL, 2030, 1500; R1, WIND, 2030, 900"`` is two

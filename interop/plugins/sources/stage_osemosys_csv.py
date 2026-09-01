@@ -29,6 +29,7 @@ import polars as pl
 from pydantic import BaseModel, DirectoryPath, Field
 
 from interop.core.pipeline import StagedSource, State
+from interop.plugins.shared.input_files import read_first_readable
 from interop.plugins.shared.osemosys_constants import (
     OSEMOSYS_DECLARATIONS_TABLE,
     OsemosysDeclarationCol,
@@ -66,12 +67,10 @@ class StageOsemosysCsvParams(BaseModel):
 
 
 class StageOsemosysCsv(StagedSource):
-    """Reads an otoole CSV folder into ``State``, guided by the config YAML beside it.
-
-    An Excel workbook and a GNU MathProg datafile are not inputs; ``otoole convert`` turns
+    """An Excel workbook and a GNU MathProg datafile are not inputs; ``otoole convert`` turns
     either one into a CSV folder. A run with no readable config stops, because a missing
-    input is not model data. A parameter the config declares and the folder does not hold is
-    left out with a warning, and the rest of the model still stages.
+    input is not model data. A set or a parameter the config declares and the source cannot
+    read is left out with a warning, and the rest of the model still stages.
     """
 
     name: ClassVar[str] = "stage_osemosys_csv"
@@ -111,23 +110,13 @@ class StageOsemosysCsv(StagedSource):
 
     def _read_declared_frame(self, folder: Path, declaration: OsemosysDeclaration) -> pl.DataFrame:
         """The entry's CSV, with the types the config declares."""
-        raw = self._read_first_filed_under(folder, declaration.file_names)
+        raw = read_first_readable(self._fs, folder, declaration.file_names)
         if raw is None:
             raise _UnreadableCsv("the folder holds no CSV for it")
-        text = pl.read_csv(io.BytesIO(raw), infer_schema=False)
+        text = _parse_csv(raw)
         if text.columns != declaration.columns:
             raise _UnreadableCsv(f"its columns are {text.columns}, not {declaration.columns}")
         return _cast_to_declared_types(text, declaration)
-
-    def _read_first_filed_under(self, folder: Path, file_names: Sequence[str]) -> bytes | None:
-        """The bytes of the first of these files the folder holds.
-
-        The port lists no directory, so the config's names are the only way to find a file.
-        """
-        for file_name in file_names:
-            if self._fs.can_read(folder / file_name):
-                return self._fs.read_bytes(folder / file_name)
-        return None
 
 
 class _UnreadableCsv(Exception):
@@ -188,6 +177,13 @@ class _StagingRun:
         return pl.scan_parquet(out)
 
 
+def _parse_csv(raw: bytes) -> pl.DataFrame:
+    try:
+        return pl.read_csv(io.BytesIO(raw), infer_schema=False)
+    except pl.exceptions.PolarsError as error:
+        raise _UnreadableCsv(f"its CSV does not parse: {error}") from error
+
+
 def _cast_to_declared_types(text: pl.DataFrame, declaration: OsemosysDeclaration) -> pl.DataFrame:
     try:
         return text.cast(declaration.column_dtypes)  # type: ignore[arg-type]
@@ -231,8 +227,8 @@ def _warn_about_skipped(skipped: Sequence[_Skip]) -> None:
     if not skipped:
         return
     log.warning(
-        "osemosys: the config declares %d set(s) or parameter(s) the folder does not give, "
+        "osemosys: the config declares %d set(s) or parameter(s) the source cannot read, "
         "so each is left out: %s",
         len(skipped),
-        name_a_few([skip.declaration.name for skip in skipped]),
+        name_a_few([f"{skip.declaration.name} ({skip.reason})" for skip in skipped]),
     )
