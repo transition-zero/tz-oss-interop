@@ -13,6 +13,7 @@ read the artefact with the same helpers rather than parsing it afresh.
 """
 
 from interop_testing.builders.caiso_stack_models import CaisoStackModelBuilder
+from interop_testing.builders.osemosys_models import OsemosysModelBuilder, ParameterSpec
 from interop_testing.builders.plexos_models import PlexosModelBuilder
 from interop_testing.builders.pypsa_networks import PyPSANetworkBuilder, read_network
 from interop_testing.builders.sienna_results import SiennaResultsBuilder
@@ -32,6 +33,8 @@ from interop_testing.projects import (
 __all__ = [
     "DEFAULT_ADAPTERS_YAML",
     "CaisoStackModelBuilder",
+    "OsemosysModelBuilder",
+    "ParameterSpec",
     "PlexosModelBuilder",
     "PyPSANetworkBuilder",
     "SiennaResultsBuilder",

@@ -11,6 +11,7 @@ class Framework(StrEnum):
     PYPSA = "pypsa"
     SIENNA = "sienna"
     PLEXOS = "plexos"
+    OSEMOSYS = "osemosys"
     POWER_SIMULATIONS = "power-simulations"
     CAISO_PLEXOS = "caiso-plexos"
     RESULTS = RESULTS_FRAMEWORK

@@ -913,6 +913,7 @@ dependencies = [
     { name = "pypsa" },
     { name = "pytest" },
     { name = "pytest-bdd" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -922,6 +923,7 @@ requires-dist = [
     { name = "pypsa", specifier = ">=1.2.4" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-bdd", specifier = ">=7.3" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 
 [[package]]
