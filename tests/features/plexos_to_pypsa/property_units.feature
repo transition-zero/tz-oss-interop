@@ -115,3 +115,18 @@ Feature: Read a PLEXOS property in the unit the model states it in
     And the model is saved as "inputs/banded.xml"
     When I run translate against "inputs/banded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "GasPlant" in "outputs/network.nc" has "marginal_cost" equal to 24
+
+  Scenario: a start offtake stated in the model's own imperial energy unit converts to GJ
+    Given a Plexos model
+    And the model measures in "Imperial"
+    And the model states "Offtake at Start" in "~"
+    And the model states "Price" in "$/~"
+    And the model contains fuel "Gas" with price 8
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And the model is saved as "inputs/imperial_start.xml"
+    When I run translate against "inputs/imperial_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    # 1800 MMBTU is 1899.1 GJ, and $8/MMBTU is $7.5834/GJ, so the start costs what it did in
+    # the model's own units. Reading the offtake unconverted would price it 5% low.
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
+    And the file "decisions.md" contains "`plexos.Generator.CCGT.Offtake at Start` = 1899.10062 GJ"

@@ -113,7 +113,6 @@ def collapse_membership_properties(
     ``collapse_properties_by_object`` keys a value by the child object, which is what a
     property describing the child wants. A property stated on the membership describes the
     pair — the gigajoules one generator burns of one fuel to start — so both ends are kept.
-    Null (file-backed) values are dropped, as they are there.
     """
     banded: dict[str, dict[str, dict[str, list[float]]]] = {}
     for parent, child, property_name, value in _read_membership_property_rows(

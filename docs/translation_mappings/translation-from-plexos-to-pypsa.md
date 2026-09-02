@@ -298,10 +298,16 @@ has almost certainly priced the fuel inside its own `Start Cost` already, and ad
 would charge that fuel twice. Where a generator states both, the report records the start
 fuel as not mapped.
 
-The fuel that prices a start is the one the generator already burns for its heat rate. Both
-`Start Cost` and `Offtake at Start` are banded by how long the unit has been off, and both
-take the highest band, which is the cold start: that is the cost a commitment decision has
-to clear.
+The fuel that prices a start is the one the `Start Fuels` membership itself names, which
+need not be the fuel the generator runs on: a unit that runs on gas and lights off on
+distillate pays the distillate price. Where a generator names several start fuels, the one
+its heat rate already uses is taken, and where none of them is that fuel, the one whose
+start takes the most.
+
+Both `Start Cost` and `Offtake at Start` are banded by how long the unit has been off, and
+both take the highest band, which is the cold start: that is the cost a commitment decision
+has to clear. `Offtake at Start` is read in GJ, out of whichever energy unit the model
+states it in.
 
 A `committable` generator that states neither is recorded as not mapped, so a reader can
 tell a start priced at zero from a start nobody priced.

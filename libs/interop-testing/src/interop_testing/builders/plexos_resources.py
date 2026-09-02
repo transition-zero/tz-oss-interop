@@ -187,11 +187,7 @@ class ResourceBuilder(PlexosTables):
     def add_start_fuel(
         self, generator: str, fuel: str, offtake: float, band: int | None = None
     ) -> None:
-        """The gigajoules a generator burns to start, on its Generator to Fuel membership.
-
-        PLEXOS prices a start either as money on the generator or as this offtake, which
-        the fuel's own Price turns into money.
-        """
+        """The gigajoules a generator burns to start, on its Generator to Fuel membership."""
         self._check_not_saved(f"start fuel {fuel!r} of generator {generator!r}")
         self._add_property(
             GENERATOR_CLASS,

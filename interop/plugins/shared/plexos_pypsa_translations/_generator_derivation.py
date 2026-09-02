@@ -235,8 +235,6 @@ class FuelUse:
 
 @dataclass(frozen=True)
 class _FuelPrice:
-    """A fuel's price, and whether the model states it as a series of dated bands."""
-
     value: float
     is_dated: bool
 
@@ -477,8 +475,8 @@ def _efficiency(fuel: FuelUse | None, p_nom: float) -> float | None:
 class StartFuel:
     """The fuel a generator burns to start: the gigajoules it takes, and what they cost.
 
-    The fuel is the one the heat rate already uses, so a start is priced the same way the
-    generator's own output is.
+    The Start Fuels membership names the fuel, so it need not be the one the heat rate uses:
+    a unit that runs on gas may light off on distillate, and pays the distillate price.
     """
 
     name: str
@@ -506,7 +504,11 @@ def _start_fuel(
 
 
 def _choose_start_fuel(offtakes: dict[str, float], fuel: FuelUse | None) -> str:
-    """The fuel the heat rate already uses, or where none of them is it, the hungriest start."""
+    """Of the fuels a start may burn, the one the heat rate uses, else the largest offtake.
+
+    A generator naming several start fuels burns a mix PyPSA has no way to hold, so one of
+    them has to stand for the start.
+    """
     if fuel is not None and fuel.name in offtakes:
         return fuel.name
     return max(offtakes, key=lambda name: offtakes[name])

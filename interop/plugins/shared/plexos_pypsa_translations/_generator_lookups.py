@@ -94,12 +94,7 @@ def build_lookups(state: State) -> Lookups:
 
 
 def _read_start_fuel_offtake(properties: pl.LazyFrame) -> dict[str, dict[str, float]]:
-    """Each generator's start fuels, and the gigajoules of each a cold start takes.
-
-    The offtake is stated on the Generator to Fuel membership, so both ends matter: a
-    generator may start on a fuel other than the one it runs on, and that fuel's own price
-    is what the start costs.
-    """
+    """Each generator's start fuels, and the gigajoules of each a cold start takes."""
     start_fuels = collapse_membership_properties(
         properties, PlexosClass.GENERATOR, PlexosCollection.START_FUELS, _COLD_START_BAND
     )
@@ -142,8 +137,7 @@ def _mean_fuel_prices(state: State) -> dict[str, float]:
     """Each fuel's mean price over the horizon, for the fuels priced by date.
 
     A fuel priced by date carries its real price in the series, and the scalar the model
-    states beside it is whatever the first date band happened to hold. The mean is what a
-    reader sampling one number off the network should see.
+    states beside it is whatever the first date band happened to hold.
     """
     return _aggregate_series(
         state, PlexosClass.FUEL, PlexosProperty.PRICE, pl.col(StagedTimeSeriesCol.VALUE).mean()

@@ -47,7 +47,6 @@ _NOT_CARRIED_NOTE = (
 _SENSES: dict[float, str] = {-1.0: "<=", 0.0: "==", 1.0: ">="}
 _UNSTATED_SENSE = "unstated"
 
-# The right-hand sides one Constraint may state, each over its own period.
 _RIGHT_HAND_SIDES = (
     PlexosProperty.RHS,
     PlexosProperty.RHS_HOUR,
@@ -62,8 +61,6 @@ _NO_COEFFICIENT = "no coefficient"
 
 @dataclass(frozen=True)
 class _Constraint:
-    """One PLEXOS Constraint: which way it binds, over what, and to which right-hand sides."""
-
     name: str
     sense: str
     coefficients: tuple[str, ...]
@@ -73,7 +70,6 @@ class _Constraint:
 
 
 def map_constraints(state: State, recorder: ScopedRecorder) -> None:
-    """Report every PLEXOS Constraint, none of which the network file can hold."""
     constraints = _read_constraints(state)
     if not constraints:
         return
@@ -150,7 +146,6 @@ def _read_sense(stated: dict[str, float]) -> str:
 
 
 def _record(reporter: SourceReporter, constraint: _Constraint) -> None:
-    """One event per right-hand side stated, or one against the object where it states none."""
     note = f"{_NOT_CARRIED_NOTE}. {_describe(constraint)}"
     if not constraint.right_hand_sides:
         reporter.record_dropped(_source(constraint.name, None, None), note)
@@ -167,9 +162,7 @@ def _source(
 
 
 def _describe(constraint: _Constraint) -> str:
-    """Which way the Constraint binds, over which Generators, and by which coefficient.
-
-    A Constraint can name objects of any class. Only the Generators it names are read, so a
+    """A Constraint can name objects of any class. Only the Generators it names are read, so a
     Constraint over anything else is reported with nothing listed beside its sense.
     """
     if not constraint.members:

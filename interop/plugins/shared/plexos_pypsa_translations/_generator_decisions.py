@@ -438,7 +438,6 @@ def _priced_start_fuel(mapping: GeneratorMapping) -> StartFuel | None:
 
 
 def _has_unpriced_start(mapping: GeneratorMapping) -> bool:
-    """A committed generator whose model prices a start neither way starts for free."""
     commitment = mapping.unit_commitment
     return commitment is not None and commitment.start_up_cost is None
 
