@@ -110,6 +110,7 @@ class PlexosCollection(StrEnum):
     REGION = "Region"
     ZONES = "Zones"
     GENERATORS = "Generators"
+    CONSTRAINTS = "Constraints"
     FUELS = "Fuels"
     START_FUELS = "Start Fuels"
     EMISSIONS = "Emissions"
@@ -196,6 +197,14 @@ class PlexosProperty(StrEnum):
     # Fuel / Emission
     PRICE = "Price"
     PRODUCTION_RATE = "Production Rate"
+    # Constraint
+    SENSE = "Sense"
+    RHS = "RHS"
+    RHS_HOUR = "RHS Hour"
+    RHS_DAY = "RHS Day"
+    RHS_WEEK = "RHS Week"
+    RHS_MONTH = "RHS Month"
+    RHS_YEAR = "RHS Year"
 
 
 def is_plexos_true(value: float) -> bool:

@@ -364,3 +364,31 @@ def given_generator_burns_start_fuel_in_band(
     plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str, band: int
 ) -> None:
     plexos_model_builder.add_start_fuel(name, fuel, offtake, band=band)
+
+
+@given(
+    parsers.parse(
+        'the model contains constraint "{name}" over generators "{generators}" '
+        'with "{coefficient_property}" {coefficient:g}'
+    )
+)
+def given_model_contains_constraint(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    generators: str,
+    coefficient_property: str,
+    coefficient: float,
+) -> None:
+    plexos_model_builder.add_constraint(
+        name,
+        generators=[generator.strip() for generator in generators.split(",")],
+        coefficient_property=coefficient_property,
+        coefficient=coefficient,
+    )
+
+
+@given(parsers.parse('constraint "{name}" states "{property_name}" of {value:g}'))
+def given_constraint_states_property(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, value: float
+) -> None:
+    plexos_model_builder.add_constraint_property(name, property_name, value)

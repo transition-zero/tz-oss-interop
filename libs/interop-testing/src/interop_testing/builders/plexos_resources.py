@@ -14,6 +14,8 @@ from interop_testing.builders.plexos_vocabulary import (
     BATTERY_CLASS,
     CAPACITY_PROPERTY,
     CHARGE_EFFICIENCY_PROPERTY,
+    CONSTRAINT_CLASS,
+    CONSTRAINTS_COLLECTION,
     DEFAULT_CATEGORY,
     FUEL_CLASS,
     FUELS_COLLECTION,
@@ -148,6 +150,38 @@ class ResourceBuilder(PlexosTables):
             RESERVES_COLLECTION,
             MUTUALLY_EXCLUSIVE_PROPERTY,
             code,
+        )
+
+    def add_constraint(
+        self,
+        name: str,
+        generators: list[str],
+        coefficient_property: str,
+        coefficient: float,
+    ) -> None:
+        """A Constraint over a set of generators, each weighted by one coefficient.
+
+        PLEXOS states the coefficient on the Constraint to Generator membership and the
+        right-hand side on the Constraint itself, which ``add_constraint_property`` sets.
+        """
+        self._check_not_saved(f"constraint {name!r}")
+        self._add_system_object(CONSTRAINT_CLASS, name, CONSTRAINTS_COLLECTION)
+        for generator in generators:
+            self._add_property(
+                CONSTRAINT_CLASS,
+                name,
+                GENERATOR_CLASS,
+                generator,
+                GENERATORS_COLLECTION,
+                coefficient_property,
+                coefficient,
+            )
+
+    def add_constraint_property(self, name: str, property_name: str, value: float) -> None:
+        """A Constraint's own property, such as its Sense or one of its right-hand sides."""
+        self._check_not_saved(f"property {property_name!r} of constraint {name!r}")
+        self._add_system_property(
+            CONSTRAINT_CLASS, name, CONSTRAINTS_COLLECTION, property_name, value
         )
 
     def add_start_fuel(

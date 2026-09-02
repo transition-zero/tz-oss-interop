@@ -204,16 +204,22 @@ groups of generators then take that type.
 ## Zones, interfaces and custom constraints
 
 **The PLEXOS data.** `Zone` objects, `Interface` flow limits and `Constraint` objects, which
-include RPS targets and emission caps.
+include energy budgets, running hour limits, RPS targets and emission caps.
 
-**What happens to it.** The translation carries none of them.
+**What happens to it.** The translation carries none of them. It does report every
+`Constraint`, one entry for each right-hand side the constraint states, naming the sense,
+the coefficient and the objects it binds.
 
 **The cause.** The hub has no equivalent, and the Sienna types this translation writes have
-none either.
+none either. Nor does a PyPSA `GlobalConstraint`, which limits one carrier over the whole
+horizon and cannot name a set of components.
 
 **The effect on the dispatch.** Nothing applies a group flow limit, so a transfer your
 PLEXOS model bounds can go higher. Nothing applies a renewable target or an emission cap.
-Only the carbon price reaches the cost.
+Only the carbon price reaches the cost. Where a model caps the energy of a group of hydro
+units, or the running hours of a group of peakers, with a `Constraint`, those resources are
+free to run at nameplate over the whole horizon: read the reported entries before you trust
+the dispatch.
 
 ---
 

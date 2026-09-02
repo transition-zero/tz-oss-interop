@@ -20,6 +20,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 )
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
 from interop.plugins.steps.plexos_to_pypsa.map_buses import PlexosToPypsaMapBuses
+from interop.plugins.steps.plexos_to_pypsa.map_constraints import PlexosToPypsaMapConstraints
 from interop.plugins.steps.plexos_to_pypsa.map_generators import PlexosToPypsaMapGenerators
 from interop.plugins.steps.plexos_to_pypsa.map_loads import PlexosToPypsaMapLoads
 from interop.plugins.steps.plexos_to_pypsa.map_reserves import PlexosToPypsaMapReserves
@@ -50,7 +51,8 @@ class PlexosToPypsaMapComponents(TranslationStep):
     Sub-steps run in dependency order: buses first, then everything that references a bus.
     Reserves are the one resource with no native PyPSA home, so they are carried to the
     extensions sidecar rather than enforced. Storage units reference a bus by name, which
-    the sink auto-creates, so they need no buses table to be mapped.
+    the sink auto-creates, so they need no buses table to be mapped. Constraints go last
+    because they only report; nothing downstream reads what they leave behind.
     """
 
     name: ClassVar[str] = "plexos_to_pypsa_map_components"
@@ -64,6 +66,7 @@ class PlexosToPypsaMapComponents(TranslationStep):
             PlexosToPypsaMapTransmission(_scoped(recorder, PlexosToPypsaMapTransmission.name)),
             PlexosToPypsaMapReserves(_scoped(recorder, PlexosToPypsaMapReserves.name)),
             PlexosToPypsaMapStorageUnits(_scoped(recorder, PlexosToPypsaMapStorageUnits.name)),
+            PlexosToPypsaMapConstraints(_scoped(recorder, PlexosToPypsaMapConstraints.name)),
         )
         self._ensemble_recorder = _scoped(recorder, _CHOOSE_ENSEMBLE_SAMPLES)
         self._off_window_recorder = _scoped(recorder, _DROP_PROFILES_OFF_THE_WINDOW)

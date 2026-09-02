@@ -241,9 +241,15 @@ separate. They do not both become `CCGT`. A program that reads the output can gr
 because you know which of your names are the same technology.
 
 The translator uses a different test to find a **thermal** unit. It does not read a name. A
-generator is thermal if it has a `Fuel` and a heat rate. A thermal generator is
-`committable`, it has an `efficiency`, and its `marginal_cost` comes from the fuel price. A
-generator that is not thermal takes a flat VO&M charge.
+generator is thermal if it has a `Fuel` and a heat rate. A thermal generator has an
+`efficiency`, and its `marginal_cost` comes from the fuel price. A generator that is not
+thermal takes a flat VO&M charge.
+
+**Being thermal is not what makes a generator `committable`.** PLEXOS holds a unit to its
+minimum stable level only while the unit is committed. PyPSA holds a generator that is not
+`committable` to `p_min_pu` in every hour. Thus a generator that states a minimum has to be
+`committable`, whatever it burns, or the translation forces it to run all year. A generator
+is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 
 ### Fields
 
@@ -255,12 +261,12 @@ generator that is not thermal takes a flat VO&M charge.
 | `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity | `derived` |
 | `p_min_pu` | | [Minimum generation](#minimum-generation) | `derived` |
 | `p_max_pu` | | `1.0`, or the [`Rating` and the outage derates](#availability-and-outages) | `derived` |
-| `marginal_cost` | $/MWh | `fuel price × Heat Rate Incr + VO&M`, and the carbon term if there is one | `derived` |
+| `marginal_cost` | $/MWh | `fuel price × Heat Rate Incr + VO&M`, and the carbon term if there is one. Where the fuel is [priced by date](#a-fuel-priced-by-date), the fuel price here is the mean of its own series | `derived` |
 | `efficiency` | | From the [heat rate](#unit-conversions) | `derived` |
-| `committable` | | `True` for a thermal generator. If not, `False`. | `derived` |
+| `committable` | | `True` for a thermal generator, and for one whose `p_min_pu` is more than `0`. If not, `False`. | `derived` |
 | `min_up_time` / `min_down_time` | snapshots | `Min Up Time` / `Min Down Time` | `derived` |
-| `ramp_limit_up` / `ramp_limit_down` | per unit per hour | `Max Ramp Up` / `Max Ramp Down` × 60 ÷ `p_nom` | `derived` |
-| `start_up_cost` | $ | `Start Cost`, the cold start band | `derived` |
+| `ramp_limit_up` / `ramp_limit_down` | per unit per hour | `Max Ramp Up` / `Max Ramp Down` × 60 ÷ `p_nom`, held at `1` | `derived` |
+| `start_up_cost` | $ | Refer to [What a start costs](#what-a-start-costs) | `derived` |
 | `shut_down_cost` | $ | `0.0` | `default` |
 | `up_time_before` | snapshots | `0` | `default` |
 
@@ -275,6 +281,41 @@ component:
 | `p_nom` is 0 | The generator can never dispatch. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
+
+### What a start costs
+
+PLEXOS prices the start of a generator in one of two ways, and a model may use either.
+
+1. `Start Cost`, an amount of money for each start, on the generator itself.
+2. **Start fuel**: `Offtake at Start`, the gigajoules the generator burns for each start,
+   on the `Start Fuels` membership that joins the generator to a `Fuel`. The `Price` of
+   that fuel turns the offtake into money.
+
+The translator reads both. Where a generator states `Start Cost`, that is the
+`start_up_cost`, whatever its start fuel says. Where it states none, the `start_up_cost` is
+`Offtake at Start × the fuel price`. **The two are never added.** A model that states both
+has almost certainly priced the fuel inside its own `Start Cost` already, and adding them
+would charge that fuel twice. Where a generator states both, the report records the start
+fuel as not mapped.
+
+The fuel that prices a start is the one the generator already burns for its heat rate. Both
+`Start Cost` and `Offtake at Start` are banded by how long the unit has been off, and both
+take the highest band, which is the cold start: that is the cost a commitment decision has
+to clear.
+
+A `committable` generator that states neither is recorded as not mapped, so a reader can
+tell a start priced at zero from a start nobody priced.
+
+### A fuel priced by date
+
+A `Fuel` may state its `Price` as a single number, or as a series of dated bands. Where it
+states dated bands, the `marginal_cost` of every generator burning it varies over the
+horizon, and PyPSA reads that series rather than the one number beside it.
+
+The one number still has to mean something to a reader who samples it. So where the fuel is
+priced by date, the fuel price in the static `marginal_cost` is the **mean of that fuel's
+own series**, not the first band. The rest of the cost is unchanged, so the static value and
+the series agree.
 
 **Demand response is a generator.** PLEXOS has no demand response object. A model shows the
 resource as a generator that has a very high trigger price and a high heat rate on an
@@ -613,6 +654,7 @@ uses:
 | Heat rate segments | The average, across equal power segments |
 | `Max Flow`, `Max Rating` | The lowest |
 | `Min Flow`, `Min Rating` | The highest |
+| `Start Cost`, `Offtake at Start` | The highest, which is the cold start |
 | `Resistance`, `Reactance` | The first |
 
 ### Values that are a share of a shared profile
@@ -776,9 +818,17 @@ the model has none of them, the minimum is `0`.
 3. `Min Pump Load`, which is in MW
 
 A minimum that is more than the static availability limit gives a generator that PyPSA
-cannot dispatch. The translation then stops with an error that gives the name of the
-generator. A limit that comes from a profile changes across the horizon, and the translator
-does not do this test on it.
+cannot dispatch. The translator leaves that generator out and records it as a skipped
+component, naming it. A limit that comes from a profile changes across the horizon, and the
+translator does not do this test on it.
+
+A minimum below `0.001` of the capacity of the unit itself becomes `0`. A minimum that small
+binds no dispatch decision a solver makes, and carrying it only widens the range of numbers
+the solver works over. The report records the value the model stated and the floor that
+replaced it.
+
+A generator that ends up with a minimum above `0` is `committable`, so PyPSA holds it to
+that minimum only in the hours it runs. Refer to [`Generator`](#generator--generator).
 
 ### Unit conversions
 
@@ -868,7 +918,7 @@ reservoir and no head reservoir.
 | `Interface` | Nothing applies the group flow limits. Thus the dispatch can be more than a transfer limit that your PLEXOS model obeys. |
 | `Transformer` | The translator does not carry it. |
 | `Reserve` requirements | Nothing applies them. The generators that contribute can operate at full output. The translator does carry the reserves. Refer to [`Reserve`](#reserve--extensions-sidecar). |
-| `Constraint` | Nothing applies the custom constraints. This includes the RPS targets and the emission targets. |
+| `Constraint` | Nothing applies the custom constraints. This includes the energy budgets, the running hour limits, the RPS targets and the emission targets. The translator reports every one. Refer to [`Constraint`](#constraint). |
 | `Waterway` | The cascade route between reservoirs is lost. Each reservoir is independent. |
 | `Decision Variable` | The translator does not carry it. |
 | Emission caps | Nothing applies them. Only the carbon price goes into the cost. |
@@ -876,6 +926,36 @@ reservoir and no head reservoir.
 | More than one scenario | The translator uses the values of the selected model only. |
 | Ancillary service and demand response pseudo-generators | The translator skips nothing. Refer to [`Generator`](#generator--generator). |
 | Gas, heat and water networks | The translator accepts electricity only. |
+
+## `Constraint`
+
+A PLEXOS `Constraint` holds a weighted sum over the objects it names to a right-hand side.
+It weights each object by a coefficient on the membership — `Generation Coefficient`,
+`Hours of Operation Coefficient` and the rest — and it states the right-hand side over an
+hour, a day, a week, a month, a year, or the whole horizon. A daily energy budget on a
+group of hydro units and an annual running hour cap on a group of peakers are both written
+this way.
+
+A PyPSA `GlobalConstraint` limits one **carrier** over the whole horizon, and it has no way
+to name a set of components. Thus no shape of `Constraint` fits it, and the translator
+carries none of them.
+
+It does report all of them. Every right-hand side a `Constraint` states becomes a not
+mapped entry against the object that states it, giving the value, the sense, the
+coefficient and the objects the constraint binds. A `Constraint` stating no right-hand side
+is reported against the object itself. One warning names a few of them and counts the rest.
+
+**Read that section of the report before you trust the dispatch.** A model that caps hydro
+energy or peaker running hours with a `Constraint` gives a translated network in which
+those resources are free to run at nameplate all year.
+
+## What the sink writes
+
+The sink rounds every number it writes, static and time-varying alike, to six decimal
+places. A cost divided by an efficiency, or a profile divided by a capacity, runs to the
+full precision of a float, and each of those digits reaches the solver as another distinct
+coefficient. Six places holds a per-unit factor to a millionth of the rating of the
+component itself, which is finer than any dispatch decision a solver makes.
 
 ## Assumptions worth checking against your model
 
