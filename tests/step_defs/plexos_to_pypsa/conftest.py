@@ -348,6 +348,36 @@ def assert_generator_column(name: str, path: str, column: str, value: float) -> 
     )
 
 
+@then(parsers.parse('the PyPSA generator "{name}" in "{path}" has "{column}" exactly {value:g}'))
+def assert_generator_column_exactly(name: str, path: str, column: str, value: float) -> None:
+    """No tolerance, so a scenario can pin the number of decimal places written."""
+    import pypsa
+
+    network = pypsa.Network(path)
+    assert name in network.generators.index, f"no generator {name!r} in {path}"
+    actual = float(network.generators.at[name, column])
+    assert actual == value, (
+        f"expected generator {name!r} {column} = {value!r} exactly in {path}; got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the PyPSA generator "{name}" in "{path}" has p_max_pu at hour {hour:d} exactly {value:g}'
+    )
+)
+def assert_generator_p_max_pu_exactly(name: str, path: str, hour: int, value: float) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    series = network.generators_t.p_max_pu
+    assert name in series.columns, f"no p_max_pu time series for {name!r} in {path}"
+    actual = float(series[name].iloc[hour - 1])
+    assert actual == value, (
+        f"expected {name!r} p_max_pu hour {hour} = {value!r} exactly in {path}; got {actual!r}"
+    )
+
+
 @then(parsers.parse('the PyPSA generator "{name}" in "{path}" has no "{column}"'))
 def assert_generator_column_unset(name: str, path: str, column: str) -> None:
     import pypsa

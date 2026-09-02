@@ -20,7 +20,6 @@ from interop_testing.builders.plexos_vocabulary import (
     GENERATOR_CLASS,
     GENERATORS_COLLECTION,
     HEAD_STORAGE_COLLECTION,
-    HEAT_RATE_PROPERTY,
     INITIAL_SOC_PROPERTY,
     INITIAL_VOLUME_PROPERTY,
     LINE_CLASS,
@@ -41,12 +40,14 @@ from interop_testing.builders.plexos_vocabulary import (
     NODE_FROM_COLLECTION,
     NODE_TO_COLLECTION,
     NODES_COLLECTION,
+    OFFTAKE_AT_START_PROPERTY,
     PUMP_EFFICIENCY_PROPERTY,
     REACTANCE_PROPERTY,
     RESERVE_CLASS,
     RESERVE_TYPE_PROPERTY,
     RESERVES_COLLECTION,
     RESISTANCE_PROPERTY,
+    START_FUELS_COLLECTION,
     STORAGE_CLASS,
     STORAGES_COLLECTION,
     TAIL_STORAGE_COLLECTION,
@@ -149,17 +150,39 @@ class ResourceBuilder(PlexosTables):
             code,
         )
 
-    def add_heat_rate_band(self, generator: str, band: int, value: float) -> None:
-        """One segment of a generator's heat-rate curve.
+    def add_start_fuel(
+        self, generator: str, fuel: str, offtake: float, band: int | None = None
+    ) -> None:
+        """The gigajoules a generator burns to start, on its Generator to Fuel membership.
 
-        PLEXOS exports the segments as repeats of one property, told apart only by band.
+        PLEXOS prices a start either as money on the generator or as this offtake, which
+        the fuel's own Price turns into money.
         """
-        self._check_not_saved(f"heat rate band {band} of generator {generator!r}")
+        self._check_not_saved(f"start fuel {fuel!r} of generator {generator!r}")
+        self._add_property(
+            GENERATOR_CLASS,
+            generator,
+            FUEL_CLASS,
+            fuel,
+            START_FUELS_COLLECTION,
+            OFFTAKE_AT_START_PROPERTY,
+            offtake,
+            band=band,
+        )
+
+    def add_generator_property_band(
+        self, generator: str, property_name: str, band: int, value: float
+    ) -> None:
+        """One band of a banded Generator property.
+
+        PLEXOS exports the bands as repeats of one property, told apart only by band.
+        """
+        self._check_not_saved(f"band {band} of {property_name!r} on generator {generator!r}")
         self._add_system_property(
             GENERATOR_CLASS,
             generator,
             GENERATORS_COLLECTION,
-            HEAT_RATE_PROPERTY,
+            property_name,
             value,
             band=band,
         )

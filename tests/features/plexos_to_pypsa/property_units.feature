@@ -109,9 +109,9 @@ Feature: Read a PLEXOS property in the unit the model states it in
     Given a Plexos model
     And the model contains fuel "Natural Gas" with price 3
     And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500"
-    And the model contains heat rate 12 in band 10 for generator "GasPlant"
-    And the model contains heat rate 9 in band 2 for generator "GasPlant"
-    And the model contains heat rate 8 in band 1 for generator "GasPlant"
+    And the model contains "Heat Rate" 12 in band 10 for generator "GasPlant"
+    And the model contains "Heat Rate" 9 in band 2 for generator "GasPlant"
+    And the model contains "Heat Rate" 8 in band 1 for generator "GasPlant"
     And the model is saved as "inputs/banded.xml"
     When I run translate against "inputs/banded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "GasPlant" in "outputs/network.nc" has "marginal_cost" equal to 24

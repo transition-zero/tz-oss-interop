@@ -81,3 +81,17 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     And the model is saved as "inputs/model.xml"
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "GasPlant" has a marginal_cost time series 25.0 65.0
+
+  Scenario: the static marginal cost of a fuel priced by date is the mean of its own series
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=2, VO&M Charge=5"
+    And the model contains fuel "Gas" with price 10
+    And fuel "Gas" costs 30 from "2026-01-02"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA generator "GasPlant" in "outputs/network.nc" has "marginal_cost" equal to 45
+    And the file "decisions.md" contains "the mean of the fuel's own dated price series"

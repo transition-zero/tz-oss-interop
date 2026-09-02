@@ -76,12 +76,18 @@ def given_model_measures_in(plexos_model_builder: PlexosModelBuilder, units_sett
 
 
 @given(
-    parsers.parse('the model contains heat rate {value:g} in band {band:d} for generator "{name}"')
+    parsers.parse(
+        'the model contains "{property_name}" {value:g} in band {band:d} for generator "{name}"'
+    )
 )
-def given_model_contains_heat_rate_band(
-    plexos_model_builder: PlexosModelBuilder, value: float, band: int, name: str
+def given_model_contains_property_band(
+    plexos_model_builder: PlexosModelBuilder,
+    property_name: str,
+    value: float,
+    band: int,
+    name: str,
 ) -> None:
-    plexos_model_builder.add_heat_rate_band(name, band=band, value=value)
+    plexos_model_builder.add_generator_property_band(name, property_name, band=band, value=value)
 
 
 @given(parsers.parse('the export omits the {class_name} object "{name}"'))
@@ -340,3 +346,21 @@ def given_model_contains_model_with_scenarios(
 @given(parsers.parse('the model is saved as "{xml_path}"'))
 def given_model_is_saved_as(plexos_model_builder: PlexosModelBuilder, xml_path: str) -> None:
     plexos_model_builder.save(Path(xml_path))
+
+
+@given(parsers.parse('generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start'))
+def given_generator_burns_start_fuel(
+    plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str
+) -> None:
+    plexos_model_builder.add_start_fuel(name, fuel, offtake)
+
+
+@given(
+    parsers.parse(
+        'generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start in band {band:d}'
+    )
+)
+def given_generator_burns_start_fuel_in_band(
+    plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str, band: int
+) -> None:
+    plexos_model_builder.add_start_fuel(name, fuel, offtake, band=band)

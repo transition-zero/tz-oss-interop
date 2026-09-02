@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_OUTPUT_DECIMAL_PLACES,
     PyPSABusCol,
     PyPSAComponent,
     PyPSADestinationTable,
@@ -139,6 +140,7 @@ def _add_in_bulk(
     """
     if frame.height == 0:
         return
+    frame = _rounded(frame)
     names = frame[name_column].to_list()
     columns = {column: frame[column].to_list() for column in required}
     # PyPSA's third positional is a name suffix, so mypy cannot check the attribute kwargs.
@@ -152,6 +154,11 @@ def _add_in_bulk(
             static.loc[rows, column] = pd.Series(
                 carried[column].to_list(), index=rows, dtype=static[column].dtype
             )
+
+
+def _rounded(frame: pl.DataFrame) -> pl.DataFrame:
+    """Every float column held to the places the sink writes."""
+    return frame.with_columns(pl.col(pl.Float32, pl.Float64).round(PYPSA_OUTPUT_DECIMAL_PLACES))
 
 
 def _add_buses(network: pypsa.Network, buses: pl.DataFrame | None, referenced: set[str]) -> None:
@@ -380,7 +387,9 @@ def _joined(
     model of a few hundred components dominates the time spent writing a network.
     """
     compounded = {
-        name: _compound(frame[name].tolist(), values) if name in frame.columns else values
+        name: _round_all(
+            _compound(frame[name].tolist(), values) if name in frame.columns else values
+        )
         for name, values in by_component.items()
     }
     added = pd.DataFrame(compounded, index=snapshots)
@@ -390,6 +399,11 @@ def _joined(
 
 def _compound(held: list[float], scaled: list[float]) -> list[float]:
     return [first * second for first, second in zip(held, scaled, strict=True)]
+
+
+def _round_all(values: list[float]) -> list[float]:
+    """Held to the places the sink writes, once every derate has been compounded in."""
+    return [round(value, PYPSA_OUTPUT_DECIMAL_PLACES) for value in values]
 
 
 def _collect_series_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, list[float]]:

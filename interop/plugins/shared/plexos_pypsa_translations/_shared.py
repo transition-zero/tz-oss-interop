@@ -102,6 +102,60 @@ def _reduce(values: list[float], rule: MultiValueRule) -> float:
             return max(values)
 
 
+def collapse_membership_properties_by_parent(
+    properties: pl.LazyFrame,
+    parent_class: PlexosClass,
+    collection: PlexosCollection,
+    rule: MultiValueRule = MultiValueRule.FIRST,
+) -> ObjectProperties:
+    """Per-parent property values for one membership collection, collapsed per ``rule``.
+
+    ``collapse_properties_by_object`` keys a value by the child object, which is what a
+    property describing the child wants. A property whose subject is the parent — the fuel
+    a generator burns to start, stated on the Generator to Fuel membership — belongs to
+    that parent, so its values collapse across every child the parent relates to as well as
+    across the bands of each. Null (file-backed) values are dropped, as they are there.
+    """
+    banded: dict[str, dict[str, list[float]]] = {}
+    for row in _read_membership_property_rows(properties, parent_class, collection):
+        name, property_name, value = row
+        banded.setdefault(name, {}).setdefault(property_name, []).append(value)
+    return {
+        name: {
+            property_name: _reduce(values, rule) for property_name, values in by_property.items()
+        }
+        for name, by_property in banded.items()
+    }
+
+
+def _read_membership_property_rows(
+    properties: pl.LazyFrame, parent_class: PlexosClass, collection: PlexosCollection
+) -> Iterator[tuple[str, str, float]]:
+    """(parent, property, value) for one collection's properties, in band order."""
+    if not _has_property_columns(properties):
+        return iter(())
+    frame = (
+        properties.filter(
+            (pl.col(PlexosPropertyCol.PARENT_CLASS) == parent_class)
+            & (pl.col(PlexosPropertyCol.COLLECTION) == collection)
+            & pl.col(PlexosPropertyCol.VALUE).is_not_null()
+        )
+        .sort(
+            PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.PROPERTY,
+            # Bands are staged as text, so a lexicographic sort would put band 10 first.
+            pl.col(PlexosPropertyCol.BAND).cast(pl.Int64, strict=False),
+        )
+        .select(
+            PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.PROPERTY,
+            PlexosPropertyCol.VALUE,
+        )
+        .collect()
+    )
+    return frame.iter_rows()
+
+
 def collapse_units_by_object(properties: pl.LazyFrame, plexos_class: PlexosClass) -> ObjectUnits:
     """The unit each object states each of its properties in, first band winning.
 

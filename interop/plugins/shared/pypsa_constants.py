@@ -395,6 +395,13 @@ UNSET_BUS_LOCATION: str = ""
 # A component whose source has no availability input is translated as in service.
 DEFAULT_COMPONENT_ACTIVE: bool = True
 
+# How many decimal places the sink writes a number to. A cost divided by an efficiency, or a
+# profile divided by a capacity, runs to the full precision of a float, and every one of
+# those digits reaches the solver as another distinct coefficient. Six places holds a per-unit
+# factor down to a millionth of a component's own rating, which is finer than any dispatch
+# decision a solver makes.
+PYPSA_OUTPUT_DECIMAL_PLACES: int = 6
+
 
 class PyPSADestinationTable:
     """Keys for ``State.destination_tables``, holding translated PyPSA component rows."""

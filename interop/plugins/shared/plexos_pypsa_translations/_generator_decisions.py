@@ -15,6 +15,7 @@ from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_GJ,
     UNIT_DOLLARS_PER_MWH,
     UNIT_DOLLARS_PER_TONNE,
+    UNIT_GJ,
     UNIT_GJ_PER_MWH,
     UNIT_HOURS,
     UNIT_KG_PER_GJ,
@@ -32,12 +33,14 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import (
     CarbonTerm,
     GeneratorMapping,
+    StartFuel,
     ThermalCostTerms,
     UnitCommitment,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
     MARGINAL_COST_CARBON_TERM,
+    START_UP_COST_FUEL_TERM,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
@@ -55,14 +58,36 @@ _P_NOM_RATING_DERIVATION = "Rating above Max Capacity x Units, so the Rating is 
 _THERMAL_CARRIER_DERIVATION = "the fuel names the carrier"
 _CATEGORY_CARRIER_DERIVATION = "the category names the carrier"
 _P_MIN_PU_DERIVATION = "the first available minimum-generation property, converted to per unit"
+_P_MIN_PU_NEGLIGIBLE_DERIVATION = (
+    "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is "
+    "written as zero"
+)
 _P_MIN_PU_NOTE = "no Min Stable Level, so the generator can turn down to zero"
 _THERMAL_COST_DERIVATION = "fuel price x heat rate + VO&M charge + the carbon term"
+_DATED_COST_DERIVATION = (
+    "fuel price x heat rate + VO&M charge + the carbon term, where the price is the mean "
+    "of the fuel's own dated price series"
+)
 _FLAT_COST_DERIVATION = "a non-fuel generator carries only its VO&M charge"
 _CARBON_DERIVATION = "carbon price x production rate x heat rate / 1000"
-_COMMITTABLE_DERIVATION = "thermal generators are unit-committed; others are not"
+_COMMITTABLE_DERIVATION = (
+    "a generator burning a fuel or holding a minimum output is unit-committed; others are not"
+)
 _RAMP_DERIVATION = "Max Ramp x snapshot minutes / p_nom, capped at 1"
 _TIME_LIMIT_DERIVATION = "hours -> snapshots at the network resolution"
-_START_UP_DERIVATION = "the cold-start band"
+_START_FUEL_DERIVATION = "Offtake at Start x the fuel's price"
+_START_UP_STATED_DERIVATION = "the cold-start band of Start Cost"
+_START_UP_FUEL_DERIVATION = (
+    "the start fuel prices the start, since the generator states no Start Cost"
+)
+_START_UP_UNPRICED_NOTE = (
+    "the generator states neither a Start Cost nor a start fuel, so nothing prices its "
+    "starts and PyPSA reads a start as free"
+)
+_DISCARDED_START_FUEL_NOTE = (
+    "the generator states its own Start Cost, which has already priced whatever fuel a "
+    "start burns, so the two are not added together"
+)
 _P_MAX_PU_DERATE_DERIVATION = "an outage or static rating derate"
 _P_MAX_PU_NOTE = "no rating or outage derate, so the generator can run at full output"
 _UP_TIME_BEFORE_NOTE = (
@@ -81,6 +106,8 @@ _P_MAX_PU_COLUMN = MappedColumns((PyPSAGeneratorCol.P_MAX_PU,))
 # The carbon adder is an event on no destination column: marginal_cost cites it as a
 # source, so it is named here rather than left implicit inside that one derivation.
 _CARBON_TERM_COLUMN = MappedColumns((MARGINAL_COST_CARBON_TERM,), UNIT_DOLLARS_PER_MWH)
+# What a start's fuel costs, on no destination column for the same reason.
+_START_FUEL_TERM_COLUMN = MappedColumns((START_UP_COST_FUEL_TERM,), UNIT_DOLLARS)
 
 
 @dataclass(frozen=True)
@@ -90,6 +117,9 @@ class GeneratorDecisions:
     name: str
     profile: Decision | None
     carbon: Decision | None
+    start_fuel: Decision | None
+    unpriced_start: bool
+    discarded_start_fuel: bool
     discarded_fuels: tuple[str, ...]
     bus: Decision = maps_to(PyPSAGeneratorCol.BUS)
     carrier: Decision = maps_to(PyPSAGeneratorCol.CARRIER)
@@ -118,6 +148,9 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
         name=mapping.name,
         profile=_profile(mapping),
         carbon=_carbon(mapping),
+        start_fuel=_start_fuel(mapping),
+        unpriced_start=_has_unpriced_start(mapping),
+        discarded_start_fuel=_has_discarded_start_fuel(mapping),
         discarded_fuels=mapping.discarded_fuels,
         bus=_bus(mapping),
         carrier=_carrier(mapping),
@@ -139,13 +172,24 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
 
 
 def record_generator(reporter: ComponentReporter, decisions: GeneratorDecisions) -> None:
-    """The carbon term precedes marginal_cost, which cites it as a source."""
+    """The carbon and start-fuel terms precede the values that cite them as sources."""
     name = decisions.name
     if decisions.carbon is not None:
         reporter.record(name, _CARBON_TERM_COLUMN, decisions.carbon)
+    if decisions.start_fuel is not None:
+        reporter.record(name, _START_FUEL_TERM_COLUMN, decisions.start_fuel)
     reporter.record_mapping(name, decisions)
     if decisions.profile is not None:
         reporter.record(name, _P_MAX_PU_COLUMN, decisions.profile)
+    if decisions.unpriced_start:
+        reporter.record_dropped(
+            _source(name, PlexosProperty.START_COST, None, UNIT_DOLLARS), _START_UP_UNPRICED_NOTE
+        )
+    if decisions.discarded_start_fuel:
+        reporter.record_dropped(
+            _source(name, PlexosProperty.OFFTAKE_AT_START, None, UNIT_GJ),
+            _DISCARDED_START_FUEL_NOTE,
+        )
     for fuel_name in decisions.discarded_fuels:
         reporter.record_skipped(
             _source(name, PlexosCollection.FUELS, fuel_name), _DISCARDED_FUEL_NOTE
@@ -186,7 +230,8 @@ def _p_min_pu(mapping: GeneratorMapping) -> Decision:
     if minimum.source_property is None or minimum.source_value is None:
         return Decision.default(minimum.p_min_pu, _P_MIN_PU_NOTE)
     source = _source(mapping.name, minimum.source_property, minimum.source_value)
-    return Decision.derived(minimum.p_min_pu, [source], _P_MIN_PU_DERIVATION)
+    derivation = _P_MIN_PU_NEGLIGIBLE_DERIVATION if minimum.is_negligible else _P_MIN_PU_DERIVATION
+    return Decision.derived(minimum.p_min_pu, [source], derivation)
 
 
 def _p_max_pu(mapping: GeneratorMapping) -> Decision:
@@ -220,8 +265,9 @@ def _marginal_cost(mapping: GeneratorMapping) -> Decision:
             mapping.name, PlexosProperty.VOM_CHARGE, mapping.cost.vom, UNIT_DOLLARS_PER_MWH
         )
         return Decision.derived(mapping.cost.marginal_cost, [source], _FLAT_COST_DERIVATION)
+    derivation = _DATED_COST_DERIVATION if terms.is_priced_by_date else _THERMAL_COST_DERIVATION
     return Decision.derived(
-        terms.marginal_cost, _thermal_cost_sources(mapping.name, terms), _THERMAL_COST_DERIVATION
+        terms.marginal_cost, _thermal_cost_sources(mapping.name, terms), derivation
     )
 
 
@@ -348,8 +394,59 @@ def _time_limit(
 
 
 def _start_up_cost(name: str, commitment: UnitCommitment) -> Decision:
-    start_cost = commitment.start_up_cost
-    if start_cost is None:
+    """PLEXOS prices a start as money on the generator, or as the fuel a start burns."""
+    stated = commitment.stated_start_cost
+    if stated is not None:
+        source = _source(name, PlexosProperty.START_COST, stated, UNIT_DOLLARS)
+        return Decision.derived(stated, [source], _START_UP_STATED_DERIVATION)
+    start_fuel = commitment.start_fuel
+    if start_fuel is None:
         return Decision.unreported(None)
-    source = _source(name, PlexosProperty.START_COST, start_cost, UNIT_DOLLARS)
-    return Decision.derived(start_cost, [source], _START_UP_DERIVATION)
+    source = SourceValue.derived_earlier(
+        PyPSAComponent.GENERATOR, name, START_UP_COST_FUEL_TERM, start_fuel.cost, UNIT_DOLLARS
+    )
+    return Decision.derived(start_fuel.cost, [source], _START_UP_FUEL_DERIVATION)
+
+
+def _start_fuel(mapping: GeneratorMapping) -> Decision | None:
+    """What a start's fuel costs, recorded as the value start_up_cost derives from."""
+    start_fuel = _priced_start_fuel(mapping)
+    if start_fuel is None:
+        return None
+    return Decision.derived(
+        start_fuel.cost,
+        [
+            _source(mapping.name, PlexosProperty.OFFTAKE_AT_START, start_fuel.offtake, UNIT_GJ),
+            SourceValue(
+                PlexosClass.FUEL,
+                start_fuel.name,
+                PlexosProperty.PRICE,
+                start_fuel.price,
+                UNIT_DOLLARS_PER_GJ,
+            ),
+        ],
+        _START_FUEL_DERIVATION,
+    )
+
+
+def _priced_start_fuel(mapping: GeneratorMapping) -> StartFuel | None:
+    """The start fuel where it is what prices the start, rather than a Start Cost."""
+    commitment = mapping.unit_commitment
+    if commitment is None or commitment.stated_start_cost is not None:
+        return None
+    return commitment.start_fuel
+
+
+def _has_unpriced_start(mapping: GeneratorMapping) -> bool:
+    """A committed generator whose model prices a start neither way starts for free."""
+    commitment = mapping.unit_commitment
+    return commitment is not None and commitment.start_up_cost is None
+
+
+def _has_discarded_start_fuel(mapping: GeneratorMapping) -> bool:
+    commitment = mapping.unit_commitment
+    return (
+        commitment is not None
+        and commitment.stated_start_cost is not None
+        and commitment.start_fuel is not None
+    )
