@@ -102,36 +102,41 @@ def _reduce(values: list[float], rule: MultiValueRule) -> float:
             return max(values)
 
 
-def collapse_membership_properties_by_parent(
+def collapse_membership_properties(
     properties: pl.LazyFrame,
     parent_class: PlexosClass,
     collection: PlexosCollection,
     rule: MultiValueRule = MultiValueRule.FIRST,
-) -> ObjectProperties:
-    """Per-parent property values for one membership collection, collapsed per ``rule``.
+) -> dict[str, ObjectProperties]:
+    """One collection's property values, keyed by parent then by child then by property.
 
     ``collapse_properties_by_object`` keys a value by the child object, which is what a
-    property describing the child wants. A property whose subject is the parent — the fuel
-    a generator burns to start, stated on the Generator to Fuel membership — belongs to
-    that parent, so its values collapse across every child the parent relates to as well as
-    across the bands of each. Null (file-backed) values are dropped, as they are there.
+    property describing the child wants. A property stated on the membership describes the
+    pair — the gigajoules one generator burns of one fuel to start — so both ends are kept.
+    Null (file-backed) values are dropped, as they are there.
     """
-    banded: dict[str, dict[str, list[float]]] = {}
-    for row in _read_membership_property_rows(properties, parent_class, collection):
-        name, property_name, value = row
-        banded.setdefault(name, {}).setdefault(property_name, []).append(value)
+    banded: dict[str, dict[str, dict[str, list[float]]]] = {}
+    for parent, child, property_name, value in _read_membership_property_rows(
+        properties, parent_class, collection
+    ):
+        by_child = banded.setdefault(parent, {}).setdefault(child, {})
+        by_child.setdefault(property_name, []).append(value)
     return {
-        name: {
-            property_name: _reduce(values, rule) for property_name, values in by_property.items()
+        parent: {
+            child: {
+                property_name: _reduce(values, rule)
+                for property_name, values in by_property.items()
+            }
+            for child, by_property in by_child.items()
         }
-        for name, by_property in banded.items()
+        for parent, by_child in banded.items()
     }
 
 
 def _read_membership_property_rows(
     properties: pl.LazyFrame, parent_class: PlexosClass, collection: PlexosCollection
-) -> Iterator[tuple[str, str, float]]:
-    """(parent, property, value) for one collection's properties, in band order."""
+) -> Iterator[tuple[str, str, str, float]]:
+    """(parent, child, property, value) for one collection's properties, in band order."""
     if not _has_property_columns(properties):
         return iter(())
     frame = (
@@ -142,12 +147,14 @@ def _read_membership_property_rows(
         )
         .sort(
             PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.CHILD_OBJECT,
             PlexosPropertyCol.PROPERTY,
             # Bands are staged as text, so a lexicographic sort would put band 10 first.
             pl.col(PlexosPropertyCol.BAND).cast(pl.Int64, strict=False),
         )
         .select(
             PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.CHILD_OBJECT,
             PlexosPropertyCol.PROPERTY,
             PlexosPropertyCol.VALUE,
         )

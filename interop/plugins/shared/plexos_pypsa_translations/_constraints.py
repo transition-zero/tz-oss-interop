@@ -5,9 +5,7 @@ It weights each object by a coefficient stated on the membership, and it may sta
 right-hand side over an hour, a day, a week, a month, a year, or the whole horizon.
 
 PyPSA's GlobalConstraint limits one carrier over the whole horizon and has no way to name
-a set of components, so no shape of Constraint has a home in the network file. Nothing is
-carried, and each right-hand side is recorded against the object stating it, so a reader
-sees which limits the network is not holding to rather than having to notice their absence.
+a set of components, so no shape of Constraint has a home in the network file.
 """
 
 from __future__ import annotations
@@ -27,7 +25,7 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
     ObjectUnits,
-    collapse_membership_properties_by_parent,
+    collapse_membership_properties,
     collapse_properties_by_object,
     collapse_units_by_object,
     relate_children,
@@ -64,12 +62,7 @@ _NO_COEFFICIENT = "no coefficient"
 
 @dataclass(frozen=True)
 class _Constraint:
-    """One PLEXOS Constraint: which way it binds, over what, and to which right-hand sides.
-
-    ``units`` holds the unit the model states each of its properties in, so a right-hand
-    side is reported in the model's own terms rather than in one inferred from the
-    coefficient beside it.
-    """
+    """One PLEXOS Constraint: which way it binds, over what, and to which right-hand sides."""
 
     name: str
     sense: str
@@ -97,8 +90,10 @@ def _read_constraints(state: State) -> list[_Constraint]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     scalars = collapse_properties_by_object(properties, PlexosClass.CONSTRAINT)
     units = collapse_units_by_object(properties, PlexosClass.CONSTRAINT)
-    coefficients = collapse_membership_properties_by_parent(
-        properties, PlexosClass.CONSTRAINT, PlexosCollection.GENERATORS
+    coefficients = _coefficients_by_constraint(
+        collapse_membership_properties(
+            properties, PlexosClass.CONSTRAINT, PlexosCollection.GENERATORS
+        )
     )
     members = relate_children(
         state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
@@ -112,14 +107,14 @@ def _read_one(
     name: str,
     scalars: ObjectProperties,
     units: ObjectUnits,
-    coefficients: ObjectProperties,
+    coefficients: dict[str, tuple[str, ...]],
     members: list[str],
 ) -> _Constraint:
     stated = scalars.get(name, {})
     return _Constraint(
         name=name,
         sense=_read_sense(stated),
-        coefficients=tuple(sorted(coefficients.get(name, {}))),
+        coefficients=coefficients.get(name, ()),
         members=tuple(members),
         right_hand_sides={
             property_name: stated[property_name]
@@ -128,6 +123,16 @@ def _read_one(
         },
         units=units.get(name, {}),
     )
+
+
+def _coefficients_by_constraint(
+    by_constraint: dict[str, ObjectProperties],
+) -> dict[str, tuple[str, ...]]:
+    """Which coefficients each Constraint weights its Generators by, whichever ones it names."""
+    return {
+        name: tuple(sorted({prop for by_property in by_generator.values() for prop in by_property}))
+        for name, by_generator in by_constraint.items()
+    }
 
 
 def _constraint_names(state: State) -> list[str]:

@@ -22,7 +22,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     MultiValueRule,
     ObjectProperties,
     built_bus_names,
-    collapse_membership_properties_by_parent,
+    collapse_membership_properties,
     collapse_properties_by_object,
     read_file_backed_properties,
     relate_child,
@@ -53,7 +53,7 @@ class Lookups:
     bus_names: set[str]
     gen_to_node: dict[str, str]
     gen_fuels: dict[str, list[str]]
-    start_fuel_offtake: dict[str, float]
+    start_fuel_offtake: dict[str, dict[str, float]]
     fuel_to_emission: dict[str, str]
     file_backed_properties: dict[str, list[str]]
     availability_profiles: dict[str, str]
@@ -93,20 +93,25 @@ def build_lookups(state: State) -> Lookups:
     )
 
 
-def _read_start_fuel_offtake(properties: pl.LazyFrame) -> dict[str, float]:
-    """The gigajoules each generator burns for a cold start, whatever fuel it burns them as.
+def _read_start_fuel_offtake(properties: pl.LazyFrame) -> dict[str, dict[str, float]]:
+    """Each generator's start fuels, and the gigajoules of each a cold start takes.
 
-    The offtake is stated on the Generator to Fuel membership, so it is the generator it
-    describes rather than the fuel.
+    The offtake is stated on the Generator to Fuel membership, so both ends matter: a
+    generator may start on a fuel other than the one it runs on, and that fuel's own price
+    is what the start costs.
     """
-    start_fuels = collapse_membership_properties_by_parent(
+    start_fuels = collapse_membership_properties(
         properties, PlexosClass.GENERATOR, PlexosCollection.START_FUELS, _COLD_START_BAND
     )
-    return {
-        name: props[PlexosProperty.OFFTAKE_AT_START]
-        for name, props in start_fuels.items()
-        if PlexosProperty.OFFTAKE_AT_START in props
+    offtakes = {
+        name: {
+            fuel: properties_of_fuel[PlexosProperty.OFFTAKE_AT_START]
+            for fuel, properties_of_fuel in by_fuel.items()
+            if PlexosProperty.OFFTAKE_AT_START in properties_of_fuel
+        }
+        for name, by_fuel in start_fuels.items()
     }
+    return {name: by_fuel for name, by_fuel in offtakes.items() if by_fuel}
 
 
 def _availability_profiles(file_backed: dict[str, list[str]]) -> dict[str, str]:

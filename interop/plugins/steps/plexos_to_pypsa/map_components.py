@@ -51,8 +51,7 @@ class PlexosToPypsaMapComponents(TranslationStep):
     Sub-steps run in dependency order: buses first, then everything that references a bus.
     Reserves are the one resource with no native PyPSA home, so they are carried to the
     extensions sidecar rather than enforced. Storage units reference a bus by name, which
-    the sink auto-creates, so they need no buses table to be mapped. Constraints go last
-    because they only report; nothing downstream reads what they leave behind.
+    the sink auto-creates, so they need no buses table to be mapped.
     """
 
     name: ClassVar[str] = "plexos_to_pypsa_map_components"

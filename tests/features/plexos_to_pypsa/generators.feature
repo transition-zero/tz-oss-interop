@@ -451,3 +451,24 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/long_decimals.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "efficiency" exactly 0.514286
     And the PyPSA generator "Solar1" in "outputs/network.nc" has p_max_pu at hour 1 exactly 0.333333
+
+  Scenario: a generator that starts on a fuel it does not run on pays that fuel's own price
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains fuel "Distillate" with price 25
+    And the model contains generator "DualFuel" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "DualFuel" burns 1800 GJ of fuel "Distillate" to start
+    And the model is saved as "inputs/dual_fuel_start.xml"
+    When I run translate against "inputs/dual_fuel_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "DualFuel" in "outputs/network.nc" has "start_up_cost" equal to 45000
+    And the file "decisions.md" contains "`plexos.Fuel.Distillate.Price` = 25.0 $/GJ"
+
+  Scenario: a minimum the availability ceiling itself makes negligible is written as zero
+    Given a Plexos model
+    And the model contains data file "OutageProfile" at "profiles/outage.csv" with hourly values "0.05, 100, 100"
+    And the model contains generator "Reservoir" with "node=Grid_Node, category=Hydro, Max Capacity=21, Min Stable Level=12, Rating Factor=file:OutageProfile"
+    And the model is saved as "inputs/capped_minimum.xml"
+    When I run translate against "inputs/capped_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "Reservoir" in "outputs/network.nc" has "p_min_pu" equal to 0
+    And the PyPSA generator "Reservoir" in "outputs/network.nc" is not committable
+    And the file "decisions.md" contains "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is written as zero"

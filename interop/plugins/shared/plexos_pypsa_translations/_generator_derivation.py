@@ -171,7 +171,9 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
     fuels = lookups.gen_fuels.get(source.name, [])
     fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
-    minimum = _cap_at_availability(_minimum_generation(source), availability, source, lookups)
+    minimum = _floor_negligible(
+        _cap_at_availability(_minimum_generation(source), availability, source, lookups)
+    )
     return GeneratorMapping(
         name=source.name,
         bus_name=node,
@@ -231,18 +233,33 @@ class FuelUse:
     production_rate: float | None
 
 
+@dataclass(frozen=True)
+class _FuelPrice:
+    """A fuel's price, and whether the model states it as a series of dated bands."""
+
+    value: float
+    is_dated: bool
+
+
+def _read_fuel_price(fuel_name: str, lookups: Lookups) -> _FuelPrice:
+    """The mean of a fuel's dated price series, or the one scalar the model states."""
+    dated = lookups.dated_fuel_prices.get(fuel_name)
+    if dated is not None:
+        return _FuelPrice(dated, is_dated=True)
+    props = lookups.fuel_props.get(fuel_name, {})
+    return _FuelPrice(_value(props, PlexosProperty.PRICE, 0.0), is_dated=False)
+
+
 def _fuel_use(source: SourceGenerator, fuel_name: str | None, lookups: Lookups) -> FuelUse | None:
     heat_rate = _read_heat_rate(source.props)
     if fuel_name is None or heat_rate is None:
         return None
     fuel_props = lookups.fuel_props.get(fuel_name, {})
-    dated_price = lookups.dated_fuel_prices.get(fuel_name)
+    price = _read_fuel_price(fuel_name, lookups)
     return FuelUse(
         name=fuel_name,
-        price=dated_price
-        if dated_price is not None
-        else _value(fuel_props, PlexosProperty.PRICE, 0.0),
-        is_priced_by_date=dated_price is not None,
+        price=price.value,
+        is_priced_by_date=price.is_dated,
         heat_rate=heat_rate.value,
         heat_rate_property=heat_rate.property_name,
         heat_rate_base=_value(source.props, PlexosProperty.HEAT_RATE_BASE, 0.0),
@@ -288,10 +305,7 @@ def _classify(fuel: FuelUse | None, source: SourceGenerator) -> str:
 
 @dataclass(frozen=True)
 class MinimumGeneration:
-    """p_min_pu and the PLEXOS property it came from, null where the default applied.
-
-    ``is_negligible`` marks a stated minimum small enough to have been written as zero.
-    """
+    """p_min_pu and the PLEXOS property it came from, null where the default applied."""
 
     p_min_pu: float
     source_property: str | None
@@ -303,23 +317,21 @@ def _minimum_generation(source: SourceGenerator) -> MinimumGeneration:
     """p_min_pu from the first present of Min Stable Factor, Level, or Pump Load; else 0."""
     factor = _optional(source.props, PlexosProperty.MIN_STABLE_FACTOR)
     if factor is not None:
-        return _floor_negligible(factor / PERCENT, PlexosProperty.MIN_STABLE_FACTOR, factor)
+        return MinimumGeneration(factor / PERCENT, PlexosProperty.MIN_STABLE_FACTOR, factor)
     for property_name in _MIN_STABLE_MEGAWATT_PROPERTIES:
         megawatts = _optional(source.props, property_name)
         if megawatts is not None and source.p_nom:
-            return _floor_negligible(megawatts / source.p_nom, property_name, megawatts)
+            return MinimumGeneration(megawatts / source.p_nom, property_name, megawatts)
     return MinimumGeneration(DEFAULT_P_MIN_PU, None, None)
 
 
-def _floor_negligible(
-    p_min_pu: float, source_property: str, source_value: float
-) -> MinimumGeneration:
-    """Write a minimum below one part in a thousand of the capacity as no minimum at all."""
-    if 0.0 < p_min_pu < NEGLIGIBLE_P_MIN_PU:
-        return MinimumGeneration(
-            DEFAULT_P_MIN_PU, source_property, source_value, is_negligible=True
-        )
-    return MinimumGeneration(p_min_pu, source_property, source_value)
+def _floor_negligible(minimum: MinimumGeneration) -> MinimumGeneration:
+    """Runs after the availability cap, which can itself leave a minimum this small."""
+    if not 0.0 < minimum.p_min_pu < NEGLIGIBLE_P_MIN_PU:
+        return minimum
+    return MinimumGeneration(
+        DEFAULT_P_MIN_PU, minimum.source_property, minimum.source_value, is_negligible=True
+    )
 
 
 @dataclass(frozen=True)
@@ -481,11 +493,23 @@ class StartFuel:
 def _start_fuel(
     source: SourceGenerator, fuel: FuelUse | None, lookups: Lookups
 ) -> StartFuel | None:
-    """What a start burns, where the generator both names a start fuel and burns one."""
-    offtake = lookups.start_fuel_offtake.get(source.name)
-    if fuel is None or offtake is None:
+    """What a start burns, priced by the fuel the Start Fuels membership itself names.
+
+    A generator may start on a fuel it does not run on, so the run fuel's price is not
+    always the price of a start.
+    """
+    offtakes = lookups.start_fuel_offtake.get(source.name, {})
+    if not offtakes:
         return None
-    return StartFuel(fuel.name, offtake, fuel.price)
+    name = _choose_start_fuel(offtakes, fuel)
+    return StartFuel(name, offtakes[name], _read_fuel_price(name, lookups).value)
+
+
+def _choose_start_fuel(offtakes: dict[str, float], fuel: FuelUse | None) -> str:
+    """The fuel the heat rate already uses, or where none of them is it, the hungriest start."""
+    if fuel is not None and fuel.name in offtakes:
+        return fuel.name
+    return max(offtakes, key=lambda name: offtakes[name])
 
 
 @dataclass(frozen=True)
@@ -539,7 +563,6 @@ def _derive_unit_commitment(
 
 
 def _start_up_cost(stated: float | None, start_fuel: StartFuel | None) -> float | None:
-    """Start Cost prices the start where the generator states one; otherwise the start fuel."""
     if stated is not None:
         return stated
     return start_fuel.cost if start_fuel is not None else None
