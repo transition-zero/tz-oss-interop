@@ -486,5 +486,20 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains generator "FreeStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8, Start Cost=0"
     And the model is saved as "inputs/free_start.xml"
     When I run translate against "inputs/free_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the PyPSA generator "FreeStart" in "outputs/network.nc" has "start_up_cost" equal to 0
-    And the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 $"
+    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 $"
+
+  Scenario: a generator naming several start fuels starts on the one its heat rate uses
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains fuel "Distillate" with price 25
+    And the model contains generator "DualStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "DualStart" burns 100 GJ of fuel "Gas" to start
+    And generator "DualStart" burns 1800 GJ of fuel "Distillate" to start
+    And the model contains generator "NeitherStart" with "node=Grid_Node, category=Gas, Max Capacity=100, Min Stable Level=50"
+    And generator "NeitherStart" burns 100 GJ of fuel "Gas" to start
+    And generator "NeitherStart" burns 1800 GJ of fuel "Distillate" to start
+    And the model is saved as "inputs/several_start_fuels.xml"
+    When I run translate against "inputs/several_start_fuels.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "DualStart" in "outputs/network.nc" has "start_up_cost" equal to 800
+    # A generator burning no fuel has no heat rate to prefer one by, so the largest start wins.
+    And the PyPSA generator "NeitherStart" in "outputs/network.nc" has "start_up_cost" equal to 45000
