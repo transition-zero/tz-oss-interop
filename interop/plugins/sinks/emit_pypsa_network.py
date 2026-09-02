@@ -12,6 +12,7 @@ from interop.core.pipeline import Sink, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_OUTPUT_DECIMAL_PLACES,
+    UNROUNDED_OUTPUT_COLUMNS,
     PyPSABusCol,
     PyPSAComponent,
     PyPSADestinationTable,
@@ -140,7 +141,11 @@ def _add_in_bulk(
     """
     if frame.height == 0:
         return
-    frame = frame.with_columns(pl.col(pl.Float32, pl.Float64).round(PYPSA_OUTPUT_DECIMAL_PLACES))
+    frame = frame.with_columns(
+        pl.col(pl.Float32, pl.Float64)
+        .exclude(UNROUNDED_OUTPUT_COLUMNS)
+        .round(PYPSA_OUTPUT_DECIMAL_PLACES)
+    )
     names = frame[name_column].to_list()
     columns = {column: frame[column].to_list() for column in required}
     # PyPSA's third positional is a name suffix, so mypy cannot check the attribute kwargs.

@@ -291,9 +291,10 @@ PLEXOS prices the start of a generator in one of two ways, and a model may use e
    on the `Start Fuels` membership that joins the generator to a `Fuel`. The `Price` of
    that fuel turns the offtake into money.
 
-The translator reads both. Where a generator states `Start Cost`, that is the
-`start_up_cost`, whatever its start fuel says. Where it states none, the `start_up_cost` is
-`Offtake at Start × the fuel price`. **The two are never added.** A model that states both
+The translator reads both. Where a generator states a `Start Cost` above zero, that is the
+`start_up_cost`, whatever its start fuel says. Where it states none, or states zero, the
+`start_up_cost` is `Offtake at Start × the fuel price`. A zero with no start fuel beside it
+is a start the model prices at zero. **The two are never added.** A model that states both
 has almost certainly priced the fuel inside its own `Start Cost` already, and adding them
 would charge that fuel twice. Where a generator states both, the report records the start
 fuel as not mapped.
@@ -962,6 +963,11 @@ places. A cost divided by an efficiency, or a profile divided by a capacity, run
 full precision of a float, and each of those digits reaches the solver as another distinct
 coefficient. Six places holds a per-unit factor to a millionth of the rating of the
 component itself, which is finer than any dispatch decision a solver makes.
+
+Line impedance is the one exception. `r`, `x`, `b` and `g` are not per unit of anything the
+line states, and a near-zero-impedance coupler states a reactance of a millionth of an ohm
+or less. Rounding it away would leave PyPSA building an admittance from one over nothing, so
+these four are written as they are derived.
 
 ## Assumptions worth checking against your model
 

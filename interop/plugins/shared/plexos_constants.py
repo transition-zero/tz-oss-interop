@@ -110,7 +110,6 @@ class PlexosCollection(StrEnum):
     REGION = "Region"
     ZONES = "Zones"
     GENERATORS = "Generators"
-    CONSTRAINTS = "Constraints"
     FUELS = "Fuels"
     START_FUELS = "Start Fuels"
     EMISSIONS = "Emissions"

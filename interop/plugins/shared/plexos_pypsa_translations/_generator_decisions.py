@@ -34,6 +34,7 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_derivation impo
     CarbonTerm,
     GeneratorMapping,
     StartFuel,
+    StartPricing,
     ThermalCostTerms,
     UnitCommitment,
 )
@@ -394,9 +395,8 @@ def _time_limit(
 
 
 def _start_up_cost(name: str, commitment: UnitCommitment) -> Decision:
-    """PLEXOS prices a start as money on the generator, or as the fuel a start burns."""
-    stated = commitment.stated_start_cost
-    if stated is not None:
+    if commitment.start_pricing is StartPricing.STATED:
+        stated = commitment.stated_start_cost
         source = _source(name, PlexosProperty.START_COST, stated, UNIT_DOLLARS)
         return Decision.derived(stated, [source], _START_UP_STATED_DERIVATION)
     start_fuel = commitment.start_fuel
@@ -432,20 +432,20 @@ def _start_fuel(mapping: GeneratorMapping) -> Decision | None:
 def _priced_start_fuel(mapping: GeneratorMapping) -> StartFuel | None:
     """The start fuel where it is what prices the start, rather than a Start Cost."""
     commitment = mapping.unit_commitment
-    if commitment is None or commitment.stated_start_cost is not None:
+    if commitment is None or commitment.start_pricing is not StartPricing.START_FUEL:
         return None
     return commitment.start_fuel
 
 
 def _has_unpriced_start(mapping: GeneratorMapping) -> bool:
     commitment = mapping.unit_commitment
-    return commitment is not None and commitment.start_up_cost is None
+    return commitment is not None and commitment.start_pricing is StartPricing.NONE
 
 
 def _has_discarded_start_fuel(mapping: GeneratorMapping) -> bool:
     commitment = mapping.unit_commitment
     return (
         commitment is not None
-        and commitment.stated_start_cost is not None
+        and commitment.start_pricing is StartPricing.STATED
         and commitment.start_fuel is not None
     )

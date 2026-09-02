@@ -1,14 +1,16 @@
 """Deriving one PyPSA generator's values from one staged PLEXOS Generator.
 
 PLEXOS carries every technology in one Generator class, so what a generator *is* comes
-from what it carries: a named fuel burnt at a heat rate makes it thermal, which fixes
-its carrier, its marginal cost, and whether it is unit-committed. Everything else takes
-its carrier from its category and its cost from VO&M alone.
+from what it carries: a named fuel burnt at a heat rate makes it thermal, which fixes its
+carrier and its marginal cost. Everything else takes its carrier from its category and its
+cost from VO&M alone. Commitment is a separate test: a generator is unit-committed when it
+burns a fuel, and also when it holds a minimum output.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 
 from interop.plugins.shared.plexos_constants import (
@@ -130,8 +132,9 @@ class GeneratorMapping:
     """Values derived from one PLEXOS Generator, before events and the output row.
 
     ``fuel`` is the thermal/non-thermal distinction: a generator burning a named fuel at
-    a heat rate is thermal, is unit-committed, and prices that fuel into its marginal
-    cost. Everything else takes its carrier from its category and its cost from VO&M.
+    a heat rate is thermal and prices that fuel into its marginal cost. Everything else
+    takes its carrier from its category and its cost from VO&M. ``unit_commitment`` is set
+    separately, for a generator burning a fuel or holding a minimum output alike.
     """
 
     name: str
@@ -219,8 +222,7 @@ class FuelUse:
 
     A generator has one of these only when it both names a fuel and carries a heat rate;
     that pairing is what makes it thermal. ``price`` is the mean of the fuel's own dated
-    series where it has one, so the one number the network carries and the series the sink
-    writes beside it say the same thing.
+    series where it has one.
     """
 
     name: str
@@ -491,11 +493,7 @@ class StartFuel:
 def _start_fuel(
     source: SourceGenerator, fuel: FuelUse | None, lookups: Lookups
 ) -> StartFuel | None:
-    """What a start burns, priced by the fuel the Start Fuels membership itself names.
-
-    A generator may start on a fuel it does not run on, so the run fuel's price is not
-    always the price of a start.
-    """
+    """What a start burns, priced by the fuel the Start Fuels membership itself names."""
     offtakes = lookups.start_fuel_offtake.get(source.name, {})
     if not offtakes:
         return None
@@ -514,14 +512,17 @@ def _choose_start_fuel(offtakes: dict[str, float], fuel: FuelUse | None) -> str:
     return max(offtakes, key=lambda name: offtakes[name])
 
 
+class StartPricing(Enum):
+    """Which of PLEXOS's two ways of pricing a start a generator's own values settle on."""
+
+    STATED = auto()
+    START_FUEL = auto()
+    NONE = auto()
+
+
 @dataclass(frozen=True)
 class UnitCommitment:
-    """The commitment limits of a committed generator, each null where PLEXOS set none.
-
-    PLEXOS prices a start in one of two ways, and a model stating both has already priced
-    the fuel inside its own ``Start Cost``, so ``start_up_cost`` takes one or the other and
-    never their sum.
-    """
+    """The commitment limits of a committed generator, each null where PLEXOS set none."""
 
     max_ramp_up: float | None
     max_ramp_down: float | None
@@ -533,9 +534,22 @@ class UnitCommitment:
     min_down_time: float | None
     stated_start_cost: float | None
     start_fuel: StartFuel | None
-    start_up_cost: float | None
     up_time_before: float
     shut_down_cost: float
+
+    @property
+    def start_pricing(self) -> StartPricing:
+        """Which of the two prices a start, never both: a model stating both has already
+        priced the fuel inside its own Start Cost, so adding them would charge it twice.
+
+        A Start Cost of zero prices nothing, so a start fuel stated beside it is still what
+        a start costs. A zero with no start fuel is the model pricing a start at zero.
+        """
+        if self.start_fuel is not None and not self.stated_start_cost:
+            return StartPricing.START_FUEL
+        if self.stated_start_cost is not None:
+            return StartPricing.STATED
+        return StartPricing.NONE
 
 
 def _derive_unit_commitment(
@@ -558,16 +572,9 @@ def _derive_unit_commitment(
         min_down_time=_hours_to_snapshots(min_down_hours, minutes),
         stated_start_cost=stated_start_cost,
         start_fuel=start_fuel,
-        start_up_cost=_start_up_cost(stated_start_cost, start_fuel),
         up_time_before=DEFAULT_UP_TIME_BEFORE,
         shut_down_cost=DEFAULT_SHUT_DOWN_COST,
     )
-
-
-def _start_up_cost(stated: float | None, start_fuel: StartFuel | None) -> float | None:
-    if stated is not None:
-        return stated
-    return start_fuel.cost if start_fuel is not None else None
 
 
 def _ramp_limit(value_mw_per_min: float | None, p_nom: float, minutes: float) -> float | None:

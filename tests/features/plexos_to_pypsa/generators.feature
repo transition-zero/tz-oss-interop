@@ -406,7 +406,6 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/start_fuel.xml"
     When I run translate against "inputs/start_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
-    # The offtake and the fuel price make the start-fuel cost, which then makes start_up_cost.
     And the file "decisions.md" contains "`plexos.Generator.CCGT.Offtake at Start` = 1800.0 GJ"
     And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | Offtake at Start x the fuel's price |"
     And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | `pypsa.Generator.CCGT.start_up_cost` = 14400.0 $ | the start fuel prices the start, since the generator states no Start Cost |"
@@ -472,3 +471,20 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA generator "Reservoir" in "outputs/network.nc" has "p_min_pu" equal to 0
     And the PyPSA generator "Reservoir" in "outputs/network.nc" is not committable
     And the file "decisions.md" contains "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is written as zero"
+
+  Scenario: a start cost of zero leaves the start fuel beside it pricing the start
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7, Start Cost=0"
+    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And the model is saved as "inputs/zero_start_cost.xml"
+    When I run translate against "inputs/zero_start_cost.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
+
+  Scenario: a start cost of zero with no start fuel is still a start priced at zero
+    Given a Plexos model
+    And the model contains generator "FreeStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8, Start Cost=0"
+    And the model is saved as "inputs/free_start.xml"
+    When I run translate against "inputs/free_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "FreeStart" in "outputs/network.nc" has "start_up_cost" equal to 0
+    And the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 $"

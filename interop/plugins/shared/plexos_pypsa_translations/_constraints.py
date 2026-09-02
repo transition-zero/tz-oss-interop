@@ -124,7 +124,6 @@ def _read_one(
 def _coefficients_by_constraint(
     by_constraint: dict[str, ObjectProperties],
 ) -> dict[str, tuple[str, ...]]:
-    """Which coefficients each Constraint weights its Generators by, whichever ones it names."""
     return {
         name: tuple(sorted({prop for by_property in by_generator.values() for prop in by_property}))
         for name, by_generator in by_constraint.items()
