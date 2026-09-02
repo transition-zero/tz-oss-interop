@@ -829,10 +829,10 @@ cannot dispatch. The translator leaves that generator out and records it as a sk
 component, naming it. A limit that comes from a profile changes across the horizon, and the
 translator does not do this test on it.
 
-A minimum below `0.001` of the capacity of the unit itself becomes `0`. A minimum that small
-binds no dispatch decision a solver makes, and carrying it only widens the range of numbers
-the solver works over. The report records the value the model stated and the floor that
-replaced it.
+A minimum that comes to less than `0.001` per unit becomes `0`, whether the model states it
+that small or the availability cap above leaves it that small. A minimum that small binds no
+dispatch decision a solver makes, and carrying it only widens the range of numbers the solver
+works over. The report records the value the model stated and the floor that replaced it.
 
 A generator that ends up with a minimum above `0` is `committable`, so PyPSA holds it to
 that minimum only in the hours it runs. Refer to [`Generator`](#generator--generator).

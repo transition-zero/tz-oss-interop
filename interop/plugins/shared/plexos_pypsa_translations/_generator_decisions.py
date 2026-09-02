@@ -60,8 +60,8 @@ _THERMAL_CARRIER_DERIVATION = "the fuel names the carrier"
 _CATEGORY_CARRIER_DERIVATION = "the category names the carrier"
 _P_MIN_PU_DERIVATION = "the first available minimum-generation property, converted to per unit"
 _P_MIN_PU_NEGLIGIBLE_DERIVATION = (
-    "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is "
-    "written as zero"
+    "the minimum this generator can be held to, after any availability cap, comes to less "
+    "than 0.001 per unit, which constrains no dispatch, so it is written as zero"
 )
 _P_MIN_PU_NOTE = "no Min Stable Level, so the generator can turn down to zero"
 _THERMAL_COST_DERIVATION = "fuel price x heat rate + VO&M charge + the carbon term"

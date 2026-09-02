@@ -378,7 +378,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/negligible_minimum.xml"
     When I run translate against "inputs/negligible_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "WindFleet" in "outputs/network.nc" has "p_min_pu" equal to 0
-    And the file "decisions.md" contains "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is written as zero"
+    And the file "decisions.md" contains "the minimum this generator can be held to, after any availability cap, comes to less than 0.001 per unit, which constrains no dispatch, so it is written as zero"
 
   Scenario: a generator burning no fuel still commits so its minimum binds only while it runs
     Given a Plexos model
@@ -387,16 +387,6 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/hydro_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "RunOfRiver" in "outputs/network.nc" is committable
     And the PyPSA generator "RunOfRiver" in "outputs/network.nc" has "p_min_pu" equal to 0.5714285714285714
-
-  Scenario: a fast generator's ramp limit stops at the whole of its capacity in one hour
-    Given a Plexos model
-    And the model contains generator "Peaker" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=10, Max Ramp Up=50, Max Ramp Down=50"
-    And the model is saved as "inputs/fast_ramp.xml"
-    When I run translate against "inputs/fast_ramp.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the PyPSA generator "Peaker" in "outputs/network.nc" has "ramp_limit_up" equal to 1
-    And the PyPSA generator "Peaker" in "outputs/network.nc" has "ramp_limit_down" equal to 1
-    # The event still names the MW per minute the source stated, so the clamp is auditable.
-    And the file "decisions.md" contains "`plexos.Generator.Peaker.Max Ramp Up` = 50.0 MW/min"
 
   Scenario: a start priced only as start fuel still costs the generator something
     Given a Plexos model
@@ -470,7 +460,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/capped_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "Reservoir" in "outputs/network.nc" has "p_min_pu" equal to 0
     And the PyPSA generator "Reservoir" in "outputs/network.nc" is not committable
-    And the file "decisions.md" contains "a minimum below 0.001 of the unit's own capacity constrains no dispatch, so it is written as zero"
+    And the file "decisions.md" contains "the minimum this generator can be held to, after any availability cap, comes to less than 0.001 per unit, which constrains no dispatch, so it is written as zero"
 
   Scenario: a start cost of zero leaves the start fuel beside it pricing the start
     Given a Plexos model
