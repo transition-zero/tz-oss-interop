@@ -1,0 +1,10 @@
+source_framework: plexos
+destination_framework: sienna
+source:
+  name: stage_plexos_sienna_mappings
+steps:
+  - name: plexos_sienna_mappings_to_carriers
+sinks:
+  - name: emit_carrier_mappings
+    params:
+      output_path: derived/carrier_mappings.yaml

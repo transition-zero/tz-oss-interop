@@ -1,0 +1,42 @@
+name: Maintainability
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  versions:
+    uses: ./.github/workflows/python-versions.yml
+
+  maintainability:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ needs.versions.outputs.latest }}
+        run: uv python install ${{ needs.versions.outputs.latest }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Build maintainability report
+        run: uv run python .github/scripts/maintainability_report.py
+
+      - name: Post sticky PR comment
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: maintainability-report
+          path: maintainability_report.md

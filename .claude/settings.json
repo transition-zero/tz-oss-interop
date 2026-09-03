@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__postgres__query",
+      "mcp__notion__notion-fetch",
+      "mcp__notion__notion-search",
+      "Bash(uv run pytest *)",
+      "Bash(uv run mypy *)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run lint-imports)"
+    ]
+  }
+}

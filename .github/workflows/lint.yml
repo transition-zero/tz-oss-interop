@@ -1,0 +1,46 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  versions:
+    uses: ./.github/workflows/python-versions.yml
+
+  # Lint results don't vary by interpreter, so this runs once on the newest
+  # supported Python. It stays on Linux because `make lint` drives pre-commit,
+  # whose hooks are all bash.
+  lint:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ needs.versions.outputs.latest }}
+        run: uv python install ${{ needs.versions.outputs.latest }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Lint
+        run: make lint
+
+  # Enforce that every workflow action is pinned to an immutable commit SHA.
+  action-pins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check actions are pinned to a commit SHA
+        run: scripts/check_action_pins.sh

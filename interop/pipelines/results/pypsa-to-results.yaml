@@ -1,0 +1,14 @@
+source_framework: pypsa
+destination_framework: results
+source:
+  name: stage_pypsa_network_file
+steps:
+  - name: pypsa_to_results_map_observations
+sinks:
+  - name: emit_results_parquet
+    params:
+      output_dir: outputs
+      framework: pypsa
+      label: pypsa results
+      timezone: UTC
+      source_artifact: network.nc

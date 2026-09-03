@@ -1,0 +1,2 @@
+name,v_nom,type,carrier,unit,location,control,generator,sub_network
+electricity,380.0,,AC,,,PQ,,

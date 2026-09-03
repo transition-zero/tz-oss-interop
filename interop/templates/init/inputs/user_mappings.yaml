@@ -1,0 +1,67 @@
+carriers:
+  - pypsa_carrier: nuclear
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NUCLEAR
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: coal
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: COAL
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: lignite
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: COAL
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: CCGT
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: CC
+  - pypsa_carrier: OCGT
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: GT
+  - pypsa_carrier: gas
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: CC
+  - pypsa_carrier: oil
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: DISTILLATE_FUEL_OIL
+    sienna_prime_mover_type: GT
+  - pypsa_carrier: geothermal
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: GEOTHERMAL
+    sienna_prime_mover_type: BT
+  - pypsa_carrier: biomass
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER_BIOMASS_SOLIDS
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: bioenergy
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER_BIOMASS_SOLIDS
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: waste
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: MUNICIPAL_WASTE
+    sienna_prime_mover_type: ST
+  - pypsa_carrier: hydrogen
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER_GAS
+    sienna_prime_mover_type: FC
+  - pypsa_carrier: onwind
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: WT
+  - pypsa_carrier: offwind-ac
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: WS
+  - pypsa_carrier: offwind-dc
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: WS
+  - pypsa_carrier: solar
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - pypsa_carrier: hydro
+    sienna_component_type: HydroDispatch
+    sienna_prime_mover_type: HY
+  - pypsa_carrier: PHS
+    sienna_component_type: EnergyReservoirStorage
+    sienna_prime_mover_type: PS

@@ -1,0 +1,262 @@
+[project]
+name = "interop"
+version = "0.1.0"
+requires-python = ">=3.11,<3.14"
+description = "Translation tooling for energy-system model formats."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "TransitionZero", email = "info@transitionzero.org" }]
+keywords = [
+    "energy",
+    "energy-system-modelling",
+    "pypsa",
+    "sienna",
+    "plexos",
+    "osemosys",
+    "translation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "questionary>=2.0",
+    "dishka>=1.4",
+    "pydantic>=2",
+    "pyyaml>=6",
+    "humanize>=4.16.0",
+    "polars>=1.43.2",
+    "xarray>=2026.7.0",
+    "netcdf4>=1.6",
+    "h5py>=3.16.0",
+    "h5netcdf>=1.8.1",
+    "requests>=2.34.2",
+    "scipy>=1.11",
+    "juliacall>=0.9",
+    "pandas>=3.0.5",
+    "pypsa>=1.2.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/transition-zero/tz-oss-interop"
+Repository = "https://github.com/transition-zero/tz-oss-interop"
+Documentation = "https://github.com/transition-zero/tz-oss-interop/tree/main/docs"
+Issues = "https://github.com/transition-zero/tz-oss-interop/issues"
+Discussions = "https://github.com/transition-zero/tz-oss-interop/discussions"
+
+[project.scripts]
+interop = "interop.main:app"
+interop-lint-plugin-inheritance = "interop.lints.plugin_inheritance:main"
+interop-lint-plugin-filesystem = "interop.lints.plugin_filesystem:main"
+
+[dependency-groups]
+dev = [
+    "interop-testing",
+    "pytest-cov>=5",
+    "ruff>=0.16.2",
+    "mypy>=2.3.0",
+    "mutmut>=3.7.0",
+    "import-linter>=2.13",
+    "ipykernel>=7.3.0",
+    "pre-commit>=4.6.2",
+    "xenon>=0.9.3",
+    "pandas-stubs>=3.0.5.260730",
+]
+
+[tool.uv.workspace]
+members = ["libs/*"]
+
+[tool.uv.sources]
+interop-testing = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["interop"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["mutants"]
+
+[tool.ruff.lint]
+# PLW1514 (an explicit `encoding=` on every text-mode read/write) is still a ruff
+# preview rule, so preview has to be on for it. `explicit-preview-rules` keeps
+# that from enabling every other preview rule in the selected sets.
+preview = true
+explicit-preview-rules = true
+select = ["E", "F", "I", "UP", "B", "SIM", "PLW1514"]
+
+[tool.ruff.lint.per-file-ignores]
+# Long lines are Julia code inside Python string literals; splitting them harms readability.
+"interop/adapters/outbound/julia_solver.py" = ["E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+exclude = ["mutants/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "questionary.*",
+    "pytest_bdd.*",
+    "yaml.*",
+    "netCDF4.*",
+    "h5py.*",
+    "juliacall.*",
+    "juliapkg.*",
+    "radon.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+bdd_features_base_dir = "tests/features"
+markers = [
+    "slow: tests with a steep per-mutant cost that outweighs their mutation-testing value (e.g. the subprocess install smoke); excluded from mutation runs via `pytest -m 'not slow'`.",
+    "fork_unsafe: tests that run a Polars compute. Polars' Rayon pool does not survive mutmut's fork() at any pool size, so scripts/run_mutmut.py re-execs the mutants these tests cover in a fresh interpreter. That re-exec is too steep for the CI mutation job, so these tests are also tagged slow (excluded from the default `not slow` run); `make mutation-full` widens the filter to `not slow or fork_unsafe` to run them locally.",
+]
+
+[tool.mutmut]
+source_paths = ["interop/"]
+# test_ci_python_matrix.py loads .github/scripts/python_versions.py by path (it isn't
+# importable), so mutmut's mutants/ sandbox needs a copy or that test fails to collect.
+also_copy = [".github/"]
+do_not_mutate = [
+    "interop/di/*",
+    "interop/main.py",
+    "interop/logging_setup.py",
+    "interop/adapters/inbound/interactive_cli/*",
+    "interop/plugins/sources/stage_pypsa_network_file.py",
+    # mutmut puts its dispatcher dictionary between the last `@overload` stub and the
+    # implementation, which breaks the chain mypy requires. The type-check filter then
+    # gets an error it cannot map to a mutant, and it stops the whole run.
+    "interop/core/extensions.py",
+    # Development-time lint tooling rather than translation logic: it is proven
+    # by pre-commit running it over this repo's own plugins on every commit.
+    "interop/lints/*",
+    "*/__init__.py",
+]
+# A logging call's arguments carry no behaviour: nothing asserts on log output, and the
+# logging module swallows a formatting error rather than raising it. mutmut skips a whole
+# expression whose first line matches, so this covers the arguments of a call spread over
+# several lines too. It only matches a logger bound to the name `log`, which is the
+# convention everywhere in interop/; a module calling it something else stays mutable.
+do_not_mutate_patterns = ['^\s*log\.(debug|info|warning|error|exception|critical)\(']
+# mutmut 3.x ignores the `runner` field that older docs suggest; the
+# pytest filter has to go through pytest_add_cli_args (passed to every
+# pytest.main() invocation, both stats collection and per-mutant runs).
+pytest_add_cli_args = ["-m", "not slow"]
+backup = false
+# A mutant that hangs burns its whole budget before mutmut kills it, so this pair caps
+# what one costs: four times the covering tests' measured duration, over a 2s floor.
+# That leaves a mutant several times its clean run before it is called hung, well under
+# mutmut's own 15x-plus-1s default.
+timeout_multiplier = 4.0
+timeout_constant = 2.0
+# Discard type-invalid mutants (e.g. None into a non-optional param) before they
+# are test-run: mutmut runs this from inside mutants/ and buckets every reported
+# error's mutant as caught_by_type_check. A relaxed (non-strict) config is used
+# so only mutation-induced type errors (arg-type/call-arg) fire, not strict-only
+# scaffolding noise like unused-ignore that mutmut cannot map back to a mutant.
+type_check_command = ["mypy", "--output=json", "--config-file", "../scripts/mutmut_mypy.ini", "interop"]
+
+[tool.coverage.run]
+source = ["interop"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.importlinter]
+root_packages = ["interop", "interop_testing"]
+
+[[tool.importlinter.contracts]]
+name = "Outbound adapters are independent"
+type = "independence"
+modules = [
+    "interop.adapters.outbound.local_filesystem",
+    "interop.adapters.outbound.julia_solver",
+    "interop.adapters.outbound.markdown_comparison_report",
+]
+
+[[tool.importlinter.contracts]]
+name = "Core does not depend on adapters, plugins, DI, or main"
+type = "forbidden"
+source_modules = ["interop.core"]
+forbidden_modules = ["interop.adapters", "interop.plugins", "interop.di", "interop.main"]
+
+[[tool.importlinter.contracts]]
+name = "Ports do not depend on adapters, core, DI, or main"
+type = "forbidden"
+source_modules = ["interop.ports"]
+forbidden_modules = ["interop.adapters", "interop.core", "interop.di", "interop.main"]
+
+[[tool.importlinter.contracts]]
+name = "Inbound adapters do not import outbound adapters directly"
+type = "forbidden"
+source_modules = ["interop.adapters.inbound"]
+forbidden_modules = ["interop.adapters.outbound"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters reach core only through ports, never core internals"
+type = "forbidden"
+source_modules = ["interop.adapters"]
+forbidden_modules = ["interop.core"]
+
+[[tool.importlinter.contracts]]
+name = "Plugins depend only on core and ports"
+type = "forbidden"
+source_modules = ["interop.plugins"]
+forbidden_modules = ["interop.adapters", "interop.di", "interop.main"]
+
+[[tool.importlinter.contracts]]
+# interop_testing depends on interop, never the reverse. The split into its own
+# workspace package makes that structural, but both are installed together in dev,
+# so a stray import would still resolve — this keeps it caught at lint time.
+name = "Nothing depends on the test harness"
+type = "forbidden"
+source_modules = [
+    "interop.core",
+    "interop.plugins",
+    "interop.adapters",
+    "interop.ports",
+    "interop.di",
+    "interop.main",
+]
+forbidden_modules = ["interop_testing"]
+
+[[tool.importlinter.contracts]]
+# The plugin lints are published so a project can enforce interop's plugin
+# contracts on a base install. That only holds while they stay pure-stdlib ast
+# walks: importing anything from interop would pull the whole dependency set in
+# behind a check that never executes the code it reads.
+name = "The plugin lints depend on nothing else in interop"
+type = "forbidden"
+source_modules = ["interop.lints"]
+forbidden_modules = [
+    "interop.core",
+    "interop.plugins",
+    "interop.adapters",
+    "interop.ports",
+    "interop.di",
+    "interop.main",
+]
+
+[[tool.importlinter.contracts]]
+name = "Steps do not read or write filesystem"
+type = "forbidden"
+source_modules = ["interop.plugins.steps"]
+forbidden_modules = [
+    "interop.plugins.sources",
+    "interop.plugins.sinks",
+    "interop.ports.outbound.filesystem",
+]

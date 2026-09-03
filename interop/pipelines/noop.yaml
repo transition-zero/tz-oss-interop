@@ -1,0 +1,11 @@
+source_framework: noop
+destination_framework: noop
+source:
+  name: noop
+  params: {}
+steps:
+  - name: noop
+    params: {}
+sinks:
+  - name: noop
+    params: {}

@@ -1,0 +1,44 @@
+# adapters.yaml binds outbound ports to adapter names and configures
+# the bound adapters. Every section below is optional; an absent key
+# falls back to its built-in default. Full reference: "Adapters config"
+# in docs/developer_documentation/extending.md in the interop repository.
+
+# Bind an outbound port to one adapter by name. Built-in keys and
+# their shipped adapter values:
+#   filesystem -> local_filesystem  (default)
+#   reporter   -> markdown_report  (default)
+#                 csv_report
+#                 noop_report
+#   solver     -> julia_solver      (default)
+# Custom adapters under plugins/adapters/ register their `name` here too.
+#
+# Example (uncomment to use these settings):
+# bindings:
+#   reporter: csv_report
+
+# Bind an outbound port to a list of adapters; the container fans
+# calls out to each one internally. `reporter` is the only key
+# supported today.
+#
+# Example (uncomment to use these settings):
+# multi_bindings:
+#   reporter: [markdown_report, csv_report]
+
+# Per-adapter configuration, keyed by adapter `name`. Each value must
+# match the adapter's `config_schema`. Shipped configs:
+#   local_filesystem.root                          (Path or None; default None)
+#   markdown_report.output_path                    (Path; default decisions.md)
+#   csv_report.output_path                         (Path; default decisions.csv)
+#   julia_solver.powersystems_jl_path              (Path or None; default None = registry release)
+#   julia_solver.powersimulations_jl_path          (Path or None; default None = registry release)
+#   julia_solver.hydropowersimulations_jl_path     (Path or None; default None = registry release)
+#
+# Example (uncomment to use these settings):
+# adapters:
+#   markdown_report:
+#     output_path: outputs/decisions.md
+#   csv_report:
+#     output_path: outputs/decisions.csv
+
+observability:
+  log_level: INFO

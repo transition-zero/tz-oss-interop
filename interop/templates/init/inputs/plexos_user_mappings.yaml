@@ -1,0 +1,53 @@
+# The carrier mappings a plexos-to-sienna run reads, written in PLEXOS words.
+#
+# Each row names a string from your PLEXOS model and the Sienna type it becomes.
+# `plexos_concept` says where that string comes from:
+#
+#   fuel      the name of a Fuel object. A generator that burns a fuel and states a heat
+#             rate takes this row.
+#   category  the PLEXOS category of a generator that burns no fuel.
+#
+# Add one row for each Fuel and each category in your model. A generator whose fuel or
+# category has no row here is left out of the Sienna system, and decisions.md names it.
+#
+# Reservoir hydro, pumped storage and a Battery take a carrier the translator writes
+# rather than one your model states, so the derive pipeline supplies a row for each. The
+# three commented rows below are those defaults. Uncomment one to change it.
+
+carriers:
+  - plexos_concept: fuel
+    plexos_name: Natural Gas
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: CC
+
+  - plexos_concept: fuel
+    plexos_name: Coal
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: COAL
+    sienna_prime_mover_type: ST
+
+  - plexos_concept: category
+    plexos_name: Solar
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+
+  - plexos_concept: category
+    plexos_name: Wind
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: WT
+
+  # - plexos_concept: storage_kind
+  #   plexos_name: reservoir_hydro
+  #   sienna_component_type: HydroDispatch
+  #   sienna_prime_mover_type: HY
+  #
+  # - plexos_concept: storage_kind
+  #   plexos_name: pumped_storage
+  #   sienna_component_type: EnergyReservoirStorage
+  #   sienna_prime_mover_type: PS
+  #
+  # - plexos_concept: storage_kind
+  #   plexos_name: battery
+  #   sienna_component_type: EnergyReservoirStorage
+  #   sienna_prime_mover_type: BA

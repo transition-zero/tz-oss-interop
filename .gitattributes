@@ -1,0 +1,9 @@
+# The Windows runner checks out with core.autocrlf=true, so without this every
+# text file would land as CRLF in the working tree.
+* text=auto eol=lf
+
+uv.lock linguist-generated=true diff=false
+
+# Committed reference datasets: collapse in diffs and drop from language stats.
+# `-text` keeps their bytes (some carry CRLF) identical on every platform.
+interop/data/**/*.csv linguist-generated=true diff=false -text

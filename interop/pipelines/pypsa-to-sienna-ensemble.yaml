@@ -1,0 +1,19 @@
+source_framework: pypsa
+destination_framework: sienna
+source:
+  name: stage_pypsa_network_ensemble
+steps:
+  - name: pypsa_to_sienna_map_components
+  - name: pypsa_to_sienna_relate_components
+validators:
+  - name: pypsa_bus_reference_integrity
+  - name: pypsa_generators
+  - name: pypsa_storage_units
+  - name: pypsa_loads
+  - name: pypsa_lines
+  - name: pypsa_links
+  - name: pypsa_unique_names
+sinks:
+  - name: emit_sienna_files_ensemble
+    params:
+      output_dir: outputs/ensemble

@@ -1,0 +1,13 @@
+source_framework: plexos
+destination_framework: sienna
+mappings:
+  - pipeline: derive-plexos-sienna-mappings
+compose:
+  - pipeline: plexos-to-pypsa-monte-carlo-reliability
+    params:
+      emit_pypsa_network_ensemble.output_dir: ensemble
+      emit_extensions_json.output_path: extensions.json
+  - pipeline: pypsa-to-sienna-ensemble
+    params:
+      stage_pypsa_network_ensemble.network_dir: $plexos-to-pypsa-monte-carlo-reliability.emit_pypsa_network_ensemble.output_dir
+      stage_pypsa_network_ensemble.extensions_json_path: $plexos-to-pypsa-monte-carlo-reliability.emit_extensions_json.output_path

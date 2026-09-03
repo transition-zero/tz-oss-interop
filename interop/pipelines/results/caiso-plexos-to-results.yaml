@@ -1,0 +1,19 @@
+source_framework: caiso-plexos
+destination_framework: results
+source:
+  name: stage_caiso_plexos_stack_model
+  # Defaults only: the prompts offer these and the user edits them. The CSVs are not
+  # shipped with interop — docs/case_studies/caiso-sa26.md says how to produce them.
+  params:
+    stack_model_path: case_study_inputs/caiso-sa26/stack_model.csv
+    appendix_path: case_study_inputs/caiso-sa26/appendix_capacity_by_fuel_month.csv
+steps:
+  - name: caiso_plexos_to_results
+sinks:
+  - name: emit_results_parquet
+    params:
+      output_dir: outputs
+      framework: caiso-plexos
+      label: CAISO 2026 Summer Assessment stack model
+      timezone: America/Los_Angeles
+      source_artifact: the published stack-model and appendix CSVs

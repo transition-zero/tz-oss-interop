@@ -1,0 +1,15 @@
+source_framework: sienna
+destination_framework: results
+source:
+  name: stage_sienna_results
+steps:
+  - name: sienna_to_pypsa_map_components
+  - name: sienna_results_to_results_format
+sinks:
+  - name: emit_results_parquet
+    params:
+      output_dir: outputs
+      framework: sienna
+      label: sienna results
+      timezone: UTC
+      source_artifact: system.json

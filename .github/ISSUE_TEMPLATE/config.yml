@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/transition-zero/tz-oss-interop/discussions
+    about: Ask how something works, or float an idea before it becomes an issue.
+  - name: Security vulnerability
+    url: https://github.com/transition-zero/tz-oss-interop/security/advisories/new
+    about: Report a vulnerability privately. Never in a public issue.
+  - name: Code of Conduct concern
+    url: https://github.com/transition-zero/tz-oss-interop/blob/main/CODE_OF_CONDUCT.md
+    about: How to report a Code of Conduct problem to the maintainers.

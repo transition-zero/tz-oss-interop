@@ -1,0 +1,113 @@
+# Run `uv run pre-commit install` once after cloning to wire the git hook.
+# Hooks shell out via `uv run` so the versions match the dev environment
+# (and what CI runs); upgrading a tool in pyproject.toml needs no rev bump here.
+
+exclude: '^(mutants/|\.mutmut-cache/)'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+
+  - repo: local
+    hooks:
+      # Fail if any workflow `uses:` is not pinned to an immutable commit SHA.
+      - id: check-action-pins
+        name: github actions pinned to SHA
+        entry: scripts/check_action_pins.sh
+        language: script
+        files: ^\.github/workflows/.*\.ya?ml$
+        pass_filenames: false
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --force-exclude
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy interop libs tests .github/scripts scripts
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: lint-imports
+        name: lint-imports
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        types_or: [python, toml]
+
+      # The template plugin roots are named individually, not as
+      # `interop/templates`: each argument must be the directory that *holds* the
+      # category subdirectories, and a root with none is silently skipped. A new
+      # example under templates/examples/ needs adding here to be covered.
+      - id: plugin-inheritance
+        name: plugin classes inherit their Protocol
+        entry: >-
+          uv run interop-lint-plugin-inheritance plugins interop/plugins
+          interop/templates/init/plugins interop/templates/examples/pypsa/plugins
+          --adapters-dir interop/adapters/outbound
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: test-decoupling
+        name: BDD step files do not import UserInputError subclasses
+        entry: uv run python scripts/lint_test_decoupling.py
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: bdd-only
+        name: all test files drive tests through pytest-bdd
+        entry: uv run python scripts/lint_bdd_only.py
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      # Template roots named individually, for the reason on plugin-inheritance.
+      - id: plugin-filesystem
+        name: plugins reach the filesystem only through FilesystemPort
+        entry: >-
+          uv run interop-lint-plugin-filesystem plugins interop/plugins
+          interop/templates/init/plugins interop/templates/examples/pypsa/plugins
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: feature-tags
+        name: feature files carry the mutation-budget tags
+        entry: uv run python scripts/lint_feature_tags.py
+        language: system
+        pass_filenames: false
+        files: ^(tests/features/.*\.feature|scripts/lint_feature_tags\.py)$
+
+      - id: committed-data
+        name: no publisher data files in the repository
+        entry: uv run python scripts/lint_committed_data.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: coverage
+        name: coverage
+        entry: uv run pytest --cov=interop --cov-report=term-missing
+        language: system
+        pass_filenames: false
+        stages: [manual]
+        types: [python]

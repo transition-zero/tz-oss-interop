@@ -1,0 +1,14 @@
+source_framework: plexos
+destination_framework: pypsa
+source:
+  name: stage_plexos_xml_ensemble
+steps:
+  - name: plexos_to_pypsa_map_components
+  - name: plexos_to_pypsa_add_load_shedding
+sinks:
+  - name: emit_pypsa_network_ensemble
+    params:
+      output_dir: outputs/ensemble
+  - name: emit_extensions_json
+    params:
+      output_path: outputs/extensions.json

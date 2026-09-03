@@ -1,0 +1,11 @@
+source_framework: plexos
+destination_framework: pypsa
+source:
+  name: stage_plexos_xml
+steps:
+  - name: plexos_to_pypsa_map_components
+sinks:
+  - name: emit_pypsa_network
+  - name: emit_extensions_json
+    params:
+      output_path: outputs/extensions.json

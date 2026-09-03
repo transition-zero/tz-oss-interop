@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # GitHub Actions used across all workflows in .github/workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Python dependencies (uv reads pyproject.toml + uv.lock at the repo root).
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Group dev tooling into a single PR to cut review noise.
+      dev-dependencies:
+        dependency-type: "development"
+      # Group non-major production updates together.
+      production-minor-patch:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]

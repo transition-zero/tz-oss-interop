@@ -1,0 +1,16 @@
+[project]
+name = "interop-ep-test-pkg"
+version = "0.0.1"
+requires-python = ">=3.11"
+description = "Test fixture package for interop entry-point discovery."
+dependencies = []
+
+[project.entry-points."interop.steps"]
+entry_point_step = "interop_ep_test_pkg:EntryPointStep"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["interop_ep_test_pkg"]

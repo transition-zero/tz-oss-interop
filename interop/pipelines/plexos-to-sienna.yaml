@@ -1,0 +1,13 @@
+source_framework: plexos
+destination_framework: sienna
+mappings:
+  - pipeline: derive-plexos-sienna-mappings
+compose:
+  - pipeline: plexos-to-pypsa
+    params:
+      emit_pypsa_network.output_path: network.nc
+      emit_extensions_json.output_path: extensions.json
+  - pipeline: pypsa-to-sienna
+    params:
+      stage_pypsa_network_file.path: $plexos-to-pypsa.emit_pypsa_network.output_path
+      stage_pypsa_network_file.extensions_json_path: $plexos-to-pypsa.emit_extensions_json.output_path

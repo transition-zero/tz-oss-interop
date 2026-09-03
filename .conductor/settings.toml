@@ -1,0 +1,33 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# Gitignored files every workspace wants. Nothing matches today; the patterns are
+# here so a future .env or per-machine Claude Code permission file is picked up.
+file_include_globs = [".env*", ".claude/settings.local.json"]
+
+[scripts]
+setup = "uv sync --locked --all-groups"
+# Nothing here binds a port or shares a database, so workspaces can run at once.
+run_mode = "concurrent"
+
+# The commands themselves live in the Makefile, alongside the targets CI calls.
+[scripts.run.test]
+command = "make test"
+default = true
+icon = "test-tube"
+
+[scripts.run.coverage]
+command = "make coverage"
+icon = "percent"
+
+[scripts.run.maintainability]
+command = "make maintainability"
+icon = "gauge"
+
+# Both mutation runs take tens of minutes; mutation-full is the slower of the two.
+[scripts.run.mutation]
+command = "make mutation"
+icon = "biohazard"
+
+[scripts.run.mutation-full]
+command = "make mutation-full"
+icon = "radiation"

@@ -1,0 +1,24 @@
+# VCS / caches / environments — never needed inside the image
+.git
+.venv
+.venv-*
+__pycache__
+*.pyc
+.pytest_cache
+.mutmut-cache
+mutants/
+.ruff_cache
+
+# Dev/test-only content — the image ships runtime code only
+tests/
+docs/
+scripts/
+*.egg-info
+
+# Scratch test projects created during manual testing this session
+my-model*
+
+# Editor/OS noise
+.DS_Store
+.vscode/
+.idea/

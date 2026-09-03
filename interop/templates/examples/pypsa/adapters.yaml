@@ -1,0 +1,14 @@
+# Fan the translation decisions report out to both Markdown (human-readable)
+# and CSV. The CSV maps each PyPSA component to its Sienna counterpart and is
+# the mapping file the compare command reads back in.
+multi_bindings:
+  reporter: [markdown_report, csv_report]
+
+adapters:
+  markdown_report:
+    output_path: outputs/decisions.md
+  csv_report:
+    output_path: outputs/decisions.csv
+
+observability:
+  log_level: INFO

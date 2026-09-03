@@ -1,0 +1,45 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  versions:
+    uses: ./.github/workflows/python-versions.yml
+
+  test:
+    needs: versions
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          # A macOS runner minute costs ten times a Linux one; put this line
+          # back to test on macOS again.
+          # - macos-latest
+        python-version: ${{ fromJSON(needs.versions.outputs.all) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Test with coverage
+        # GNU make is not on PATH on the Windows runner image, so call pytest
+        # through uv directly rather than `make coverage`.
+        run: uv run pytest --cov=interop --cov-report=term-missing

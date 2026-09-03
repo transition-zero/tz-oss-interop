@@ -1,0 +1,6 @@
+source_framework: noop
+destination_framework: noop
+source:
+  name: noop
+sinks:
+  - name: noop

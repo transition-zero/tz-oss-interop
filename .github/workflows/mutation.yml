@@ -1,0 +1,74 @@
+name: Mutation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  versions:
+    uses: ./.github/workflows/python-versions.yml
+
+  mutation:
+    needs: versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The mutation fixtures are tiny, so intra-op parallelism buys nothing across
+      # thousands of short mutant runs. This does not make Polars fork-safe: a forked
+      # child that touches Polars deadlocks at any pool size, which is what the
+      # `fork_unsafe` re-exec in scripts/run_mutmut.py is for.
+      POLARS_MAX_THREADS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ needs.versions.outputs.latest }}
+        run: uv python install ${{ needs.versions.outputs.latest }}
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Restore mutmut cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mutants
+          # No restore-keys fallback: mutmut's own copy_src_dir() only copies a file into
+          # mutants/ if it doesn't already exist there, so restoring a cache saved under a
+          # different (non-matching) key would silently leave stale non-Python files (e.g.
+          # pipeline YAML) in place indefinitely. A miss on this exact key should mean a
+          # fully fresh mutants/, not a mismatched one.
+          key: mutmut-${{ runner.os }}-${{ hashFiles('interop/**', 'uv.lock') }}
+
+      # Bounded well inside the job's own limit so the score report and PR comment
+      # always get to run. mutmut writes each mutant's result to disk as it finishes,
+      # so a run cut short here still reports everything it got through; the report
+      # names the remainder as unchecked rather than scoring them.
+      - name: Run mutmut
+        timeout-minutes: 20
+        continue-on-error: true
+        run: make mutation || true
+
+      - name: Build score report
+        id: score
+        if: always()
+        env:
+          MUTATION_THRESHOLD: "0.0"
+        run: uv run python .github/scripts/mutmut_score.py
+
+      - name: Post sticky PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: mutation-score
+          path: mutation_score.md

@@ -1,0 +1,15 @@
+# TruffleHog path exclusions, shared by the local pre-commit hook and CI.
+#
+# One POSIX regular expression per line, matched against each file's
+# repo-relative path. A matching file is skipped by the secret scan. Blank lines
+# and lines starting with '#' are ignored.
+#
+# Use this ONLY for paths that legitimately contain secret-shaped strings that
+# are NOT real credentials (test fixtures, sample/example data, generated
+# files). Keep patterns narrow so the scanner stays useful. For a single line,
+# prefer an inline `trufflehog:ignore` comment instead.
+#
+# Examples (uncomment / adapt as needed):
+# ^backend/tests/fixtures/
+# ^backend/tests/data/.*\.sample$
+# ^frontend/.*/__mocks__/

@@ -1,0 +1,46 @@
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Every commit in the pull request must certify the Developer Certificate of
+  # Origin with a `Signed-off-by` trailer. This is a plain git+bash check rather
+  # than a GitHub App, so a fork of this repository gets the same gate without
+  # anyone installing anything.
+  dco:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The pull_request event checks out a merge commit with a shallow history,
+      # so fetch enough of it to walk every commit the PR adds.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Check every commit is signed off
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Run the checker as the base branch holds it, not as the pull request
+          # holds it, so no pull request can edit the gate it has to pass. The
+          # fallback is for the one pull request that first adds the checker: it
+          # reads the tip of the base branch, so once the checker is on that
+          # branch every later pull request meets it whatever it is based on.
+          git fetch --no-tags origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
+
+          checker="${RUNNER_TEMP}/check_dco.sh"
+          if git cat-file -e "origin/${BASE_REF}:scripts/check_dco.sh" 2>/dev/null; then
+            git show "origin/${BASE_REF}:scripts/check_dco.sh" > "$checker"
+          else
+            echo "::warning::${BASE_REF} carries no scripts/check_dco.sh yet, so this pull request's own copy is running."
+            cp scripts/check_dco.sh "$checker"
+          fi
+
+          bash "$checker" "$BASE_SHA" "$HEAD_SHA"
