@@ -1,6 +1,6 @@
 [project]
 name = "interop"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11,<3.14"
 description = "Translation tooling for energy-system model formats."
 readme = "README.md"
