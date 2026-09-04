@@ -58,10 +58,10 @@ interop-lint-plugin-filesystem = "interop.lints.plugin_filesystem:main"
 dev = [
     "interop-testing",
     "pytest-cov>=5",
-    "ruff>=0.16.2",
-    "mypy>=2.3.0",
+    "ruff>=0.16.5",
+    "mypy>=2.3.1",
     "mutmut>=3.7.0",
-    "import-linter>=2.13",
+    "import-linter>=2.14",
     "ipykernel>=7.3.0",
     "pre-commit>=4.6.2",
     "xenon>=0.9.3",
