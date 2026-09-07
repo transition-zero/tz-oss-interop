@@ -26,13 +26,14 @@ head="${2:-HEAD}"
 
 range="$(git merge-base "$base" "$head")..$head"
 
-status=0
-while IFS= read -r sha; do
-  [ -z "$sha" ] && continue
+# Says why a commit fails the check, completing "Commit <sha> …", or says
+# nothing at all if it passes.
+explain_missing_sign_off() {
+  local sha="$1"
+  local author_email author_name sign_offs
 
   author_email="$(git show -s --format='%ae' "$sha")"
   author_name="$(git show -s --format='%an' "$sha")"
-  subject="$(git show -s --format='%s' "$sha")"
 
   # A trailer only counts on its own line, so pick out the sign-off lines
   # before looking at who they name.
@@ -42,25 +43,29 @@ while IFS= read -r sha; do
   # GitHub names a bot account `<something>[bot]`, and gives it an address of
   # the form `<id>+<something>[bot]@users.noreply.github.com`.
   if [[ "$author_name" == *"[bot]" || "$author_email" == *"[bot]@users.noreply.github.com" ]]; then
-    if [ -n "$sign_offs" ]; then
-      continue
+    if [ -z "$sign_offs" ]; then
+      echo "is authored by the bot ${author_name} and carries no Signed-off-by trailer"
     fi
-
-    echo "::error::Commit ${sha}, authored by the bot ${author_name}, carries no Signed-off-by trailer." >&2
-    echo "MISSING SIGN-OFF  ${sha:0:12}  ${subject}" >&2
-    status=1
-    continue
+    return
   fi
 
   # The address is matched as a fixed string, since an address may hold a regex
   # metacharacter (`jane+interop@example.com`), and case-insensitively, since
   # git preserves whatever case the author configured.
-  if printf '%s\n' "$sign_offs" | grep -iFq "<${author_email}>"; then
-    continue
+  if ! printf '%s\n' "$sign_offs" | grep -iFq "<${author_email}>"; then
+    echo "is not signed off by its author <${author_email}>"
   fi
+}
 
-  echo "::error::Commit ${sha} is not signed off by its author <${author_email}>." >&2
-  echo "MISSING SIGN-OFF  ${sha:0:12}  ${subject}" >&2
+status=0
+while IFS= read -r sha; do
+  [ -z "$sha" ] && continue
+
+  reason="$(explain_missing_sign_off "$sha")"
+  [ -z "$reason" ] && continue
+
+  echo "::error::Commit ${sha} ${reason}." >&2
+  echo "MISSING SIGN-OFF  ${sha:0:12}  $(git show -s --format='%s' "$sha")" >&2
   status=1
 done < <(git rev-list --no-merges "$range")
 
