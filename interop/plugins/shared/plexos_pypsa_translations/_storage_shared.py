@@ -31,6 +31,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     CandidateSource,
     ExpansionDecisions,
     RatedCapacity,
+    UnpricedCandidate,
     derive_p_nom,
     find_unpriced_build,
 )
@@ -135,10 +136,15 @@ def warn_about_skipped(skipped: SkippedComponent) -> None:
 
 @dataclass(frozen=True)
 class SkippedComponent:
-    """A PLEXOS object the mapping deliberately did not translate, and why."""
+    """A PLEXOS object the mapping deliberately did not translate, and why.
+
+    ``unpriced`` is set where the expansion rule left the object out, since that rule warns
+    about all of them together rather than one line each.
+    """
 
     source: SourceValue
     note: str
+    unpriced: UnpricedCandidate | None = None
 
 
 # Every storage object ends as one or the other: a unit to write, or a recorded reason not to.
@@ -350,7 +356,6 @@ class RatedObject:
 
     name: str
     properties: dict[str, float]
-    stated_units: dict[str, str | None]
     node: str
     p_nom: Decision
     candidate: CandidateSource
@@ -364,11 +369,9 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
         return _skipped_without_capacity(rating, staged.name)
-    unpriced = find_unpriced_build(staged.properties)
+    unpriced = find_unpriced_build(rating.plexos_class, staged.name, staged.properties)
     if unpriced is not None:
-        return skip_object(
-            rating.plexos_class, staged.name, unpriced.plexos_property, unpriced.note
-        )
+        return SkippedComponent(unpriced.source, unpriced.note, unpriced)
     candidate = CandidateSource(
         rating.plexos_class,
         staged.name,
@@ -379,9 +382,7 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
     p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
-    return RatedObject(
-        staged.name, staged.properties, staged.stated_units, staged.node, p_nom, candidate
-    )
+    return RatedObject(staged.name, staged.properties, staged.node, p_nom, candidate)
 
 
 def skip_object(
@@ -417,13 +418,21 @@ def _skipped_zero_p_nom(rating: RatedPower, name: str, p_nom: float) -> SkippedC
 
 
 def derive_max_hours(
-    capacity: Decision | None, p_nom: float, absent_note: str = MAX_HOURS_NOTE
+    capacity: Decision | None,
+    rated_power: float,
+    absent_note: str = MAX_HOURS_NOTE,
+    per: str = _PER_P_NOM_DERIVATION,
 ) -> Decision:
-    """Hours of storage at rated power, from whichever property stated the energy capacity."""
+    """Hours of storage at rated power, from whichever property stated the energy capacity.
+
+    ``capacity`` and ``rated_power`` have to describe the same thing: a reservoir shared by
+    every unit divides by the power of all of them, and an energy stated beside one unit's
+    power divides by that one power.
+    """
     if capacity is None:
         return Decision.default(DEFAULT_STORAGE_MAX_HOURS, absent_note)
     return Decision.derived(
-        capacity.value / p_nom, capacity.sources, capacity.explanation + _PER_P_NOM_DERIVATION
+        capacity.value / rated_power, capacity.sources, capacity.explanation + per
     )
 
 

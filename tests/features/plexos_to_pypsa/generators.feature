@@ -522,7 +522,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
 
   Scenario: a plant that may also expand keeps the capacity it has as its floor
     Given a Plexos model
-    And the model contains generator "CoalUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1, Build Cost=2000000, WACC=0.07"
+    And the model contains generator "CoalUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1, Build Cost=2000000, WACC=0.07, Economic Life=30"
     And the model is saved as "inputs/expanding_plant.xml"
     When I run translate against "inputs/expanding_plant.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "CoalUnit" is extendable
@@ -534,17 +534,22 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Given a Plexos model
     And the model contains generator "Unpriced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4"
     And the model contains generator "Undiscounted_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000"
-    And the model contains generator "Priced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07"
+    And the model contains generator "Everlasting_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07"
+    And the model contains generator "Priced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07, Economic Life=25"
     And the model is saved as "inputs/unpriced_candidate.xml"
     When I run translate against "inputs/unpriced_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "Unpriced_REZ"
     # PyPSA annuitises an overnight cost with the discount rate, and refuses a network stating one without the other.
     And the PyPSA network "outputs/network.nc" has no generator "Undiscounted_REZ"
+    # PyPSA annuitises over the lifetime, and a lifetime of infinity prices the build as a perpetuity.
+    And the PyPSA network "outputs/network.nc" has no generator "Everlasting_REZ"
     And the PyPSA network "outputs/network.nc" generator "Priced_REZ" is extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
     And the file "decisions.md" contains "a candidate with no WACC gives PyPSA no discount rate to annuitise its Build Cost over"
-    And the log contains "1 candidate generator(s) state no Build Cost, so each is left out"
-    And the log contains "1 candidate generator(s) state no WACC, so each is left out"
+    And the file "decisions.md" contains "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over"
+    And the log contains "1 candidate Generator(s) state no Build Cost, so each is left out"
+    And the log contains "1 candidate Generator(s) state no WACC, so each is left out"
+    And the log contains "1 candidate Generator(s) state no Economic Life, so each is left out"
 
   Scenario: a generator the model cannot build states nothing about expansion
     Given a Plexos model

@@ -23,7 +23,11 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATable,
     PyPSATimeSeriesCol,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import pypsa_skip_report
+from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    effective_p_nom,
+    holds_solved_capacity,
+    pypsa_skip_report,
+)
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
@@ -82,9 +86,9 @@ TIME_VARYING_LINK_ATTRS: tuple[str, ...] = (
 
 def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
     """Add optional PyPSA link columns absent when all links share the PyPSA default."""
-    float_defaults: list[tuple[str, float]] = [
+    float_defaults: list[tuple[str, float | None]] = [
         (PyPSALinkCol.P_NOM, 0.0),
-        (PyPSALinkCol.P_NOM_OPT, 0.0),
+        (PyPSALinkCol.P_NOM_OPT, None),
         (PyPSALinkCol.P_MIN_PU, 0.0),
         (PyPSALinkCol.P_MAX_PU, 1.0),
         (PyPSALinkCol.EFFICIENCY, 1.0),
@@ -104,7 +108,7 @@ def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
     return table.with_columns(
         [
             pl.col(PyPSALinkCol.P_NOM).fill_nan(0.0).fill_null(0.0),
-            pl.col(PyPSALinkCol.P_NOM_OPT).fill_nan(0.0).fill_null(0.0),
+            pl.col(PyPSALinkCol.P_NOM_OPT).fill_nan(None),
             pl.col(PyPSALinkCol.P_MIN_PU).fill_nan(0.0).fill_null(0.0),
             pl.col(PyPSALinkCol.P_MAX_PU).fill_nan(1.0).fill_null(1.0),
             pl.col(PyPSALinkCol.EFFICIENCY).fill_nan(1.0).fill_null(1.0),
@@ -208,10 +212,8 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 
 # --- Limit / loss expressions ---
 
-_effective_p_nom = (
-    pl.when(pl.col(PyPSALinkCol.P_NOM_EXTENDABLE) & (pl.col(PyPSALinkCol.P_NOM_OPT) > 0))
-    .then(pl.col(PyPSALinkCol.P_NOM_OPT))
-    .otherwise(pl.col(PyPSALinkCol.P_NOM))
+_effective_p_nom = effective_p_nom(
+    PyPSALinkCol.P_NOM_EXTENDABLE, PyPSALinkCol.P_NOM_OPT, PyPSALinkCol.P_NOM
 )
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
 _from_min = (
@@ -228,7 +230,7 @@ _to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
     """The PyPSA capacity attribute actually used for the power limits, and its value."""
-    if bool(old[PyPSALinkCol.P_NOM_EXTENDABLE]) and old[PyPSALinkCol.P_NOM_OPT] > 0:
+    if holds_solved_capacity(old, PyPSALinkCol.P_NOM_EXTENDABLE, PyPSALinkCol.P_NOM_OPT):
         return PyPSALinkCol.P_NOM_OPT, old[PyPSALinkCol.P_NOM_OPT]
     return PyPSALinkCol.P_NOM, old[PyPSALinkCol.P_NOM]
 

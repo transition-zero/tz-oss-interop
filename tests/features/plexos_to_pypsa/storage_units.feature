@@ -522,6 +522,10 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Then the PyPSA network "outputs/network.nc" storage unit "new_bat" is extendable
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_min" is 0
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom" is 300
+    # Capacity is the energy beside one unit's Max Power, so the hours are one unit's 200 / 50.
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "max_hours" is 4
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "state_of_charge_initial" is 600
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "overnight_cost" is 800000
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "lifetime" is 20
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "discount_rate" is 0.07
@@ -547,6 +551,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And generator "phs_grow" has property "Max Units Built" 1
     And generator "phs_grow" has property "Build Cost" 1500000
     And generator "phs_grow" has property "WACC" 0.07
+    And generator "phs_grow" has property "Economic Life" 40
     And the model is saved as "inputs/growing_phs.xml"
     When I run translate against "inputs/growing_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_grow" is extendable
@@ -564,6 +569,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And generator "phs_new" has property "Max Units Built" 3
     And generator "phs_new" has property "Build Cost" 1500000
     And generator "phs_new" has property "WACC" 0.07
+    And generator "phs_new" has property "Economic Life" 40
     And the model is saved as "inputs/new_phs.xml"
     When I run translate against "inputs/new_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_new" is extendable

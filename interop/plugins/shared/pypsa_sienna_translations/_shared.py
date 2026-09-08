@@ -34,6 +34,35 @@ from interop.ports.outbound.reporting import (
 
 PYPSA_TO_SIENNA = "pypsa-to-sienna"
 
+# An enrichment column on the source table, which finalise() drops.
+EFFECTIVE_P_NOM = "_effective_p_nom"
+
+EFFECTIVE_P_NOM_DERIVATION = "p_nom_opt where an extendable component has one, else p_nom"
+
+
+def has_solved_capacity(extendable: str, opt: str) -> pl.Expr:
+    """True where a solve wrote a capacity for an extendable component.
+
+    A solve that builds none of a component writes p_nom_opt 0; only a network no solve has
+    touched leaves the column out, which stages as null.
+    """
+    return pl.col(extendable) & pl.col(opt).is_not_null()
+
+
+def holds_solved_capacity(row: dict[str, Any], extendable: str, opt: str) -> bool:
+    """``has_solved_capacity`` for one row, so an event names the attribute the value came from."""
+    return bool(row[extendable]) and row[opt] is not None
+
+
+def effective_p_nom(extendable: str, opt: str, nom: str) -> pl.Expr:
+    """The capacity to translate: the solved one where there is one, else the stated one."""
+    return pl.when(has_solved_capacity(extendable, opt)).then(pl.col(opt)).otherwise(pl.col(nom))
+
+
+def with_effective_p_nom(table: pl.DataFrame, extendable: str, opt: str, nom: str) -> pl.DataFrame:
+    return table.with_columns(effective_p_nom(extendable, opt, nom).alias(EFFECTIVE_P_NOM))
+
+
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"
 
 # Loads, generators, hydro units and storage units all leave a non-AC bus the same way.

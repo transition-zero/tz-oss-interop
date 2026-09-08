@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
+from functools import cached_property
 from typing import Any
 
 from interop.plugins.shared.constants import UNIT_MW
@@ -24,6 +25,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     ExpansionDecisions,
     RatedCapacity,
     derive_expansion,
+    derive_p_nom,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import Lookups
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
@@ -35,7 +37,6 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
     MAX_RAMP_LIMIT_PU,
     NEGLIGIBLE_P_MIN_PU,
-    NOTHING_TO_BUILD,
     PERCENT,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import Decision, SourceValue
@@ -102,18 +103,13 @@ class SourceGenerator:
     stated_units: dict[str, str | None]
     max_capacity: float
 
-    @property
-    def max_units_built(self) -> float:
-        return _value(self.props, PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD)
+    @cached_property
+    def candidate(self) -> CandidateSource:
+        return read_candidate(self)
 
     @property
     def is_candidate(self) -> bool:
-        return self.max_units_built > NOTHING_TO_BUILD
-
-    @property
-    def buildable(self) -> float:
-        """MW the model allows to be built, on top of whatever the generator already has."""
-        return self.max_units_built * self.max_capacity
+        return self.candidate.is_candidate
 
     @property
     def nameplate(self) -> float:
@@ -139,15 +135,8 @@ class SourceGenerator:
 
     @property
     def p_nom(self) -> float:
-        """What the generator has, or what it may build where it has nothing yet.
-
-        PyPSA optimises ``p_nom_opt`` between ``p_nom_min`` and ``p_nom_max`` and reads
-        ``p_nom`` only for a generator whose capacity is fixed, so what stands here for a
-        candidate does not bind its dispatch. It is what every per-unit field on the
-        component is read against -- ``p_min_pu``, a ramp limit, an availability profile
-        stated in MW -- and against nothing each of those would come out at zero.
-        """
-        return self.existing or self.buildable
+        """What the generator has, or what it may build where it has nothing yet."""
+        return float(derive_p_nom(self.candidate).value)
 
 
 def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> SourceGenerator:
@@ -176,7 +165,6 @@ def _rated_capacity(name: str, props: dict[str, float], lookups: Lookups) -> flo
 
 
 def read_candidate(source: SourceGenerator) -> CandidateSource:
-    """One staged Generator as the shared expansion rule reads it."""
     capacity = SourceValue(
         PlexosClass.GENERATOR,
         source.name,
@@ -249,7 +237,7 @@ def has_infeasible_dispatch_range(mapping: GeneratorMapping) -> bool:
 
 
 def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> GeneratorMapping:
-    candidate = read_candidate(source)
+    candidate = source.candidate
     fuels = lookups.gen_fuels.get(source.name, [])
     fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
