@@ -9,13 +9,13 @@ the sink uses to write ``p_max_pu`` over the snapshots.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from interop.core.extensions import ExtensionKind, GeneratorExtension, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_MW
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW, UNIT_MW, UNIT_YEARS
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosCollection,
@@ -43,6 +43,8 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    EXT_TECHNICAL_LIFE_FIELD,
+    EXT_UNIT_SIZE_FIELD,
     GENERATOR_EXT_CATEGORY_FIELD,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -75,7 +77,17 @@ _FILE_BACKED_NOTE = (
     "Max Capacity comes from a data file rather than a value, so the generator "
     "has no p_nom to size it or to per-unitise its availability against"
 )
-_RETIRED_NOTE = "Units = 0 marks a retired generator"
+_RETIRED_NOTE = "Units = 0 and no Max Units Built marks a retired generator"
+_NO_BUILD_COST_NOTE = (
+    "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
+)
+_UNIT_SIZE_DERIVATION = (
+    "PyPSA sizes a candidate by p_nom_max alone, so what one unit of it is travels beside it"
+)
+_TECHNICAL_LIFE_DERIVATION = (
+    "PyPSA's one lifetime holds the capital recovery period, so the technology lifetime "
+    "travels beside it"
+)
 _CATEGORY_DERIVATION = "a PyPSA generator carries one carrier, so the category travels beside it"
 _PROFILE_NOT_STAGED_NOTE = (
     "the source staged no series for this profile, so p_max_pu keeps the static "
@@ -87,6 +99,8 @@ _DATA_FILE = "data file"
 _PROFILE = "profile"
 
 _CATEGORY_COLUMN = MappedColumns((GENERATOR_EXT_CATEGORY_FIELD,))
+_UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
+_TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
 
 
 def map_generators(state: State, recorder: ScopedRecorder) -> None:
@@ -97,12 +111,14 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
     lookups = build_lookups(state)
     reporter = ComponentReporter(recorder, PyPSAComponent.GENERATOR)
     storage_turbines = storage_turbine_names(state)
+    drops = _Drops()
     translated = [
         one
         for generator in generators.collect().iter_rows(named=True)
         if generator[PlexosObjectCol.NAME] not in storage_turbines
-        if (one := _map_one(generator, lookups, reporter)) is not None
+        if (one := _map_one(generator, lookups, reporter, drops)) is not None
     ]
+    _warn_unpriced_candidates(drops.candidates_without_build_cost)
     if not translated:
         return
     append_destination_rows(
@@ -115,8 +131,25 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
         GENERATORS_DESTINATION_SCHEMA,
     )
     mappings = [one.mapping for one in translated]
-    _carry_categories_to_extensions(state, mappings, reporter)
+    _carry_to_extensions(state, mappings, reporter)
     _record_availability_time_series(state, mappings, reporter)
+
+
+@dataclass
+class _Drops:
+    """What one walk left out, so a warning names a few of them rather than each on its own."""
+
+    candidates_without_build_cost: list[str] = field(default_factory=list)
+
+
+def _warn_unpriced_candidates(names: list[str]) -> None:
+    if not names:
+        return
+    log.warning(
+        "plexos: %d candidate generator(s) state no Build Cost, so each is left out. Each one: %s",
+        len(names),
+        name_a_few(sorted(names)),
+    )
 
 
 @dataclass(frozen=True)
@@ -127,19 +160,48 @@ class _TranslatedGenerator:
     decisions: GeneratorDecisions
 
 
-def _carry_categories_to_extensions(
+def _carry_to_extensions(
     state: State, mappings: list[GeneratorMapping], reporter: ComponentReporter
 ) -> None:
-    """Put every generator's PLEXOS category in the sidecar, since only one of it and the
-    fuel could become the carrier. The one that did not is what the report names.
+    """Put what the network file cannot hold in the sidecar: the PLEXOS category, since only
+    one of it and the fuel could become the carrier, and the two expansion values PyPSA has
+    no field for.
     """
     for mapping in mappings:
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
+        _record_expansion_extensions(mapping, reporter)
     records = [
-        GeneratorExtension(name=mapping.name, category=mapping.category) for mapping in mappings
+        GeneratorExtension(
+            name=mapping.name,
+            category=mapping.category,
+            unit_size_mw=mapping.expansion.unit_size,
+            technical_life_years=mapping.expansion.technical_life,
+        )
+        for mapping in mappings
     ]
     append_extensions(state.destination_extensions, ExtensionKind.GENERATOR, records)
+
+
+def _record_expansion_extensions(mapping: GeneratorMapping, reporter: ComponentReporter) -> None:
+    """The two candidate values the network file has no column for, each where it is stated."""
+    expansion = mapping.expansion
+    if expansion.unit_size is not None:
+        source = _source(mapping.name, PlexosProperty.MAX_CAPACITY, expansion.unit_size, UNIT_MW)
+        reporter.record(
+            mapping.name,
+            _UNIT_SIZE_COLUMN,
+            Decision.derived(expansion.unit_size, [source], _UNIT_SIZE_DERIVATION),
+        )
+    if expansion.technical_life is not None:
+        source = _source(
+            mapping.name, PlexosProperty.TECHNICAL_LIFE, expansion.technical_life, UNIT_YEARS
+        )
+        reporter.record(
+            mapping.name,
+            _TECHNICAL_LIFE_COLUMN,
+            Decision.derived(expansion.technical_life, [source], _TECHNICAL_LIFE_DERIVATION),
+        )
 
 
 def _category_decision(mapping: GeneratorMapping) -> Decision:
@@ -148,7 +210,7 @@ def _category_decision(mapping: GeneratorMapping) -> Decision:
 
 
 def _map_one(
-    generator: dict[str, Any], lookups: Lookups, reporter: ComponentReporter
+    generator: dict[str, Any], lookups: Lookups, reporter: ComponentReporter, drops: _Drops
 ) -> _TranslatedGenerator | None:
     name = generator[PlexosObjectCol.NAME]
     node = lookups.gen_to_node.get(name)
@@ -161,7 +223,7 @@ def _map_one(
         )
         return None
     source = read_source(generator, name, lookups)
-    if source.units == 0.0:
+    if source.units == 0.0 and not source.is_candidate:
         reporter.record_skipped(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
         return None
     if source.p_nom <= 0.0:
@@ -169,6 +231,13 @@ def _map_one(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
+        return None
+    if source.is_candidate and PlexosProperty.BUILD_COST not in source.props:
+        reporter.record_skipped(
+            _source(name, PlexosProperty.BUILD_COST, None, UNIT_DOLLARS_PER_MW),
+            _NO_BUILD_COST_NOTE,
+        )
+        drops.candidates_without_build_cost.append(name)
         return None
     mapping = derive_generator(source, node, lookups)
     if has_infeasible_dispatch_range(mapping):

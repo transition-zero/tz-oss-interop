@@ -479,6 +479,14 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.START_UP_COST: pl.Float64,
     PyPSAGeneratorCol.SHUT_DOWN_COST: pl.Float64,
     PyPSAGeneratorCol.P_NOM_EXTENDABLE: pl.Boolean,
+    # Expansion fields, null for a component whose capacity the source fixes. The sink
+    # omits a null column so PyPSA applies its own default.
+    PyPSAGeneratorCol.P_NOM_MIN: pl.Float64,
+    PyPSAGeneratorCol.P_NOM_MAX: pl.Float64,
+    PyPSAGeneratorCol.OVERNIGHT_COST: pl.Float64,
+    PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
+    PyPSAGeneratorCol.LIFETIME: pl.Float64,
+    PyPSAGeneratorCol.FOM_COST: pl.Float64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -508,6 +516,14 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: pl.Boolean,
     PyPSAStorageUnitCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSAStorageUnitCol.INFLOW: pl.Float64,
+    # Expansion fields, null for a component whose capacity the source fixes. The sink
+    # omits a null column so PyPSA applies its own default.
+    PyPSAStorageUnitCol.P_NOM_MIN: pl.Float64,
+    PyPSAStorageUnitCol.P_NOM_MAX: pl.Float64,
+    PyPSAStorageUnitCol.OVERNIGHT_COST: pl.Float64,
+    PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
+    PyPSAStorageUnitCol.LIFETIME: pl.Float64,
+    PyPSAStorageUnitCol.FOM_COST: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

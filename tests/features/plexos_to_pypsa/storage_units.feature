@@ -504,3 +504,34 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/orphan_inflow.xml"
     When I run translate against "inputs/orphan_inflow.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "decisions.md" contains "| `plexos.Storage.orphan_head.Natural Inflow` = 40.0 MW |  |  | no turbine draws from this reservoir, so its Natural Inflow is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a candidate battery becomes an extendable storage unit priced by its build cost
+    Given a Plexos model
+    And the model states "Build Cost" in "$/kW"
+    And the model contains region "East"
+    And the model contains node "node_c" in region "East"
+    And the model contains battery "new_bat" on node "node_c" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And battery "new_bat" has property "Units" 0
+    And battery "new_bat" has property "Max Units Built" 6
+    And battery "new_bat" has property "Build Cost" 800
+    And battery "new_bat" has property "Economic Life" 20
+    And battery "new_bat" has property "Technical Life" 15
+    And the model is saved as "inputs/candidate_battery.xml"
+    When I run translate against "inputs/candidate_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "new_bat" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_min" is 0
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "overnight_cost" is 800000
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "lifetime" is 20
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "unit_size_mw" set to 50.0
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "technical_life_years" set to 15.0
+
+  Scenario: a battery the model cannot build stays fixed
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_f" in region "East"
+    And the model contains battery "old_bat" on node "node_f" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And the model is saved as "inputs/fixed_battery.xml"
+    When I run translate against "inputs/fixed_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "old_bat" is not extendable
+    And the file "decisions.md" contains "the object states no Max Units Built, so its capacity is fixed"

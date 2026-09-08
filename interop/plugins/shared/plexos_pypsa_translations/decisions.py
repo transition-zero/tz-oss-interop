@@ -106,18 +106,22 @@ class MappedColumns:
         return value.by_column[column] if isinstance(value, PerColumn) else value
 
 
-def maps_to(*columns: str, unit: str | None = None) -> Any:
+def maps_to(*columns: str, unit: str | None = None, default: Decision | None = None) -> Any:
     """Declare which destination columns a mapping field fills.
 
     The return type is ``Any`` so the field keeps its ``Decision`` annotation; ``field``
-    itself is what the dataclass machinery reads.
+    itself is what the dataclass machinery reads. ``default`` is the decision a mapping
+    that has nothing to say about this column carries, for a dataclass several paths build.
     """
-    return declares(MappedColumns(columns, unit))
+    return declares(MappedColumns(columns, unit), default)
 
 
-def declares(mapped: MappedColumns) -> Any:
+def declares(mapped: MappedColumns, default: Decision | None = None) -> Any:
     """``maps_to`` for columns already named as a constant, so an extra event can reuse them."""
-    return field(metadata={_MAPPED_COLUMNS: mapped})
+    metadata = {_MAPPED_COLUMNS: mapped}
+    if default is None:
+        return field(metadata=metadata)
+    return field(metadata=metadata, default=default)
 
 
 def mapped_fields(mapping: Any) -> Iterator[tuple[MappedColumns, Decision]]:

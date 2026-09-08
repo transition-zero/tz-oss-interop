@@ -18,6 +18,7 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import Lookups
+from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_P_MIN_PU,
     DEFAULT_SHUT_DOWN_COST,
@@ -26,6 +27,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
     MAX_RAMP_LIMIT_PU,
     NEGLIGIBLE_P_MIN_PU,
+    NOTHING_TO_BUILD,
     PERCENT,
 )
 
@@ -85,7 +87,24 @@ class SourceGenerator:
     category: str
     units: float
     props: dict[str, float]
+    stated_units: dict[str, str | None]
     max_capacity: float
+
+    @property
+    def max_units_built(self) -> float:
+        """How many units the model allows to be built, which is 0 for a fixed generator."""
+        return _value(self.props, PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD)
+
+    @property
+    def is_candidate(self) -> bool:
+        """Whether the model allows this generator to be built, which is what Max Units
+        Built decides. A generator that is only a candidate states no Units at all."""
+        return self.max_units_built > NOTHING_TO_BUILD
+
+    @property
+    def buildable(self) -> float:
+        """MW the model allows to be built, on top of whatever the generator already has."""
+        return self.max_units_built * self.max_capacity
 
     @property
     def nameplate(self) -> float:
@@ -93,14 +112,33 @@ class SourceGenerator:
 
     @property
     def rating_as_capacity(self) -> float | None:
-        """A Rating above the nameplate replaces Max Capacity rather than derating it."""
+        """A Rating above the nameplate replaces Max Capacity rather than derating it.
+
+        A candidate with no units has no nameplate for a Rating to replace, so its Rating
+        derates the capacity it may build like any other generator's.
+        """
+        if not self.units:
+            return None
         rating = _optional(self.props, PlexosProperty.RATING)
         return rating if rating is not None and rating > self.nameplate else None
 
     @property
-    def p_nom(self) -> float:
+    def existing(self) -> float:
+        """The capacity the generator already has, before anything is built."""
         capacity = self.rating_as_capacity
         return self.nameplate if capacity is None else capacity
+
+    @property
+    def p_nom(self) -> float:
+        """What the generator has, or what it may build where it has nothing yet.
+
+        PyPSA optimises ``p_nom_opt`` between ``p_nom_min`` and ``p_nom_max`` and reads
+        ``p_nom`` only for a generator whose capacity is fixed, so what stands here for a
+        candidate does not bind its dispatch. It is what every per-unit field on the
+        component is read against -- ``p_min_pu``, a ramp limit, an availability profile
+        stated in MW -- and against nothing each of those would come out at zero.
+        """
+        return self.existing or self.buildable
 
 
 def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> SourceGenerator:
@@ -110,6 +148,7 @@ def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> Sourc
         category=generator.get(PlexosObjectCol.CATEGORY) or "",
         units=_value(props, PlexosProperty.UNITS, DEFAULT_UNITS),
         props=props,
+        stated_units=lookups.gen_units.get(name, {}),
         max_capacity=_rated_capacity(name, props, lookups),
     )
 
@@ -125,6 +164,51 @@ def _rated_capacity(name: str, props: dict[str, float], lookups: Lookups) -> flo
     if static:
         return static
     return lookups.profile_peaks[PlexosProperty.RATING].get(name, static)
+
+
+@dataclass(frozen=True)
+class Expansion:
+    """What a PLEXOS object may build, and what building it costs.
+
+    Every field is null for an object the model does not allow to be built. PyPSA works out
+    what a year of new capacity costs from the overnight cost, the discount rate and the
+    lifetime together, so nothing here assembles that number itself.
+    """
+
+    max_units_built: float | None = None
+    unit_size: float | None = None
+    p_nom_min: float | None = None
+    p_nom_max: float | None = None
+    overnight_cost: float | None = None
+    wacc: float | None = None
+    discount_rate: float | None = None
+    economic_life: float | None = None
+    fom_cost: float | None = None
+    technical_life: float | None = None
+
+    @property
+    def is_candidate(self) -> bool:
+        return self.max_units_built is not None
+
+
+def derive_expansion(source: SourceGenerator) -> Expansion:
+    """What one candidate may build; every field is null for a generator that may not."""
+    if not source.is_candidate:
+        return Expansion()
+    wacc = _optional(source.props, PlexosProperty.WACC)
+    return Expansion(
+        max_units_built=source.max_units_built,
+        unit_size=source.max_capacity,
+        # A generator already running cannot be un-built, so what it has is its own floor.
+        p_nom_min=source.existing,
+        p_nom_max=source.existing + source.buildable,
+        overnight_cost=_optional(source.props, PlexosProperty.BUILD_COST),
+        wacc=wacc,
+        discount_rate=as_rate(wacc, source.stated_units.get(PlexosProperty.WACC)),
+        economic_life=_optional(source.props, PlexosProperty.ECONOMIC_LIFE),
+        fom_cost=_optional(source.props, PlexosProperty.FOM_CHARGE),
+        technical_life=_optional(source.props, PlexosProperty.TECHNICAL_LIFE),
+    )
 
 
 @dataclass(frozen=True)
@@ -152,6 +236,7 @@ class GeneratorMapping:
     cost: Cost
     efficiency: float | None
     unit_commitment: UnitCommitment | None
+    expansion: Expansion
 
     @property
     def is_committable(self) -> bool:
@@ -197,6 +282,7 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         )
         if _commits(fuel, minimum)
         else None,
+        expansion=derive_expansion(source),
     )
 
 

@@ -21,9 +21,11 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     MultiValueRule,
     ObjectProperties,
+    ObjectUnits,
     built_bus_names,
     collapse_membership_properties,
     collapse_properties_by_object,
+    collapse_units_by_object,
     read_file_backed_properties,
     relate_child,
     relate_children,
@@ -49,6 +51,7 @@ class Lookups:
     """Per-class property values and membership resolutions the generator loop reads."""
 
     gen_props: ObjectProperties
+    gen_units: ObjectUnits
     fuel_props: ObjectProperties
     emission_props: ObjectProperties
     bus_names: set[str]
@@ -73,6 +76,7 @@ def build_lookups(state: State) -> Lookups:
         gen_props=collapse_properties_by_object(
             properties, PlexosClass.GENERATOR, _GENERATOR_RULES
         ),
+        gen_units=collapse_units_by_object(properties, PlexosClass.GENERATOR),
         fuel_props=collapse_properties_by_object(properties, PlexosClass.FUEL),
         emission_props=collapse_properties_by_object(properties, PlexosClass.EMISSION),
         bus_names=built_bus_names(state),
