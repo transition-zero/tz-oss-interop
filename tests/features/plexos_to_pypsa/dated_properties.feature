@@ -57,6 +57,19 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 100
     And the PyPSA network "outputs/network.nc" generator "Farm" has a p_max_pu time series 0.5 1.0
 
+  Scenario: a candidate's dated capacity is a share of the capacity it may build
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07, Economic Life=25"
+    And generator "REZ" states "Max Capacity" of 100 from "2026-01-02"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "REZ" attribute "p_nom" is 400
+    And the PyPSA network "outputs/network.nc" generator "REZ" has a p_max_pu time series 0.5 1.0
+
   Scenario: an outage dated between two days ends when the second one does
     Given a Plexos model
     And the model contains region "Grid"

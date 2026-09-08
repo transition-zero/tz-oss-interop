@@ -542,9 +542,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/unpriced_candidate.xml"
     When I run translate against "inputs/unpriced_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "Unpriced_REZ"
-    # PyPSA annuitises an overnight cost with the discount rate, and refuses a network stating one without the other.
     And the PyPSA network "outputs/network.nc" has no generator "Undiscounted_REZ"
-    # PyPSA annuitises over the lifetime, and a lifetime of infinity prices the build as a perpetuity.
     And the PyPSA network "outputs/network.nc" has no generator "Everlasting_REZ"
     And the PyPSA network "outputs/network.nc" generator "Priced_REZ" is extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
