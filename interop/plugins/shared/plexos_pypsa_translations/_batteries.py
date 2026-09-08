@@ -11,7 +11,6 @@ import logging
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_HOURS,
-    UNIT_MW,
     UNIT_MWH,
     UNIT_PERCENT,
 )
@@ -20,7 +19,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    RatedCapacity,
     derive_expansion,
     gather_sources,
 )
@@ -34,7 +32,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
     RatedObject,
     RatedPower,
-    StagedObject,
     StorageLookups,
     StorageUnitMapping,
     derive_bus,
@@ -47,8 +44,6 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     BATTERY_CYCLIC,
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
-    DEFAULT_UNITS,
-    DIRECT_DERIVATION,
     END_EFFECTS_RECYCLE,
     PERCENT,
     STORAGE_FULL_CHARGE_PU,
@@ -94,7 +89,6 @@ _BATTERY_NO_START_NOTE = (
 _BATTERY_RECYCLE_DERIVATION = "End Effects Method recycles the level"
 _CAPACITY_DERIVATION = "Capacity"
 _CAPACITY_FROM_DURATION_DERIVATION = "Duration * Max Power"
-_P_NOM_FROM_UNITS_DERIVATION = "Max Power * Units"
 _STORED_ENERGY_DERIVATION = "p_nom * max_hours"
 _SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * p_nom * max_hours"
 _PER_MAX_POWER_DERIVATION = " / Max Power"
@@ -109,23 +103,7 @@ def map_battery(name: str, lookups: StorageLookups) -> MappedOrSkipped:
     return _derive_battery(rated)
 
 
-def _battery_rating(staged: StagedObject) -> RatedCapacity:
-    """A PLEXOS Battery states the power of one of its units as its Max Power."""
-    max_power = staged.properties[PlexosProperty.MAX_POWER]
-    units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
-    power = SourceValue(
-        PlexosClass.BATTERY, staged.name, PlexosProperty.MAX_POWER, max_power, UNIT_MW
-    )
-    counted = SourceValue(PlexosClass.BATTERY, staged.name, PlexosProperty.UNITS, units)
-    return RatedCapacity(
-        existing=Decision.derived(
-            max_power * units, [power, counted], _P_NOM_FROM_UNITS_DERIVATION
-        ),
-        unit_size=Decision.derived(max_power, [power], DIRECT_DERIVATION),
-    )
-
-
-_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER, _battery_rating)
+_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER)
 
 
 def _derive_battery(rated: RatedObject) -> StorageUnitMapping:

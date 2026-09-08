@@ -278,7 +278,7 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
 | `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate only | `direct` |
 
-**The translator does not translate six cases.** It records each one as a skipped
+**The translator does not translate seven cases.** It records each one as a skipped
 component:
 
 | Case | Cause |

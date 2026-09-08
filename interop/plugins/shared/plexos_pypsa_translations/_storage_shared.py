@@ -8,7 +8,6 @@ recorded as skipped rather than written half-formed.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from math import sqrt
 
@@ -44,6 +43,8 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_STATE_OF_CHARGE_INITIAL,
     DEFAULT_STORAGE_MAX_HOURS,
+    DEFAULT_UNITS,
+    DIRECT_DERIVATION,
     PERCENT,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -85,6 +86,7 @@ _ROUND_TRIP_DERIVATION = "sqrt(round-trip / 100), split symmetrically"
 # The Storage properties whose stated unit decides whether they are energy at all.
 _VOLUME_PROPERTIES = (PlexosProperty.MAX_VOLUME, PlexosProperty.INITIAL_VOLUME)
 
+_TIMES_UNITS_DERIVATION = " * Units"
 _PER_P_NOM_DERIVATION = " / p_nom"
 _CLAMPED_DERIVATION = ", clamped to 0..p_nom * max_hours"
 
@@ -321,7 +323,20 @@ class RatedPower:
 
     plexos_class: PlexosClass
     capacity_property: PlexosProperty
-    derive: Callable[[StagedObject], RatedCapacity]
+
+    def rate(self, staged: StagedObject) -> RatedCapacity:
+        power = staged.properties[self.capacity_property]
+        units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
+        stated = SourceValue(self.plexos_class, staged.name, self.capacity_property, power, UNIT_MW)
+        counted = SourceValue(self.plexos_class, staged.name, PlexosProperty.UNITS, units)
+        return RatedCapacity(
+            existing=Decision.derived(
+                power * units,
+                [stated, counted],
+                f"{self.capacity_property}{_TIMES_UNITS_DERIVATION}",
+            ),
+            unit_size=Decision.derived(power, [stated], DIRECT_DERIVATION),
+        )
 
 
 @dataclass(frozen=True)
@@ -348,7 +363,7 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         staged.name,
         staged.properties,
         staged.stated_units,
-        rating.derive(staged),
+        rating.rate(staged),
     )
     unpriced = find_unpriced_candidate(candidate)
     if unpriced is not None:
