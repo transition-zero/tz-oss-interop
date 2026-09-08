@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_GJ,
+    UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_DOLLARS_PER_TONNE,
     UNIT_GJ,
@@ -23,6 +25,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW_PER_MINUTE,
     UNIT_PER_UNIT_PER_HOUR,
     UNIT_SNAPSHOTS,
+    UNIT_YEARS,
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
@@ -39,6 +42,7 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_derivation impo
     UnitCommitment,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    DIRECT_DERIVATION,
     FULL_AVAILABILITY,
     MARGINAL_COST_CARBON_TERM,
     START_UP_COST_FUEL_TERM,
@@ -97,8 +101,18 @@ _UP_TIME_BEFORE_NOTE = (
 _SHUT_DOWN_NOTE = "PLEXOS prices only starts, so shutting down is free"
 _EFFICIENCY_DERIVATION = "p_nom / (Heat Rate Base + Heat Rate Incr x p_nom) x 3.6"
 _DISCARDED_FUEL_NOTE = "a multi-fuel generator keeps its first fuel; this one is discarded"
-_EXTENDABLE_NOTE = "v1 translates a dispatch model, so capacity is fixed"
+_EXTENDABLE_DERIVATION = "Max Units Built above zero is what makes a generator a candidate"
+_NOT_EXTENDABLE_NOTE = "the generator states no Max Units Built, so its capacity is fixed"
 _NOT_EXTENDABLE = False
+_P_NOM_MIN_DERIVATION = (
+    "Max Capacity x Units, the capacity the generator already has and a build cannot remove"
+)
+_P_NOM_MAX_DERIVATION = "Max Capacity x (Units + Max Units Built)"
+_P_NOM_CANDIDATE_DERIVATION = (
+    "the generator has no units yet, so its nominal power is the capacity it may build: "
+    "Max Capacity x Max Units Built"
+)
+_DISCOUNT_RATE_DERIVATION = "WACC, read as a fraction where the model states a percentage"
 
 # The value a p_max_pu event carries when the ceiling varies over the horizon.
 _PROFILE = "profile"
@@ -140,6 +154,12 @@ class GeneratorDecisions:
     start_up_cost: Decision = maps_to(PyPSAGeneratorCol.START_UP_COST, unit=UNIT_DOLLARS)
     shut_down_cost: Decision = maps_to(PyPSAGeneratorCol.SHUT_DOWN_COST, unit=UNIT_DOLLARS)
     p_nom_extendable: Decision = maps_to(PyPSAGeneratorCol.P_NOM_EXTENDABLE)
+    p_nom_min: Decision = maps_to(PyPSAGeneratorCol.P_NOM_MIN, unit=UNIT_MW)
+    p_nom_max: Decision = maps_to(PyPSAGeneratorCol.P_NOM_MAX, unit=UNIT_MW)
+    overnight_cost: Decision = maps_to(PyPSAGeneratorCol.OVERNIGHT_COST, unit=UNIT_DOLLARS_PER_MW)
+    discount_rate: Decision = maps_to(PyPSAGeneratorCol.DISCOUNT_RATE)
+    lifetime: Decision = maps_to(PyPSAGeneratorCol.LIFETIME, unit=UNIT_YEARS)
+    fom_cost: Decision = maps_to(PyPSAGeneratorCol.FOM_COST, unit=UNIT_DOLLARS_PER_MW_YEAR)
 
 
 def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
@@ -168,7 +188,13 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
         up_time_before=commitment.up_time_before,
         start_up_cost=commitment.start_up_cost,
         shut_down_cost=commitment.shut_down_cost,
-        p_nom_extendable=Decision.default(_NOT_EXTENDABLE, _EXTENDABLE_NOTE),
+        p_nom_extendable=_p_nom_extendable(mapping),
+        p_nom_min=_p_nom_min(mapping),
+        p_nom_max=_p_nom_max(mapping),
+        overnight_cost=_overnight_cost(mapping),
+        discount_rate=_discount_rate(mapping),
+        lifetime=_economic_life(mapping),
+        fom_cost=_fom_cost(mapping),
     )
 
 
@@ -215,15 +241,108 @@ def _carrier(mapping: GeneratorMapping) -> Decision:
 
 
 def _p_nom(mapping: GeneratorMapping) -> Decision:
-    nameplate = [
-        _source(mapping.name, PlexosProperty.MAX_CAPACITY, mapping.max_capacity, UNIT_MW),
-        _source(mapping.name, PlexosProperty.UNITS, mapping.units),
-    ]
+    nameplate = _capacity_sources(mapping)
+    if not mapping.units and mapping.expansion.is_candidate:
+        sources = [nameplate[0], _units_built_source(mapping)]
+        return Decision.derived(mapping.p_nom, sources, _P_NOM_CANDIDATE_DERIVATION)
     capacity = mapping.rating_as_capacity
     if capacity is None:
         return Decision.derived(mapping.p_nom, nameplate, _P_NOM_DERIVATION)
     rating = _source(mapping.name, PlexosProperty.RATING, capacity, UNIT_MW)
     return Decision.derived(mapping.p_nom, [rating, *nameplate], _P_NOM_RATING_DERIVATION)
+
+
+def _capacity_sources(mapping: GeneratorMapping) -> list[SourceValue]:
+    """The two properties every capacity bound of a generator is built from."""
+    return [
+        _source(mapping.name, PlexosProperty.MAX_CAPACITY, mapping.max_capacity, UNIT_MW),
+        _source(mapping.name, PlexosProperty.UNITS, mapping.units),
+    ]
+
+
+def _units_built_source(mapping: GeneratorMapping) -> SourceValue:
+    return _source(mapping.name, PlexosProperty.MAX_UNITS_BUILT, mapping.expansion.max_units_built)
+
+
+def _p_nom_extendable(mapping: GeneratorMapping) -> Decision:
+    if not mapping.expansion.is_candidate:
+        return Decision.default(_NOT_EXTENDABLE, _NOT_EXTENDABLE_NOTE)
+    return Decision.derived(True, [_units_built_source(mapping)], _EXTENDABLE_DERIVATION)
+
+
+def _p_nom_min(mapping: GeneratorMapping) -> Decision:
+    """A build adds to what the generator has, so what it has is the floor of what it keeps."""
+    p_nom_min = mapping.expansion.p_nom_min
+    if p_nom_min is None:
+        return Decision.unreported(None)
+    return Decision.derived(p_nom_min, _capacity_sources(mapping), _P_NOM_MIN_DERIVATION)
+
+
+def _p_nom_max(mapping: GeneratorMapping) -> Decision:
+    p_nom_max = mapping.expansion.p_nom_max
+    if p_nom_max is None:
+        return Decision.unreported(None)
+    sources = [*_capacity_sources(mapping), _units_built_source(mapping)]
+    return Decision.derived(p_nom_max, sources, _P_NOM_MAX_DERIVATION)
+
+
+def _overnight_cost(mapping: GeneratorMapping) -> Decision:
+    cost = mapping.expansion.overnight_cost
+    return _from_property(
+        mapping.name,
+        cost,
+        cost,
+        PlexosProperty.BUILD_COST,
+        UNIT_DOLLARS_PER_MW,
+        DIRECT_DERIVATION,
+    )
+
+
+def _discount_rate(mapping: GeneratorMapping) -> Decision:
+    expansion = mapping.expansion
+    return _from_property(
+        mapping.name,
+        expansion.discount_rate,
+        expansion.wacc,
+        PlexosProperty.WACC,
+        None,
+        _DISCOUNT_RATE_DERIVATION,
+    )
+
+
+def _economic_life(mapping: GeneratorMapping) -> Decision:
+    """PyPSA reads one lifetime and spreads the overnight cost across it, which is the
+    period PLEXOS states as the Economic Life rather than the Technical Life."""
+    life = mapping.expansion.economic_life
+    return _from_property(
+        mapping.name, life, life, PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, DIRECT_DERIVATION
+    )
+
+
+def _fom_cost(mapping: GeneratorMapping) -> Decision:
+    cost = mapping.expansion.fom_cost
+    return _from_property(
+        mapping.name,
+        cost,
+        cost,
+        PlexosProperty.FOM_CHARGE,
+        UNIT_DOLLARS_PER_MW_YEAR,
+        DIRECT_DERIVATION,
+    )
+
+
+def _from_property(
+    name: str,
+    value: float | None,
+    stated: float | None,
+    plexos_property: str,
+    unit: str | None,
+    derivation: str,
+) -> Decision:
+    """One expansion value and the property it came from, unreported where it states none."""
+    if value is None:
+        return Decision.unreported(None)
+    return Decision.derived(value, [_source(name, plexos_property, stated, unit)], derivation)
 
 
 def _p_min_pu(mapping: GeneratorMapping) -> Decision:

@@ -3,10 +3,11 @@
 This document tells you what each part of your PLEXOS model becomes in the PyPSA network.
 It gives the source of each field.
 
-> **Scope:** the translator accepts electricity-only models, and it translates them for
-> dispatch. It does not translate capacity expansion, custom constraints or hydro cascades.
-> It carries the reserves to a sidecar file, but it does not apply them. Refer to
-> [Reserves](#reserve--extensions-sidecar) and [Not translated](#not-translated). The
+> **Scope:** the translator accepts electricity-only models. It does not translate custom
+> constraints or hydro cascades. It carries the reserves to a sidecar file, but it does not
+> apply them. Refer to [Reserves](#reserve--extensions-sidecar) and
+> [Not translated](#not-translated). It reads what your model allows to be built and writes
+> an extendable component for it; refer to [What a candidate is](#what-a-candidate-is). The
 > `plexos-to-pypsa-monte-carlo-reliability` pipeline also adds a load shedding generator at
 > each bus. Refer to [Load shedding](#load-shedding).
 
@@ -269,16 +270,24 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `start_up_cost` | $ | Refer to [What a start costs](#what-a-start-costs) | `derived` |
 | `shut_down_cost` | $ | `0.0` | `default` |
 | `up_time_before` | snapshots | `0` | `default` |
+| `p_nom_extendable` | | `True` where `Max Units Built` is above zero. If not, `False`. | `derived` / `default` |
+| `p_nom_min` | MW | `Max Capacity × Units`, for a candidate only | `derived` |
+| `p_nom_max` | MW | `Max Capacity × (Units + Max Units Built)`, for a candidate only | `derived` |
+| `overnight_cost` | $/MW | `Build Cost`, for a candidate only | `direct` |
+| `discount_rate` | | `WACC`, for a candidate only | `derived` |
+| `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
+| `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate only | `direct` |
 
-**The translator does not translate four cases.** It records each one as a skipped
+**The translator does not translate five cases.** It records each one as a skipped
 component:
 
 | Case | Cause |
 | --- | --- |
 | The generator has no `Node` | There is no bus to connect the generator to. |
-| The generator has no [`Units`](#which-entry-applies-when) at any time in the horizon | The unit is retired. |
+| The generator has no [`Units`](#which-entry-applies-when) at any time in the horizon, and no `Max Units Built` | The unit is retired. |
 | `Max Capacity` comes from a data file | There is no single `p_nom`. Thus the translator cannot set the size of the generator, and it cannot calculate the availability per unit. |
 | `p_nom` is 0 | The generator can never dispatch. |
+| The generator is a candidate and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -349,6 +358,7 @@ has more than one fuel uses its primary fuel.
 | `state_of_charge_initial` | MWh | `Initial SoC % × Capacity` | `derived` |
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE`, or if the model gives no `Initial SoC` | `derived` |
 | `marginal_cost` | $/MWh | `0.0` | `default` |
+| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
 
 The energy capacity of a battery is its `Capacity`. If the model gives a duration in place
 of a capacity, the energy capacity is `Duration × Max Power`. `max_hours` and
@@ -381,6 +391,7 @@ name of the turbine is the name of that `StorageUnit`.
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE` | `derived` |
 | `marginal_cost` | $/MWh | `VO&M Charge`. If there is none, `0.0`. | `derived` |
 | `inflow` | MW | The `Natural Inflow` of the head reservoir, if the model gives it in a unit that converts to MW. A `Natural Inflow` that reads a data file becomes a time series. | `derived` |
+| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
 
 The turbine finds its reservoirs through its `Head Storage` membership and its
 `Tail Storage` membership. The translator never compares the names of the reservoirs. The
@@ -685,6 +696,45 @@ the file.
 
 `Max Capacity`, `Min Stable Level`, `Rating`, `Rating Factor`, `Units Out` and a Region
 `Load` can all come to the translation in this form.
+
+### What a candidate is
+
+`Max Units Built` is what makes a PLEXOS object a candidate. An object stating a count above
+zero may be built; an object stating none may not, and its capacity is fixed. The rule is the
+same for a `Generator`, a `Battery` and a pumped-storage turbine.
+
+A candidate becomes an extendable PyPSA component. These are the fields it carries, and the
+PLEXOS property each one comes from:
+
+| PyPSA field | Unit | From |
+| --- | --- | --- |
+| `p_nom_extendable` | | `Max Units Built` above zero |
+| `p_nom_min` | MW | The capacity the object already has, which a build cannot take away |
+| `p_nom_max` | MW | That capacity plus `Max Units Built` units of it |
+| `overnight_cost` | $/MW | `Build Cost` |
+| `discount_rate` | | `WACC`, read as a fraction where the model states a percentage |
+| `lifetime` | yr | `Economic Life` |
+| `fom_cost` | $/MW/yr | `FO&M Charge` |
+
+PyPSA works out what a year of new capacity costs from `overnight_cost`, `discount_rate` and
+`lifetime` together, and `overnight_cost` takes precedence over `capital_cost`. So the
+translator writes those three and never assembles an annuity of its own.
+
+`Economic Life` is the period the capital is recovered over, which is the period PyPSA
+annuitises across. `Technical Life` is how long the plant runs, and PyPSA has one lifetime
+field, which the recovery period already claims. So the technical life travels in the
+extensions sidecar as `technical_life_years`. The capacity of one unit travels beside it as
+`unit_size_mw`, because PyPSA sizes a candidate by `p_nom_max` alone.
+
+A candidate that has nothing yet takes the capacity it may build as its `p_nom`. PyPSA
+optimises `p_nom_opt` between `p_nom_min` and `p_nom_max` and reads `p_nom` only for a
+component whose capacity is fixed, so this does not bind the dispatch. It is what every
+per-unit field on the component is read against — `p_min_pu`, a ramp limit, an availability
+profile stated in MW — and against nothing each of those would come out at zero.
+
+A candidate that states no `Build Cost` is left out. Nothing prices building it, so an
+expansion would take it for free. The translator records a `COMPONENT_SKIPPED` event naming
+the object, and warns once naming a few of them.
 
 ### Which entry applies when
 

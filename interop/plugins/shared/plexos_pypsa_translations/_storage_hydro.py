@@ -26,7 +26,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
     CHARGE_NOTE,
     EFFICIENCY_NOTE,
-    EXTENDABLE_NOTE,
     FULL_DISCHARGE_NOTE,
     MAX_HOURS_NOTE,
     NO_RESERVOIR_INFLOW_NOTE,
@@ -39,6 +38,7 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     StorageLookups,
     StorageUnitMapping,
     derive_bus,
+    derive_expansion,
     derive_max_hours,
     derive_round_trip_efficiency,
     derive_state_of_charge_initial,
@@ -55,7 +55,6 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     STORAGE_FULL_DISCHARGE_PU,
     STORAGE_GENERATE_ONLY_PU,
     STORAGE_MARGINAL_COST,
-    STORAGE_P_NOM_EXTENDABLE,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
@@ -226,6 +225,7 @@ def _derive_turbine(
         rated.p_nom.value,
         _VOLUME_NOT_ENERGY_NOTE if unreadable else MAX_HOURS_NOTE,
     )
+    expansion = derive_expansion(PlexosClass.GENERATOR, rated)
     return StorageUnitMapping(
         name=rated.name,
         bus=derive_bus(PlexosClass.GENERATOR, rated.name, rated.node),
@@ -241,8 +241,16 @@ def _derive_turbine(
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),
-        p_nom_extendable=Decision.default(STORAGE_P_NOM_EXTENDABLE, EXTENDABLE_NOTE),
+        p_nom_extendable=expansion.p_nom_extendable,
+        p_nom_min=expansion.p_nom_min,
+        p_nom_max=expansion.p_nom_max,
+        overnight_cost=expansion.overnight_cost,
+        discount_rate=expansion.discount_rate,
+        lifetime=expansion.lifetime,
+        fom_cost=expansion.fom_cost,
         inflow_storage=_inflow_storage(head),
+        unit_size=expansion.unit_size,
+        technical_life=expansion.technical_life,
     )
 
 

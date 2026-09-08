@@ -107,6 +107,12 @@ class GeneratorExtension(ExtensionRecord):
     p_nom_extendable: bool | None = None
     # PLEXOS only: the generator's category, a grouping string the user chooses.
     category: str | None = None
+    # MW. PLEXOS Max Capacity: what one unit of a candidate is. PyPSA sizes a candidate by
+    # p_nom_max alone, so the size of a single unit has no field there.
+    unit_size_mw: float | None = None
+    # yr. PLEXOS Technical Life: how long the plant runs. PyPSA has one lifetime and the
+    # capital recovery period claims it, so this has no field there.
+    technical_life_years: float | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -145,6 +151,12 @@ class ControllableLineExtension(ExtensionRecord):
 
 class StorageExtension(ExtensionRecord):
     p_nom_extendable: bool | None = None  # PyPSA only
+    # MW. PLEXOS Max Power: what one unit of a candidate is. PyPSA sizes a candidate by
+    # p_nom_max alone, so the size of a single unit has no field there.
+    unit_size_mw: float | None = None
+    # yr. PLEXOS Technical Life: how long the plant runs. PyPSA has one lifetime and the
+    # capital recovery period claims it, so this has no field there.
+    technical_life_years: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):
