@@ -207,8 +207,9 @@ groups of generators then take that type.
 include energy budgets, running hour limits, RPS targets and emission caps.
 
 **What happens to it.** The translation carries none of them. It does report every
-`Constraint`, one entry for each right-hand side the constraint states, naming the sense,
-the coefficient and the objects it binds.
+`Constraint`, one entry for each right-hand side the constraint states, naming the sense
+and every term of the weighted sum: the object, the class it belongs to, and the
+coefficient weighting it.
 
 **The cause.** The hub has no equivalent, and the Sienna types this translation writes have
 none either. Nor does a PyPSA `GlobalConstraint`, which limits one carrier over the whole

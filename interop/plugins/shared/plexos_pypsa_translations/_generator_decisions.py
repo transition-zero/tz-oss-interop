@@ -80,6 +80,15 @@ _COMMITTABLE_DERIVATION = (
 _RAMP_DERIVATION = "Max Ramp x snapshot minutes / p_nom, capped at 1"
 _TIME_LIMIT_DERIVATION = "hours -> snapshots at the network resolution"
 _START_FUEL_DERIVATION = "Offtake at Start x the fuel's price"
+_START_FUEL_DATED_DERIVATION = (
+    "Offtake at Start x the fuel's price, where the price is the mean of the fuel's own "
+    "dated price series"
+)
+_DISCARDED_START_FUEL_CHOICE_NOTE = (
+    "the generator names several start fuels and PyPSA holds one start price, so the fuel "
+    "its heat rate burns stands for the start, or the largest offtake where it burns none; "
+    "this one is left out"
+)
 _START_UP_STATED_DERIVATION = "the cold-start band of Start Cost"
 _START_UP_FUEL_DERIVATION = (
     "the start fuel prices the start, since the generator states no Start Cost"
@@ -122,6 +131,7 @@ class GeneratorDecisions:
     start_fuel: Decision | None
     unpriced_start: bool
     discarded_start_fuel: bool
+    discarded_start_fuels: tuple[str, ...]
     discarded_fuels: tuple[str, ...]
     bus: Decision = maps_to(PyPSAGeneratorCol.BUS)
     carrier: Decision = maps_to(PyPSAGeneratorCol.CARRIER)
@@ -153,6 +163,7 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
         start_fuel=_start_fuel(mapping),
         unpriced_start=_has_unpriced_start(mapping),
         discarded_start_fuel=_has_discarded_start_fuel(mapping),
+        discarded_start_fuels=_discarded_start_fuels(mapping),
         discarded_fuels=mapping.discarded_fuels,
         bus=_bus(mapping),
         carrier=_carrier(mapping),
@@ -191,6 +202,11 @@ def record_generator(reporter: ComponentReporter, decisions: GeneratorDecisions)
         reporter.record_dropped(
             _source(name, PlexosProperty.OFFTAKE_AT_START, None, UNIT_GJ),
             _DISCARDED_START_FUEL_NOTE,
+        )
+    for fuel_name in decisions.discarded_start_fuels:
+        reporter.record_skipped(
+            _source(name, PlexosCollection.START_FUELS, fuel_name),
+            _DISCARDED_START_FUEL_CHOICE_NOTE,
         )
     for fuel_name in decisions.discarded_fuels:
         reporter.record_skipped(
@@ -406,6 +422,9 @@ def _start_fuel(mapping: GeneratorMapping) -> Decision | None:
     start_fuel = _priced_start_fuel(mapping)
     if start_fuel is None:
         return None
+    derivation = (
+        _START_FUEL_DATED_DERIVATION if start_fuel.is_priced_by_date else _START_FUEL_DERIVATION
+    )
     return Decision.derived(
         start_fuel.cost,
         [
@@ -418,7 +437,7 @@ def _start_fuel(mapping: GeneratorMapping) -> Decision | None:
                 UNIT_DOLLARS_PER_GJ,
             ),
         ],
-        _START_FUEL_DERIVATION,
+        derivation,
     )
 
 
@@ -428,6 +447,16 @@ def _priced_start_fuel(mapping: GeneratorMapping) -> StartFuel | None:
     if commitment is None or commitment.start_pricing is not StartPricing.START_FUEL:
         return None
     return commitment.start_fuel
+
+
+def _discarded_start_fuels(mapping: GeneratorMapping) -> tuple[str, ...]:
+    """The start fuels the choice left out, where a start fuel is what prices the start.
+
+    A Start Cost beside them prices the start instead, and the whole start-fuel reading is
+    already reported as dropped, so naming each fuel again would say it twice.
+    """
+    start_fuel = _priced_start_fuel(mapping)
+    return () if start_fuel is None else start_fuel.discarded
 
 
 def _has_unpriced_start(mapping: GeneratorMapping) -> bool:

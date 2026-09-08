@@ -17,18 +17,19 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
-    PlexosCollection,
     PlexosObjectCol,
     PlexosProperty,
     PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
+    ClassMember,
+    MemberProperties,
     ObjectProperties,
     ObjectUnits,
-    collapse_membership_properties,
+    collapse_member_properties,
     collapse_properties_by_object,
     collapse_units_by_object,
-    relate_children,
+    relate_all_children,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceReporter,
@@ -60,11 +61,23 @@ _NO_COEFFICIENT = "no coefficient"
 
 
 @dataclass(frozen=True)
+class _Term:
+    """One object a Constraint weights, and the coefficient it is weighted by.
+
+    A member the Constraint states no coefficient for still stands in the sum, so the
+    coefficient and the property naming it are both optional.
+    """
+
+    member: ClassMember
+    coefficient_property: str | None
+    coefficient: float | None
+
+
+@dataclass(frozen=True)
 class _Constraint:
     name: str
     sense: str
-    coefficients: tuple[str, ...]
-    members: tuple[str, ...]
+    terms: tuple[_Term, ...]
     right_hand_sides: dict[str, float]
     units: dict[str, str | None]
 
@@ -86,32 +99,28 @@ def _read_constraints(state: State) -> list[_Constraint]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     scalars = collapse_properties_by_object(properties, PlexosClass.CONSTRAINT)
     units = collapse_units_by_object(properties, PlexosClass.CONSTRAINT)
-    coefficients = _coefficients_by_constraint(
-        collapse_membership_properties(
-            properties, PlexosClass.CONSTRAINT, PlexosCollection.GENERATORS
-        )
+    coefficients = collapse_member_properties(properties, PlexosClass.CONSTRAINT)
+    members = relate_all_children(
+        state.source_topology[PlexosResolvedTable.MEMBERSHIPS], PlexosClass.CONSTRAINT
     )
-    members = relate_children(
-        state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
-        PlexosClass.CONSTRAINT,
-        PlexosCollection.GENERATORS,
-    )
-    return [_read_one(name, scalars, units, coefficients, members.get(name, [])) for name in names]
+    return [
+        _read_one(name, scalars, units, coefficients.get(name, {}), members.get(name, []))
+        for name in names
+    ]
 
 
 def _read_one(
     name: str,
     scalars: ObjectProperties,
     units: ObjectUnits,
-    coefficients: dict[str, tuple[str, ...]],
-    members: list[str],
+    coefficients: MemberProperties,
+    members: list[ClassMember],
 ) -> _Constraint:
     stated = scalars.get(name, {})
     return _Constraint(
         name=name,
         sense=_read_sense(stated),
-        coefficients=coefficients.get(name, ()),
-        members=tuple(members),
+        terms=_build_terms(members, coefficients),
         right_hand_sides={
             property_name: stated[property_name]
             for property_name in _RIGHT_HAND_SIDES
@@ -121,13 +130,24 @@ def _read_one(
     )
 
 
-def _coefficients_by_constraint(
-    by_constraint: dict[str, ObjectProperties],
-) -> dict[str, tuple[str, ...]]:
-    return {
-        name: tuple(sorted({prop for by_property in by_generator.values() for prop in by_property}))
-        for name, by_generator in by_constraint.items()
-    }
+def _build_terms(members: list[ClassMember], coefficients: MemberProperties) -> tuple[_Term, ...]:
+    """One term per coefficient a member is weighted by, and a bare term where it has none.
+
+    A coefficient can name a member the memberships do not, so the two sources are read
+    together and the result is ordered by class, then by name, then by property.
+    """
+    named = sorted(set(members) | set(coefficients))
+    terms: list[_Term] = []
+    for member in named:
+        weights = coefficients.get(member, {})
+        if not weights:
+            terms.append(_Term(member, None, None))
+            continue
+        terms.extend(
+            _Term(member, property_name, weights[property_name])
+            for property_name in sorted(weights)
+        )
+    return tuple(terms)
 
 
 def _constraint_names(state: State) -> list[str]:
@@ -161,16 +181,21 @@ def _source(
 
 
 def _describe(constraint: _Constraint) -> str:
-    """A Constraint can name objects of any class. Only the Generators it names are read, so a
-    Constraint over anything else is reported with nothing listed beside its sense.
-    """
-    if not constraint.members:
-        return f"Sense {constraint.sense}, over no {PlexosClass.GENERATOR}"
-    coefficients = " and ".join(constraint.coefficients) or _NO_COEFFICIENT
+    """The sense the Constraint binds in, and the weighted sum it binds."""
+    if not constraint.terms:
+        return f"Sense {constraint.sense}, over no objects"
     return (
-        f"Sense {constraint.sense} over {len(constraint.members)} "
-        f"{PlexosClass.GENERATOR}(s) by {coefficients}: "
-        f"{name_a_few(sorted(constraint.members))}"
+        f"Sense {constraint.sense} over {len(constraint.terms)} term(s): "
+        f"{name_a_few(_describe_term(term) for term in constraint.terms)}"
+    )
+
+
+def _describe_term(term: _Term) -> str:
+    if term.coefficient is None:
+        return f"{term.member.member_class} {term.member.name} with {_NO_COEFFICIENT}"
+    return (
+        f"{term.coefficient} x {term.member.member_class} {term.member.name} "
+        f"({term.coefficient_property})"
     )
 
 

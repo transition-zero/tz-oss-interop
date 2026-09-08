@@ -14,9 +14,13 @@ from pytest_bdd import given, parsers
 from interop_testing.builders.plexos_models import (
     PlexosModelBuilder,
 )
+from interop_testing.builders.plexos_tables import ConstraintTerm
 
-# The generators table's header cell naming the generator itself, not one of its fields.
+# The header cells of the table a Constraint states its weighted terms in.
+_CLASS_FIELD = "class"
 _NAME_FIELD = "name"
+_COEFFICIENT_PROPERTY_FIELD = "coefficient property"
+_COEFFICIENT_FIELD = "coefficient"
 
 
 @given("a Plexos model", target_fixture="plexos_model_builder")
@@ -348,7 +352,7 @@ def given_model_is_saved_as(plexos_model_builder: PlexosModelBuilder, xml_path: 
     plexos_model_builder.save(Path(xml_path))
 
 
-@given(parsers.parse('generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start'))
+@given(parsers.parse('generator "{name}" burns {offtake:g} of fuel "{fuel}" to start'))
 def given_generator_burns_start_fuel(
     plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str
 ) -> None:
@@ -356,9 +360,7 @@ def given_generator_burns_start_fuel(
 
 
 @given(
-    parsers.parse(
-        'generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start in band {band:d}'
-    )
+    parsers.parse('generator "{name}" burns {offtake:g} of fuel "{fuel}" to start in band {band:d}')
 )
 def given_generator_burns_start_fuel_in_band(
     plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str, band: int
@@ -366,24 +368,26 @@ def given_generator_burns_start_fuel_in_band(
     plexos_model_builder.add_start_fuel(name, fuel, offtake, band=band)
 
 
-@given(
-    parsers.parse(
-        'the model contains constraint "{name}" over generators "{generators}" '
-        'with "{coefficient_property}" {coefficient:g}'
-    )
-)
+@given(parsers.parse('the model contains constraint "{name}" over:'))
 def given_model_contains_constraint(
-    plexos_model_builder: PlexosModelBuilder,
-    name: str,
-    generators: str,
-    coefficient_property: str,
-    coefficient: float,
+    plexos_model_builder: PlexosModelBuilder, name: str, datatable: list[list[str]]
 ) -> None:
-    plexos_model_builder.add_constraint(
-        name,
-        generators=[generator.strip() for generator in generators.split(",")],
-        coefficient_property=coefficient_property,
-        coefficient=coefficient,
+    """A Constraint weighting objects of any class, one row per weighted term.
+
+    The header names the member's class, its name, the coefficient property the weight is
+    stated under, and the weight itself.
+    """
+    header, *rows = datatable
+    terms = [_read_constraint_term(dict(zip(header, row, strict=True))) for row in rows]
+    plexos_model_builder.add_constraint_over(name, terms)
+
+
+def _read_constraint_term(fields: dict[str, str]) -> ConstraintTerm:
+    return ConstraintTerm(
+        member_class=fields[_CLASS_FIELD],
+        member=fields[_NAME_FIELD],
+        coefficient_property=fields[_COEFFICIENT_PROPERTY_FIELD],
+        coefficient=float(fields[_COEFFICIENT_FIELD]),
     )
 
 

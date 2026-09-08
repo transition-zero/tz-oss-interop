@@ -8,13 +8,19 @@ apart keeps the topology and the resources readable on their own.
 from __future__ import annotations
 
 from interop_testing.builders.plexos_generator_specs import GeneratorSpec
-from interop_testing.builders.plexos_tables import DateBand, LineEndpoints, PlexosTables
+from interop_testing.builders.plexos_tables import (
+    ConstraintTerm,
+    DateBand,
+    LineEndpoints,
+    PlexosTables,
+)
 from interop_testing.builders.plexos_vocabulary import (
     BATTERIES_COLLECTION,
     BATTERY_CLASS,
     CAPACITY_PROPERTY,
     CHARGE_EFFICIENCY_PROPERTY,
     CONSTRAINT_CLASS,
+    CONSTRAINT_MEMBER_COLLECTIONS,
     CONSTRAINTS_COLLECTION,
     DEFAULT_CATEGORY,
     FUEL_CLASS,
@@ -152,29 +158,23 @@ class ResourceBuilder(PlexosTables):
             code,
         )
 
-    def add_constraint(
-        self,
-        name: str,
-        generators: list[str],
-        coefficient_property: str,
-        coefficient: float,
-    ) -> None:
-        """A Constraint over a set of generators, each weighted by one coefficient.
+    def add_constraint_over(self, name: str, terms: list[ConstraintTerm]) -> None:
+        """A Constraint over objects of any class, each weighted by its own coefficient.
 
-        PLEXOS states the coefficient on the Constraint to Generator membership and the
+        PLEXOS states the coefficient on the Constraint to member membership and the
         right-hand side on the Constraint itself, which ``add_constraint_property`` sets.
         """
         self._check_not_saved(f"constraint {name!r}")
         self._add_system_object(CONSTRAINT_CLASS, name, CONSTRAINTS_COLLECTION)
-        for generator in generators:
+        for term in terms:
             self._add_property(
                 CONSTRAINT_CLASS,
                 name,
-                GENERATOR_CLASS,
-                generator,
-                GENERATORS_COLLECTION,
-                coefficient_property,
-                coefficient,
+                term.member_class,
+                term.member,
+                CONSTRAINT_MEMBER_COLLECTIONS[term.member_class],
+                term.coefficient_property,
+                term.coefficient,
             )
 
     def add_constraint_property(self, name: str, property_name: str, value: float) -> None:

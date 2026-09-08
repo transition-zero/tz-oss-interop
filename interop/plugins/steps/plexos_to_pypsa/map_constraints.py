@@ -12,6 +12,8 @@ from interop.plugins.shared.plexos_pypsa_translations import map_constraints
 
 
 class PlexosToPypsaMapConstraints(TranslationStep):
+    """Reports every PLEXOS Constraint, none of which PyPSA has a home for."""
+
     name: ClassVar[str] = "plexos_to_pypsa_map_constraints"
     params_schema: ClassVar[type[BaseModel] | None] = None
 
