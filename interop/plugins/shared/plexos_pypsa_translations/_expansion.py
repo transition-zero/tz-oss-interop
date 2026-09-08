@@ -7,7 +7,9 @@ has, and reads the destination decisions back.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from collections.abc import Iterable
+from dataclasses import dataclass, replace
 
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
@@ -34,6 +36,9 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     maps_to,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
 
 NOTHING_TO_REPORT = Decision.unreported(None)
 
@@ -64,6 +69,11 @@ _NO_WACC_NOTE = (
 _NO_ECONOMIC_LIFE_NOTE = (
     "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over, "
     "so PyPSA prices the build as a perpetuity"
+)
+_BUILD_LEFT_OUT_NOTE = "; the object keeps the capacity it runs and only its build is left out"
+_UNPRICED_BUILD_DERIVATION = (
+    "the model prices no build for this object, so it keeps the capacity it runs and that "
+    "capacity is fixed"
 )
 
 UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
@@ -125,6 +135,8 @@ class ExpansionDecisions:
     # What the sidecar carries because the network file has no column for it.
     unit_size: Decision = NOTHING_TO_REPORT
     technical_life: Decision = NOTHING_TO_REPORT
+    # The build of an object that runs already and prices no expansion of itself.
+    dropped_build: DroppedBuild | None = None
 
 
 FIXED_CAPACITY = ExpansionDecisions(
@@ -141,6 +153,9 @@ FIXED_CAPACITY = ExpansionDecisions(
 def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
     if not source.is_candidate:
         return FIXED_CAPACITY
+    unpriced = _find_unpriced_build(source)
+    if unpriced is not None:
+        return _fixed_at_what_it_runs(source, unpriced)
     rated = source.rated
     built = source.name_units_built()
     return ExpansionDecisions(
@@ -210,29 +225,59 @@ _PRICES_A_BUILD = (
 )
 
 
-def find_unpriced_build(
-    plexos_class: PlexosClass, name: str, props: dict[str, float]
-) -> SkippedComponent | None:
-    """The first property a candidate leaves out that stops PyPSA pricing its build."""
-    if props.get(PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD) <= NOTHING_TO_BUILD:
+@dataclass(frozen=True)
+class DroppedBuild:
+    """A build the model prices nothing for, on an object that keeps the capacity it runs."""
+
+    source: SourceValue
+    note: str
+
+
+def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
+    """A candidate with nothing running yet whose build the model prices nothing for.
+
+    Its whole capacity is the build, so there is nothing to write once the build goes. An
+    object that already runs states capacity a dispatch model needs, so it stays.
+    """
+    if source.rated.existing.value or not source.is_candidate:
         return None
-    unpriced = next((one for one in _PRICES_A_BUILD if one.plexos_property not in props), None)
+    unpriced = _find_unpriced_build(source)
     if unpriced is None:
         return None
     return SkippedComponent(
-        source=SourceValue(plexos_class, name, unpriced.plexos_property, None, unpriced.unit),
+        source=_names_absent(source, unpriced),
         note=unpriced.note,
         warn_with=SkipGroup(
-            counted=f"candidate {plexos_class}(s)", reason=f"state no {unpriced.plexos_property}"
+            counted=f"candidate {source.plexos_class}(s)",
+            reason=f"state no {unpriced.plexos_property}",
         ),
     )
 
 
-def record_expansion_extensions(
-    name: str, expansion: ExpansionDecisions, reporter: ComponentReporter
-) -> None:
+def record_expansion(name: str, expansion: ExpansionDecisions, reporter: ComponentReporter) -> None:
+    """What travels beside the destination row: the sidecar fields, and a build left out."""
     reporter.record(name, UNIT_SIZE_COLUMN, expansion.unit_size)
     reporter.record(name, TECHNICAL_LIFE_COLUMN, expansion.technical_life)
+    if expansion.dropped_build is not None:
+        reporter.record_dropped(expansion.dropped_build.source, expansion.dropped_build.note)
+
+
+def warn_about_dropped_builds(expansions: Iterable[ExpansionDecisions]) -> None:
+    """One line for each property that left a running object's build unpriced."""
+    dropped = [one.dropped_build for one in expansions if one.dropped_build is not None]
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for one in dropped:
+        key = (one.source.component, str(one.source.attribute))
+        grouped.setdefault(key, []).append(one.source.name)
+    for (component, plexos_property), names in sorted(grouped.items()):
+        log.warning(
+            "plexos: %d %s(s) that already run state no %s, so each keeps the capacity it "
+            "runs and none of the build it may make. Each one: %s",
+            len(names),
+            component,
+            plexos_property,
+            name_a_few(sorted(names)),
+        )
 
 
 def read_sidecar_value(decision: Decision) -> float | None:
@@ -246,6 +291,32 @@ def gather_sources(*groups: tuple[SourceValue, ...] | list[SourceValue]) -> list
         for source in group:
             gathered[source] = None
     return list(gathered)
+
+
+def _find_unpriced_build(source: CandidateSource) -> UnpricedBuild | None:
+    """The first property a candidate leaves out that stops PyPSA pricing its build."""
+    return next((one for one in _PRICES_A_BUILD if one.plexos_property not in source.props), None)
+
+
+def _fixed_at_what_it_runs(source: CandidateSource, unpriced: UnpricedBuild) -> ExpansionDecisions:
+    return replace(
+        FIXED_CAPACITY,
+        p_nom_extendable=Decision.derived(
+            False,  # noqa: FBT003
+            [source.name_units_built()],
+            _UNPRICED_BUILD_DERIVATION,
+        ),
+        dropped_build=DroppedBuild(
+            source=_names_absent(source, unpriced),
+            note=unpriced.note + _BUILD_LEFT_OUT_NOTE,
+        ),
+    )
+
+
+def _names_absent(source: CandidateSource, unpriced: UnpricedBuild) -> SourceValue:
+    return SourceValue(
+        source.plexos_class, source.name, unpriced.plexos_property, None, unpriced.unit
+    )
 
 
 def _discount_rate(source: CandidateSource) -> Decision:

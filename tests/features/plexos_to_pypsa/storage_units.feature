@@ -275,7 +275,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_duration.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "max_hours" is 2.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "state_of_charge_initial" is 100.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * energy capacity |"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * p_nom * max_hours |"
 
   Scenario: a mothballed turbine has no rated power and is skipped
     Given a Plexos model
@@ -603,3 +603,17 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_max" is 300
     # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom" is 300
+
+  Scenario: a battery that already runs keeps its capacity when its build is unpriced
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_k" in region "East"
+    And the model contains battery "bat_running" on node "node_k" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And battery "bat_running" has property "Units" 2
+    And battery "bat_running" has property "Max Units Built" 3
+    And the model is saved as "inputs/unpriced_battery.xml"
+    When I run translate against "inputs/unpriced_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "bat_running" attribute "p_nom" is 100.0
+    And the PyPSA network "outputs/network.nc" storage unit "bat_running" is not extendable
+    And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
+    And the log contains "1 Battery(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"

@@ -23,9 +23,10 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    find_unpriced_build,
+    find_unpriced_candidate,
     read_sidecar_value,
-    record_expansion_extensions,
+    record_expansion,
+    warn_about_dropped_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
     GeneratorDecisions,
@@ -147,7 +148,7 @@ def _carry_to_extensions(
     for mapping in mappings:
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
-        record_expansion_extensions(mapping.name, mapping.expansion, reporter)
+        record_expansion(mapping.name, mapping.expansion, reporter)
     records = [
         GeneratorExtension(
             name=mapping.name,
@@ -157,6 +158,7 @@ def _carry_to_extensions(
         )
         for mapping in mappings
     ]
+    warn_about_dropped_builds(mapping.expansion for mapping in mappings)
     append_extensions(state.destination_extensions, ExtensionKind.GENERATOR, records)
 
 
@@ -184,7 +186,7 @@ def _map_one(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
-    unpriced = find_unpriced_build(PlexosClass.GENERATOR, name, source.props)
+    unpriced = find_unpriced_candidate(source.candidate)
     if unpriced is not None:
         return unpriced
     mapping = derive_generator(source, node, lookups)

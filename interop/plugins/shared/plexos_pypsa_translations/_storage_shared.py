@@ -31,7 +31,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     ExpansionDecisions,
     RatedCapacity,
     derive_p_nom,
-    find_unpriced_build,
+    find_unpriced_candidate,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -343,9 +343,6 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
         return _skipped_without_capacity(rating, staged.name)
-    unpriced = find_unpriced_build(rating.plexos_class, staged.name, staged.properties)
-    if unpriced is not None:
-        return unpriced
     candidate = CandidateSource(
         rating.plexos_class,
         staged.name,
@@ -353,6 +350,9 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         staged.stated_units,
         rating.derive(staged),
     )
+    unpriced = find_unpriced_candidate(candidate)
+    if unpriced is not None:
+        return unpriced
     p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
