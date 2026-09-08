@@ -38,8 +38,9 @@ from interop.plugins.shared.staged_samples import choose_reference_sample, filte
 _PROFILE_PROPERTIES = (PlexosProperty.RATING, PlexosProperty.RATING_FACTOR)
 
 # PLEXOS bands what a start costs by how long the unit has been off, hot band first. PyPSA
-# holds one number, and the cold start is the one a commitment decision has to clear.
-_COLD_START_BAND = MultiValueRule.HIGHEST
+# holds one number, and the cold start is the one a commitment decision has to clear, so
+# the last band wins whether or not it holds the largest number.
+_COLD_START_BAND = MultiValueRule.LAST
 _GENERATOR_RULES: dict[str, MultiValueRule] = {PlexosProperty.START_COST: _COLD_START_BAND}
 
 

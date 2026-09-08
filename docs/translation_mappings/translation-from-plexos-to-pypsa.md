@@ -948,9 +948,10 @@ to name a set of components. Thus no shape of `Constraint` fits it, and the tran
 carries none of them.
 
 It does report all of them. Every right-hand side a `Constraint` states becomes a not
-mapped entry against the object that states it, giving the value, the sense, the
-coefficient and the objects the constraint binds. A `Constraint` stating no right-hand side
-is reported against the object itself. One warning names a few of them and counts the rest.
+mapped entry against the object that states it, giving the value, the sense, and each term
+of the weighted sum: the object, the class it belongs to, and the coefficient weighting it.
+A `Constraint` stating no right-hand side is reported against the object itself. One
+warning names a few of them and counts the rest.
 
 **Read that section of the report before you trust the dispatch.** A model that caps hydro
 energy or peaker running hours with a `Constraint` gives a translated network in which

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -40,6 +40,21 @@ ObjectProperties = dict[str, dict[str, float]]
 ObjectUnits = dict[str, dict[str, str | None]]
 
 
+class ClassMember(NamedTuple):
+    """One object another object relates to, named with the class it belongs to.
+
+    Two classes can hold an object of the same name, so a lookup that spans collections
+    keys on the pair rather than on the name alone.
+    """
+
+    member_class: str
+    name: str
+
+
+# One member's property values on its membership, keyed by property name.
+MemberProperties = dict[ClassMember, dict[str, float]]
+
+
 class MultiValueRule(Enum):
     """How to collapse a property that exports several values (bands) into one scalar.
 
@@ -48,6 +63,7 @@ class MultiValueRule(Enum):
     """
 
     FIRST = auto()
+    LAST = auto()
     LOWEST = auto()
     HIGHEST = auto()
 
@@ -72,9 +88,10 @@ def collapse_properties_by_object(
     """Per-object property values for one class, each banded property collapsed per its rule.
 
     A line's ``Max Flow`` takes the lowest band, ``Min Flow`` the highest, impedance the
-    first. A property absent from ``rules`` uses ``default`` (first in band order). Null
-    (file-backed) values are dropped, so a purely file-backed property is absent from the
-    result and ``read_file_backed_properties`` is what finds it.
+    first, and a start cost the last band rather than the largest number in one. A property
+    absent from ``rules`` uses ``default`` (first in band order). Null (file-backed) values
+    are dropped, so a purely file-backed property is absent from the result and
+    ``read_file_backed_properties`` is what finds it.
     """
     rules = rules or {}
     banded: dict[str, dict[str, list[float]]] = {}
@@ -96,6 +113,8 @@ def _reduce(values: list[float], rule: MultiValueRule) -> float:
     match rule:
         case MultiValueRule.FIRST:
             return values[0]
+        case MultiValueRule.LAST:
+            return values[-1]
         case MultiValueRule.LOWEST:
             return min(values)
         case MultiValueRule.HIGHEST:
@@ -125,6 +144,69 @@ def collapse_membership_properties(
         }
         for parent, by_child in banded.items()
     }
+
+
+def collapse_member_properties(
+    properties: pl.LazyFrame,
+    parent_class: PlexosClass,
+    rule: MultiValueRule = MultiValueRule.FIRST,
+) -> dict[str, MemberProperties]:
+    """Every property one class states on its memberships, whatever collection they sit in.
+
+    Keyed by parent, then by member, then by property. A Constraint weights objects of
+    any class, so it reads its coefficients this way rather than one collection at a time.
+    """
+    banded: dict[str, dict[ClassMember, dict[str, list[float]]]] = {}
+    for parent, member, property_name, value in _read_member_property_rows(
+        properties, parent_class
+    ):
+        by_property = banded.setdefault(parent, {}).setdefault(member, {})
+        by_property.setdefault(property_name, []).append(value)
+    return {
+        parent: {
+            member: {
+                property_name: _reduce(values, rule)
+                for property_name, values in by_property.items()
+            }
+            for member, by_property in by_member.items()
+        }
+        for parent, by_member in banded.items()
+    }
+
+
+def _read_member_property_rows(
+    properties: pl.LazyFrame, parent_class: PlexosClass
+) -> Iterator[tuple[str, ClassMember, str, float]]:
+    """(parent, member, property, value) for every membership of a class, in band order."""
+    if not _has_property_columns(properties):
+        return iter(())
+    frame = (
+        properties.filter(
+            (pl.col(PlexosPropertyCol.PARENT_CLASS) == parent_class)
+            & pl.col(PlexosPropertyCol.VALUE).is_not_null()
+        )
+        .select(
+            PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.CHILD_CLASS,
+            PlexosPropertyCol.CHILD_OBJECT,
+            PlexosPropertyCol.PROPERTY,
+            PlexosPropertyCol.VALUE,
+            PlexosPropertyCol.BAND,
+        )
+        .sort(
+            PlexosPropertyCol.PARENT_OBJECT,
+            PlexosPropertyCol.CHILD_CLASS,
+            PlexosPropertyCol.CHILD_OBJECT,
+            PlexosPropertyCol.PROPERTY,
+            # Bands are staged as text, so a lexicographic sort would put band 10 first.
+            pl.col(PlexosPropertyCol.BAND).cast(pl.Int64, strict=False),
+        )
+        .collect()
+    )
+    return (
+        (parent, ClassMember(child_class, child), property_name, value)
+        for parent, child_class, child, property_name, value, _band in frame.iter_rows()
+    )
 
 
 def _read_membership_property_rows(
@@ -240,6 +322,34 @@ def relate_children(
         children = result.setdefault(parent, [])
         if child not in children:
             children.append(child)
+    return result
+
+
+def relate_all_children(
+    memberships: pl.LazyFrame,
+    parent_class: PlexosClass,
+) -> dict[str, list[ClassMember]]:
+    """Every object each object of ``parent_class`` relates to, whatever the collection.
+
+    Each member carries its own class, since a Constraint can name objects of any of them.
+    """
+    if not _has_membership_columns(memberships):
+        return {}
+    frame = (
+        memberships.filter(pl.col(PlexosMembershipCol.PARENT_CLASS) == parent_class)
+        .select(
+            PlexosMembershipCol.PARENT_OBJECT,
+            PlexosMembershipCol.CHILD_CLASS,
+            PlexosMembershipCol.CHILD_OBJECT,
+        )
+        .collect()
+    )
+    result: dict[str, list[ClassMember]] = {}
+    for parent, child_class, child in frame.iter_rows():
+        members = result.setdefault(parent, [])
+        member = ClassMember(child_class, child)
+        if member not in members:
+            members.append(member)
     return result
 
 

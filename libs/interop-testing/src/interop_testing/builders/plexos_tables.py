@@ -36,6 +36,19 @@ class LineEndpoints(NamedTuple):
     node_to: str
 
 
+class ConstraintTerm(NamedTuple):
+    """One object a Constraint weights, and the coefficient weighting it.
+
+    PLEXOS states the coefficient on the Constraint to member membership, and a Constraint
+    can weight an object of any class, so the term names the member's class as well.
+    """
+
+    member_class: str
+    member: str
+    coefficient_property: str
+    coefficient: float
+
+
 class DateBand(NamedTuple):
     """When a property value applies. An absent end runs from its start onwards."""
 
