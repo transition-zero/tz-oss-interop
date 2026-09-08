@@ -42,7 +42,10 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_derivation impo
     ThermalCostTerms,
     UnitCommitment,
 )
-from interop.plugins.shared.plexos_pypsa_translations._lifespan import derive_build_year
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    LifespanDecisions,
+    derive_lifespan,
+)
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
     MARGINAL_COST_CARBON_TERM,
@@ -151,7 +154,7 @@ class GeneratorDecisions:
     up_time_before: Decision = maps_to(PyPSAGeneratorCol.UP_TIME_BEFORE, unit=UNIT_SNAPSHOTS)
     start_up_cost: Decision = maps_to(PyPSAGeneratorCol.START_UP_COST, unit=UNIT_DOLLARS)
     shut_down_cost: Decision = maps_to(PyPSAGeneratorCol.SHUT_DOWN_COST, unit=UNIT_DOLLARS)
-    build_year: Decision = maps_to(PyPSAGeneratorCol.BUILD_YEAR)
+    lifespan: LifespanDecisions = holds()
     expansion: ExpansionDecisions = holds()
 
 
@@ -182,7 +185,7 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
         up_time_before=commitment.up_time_before,
         start_up_cost=commitment.start_up_cost,
         shut_down_cost=commitment.shut_down_cost,
-        build_year=derive_build_year(PlexosClass.GENERATOR, mapping.name, mapping.lifespan),
+        lifespan=derive_lifespan(PlexosClass.GENERATOR, mapping.name, mapping.lifespan),
         expansion=mapping.expansion,
     )
 

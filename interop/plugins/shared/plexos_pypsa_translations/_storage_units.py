@@ -33,8 +33,8 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     warn_about_dropped_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
-    RETIREMENT_YEAR_COLUMN,
     read_year,
+    record_lifespan,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -233,7 +233,7 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
     for mapping in storage_units.mappings:
         reporter.record_mapping(mapping.name, mapping)
         record_expansion(mapping.name, mapping.expansion, reporter)
-        reporter.record(mapping.name, RETIREMENT_YEAR_COLUMN, mapping.retirement_year)
+        record_lifespan(mapping.name, mapping.lifespan, reporter)
     warn_about_dropped_builds(mapping.expansion for mapping in storage_units.mappings)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
@@ -248,7 +248,7 @@ def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> No
             name=mapping.name,
             unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
             technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
-            retirement_year=read_year(mapping.retirement_year),
+            retirement_year=read_year(mapping.lifespan.retirement_year),
         )
         for mapping in mappings
     ]

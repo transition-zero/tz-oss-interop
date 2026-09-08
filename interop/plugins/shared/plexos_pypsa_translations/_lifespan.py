@@ -8,6 +8,7 @@ these years are read from the dated bands the source stages beside it, unclipped
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import NamedTuple
 
@@ -25,14 +26,18 @@ from interop.plugins.shared.plexos_dates import (
     latest_covering,
     opens_at,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import NOTHING_TO_REPORT
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     EXT_RETIREMENT_YEAR_FIELD,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
+    ComponentReporter,
     Decision,
     MappedColumns,
     SourceValue,
+    maps_to,
 )
+from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 
 # What a schedule runs while no band it states covers the moment.
 _NOT_IN_SERVICE = 0.0
@@ -63,6 +68,13 @@ class Lifespan(NamedTuple):
 NO_LIFESPAN = Lifespan(None, None)
 
 
+@dataclass(frozen=True)
+class LifespanDecisions:
+    build_year: Decision = maps_to(PyPSAGeneratorCol.BUILD_YEAR)
+    # The sidecar carries the retirement year, since PyPSA has no column for it.
+    retirement_year: Decision = NOTHING_TO_REPORT
+
+
 class _UnitsBand(NamedTuple):
     """How many units one dated ``Units`` row runs, and the dates it runs them between."""
 
@@ -82,12 +94,17 @@ def read_lifespans(dated: pl.LazyFrame, plexos_class: PlexosClass) -> dict[str, 
     return {name: _read_lifespan(bands) for name, bands in _read_bands(dated, plexos_class).items()}
 
 
-def derive_build_year(plexos_class: PlexosClass, name: str, lifespan: Lifespan) -> Decision:
-    return _derive_year(plexos_class, name, lifespan.build, _BUILD_DERIVATION)
+def derive_lifespan(plexos_class: PlexosClass, name: str, lifespan: Lifespan) -> LifespanDecisions:
+    return LifespanDecisions(
+        build_year=_derive_year(plexos_class, name, lifespan.build, _BUILD_DERIVATION),
+        retirement_year=_derive_year(
+            plexos_class, name, lifespan.retirement, _RETIREMENT_DERIVATION
+        ),
+    )
 
 
-def derive_retirement_year(plexos_class: PlexosClass, name: str, lifespan: Lifespan) -> Decision:
-    return _derive_year(plexos_class, name, lifespan.retirement, _RETIREMENT_DERIVATION)
+def record_lifespan(name: str, decisions: LifespanDecisions, reporter: ComponentReporter) -> None:
+    reporter.record(name, RETIREMENT_YEAR_COLUMN, decisions.retirement_year)
 
 
 def _derive_year(
@@ -133,7 +150,6 @@ def _read_bands(dated: pl.LazyFrame, plexos_class: PlexosClass) -> dict[str, lis
 
 
 def _states_a_date(bands: list[_UnitsBand]) -> bool:
-    """An object whose ``Units`` are one value for all time keeps that value for all time."""
     return any(band.dates != UNDATED for band in bands)
 
 

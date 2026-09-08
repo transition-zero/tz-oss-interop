@@ -12,7 +12,7 @@ from interop.plugins.shared.plexos_pypsa_translations import map_constraints
 
 
 class PlexosToPypsaMapConstraints(TranslationStep):
-    """Carries every PLEXOS Constraint to the extensions sidecar; PyPSA enforces none."""
+    """Carries each PLEXOS Constraint it can read to the extensions sidecar; PyPSA enforces none."""
 
     name: ClassVar[str] = "plexos_to_pypsa_map_constraints"
     params_schema: ClassVar[type[BaseModel] | None] = None

@@ -93,11 +93,7 @@ class ConstraintSense(StrEnum):
 
 
 class ConstraintPeriod(StrEnum):
-    """The span one right-hand side applies over.
-
-    PLEXOS states a limit per hour, day, week, month or year, or over the whole horizon,
-    and spells each as a right-hand side property of its own.
-    """
+    """The span one right-hand side applies over."""
 
     HORIZON = "horizon"  # PLEXOS RHS
     HOUR = "hour"  # PLEXOS RHS Hour

@@ -30,7 +30,6 @@ T = TypeVar("T")
 
 
 def latest_covering(bands: Sequence[tuple[DateBand, T]], moment: datetime) -> T | None:
-    """What the last band covering the moment states, else None."""
     covering = [value for band, value in bands if band.covers(moment)]
     return covering[-1] if covering else None
 

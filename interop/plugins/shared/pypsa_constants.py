@@ -489,7 +489,6 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.FOM_COST: pl.Float64,
-    # The year the source brings the generator into service, null where it states none.
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
 }
 
@@ -528,7 +527,6 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
     PyPSAStorageUnitCol.FOM_COST: pl.Float64,
-    # The year the source brings the storage unit into service, null where it states none.
     PyPSAStorageUnitCol.BUILD_YEAR: pl.Int64,
 }
 

@@ -26,7 +26,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    NOTHING_TO_REPORT,
     CandidateSource,
     ExpansionDecisions,
     RatedCapacity,
@@ -36,6 +35,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
     NO_LIFESPAN,
     Lifespan,
+    LifespanDecisions,
     read_lifespans,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
@@ -121,10 +121,8 @@ class StorageUnitMapping:
     )
     inflow: Decision = maps_to(PyPSAStorageUnitCol.INFLOW, unit=UNIT_MW)
     cyclic: Decision = maps_to(PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE)
-    build_year: Decision = maps_to(PyPSAStorageUnitCol.BUILD_YEAR)
+    lifespan: LifespanDecisions = holds()
     expansion: ExpansionDecisions = holds()
-    # The sidecar carries the retirement year, since PyPSA has no column for it.
-    retirement_year: Decision = NOTHING_TO_REPORT
     # Units is a Battery-only reading; a units-out trace derates against it.
     units: float | None = None
     # The head Storage whose Natural Inflow this unit reads, where that inflow is power. An

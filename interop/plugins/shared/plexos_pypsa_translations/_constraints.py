@@ -62,6 +62,10 @@ _NOT_CARRIED_NOTE = (
     "this Constraint states no sense, or no right-hand side, so it holds no inequality to "
     "carry to the extensions sidecar"
 )
+_UNREADABLE_SENSE_NOTE = (
+    "this Constraint states a Sense that is not -1, 0 or 1, so the translator cannot read the "
+    "inequality it holds in and carries nothing to the extensions sidecar"
+)
 
 # PLEXOS states which way a Constraint binds as one integer.
 _SENSES: dict[float, ConstraintSense] = {
@@ -71,7 +75,6 @@ _SENSES: dict[float, ConstraintSense] = {
 }
 _UNSTATED_SENSE = "unstated"
 
-# The right-hand side properties, each with the span it holds the sum over.
 _PERIODS: dict[str, ConstraintPeriod] = {
     PlexosProperty.RHS: ConstraintPeriod.HORIZON,
     PlexosProperty.RHS_HOUR: ConstraintPeriod.HOUR,
@@ -101,6 +104,8 @@ class _Term:
 class _Constraint:
     name: str
     sense: ConstraintSense | None
+    # What the model states, kept so a code the translator cannot read reports as itself.
+    stated_sense: float | None
     terms: tuple[_Term, ...]
     right_hand_sides: dict[str, float]
     units: dict[str, str | None]
@@ -159,6 +164,7 @@ def _read_one(
     return _Constraint(
         name=name,
         sense=_read_sense(stated),
+        stated_sense=stated.get(PlexosProperty.SENSE),
         terms=_build_terms(members, coefficients),
         right_hand_sides={
             property_name: stated[property_name]
@@ -240,7 +246,7 @@ def _member(term: _Term) -> ConstraintMember:
 
 def _record(reporter: SourceReporter, outcome: _Outcome) -> None:
     constraint = outcome.constraint
-    carried = _CARRIED_NOTE if outcome.record is not None else _NOT_CARRIED_NOTE
+    carried = _CARRIED_NOTE if outcome.record is not None else _not_carried_note(constraint)
     note = f"{carried}. {_describe(constraint)}"
     if not constraint.right_hand_sides:
         reporter.record_dropped(_source(constraint.name, None, None), note)
@@ -256,15 +262,28 @@ def _source(
     return SourceValue(PlexosClass.CONSTRAINT, name, attribute, value, unit)
 
 
+def _not_carried_note(constraint: _Constraint) -> str:
+    """Why the Constraint holds no inequality: a sense it lacks, or one nothing reads."""
+    if constraint.sense is None and constraint.stated_sense is not None:
+        return _UNREADABLE_SENSE_NOTE
+    return _NOT_CARRIED_NOTE
+
+
 def _describe(constraint: _Constraint) -> str:
     """The sense the Constraint binds in, and the weighted sum it binds."""
-    sense = constraint.sense or _UNSTATED_SENSE
+    sense = _sense_text(constraint)
     if not constraint.terms:
         return f"Sense {sense}, over no objects"
     return (
         f"Sense {sense} over {len(constraint.terms)} term(s): "
         f"{name_a_few(_describe_term(term) for term in constraint.terms)}"
     )
+
+
+def _sense_text(constraint: _Constraint) -> str:
+    if constraint.sense is not None:
+        return constraint.sense
+    return _UNSTATED_SENSE if constraint.stated_sense is None else str(constraint.stated_sense)
 
 
 def _describe_term(term: _Term) -> str:

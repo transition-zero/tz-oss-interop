@@ -122,28 +122,19 @@ def _property_identity(row: dict[str, Any]) -> tuple[Any, ...]:
 def _steps_within(ordered: list[DatedRow], window: Window) -> list[_Step]:
     """One step per moment the property's value changes inside the window."""
     template = ordered[0].row
-    outside = _stated_for_no_date(ordered)
     return [
-        _Step(moment, {**template, PlexosPropertyCol.VALUE: _value_at(ordered, outside, moment)})
+        _Step(moment, {**template, PlexosPropertyCol.VALUE: _value_at(ordered, moment)})
         for moment in _change_moments(ordered, window)
     ]
 
 
-def _stated_for_no_date(ordered: list[DatedRow]) -> dict[str, Any] | None:
-    return next((dated.row for dated in ordered if dated.dates == UNDATED), None)
-
-
-def _value_at(
-    ordered: list[DatedRow], outside: dict[str, Any] | None, moment: datetime
-) -> float | None:
-    """The latest band covering the moment, else the value stated for no date, else none.
+def _value_at(ordered: list[DatedRow], moment: datetime) -> float | None:
+    """The latest band covering the moment, else none.
 
     A property stated only for a period is not in effect outside one, and a property with
     no value in effect is a property the model is not applying: it reads as zero.
     """
     stating = latest_covering(ordered, moment)
-    if stating is None:
-        stating = outside
     if stating is None:
         return _NOT_IN_EFFECT
     value: float | None = stating[PlexosPropertyCol.VALUE]

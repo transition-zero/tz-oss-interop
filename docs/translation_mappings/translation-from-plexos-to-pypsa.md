@@ -1033,8 +1033,9 @@ framework that can express it.
 | `members` | One entry per object the sum names, each giving the name, the PLEXOS class it belongs to, the coefficient and the property that states the coefficient |
 | `applies_to_expansion_plan` | `Include in LT Plan` |
 
-A `Constraint` that states no sense, or no right-hand side at all, states no inequality to
-carry. The translator leaves that one out and reports it.
+A `Constraint` that states no sense, a `Sense` other than `-1`, `0` or `1`, or no
+right-hand side at all, states no inequality to carry. The translator leaves that one out
+and reports it, naming the `Sense` it could not read where that is the reason.
 
 The report carries all of them either way. Every right-hand side a `Constraint` states
 becomes a not mapped entry against the object that states it, giving the value, the sense,

@@ -45,9 +45,8 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     build_lookups,
 )
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
-    RETIREMENT_YEAR_COLUMN,
-    derive_retirement_year,
     read_year,
+    record_lifespan,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
@@ -131,9 +130,8 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
         ],
         GENERATORS_DESTINATION_SCHEMA,
     )
-    mappings = [one.mapping for one in translated]
-    _carry_to_extensions(state, mappings, reporter)
-    _record_availability_time_series(state, mappings, reporter)
+    _carry_to_extensions(state, translated, reporter)
+    _record_availability_time_series(state, [one.mapping for one in translated], reporter)
 
 
 @dataclass(frozen=True)
@@ -145,31 +143,28 @@ class _TranslatedGenerator:
 
 
 def _carry_to_extensions(
-    state: State, mappings: list[GeneratorMapping], reporter: ComponentReporter
+    state: State, translated: list[_TranslatedGenerator], reporter: ComponentReporter
 ) -> None:
     """Put what the network file cannot hold in the sidecar, starting with the PLEXOS
     category, since only one of it and the fuel could become the carrier.
     """
-    retirements = {
-        mapping.name: derive_retirement_year(PlexosClass.GENERATOR, mapping.name, mapping.lifespan)
-        for mapping in mappings
-    }
-    for mapping in mappings:
+    for one in translated:
+        mapping = one.mapping
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
         record_expansion(mapping.name, mapping.expansion, reporter)
-        reporter.record(mapping.name, RETIREMENT_YEAR_COLUMN, retirements[mapping.name])
+        record_lifespan(mapping.name, one.decisions.lifespan, reporter)
     records = [
         GeneratorExtension(
-            name=mapping.name,
-            category=mapping.category,
-            unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
-            technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
-            retirement_year=read_year(retirements[mapping.name]),
+            name=one.mapping.name,
+            category=one.mapping.category,
+            unit_size_mw=read_sidecar_value(one.mapping.expansion.unit_size),
+            technical_life_years=read_sidecar_value(one.mapping.expansion.technical_life),
+            retirement_year=read_year(one.decisions.lifespan.retirement_year),
         )
-        for mapping in mappings
+        for one in translated
     ]
-    warn_about_dropped_builds(mapping.expansion for mapping in mappings)
+    warn_about_dropped_builds(one.mapping.expansion for one in translated)
     append_extensions(state.destination_extensions, ExtensionKind.GENERATOR, records)
 
 
