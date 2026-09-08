@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import sqrt
 
+import polars as pl
+
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
@@ -181,43 +183,36 @@ class StagedObject:
 
 
 @dataclass(frozen=True)
+class ClassLookups:
+    """What one PLEXOS class states about each of its objects."""
+
+    properties: ObjectProperties
+    stated_units: ObjectUnits
+    nodes: dict[str, str]
+    file_backed: dict[str, list[str]]
+    lifespans: dict[str, Lifespan]
+
+
+@dataclass(frozen=True)
 class StorageLookups:
     """The per-object properties and memberships the three storage paths read."""
 
-    battery_properties: ObjectProperties
-    generator_properties: ObjectProperties
+    by_class: dict[PlexosClass, ClassLookups]
     storage_properties: ObjectProperties
-    node_by_battery: dict[str, str]
-    node_by_generator: dict[str, str]
+    storage_units: ObjectUnits
     head_by_generator: dict[str, str]
     tail_by_generator: dict[str, str]
-    file_backed_by_battery: dict[str, list[str]]
-    file_backed_by_generator: dict[str, list[str]]
-    battery_units: ObjectUnits
-    generator_units: ObjectUnits
-    storage_units: ObjectUnits
     storages_with_inflow_profile: set[str]
-    lifespan_by_battery: dict[str, Lifespan]
-    lifespan_by_generator: dict[str, Lifespan]
 
-    def battery(self, name: str) -> StagedObject:
+    def staged(self, plexos_class: PlexosClass, name: str) -> StagedObject:
+        one = self.by_class[plexos_class]
         return StagedObject(
             name=name,
-            properties=self.battery_properties.get(name, {}),
-            stated_units=self.battery_units.get(name, {}),
-            node=self.node_by_battery.get(name),
-            file_backed=self.file_backed_by_battery.get(name, []),
-            lifespan=self.lifespan_by_battery.get(name, NO_LIFESPAN),
-        )
-
-    def generator(self, name: str) -> StagedObject:
-        return StagedObject(
-            name=name,
-            properties=self.generator_properties.get(name, {}),
-            stated_units=self.generator_units.get(name, {}),
-            node=self.node_by_generator.get(name),
-            file_backed=self.file_backed_by_generator.get(name, []),
-            lifespan=self.lifespan_by_generator.get(name, NO_LIFESPAN),
+            properties=one.properties.get(name, {}),
+            stated_units=one.stated_units.get(name, {}),
+            node=one.nodes.get(name),
+            file_backed=one.file_backed.get(name, []),
+            lifespan=one.lifespans.get(name, NO_LIFESPAN),
         )
 
     def has_head_and_tail(self, generator: str) -> bool:
@@ -292,25 +287,34 @@ def build_lookups(state: State) -> StorageLookups:
     memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
     dated = state.source_topology[PlexosResolvedTable.DATED_PROPERTIES]
     return StorageLookups(
-        battery_properties=collapse_properties_by_object(properties, PlexosClass.BATTERY),
-        generator_properties=collapse_properties_by_object(properties, PlexosClass.GENERATOR),
+        by_class={
+            plexos_class: _read_class(properties, memberships, dated, plexos_class)
+            for plexos_class in (PlexosClass.BATTERY, PlexosClass.GENERATOR)
+        },
         storage_properties=collapse_properties_by_object(properties, PlexosClass.STORAGE),
-        node_by_battery=relate_child(memberships, PlexosClass.BATTERY, PlexosCollection.NODES),
-        node_by_generator=relate_child(memberships, PlexosClass.GENERATOR, PlexosCollection.NODES),
+        storage_units=collapse_units_by_object(properties, PlexosClass.STORAGE),
         head_by_generator=relate_child(
             memberships, PlexosClass.GENERATOR, PlexosCollection.HEAD_STORAGE
         ),
         tail_by_generator=relate_child(
             memberships, PlexosClass.GENERATOR, PlexosCollection.TAIL_STORAGE
         ),
-        file_backed_by_battery=read_file_backed_properties(properties, PlexosClass.BATTERY),
-        file_backed_by_generator=read_file_backed_properties(properties, PlexosClass.GENERATOR),
-        battery_units=collapse_units_by_object(properties, PlexosClass.BATTERY),
-        generator_units=collapse_units_by_object(properties, PlexosClass.GENERATOR),
-        storage_units=collapse_units_by_object(properties, PlexosClass.STORAGE),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
-        lifespan_by_battery=read_lifespans(dated, PlexosClass.BATTERY),
-        lifespan_by_generator=read_lifespans(dated, PlexosClass.GENERATOR),
+    )
+
+
+def _read_class(
+    properties: pl.LazyFrame,
+    memberships: pl.LazyFrame,
+    dated: pl.LazyFrame,
+    plexos_class: PlexosClass,
+) -> ClassLookups:
+    return ClassLookups(
+        properties=collapse_properties_by_object(properties, plexos_class),
+        stated_units=collapse_units_by_object(properties, plexos_class),
+        nodes=relate_child(memberships, plexos_class, PlexosCollection.NODES),
+        file_backed=read_file_backed_properties(properties, plexos_class),
+        lifespans=read_lifespans(dated, plexos_class),
     )
 
 

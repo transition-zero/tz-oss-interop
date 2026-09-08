@@ -129,10 +129,8 @@ def _steps_within(ordered: list[DatedRow], window: Window) -> list[_Step]:
 
 
 def _value_at(ordered: list[DatedRow], moment: datetime) -> float | None:
-    """The latest band covering the moment, else none.
-
-    A property stated only for a period is not in effect outside one, and a property with
-    no value in effect is a property the model is not applying: it reads as zero.
+    """A property stated only for a period is not in effect outside one, and a property
+    with no value in effect is a property the model is not applying: it reads as zero.
     """
     stating = latest_covering(ordered, moment)
     if stating is None:

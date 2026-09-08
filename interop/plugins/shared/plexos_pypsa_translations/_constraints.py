@@ -114,8 +114,6 @@ class _Constraint:
 
 @dataclass(frozen=True)
 class _Outcome:
-    """One Constraint and the record it travels as, which is None where it states too little."""
-
     constraint: _Constraint
     record: ConstraintExtension | None
 

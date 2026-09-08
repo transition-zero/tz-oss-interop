@@ -20,7 +20,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_dates import (
-    UNDATED,
     DateBand,
     band_edges,
     latest_covering,
@@ -76,8 +75,6 @@ class LifespanDecisions:
 
 
 class _UnitsBand(NamedTuple):
-    """How many units one dated ``Units`` row runs, and the dates it runs them between."""
-
     dates: DateBand
     units: float
 
@@ -144,13 +141,7 @@ def _read_bands(dated: pl.LazyFrame, plexos_class: PlexosClass) -> dict[str, lis
     bands: dict[str, list[_UnitsBand]] = {}
     for name, date_from, date_to, units in frame.iter_rows():
         bands.setdefault(name, []).append(_UnitsBand(DateBand(date_from, date_to), units))
-    return {
-        name: sorted(rows, key=opens_at) for name, rows in bands.items() if _states_a_date(rows)
-    }
-
-
-def _states_a_date(bands: list[_UnitsBand]) -> bool:
-    return any(band.dates != UNDATED for band in bands)
+    return {name: sorted(rows, key=opens_at) for name, rows in bands.items()}
 
 
 def _read_lifespan(bands: list[_UnitsBand]) -> Lifespan:

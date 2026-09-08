@@ -98,7 +98,7 @@ _PER_MAX_POWER_DERIVATION = " / Max Power"
 
 
 def map_battery(name: str, lookups: StorageLookups) -> MappedOrSkipped:
-    rated = rate_object(lookups.battery(name), _BATTERY_POWER)
+    rated = rate_object(lookups.staged(PlexosClass.BATTERY, name), _BATTERY_POWER)
     if isinstance(rated, SkippedComponent):
         return rated
     return _derive_battery(rated)
