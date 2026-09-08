@@ -352,7 +352,7 @@ def given_model_is_saved_as(plexos_model_builder: PlexosModelBuilder, xml_path: 
     plexos_model_builder.save(Path(xml_path))
 
 
-@given(parsers.parse('generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start'))
+@given(parsers.parse('generator "{name}" burns {offtake:g} of fuel "{fuel}" to start'))
 def given_generator_burns_start_fuel(
     plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str
 ) -> None:
@@ -360,9 +360,7 @@ def given_generator_burns_start_fuel(
 
 
 @given(
-    parsers.parse(
-        'generator "{name}" burns {offtake:g} GJ of fuel "{fuel}" to start in band {band:d}'
-    )
+    parsers.parse('generator "{name}" burns {offtake:g} of fuel "{fuel}" to start in band {band:d}')
 )
 def given_generator_burns_start_fuel_in_band(
     plexos_model_builder: PlexosModelBuilder, name: str, offtake: float, fuel: str, band: int
@@ -380,11 +378,11 @@ def given_model_contains_constraint(
     stated under, and the weight itself.
     """
     header, *rows = datatable
-    terms = [read_constraint_term(dict(zip(header, row, strict=True))) for row in rows]
+    terms = [_read_constraint_term(dict(zip(header, row, strict=True))) for row in rows]
     plexos_model_builder.add_constraint_over(name, terms)
 
 
-def read_constraint_term(fields: dict[str, str]) -> ConstraintTerm:
+def _read_constraint_term(fields: dict[str, str]) -> ConstraintTerm:
     return ConstraintTerm(
         member_class=fields[_CLASS_FIELD],
         member=fields[_NAME_FIELD],

@@ -123,7 +123,7 @@ Feature: Read a PLEXOS property in the unit the model states it in
     And the model states "Price" in "$/~"
     And the model contains fuel "Gas" with price 8
     And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
-    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
     And the model is saved as "inputs/imperial_start.xml"
     When I run translate against "inputs/imperial_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     # 1800 MMBTU is 1899.1 GJ, and $8/MMBTU is $7.5834/GJ, so the start costs what it did in

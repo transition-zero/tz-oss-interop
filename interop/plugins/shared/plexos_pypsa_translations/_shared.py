@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from enum import Enum, auto
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypeVar
 
 import polars as pl
 
@@ -53,6 +53,9 @@ class ClassMember(NamedTuple):
 
 # One member's property values on its membership, keyed by property name.
 MemberProperties = dict[ClassMember, dict[str, float]]
+
+# What a collapsed membership property is keyed on: a child's name, or the member itself.
+_Child = TypeVar("_Child", str, ClassMember)
 
 
 class MultiValueRule(Enum):
@@ -128,22 +131,9 @@ def collapse_membership_properties(
     rule: MultiValueRule = MultiValueRule.FIRST,
 ) -> dict[str, ObjectProperties]:
     """One collection's property values, keyed by parent then by child then by property."""
-    banded: dict[str, dict[str, dict[str, list[float]]]] = {}
-    for parent, child, property_name, value in _read_membership_property_rows(
-        properties, parent_class, collection
-    ):
-        by_child = banded.setdefault(parent, {}).setdefault(child, {})
-        by_child.setdefault(property_name, []).append(value)
-    return {
-        parent: {
-            child: {
-                property_name: _reduce(values, rule)
-                for property_name, values in by_property.items()
-            }
-            for child, by_property in by_child.items()
-        }
-        for parent, by_child in banded.items()
-    }
+    return _collapse_by_property(
+        _read_membership_property_rows(properties, parent_class, collection), rule
+    )
 
 
 def collapse_member_properties(
@@ -156,21 +146,30 @@ def collapse_member_properties(
     Keyed by parent, then by member, then by property. A Constraint weights objects of
     any class, so it reads its coefficients this way rather than one collection at a time.
     """
-    banded: dict[str, dict[ClassMember, dict[str, list[float]]]] = {}
-    for parent, member, property_name, value in _read_member_property_rows(
-        properties, parent_class
-    ):
-        by_property = banded.setdefault(parent, {}).setdefault(member, {})
+    return _collapse_by_property(_read_member_property_rows(properties, parent_class), rule)
+
+
+def _collapse_by_property(
+    rows: Iterator[tuple[str, _Child, str, float]], rule: MultiValueRule
+) -> dict[str, dict[_Child, dict[str, float]]]:
+    """Group ``(parent, child, property, value)`` rows and collapse each property's bands.
+
+    The child is whatever the caller's rows key on: a name where one collection is read,
+    a ``ClassMember`` where every collection is.
+    """
+    banded: dict[str, dict[_Child, dict[str, list[float]]]] = {}
+    for parent, child, property_name, value in rows:
+        by_property = banded.setdefault(parent, {}).setdefault(child, {})
         by_property.setdefault(property_name, []).append(value)
     return {
         parent: {
-            member: {
+            child: {
                 property_name: _reduce(values, rule)
                 for property_name, values in by_property.items()
             }
-            for member, by_property in by_member.items()
+            for child, by_property in by_child.items()
         }
-        for parent, by_member in banded.items()
+        for parent, by_child in banded.items()
     }
 
 

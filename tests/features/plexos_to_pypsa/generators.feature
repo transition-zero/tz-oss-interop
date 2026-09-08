@@ -392,7 +392,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Given a Plexos model
     And the model contains fuel "Gas" with price 8
     And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7"
-    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
     And the model is saved as "inputs/start_fuel.xml"
     When I run translate against "inputs/start_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
@@ -404,7 +404,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Given a Plexos model
     And the model contains fuel "Gas" with price 8
     And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7, Start Cost=1000"
-    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
     And the model is saved as "inputs/both_start_prices.xml"
     When I run translate against "inputs/both_start_prices.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 1000
@@ -419,8 +419,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains "Start Cost" 5000 in band 1 for generator "Hot"
     And the model contains "Start Cost" 1000 in band 2 for generator "Hot"
     And the model contains generator "Cold" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
-    And generator "Cold" burns 900 GJ of fuel "Gas" to start in band 1
-    And generator "Cold" burns 300 GJ of fuel "Gas" to start in band 2
+    And generator "Cold" burns 900 of fuel "Gas" to start in band 1
+    And generator "Cold" burns 300 of fuel "Gas" to start in band 2
     And the model is saved as "inputs/start_bands.xml"
     When I run translate against "inputs/start_bands.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "Hot" in "outputs/network.nc" has "start_up_cost" equal to 1000
@@ -448,7 +448,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains fuel "Gas" with price 8
     And the model contains fuel "Distillate" with price 25
     And the model contains generator "DualFuel" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
-    And generator "DualFuel" burns 1800 GJ of fuel "Distillate" to start
+    And generator "DualFuel" burns 1800 of fuel "Distillate" to start
     And the model is saved as "inputs/dual_fuel_start.xml"
     When I run translate against "inputs/dual_fuel_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "DualFuel" in "outputs/network.nc" has "start_up_cost" equal to 45000
@@ -468,7 +468,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Given a Plexos model
     And the model contains fuel "Gas" with price 8
     And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7, Start Cost=0"
-    And generator "CCGT" burns 1800 GJ of fuel "Gas" to start
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
     And the model is saved as "inputs/zero_start_cost.xml"
     When I run translate against "inputs/zero_start_cost.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
@@ -485,13 +485,14 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains fuel "Gas" with price 8
     And the model contains fuel "Distillate" with price 25
     And the model contains generator "DualStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
-    And generator "DualStart" burns 100 GJ of fuel "Gas" to start
-    And generator "DualStart" burns 1800 GJ of fuel "Distillate" to start
+    And generator "DualStart" burns 100 of fuel "Gas" to start
+    And generator "DualStart" burns 1800 of fuel "Distillate" to start
     And the model contains generator "NeitherStart" with "node=Grid_Node, category=Gas, Max Capacity=100, Min Stable Level=50"
-    And generator "NeitherStart" burns 100 GJ of fuel "Gas" to start
-    And generator "NeitherStart" burns 1800 GJ of fuel "Distillate" to start
+    And generator "NeitherStart" burns 100 of fuel "Gas" to start
+    And generator "NeitherStart" burns 1800 of fuel "Distillate" to start
     And the model is saved as "inputs/several_start_fuels.xml"
     When I run translate against "inputs/several_start_fuels.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "DualStart" in "outputs/network.nc" has "start_up_cost" equal to 800
     # A generator burning no fuel has no heat rate to prefer one by, so the largest start wins.
     And the PyPSA generator "NeitherStart" in "outputs/network.nc" has "start_up_cost" equal to 45000
+    And the file "decisions.md" contains "the generator names several start fuels and PyPSA holds one start price, so the fuel its heat rate burns stands for the start, or the largest offtake where it burns none; this one is left out"

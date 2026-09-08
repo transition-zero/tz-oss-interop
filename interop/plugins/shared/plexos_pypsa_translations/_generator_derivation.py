@@ -192,7 +192,9 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         availability=availability,
         cost=_assemble_cost(source.props, fuel),
         efficiency=_efficiency(fuel, source.p_nom),
-        unit_commitment=_derive_unit_commitment(source, _start_fuel(source, fuel, lookups), lookups)
+        unit_commitment=_derive_unit_commitment(
+            source, _derive_start_fuel(source, fuel, lookups), lookups
+        )
         if _commits(fuel, minimum)
         else None,
     )
@@ -479,18 +481,21 @@ class StartFuel:
 
     The Start Fuels membership names the fuel, so it need not be the one the heat rate uses:
     a unit that runs on gas may light off on distillate, and pays the distillate price.
+    ``discarded`` names the other start fuels, which one start price has no room for.
     """
 
     name: str
     offtake: float
     price: float
+    is_priced_by_date: bool
+    discarded: tuple[str, ...]
 
     @property
     def cost(self) -> float:
         return self.offtake * self.price
 
 
-def _start_fuel(
+def _derive_start_fuel(
     source: SourceGenerator, fuel: FuelUse | None, lookups: Lookups
 ) -> StartFuel | None:
     """What a start burns, priced by the fuel the Start Fuels membership itself names."""
@@ -498,7 +503,14 @@ def _start_fuel(
     if not offtakes:
         return None
     name = _choose_start_fuel(offtakes, fuel)
-    return StartFuel(name, offtakes[name], _read_fuel_price(name, lookups).value)
+    price = _read_fuel_price(name, lookups)
+    return StartFuel(
+        name=name,
+        offtake=offtakes[name],
+        price=price.value,
+        is_priced_by_date=price.is_dated,
+        discarded=tuple(sorted(other for other in offtakes if other != name)),
+    )
 
 
 def _choose_start_fuel(offtakes: dict[str, float], fuel: FuelUse | None) -> str:
@@ -545,7 +557,7 @@ class UnitCommitment:
         A Start Cost of zero prices nothing, so a start fuel stated beside it is still what
         a start costs. A zero with no start fuel is the model pricing a start at zero.
         """
-        if self.start_fuel is not None and not self.stated_start_cost:
+        if self.start_fuel is not None and self.stated_start_cost in (None, 0.0):
             return StartPricing.START_FUEL
         if self.stated_start_cost is not None:
             return StartPricing.STATED
