@@ -1,6 +1,6 @@
 """The per-class lookups the generator mapping reads while it walks the Generator class.
 
-Each is built once from the two long staged tables, so mapping a generator is dictionary
+Each is built once from the long staged tables, so mapping a generator is dictionary
 reads rather than a scan per generator.
 """
 
@@ -17,6 +17,10 @@ from interop.plugins.shared.plexos_constants import (
     PlexosCollection,
     PlexosProperty,
     PlexosResolvedTable,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    Lifespan,
+    read_lifespans,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     MultiValueRule,
@@ -65,6 +69,7 @@ class Lookups:
     profile_peaks: dict[str, dict[str, float]]
     capacity_peaks: dict[str, float]
     dated_fuel_prices: dict[str, float]
+    lifespans: dict[str, Lifespan]
     minutes_per_snapshot: float
 
 
@@ -90,6 +95,9 @@ def build_lookups(state: State) -> Lookups:
         profile_peaks={prop: _series_peaks(state, prop) for prop in _PROFILE_PROPERTIES},
         capacity_peaks=_series_peaks(state, PlexosProperty.MAX_CAPACITY),
         dated_fuel_prices=_mean_fuel_prices(state),
+        lifespans=read_lifespans(
+            state.source_topology[PlexosResolvedTable.DATED_PROPERTIES], PlexosClass.GENERATOR
+        ),
         # Every staged series shares the network's snapshots, so any of them fixes the
         # resolution the hour-based generator properties convert against.
         minutes_per_snapshot=resolution_minutes(

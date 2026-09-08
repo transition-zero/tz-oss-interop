@@ -1,14 +1,16 @@
 @slow @fork_unsafe
-Feature: PLEXOS Constraint objects are reported rather than silently dropped
+Feature: PLEXOS Constraint objects travel in the extensions sidecar
 
   A PLEXOS Constraint limits a weighted sum over a named set of objects, and states its
   right-hand side per day, per hour, per week, per month, per year, or over the whole
   horizon. PyPSA's GlobalConstraint limits one carrier over the whole horizon and cannot
   name a set of components, so none of those shapes has a home in the network file.
 
-  The translation therefore carries no Constraint, and says so: every right-hand side a
-  Constraint states is reported against the object stating it, so a reader can see which
-  limits the solved network is not holding to.
+  Each Constraint therefore travels in the extensions sidecar instead, and the network's
+  silence about it is reported: every right-hand side a Constraint states is recorded
+  against the object stating it, so a reader can see which limits the solved network is not
+  holding to. A Constraint stating no sense, or no right-hand side at all, states no
+  inequality to carry, so it is left out and reported as such.
 
   Scenario: a daily energy limit over named generators is reported, naming what it binds
     Given a Plexos model
@@ -28,9 +30,9 @@ Feature: PLEXOS Constraint objects are reported rather than silently dropped
     When I run translate against "inputs/constraint.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "outputs/network.nc" exists
     And the file "decisions.md" contains "`plexos.Constraint.RiverSystem.RHS Day` = 1.708"
-    And the file "decisions.md" contains "a Constraint holds a weighted sum over the objects it names to its right-hand side, which PyPSA's GlobalConstraint cannot express, so the limit is not carried"
+    And the file "decisions.md" contains "constraint carried to the extensions sidecar; PyPSA's GlobalConstraint cannot hold a weighted sum over the objects a Constraint names, so the network file itself does not limit them"
     And the file "decisions.md" contains "Sense <= over 2 term(s): 1.0 x Generator AA1 (Generation Coefficient), 1.0 x Generator AA2 (Generation Coefficient)"
-    And the log contains "plexos: 1 Constraint(s) limit what the model may dispatch, and PyPSA has no home for any of them, so none is enforced: RiverSystem"
+    And the log contains "plexos: 1 Constraint(s) limit what the model may dispatch and the network file enforces none of them; each one the translator can read travels in the extensions sidecar: RiverSystem"
 
   Scenario: every right-hand side a Constraint states is reported, one for each
     Given a Plexos model
@@ -80,6 +82,52 @@ Feature: PLEXOS Constraint objects are reported rather than silently dropped
     And the model is saved as "inputs/unbounded.xml"
     When I run translate against "inputs/unbounded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "decisions.md" contains "`plexos.Constraint.Unbounded`"
+    And the file "decisions.md" contains "a Constraint holds a weighted sum over the objects it names to its right-hand side, which PyPSA's GlobalConstraint cannot express, so the limit is not carried"
+    And the file "outputs/extensions.json" does not contain "Unbounded"
+
+  Scenario: a Constraint stating no sense states no inequality, so it is left out
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Peaker" with "node=Grid_Node, category=Gas, Max Capacity=100"
+    And the model contains constraint "Senseless" over:
+      | class     | name   | coefficient property   | coefficient |
+      | Generator | Peaker | Generation Coefficient | 1           |
+    And constraint "Senseless" states "RHS Day" of 400
+    And the model is saved as "inputs/senseless.xml"
+    When I run translate against "inputs/senseless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "decisions.md" contains "`plexos.Constraint.Senseless.RHS Day` = 400.0"
+    And the file "decisions.md" contains "so the limit is not carried"
+    And the file "outputs/extensions.json" does not contain "Senseless"
+
+  Scenario: a readable Constraint reaches the sidecar with its sense, its limit and its members
+    The sidecar states the limit in its own vocabulary: the sense as the inequality it holds
+    in, the right-hand side beside the span it applies over, and each object the sum weights
+    with the class it belongs to.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generators:
+      | name | node      | category | Max Capacity |
+      | AA1  | Grid_Node | Hydro    | 21           |
+      | AA2  | Grid_Node | Hydro    | 23           |
+    And the model contains constraint "RiverSystem" over:
+      | class     | name | coefficient property   | coefficient |
+      | Generator | AA1  | Generation Coefficient | 1           |
+      | Generator | AA2  | Generation Coefficient | 2.5         |
+    And constraint "RiverSystem" states "Sense" of -1
+    And constraint "RiverSystem" states "RHS Day" of 1.708
+    And constraint "RiverSystem" states "Include in LT Plan" of 1
+    And the model is saved as "inputs/carried.xml"
+    When I run translate against "inputs/carried.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "outputs/extensions.json" parses as JSON with "constraint.0.name" set to "RiverSystem"
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.sense" set to "<="
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.limits.0.period" set to "day"
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.limits.0.value" set to 1.708
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.members.0.name" set to "AA1"
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.members.0.member_class" set to "Generator"
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.members.1.coefficient" set to 2.5
+    And the file "outputs/extensions.json" parses as JSON with "constraint.0.applies_to_expansion_plan" set to true
 
   Scenario: a model with no Constraint objects warns about nothing
     Given a Plexos model

@@ -123,3 +123,45 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA generator "GasPlant" in "outputs/network.nc" has "marginal_cost" equal to 45
     And the file "decisions.md" contains "the mean of the fuel's own dated price series"
+
+  Scenario: a generator whose units start at zero and rise in a later year is built in it
+    The plan commits this candidate for 2032, which the 2026 network still records, so a
+    reader knows the year the model brings it into service.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "REZ" with "node=Grid_Node, category=Wind, Max Capacity=100, Units=0, Max Units Built=1, Build Cost=900000, WACC=0.07, Economic Life=25"
+    And generator "REZ" states "Units" of 1 from "2032-01-01"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/built_later.xml"
+    When I run translate against "inputs/built_later.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "REZ" attribute "build_year" is 2032
+    And the file "decisions.md" contains "the first year the dated Units rise above zero"
+
+  Scenario: a generator whose units fall to zero in a later year retires in it
+    PyPSA has no retirement year, so the sidecar carries it.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "OldCoal" with "node=Grid_Node, category=Coal, Max Capacity=500, Units=2"
+    And generator "OldCoal" states "Units" of 0 from "2035-01-01"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/retires_later.xml"
+    When I run translate against "inputs/retires_later.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "OldCoal" attribute "p_nom" is 1000
+    And the file "outputs/extensions.json" parses as JSON with "generator.0.retirement_year" set to 2035
+    And the file "decisions.md" contains "the first year the dated Units fall back to zero"
+
+  Scenario: a generator that dates no units states neither year
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Steady" with "node=Grid_Node, category=Coal, Max Capacity=500, Units=1"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/undated_units.xml"
+    When I run translate against "inputs/undated_units.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Steady" attribute "build_year" is 0
+    And the file "outputs/extensions.json" does not contain "retirement_year"

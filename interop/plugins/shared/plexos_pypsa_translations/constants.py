@@ -23,6 +23,9 @@ EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
 EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
 """Names that sidecar key in the audit trail; the network file itself has no such column."""
 
+EXT_RETIREMENT_YEAR_FIELD: str = "extensions.retirement_year"
+"""Names that sidecar key in the audit trail; the network file itself has no such column."""
+
 # --- generators ---------------------------------------------------------------
 
 DEFAULT_UP_TIME_BEFORE: float = 0.0

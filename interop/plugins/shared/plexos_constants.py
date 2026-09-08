@@ -40,10 +40,11 @@ class PlexosClass(StrEnum):
 
 
 class PlexosResolvedTable:
-    """Keys of the two long tables ``stage_plexos_xml`` resolves from the raw ``t_*`` tables."""
+    """Keys of the long tables ``stage_plexos_xml`` resolves from the raw ``t_*`` tables."""
 
     MEMBERSHIPS = "memberships"
     PROPERTIES = "properties"
+    DATED_PROPERTIES = "dated_properties"
 
 
 class PlexosObjectCol:
@@ -93,6 +94,19 @@ class PlexosPropertyCol:
     UNIT = "unit"
     DATA_FILE = "data_file"
     SCALING = "scaling"
+
+
+class PlexosDatedPropertyCol(PlexosPropertyCol):
+    """Columns of the resolved ``dated_properties`` table.
+
+    The ``properties`` columns, plus the dates the value on the row applies between. Every
+    resolved row is here, whether or not the window being translated covers its band, so a
+    mapping reading a schedule sees the years the model states rather than one value.
+    ``date_to`` names a whole day, so the band runs to the end of it.
+    """
+
+    DATE_FROM = "date_from"
+    DATE_TO = "date_to"
 
 
 class PlexosCollection(StrEnum):
@@ -211,6 +225,7 @@ class PlexosProperty(StrEnum):
     RHS_WEEK = "RHS Week"
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
+    INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 
 def is_plexos_true(value: float) -> bool:

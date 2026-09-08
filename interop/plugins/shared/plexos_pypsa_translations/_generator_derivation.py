@@ -28,6 +28,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     derive_p_nom,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import Lookups
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import NO_LIFESPAN, Lifespan
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_P_MIN_PU,
     DEFAULT_SHUT_DOWN_COST,
@@ -102,6 +103,7 @@ class SourceGenerator:
     props: dict[str, float]
     stated_units: dict[str, str | None]
     max_capacity: float
+    lifespan: Lifespan
 
     @cached_property
     def candidate(self) -> CandidateSource:
@@ -142,6 +144,7 @@ def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> Sourc
         props=props,
         stated_units=lookups.gen_units.get(name, {}),
         max_capacity=_rated_capacity(name, props, lookups),
+        lifespan=lookups.lifespans.get(name, NO_LIFESPAN),
     )
 
 
@@ -212,6 +215,7 @@ class GeneratorMapping:
     unit_commitment: UnitCommitment | None
     candidate: CandidateSource
     expansion: ExpansionDecisions
+    lifespan: Lifespan
 
     @property
     def is_committable(self) -> bool:
@@ -258,6 +262,7 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         else None,
         candidate=candidate,
         expansion=derive_expansion(candidate),
+        lifespan=source.lifespan,
     )
 
 

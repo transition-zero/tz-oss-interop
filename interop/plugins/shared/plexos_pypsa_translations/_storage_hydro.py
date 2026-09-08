@@ -25,6 +25,10 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     derive_expansion,
 )
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    derive_build_year,
+    derive_retirement_year,
+)
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
     CHARGE_NOTE,
@@ -221,7 +225,9 @@ def _derive_turbine(
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),
+        build_year=derive_build_year(PlexosClass.GENERATOR, rated.name, rated.lifespan),
         expansion=expansion,
+        retirement_year=derive_retirement_year(PlexosClass.GENERATOR, rated.name, rated.lifespan),
         inflow_storage=_inflow_storage(head),
     )
 

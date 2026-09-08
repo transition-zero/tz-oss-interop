@@ -44,6 +44,10 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     Lookups,
     build_lookups,
 )
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    RETIREMENT_YEAR_COLUMN,
+    derive_retirement_year,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
@@ -149,12 +153,18 @@ def _carry_to_extensions(
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
         record_expansion(mapping.name, mapping.expansion, reporter)
+        reporter.record(
+            mapping.name,
+            RETIREMENT_YEAR_COLUMN,
+            derive_retirement_year(PlexosClass.GENERATOR, mapping.name, mapping.lifespan),
+        )
     records = [
         GeneratorExtension(
             name=mapping.name,
             category=mapping.category,
             unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
             technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
+            retirement_year=mapping.lifespan.retirement_year,
         )
         for mapping in mappings
     ]

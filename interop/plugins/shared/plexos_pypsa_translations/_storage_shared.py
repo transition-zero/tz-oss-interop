@@ -26,11 +26,17 @@ from interop.plugins.shared.plexos_constants import (
     PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    NOTHING_TO_REPORT,
     CandidateSource,
     ExpansionDecisions,
     RatedCapacity,
     derive_p_nom,
     find_unpriced_candidate,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    NO_LIFESPAN,
+    Lifespan,
+    read_lifespans,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -115,7 +121,10 @@ class StorageUnitMapping:
     )
     inflow: Decision = maps_to(PyPSAStorageUnitCol.INFLOW, unit=UNIT_MW)
     cyclic: Decision = maps_to(PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE)
+    build_year: Decision = maps_to(PyPSAStorageUnitCol.BUILD_YEAR)
     expansion: ExpansionDecisions = holds()
+    # The sidecar carries the retirement year, since PyPSA has no column for it.
+    retirement_year: Decision = NOTHING_TO_REPORT
     # Units is a Battery-only reading; a units-out trace derates against it.
     units: float | None = None
     # The head Storage whose Natural Inflow this unit reads, where that inflow is power. An
@@ -170,6 +179,7 @@ class StagedObject:
     stated_units: dict[str, str | None]
     node: str | None
     file_backed: list[str]
+    lifespan: Lifespan
 
 
 @dataclass(frozen=True)
@@ -189,6 +199,8 @@ class StorageLookups:
     generator_units: ObjectUnits
     storage_units: ObjectUnits
     storages_with_inflow_profile: set[str]
+    lifespan_by_battery: dict[str, Lifespan]
+    lifespan_by_generator: dict[str, Lifespan]
 
     def battery(self, name: str) -> StagedObject:
         return StagedObject(
@@ -197,6 +209,7 @@ class StorageLookups:
             stated_units=self.battery_units.get(name, {}),
             node=self.node_by_battery.get(name),
             file_backed=self.file_backed_by_battery.get(name, []),
+            lifespan=self.lifespan_by_battery.get(name, NO_LIFESPAN),
         )
 
     def generator(self, name: str) -> StagedObject:
@@ -206,6 +219,7 @@ class StorageLookups:
             stated_units=self.generator_units.get(name, {}),
             node=self.node_by_generator.get(name),
             file_backed=self.file_backed_by_generator.get(name, []),
+            lifespan=self.lifespan_by_generator.get(name, NO_LIFESPAN),
         )
 
     def has_head_and_tail(self, generator: str) -> bool:
@@ -278,6 +292,7 @@ def _states_inflow_in_other_units(volumes: dict[str, float], units: dict[str, st
 def build_lookups(state: State) -> StorageLookups:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    dated = state.source_topology[PlexosResolvedTable.DATED_PROPERTIES]
     return StorageLookups(
         battery_properties=collapse_properties_by_object(properties, PlexosClass.BATTERY),
         generator_properties=collapse_properties_by_object(properties, PlexosClass.GENERATOR),
@@ -296,6 +311,8 @@ def build_lookups(state: State) -> StorageLookups:
         generator_units=collapse_units_by_object(properties, PlexosClass.GENERATOR),
         storage_units=collapse_units_by_object(properties, PlexosClass.STORAGE),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
+        lifespan_by_battery=read_lifespans(dated, PlexosClass.BATTERY),
+        lifespan_by_generator=read_lifespans(dated, PlexosClass.GENERATOR),
     )
 
 
@@ -348,6 +365,7 @@ class RatedObject:
     node: str
     p_nom: Decision
     candidate: CandidateSource
+    lifespan: Lifespan
 
 
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
@@ -371,7 +389,9 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
     p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
-    return RatedObject(staged.name, staged.properties, staged.node, p_nom, candidate)
+    return RatedObject(
+        staged.name, staged.properties, staged.node, p_nom, candidate, staged.lifespan
+    )
 
 
 def skip_object(

@@ -22,6 +22,10 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     derive_expansion,
     gather_sources,
 )
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    derive_build_year,
+    derive_retirement_year,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
@@ -131,7 +135,9 @@ def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
         ),
         inflow=Decision.default(DEFAULT_INFLOW, NO_RESERVOIR_INFLOW_NOTE),
         cyclic=_battery_cyclic(rated),
+        build_year=derive_build_year(PlexosClass.BATTERY, rated.name, rated.lifespan),
         expansion=expansion,
+        retirement_year=derive_retirement_year(PlexosClass.BATTERY, rated.name, rated.lifespan),
         units=rated.properties.get(PlexosProperty.UNITS),
     )
 

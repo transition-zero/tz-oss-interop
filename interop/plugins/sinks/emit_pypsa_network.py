@@ -301,6 +301,7 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.DISCOUNT_RATE,
             PyPSAGeneratorCol.LIFETIME,
             PyPSAGeneratorCol.FOM_COST,
+            PyPSAGeneratorCol.BUILD_YEAR,
         ),
     )
 
@@ -337,6 +338,7 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.DISCOUNT_RATE,
             PyPSAStorageUnitCol.LIFETIME,
             PyPSAStorageUnitCol.FOM_COST,
+            PyPSAStorageUnitCol.BUILD_YEAR,
         ),
     )
 

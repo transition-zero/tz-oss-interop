@@ -35,7 +35,7 @@ property of the PLEXOS to Sienna mapping.
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
 | `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
 | [Region `VoLL`](#region-load--interruptiblepowerload) | The `operation_cost` of an `InterruptiblePowerLoad`, on a reliability run only. |
-| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated) |
+| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -504,7 +504,7 @@ energy than your model gives it.
 | `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
 | `Transformer` | The translator does not carry it. |
-| `Constraint` | Nothing applies the custom constraints, which include the RPS targets and the emission targets. |
+| `Constraint` | The record reaches `extensions.json`, but nothing applies the custom constraints, which include the RPS targets and the emission targets. |
 | `Waterway` | The cascade route between reservoirs is lost. Each reservoir is independent. |
 | `Decision Variable` | The translator does not carry it. |
 | Emission caps | Nothing applies them. Only the carbon price reaches the cost. |

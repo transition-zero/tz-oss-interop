@@ -195,6 +195,7 @@ class PyPSALineCol:
     LENGTH = "length"
     NUM_PARALLEL = "num_parallel"
     TERRAIN_FACTOR = "terrain_factor"
+    BUILD_YEAR = "build_year"
     S_NOM_MIN = "s_nom_min"
     S_NOM_MAX = "s_nom_max"
     OVERNIGHT_COST = "overnight_cost"
@@ -222,6 +223,7 @@ class PyPSALinkCol:
     ACTIVE = "active"
     CARRIER = "carrier"
     TERRAIN_FACTOR = "terrain_factor"
+    BUILD_YEAR = "build_year"
     P_NOM_MIN = "p_nom_min"
     P_NOM_MAX = "p_nom_max"
     OVERNIGHT_COST = "overnight_cost"
@@ -256,6 +258,7 @@ class PyPSAGeneratorCol(PyPSAComponentCol):
     CAPITAL_COST = "capital_cost"
     LIFETIME = "lifetime"
     FOM_COST = "fom_cost"
+    BUILD_YEAR = "build_year"
 
 
 class PyPSAStorageUnitCol(PyPSAComponentCol):
@@ -282,6 +285,7 @@ class PyPSAStorageUnitCol(PyPSAComponentCol):
     CAPITAL_COST = "capital_cost"
     LIFETIME = "lifetime"
     FOM_COST = "fom_cost"
+    BUILD_YEAR = "build_year"
 
 
 class PyPSAStoreCol(PyPSAComponentCol):
@@ -487,6 +491,8 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.FOM_COST: pl.Float64,
+    # The year the source brings the generator into service, null where it states none.
+    PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -524,6 +530,8 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
     PyPSAStorageUnitCol.FOM_COST: pl.Float64,
+    # The year the source brings the storage unit into service, null where it states none.
+    PyPSAStorageUnitCol.BUILD_YEAR: pl.Int64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
