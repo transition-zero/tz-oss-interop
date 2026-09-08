@@ -55,6 +55,9 @@ property of the PLEXOS to Sienna mapping.
   [The carrier mappings file](#the-carrier-mappings-file).
 - **A component whose carrier your file does not name is left out.** The run completes and
   `decisions.md` names each one.
+- **A candidate is not a plant.** A `Generator`, a `Battery` or a turbine that states
+  `Max Units Built` is a build the plan has yet to decide, and a dispatch system has no
+  capacity for one, so it is left out and `decisions.md` names it.
 - **One scenario only.** The Model you select applies its own Scenario overlays. The
   translator reads no other scenario.
 - **One calendar year at a time.** The year you give narrows the Horizon of the Model. Every
@@ -263,13 +266,14 @@ An availability that changes with time becomes a `TimeSeriesAssociation` on
 `max_active_power`. That is the name PowerSimulations reads an availability forecast under.
 The stored shape peaks at 1.0 and scales back to MW through `active_power_limits.max`.
 
-**The translator does not translate four cases.** It records each one as a skipped
+**The translator does not translate five cases.** It records each one as a skipped
 component:
 
 | Case | Cause |
 | --- | --- |
 | The generator has no `Node` | There is no bus to connect it to. |
 | The generator has no `Units` at any time in the horizon | The unit is retired. |
+| The generator states `Max Units Built` | It is a candidate to build, not capacity to dispatch. |
 | `Max Capacity` comes from a data file | There is no single capacity to divide the per-unit fields by. |
 | The capacity is 0 | The generator can never dispatch. |
 

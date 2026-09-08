@@ -108,6 +108,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "solar_1" on "bus_1" carrier "solar" p_nom 200.0 p_nom_extendable True
+    And generator "solar_1" has p_nom_opt 200
     And the network is saved as "inputs/solar_extendable.nc"
     When I run translate against "inputs/solar_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "solar_1" having "p_nom_extendable" set to true

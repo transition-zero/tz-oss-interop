@@ -25,8 +25,34 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "state_of_charge_initial" is 100.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "marginal_cost" is 0.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" is not cyclic
-    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | direct |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW<br>`plexos.Battery.bat_1.Units` = 1.0 | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `plexos.Battery.bat_1.Charge Efficiency` = 81.0 % | `pypsa.StorageUnit.bat_1.efficiency_store` = 0.9 | sqrt(round-trip / 100), split symmetrically |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a Battery of several units is rated at the power of all of them
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_u" in region "West"
+    And the model contains battery "bat_pair" on node "node_u" with max_power 50 capacity 200 charge_efficiency 81 initial_soc 50
+    And battery "bat_pair" has property "Units" 2
+    And the model is saved as "inputs/battery_units.xml"
+    When I run translate against "inputs/battery_units.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "p_nom" is 100.0
+    # Max Power and Capacity both describe one unit, so the hours are one unit's 200 / 50.
+    And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "max_hours" is 4.0
+    And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "state_of_charge_initial" is 200.0
+    And the file "decisions.md" contains "| `plexos.Battery.bat_pair.Max Power` = 50.0 MW<br>`plexos.Battery.bat_pair.Units` = 2.0 | `pypsa.StorageUnit.bat_pair.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a Battery with no units in service cannot dispatch and is left out
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_z" in region "West"
+    And the model contains battery "bat_stored" on node "node_z" with max_power 50 capacity 200 charge_efficiency 81 initial_soc 50
+    And battery "bat_stored" has property "Units" 0
+    And the model is saved as "inputs/battery_stored.xml"
+    When I run translate against "inputs/battery_stored.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 0 storage units
+    And the log contains "dropping Battery 'bat_stored'"
+    And the file "decisions.md" contains "rated power works out to 0.0 MW, so this unit cannot dispatch"
 
   Scenario: a pumped-storage plant becomes a cyclic PyPSA PHS StorageUnit
     Given a Plexos model

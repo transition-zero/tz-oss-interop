@@ -135,7 +135,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/infeasible.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "InfeasiblePlant"
     And the log contains "dropping Generator 'InfeasiblePlant'"
-    And the log contains "p_min_pu 0.5 is above p_max_pu 0.4"
+    And the log contains "p_min_pu 0.5 sits above p_max_pu 0.4"
     And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which PyPSA cannot dispatch, so the generator is dropped |"
 
   Scenario: a non-fuel dispatchable generator gets a flat cost from its category

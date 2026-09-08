@@ -128,12 +128,6 @@ class SourceGenerator:
         return rating if rating is not None and rating > self.nameplate else None
 
     @property
-    def existing(self) -> float:
-        """The capacity the generator already has, before anything is built."""
-        capacity = self.rating_as_capacity
-        return self.nameplate if capacity is None else capacity
-
-    @property
     def p_nom(self) -> float:
         """What the generator has, or what it may build where it has nothing yet."""
         return float(derive_p_nom(self.candidate).value)

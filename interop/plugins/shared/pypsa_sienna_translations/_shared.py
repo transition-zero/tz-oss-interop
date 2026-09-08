@@ -26,7 +26,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaVariableCostType,
     time_series_uuid,
 )
-from interop.plugins.shared.translation_runner import SkippedNames, SkipReport
+from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, SkipRule
 from interop.ports.outbound.reporting import (
     DestinationField,
     SourceField,
@@ -34,17 +34,16 @@ from interop.ports.outbound.reporting import (
 
 PYPSA_TO_SIENNA = "pypsa-to-sienna"
 
-# An enrichment column on the source table, which finalise() drops.
+# Enrichment columns on the source table, which finalise() drops.
 EFFECTIVE_P_NOM = "_effective_p_nom"
+STATES_BUILT_CAPACITY = "_states_built_capacity"
 
 EFFECTIVE_P_NOM_DERIVATION = "p_nom_opt where an extendable component has one, else p_nom"
 
 
 def has_solved_capacity(extendable: str, opt: str) -> pl.Expr:
-    """True where a solve wrote a capacity for an extendable component.
-
-    A solve that builds none of a component writes p_nom_opt 0; only a network no solve has
-    touched leaves the column out, which stages as null.
+    """A solve that builds none of a component writes p_nom_opt 0; only a network no solve
+    has touched leaves the column out, which stages as null.
     """
     return pl.col(extendable) & pl.col(opt).is_not_null()
 
@@ -55,12 +54,23 @@ def holds_solved_capacity(row: dict[str, Any], extendable: str, opt: str) -> boo
 
 
 def effective_p_nom(extendable: str, opt: str, nom: str) -> pl.Expr:
-    """The capacity to translate: the solved one where there is one, else the stated one."""
     return pl.when(has_solved_capacity(extendable, opt)).then(pl.col(opt)).otherwise(pl.col(nom))
 
 
+def states_built_capacity(extendable: str, opt: str) -> pl.Expr:
+    """Whether the component has capacity an operations model may dispatch.
+
+    An extendable component no solve has sized states its capacity as a build the plan has
+    yet to decide, and PyPSA ignores the p_nom of an extendable component altogether.
+    """
+    return ~pl.col(extendable) | pl.col(opt).is_not_null()
+
+
 def with_effective_p_nom(table: pl.DataFrame, extendable: str, opt: str, nom: str) -> pl.DataFrame:
-    return table.with_columns(effective_p_nom(extendable, opt, nom).alias(EFFECTIVE_P_NOM))
+    return table.with_columns(
+        effective_p_nom(extendable, opt, nom).alias(EFFECTIVE_P_NOM),
+        states_built_capacity(extendable, opt).alias(STATES_BUILT_CAPACITY),
+    )
 
 
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"
@@ -114,6 +124,27 @@ def carrier_scope_skips(naming: PyPSAComponentNaming) -> ScopeSkips:
             listed=listed,
         ),
         bus_scope=skip(reason=NOT_AN_ELECTRICITY_BUS_REASON, note=NOT_AN_ELECTRICITY_BUS_NOTE),
+    )
+
+
+UNBUILT_CANDIDATE_REASON = "are extendable and no solve has sized them"
+UNBUILT_CANDIDATE_NOTE = (
+    "p_nom_extendable is true and the network states no p_nom_opt, so this is capacity the "
+    "plan may build rather than capacity an operations model may dispatch"
+)
+
+
+def unbuilt_candidate_skip(naming: PyPSAComponentNaming) -> SkipRule:
+    """The drop for a candidate an operations system must not read as a built plant."""
+    return SkipRule(
+        keep=pl.col(STATES_BUILT_CAPACITY),
+        report=pypsa_skip_report(
+            component=naming.display,
+            name_col=PyPSAComponentCol.NAME,
+            counted_noun=naming.plural,
+            reason=UNBUILT_CANDIDATE_REASON,
+            note=UNBUILT_CANDIDATE_NOTE,
+        ),
     )
 
 
