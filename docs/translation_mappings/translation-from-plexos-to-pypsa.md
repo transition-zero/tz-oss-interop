@@ -278,7 +278,7 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
 | `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate only | `direct` |
 
-**The translator does not translate five cases.** It records each one as a skipped
+**The translator does not translate six cases.** It records each one as a skipped
 component:
 
 | Case | Cause |
@@ -289,6 +289,7 @@ component:
 | `p_nom` is 0 | The generator can never dispatch. |
 | The generator is a candidate and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
 | The generator is a candidate and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
+| The generator is a candidate and gives no `Economic Life` | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -361,10 +362,12 @@ has more than one fuel uses its primary fuel.
 | `marginal_cost` | $/MWh | `0.0` | `default` |
 | `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
 
-The energy capacity of a battery is its `Capacity`. If the model gives a duration in place
-of a capacity, the energy capacity is `Duration × Max Power`. `max_hours` and
-`state_of_charge_initial` both read that one value. Thus they cannot disagree about the
-energy of the battery.
+The energy one unit of a battery holds is its `Capacity`. If the model gives a duration in
+place of a capacity, that energy is `Duration × Max Power`. `max_hours` is that energy
+divided by `Max Power`, which is the power of the same one unit, so `p_nom × max_hours` is
+the energy of however many units the `p_nom` stands for. `state_of_charge_initial` reads
+`Initial SoC` against that same energy. Thus they cannot disagree about the energy of the
+battery.
 
 `Charge Efficiency` is a round trip value. The translator divides it equally between the
 charge and the discharge. Thus the round trip value does not change. `Min SoC` and `Max
@@ -737,10 +740,12 @@ The rated power of one unit is the `Max Capacity` of a `Generator` or a pumped-s
 turbine, and the `Max Power` of a `Battery`. An object that states `Units` above one already
 holds that many, so a build adds units to what it has rather than multiplying it.
 
-A candidate that states no `Build Cost`, or no `WACC`, is left out. Without a build cost
-nothing prices building it, so an expansion would take it for free; without a discount rate
-PyPSA cannot annuitise the build cost, and refuses the network. The translator records a
-`COMPONENT_SKIPPED` event naming the object, and warns once naming a few of them.
+A candidate that states no `Build Cost`, no `WACC` or no `Economic Life` is left out.
+Without a build cost nothing prices building it, so an expansion would take it for free.
+Without a discount rate PyPSA cannot annuitise the build cost, and refuses the network.
+Without an economic life PyPSA annuitises across its own default lifetime of infinity, which
+prices the build as a perpetuity. The translator records a `COMPONENT_SKIPPED` event naming
+the object, and warns once naming a few of them.
 
 ### Which entry applies when
 

@@ -7,6 +7,8 @@ has, and reads the destination decisions back.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from interop.plugins.shared.constants import (
@@ -31,8 +33,11 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     maps_to,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
+from interop.plugins.shared.warning_text import name_a_few
 
-NOT_A_CANDIDATE = Decision.unreported(None)
+log = logging.getLogger(__name__)
+
+NOTHING_TO_REPORT = Decision.unreported(None)
 
 NOTHING_BUILT_DERIVATION = "Units is zero, so none of the rated power is built yet"
 
@@ -60,6 +65,10 @@ _NO_WACC_NOTE = (
     "a candidate with no WACC gives PyPSA no discount rate to annuitise its Build Cost over, "
     "so PyPSA refuses the network"
 )
+_NO_ECONOMIC_LIFE_NOTE = (
+    "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over, "
+    "so PyPSA prices the build as a perpetuity"
+)
 
 UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
 TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
@@ -67,11 +76,7 @@ TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
 
 @dataclass(frozen=True)
 class RatedCapacity:
-    """The rated power an object already has, beside the rated power of one unit of it.
-
-    The two differ wherever a model states more than one unit, and wherever a candidate
-    states no unit at all.
-    """
+    """The rated power an object already has, beside the rated power of one unit of it."""
 
     existing: Decision
     unit_size: Decision
@@ -111,22 +116,18 @@ class ExpansionDecisions:
     lifetime: Decision = maps_to(PyPSAGeneratorCol.LIFETIME, unit=UNIT_YEARS)
     fom_cost: Decision = maps_to(PyPSAGeneratorCol.FOM_COST, unit=UNIT_DOLLARS_PER_MW_YEAR)
     # What the sidecar carries because the network file has no column for it.
-    unit_size: Decision = NOT_A_CANDIDATE
-    technical_life: Decision = NOT_A_CANDIDATE
-
-    @property
-    def is_candidate(self) -> bool:
-        return bool(self.p_nom_extendable.value)
+    unit_size: Decision = NOTHING_TO_REPORT
+    technical_life: Decision = NOTHING_TO_REPORT
 
 
 FIXED_CAPACITY = ExpansionDecisions(
     p_nom_extendable=Decision.default(False, _NOT_EXTENDABLE_NOTE),  # noqa: FBT003
-    p_nom_min=NOT_A_CANDIDATE,
-    p_nom_max=NOT_A_CANDIDATE,
-    overnight_cost=NOT_A_CANDIDATE,
-    discount_rate=NOT_A_CANDIDATE,
-    lifetime=NOT_A_CANDIDATE,
-    fom_cost=NOT_A_CANDIDATE,
+    p_nom_min=NOTHING_TO_REPORT,
+    p_nom_max=NOTHING_TO_REPORT,
+    overnight_cost=NOTHING_TO_REPORT,
+    discount_rate=NOTHING_TO_REPORT,
+    lifetime=NOTHING_TO_REPORT,
+    fom_cost=NOTHING_TO_REPORT,
 )
 
 
@@ -165,7 +166,14 @@ def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
 
 
 def derive_buildable(source: CandidateSource) -> Decision:
-    """The capacity a candidate may build, which stands as its p_nom while it has none."""
+    """The capacity a candidate may build, which stands as its p_nom while it has none.
+
+    PyPSA optimises ``p_nom_opt`` between ``p_nom_min`` and ``p_nom_max`` and reads ``p_nom``
+    only for an object whose capacity is fixed, so what stands here does not bind the
+    dispatch. It is what every per-unit field on the component is read against --
+    ``p_min_pu``, a ramp limit, an availability profile stated in MW -- and against nothing
+    each of those would come out at zero.
+    """
     return Decision.derived(
         source.rated.unit_size.value * source.max_units_built,
         [*source.rated.unit_size.sources, source.name_units_built()],
@@ -174,7 +182,6 @@ def derive_buildable(source: CandidateSource) -> Decision:
 
 
 def derive_p_nom(source: CandidateSource) -> Decision:
-    """What the object has, or what it may build where it has nothing yet."""
     if source.rated.existing.value or not source.is_candidate:
         return source.rated.existing
     return derive_buildable(source)
@@ -192,14 +199,53 @@ class UnpricedBuild:
 _PRICES_A_BUILD = (
     UnpricedBuild(PlexosProperty.BUILD_COST, UNIT_DOLLARS_PER_MW, _NO_BUILD_COST_NOTE),
     UnpricedBuild(PlexosProperty.WACC, None, _NO_WACC_NOTE),
+    UnpricedBuild(PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, _NO_ECONOMIC_LIFE_NOTE),
 )
 
 
-def find_unpriced_build(props: dict[str, float]) -> UnpricedBuild | None:
+@dataclass(frozen=True)
+class UnpricedCandidate:
+    """One candidate left out, and the property it left out that priced its build."""
+
+    plexos_class: PlexosClass
+    name: str
+    unpriced: UnpricedBuild
+
+    @property
+    def source(self) -> SourceValue:
+        return SourceValue(
+            self.plexos_class, self.name, self.unpriced.plexos_property, None, self.unpriced.unit
+        )
+
+    @property
+    def note(self) -> str:
+        return self.unpriced.note
+
+
+def find_unpriced_build(
+    plexos_class: PlexosClass, name: str, props: dict[str, float]
+) -> UnpricedCandidate | None:
     """The first property a candidate leaves out that stops PyPSA pricing its build."""
     if props.get(PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD) <= NOTHING_TO_BUILD:
         return None
-    return next((one for one in _PRICES_A_BUILD if one.plexos_property not in props), None)
+    unpriced = next((one for one in _PRICES_A_BUILD if one.plexos_property not in props), None)
+    return None if unpriced is None else UnpricedCandidate(plexos_class, name, unpriced)
+
+
+def warn_unpriced_builds(candidates: Sequence[UnpricedCandidate]) -> None:
+    """One warning per class and property a candidate left out, naming a few of the objects."""
+    by_property: dict[tuple[str, str], list[str]] = {}
+    for one in candidates:
+        key = (one.plexos_class, one.unpriced.plexos_property)
+        by_property.setdefault(key, []).append(one.name)
+    for (plexos_class, plexos_property), names in sorted(by_property.items()):
+        log.warning(
+            "plexos: %d candidate %s(s) state no %s, so each is left out. Each one: %s",
+            len(names),
+            plexos_class,
+            plexos_property,
+            name_a_few(sorted(names)),
+        )
 
 
 def record_expansion_extensions(
@@ -226,7 +272,7 @@ def _discount_rate(source: CandidateSource) -> Decision:
     wacc = source.props.get(PlexosProperty.WACC)
     rate = as_rate(wacc, source.stated_units.get(PlexosProperty.WACC))
     if rate is None:
-        return NOT_A_CANDIDATE
+        return NOTHING_TO_REPORT
     stated = SourceValue(source.plexos_class, source.name, PlexosProperty.WACC, wacc)
     return Decision.derived(rate, [stated], _DISCOUNT_RATE_DERIVATION)
 
@@ -236,6 +282,6 @@ def _from_property(
 ) -> Decision:
     value = source.props.get(plexos_property)
     if value is None:
-        return NOT_A_CANDIDATE
+        return NOTHING_TO_REPORT
     stated = SourceValue(source.plexos_class, source.name, plexos_property, value, unit)
     return Decision.derived(value, [stated], derivation)

@@ -23,9 +23,11 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    UnpricedCandidate,
     find_unpriced_build,
     read_sidecar_value,
     record_expansion_extensions,
+    warn_unpriced_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
     GeneratorDecisions,
@@ -102,14 +104,14 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
     lookups = build_lookups(state)
     reporter = ComponentReporter(recorder, PyPSAComponent.GENERATOR)
     storage_turbines = storage_turbine_names(state)
-    unpriced: dict[str, list[str]] = {}
-    translated = [
+    outcomes = [
         one
         for generator in generators.collect().iter_rows(named=True)
         if generator[PlexosObjectCol.NAME] not in storage_turbines
-        if (one := _map_one(generator, lookups, reporter, unpriced)) is not None
+        if (one := _map_one(generator, lookups, reporter)) is not None
     ]
-    _warn_unpriced_candidates(unpriced)
+    warn_unpriced_builds([one for one in outcomes if isinstance(one, UnpricedCandidate)])
+    translated = [one for one in outcomes if isinstance(one, _TranslatedGenerator)]
     if not translated:
         return
     append_destination_rows(
@@ -124,16 +126,6 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
     mappings = [one.mapping for one in translated]
     _carry_to_extensions(state, mappings, reporter)
     _record_availability_time_series(state, mappings, reporter)
-
-
-def _warn_unpriced_candidates(unpriced: dict[str, list[str]]) -> None:
-    for plexos_property, names in unpriced.items():
-        log.warning(
-            "plexos: %d candidate generator(s) state no %s, so each is left out. Each one: %s",
-            len(names),
-            plexos_property,
-            name_a_few(sorted(names)),
-        )
 
 
 @dataclass(frozen=True)
@@ -172,11 +164,8 @@ def _category_decision(mapping: GeneratorMapping) -> Decision:
 
 
 def _map_one(
-    generator: dict[str, Any],
-    lookups: Lookups,
-    reporter: ComponentReporter,
-    unpriced: dict[str, list[str]],
-) -> _TranslatedGenerator | None:
+    generator: dict[str, Any], lookups: Lookups, reporter: ComponentReporter
+) -> _TranslatedGenerator | UnpricedCandidate | None:
     name = generator[PlexosObjectCol.NAME]
     node = lookups.gen_to_node.get(name)
     if node is None:
@@ -197,14 +186,10 @@ def _map_one(
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
         return None
-    unpriced_build = find_unpriced_build(source.props)
-    if unpriced_build is not None:
-        reporter.record_skipped(
-            _source(name, unpriced_build.plexos_property, None, unpriced_build.unit),
-            unpriced_build.note,
-        )
-        unpriced.setdefault(unpriced_build.plexos_property, []).append(name)
-        return None
+    unpriced = find_unpriced_build(PlexosClass.GENERATOR, name, source.props)
+    if unpriced is not None:
+        reporter.record_skipped(unpriced.source, unpriced.note)
+        return unpriced
     mapping = derive_generator(source, node, lookups)
     if has_infeasible_dispatch_range(mapping):
         _report_infeasible_dispatch_range(mapping, reporter)

@@ -33,11 +33,14 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 )
 from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich_prime_mover
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
+    EFFECTIVE_P_NOM_DERIVATION,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
+    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -73,7 +76,6 @@ from interop.ports.outbound.reporting import (
 HYDRO_MAX_ACTIVE_POWER_ATTR = "_hydro_max_active_power"
 
 _PRIME_MOVER_COL = "_prime_mover_raw"
-_EFFECTIVE_P_NOM = "_effective_p_nom"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
@@ -98,7 +100,7 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
         table,
         [
             (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, 0.0),
+            (PyPSAStorageUnitCol.P_NOM_OPT, None),
             (PyPSAStorageUnitCol.P_MIN_PU, 0.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -106,14 +108,11 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [(PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False)],
     )
-    return table.with_columns(
-        pl.when(
-            pl.col(PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
-            & (pl.col(PyPSAStorageUnitCol.P_NOM_OPT) > 0)
-        )
-        .then(pl.col(PyPSAStorageUnitCol.P_NOM_OPT))
-        .otherwise(pl.col(PyPSAStorageUnitCol.P_NOM))
-        .alias(_EFFECTIVE_P_NOM)
+    return with_effective_p_nom(
+        table,
+        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
+        PyPSAStorageUnitCol.P_NOM_OPT,
+        PyPSAStorageUnitCol.P_NOM,
     )
 
 
@@ -208,7 +207,7 @@ def build_hydro_ts_associations(
                 source_table=PyPSATable.STORAGE_UNITS,
                 source_attribute=PyPSAStorageUnitCol.INFLOW,
                 scaling_factor=(
-                    src_row[_EFFECTIVE_P_NOM] / src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
+                    src_row[EFFECTIVE_P_NOM] / src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
                 ),
             )
         )
@@ -273,15 +272,15 @@ HYDRO_PRIME_MOVER = _direct(
 HYDRO_BASE_POWER = _direct(
     source_col=PyPSAStorageUnitCol.P_NOM,
     dest_col=H.BASE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM),
+    expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
-    derivation="p_nom_opt where an extendable component has one, else p_nom",
+    derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
 HYDRO_ACTIVE_POWER = _direct(
     source_col=PyPSAStorageUnitCol.P_NOM,
     dest_col=H.ACTIVE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU),
+    expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU),
     unit=UNIT_MW,
     derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
 )
@@ -302,8 +301,8 @@ HYDRO_APL = _direct(
     source_col=PyPSAStorageUnitCol.P_NOM,
     dest_col=H.ACTIVE_POWER_LIMITS,
     expr=pl.struct(
-        min=(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU)).cast(pl.Float64),
-        max=(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MAX_PU)).cast(pl.Float64),
+        min=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU)).cast(pl.Float64),
+        max=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MAX_PU)).cast(pl.Float64),
     ).cast(ACTIVE_POWER_LIMITS_DTYPE),
     unit=UNIT_MW,
     derivation="min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu",

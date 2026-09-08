@@ -29,10 +29,13 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 )
 from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich_prime_mover
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
+    EFFECTIVE_P_NOM_DERIVATION,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
     variable_cost_curve,
+    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -67,7 +70,6 @@ from interop.ports.outbound.reporting import (
 )
 
 _PRIME_MOVER_COL = "_prime_mover_raw"
-_EFFECTIVE_P_NOM = "_effective_p_nom"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
@@ -80,7 +82,7 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
         table,
         [
             (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, 0.0),
+            (PyPSAStorageUnitCol.P_NOM_OPT, None),
             (PyPSAStorageUnitCol.P_MIN_PU, -1.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -94,14 +96,11 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return table.with_columns(
-        pl.when(
-            pl.col(PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
-            & (pl.col(PyPSAStorageUnitCol.P_NOM_OPT) > 0)
-        )
-        .then(pl.col(PyPSAStorageUnitCol.P_NOM_OPT))
-        .otherwise(pl.col(PyPSAStorageUnitCol.P_NOM))
-        .alias(_EFFECTIVE_P_NOM)
+    return with_effective_p_nom(
+        table,
+        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
+        PyPSAStorageUnitCol.P_NOM_OPT,
+        PyPSAStorageUnitCol.P_NOM,
     )
 
 
@@ -156,10 +155,10 @@ def _skip_without_energy(_series: pl.LazyFrame | None) -> SkipRule:
 # Defaults to 0.0 when capacity is zero (e.g. unsolved extendable unit) to
 # avoid a division-by-zero that would clip to 1.0 (incorrectly "fully charged").
 _initial_level = (
-    pl.when(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0)
+    pl.when(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0)
     .then(
         pl.col(PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL)
-        / (pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS))
+        / (pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS))
     )
     .otherwise(0.0)
     .clip(0.0, 1.0)
@@ -318,8 +317,8 @@ STORAGE_REACTIVE_POWER = _default(
 STORAGE_BASE_POWER = _direct(
     source_col=PyPSAStorageUnitCol.P_NOM,
     dest_col=S.BASE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM),
-    derivation="p_nom_opt where an extendable component has one, else p_nom",
+    expr=pl.col(EFFECTIVE_P_NOM),
+    derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
 STORAGE_COST = Translation(

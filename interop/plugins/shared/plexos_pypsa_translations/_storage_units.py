@@ -30,6 +30,7 @@ from interop.plugins.shared.plexos_pypsa_translations._batteries import (
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     read_sidecar_value,
     record_expansion_extensions,
+    warn_unpriced_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -230,7 +231,11 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
         record_expansion_extensions(mapping.name, mapping.expansion, reporter)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
-        warn_about_skipped(skipped)
+        if skipped.unpriced is None:
+            warn_about_skipped(skipped)
+    warn_unpriced_builds(
+        [skipped.unpriced for skipped in storage_units.skipped if skipped.unpriced is not None]
+    )
     for dropped in storage_units.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
 

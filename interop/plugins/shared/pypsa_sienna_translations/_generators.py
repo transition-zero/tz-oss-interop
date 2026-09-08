@@ -27,11 +27,15 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
     ExtensionSpec,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
+    EFFECTIVE_P_NOM_DERIVATION,
+    holds_solved_capacity,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
+    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -70,7 +74,6 @@ _FUEL_TYPE_COL = "_fuel_type_raw"
 _PRIME_MOVER_COL = "_prime_mover_raw"
 _TS_PEAK_PMAX = "_ts_peak_pmax"
 _DT_MINUTES_COL = "_dt_minutes"
-_EFFECTIVE_P_NOM = "_effective_p_nom"
 
 
 def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
@@ -79,7 +82,7 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         table,
         [
             (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, 0.0),
+            (PyPSAGeneratorCol.P_NOM_OPT, None),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
@@ -96,13 +99,11 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAGeneratorCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return table.with_columns(
-        pl.when(
-            pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE) & (pl.col(PyPSAGeneratorCol.P_NOM_OPT) > 0)
-        )
-        .then(pl.col(PyPSAGeneratorCol.P_NOM_OPT))
-        .otherwise(pl.col(PyPSAGeneratorCol.P_NOM))
-        .alias(_EFFECTIVE_P_NOM)
+    return with_effective_p_nom(
+        table,
+        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
+        PyPSAGeneratorCol.P_NOM_OPT,
+        PyPSAGeneratorCol.P_NOM,
     )
 
 
@@ -360,15 +361,15 @@ GENERATOR_PRIME_MOVER = Translation(
 GENERATOR_BASE_POWER = _direct(
     source_col=PyPSAGeneratorCol.P_NOM,
     dest_col=T.BASE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM),
+    expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
-    derivation="p_nom_opt where an extendable component has one, else p_nom",
+    derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
 GENERATOR_ACTIVE_POWER = _direct(
     source_col=PyPSAGeneratorCol.P_NOM,
     dest_col=T.ACTIVE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
+    expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
     unit=UNIT_MW,
     derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
 )
@@ -388,10 +389,10 @@ GENERATOR_RATING = _direct(
 GENERATOR_APL = Translation(
     exprs=[
         pl.struct(
-            min=(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU)).cast(pl.Float64),
+            min=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU)).cast(pl.Float64),
             max=pl.when(pl.col(_TS_PEAK_PMAX).is_not_null())
-            .then(pl.col(_EFFECTIVE_P_NOM) * pl.col(_TS_PEAK_PMAX))
-            .otherwise(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU))
+            .then(pl.col(EFFECTIVE_P_NOM) * pl.col(_TS_PEAK_PMAX))
+            .otherwise(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU))
             .cast(pl.Float64),
         )
         .cast(ACTIVE_POWER_LIMITS_DTYPE)
@@ -407,11 +408,12 @@ GENERATOR_APL = Translation(
                     name=old[PyPSAGeneratorCol.NAME],
                     attribute=(
                         PyPSAGeneratorCol.P_NOM_OPT
-                        if old[PyPSAGeneratorCol.P_NOM_EXTENDABLE]
-                        and old[PyPSAGeneratorCol.P_NOM_OPT] > 0
+                        if holds_solved_capacity(
+                            old, PyPSAGeneratorCol.P_NOM_EXTENDABLE, PyPSAGeneratorCol.P_NOM_OPT
+                        )
                         else PyPSAGeneratorCol.P_NOM
                     ),
-                    value=old[_EFFECTIVE_P_NOM],
+                    value=old[EFFECTIVE_P_NOM],
                     unit=UNIT_MW,
                 )
             ],
@@ -443,12 +445,12 @@ GENERATOR_RAMP_LIMITS = Translation(
         .then(
             pl.struct(
                 up=(
-                    pl.col(_EFFECTIVE_P_NOM)
+                    pl.col(EFFECTIVE_P_NOM)
                     * pl.col(PyPSAGeneratorCol.RAMP_LIMIT_UP)
                     / pl.col(_DT_MINUTES_COL)
                 ).cast(pl.Float64),
                 down=(
-                    pl.col(_EFFECTIVE_P_NOM)
+                    pl.col(EFFECTIVE_P_NOM)
                     * pl.col(PyPSAGeneratorCol.RAMP_LIMIT_DOWN)
                     / pl.col(_DT_MINUTES_COL)
                 ).cast(pl.Float64),
