@@ -19,6 +19,11 @@ from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    NOTHING_BUILT_DERIVATION,
+    RatedCapacity,
+    derive_expansion,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
@@ -34,7 +39,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     StorageLookups,
     StorageUnitMapping,
     derive_bus,
-    derive_expansion,
     derive_max_hours,
     derive_round_trip_efficiency,
     derive_state_of_charge_initial,
@@ -44,6 +48,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     BATTERY_CYCLIC,
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
+    DEFAULT_UNITS,
     DIRECT_DERIVATION,
     END_EFFECTS_RECYCLE,
     PERCENT,
@@ -101,21 +106,28 @@ def map_battery(name: str, lookups: StorageLookups) -> MappedOrSkipped:
     return _derive_battery(rated)
 
 
-def _battery_p_nom(staged: StagedObject) -> Decision:
+def _battery_rating(staged: StagedObject) -> RatedCapacity:
+    """A PLEXOS Battery states the power of one of its units as its Max Power."""
     max_power = staged.properties[PlexosProperty.MAX_POWER]
-    source = SourceValue(
+    power = SourceValue(
         PlexosClass.BATTERY, staged.name, PlexosProperty.MAX_POWER, max_power, UNIT_MW
     )
-    return Decision.derived(max_power, [source], DIRECT_DERIVATION)
+    unit_size = Decision.derived(max_power, [power], DIRECT_DERIVATION)
+    units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
+    if units:
+        return RatedCapacity(existing=unit_size, unit_size=unit_size)
+    counted = SourceValue(PlexosClass.BATTERY, staged.name, PlexosProperty.UNITS, units)
+    nothing_built = Decision.derived(0.0, [power, counted], NOTHING_BUILT_DERIVATION)
+    return RatedCapacity(existing=nothing_built, unit_size=unit_size)
 
 
-_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER, _battery_p_nom)
+_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER, _battery_rating)
 
 
 def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
     capacity = _battery_energy_capacity(rated)
     max_hours = derive_max_hours(capacity, rated.p_nom.value)
-    expansion = derive_expansion(PlexosClass.BATTERY, rated)
+    expansion = derive_expansion(rated.candidate)
     return StorageUnitMapping(
         name=rated.name,
         bus=derive_bus(PlexosClass.BATTERY, rated.name, rated.node),
@@ -131,16 +143,8 @@ def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
         ),
         inflow=Decision.default(DEFAULT_INFLOW, NO_RESERVOIR_INFLOW_NOTE),
         cyclic=_battery_cyclic(rated),
-        p_nom_extendable=expansion.p_nom_extendable,
-        p_nom_min=expansion.p_nom_min,
-        p_nom_max=expansion.p_nom_max,
-        overnight_cost=expansion.overnight_cost,
-        discount_rate=expansion.discount_rate,
-        lifetime=expansion.lifetime,
-        fom_cost=expansion.fom_cost,
+        expansion=expansion,
         units=rated.properties.get(PlexosProperty.UNITS),
-        unit_size=expansion.unit_size,
-        technical_life=expansion.technical_life,
     )
 
 
@@ -174,15 +178,15 @@ def _battery_energy_capacity(rated: RatedObject) -> Decision | None:
     duration = rated.properties.get(PlexosProperty.DURATION)
     if duration is None:
         return None
-    return _capacity_from_duration(rated.name, duration, rated.p_nom.value)
+    return _capacity_from_duration(rated.name, duration, rated.p_nom)
 
 
-def _capacity_from_duration(name: str, duration: float, max_power: float) -> Decision:
+def _capacity_from_duration(name: str, duration: float, p_nom: Decision) -> Decision:
     return Decision.derived(
-        duration * max_power,
+        duration * p_nom.value,
         [
             SourceValue(PlexosClass.BATTERY, name, PlexosProperty.DURATION, duration, UNIT_HOURS),
-            SourceValue(PlexosClass.BATTERY, name, PlexosProperty.MAX_POWER, max_power, UNIT_MW),
+            *p_nom.sources,
         ],
         _CAPACITY_FROM_DURATION_DERIVATION,
     )

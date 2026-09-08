@@ -23,6 +23,7 @@ from interop.plugins.shared.framework_reporting import DestinationReporter
 from interop.ports.outbound.reporting import SourceField
 
 _MAPPED_COLUMNS = "mapped_columns"
+_NESTED_MAPPING = "nested_mapping"
 
 
 @dataclass(frozen=True)
@@ -106,22 +107,23 @@ class MappedColumns:
         return value.by_column[column] if isinstance(value, PerColumn) else value
 
 
-def maps_to(*columns: str, unit: str | None = None, default: Decision | None = None) -> Any:
+def maps_to(*columns: str, unit: str | None = None) -> Any:
     """Declare which destination columns a mapping field fills.
 
     The return type is ``Any`` so the field keeps its ``Decision`` annotation; ``field``
-    itself is what the dataclass machinery reads. ``default`` is the decision a mapping
-    that has nothing to say about this column carries, for a dataclass several paths build.
+    itself is what the dataclass machinery reads.
     """
-    return declares(MappedColumns(columns, unit), default)
+    return declares(MappedColumns(columns, unit))
 
 
-def declares(mapped: MappedColumns, default: Decision | None = None) -> Any:
+def declares(mapped: MappedColumns) -> Any:
     """``maps_to`` for columns already named as a constant, so an extra event can reuse them."""
-    metadata = {_MAPPED_COLUMNS: mapped}
-    if default is None:
-        return field(metadata=metadata)
-    return field(metadata=metadata, default=default)
+    return field(metadata={_MAPPED_COLUMNS: mapped})
+
+
+def holds() -> Any:
+    """Declare a field carrying a mapping of its own, whose declarations this one adopts."""
+    return field(metadata={_NESTED_MAPPING: True})
 
 
 def mapped_fields(mapping: Any) -> Iterator[tuple[MappedColumns, Decision]]:
@@ -131,6 +133,9 @@ def mapped_fields(mapping: Any) -> Iterator[tuple[MappedColumns, Decision]]:
     not decisions in their own right.
     """
     for mapping_field in fields(mapping):
+        if mapping_field.metadata.get(_NESTED_MAPPING):
+            yield from mapped_fields(getattr(mapping, mapping_field.name))
+            continue
         mapped = mapping_field.metadata.get(_MAPPED_COLUMNS)
         if isinstance(mapped, MappedColumns):
             yield mapped, getattr(mapping, mapping_field.name)

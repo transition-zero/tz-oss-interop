@@ -18,7 +18,6 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
     UNIT_MWH,
     UNIT_PERCENT,
-    UNIT_YEARS,
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
@@ -27,6 +26,10 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._batteries import (
     map_battery,
     record_battery_outages,
+)
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    read_sidecar_value,
+    record_expansion_extensions,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -43,19 +46,13 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     build_lookups,
     orphan_storage_skips,
     read_object_names,
-    sidecar_value,
     warn_about_skipped,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
-from interop.plugins.shared.plexos_pypsa_translations.constants import (
-    EXT_TECHNICAL_LIFE_FIELD,
-    EXT_UNIT_SIZE_FIELD,
-)
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
-    MappedColumns,
     SourceValue,
     destination_row,
 )
@@ -68,9 +65,6 @@ from interop.plugins.shared.pypsa_constants import (
 from interop.plugins.shared.pypsa_destination import append_destination_rows
 
 log = logging.getLogger(__name__)
-
-_UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
-_TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
 
 
 def write_storage_units(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -233,10 +227,7 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
     reporter = ComponentReporter(recorder, PyPSAComponent.STORAGE_UNIT)
     for mapping in storage_units.mappings:
         reporter.record_mapping(mapping.name, mapping)
-        if mapping.unit_size is not None:
-            reporter.record(mapping.name, _UNIT_SIZE_COLUMN, mapping.unit_size)
-        if mapping.technical_life is not None:
-            reporter.record(mapping.name, _TECHNICAL_LIFE_COLUMN, mapping.technical_life)
+        record_expansion_extensions(mapping.name, mapping.expansion, reporter)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
         warn_about_skipped(skipped)
@@ -245,12 +236,11 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
 
 
 def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> None:
-    """Put the two candidate values in the sidecar, which the network file cannot hold."""
     records = [
         StorageExtension(
             name=mapping.name,
-            unit_size_mw=sidecar_value(mapping.unit_size),
-            technical_life_years=sidecar_value(mapping.technical_life),
+            unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
+            technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
         )
         for mapping in mappings
     ]

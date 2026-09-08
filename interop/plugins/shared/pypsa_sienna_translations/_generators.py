@@ -97,7 +97,9 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
     )
     return table.with_columns(
-        pl.when(pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE))
+        pl.when(
+            pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE) & (pl.col(PyPSAGeneratorCol.P_NOM_OPT) > 0)
+        )
         .then(pl.col(PyPSAGeneratorCol.P_NOM_OPT))
         .otherwise(pl.col(PyPSAGeneratorCol.P_NOM))
         .alias(_EFFECTIVE_P_NOM)
@@ -360,7 +362,7 @@ GENERATOR_BASE_POWER = _direct(
     dest_col=T.BASE_POWER,
     expr=pl.col(_EFFECTIVE_P_NOM),
     unit=UNIT_MW,
-    derivation="p_nom_opt when p_nom_extendable else p_nom",
+    derivation="p_nom_opt where an extendable component has one, else p_nom",
 )
 
 GENERATOR_ACTIVE_POWER = _direct(
@@ -406,6 +408,7 @@ GENERATOR_APL = Translation(
                     attribute=(
                         PyPSAGeneratorCol.P_NOM_OPT
                         if old[PyPSAGeneratorCol.P_NOM_EXTENDABLE]
+                        and old[PyPSAGeneratorCol.P_NOM_OPT] > 0
                         else PyPSAGeneratorCol.P_NOM
                     ),
                     value=old[_EFFECTIVE_P_NOM],

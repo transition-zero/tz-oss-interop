@@ -95,7 +95,10 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
     )
     return table.with_columns(
-        pl.when(pl.col(PyPSAStorageUnitCol.P_NOM_EXTENDABLE))
+        pl.when(
+            pl.col(PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
+            & (pl.col(PyPSAStorageUnitCol.P_NOM_OPT) > 0)
+        )
         .then(pl.col(PyPSAStorageUnitCol.P_NOM_OPT))
         .otherwise(pl.col(PyPSAStorageUnitCol.P_NOM))
         .alias(_EFFECTIVE_P_NOM)
@@ -316,7 +319,7 @@ STORAGE_BASE_POWER = _direct(
     source_col=PyPSAStorageUnitCol.P_NOM,
     dest_col=S.BASE_POWER,
     expr=pl.col(_EFFECTIVE_P_NOM),
-    derivation="p_nom_opt when p_nom_extendable else p_nom",
+    derivation="p_nom_opt where an extendable component has one, else p_nom",
 )
 
 STORAGE_COST = Translation(

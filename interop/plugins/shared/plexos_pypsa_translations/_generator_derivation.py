@@ -13,23 +13,32 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
 
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.plexos_constants import (
+    PlexosClass,
     PlexosObjectCol,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    CandidateSource,
+    ExpansionDecisions,
+    RatedCapacity,
+    derive_expansion,
+)
 from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import Lookups
-from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_P_MIN_PU,
     DEFAULT_SHUT_DOWN_COST,
     DEFAULT_UNITS,
     DEFAULT_UP_TIME_BEFORE,
+    DIRECT_DERIVATION,
     FULL_AVAILABILITY,
     MAX_RAMP_LIMIT_PU,
     NEGLIGIBLE_P_MIN_PU,
     NOTHING_TO_BUILD,
     PERCENT,
 )
+from interop.plugins.shared.plexos_pypsa_translations.decisions import Decision, SourceValue
 
 
 @dataclass(frozen=True)
@@ -78,6 +87,9 @@ _HEAT_RATE_PROPERTIES = (PlexosProperty.HEAT_RATE_INCR, PlexosProperty.HEAT_RATE
 # percentage; the other two are MW.
 _MIN_STABLE_MEGAWATT_PROPERTIES = (PlexosProperty.MIN_STABLE_LEVEL, PlexosProperty.MIN_PUMP_LOAD)
 
+P_NOM_DERIVATION = "Max Capacity x Units"
+P_NOM_RATING_DERIVATION = "Rating above Max Capacity x Units, so the Rating is the capacity"
+
 
 @dataclass(frozen=True)
 class SourceGenerator:
@@ -92,13 +104,10 @@ class SourceGenerator:
 
     @property
     def max_units_built(self) -> float:
-        """How many units the model allows to be built, which is 0 for a fixed generator."""
         return _value(self.props, PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD)
 
     @property
     def is_candidate(self) -> bool:
-        """Whether the model allows this generator to be built, which is what Max Units
-        Built decides. A generator that is only a candidate states no Units at all."""
         return self.max_units_built > NOTHING_TO_BUILD
 
     @property
@@ -166,49 +175,34 @@ def _rated_capacity(name: str, props: dict[str, float], lookups: Lookups) -> flo
     return lookups.profile_peaks[PlexosProperty.RATING].get(name, static)
 
 
-@dataclass(frozen=True)
-class Expansion:
-    """What a PLEXOS object may build, and what building it costs.
-
-    Every field is null for an object the model does not allow to be built. PyPSA works out
-    what a year of new capacity costs from the overnight cost, the discount rate and the
-    lifetime together, so nothing here assembles that number itself.
-    """
-
-    max_units_built: float | None = None
-    unit_size: float | None = None
-    p_nom_min: float | None = None
-    p_nom_max: float | None = None
-    overnight_cost: float | None = None
-    wacc: float | None = None
-    discount_rate: float | None = None
-    economic_life: float | None = None
-    fom_cost: float | None = None
-    technical_life: float | None = None
-
-    @property
-    def is_candidate(self) -> bool:
-        return self.max_units_built is not None
-
-
-def derive_expansion(source: SourceGenerator) -> Expansion:
-    """What one candidate may build; every field is null for a generator that may not."""
-    if not source.is_candidate:
-        return Expansion()
-    wacc = _optional(source.props, PlexosProperty.WACC)
-    return Expansion(
-        max_units_built=source.max_units_built,
-        unit_size=source.max_capacity,
-        # A generator already running cannot be un-built, so what it has is its own floor.
-        p_nom_min=source.existing,
-        p_nom_max=source.existing + source.buildable,
-        overnight_cost=_optional(source.props, PlexosProperty.BUILD_COST),
-        wacc=wacc,
-        discount_rate=as_rate(wacc, source.stated_units.get(PlexosProperty.WACC)),
-        economic_life=_optional(source.props, PlexosProperty.ECONOMIC_LIFE),
-        fom_cost=_optional(source.props, PlexosProperty.FOM_CHARGE),
-        technical_life=_optional(source.props, PlexosProperty.TECHNICAL_LIFE),
+def read_candidate(source: SourceGenerator) -> CandidateSource:
+    """One staged Generator as the shared expansion rule reads it."""
+    capacity = SourceValue(
+        PlexosClass.GENERATOR,
+        source.name,
+        PlexosProperty.MAX_CAPACITY,
+        source.max_capacity,
+        UNIT_MW,
     )
+    counted = SourceValue(PlexosClass.GENERATOR, source.name, PlexosProperty.UNITS, source.units)
+    return CandidateSource(
+        PlexosClass.GENERATOR,
+        source.name,
+        source.props,
+        source.stated_units,
+        RatedCapacity(
+            existing=_existing(source, capacity, counted),
+            unit_size=Decision.derived(source.max_capacity, [capacity], DIRECT_DERIVATION),
+        ),
+    )
+
+
+def _existing(source: SourceGenerator, capacity: SourceValue, counted: SourceValue) -> Decision:
+    rating = source.rating_as_capacity
+    if rating is None:
+        return Decision.derived(source.nameplate, [capacity, counted], P_NOM_DERIVATION)
+    stated = SourceValue(PlexosClass.GENERATOR, source.name, PlexosProperty.RATING, rating, UNIT_MW)
+    return Decision.derived(rating, [stated, capacity, counted], P_NOM_RATING_DERIVATION)
 
 
 @dataclass(frozen=True)
@@ -227,16 +221,15 @@ class GeneratorMapping:
     carrier: str
     fuel: FuelUse | None
     discarded_fuels: tuple[str, ...]
-    max_capacity: float
     units: float
     p_nom: float
-    rating_as_capacity: float | None
     minimum: MinimumGeneration
     availability: Availability
     cost: Cost
     efficiency: float | None
     unit_commitment: UnitCommitment | None
-    expansion: Expansion
+    candidate: CandidateSource
+    expansion: ExpansionDecisions
 
     @property
     def is_committable(self) -> bool:
@@ -256,6 +249,7 @@ def has_infeasible_dispatch_range(mapping: GeneratorMapping) -> bool:
 
 
 def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> GeneratorMapping:
+    candidate = read_candidate(source)
     fuels = lookups.gen_fuels.get(source.name, [])
     fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
@@ -269,10 +263,8 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         carrier=_classify(fuel, source),
         fuel=fuel,
         discarded_fuels=tuple(fuels[1:]),
-        max_capacity=source.max_capacity,
         units=source.units,
         p_nom=source.p_nom,
-        rating_as_capacity=source.rating_as_capacity,
         minimum=minimum,
         availability=availability,
         cost=_assemble_cost(source.props, fuel),
@@ -280,7 +272,8 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         unit_commitment=_derive_unit_commitment(source, _start_fuel(source, fuel, lookups), lookups)
         if _commits(fuel, minimum)
         else None,
-        expansion=derive_expansion(source),
+        candidate=candidate,
+        expansion=derive_expansion(candidate),
     )
 
 

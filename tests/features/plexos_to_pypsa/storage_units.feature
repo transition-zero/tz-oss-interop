@@ -514,6 +514,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And battery "new_bat" has property "Units" 0
     And battery "new_bat" has property "Max Units Built" 6
     And battery "new_bat" has property "Build Cost" 800
+    And battery "new_bat" has property "WACC" 0.07
     And battery "new_bat" has property "Economic Life" 20
     And battery "new_bat" has property "Technical Life" 15
     And the model is saved as "inputs/candidate_battery.xml"
@@ -523,6 +524,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "overnight_cost" is 800000
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "lifetime" is 20
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "discount_rate" is 0.07
     And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "unit_size_mw" set to 50.0
     And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "technical_life_years" set to 15.0
 
@@ -535,3 +537,37 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/fixed_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "old_bat" is not extendable
     And the file "decisions.md" contains "the object states no Max Units Built, so its capacity is fixed"
+
+  Scenario: a pumped-storage turbine that may build more keeps the units it runs as its floor
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_p" in region "East"
+    And the model contains pumped storage "phs_grow" on node "node_p" with max_capacity 100 pump_efficiency 64 head "grow_head" tail "grow_tail" max_volume 3000 initial_volume 1500
+    And generator "phs_grow" has property "Units" 2
+    And generator "phs_grow" has property "Max Units Built" 1
+    And generator "phs_grow" has property "Build Cost" 1500000
+    And generator "phs_grow" has property "WACC" 0.07
+    And the model is saved as "inputs/growing_phs.xml"
+    When I run translate against "inputs/growing_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_grow" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom" is 200
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom_min" is 200
+    # One more unit of 100 MW, not one more of everything the two units come to.
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom_max" is 300
+
+  Scenario: a pumped-storage turbine the model has yet to build becomes a candidate
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_n" in region "East"
+    And the model contains pumped storage "phs_new" on node "node_n" with max_capacity 100 pump_efficiency 64 head "new_head" tail "new_tail" max_volume 3000 initial_volume 1500
+    And generator "phs_new" has property "Units" 0
+    And generator "phs_new" has property "Max Units Built" 3
+    And generator "phs_new" has property "Build Cost" 1500000
+    And generator "phs_new" has property "WACC" 0.07
+    And the model is saved as "inputs/new_phs.xml"
+    When I run translate against "inputs/new_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_new" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_min" is 0
+    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_max" is 300
+    # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
+    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom" is 300
