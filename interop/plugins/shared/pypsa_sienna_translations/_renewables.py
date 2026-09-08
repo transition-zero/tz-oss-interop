@@ -89,7 +89,9 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False)],
     )
     return table.with_columns(
-        pl.when(pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE))
+        pl.when(
+            pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE) & (pl.col(PyPSAGeneratorCol.P_NOM_OPT) > 0)
+        )
         .then(pl.col(PyPSAGeneratorCol.P_NOM_OPT))
         .otherwise(pl.col(PyPSAGeneratorCol.P_NOM))
         .alias(_EFFECTIVE_P_NOM)
@@ -263,7 +265,7 @@ def _renewable_translations(
             dest_col=R.BASE_POWER,
             expr=pl.col(_EFFECTIVE_P_NOM),
             unit=UNIT_MW,
-            derivation="p_nom_opt when p_nom_extendable else p_nom",
+            derivation="p_nom_opt where an extendable component has one, else p_nom",
         ),
         direct(
             source_col=PyPSAGeneratorCol.P_NOM,

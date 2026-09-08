@@ -22,6 +22,10 @@ from interop.plugins.shared.plexos_constants import (
     PlexosCollection,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    RatedCapacity,
+    derive_expansion,
+)
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
     CHARGE_NOTE,
@@ -38,7 +42,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     StorageLookups,
     StorageUnitMapping,
     derive_bus,
-    derive_expansion,
     derive_max_hours,
     derive_round_trip_efficiency,
     derive_state_of_charge_initial,
@@ -49,6 +52,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     DEFAULT_UNITS,
+    DIRECT_DERIVATION,
     HYDRO_CYCLIC,
     PUMPED_STORAGE_CYCLIC,
     STORAGE_FULL_CHARGE_PU,
@@ -193,27 +197,24 @@ def _classify_turbine(
     return None
 
 
-def _generator_p_nom(staged: StagedObject) -> Decision:
+def _turbine_rating(staged: StagedObject) -> RatedCapacity:
+    """A PLEXOS Generator states the power of one of its units as its Max Capacity."""
     max_capacity = staged.properties[PlexosProperty.MAX_CAPACITY]
     stated_units = staged.properties.get(PlexosProperty.UNITS)
     units = DEFAULT_UNITS if stated_units is None else stated_units
-    return Decision.derived(
-        max_capacity * units,
-        [
-            SourceValue(
-                PlexosClass.GENERATOR,
-                staged.name,
-                PlexosProperty.MAX_CAPACITY,
-                max_capacity,
-                UNIT_MW,
-            ),
-            SourceValue(PlexosClass.GENERATOR, staged.name, PlexosProperty.UNITS, units),
-        ],
-        _P_NOM_FROM_UNITS_DERIVATION,
+    capacity = SourceValue(
+        PlexosClass.GENERATOR, staged.name, PlexosProperty.MAX_CAPACITY, max_capacity, UNIT_MW
+    )
+    counted = SourceValue(PlexosClass.GENERATOR, staged.name, PlexosProperty.UNITS, units)
+    return RatedCapacity(
+        existing=Decision.derived(
+            max_capacity * units, [capacity, counted], _P_NOM_FROM_UNITS_DERIVATION
+        ),
+        unit_size=Decision.derived(max_capacity, [capacity], DIRECT_DERIVATION),
     )
 
 
-_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY, _generator_p_nom)
+_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY, _turbine_rating)
 
 
 def _derive_turbine(
@@ -225,7 +226,7 @@ def _derive_turbine(
         rated.p_nom.value,
         _VOLUME_NOT_ENERGY_NOTE if unreadable else MAX_HOURS_NOTE,
     )
-    expansion = derive_expansion(PlexosClass.GENERATOR, rated)
+    expansion = derive_expansion(rated.candidate)
     return StorageUnitMapping(
         name=rated.name,
         bus=derive_bus(PlexosClass.GENERATOR, rated.name, rated.node),
@@ -241,16 +242,8 @@ def _derive_turbine(
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),
-        p_nom_extendable=expansion.p_nom_extendable,
-        p_nom_min=expansion.p_nom_min,
-        p_nom_max=expansion.p_nom_max,
-        overnight_cost=expansion.overnight_cost,
-        discount_rate=expansion.discount_rate,
-        lifetime=expansion.lifetime,
-        fom_cost=expansion.fom_cost,
+        expansion=expansion,
         inflow_storage=_inflow_storage(head),
-        unit_size=expansion.unit_size,
-        technical_life=expansion.technical_life,
     )
 
 

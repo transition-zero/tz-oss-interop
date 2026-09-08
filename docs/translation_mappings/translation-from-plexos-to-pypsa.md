@@ -271,8 +271,8 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `shut_down_cost` | $ | `0.0` | `default` |
 | `up_time_before` | snapshots | `0` | `default` |
 | `p_nom_extendable` | | `True` where `Max Units Built` is above zero. If not, `False`. | `derived` / `default` |
-| `p_nom_min` | MW | `Max Capacity × Units`, for a candidate only | `derived` |
-| `p_nom_max` | MW | `Max Capacity × (Units + Max Units Built)`, for a candidate only | `derived` |
+| `p_nom_min` | MW | The capacity the generator already has, for a candidate only | `derived` |
+| `p_nom_max` | MW | That capacity plus `Max Capacity × Max Units Built`, for a candidate only | `derived` |
 | `overnight_cost` | $/MW | `Build Cost`, for a candidate only | `direct` |
 | `discount_rate` | | `WACC`, for a candidate only | `derived` |
 | `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
@@ -288,6 +288,7 @@ component:
 | `Max Capacity` comes from a data file | There is no single `p_nom`. Thus the translator cannot set the size of the generator, and it cannot calculate the availability per unit. |
 | `p_nom` is 0 | The generator can never dispatch. |
 | The generator is a candidate and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
+| The generator is a candidate and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -710,7 +711,7 @@ PLEXOS property each one comes from:
 | --- | --- | --- |
 | `p_nom_extendable` | | `Max Units Built` above zero |
 | `p_nom_min` | MW | The capacity the object already has, which a build cannot take away |
-| `p_nom_max` | MW | That capacity plus `Max Units Built` units of it |
+| `p_nom_max` | MW | That capacity plus `Max Units Built` units, each one unit's rated power |
 | `overnight_cost` | $/MW | `Build Cost` |
 | `discount_rate` | | `WACC`, read as a fraction where the model states a percentage |
 | `lifetime` | yr | `Economic Life` |
@@ -732,9 +733,14 @@ component whose capacity is fixed, so this does not bind the dispatch. It is wha
 per-unit field on the component is read against — `p_min_pu`, a ramp limit, an availability
 profile stated in MW — and against nothing each of those would come out at zero.
 
-A candidate that states no `Build Cost` is left out. Nothing prices building it, so an
-expansion would take it for free. The translator records a `COMPONENT_SKIPPED` event naming
-the object, and warns once naming a few of them.
+The rated power of one unit is the `Max Capacity` of a `Generator` or a pumped-storage
+turbine, and the `Max Power` of a `Battery`. An object that states `Units` above one already
+holds that many, so a build adds units to what it has rather than multiplying it.
+
+A candidate that states no `Build Cost`, or no `WACC`, is left out. Without a build cost
+nothing prices building it, so an expansion would take it for free; without a discount rate
+PyPSA cannot annuitise the build cost, and refuses the network. The translator records a
+`COMPONENT_SKIPPED` event naming the object, and warns once naming a few of them.
 
 ### Which entry applies when
 

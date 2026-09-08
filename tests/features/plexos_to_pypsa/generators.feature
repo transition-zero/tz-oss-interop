@@ -519,13 +519,13 @@ Feature: Translate PLEXOS generators into a PyPSA network
     # The unit size and the technical life have no PyPSA column, so they travel beside it.
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "unit_size_mw" set to 100.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | Max Units Built above zero is what makes a generator a candidate |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 $/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 $/MW | direct |"
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
 
   Scenario: a plant that may also expand keeps the capacity it has as its floor
     Given a Plexos model
-    And the model contains generator "CoalUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1, Build Cost=2000000"
+    And the model contains generator "CoalUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1, Build Cost=2000000, WACC=0.07"
     And the model is saved as "inputs/expanding_plant.xml"
     When I run translate against "inputs/expanding_plant.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "CoalUnit" is extendable
@@ -536,13 +536,18 @@ Feature: Translate PLEXOS generators into a PyPSA network
   Scenario: a candidate that prices building nothing is left out and named
     Given a Plexos model
     And the model contains generator "Unpriced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4"
-    And the model contains generator "Priced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000"
+    And the model contains generator "Undiscounted_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000"
+    And the model contains generator "Priced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07"
     And the model is saved as "inputs/unpriced_candidate.xml"
     When I run translate against "inputs/unpriced_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "Unpriced_REZ"
+    # PyPSA annuitises an overnight cost with the discount rate, and refuses a network stating one without the other.
+    And the PyPSA network "outputs/network.nc" has no generator "Undiscounted_REZ"
     And the PyPSA network "outputs/network.nc" generator "Priced_REZ" is extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
+    And the file "decisions.md" contains "a candidate with no WACC gives PyPSA no discount rate to annuitise its Build Cost over"
     And the log contains "1 candidate generator(s) state no Build Cost, so each is left out"
+    And the log contains "1 candidate generator(s) state no WACC, so each is left out"
 
   Scenario: a generator the model cannot build states nothing about expansion
     Given a Plexos model
@@ -552,4 +557,4 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA network "outputs/network.nc" generator "FixedPlant" is not extendable
     And the PyPSA generator "FixedPlant" in "outputs/network.nc" has no "overnight_cost"
     And the PyPSA generator "FixedPlant" in "outputs/network.nc" has no "discount_rate"
-    And the file "decisions.md" contains "the generator states no Max Units Built, so its capacity is fixed"
+    And the file "decisions.md" contains "the object states no Max Units Built, so its capacity is fixed"

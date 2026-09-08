@@ -15,13 +15,10 @@ from math import sqrt
 
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
-    UNIT_DOLLARS_PER_MW,
-    UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MW,
     UNIT_MWH,
-    UNIT_YEARS,
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
@@ -30,10 +27,16 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
     PlexosResolvedTable,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    CandidateSource,
+    ExpansionDecisions,
+    RatedCapacity,
+    derive_p_nom,
+    find_unpriced_build,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
     ObjectUnits,
-    as_rate,
     collapse_properties_by_object,
     collapse_units_by_object,
     read_file_backed_properties,
@@ -42,14 +45,12 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_STATE_OF_CHARGE_INITIAL,
     DEFAULT_STORAGE_MAX_HOURS,
-    DEFAULT_UNITS,
-    DIRECT_DERIVATION,
-    NOTHING_TO_BUILD,
     PERCENT,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     SourceValue,
+    holds,
     maps_to,
 )
 from interop.plugins.shared.plexos_units import conversion_factor
@@ -67,24 +68,6 @@ NO_RESERVOIR_INFLOW_NOTE = "this unit has no reservoir, so nothing flows into it
 MAX_HOURS_NOTE = "PLEXOS states no reservoir capacity; max_hours uses the PyPSA default"
 
 FULL_DISCHARGE_NOTE = "full rated power available for discharge"
-
-EXTENDABLE_NOTE = "the object states no Max Units Built, so its capacity is fixed"
-
-EXTENDABLE_DERIVATION = "Max Units Built above zero is what makes an object a candidate"
-
-# A storage path that reads no expansion writes null and says nothing about it.
-NOT_A_CANDIDATE = Decision.unreported(None)
-
-_P_NOM_MIN_DERIVATION = "the rated power the object already has, which a build cannot take away"
-_P_NOM_MAX_DERIVATION = "rated power x (Units + Max Units Built)"
-_DISCOUNT_RATE_DERIVATION = "WACC, read as a fraction where the model states a percentage"
-_UNIT_SIZE_DERIVATION = (
-    "PyPSA sizes a candidate by p_nom_max alone, so what one unit of it is travels beside it"
-)
-_TECHNICAL_LIFE_DERIVATION = (
-    "PyPSA's one lifetime holds the capital recovery period, so the technology lifetime "
-    "travels beside it"
-)
 
 EFFICIENCY_NOTE = "PLEXOS states no round-trip efficiency; storage is modelled lossless"
 
@@ -132,28 +115,9 @@ class StorageUnitMapping:
     )
     inflow: Decision = maps_to(PyPSAStorageUnitCol.INFLOW, unit=UNIT_MW)
     cyclic: Decision = maps_to(PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE)
-    p_nom_extendable: Decision = maps_to(PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
-    p_nom_min: Decision = maps_to(
-        PyPSAStorageUnitCol.P_NOM_MIN, unit=UNIT_MW, default=NOT_A_CANDIDATE
-    )
-    p_nom_max: Decision = maps_to(
-        PyPSAStorageUnitCol.P_NOM_MAX, unit=UNIT_MW, default=NOT_A_CANDIDATE
-    )
-    overnight_cost: Decision = maps_to(
-        PyPSAStorageUnitCol.OVERNIGHT_COST, unit=UNIT_DOLLARS_PER_MW, default=NOT_A_CANDIDATE
-    )
-    discount_rate: Decision = maps_to(PyPSAStorageUnitCol.DISCOUNT_RATE, default=NOT_A_CANDIDATE)
-    lifetime: Decision = maps_to(
-        PyPSAStorageUnitCol.LIFETIME, unit=UNIT_YEARS, default=NOT_A_CANDIDATE
-    )
-    fom_cost: Decision = maps_to(
-        PyPSAStorageUnitCol.FOM_COST, unit=UNIT_DOLLARS_PER_MW_YEAR, default=NOT_A_CANDIDATE
-    )
+    expansion: ExpansionDecisions = holds()
     # Units is a Battery-only reading; a units-out trace derates against it.
     units: float | None = None
-    # What the sidecar carries because the network file has no column for it.
-    unit_size: Decision | None = None
-    technical_life: Decision | None = None
     # The head Storage whose Natural Inflow this unit reads, where that inflow is power. An
     # inflow profile is keyed by the Storage's name, not by this unit's.
     inflow_storage: str | None = None
@@ -377,7 +341,7 @@ class RatedPower:
 
     plexos_class: PlexosClass
     capacity_property: PlexosProperty
-    derive: Callable[[StagedObject], Decision]
+    derive: Callable[[StagedObject], RatedCapacity]
 
 
 @dataclass(frozen=True)
@@ -389,6 +353,7 @@ class RatedObject:
     stated_units: dict[str, str | None]
     node: str
     p_nom: Decision
+    candidate: CandidateSource
 
 
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
@@ -399,10 +364,24 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
         return _skipped_without_capacity(rating, staged.name)
-    p_nom = rating.derive(staged)
+    unpriced = find_unpriced_build(staged.properties)
+    if unpriced is not None:
+        return skip_object(
+            rating.plexos_class, staged.name, unpriced.plexos_property, unpriced.note
+        )
+    candidate = CandidateSource(
+        rating.plexos_class,
+        staged.name,
+        staged.properties,
+        staged.stated_units,
+        rating.derive(staged),
+    )
+    p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
-    return RatedObject(staged.name, staged.properties, staged.stated_units, staged.node, p_nom)
+    return RatedObject(
+        staged.name, staged.properties, staged.stated_units, staged.node, p_nom, candidate
+    )
 
 
 def skip_object(
@@ -456,127 +435,6 @@ def derive_state_of_charge_initial(level: Decision | None, usable_mwh: float) ->
     if held == level.value:
         return level
     return Decision.derived(held, level.sources, level.explanation + _CLAMPED_DERIVATION)
-
-
-@dataclass(frozen=True)
-class StorageExpansion:
-    """What a candidate storage object may build, as the columns and the sidecar read it."""
-
-    p_nom_extendable: Decision
-    p_nom_min: Decision
-    p_nom_max: Decision
-    overnight_cost: Decision
-    discount_rate: Decision
-    lifetime: Decision
-    fom_cost: Decision
-    unit_size: Decision | None
-    technical_life: Decision | None
-
-
-def derive_expansion(plexos_class: PlexosClass, rated: RatedObject) -> StorageExpansion:
-    """What one storage object may build; a fixed object states nothing about any of it.
-
-    PyPSA works out what a year of new capacity costs from the overnight cost, the discount
-    rate and the lifetime together, so nothing here assembles that number itself.
-    """
-    props = rated.properties
-    max_units_built = props.get(PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD)
-    if max_units_built <= NOTHING_TO_BUILD:
-        return _fixed_capacity()
-    name = rated.name
-    units = props.get(PlexosProperty.UNITS, DEFAULT_UNITS)
-    rated_power = rated.p_nom.value
-    built = SourceValue(plexos_class, name, PlexosProperty.MAX_UNITS_BUILT, max_units_built)
-    wacc = props.get(PlexosProperty.WACC)
-    return StorageExpansion(
-        p_nom_extendable=Decision.derived(True, [built], EXTENDABLE_DERIVATION),
-        p_nom_min=Decision.derived(
-            rated_power if units else 0.0, [*rated.p_nom.sources], _P_NOM_MIN_DERIVATION
-        ),
-        p_nom_max=Decision.derived(
-            rated_power * (units + max_units_built),
-            [*rated.p_nom.sources, built],
-            _P_NOM_MAX_DERIVATION,
-        ),
-        overnight_cost=_from_property(
-            plexos_class,
-            name,
-            props.get(PlexosProperty.BUILD_COST),
-            PlexosProperty.BUILD_COST,
-            UNIT_DOLLARS_PER_MW,
-            DIRECT_DERIVATION,
-        ),
-        discount_rate=_discount_rate(plexos_class, name, wacc, rated.stated_units),
-        lifetime=_from_property(
-            plexos_class,
-            name,
-            props.get(PlexosProperty.ECONOMIC_LIFE),
-            PlexosProperty.ECONOMIC_LIFE,
-            UNIT_YEARS,
-            DIRECT_DERIVATION,
-        ),
-        fom_cost=_from_property(
-            plexos_class,
-            name,
-            props.get(PlexosProperty.FOM_CHARGE),
-            PlexosProperty.FOM_CHARGE,
-            UNIT_DOLLARS_PER_MW_YEAR,
-            DIRECT_DERIVATION,
-        ),
-        unit_size=Decision.derived(rated_power, [*rated.p_nom.sources], _UNIT_SIZE_DERIVATION),
-        technical_life=_from_property(
-            plexos_class,
-            name,
-            props.get(PlexosProperty.TECHNICAL_LIFE),
-            PlexosProperty.TECHNICAL_LIFE,
-            UNIT_YEARS,
-            _TECHNICAL_LIFE_DERIVATION,
-        ),
-    )
-
-
-def _fixed_capacity() -> StorageExpansion:
-    return StorageExpansion(
-        p_nom_extendable=Decision.default(False, EXTENDABLE_NOTE),  # noqa: FBT003
-        p_nom_min=NOT_A_CANDIDATE,
-        p_nom_max=NOT_A_CANDIDATE,
-        overnight_cost=NOT_A_CANDIDATE,
-        discount_rate=NOT_A_CANDIDATE,
-        lifetime=NOT_A_CANDIDATE,
-        fom_cost=NOT_A_CANDIDATE,
-        unit_size=None,
-        technical_life=None,
-    )
-
-
-def _discount_rate(
-    plexos_class: PlexosClass, name: str, wacc: float | None, stated_units: dict[str, str | None]
-) -> Decision:
-    rate = as_rate(wacc, stated_units.get(PlexosProperty.WACC))
-    if rate is None:
-        return NOT_A_CANDIDATE
-    source = SourceValue(plexos_class, name, PlexosProperty.WACC, wacc)
-    return Decision.derived(rate, [source], _DISCOUNT_RATE_DERIVATION)
-
-
-def _from_property(
-    plexos_class: PlexosClass,
-    name: str,
-    value: float | None,
-    plexos_property: str,
-    unit: str | None,
-    derivation: str,
-) -> Decision:
-    """One expansion value and the property it came from, unreported where none is stated."""
-    if value is None:
-        return NOT_A_CANDIDATE
-    source = SourceValue(plexos_class, name, plexos_property, value, unit)
-    return Decision.derived(value, [source], derivation)
-
-
-def sidecar_value(decision: Decision | None) -> float | None:
-    """What a sidecar record carries for a value only a candidate states."""
-    return None if decision is None or decision.value is None else float(decision.value)
 
 
 def derive_bus(plexos_class: PlexosClass, name: str, node: str) -> Decision:
