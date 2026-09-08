@@ -84,6 +84,7 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [
             (PyPSAGeneratorCol.P_NOM, 0.0),
             (PyPSAGeneratorCol.P_NOM_OPT, None),
+            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
@@ -95,6 +96,7 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
         PyPSAGeneratorCol.P_NOM_EXTENDABLE,
         PyPSAGeneratorCol.P_NOM_OPT,
         PyPSAGeneratorCol.P_NOM,
+        PyPSAGeneratorCol.P_NOM_MIN,
     )
 
 

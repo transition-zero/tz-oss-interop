@@ -101,6 +101,7 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [
             (PyPSAStorageUnitCol.P_NOM, 0.0),
             (PyPSAStorageUnitCol.P_NOM_OPT, None),
+            (PyPSAStorageUnitCol.P_NOM_MIN, 0.0),
             (PyPSAStorageUnitCol.P_MIN_PU, 0.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -113,6 +114,7 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
         PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
         PyPSAStorageUnitCol.P_NOM_OPT,
         PyPSAStorageUnitCol.P_NOM,
+        PyPSAStorageUnitCol.P_NOM_MIN,
     )
 
 

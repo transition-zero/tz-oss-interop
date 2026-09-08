@@ -29,7 +29,7 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
-    holds_solved_capacity,
+    choose_capacity_attribute,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
@@ -83,6 +83,7 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [
             (PyPSAGeneratorCol.P_NOM, 0.0),
             (PyPSAGeneratorCol.P_NOM_OPT, None),
+            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
@@ -104,6 +105,7 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         PyPSAGeneratorCol.P_NOM_EXTENDABLE,
         PyPSAGeneratorCol.P_NOM_OPT,
         PyPSAGeneratorCol.P_NOM,
+        PyPSAGeneratorCol.P_NOM_MIN,
     )
 
 
@@ -406,12 +408,12 @@ GENERATOR_APL = Translation(
                     framework=Framework.PYPSA,
                     component=PyPSAComponent.GENERATOR,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=(
-                        PyPSAGeneratorCol.P_NOM_OPT
-                        if holds_solved_capacity(
-                            old, PyPSAGeneratorCol.P_NOM_EXTENDABLE, PyPSAGeneratorCol.P_NOM_OPT
-                        )
-                        else PyPSAGeneratorCol.P_NOM
+                    attribute=choose_capacity_attribute(
+                        old,
+                        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
+                        PyPSAGeneratorCol.P_NOM_OPT,
+                        PyPSAGeneratorCol.P_NOM,
+                        PyPSAGeneratorCol.P_NOM_MIN,
                     ),
                     value=old[EFFECTIVE_P_NOM],
                     unit=UNIT_MW,
