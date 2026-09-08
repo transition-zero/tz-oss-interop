@@ -18,6 +18,7 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    DEFAULT_UNITS,
     DIRECT_DERIVATION,
     EXT_TECHNICAL_LIFE_FIELD,
     EXT_UNIT_SIZE_FIELD,
@@ -94,6 +95,17 @@ class CandidateSource:
     @property
     def is_candidate(self) -> bool:
         return self.max_units_built > NOTHING_TO_BUILD
+
+    @property
+    def rated_unit_count(self) -> float:
+        """How many units the nominal power stands for.
+
+        It is what the object runs, or what a candidate running none of them may build, which
+        is the same reading ``derive_p_nom`` takes.
+        """
+        if self.rated.existing.value:
+            return self.props.get(PlexosProperty.UNITS, DEFAULT_UNITS)
+        return self.max_units_built
 
     def name_units_built(self) -> SourceValue:
         return SourceValue(
@@ -201,11 +213,7 @@ _PRICES_A_BUILD = (
 def find_unpriced_build(
     plexos_class: PlexosClass, name: str, props: dict[str, float]
 ) -> SkippedComponent | None:
-    """The first property a candidate leaves out that stops PyPSA pricing its build.
-
-    Every candidate leaving out the same property is named in one warning rather than a
-    line each, because a model that omits one of these omits it wholesale.
-    """
+    """The first property a candidate leaves out that stops PyPSA pricing its build."""
     if props.get(PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD) <= NOTHING_TO_BUILD:
         return None
     unpriced = next((one for one in _PRICES_A_BUILD if one.plexos_property not in props), None)

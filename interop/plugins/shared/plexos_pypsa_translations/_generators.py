@@ -325,7 +325,7 @@ def _dated_capacity_rows(state: State, mappings: list[GeneratorMapping]) -> list
             attribute=PyPSAGeneratorCol.P_MAX_PU,
             source_owner_type=PlexosClass.GENERATOR,
             source_series_name=PlexosProperty.MAX_CAPACITY,
-            scaling_factor=mapping.units / mapping.p_nom,
+            scaling_factor=mapping.candidate.rated_unit_count / mapping.p_nom,
             timing=timing,
         )
         for mapping in mappings
