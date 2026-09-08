@@ -81,7 +81,7 @@ This document targets the SiennaSchemas **Operations** namespace (the dispatchab
 
 **Implication for this translation.** PyPSA's capacity-expansion fields (`p_nom_extendable`, `capital_cost`, `p_nom_min`/`p_nom_max`, `build_year`, `lifetime`) belong to **Investments**, which is a separate translation target (PyPSA expansion → SiennaSchemas Investments), not extra fields on an Operations component. It is **out of scope for v1**. For v1 we translate the **solved** fleet: take `p_nom_opt` (post-solve capacities) as fixed Operations capacity and drop the expansion parameters (or keep round-trip crumbs in the `ext` sidecar). A genuine expansion problem is the future Investments path.
 
-Throughout this document, **`effective_p_nom`** denotes `p_nom_opt` when `p_nom_extendable` is `True` and the network states a `p_nom_opt`, and `p_nom` otherwise. All capacity-derived fields — `base_power`, `active_power`, `active_power_limits`, `ramp_limits`, and the hydro energy budget scaling factor — use `effective_p_nom`. For a non-extendable component `effective_p_nom = p_nom`. A solve that builds none of an extendable component writes `p_nom_opt` 0, and that 0 is the capacity to translate: the plan rejected the build. Only a network no solve has touched leaves `p_nom_opt` out of the file altogether, and an extendable component there is a candidate rather than a plant: the generator, renewable, hydro and storage mappings leave it out and record it as skipped.
+Throughout this document, **`effective_p_nom`** denotes the capacity an operations model may dispatch: `p_nom_opt` where an extendable component states one, `p_nom_min` where it states a capacity a build cannot take away, and `p_nom` otherwise. All capacity-derived fields — `base_power`, `active_power`, `active_power_limits`, `ramp_limits`, and the hydro energy budget scaling factor — use `effective_p_nom`. For a non-extendable component `effective_p_nom = p_nom`. A solve that builds none of an extendable component writes `p_nom_opt` 0, and that 0 is the capacity to translate: the plan rejected the build. A network no solve has touched leaves `p_nom_opt` out of the file altogether, and an extendable component there is rated at the `p_nom_min` it already runs. An extendable component with neither a `p_nom_opt` nor a `p_nom_min` is a candidate rather than a plant: the generator, renewable, hydro and storage mappings leave it out and record it as skipped.
 
 **Why Operations and not Investments.** This is a deliberate scope choice tied to the deliverable, not a claim that Operations is the more natural fit:
 
@@ -263,7 +263,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted | PyPSA does not carry Q limits for most generators |
 | `ramp_limits` | `Union{Nothing,UpDown}` (MW/min) | `n.generators.ramp_limit_up`, `ramp_limit_down` | `effective_p_nom × ramp_limit_up ÷ (dt_h × 60)` | derived | PyPSA ramp is pu/snapshot → MW/min: divide by snapshot duration (hours) and by 60. If `NaN` → `nothing`. See snapshot note in cross-cutting section |
 | `operation_cost` | `ThermalGenerationCost` | `n.generators.marginal_cost`, `start_up_cost`, `shut_down_cost` | See cost pattern above | derived | `marginal_cost` ($/MWh) → `CostCurve(LinearCurve(marginal_cost))`. See cost notes below |
-| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived | See convention discussion above |
+| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived | See convention discussion above |
 | `time_limits` | `Union{Nothing,UpDown}` (hours) | `n.generators.min_up_time`, `min_down_time` | `min_up_time × dt_h` | derived | PyPSA counts snapshots; multiply by snapshot duration in hours. If both `0` → `nothing` |
 | `must_run` | `Bool` | — | `false` | defaulted | No PyPSA equivalent; could be inferred from `p_min_pu ≈ p_max_pu` for must-run units |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | from carrier mapping table | derived | Set per carrier: e.g. `CC` for CCGT, `ST` for coal/nuclear |
@@ -348,7 +348,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted | No scalar power factor in PyPSA generator schema |
 | `operation_cost` | `RenewableGenerationCost` | `n.generators.marginal_cost` | `CostCurve(LinearCurve(marginal_cost))` | derived | Usually `0.0` for wind/solar; non-zero for curtailment-penalised networks |
-| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived |  |
+| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
 | `dynamic_injector` | `Union{Nothing,DynamicInjection}` | — | `nothing` | defaulted |  |
 
 **Minimal valid JSON example (`RenewableDispatch`):**
@@ -416,7 +416,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `rating` | `Float64` (pu) | `n.generators.p_max_pu` | `p_max_pu` | derived | Typically `1.0` |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `PVe` | derived |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted |  |
-| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived |  |
+| `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
 | `dynamic_injector` | `Union{Nothing,DynamicInjection}` | — | `nothing` | defaulted |  |
 
 **Minimal valid JSON example (`RenewableNonDispatch`):**
@@ -465,7 +465,7 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
 | `rating` | `Float64` (pu) | `n.storage_units.p_max_pu` | `p_max_pu` | derived |  |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `HY` | derived |  |
 | `active_power_limits` | `MinMax` (MW) | `p_nom`, `p_min_pu`, `p_max_pu` | `(effective_p_nom×p_min_pu, effective_p_nom×p_max_pu)` | derived |  |
-| `base_power` | `Float64` (MVA) | `n.storage_units.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived |  |
+| `base_power` | `Float64` (MVA) | `n.storage_units.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
 | `operation_cost` | `HydroGenerationCost` | `n.storage_units.marginal_cost` | `CostCurve(LinearCurve(marginal_cost))` | derived | Water value if any; default `0.0` |
 
 **Minimal valid JSON example (`HydroDispatch`):**
@@ -539,7 +539,7 @@ The translator emits `HydroDispatch` from PyPSA `StorageUnit` rows with carrier 
 | `rating` | `Float64` (pu) | `p_max_pu` | `p_max_pu` | derived |  |
 | `active_power_limits` | `MinMax` (MW) | `p_nom`, `p_min_pu`, `p_max_pu` | `(effective_p_nom×p_min_pu, effective_p_nom×p_max_pu)` | derived |  |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` | — | `nothing` | defaulted |  |
-| `base_power` | `Float64` (MVA) | `p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived |  |
+| `base_power` | `Float64` (MVA) | `p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
 | `operation_cost` | `HydroGenerationCost` | `marginal_cost` | `CostCurve(LinearCurve(marginal_cost))` | derived |  |
 | `powerhouse_elevation` | `Float64` (m) | — | `0.0` | defaulted | Not in PyPSA; default to sea level |
 | `ramp_limits` | `Union{Nothing,UpDown}` (MW/min) | `ramp_limit_up`, `ramp_limit_down` | `effective_p_nom × ramp_limit_up ÷ (dt_h × 60)` | derived |  |
@@ -612,7 +612,7 @@ The translator emits each PHS unit as a single `EnergyReservoirStorage` componen
 | `efficiency` | `NamedTuple{(:in, :out)}` ([0, 1] each) | `efficiency_store`, `efficiency_dispatch` | `(in=efficiency_store, out=efficiency_dispatch)` | direct | Direct mapping from StorageUnit |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
 | `reactive_power_limits` | `Union{Nothing, MinMax}` | — | `nothing` | defaulted |  |
-| `base_power` | `Float64` (MVA) | `p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, else `p_nom`) | derived |  |
+| `base_power` | `Float64` (MVA) | `p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
 | `operation_cost` | `Union{StorageCost, MarketBidCost}` | `marginal_cost`, cyclic flag | `StorageCost(charge_variable_cost=0, discharge_variable_cost=marginal_cost, energy_shortage_cost=energy_surplus_cost=1e6 if cyclic else 0)` | derived | Discharge cost takes the PyPSA `marginal_cost`. Symmetric shortage / surplus penalty makes `storage_target` a hard constraint when cyclic |
 | `conversion_factor` | `Float64` | — | `1.0` | defaulted | No unit conversion between `storage_capacity` and energy variable |
 | `storage_target` | `Float64` (pu-hours of base_power) | `state_of_charge_initial`, `cyclic_state_of_charge` | `initial_storage_capacity_level * max_hours` if cyclic else `0.0` | derived | End-of-horizon energy target on the same internal scale as the energy variable (despite the schema docstring's "ratio" wording, `StorageDispatchWithReserves` reads it literally in `StateofChargeTargetConstraint`). Translator raises if `cyclic_state_of_charge` is mixed across PHS units, since the formulation attribute is per device-model |

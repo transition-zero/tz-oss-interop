@@ -38,7 +38,10 @@ PYPSA_TO_SIENNA = "pypsa-to-sienna"
 EFFECTIVE_P_NOM = "_effective_p_nom"
 STATES_BUILT_CAPACITY = "_states_built_capacity"
 
-EFFECTIVE_P_NOM_DERIVATION = "p_nom_opt where an extendable component has one, else p_nom"
+EFFECTIVE_P_NOM_DERIVATION = (
+    "p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a "
+    "build cannot take away, else p_nom"
+)
 
 
 def has_solved_capacity(extendable: str, opt: str) -> pl.Expr:
@@ -48,28 +51,52 @@ def has_solved_capacity(extendable: str, opt: str) -> pl.Expr:
     return pl.col(extendable) & pl.col(opt).is_not_null()
 
 
-def holds_solved_capacity(row: dict[str, Any], extendable: str, opt: str) -> bool:
-    """``has_solved_capacity`` for one row, so an event names the attribute the value came from."""
-    return bool(row[extendable]) and row[opt] is not None
+def has_capacity_floor(extendable: str, nom_min: str) -> pl.Expr:
+    """An extendable component's p_nom_min is capacity it already has, which a build cannot
+    take away, so an operations model may dispatch it whether or not a solve has run.
+    """
+    return pl.col(extendable) & (pl.col(nom_min) > 0)
 
 
-def effective_p_nom(extendable: str, opt: str, nom: str) -> pl.Expr:
-    return pl.when(has_solved_capacity(extendable, opt)).then(pl.col(opt)).otherwise(pl.col(nom))
+def choose_capacity_attribute(
+    row: dict[str, Any], extendable: str, opt: str, nom: str, nom_min: str
+) -> str:
+    """The PyPSA attribute ``effective_p_nom`` read for one row, so an event names it."""
+    if row[extendable]:
+        if row[opt] is not None:
+            return opt
+        if row[nom_min] > 0:
+            return nom_min
+    return nom
 
 
-def states_built_capacity(extendable: str, opt: str) -> pl.Expr:
+def effective_p_nom(extendable: str, opt: str, nom: str, nom_min: str) -> pl.Expr:
+    return (
+        pl.when(has_solved_capacity(extendable, opt))
+        .then(pl.col(opt))
+        .when(has_capacity_floor(extendable, nom_min))
+        .then(pl.col(nom_min))
+        .otherwise(pl.col(nom))
+    )
+
+
+def states_built_capacity(extendable: str, opt: str, nom_min: str) -> pl.Expr:
     """Whether the component has capacity an operations model may dispatch.
 
-    An extendable component no solve has sized states its capacity as a build the plan has
-    yet to decide, and PyPSA ignores the p_nom of an extendable component altogether.
+    A component that is not extendable is rated at its p_nom. An extendable one is rated at
+    the capacity a solve gave it, or at the p_nom_min a build cannot take away. An extendable
+    component with neither states its capacity as a build the plan has yet to decide, and
+    PyPSA ignores the p_nom of an extendable component altogether.
     """
-    return ~pl.col(extendable) | pl.col(opt).is_not_null()
+    return ~pl.col(extendable) | pl.col(opt).is_not_null() | (pl.col(nom_min) > 0)
 
 
-def with_effective_p_nom(table: pl.DataFrame, extendable: str, opt: str, nom: str) -> pl.DataFrame:
+def with_effective_p_nom(
+    table: pl.DataFrame, extendable: str, opt: str, nom: str, nom_min: str
+) -> pl.DataFrame:
     return table.with_columns(
-        effective_p_nom(extendable, opt, nom).alias(EFFECTIVE_P_NOM),
-        states_built_capacity(extendable, opt).alias(STATES_BUILT_CAPACITY),
+        effective_p_nom(extendable, opt, nom, nom_min).alias(EFFECTIVE_P_NOM),
+        states_built_capacity(extendable, opt, nom_min).alias(STATES_BUILT_CAPACITY),
     )
 
 
@@ -127,10 +154,10 @@ def carrier_scope_skips(naming: PyPSAComponentNaming) -> ScopeSkips:
     )
 
 
-UNBUILT_CANDIDATE_REASON = "are extendable and no solve has sized them"
+UNBUILT_CANDIDATE_REASON = "are extendable and state no capacity they already hold"
 UNBUILT_CANDIDATE_NOTE = (
-    "p_nom_extendable is true and the network states no p_nom_opt, so this is capacity the "
-    "plan may build rather than capacity an operations model may dispatch"
+    "p_nom_extendable is true, the network states no p_nom_opt and p_nom_min is 0, so this is "
+    "capacity the plan may build rather than capacity an operations model may dispatch"
 )
 
 

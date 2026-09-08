@@ -24,8 +24,8 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    choose_capacity_attribute,
     effective_p_nom,
-    holds_solved_capacity,
     pypsa_skip_report,
 )
 from interop.plugins.shared.sienna_constants import (
@@ -89,6 +89,7 @@ def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
     float_defaults: list[tuple[str, float | None]] = [
         (PyPSALinkCol.P_NOM, 0.0),
         (PyPSALinkCol.P_NOM_OPT, None),
+        (PyPSALinkCol.P_NOM_MIN, 0.0),
         (PyPSALinkCol.P_MIN_PU, 0.0),
         (PyPSALinkCol.P_MAX_PU, 1.0),
         (PyPSALinkCol.EFFICIENCY, 1.0),
@@ -109,6 +110,7 @@ def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [
             pl.col(PyPSALinkCol.P_NOM).fill_nan(0.0).fill_null(0.0),
             pl.col(PyPSALinkCol.P_NOM_OPT).fill_nan(None),
+            pl.col(PyPSALinkCol.P_NOM_MIN).fill_nan(0.0).fill_null(0.0),
             pl.col(PyPSALinkCol.P_MIN_PU).fill_nan(0.0).fill_null(0.0),
             pl.col(PyPSALinkCol.P_MAX_PU).fill_nan(1.0).fill_null(1.0),
             pl.col(PyPSALinkCol.EFFICIENCY).fill_nan(1.0).fill_null(1.0),
@@ -213,7 +215,10 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 # --- Limit / loss expressions ---
 
 _effective_p_nom = effective_p_nom(
-    PyPSALinkCol.P_NOM_EXTENDABLE, PyPSALinkCol.P_NOM_OPT, PyPSALinkCol.P_NOM
+    PyPSALinkCol.P_NOM_EXTENDABLE,
+    PyPSALinkCol.P_NOM_OPT,
+    PyPSALinkCol.P_NOM,
+    PyPSALinkCol.P_NOM_MIN,
 )
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
 _from_min = (
@@ -230,9 +235,14 @@ _to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
     """The PyPSA capacity attribute actually used for the power limits, and its value."""
-    if holds_solved_capacity(old, PyPSALinkCol.P_NOM_EXTENDABLE, PyPSALinkCol.P_NOM_OPT):
-        return PyPSALinkCol.P_NOM_OPT, old[PyPSALinkCol.P_NOM_OPT]
-    return PyPSALinkCol.P_NOM, old[PyPSALinkCol.P_NOM]
+    attribute = choose_capacity_attribute(
+        old,
+        PyPSALinkCol.P_NOM_EXTENDABLE,
+        PyPSALinkCol.P_NOM_OPT,
+        PyPSALinkCol.P_NOM,
+        PyPSALinkCol.P_NOM_MIN,
+    )
+    return attribute, old[attribute]
 
 
 # --- Translation constants ---
