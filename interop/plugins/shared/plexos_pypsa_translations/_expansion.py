@@ -90,8 +90,6 @@ class RatedCapacity:
 
 @dataclass(frozen=True)
 class CandidateSource:
-    """One staged PLEXOS object as the expansion rule reads it."""
-
     plexos_class: PlexosClass
     name: str
     props: dict[str, float]

@@ -23,7 +23,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    RatedCapacity,
     derive_expansion,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
@@ -50,8 +49,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
-    DEFAULT_UNITS,
-    DIRECT_DERIVATION,
     HYDRO_CYCLIC,
     PUMPED_STORAGE_CYCLIC,
     STORAGE_FULL_CHARGE_PU,
@@ -130,7 +127,6 @@ _MAX_VOLUME_DERIVATION = "head Storage.Max Volume"
 _NO_INFLOW_STATED_NOTE = "the head Storage states no Natural Inflow; the reservoir does not refill"
 _NO_VOM_NOTE = "the PLEXOS Generator states no VO&M Charge"
 _PUMPED_STORAGE_CYCLIC_NOTE = "a pumped-storage plant returns to its starting level"
-_P_NOM_FROM_UNITS_DERIVATION = "Max Capacity * Units"
 _SOC_FROM_VOLUME_DERIVATION = "head Storage.Initial Volume"
 _VOLUME_NOT_ENERGY_NOTE = (
     "the head Storage names a volume unit that is not megawatt-hours, so how much energy "
@@ -197,24 +193,7 @@ def _classify_turbine(
     return None
 
 
-def _turbine_rating(staged: StagedObject) -> RatedCapacity:
-    """A PLEXOS Generator states the power of one of its units as its Max Capacity."""
-    max_capacity = staged.properties[PlexosProperty.MAX_CAPACITY]
-    stated_units = staged.properties.get(PlexosProperty.UNITS)
-    units = DEFAULT_UNITS if stated_units is None else stated_units
-    capacity = SourceValue(
-        PlexosClass.GENERATOR, staged.name, PlexosProperty.MAX_CAPACITY, max_capacity, UNIT_MW
-    )
-    counted = SourceValue(PlexosClass.GENERATOR, staged.name, PlexosProperty.UNITS, units)
-    return RatedCapacity(
-        existing=Decision.derived(
-            max_capacity * units, [capacity, counted], _P_NOM_FROM_UNITS_DERIVATION
-        ),
-        unit_size=Decision.derived(max_capacity, [capacity], DIRECT_DERIVATION),
-    )
-
-
-_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY, _turbine_rating)
+_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY)
 
 
 def _derive_turbine(

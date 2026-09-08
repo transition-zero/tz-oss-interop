@@ -135,7 +135,6 @@ UNBUILT_CANDIDATE_NOTE = (
 
 
 def unbuilt_candidate_skip(naming: PyPSAComponentNaming) -> SkipRule:
-    """The drop for a candidate an operations system must not read as a built plant."""
     return SkipRule(
         keep=pl.col(STATES_BUILT_CAPACITY),
         report=pypsa_skip_report(
