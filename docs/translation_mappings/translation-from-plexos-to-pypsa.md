@@ -287,9 +287,9 @@ component:
 | The generator has no [`Units`](#which-entry-applies-when) at any time in the horizon, and no `Max Units Built` | The unit is retired. |
 | `Max Capacity` comes from a data file | There is no single `p_nom`. Thus the translator cannot set the size of the generator, and it cannot calculate the availability per unit. |
 | `p_nom` is 0 | The generator can never dispatch. |
-| The generator is a candidate and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
-| The generator is a candidate and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
-| The generator is a candidate and gives no `Economic Life` | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
+| The generator has no units yet and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
+| The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
+| The generator has no units yet and gives no `Economic Life` | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -357,7 +357,7 @@ has more than one fuel uses its primary fuel.
 | `max_hours` | h | The energy capacity divided by `p_nom` | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Charge Efficiency)` for each | `derived` |
-| `state_of_charge_initial` | MWh | `Initial SoC % × Capacity` | `derived` |
+| `state_of_charge_initial` | MWh | `Initial SoC % × p_nom × max_hours` | `derived` |
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE`, or if the model gives no `Initial SoC` | `derived` |
 | `marginal_cost` | $/MWh | `0.0` | `default` |
 | `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
@@ -743,12 +743,17 @@ The rated power of one unit is the `Max Capacity` of a `Generator` or a pumped-s
 turbine, and the `Max Power` of a `Battery`. An object that states `Units` above one already
 holds that many, so a build adds units to what it has rather than multiplying it.
 
-A candidate that states no `Build Cost`, no `WACC` or no `Economic Life` is left out.
+A candidate that states no `Build Cost`, no `WACC` or no `Economic Life` prices no build.
 Without a build cost nothing prices building it, so an expansion would take it for free.
 Without a discount rate PyPSA cannot annuitise the build cost, and refuses the network.
 Without an economic life PyPSA annuitises across its own default lifetime of infinity, which
-prices the build as a perpetuity. The translator records a `COMPONENT_SKIPPED` event naming
-the object, and warns once naming a few of them.
+prices the build as a perpetuity.
+
+What happens next depends on whether the object already runs. An object with units in
+service keeps the capacity it runs: the translator writes it with that capacity fixed, and
+records a `NOT_MAPPED` event naming the property the model left out. An object with no units
+yet is the build and nothing else, so nothing is left to write: the translator records a
+`COMPONENT_SKIPPED` event naming the object, and warns once naming a few of them.
 
 ### Which entry applies when
 

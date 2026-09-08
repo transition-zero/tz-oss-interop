@@ -29,7 +29,8 @@ from interop.plugins.shared.plexos_pypsa_translations._batteries import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     read_sidecar_value,
-    record_expansion_extensions,
+    record_expansion,
+    warn_about_dropped_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -227,7 +228,8 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
     reporter = ComponentReporter(recorder, PyPSAComponent.STORAGE_UNIT)
     for mapping in storage_units.mappings:
         reporter.record_mapping(mapping.name, mapping)
-        record_expansion_extensions(mapping.name, mapping.expansion, reporter)
+        record_expansion(mapping.name, mapping.expansion, reporter)
+    warn_about_dropped_builds(mapping.expansion for mapping in storage_units.mappings)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
     warn_about_skips(storage_units.skipped)

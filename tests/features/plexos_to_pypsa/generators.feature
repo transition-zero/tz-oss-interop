@@ -561,3 +561,15 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "FixedPlant" in "outputs/network.nc" has no "overnight_cost"
     And the PyPSA generator "FixedPlant" in "outputs/network.nc" has no "discount_rate"
     And the file "decisions.md" contains "the object states no Max Units Built, so its capacity is fixed"
+
+  Scenario: a plant that already runs keeps its capacity when its build is unpriced
+    Given a Plexos model
+    And the model contains generator "CoalUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1"
+    And the model is saved as "inputs/unpriced_plant.xml"
+    When I run translate against "inputs/unpriced_plant.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CoalUnit" in "outputs/network.nc" has "p_nom" equal to 200
+    And the PyPSA network "outputs/network.nc" generator "CoalUnit" is not extendable
+    And the PyPSA generator "CoalUnit" in "outputs/network.nc" has no "overnight_cost"
+    And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
+    And the file "decisions.md" contains "the model prices no build for this object, so it keeps the capacity it runs and that capacity is fixed"
+    And the log contains "1 Generator(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"

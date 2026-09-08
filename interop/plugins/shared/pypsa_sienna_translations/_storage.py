@@ -151,9 +151,9 @@ def _skip_without_energy(_series: pl.LazyFrame | None) -> SkipRule:
 
 # --- Reusable expressions ---
 
-# state_of_charge_initial / (effective_p_nom * max_hours), clamped to [0, 1].
-# Defaults to 0.0 when capacity is zero (e.g. unsolved extendable unit) to
-# avoid a division-by-zero that would clip to 1.0 (incorrectly "fully charged").
+# state_of_charge_initial / (effective_p_nom * max_hours), clamped to [0, 1]. A capacity of
+# zero, from a solve that built none of an extendable unit or from a p_nom of zero, gives 0.0
+# rather than a division by zero that would clip to 1.0 and read as fully charged.
 _initial_level = (
     pl.when(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0)
     .then(
