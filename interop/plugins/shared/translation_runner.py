@@ -112,11 +112,13 @@ def row_position_id_translation(
     dest_name_col: str,
     id_col: str,
     note: str,
+    start: int = 1,
 ) -> Translation:
-    """A TRANSLATOR_DEFAULT_APPLIED translation assigning a 1-based row-position integer id.
+    """A TRANSLATOR_DEFAULT_APPLIED translation assigning a row-position integer id.
 
     ``dest_name_col`` is the destination name column (computed in the same batch) used to label
-    the event.
+    the event. ``start`` is the id the first row takes, for a table that shares one counter
+    with the tables written beside it rather than numbering from one of its own.
     """
 
     def make_events(_old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
@@ -129,7 +131,7 @@ def row_position_id_translation(
         ]
 
     return Translation(
-        exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(id_col)],
+        exprs=[pl.int_range(start, start + pl.len(), dtype=pl.Int64).alias(id_col)],
         make_events=make_events,
     )
 

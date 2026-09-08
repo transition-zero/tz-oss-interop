@@ -553,6 +553,17 @@ class ExtensionReader:
             model, self._staged.get(kind, []), self._consumed.setdefault(kind, set())
         )
 
+    def mark_read(self, kind: ExtensionKind) -> None:
+        """Mark a kind's records as read by another step of the same pipeline.
+
+        A hop reports what none of its mappings asked for, and a pipeline may split its
+        mappings across more than one step. This is how the step that does not read a kind
+        says so, rather than reporting as dropped what the step beside it consumes.
+        """
+        self._consumed.setdefault(kind, set()).update(
+            record.name for record in self._staged.get(kind, [])
+        )
+
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
