@@ -100,9 +100,9 @@ class PlexosDatedPropertyCol(PlexosPropertyCol):
     """Columns of the resolved ``dated_properties`` table.
 
     The ``properties`` columns, plus the dates the value on the row applies between. Every
-    resolved row is here, whether or not the window being translated covers its band, so a
-    mapping reading a schedule sees the years the model states rather than one value.
-    ``date_to`` names a whole day, so the band runs to the end of it.
+    row of a property the model dates is here, whether or not the window being translated
+    covers its band, so a mapping reading a schedule sees the years the model states rather
+    than one value.
     """
 
     DATE_FROM = "date_from"

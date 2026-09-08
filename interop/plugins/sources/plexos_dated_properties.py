@@ -21,7 +21,13 @@ from interop.plugins.shared.plexos_constants import (
     PlexosMembershipCol,
     PlexosPropertyCol,
 )
-from interop.plugins.shared.plexos_dates import UNDATED, DateBand
+from interop.plugins.shared.plexos_dates import (
+    UNDATED,
+    DateBand,
+    band_edges,
+    latest_covering,
+    opens_at,
+)
 from interop.plugins.sources.plexos_horizon import Window
 from interop.plugins.sources.plexos_tables import Rows, RowsByTable
 
@@ -70,7 +76,7 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     in_force: Rows = []
     stepped: Rows = []
     for dated_rows in by_property.values():
-        steps = _steps_within(sorted(dated_rows, key=_band_order), window)
+        steps = _steps_within(sorted(dated_rows, key=opens_at), window)
         in_force.append(steps[0].row)
         if len(steps) > 1:
             stepped.extend({**step.row, StagedTimeSeriesCol.SNAPSHOT: step.at} for step in steps)
@@ -78,34 +84,39 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
 
 
 def dated_rows(resolved: list[DatedRow]) -> Rows:
-    """Every resolved property row with the dates it applies between, as the model states them.
+    """Every row of a property the model dates, beside the dates it applies between.
 
     ``apply_window`` reads one value per property for the window being translated, which
     loses the years the bands outside it name. A schedule stated as a series of bands is
-    read from these rows instead.
+    read from these rows instead. A property the model dates nowhere states the same value
+    for all time, which ``properties`` already carries.
     """
+    by_property: dict[tuple[Any, ...], list[DatedRow]] = {}
+    for dated in resolved:
+        by_property.setdefault(_property_name(dated.row), []).append(dated)
     return [
         {
             **dated.row,
             PlexosDatedPropertyCol.DATE_FROM: dated.dates.date_from,
             PlexosDatedPropertyCol.DATE_TO: dated.dates.date_to,
         }
-        for dated in resolved
+        for group in by_property.values()
+        if any(dated.dates != UNDATED for dated in group)
+        for dated in group
     ]
+
+
+def _property_name(row: dict[str, Any]) -> tuple[Any, ...]:
+    """What names one property across its bands: its membership and its property name."""
+    return (
+        *(row[column] for column in _MEMBERSHIP_NAME_COLUMNS),
+        row[PlexosPropertyCol.PROPERTY],
+    )
 
 
 def _property_identity(row: dict[str, Any]) -> tuple[Any, ...]:
     """What makes a property one property: its membership, its name, and its band."""
-    return (
-        *(row[column] for column in _MEMBERSHIP_NAME_COLUMNS),
-        row[PlexosPropertyCol.PROPERTY],
-        row[PlexosPropertyCol.BAND],
-    )
-
-
-def _band_order(dated: DatedRow) -> datetime:
-    """Undated values sort first, being in force before any dated band begins."""
-    return dated.dates.date_from or datetime.min
+    return (*_property_name(row), row[PlexosPropertyCol.BAND])
 
 
 def _steps_within(ordered: list[DatedRow], window: Window) -> list[_Step]:
@@ -118,29 +129,31 @@ def _steps_within(ordered: list[DatedRow], window: Window) -> list[_Step]:
     ]
 
 
-def _stated_for_no_date(ordered: list[DatedRow]) -> DatedRow | None:
-    return next((dated for dated in ordered if dated.dates == UNDATED), None)
+def _stated_for_no_date(ordered: list[DatedRow]) -> dict[str, Any] | None:
+    return next((dated.row for dated in ordered if dated.dates == UNDATED), None)
 
 
-def _value_at(ordered: list[DatedRow], outside: DatedRow | None, moment: datetime) -> float | None:
+def _value_at(
+    ordered: list[DatedRow], outside: dict[str, Any] | None, moment: datetime
+) -> float | None:
     """The latest band covering the moment, else the value stated for no date, else none.
 
     A property stated only for a period is not in effect outside one, and a property with
     no value in effect is a property the model is not applying: it reads as zero.
     """
-    covering = [dated for dated in ordered if dated.dates.covers(moment)]
-    stating = covering[-1] if covering else outside
+    stating = latest_covering(ordered, moment)
+    if stating is None:
+        stating = outside
     if stating is None:
         return _NOT_IN_EFFECT
-    value: float | None = stating.row[PlexosPropertyCol.VALUE]
+    value: float | None = stating[PlexosPropertyCol.VALUE]
     return value
 
 
 def _change_moments(ordered: list[DatedRow], window: Window) -> list[datetime]:
     """When the window opens, and every band edge inside it."""
     moments = {window.start}
-    edges = (edge for dated in ordered for edge in (dated.dates.date_from, dated.dates.ends))
-    moments.update(edge for edge in edges if edge is not None and window.start < edge < window.end)
+    moments.update(edge for edge in band_edges(ordered) if window.start < edge < window.end)
     return sorted(moments)
 
 

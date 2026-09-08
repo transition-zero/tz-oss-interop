@@ -17,14 +17,10 @@ PERCENT: float = 100.0
 DEFAULT_UNITS: float = 1.0
 """A generator with no ``Units`` property is a single unit."""
 
+# Each names a sidecar key in the audit trail; the network file itself has no such column.
 EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
-"""Names that sidecar key in the audit trail; the network file itself has no such column."""
-
 EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
-"""Names that sidecar key in the audit trail; the network file itself has no such column."""
-
 EXT_RETIREMENT_YEAR_FIELD: str = "extensions.retirement_year"
-"""Names that sidecar key in the audit trail; the network file itself has no such column."""
 
 # --- generators ---------------------------------------------------------------
 

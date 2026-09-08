@@ -10,8 +10,8 @@ Parses the ``<MasterDataSet>`` XML into its ``t_*`` tables, then stages:
   ``t_data`` value under the selected Model's Scenario overlays (highest Read
   Order wins, base value otherwise), with a ``data_file`` path where the value
   is file-backed;
-- ``topology/dated_properties.parquet``, the same resolved values before they are
-  narrowed to the window, each beside the dates it applies between;
+- ``topology/dated_properties.parquet``, every row of a property the model dates
+  before it is narrowed to the window, each beside the dates it applies between;
 - one ``source_time_series`` frame per (owner class, property) whose value comes
   from an external CSV, streamed in as ``(snapshot, component, sample, value)`` rows.
   ``sample`` is null except where the CSV carries one column per Monte Carlo
@@ -385,8 +385,8 @@ class _ResolvedDataset:
     ``properties`` holds one row per property, the value in force when the window opens.
     ``stepped_properties`` holds every value a property takes within the window, and only
     for the properties that take more than one, so a consumer can read the shape.
-    ``dated_properties`` holds every resolved row with the dates it applies between,
-    narrowed to no window at all.
+    ``dated_properties`` holds every row of a property the model dates, with the dates it
+    applies between, narrowed to no window at all.
     """
 
     objects_by_class: _RowsByClass

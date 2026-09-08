@@ -47,6 +47,7 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
     RETIREMENT_YEAR_COLUMN,
     derive_retirement_year,
+    read_year,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
@@ -149,22 +150,22 @@ def _carry_to_extensions(
     """Put what the network file cannot hold in the sidecar, starting with the PLEXOS
     category, since only one of it and the fuel could become the carrier.
     """
+    retirements = {
+        mapping.name: derive_retirement_year(PlexosClass.GENERATOR, mapping.name, mapping.lifespan)
+        for mapping in mappings
+    }
     for mapping in mappings:
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
         record_expansion(mapping.name, mapping.expansion, reporter)
-        reporter.record(
-            mapping.name,
-            RETIREMENT_YEAR_COLUMN,
-            derive_retirement_year(PlexosClass.GENERATOR, mapping.name, mapping.lifespan),
-        )
+        reporter.record(mapping.name, RETIREMENT_YEAR_COLUMN, retirements[mapping.name])
     records = [
         GeneratorExtension(
             name=mapping.name,
             category=mapping.category,
             unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
             technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
-            retirement_year=mapping.lifespan.retirement_year,
+            retirement_year=read_year(retirements[mapping.name]),
         )
         for mapping in mappings
     ]

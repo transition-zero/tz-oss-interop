@@ -253,15 +253,9 @@ class ConstraintLimit(BaseModel):
 
 
 class ConstraintExtension(ExtensionRecord):
-    """A weighted sum over named objects, held to one or more right-hand sides.
+    """A weighted sum over named objects, held to one or more right-hand sides."""
 
-    PLEXOS has the concept and PyPSA has none: a GlobalConstraint limits one carrier over
-    the whole horizon and cannot name a set of components. A constraint therefore travels
-    here rather than in the network, so a later hop into a framework that can express it
-    still has the limit.
-    """
-
-    sense: ConstraintSense
+    sense: ConstraintSense | None = None
     limits: list[ConstraintLimit] = []
     members: list[ConstraintMember] = []
     # PLEXOS Include in LT Plan: whether the expansion plan has to meet the constraint as

@@ -59,8 +59,8 @@ _CARRIED_NOTE = (
     "limit them"
 )
 _NOT_CARRIED_NOTE = (
-    "a Constraint holds a weighted sum over the objects it names to its right-hand side, "
-    "which PyPSA's GlobalConstraint cannot express, so the limit is not carried"
+    "this Constraint states no sense, or no right-hand side, so it holds no inequality to "
+    "carry to the extensions sidecar"
 )
 
 # PLEXOS states which way a Constraint binds as one integer.
@@ -210,11 +210,7 @@ def _read_plan_flag(stated: dict[str, float]) -> bool | None:
 
 
 def _carry(constraint: _Constraint) -> ConstraintExtension | None:
-    """The sidecar record, or None where the constraint states too little to hold anything to.
-
-    A limit needs both a sense and a right-hand side: without either there is no inequality
-    to state, whatever the objects it names.
-    """
+    """The sidecar record, or None where the constraint states too little to hold anything to."""
     if constraint.sense is None or not constraint.right_hand_sides:
         return None
     return ConstraintExtension(

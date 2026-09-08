@@ -82,7 +82,7 @@ Feature: PLEXOS Constraint objects travel in the extensions sidecar
     And the model is saved as "inputs/unbounded.xml"
     When I run translate against "inputs/unbounded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "decisions.md" contains "`plexos.Constraint.Unbounded`"
-    And the file "decisions.md" contains "a Constraint holds a weighted sum over the objects it names to its right-hand side, which PyPSA's GlobalConstraint cannot express, so the limit is not carried"
+    And the file "decisions.md" contains "this Constraint states no sense, or no right-hand side, so it holds no inequality to carry to the extensions sidecar"
     And the file "outputs/extensions.json" does not contain "Unbounded"
 
   Scenario: a Constraint stating no sense states no inequality, so it is left out
@@ -97,7 +97,7 @@ Feature: PLEXOS Constraint objects travel in the extensions sidecar
     And the model is saved as "inputs/senseless.xml"
     When I run translate against "inputs/senseless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "decisions.md" contains "`plexos.Constraint.Senseless.RHS Day` = 400.0"
-    And the file "decisions.md" contains "so the limit is not carried"
+    And the file "decisions.md" contains "this Constraint states no sense, or no right-hand side, so it holds no inequality to carry to the extensions sidecar"
     And the file "outputs/extensions.json" does not contain "Senseless"
 
   Scenario: a readable Constraint reaches the sidecar with its sense, its limit and its members

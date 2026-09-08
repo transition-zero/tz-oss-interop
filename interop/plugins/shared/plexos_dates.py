@@ -1,15 +1,10 @@
-"""When a dated PLEXOS value applies.
-
-PLEXOS stamps a ``t_data`` row with the dates it applies between. The source narrows those
-bands to the window being translated, and a mapping reading a schedule out of them -- the
-year a unit arrives, the year it goes -- reads the same bands as the model states them, so
-both sides share one reading of what a band covers.
-"""
+"""When a dated PLEXOS value applies."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
-from typing import NamedTuple
+from typing import NamedTuple, TypeVar
 
 
 class DateBand(NamedTuple):
@@ -30,3 +25,22 @@ class DateBand(NamedTuple):
 
 
 UNDATED = DateBand(None, None)
+
+T = TypeVar("T")
+
+
+def latest_covering(bands: Sequence[tuple[DateBand, T]], moment: datetime) -> T | None:
+    """What the last band covering the moment states, else None."""
+    covering = [value for band, value in bands if band.covers(moment)]
+    return covering[-1] if covering else None
+
+
+def band_edges(bands: Iterable[tuple[DateBand, object]]) -> list[datetime]:
+    """Every moment a band opens or closes, earliest first."""
+    moments = {edge for band, _ in bands for edge in (band.date_from, band.ends)}
+    return sorted(moment for moment in moments if moment is not None)
+
+
+def opens_at(band: tuple[DateBand, object]) -> datetime:
+    """A sort key putting an undated band first, since it stands before any dated one begins."""
+    return band[0].date_from or datetime.min
