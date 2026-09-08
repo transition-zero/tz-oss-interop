@@ -12,15 +12,19 @@ declaration rather than repeating the column list.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.framework_reporting import DestinationReporter
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import SourceField
+
+log = logging.getLogger(__name__)
 
 _MAPPED_COLUMNS = "mapped_columns"
 _NESTED_MAPPING = "nested_mapping"
@@ -54,6 +58,52 @@ class SourceValue:
     ) -> SourceValue:
         """A PyPSA value an earlier event derived, read back as the source of a later one."""
         return cls(component, name, attribute, value, unit, framework=Framework.PYPSA)
+
+
+class SkipGroup(NamedTuple):
+    """The words one warning speaks with for every skip that shares a reading."""
+
+    counted: str
+    """What stands where "Generator(s)" does, already plural."""
+
+    reason: str
+    """Completes "N <counted> <reason>, so each is left out"."""
+
+
+@dataclass(frozen=True)
+class SkippedComponent:
+    """A PLEXOS object the mapping deliberately did not translate, and why.
+
+    ``warn_with`` is set where one warning speaks for every object a reading left out, and
+    left unset where the object gets a line of its own.
+    """
+
+    source: SourceValue
+    note: str
+    warn_with: SkipGroup | None = None
+
+
+def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
+    """One line for each object that stands alone, and one line for each group.
+
+    A skip is recorded per component and warned about, so neither view alone hides it.
+    """
+    grouped: dict[SkipGroup, list[str]] = {}
+    for one in skipped:
+        if one.warn_with is None:
+            log.warning(
+                "plexos: dropping %s %r: %s", one.source.component, one.source.name, one.note
+            )
+        else:
+            grouped.setdefault(one.warn_with, []).append(one.source.name)
+    for group, names in sorted(grouped.items()):
+        log.warning(
+            "plexos: %d %s %s, so each is left out. Each one: %s",
+            len(names),
+            group.counted,
+            group.reason,
+            name_a_few(sorted(names)),
+        )
 
 
 class DecisionKind(Enum):

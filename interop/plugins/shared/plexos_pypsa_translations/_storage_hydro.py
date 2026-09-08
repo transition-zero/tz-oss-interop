@@ -37,7 +37,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
     RatedObject,
     RatedPower,
-    SkippedComponent,
     StagedObject,
     StorageLookups,
     StorageUnitMapping,
@@ -62,6 +61,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
 )
 from interop.plugins.shared.pypsa_constants import (

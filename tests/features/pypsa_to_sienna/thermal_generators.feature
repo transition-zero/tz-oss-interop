@@ -174,10 +174,22 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "coal_1" on "bus_1" carrier "coal" p_nom 500.0 p_nom_extendable True
+    And generator "coal_1" has p_nom_opt 500
     And the network is saved as "inputs/gen_extendable.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/gen_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "coal_1" having "p_nom_extendable" set to true
+
+  Scenario: an extendable generator no solve has sized is a candidate, so it is left out
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "planned_ccgt" on "bus_1" carrier "CCGT" p_nom 500.0 p_nom_extendable True
+    And the network is saved as "inputs/gen_candidate.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/gen_candidate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
+    And the log contains "1 Generator(s) are extendable and no solve has sized them, so each is left out"
+    And the file "decisions.md" contains "p_nom_extendable is true and the network states no p_nom_opt, so this is capacity the plan may build rather than capacity an operations model may dispatch"
 
   Scenario: generator without p_nom_extendable records the flag false in extensions
     Given a PyPSA network

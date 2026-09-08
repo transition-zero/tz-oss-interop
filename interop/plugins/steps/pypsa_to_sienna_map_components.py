@@ -66,6 +66,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     link_time_varying_owners,
     load_in_scope,
     load_is_interruptible,
+    unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -307,6 +308,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         carriers = self._carrier_mappings.get_carriers(mapping.sienna_component)
         table = mapping.fill_defaults(source)
         table = table.filter(pl.col(mapping.carrier_col).is_in(list(carriers)))
+        table = self._drop_unbuilt_candidates(table, mapping)
         series = self._source_time_series(state, mapping)
         if mapping.skip is not None:
             rule = mapping.skip(series)
@@ -317,6 +319,19 @@ class PypsaToSiennaMapComponents(TranslationStep):
             series=series,
             ts_info=ts_info,
         )
+
+    def _drop_unbuilt_candidates(
+        self, table: pl.DataFrame, mapping: ComponentMapping
+    ) -> pl.DataFrame:
+        """Leave out the candidates, which a Sienna operations system has no capacity for.
+
+        A component a solve has sized carries the capacity it built, and one whose capacity is
+        fixed carries what it has. Anything else is a build the plan has yet to decide, and
+        writing it here would give the operations system a plant nobody has built.
+        """
+        rule = unbuilt_candidate_skip(PYPSA_COMPONENT_NAMING[mapping.source_table])
+        kept, _ = filter_component(table, rule.keep, rule.report, self._recorder)
+        return kept
 
     def _add_derived_series(
         self, state: State, mapping: ComponentMapping, prepared: _PreparedSource

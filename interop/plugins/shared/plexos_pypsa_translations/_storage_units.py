@@ -30,7 +30,6 @@ from interop.plugins.shared.plexos_pypsa_translations._batteries import (
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     read_sidecar_value,
     record_expansion_extensions,
-    warn_unpriced_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
@@ -41,21 +40,21 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_hydro import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
-    SkippedComponent,
     StorageLookups,
     StorageUnitMapping,
     build_lookups,
     orphan_storage_skips,
     read_object_names,
-    warn_about_skipped,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
+    SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
@@ -231,11 +230,7 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
         record_expansion_extensions(mapping.name, mapping.expansion, reporter)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
-        if skipped.unpriced is None:
-            warn_about_skipped(skipped)
-    warn_unpriced_builds(
-        [skipped.unpriced for skipped in storage_units.skipped if skipped.unpriced is not None]
-    )
+    warn_about_skips(storage_units.skipped)
     for dropped in storage_units.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
 

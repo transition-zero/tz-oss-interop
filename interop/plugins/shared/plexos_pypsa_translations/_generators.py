@@ -23,11 +23,9 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    UnpricedCandidate,
     find_unpriced_build,
     read_sidecar_value,
     record_expansion_extensions,
-    warn_unpriced_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
     GeneratorDecisions,
@@ -56,8 +54,10 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
     Decision,
     MappedColumns,
+    SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     GENERATORS_DESTINATION_SCHEMA,
@@ -105,12 +105,14 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
     reporter = ComponentReporter(recorder, PyPSAComponent.GENERATOR)
     storage_turbines = storage_turbine_names(state)
     outcomes = [
-        one
+        _map_one(generator, lookups, reporter)
         for generator in generators.collect().iter_rows(named=True)
         if generator[PlexosObjectCol.NAME] not in storage_turbines
-        if (one := _map_one(generator, lookups, reporter)) is not None
     ]
-    warn_unpriced_builds([one for one in outcomes if isinstance(one, UnpricedCandidate)])
+    skipped = [one for one in outcomes if isinstance(one, SkippedComponent)]
+    for one in skipped:
+        reporter.record_skipped(one.source, one.note)
+    warn_about_skips(skipped)
     translated = [one for one in outcomes if isinstance(one, _TranslatedGenerator)]
     if not translated:
         return
@@ -165,56 +167,41 @@ def _category_decision(mapping: GeneratorMapping) -> Decision:
 
 def _map_one(
     generator: dict[str, Any], lookups: Lookups, reporter: ComponentReporter
-) -> _TranslatedGenerator | UnpricedCandidate | None:
+) -> _TranslatedGenerator | SkippedComponent:
     name = generator[PlexosObjectCol.NAME]
     node = lookups.gen_to_node.get(name)
     if node is None:
-        reporter.record_skipped(_source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE)
-        return None
+        return SkippedComponent(_source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE)
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
-        reporter.record_skipped(
+        return SkippedComponent(
             _source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW), _FILE_BACKED_NOTE
         )
-        return None
     source = read_source(generator, name, lookups)
     if source.units == 0.0 and not source.is_candidate:
-        reporter.record_skipped(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
-        return None
+        return SkippedComponent(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
     if source.p_nom <= 0.0:
-        reporter.record_skipped(
+        return SkippedComponent(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
-        return None
     unpriced = find_unpriced_build(PlexosClass.GENERATOR, name, source.props)
     if unpriced is not None:
-        reporter.record_skipped(unpriced.source, unpriced.note)
         return unpriced
     mapping = derive_generator(source, node, lookups)
     if has_infeasible_dispatch_range(mapping):
-        _report_infeasible_dispatch_range(mapping, reporter)
-        return None
+        return _infeasible_dispatch_range(mapping)
     decisions = decide_generator(mapping)
     record_generator(reporter, decisions)
     return _TranslatedGenerator(mapping, decisions)
 
 
-def _report_infeasible_dispatch_range(
-    mapping: GeneratorMapping, reporter: ComponentReporter
-) -> None:
+def _infeasible_dispatch_range(mapping: GeneratorMapping) -> SkippedComponent:
     p_min_pu = mapping.minimum.p_min_pu
     p_max_pu = mapping.availability.static_p_max_pu
-    reporter.record_skipped(
+    return SkippedComponent(
         _source(mapping.name, mapping.minimum.source_property, mapping.minimum.source_value),
         f"p_min_pu {p_min_pu} sits above p_max_pu {p_max_pu}, which PyPSA cannot dispatch, "
         "so the generator is dropped",
-    )
-    log.warning(
-        "plexos: dropping Generator %r: p_min_pu %s is above p_max_pu %s, which PyPSA "
-        "cannot dispatch",
-        mapping.name,
-        p_min_pu,
-        p_max_pu,
     )
 
 

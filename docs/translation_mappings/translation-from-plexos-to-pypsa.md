@@ -353,7 +353,7 @@ has more than one fuel uses its primary fuel.
 | `name` | | `Battery.name` | `direct` |
 | `bus` | | The `Node` of the battery | `direct` |
 | `carrier` | | `battery` | `default` |
-| `p_nom` | MW | `Max Power` | `direct` |
+| `p_nom` | MW | `Max Power × Units` | `derived` |
 | `max_hours` | h | The energy capacity divided by `p_nom` | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Charge Efficiency)` for each | `derived` |
@@ -375,7 +375,10 @@ SoC` are `dropped`, and the full energy capacity is available.
 
 A `Battery` or a turbine can have a rated power of zero. For example, `Units 0` puts a unit
 into storage. Such a unit cannot dispatch. The translator does not write it, and it makes a
-`COMPONENT_SKIPPED` event that gives the name of the unit.
+`COMPONENT_SKIPPED` event that gives the name of the unit. An object that states `Units 0`
+beside a `Max Units Built` is a candidate rather than a unit in storage: it takes the
+capacity it may build as its `p_nom`, and the translator writes it. Refer to
+[What a candidate is](#what-a-candidate-is).
 
 ## Pumped storage → `StorageUnit`
 
@@ -387,7 +390,7 @@ name of the turbine is the name of that `StorageUnit`.
 | `name` | | The `Generator.name` of the turbine | `direct` |
 | `bus` | | The `Node` of the turbine | `direct` |
 | `carrier` | | `PHS` | `default` |
-| `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity | `derived` |
+| `p_nom` | MW | `Max Capacity × Units` | `derived` |
 | `max_hours` | h | The `Max Volume` of the head reservoir divided by `p_nom`, if the model gives that volume in MWh | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Pump Efficiency)` for each | `derived` |

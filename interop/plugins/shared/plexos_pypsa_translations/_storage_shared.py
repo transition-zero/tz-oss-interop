@@ -8,7 +8,6 @@ recorded as skipped rather than written half-formed.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import sqrt
@@ -31,7 +30,6 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     CandidateSource,
     ExpansionDecisions,
     RatedCapacity,
-    UnpricedCandidate,
     derive_p_nom,
     find_unpriced_build,
 )
@@ -50,6 +48,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
     holds,
     maps_to,
@@ -61,8 +60,6 @@ from interop.plugins.shared.pypsa_constants import (
 from interop.plugins.shared.pypsa_time_series import (
     series_components,
 )
-
-log = logging.getLogger(__name__)
 
 NO_RESERVOIR_INFLOW_NOTE = "this unit has no reservoir, so nothing flows into it"
 
@@ -122,29 +119,6 @@ class StorageUnitMapping:
     # The head Storage whose Natural Inflow this unit reads, where that inflow is power. An
     # inflow profile is keyed by the Storage's name, not by this unit's.
     inflow_storage: str | None = None
-
-
-def warn_about_skipped(skipped: SkippedComponent) -> None:
-    """A skip is recorded per component, and warned about, so neither view alone hides it."""
-    log.warning(
-        "plexos: dropping %s %r: %s",
-        skipped.source.component,
-        skipped.source.name,
-        skipped.note,
-    )
-
-
-@dataclass(frozen=True)
-class SkippedComponent:
-    """A PLEXOS object the mapping deliberately did not translate, and why.
-
-    ``unpriced`` is set where the expansion rule left the object out, since that rule warns
-    about all of them together rather than one line each.
-    """
-
-    source: SourceValue
-    note: str
-    unpriced: UnpricedCandidate | None = None
 
 
 # Every storage object ends as one or the other: a unit to write, or a recorded reason not to.
@@ -371,7 +345,7 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         return _skipped_without_capacity(rating, staged.name)
     unpriced = find_unpriced_build(rating.plexos_class, staged.name, staged.properties)
     if unpriced is not None:
-        return SkippedComponent(unpriced.source, unpriced.note, unpriced)
+        return unpriced
     candidate = CandidateSource(
         rating.plexos_class,
         staged.name,

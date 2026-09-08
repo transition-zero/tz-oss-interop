@@ -20,7 +20,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    NOTHING_BUILT_DERIVATION,
     RatedCapacity,
     derive_expansion,
 )
@@ -34,7 +33,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
     RatedObject,
     RatedPower,
-    SkippedComponent,
     StagedObject,
     StorageLookups,
     StorageUnitMapping,
@@ -58,6 +56,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
 )
 from interop.plugins.shared.pypsa_constants import (
@@ -94,6 +93,7 @@ _BATTERY_NO_START_NOTE = (
 _BATTERY_RECYCLE_DERIVATION = "End Effects Method recycles the level"
 _CAPACITY_DERIVATION = "Capacity"
 _CAPACITY_FROM_DURATION_DERIVATION = "Duration * Max Power"
+_P_NOM_FROM_UNITS_DERIVATION = "Max Power * Units"
 _SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * energy capacity"
 _PER_MAX_POWER_DERIVATION = " / Max Power"
 
@@ -110,16 +110,17 @@ def map_battery(name: str, lookups: StorageLookups) -> MappedOrSkipped:
 def _battery_rating(staged: StagedObject) -> RatedCapacity:
     """A PLEXOS Battery states the power of one of its units as its Max Power."""
     max_power = staged.properties[PlexosProperty.MAX_POWER]
+    units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
     power = SourceValue(
         PlexosClass.BATTERY, staged.name, PlexosProperty.MAX_POWER, max_power, UNIT_MW
     )
-    unit_size = Decision.derived(max_power, [power], DIRECT_DERIVATION)
-    units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
-    if units:
-        return RatedCapacity(existing=unit_size, unit_size=unit_size)
     counted = SourceValue(PlexosClass.BATTERY, staged.name, PlexosProperty.UNITS, units)
-    nothing_built = Decision.derived(0.0, [power, counted], NOTHING_BUILT_DERIVATION)
-    return RatedCapacity(existing=nothing_built, unit_size=unit_size)
+    return RatedCapacity(
+        existing=Decision.derived(
+            max_power * units, [power, counted], _P_NOM_FROM_UNITS_DERIVATION
+        ),
+        unit_size=Decision.derived(max_power, [power], DIRECT_DERIVATION),
+    )
 
 
 _BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER, _battery_rating)

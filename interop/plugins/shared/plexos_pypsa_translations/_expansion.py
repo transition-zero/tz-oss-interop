@@ -7,8 +7,6 @@ has, and reads the destination decisions back.
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 
 from interop.plugins.shared.constants import (
@@ -29,17 +27,14 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
     Decision,
     MappedColumns,
+    SkipGroup,
+    SkippedComponent,
     SourceValue,
     maps_to,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
-from interop.plugins.shared.warning_text import name_a_few
-
-log = logging.getLogger(__name__)
 
 NOTHING_TO_REPORT = Decision.unreported(None)
-
-NOTHING_BUILT_DERIVATION = "Units is zero, so none of the rated power is built yet"
 
 P_NOM_CANDIDATE_DERIVATION = (
     "the object has no units yet, so its nominal power is the capacity it may build: "
@@ -203,49 +198,26 @@ _PRICES_A_BUILD = (
 )
 
 
-@dataclass(frozen=True)
-class UnpricedCandidate:
-    """One candidate left out, and the property it left out that priced its build."""
-
-    plexos_class: PlexosClass
-    name: str
-    unpriced: UnpricedBuild
-
-    @property
-    def source(self) -> SourceValue:
-        return SourceValue(
-            self.plexos_class, self.name, self.unpriced.plexos_property, None, self.unpriced.unit
-        )
-
-    @property
-    def note(self) -> str:
-        return self.unpriced.note
-
-
 def find_unpriced_build(
     plexos_class: PlexosClass, name: str, props: dict[str, float]
-) -> UnpricedCandidate | None:
-    """The first property a candidate leaves out that stops PyPSA pricing its build."""
+) -> SkippedComponent | None:
+    """The first property a candidate leaves out that stops PyPSA pricing its build.
+
+    Every candidate leaving out the same property is named in one warning rather than a
+    line each, because a model that omits one of these omits it wholesale.
+    """
     if props.get(PlexosProperty.MAX_UNITS_BUILT, NOTHING_TO_BUILD) <= NOTHING_TO_BUILD:
         return None
     unpriced = next((one for one in _PRICES_A_BUILD if one.plexos_property not in props), None)
-    return None if unpriced is None else UnpricedCandidate(plexos_class, name, unpriced)
-
-
-def warn_unpriced_builds(candidates: Sequence[UnpricedCandidate]) -> None:
-    """One warning per class and property a candidate left out, naming a few of the objects."""
-    by_property: dict[tuple[str, str], list[str]] = {}
-    for one in candidates:
-        key = (one.plexos_class, one.unpriced.plexos_property)
-        by_property.setdefault(key, []).append(one.name)
-    for (plexos_class, plexos_property), names in sorted(by_property.items()):
-        log.warning(
-            "plexos: %d candidate %s(s) state no %s, so each is left out. Each one: %s",
-            len(names),
-            plexos_class,
-            plexos_property,
-            name_a_few(sorted(names)),
-        )
+    if unpriced is None:
+        return None
+    return SkippedComponent(
+        source=SourceValue(plexos_class, name, unpriced.plexos_property, None, unpriced.unit),
+        note=unpriced.note,
+        warn_with=SkipGroup(
+            counted=f"candidate {plexos_class}(s)", reason=f"state no {unpriced.plexos_property}"
+        ),
+    )
 
 
 def record_expansion_extensions(
