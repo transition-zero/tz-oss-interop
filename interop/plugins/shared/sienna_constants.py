@@ -91,10 +91,8 @@ SIENNA_TYPE_ATTRIBUTE = "type"
 """Attribute name used in event-only sienna_type Translation objects."""
 
 SIENNA_NAME_COLUMN = "name"
-"""The column every Sienna destination table holds a component's name in."""
 
 SIENNA_ID_COLUMN = "id"
-"""The column every Sienna destination table holds a component's id in."""
 
 
 class SiennaACBusCol:
