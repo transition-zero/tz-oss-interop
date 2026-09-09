@@ -11,6 +11,7 @@ so they are not re-exported.
 from __future__ import annotations
 
 from interop.plugins.shared.plexos_pypsa_translations._buses import map_buses
+from interop.plugins.shared.plexos_pypsa_translations._constraints import map_constraints
 from interop.plugins.shared.plexos_pypsa_translations._ensemble import choose_ensemble_samples
 from interop.plugins.shared.plexos_pypsa_translations._generators import map_generators
 from interop.plugins.shared.plexos_pypsa_translations._load_shedding import (
@@ -43,6 +44,7 @@ __all__ = [
     "choose_ensemble_samples",
     "collapse_properties_by_object",
     "map_buses",
+    "map_constraints",
     "map_generators",
     "map_loads",
     "map_reserves",

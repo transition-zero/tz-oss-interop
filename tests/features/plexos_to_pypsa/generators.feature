@@ -371,3 +371,128 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA generator "OverRated" in "outputs/network.nc" has "p_nom" equal to 68
     And the PyPSA generator "OverRated" in "outputs/network.nc" has "p_max_pu" equal to 1
     And the file "decisions.md" contains "Rating above Max Capacity x Units"
+
+  Scenario: a minimum stable level far below the capacity is written as no minimum at all
+    Given a Plexos model
+    And the model contains generator "WindFleet" with "node=Grid_Node, category=Wind, Max Capacity=15000, Min Stable Level=0.0067"
+    And the model is saved as "inputs/negligible_minimum.xml"
+    When I run translate against "inputs/negligible_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "WindFleet" in "outputs/network.nc" has "p_min_pu" equal to 0
+    And the file "decisions.md" contains "the minimum this generator can be held to, after any availability cap, comes to less than 0.001 per unit, which constrains no dispatch, so it is written as zero"
+
+  Scenario: a generator burning no fuel still commits so its minimum binds only while it runs
+    Given a Plexos model
+    And the model contains generator "RunOfRiver" with "node=Grid_Node, category=Hydro, Max Capacity=21, Min Stable Level=12"
+    And the model is saved as "inputs/hydro_minimum.xml"
+    When I run translate against "inputs/hydro_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "RunOfRiver" in "outputs/network.nc" is committable
+    And the PyPSA generator "RunOfRiver" in "outputs/network.nc" has "p_min_pu" exactly 0.571429
+
+  Scenario: a start priced only as start fuel still costs the generator something
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7"
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
+    And the model is saved as "inputs/start_fuel.xml"
+    When I run translate against "inputs/start_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
+    And the file "decisions.md" contains "`plexos.Generator.CCGT.Offtake at Start` = 1800.0 GJ"
+    And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | Offtake at Start x the fuel's price |"
+    And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | `pypsa.Generator.CCGT.start_up_cost` = 14400.0 $ | the start fuel prices the start, since the generator states no Start Cost |"
+
+  Scenario: a stated start cost wins over the start fuel rather than being added to it
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7, Start Cost=1000"
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
+    And the model is saved as "inputs/both_start_prices.xml"
+    When I run translate against "inputs/both_start_prices.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 1000
+    And the file "decisions.md" contains "the generator states its own Start Cost, which has already priced whatever fuel a start burns"
+
+  Scenario: a banded start takes its cold-start band, whichever way the model prices it
+    PLEXOS orders the bands by how long the unit has been off, so the last band is the cold
+    start whether or not it is the dearest band the generator states.
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 2
+    And the model contains generator "Hot" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And the model contains "Start Cost" 5000 in band 1 for generator "Hot"
+    And the model contains "Start Cost" 1000 in band 2 for generator "Hot"
+    And the model contains generator "Cold" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "Cold" burns 900 of fuel "Gas" to start in band 1
+    And generator "Cold" burns 300 of fuel "Gas" to start in band 2
+    And the model is saved as "inputs/start_bands.xml"
+    When I run translate against "inputs/start_bands.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "Hot" in "outputs/network.nc" has "start_up_cost" equal to 1000
+    And the PyPSA generator "Cold" in "outputs/network.nc" has "start_up_cost" equal to 600
+
+  Scenario: a committable generator that prices no start says so rather than starting for free
+    Given a Plexos model
+    And the model contains generator "FreePlant" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8"
+    And the model is saved as "inputs/no_start_price.xml"
+    When I run translate against "inputs/no_start_price.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "decisions.md" contains "the generator states neither a Start Cost nor a start fuel, so nothing prices its starts"
+
+  Scenario: the sink writes each number to a fixed number of decimal places
+    Given a Plexos model
+    And the model contains data file "SolarProfile" at "profiles/solar.csv" with hourly values "100, 150, 200"
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7"
+    And the model contains generator "Solar1" with "node=Grid_Node, category=Solar, Max Capacity=300, Rating=file:SolarProfile"
+    And the model is saved as "inputs/long_decimals.xml"
+    When I run translate against "inputs/long_decimals.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "efficiency" exactly 0.514286
+    And the PyPSA generator "Solar1" in "outputs/network.nc" has p_max_pu at hour 1 exactly 0.333333
+
+  Scenario: a generator that starts on a fuel it does not run on pays that fuel's own price
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains fuel "Distillate" with price 25
+    And the model contains generator "DualFuel" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "DualFuel" burns 1800 of fuel "Distillate" to start
+    And the model is saved as "inputs/dual_fuel_start.xml"
+    When I run translate against "inputs/dual_fuel_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "DualFuel" in "outputs/network.nc" has "start_up_cost" equal to 45000
+    And the file "decisions.md" contains "`plexos.Fuel.Distillate.Price` = 25.0 $/GJ"
+
+  Scenario: a minimum the availability ceiling itself makes negligible is written as zero
+    Given a Plexos model
+    And the model contains data file "OutageProfile" at "profiles/outage.csv" with hourly values "0.05, 100, 100"
+    And the model contains generator "Reservoir" with "node=Grid_Node, category=Hydro, Max Capacity=21, Min Stable Level=12, Rating Factor=file:OutageProfile"
+    And the model is saved as "inputs/capped_minimum.xml"
+    When I run translate against "inputs/capped_minimum.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "Reservoir" in "outputs/network.nc" has "p_min_pu" equal to 0
+    And the PyPSA generator "Reservoir" in "outputs/network.nc" is not committable
+    And the file "decisions.md" contains "the minimum this generator can be held to, after any availability cap, comes to less than 0.001 per unit, which constrains no dispatch, so it is written as zero"
+
+  Scenario: a start cost of zero leaves the start fuel beside it pricing the start
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains generator "CCGT" with "node=Grid_Node, fuel=Gas, Max Capacity=449, Heat Rate=7, Start Cost=0"
+    And generator "CCGT" burns 1800 of fuel "Gas" to start
+    And the model is saved as "inputs/zero_start_cost.xml"
+    When I run translate against "inputs/zero_start_cost.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
+
+  Scenario: a start cost of zero with no start fuel is still a start priced at zero
+    Given a Plexos model
+    And the model contains generator "FreeStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8, Start Cost=0"
+    And the model is saved as "inputs/free_start.xml"
+    When I run translate against "inputs/free_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 $"
+
+  Scenario: a generator naming several start fuels starts on the one its heat rate uses
+    Given a Plexos model
+    And the model contains fuel "Gas" with price 8
+    And the model contains fuel "Distillate" with price 25
+    And the model contains generator "DualStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=7"
+    And generator "DualStart" burns 100 of fuel "Gas" to start
+    And generator "DualStart" burns 1800 of fuel "Distillate" to start
+    And the model contains generator "NeitherStart" with "node=Grid_Node, category=Gas, Max Capacity=100, Min Stable Level=50"
+    And generator "NeitherStart" burns 100 of fuel "Gas" to start
+    And generator "NeitherStart" burns 1800 of fuel "Distillate" to start
+    And the model is saved as "inputs/several_start_fuels.xml"
+    When I run translate against "inputs/several_start_fuels.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "DualStart" in "outputs/network.nc" has "start_up_cost" equal to 800
+    # A generator burning no fuel has no heat rate to prefer one by, so the largest start wins.
+    And the PyPSA generator "NeitherStart" in "outputs/network.nc" has "start_up_cost" equal to 45000
+    And the file "decisions.md" contains "the generator names several start fuels and PyPSA holds one start price, so the fuel its heat rate burns stands for the start, or the largest offtake where it burns none; this one is left out"

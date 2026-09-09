@@ -1,14 +1,16 @@
 """Deriving one PyPSA generator's values from one staged PLEXOS Generator.
 
 PLEXOS carries every technology in one Generator class, so what a generator *is* comes
-from what it carries: a named fuel burnt at a heat rate makes it thermal, which fixes
-its carrier, its marginal cost, and whether it is unit-committed. Everything else takes
-its carrier from its category and its cost from VO&M alone.
+from what it carries: a named fuel burnt at a heat rate makes it thermal, which fixes its
+carrier and its marginal cost. Everything else takes its carrier from its category and its
+cost from VO&M alone. Commitment is a separate test: a generator is unit-committed when it
+burns a fuel, and also when it holds a minimum output.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 
 from interop.plugins.shared.plexos_constants import (
@@ -23,6 +25,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_UP_TIME_BEFORE,
     FULL_AVAILABILITY,
     MAX_RAMP_LIMIT_PU,
+    NEGLIGIBLE_P_MIN_PU,
     PERCENT,
 )
 
@@ -46,6 +49,7 @@ class ThermalCostTerms:
 
     fuel_name: str
     fuel_price: float
+    is_priced_by_date: bool
     heat_rate: float
     heat_rate_property: str
     vom: float
@@ -128,8 +132,9 @@ class GeneratorMapping:
     """Values derived from one PLEXOS Generator, before events and the output row.
 
     ``fuel`` is the thermal/non-thermal distinction: a generator burning a named fuel at
-    a heat rate is thermal, is unit-committed, and prices that fuel into its marginal
-    cost. Everything else takes its carrier from its category and its cost from VO&M.
+    a heat rate is thermal and prices that fuel into its marginal cost. Everything else
+    takes its carrier from its category and its cost from VO&M. ``unit_commitment`` is set
+    separately, for a generator burning a fuel or holding a minimum output alike.
     """
 
     name: str
@@ -150,7 +155,7 @@ class GeneratorMapping:
 
     @property
     def is_committable(self) -> bool:
-        return self.fuel is not None
+        return self.unit_commitment is not None
 
 
 def has_infeasible_dispatch_range(mapping: GeneratorMapping) -> bool:
@@ -169,6 +174,9 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
     fuels = lookups.gen_fuels.get(source.name, [])
     fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
+    minimum = _floor_negligible(
+        _cap_at_availability(_minimum_generation(source), availability, source, lookups)
+    )
     return GeneratorMapping(
         name=source.name,
         bus_name=node,
@@ -180,14 +188,26 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         units=source.units,
         p_nom=source.p_nom,
         rating_as_capacity=source.rating_as_capacity,
-        minimum=_cap_at_availability(_minimum_generation(source), availability, source, lookups),
+        minimum=minimum,
         availability=availability,
         cost=_assemble_cost(source.props, fuel),
         efficiency=_efficiency(fuel, source.p_nom),
-        unit_commitment=_derive_unit_commitment(source, lookups.minutes_per_snapshot)
-        if fuel is not None
+        unit_commitment=_derive_unit_commitment(
+            source, _derive_start_fuel(source, fuel, lookups), lookups
+        )
+        if _commits(fuel, minimum)
         else None,
     )
+
+
+def _commits(fuel: FuelUse | None, minimum: MinimumGeneration) -> bool:
+    """Whether PyPSA has to unit-commit this generator to read the source the way PLEXOS does.
+
+    PLEXOS holds a unit to its minimum stable level only while it is committed, so a
+    generator carrying one has to commit or PyPSA binds that minimum in every hour. A
+    generator burning a fuel commits whether or not it states a minimum.
+    """
+    return fuel is not None or minimum.p_min_pu > DEFAULT_P_MIN_PU
 
 
 @dataclass(frozen=True)
@@ -203,11 +223,13 @@ class FuelUse:
     """The fuel a thermal generator burns and the rate it burns it at.
 
     A generator has one of these only when it both names a fuel and carries a heat rate;
-    that pairing is what makes it thermal.
+    that pairing is what makes it thermal. ``price`` is the mean of the fuel's own dated
+    series where it has one.
     """
 
     name: str
     price: float
+    is_priced_by_date: bool
     heat_rate: float
     heat_rate_property: str
     heat_rate_base: float
@@ -215,14 +237,31 @@ class FuelUse:
     production_rate: float | None
 
 
+@dataclass(frozen=True)
+class _FuelPrice:
+    value: float
+    is_dated: bool
+
+
+def _read_fuel_price(fuel_name: str, lookups: Lookups) -> _FuelPrice:
+    """The mean of a fuel's dated price series, or the one scalar the model states."""
+    dated = lookups.dated_fuel_prices.get(fuel_name)
+    if dated is not None:
+        return _FuelPrice(dated, is_dated=True)
+    props = lookups.fuel_props.get(fuel_name, {})
+    return _FuelPrice(_value(props, PlexosProperty.PRICE, 0.0), is_dated=False)
+
+
 def _fuel_use(source: SourceGenerator, fuel_name: str | None, lookups: Lookups) -> FuelUse | None:
     heat_rate = _read_heat_rate(source.props)
     if fuel_name is None or heat_rate is None:
         return None
     fuel_props = lookups.fuel_props.get(fuel_name, {})
+    price = _read_fuel_price(fuel_name, lookups)
     return FuelUse(
         name=fuel_name,
-        price=_value(fuel_props, PlexosProperty.PRICE, 0.0),
+        price=price.value,
+        is_priced_by_date=price.is_dated,
         heat_rate=heat_rate.value,
         heat_rate_property=heat_rate.property_name,
         heat_rate_base=_value(source.props, PlexosProperty.HEAT_RATE_BASE, 0.0),
@@ -273,6 +312,7 @@ class MinimumGeneration:
     p_min_pu: float
     source_property: str | None
     source_value: float | None
+    is_negligible: bool = False
 
 
 def _minimum_generation(source: SourceGenerator) -> MinimumGeneration:
@@ -285,6 +325,15 @@ def _minimum_generation(source: SourceGenerator) -> MinimumGeneration:
         if megawatts is not None and source.p_nom:
             return MinimumGeneration(megawatts / source.p_nom, property_name, megawatts)
     return MinimumGeneration(DEFAULT_P_MIN_PU, None, None)
+
+
+def _floor_negligible(minimum: MinimumGeneration) -> MinimumGeneration:
+    """Runs after the availability cap, which can itself leave a minimum this small."""
+    if not 0.0 < minimum.p_min_pu < NEGLIGIBLE_P_MIN_PU:
+        return minimum
+    return MinimumGeneration(
+        DEFAULT_P_MIN_PU, minimum.source_property, minimum.source_value, is_negligible=True
+    )
 
 
 @dataclass(frozen=True)
@@ -395,6 +444,7 @@ def _thermal_cost_terms(fuel: FuelUse, vom: float) -> ThermalCostTerms:
     return ThermalCostTerms(
         fuel_name=fuel.name,
         fuel_price=fuel.price,
+        is_priced_by_date=fuel.is_priced_by_date,
         heat_rate=fuel.heat_rate,
         heat_rate_property=fuel.heat_rate_property,
         vom=vom,
@@ -426,8 +476,65 @@ def _efficiency(fuel: FuelUse | None, p_nom: float) -> float | None:
 
 
 @dataclass(frozen=True)
+class StartFuel:
+    """The fuel a generator burns to start: the gigajoules it takes, and what they cost.
+
+    The Start Fuels membership names the fuel, so it need not be the one the heat rate uses:
+    a unit that runs on gas may light off on distillate, and pays the distillate price.
+    ``discarded`` names the other start fuels, which one start price has no room for.
+    """
+
+    name: str
+    offtake: float
+    price: float
+    is_priced_by_date: bool
+    discarded: tuple[str, ...]
+
+    @property
+    def cost(self) -> float:
+        return self.offtake * self.price
+
+
+def _derive_start_fuel(
+    source: SourceGenerator, fuel: FuelUse | None, lookups: Lookups
+) -> StartFuel | None:
+    """What a start burns, priced by the fuel the Start Fuels membership itself names."""
+    offtakes = lookups.start_fuel_offtake.get(source.name, {})
+    if not offtakes:
+        return None
+    name = _choose_start_fuel(offtakes, fuel)
+    price = _read_fuel_price(name, lookups)
+    return StartFuel(
+        name=name,
+        offtake=offtakes[name],
+        price=price.value,
+        is_priced_by_date=price.is_dated,
+        discarded=tuple(sorted(other for other in offtakes if other != name)),
+    )
+
+
+def _choose_start_fuel(offtakes: dict[str, float], fuel: FuelUse | None) -> str:
+    """Of the fuels a start may burn, the one the heat rate uses, else the largest offtake.
+
+    A generator naming several start fuels burns a mix PyPSA has no way to hold, so one of
+    them has to stand for the start.
+    """
+    if fuel is not None and fuel.name in offtakes:
+        return fuel.name
+    return max(offtakes, key=lambda name: offtakes[name])
+
+
+class StartPricing(Enum):
+    """Which of PLEXOS's two ways of pricing a start a generator's own values settle on."""
+
+    STATED = auto()
+    START_FUEL = auto()
+    NONE = auto()
+
+
+@dataclass(frozen=True)
 class UnitCommitment:
-    """The commitment limits of a thermal generator, each null where PLEXOS set none."""
+    """The commitment limits of a committed generator, each null where PLEXOS set none."""
 
     max_ramp_up: float | None
     max_ramp_down: float | None
@@ -437,16 +544,35 @@ class UnitCommitment:
     min_down_hours: float | None
     min_up_time: float | None
     min_down_time: float | None
-    start_up_cost: float | None
+    stated_start_cost: float | None
+    start_fuel: StartFuel | None
     up_time_before: float
     shut_down_cost: float
 
+    @property
+    def start_pricing(self) -> StartPricing:
+        """Which of the two prices a start, never both: a model stating both has already
+        priced the fuel inside its own Start Cost, so adding them would charge it twice.
 
-def _derive_unit_commitment(source: SourceGenerator, minutes: float) -> UnitCommitment:
+        A Start Cost of zero prices nothing, so a start fuel stated beside it is still what
+        a start costs. A zero with no start fuel is the model pricing a start at zero.
+        """
+        if self.start_fuel is not None and self.stated_start_cost in (None, 0.0):
+            return StartPricing.START_FUEL
+        if self.stated_start_cost is not None:
+            return StartPricing.STATED
+        return StartPricing.NONE
+
+
+def _derive_unit_commitment(
+    source: SourceGenerator, start_fuel: StartFuel | None, lookups: Lookups
+) -> UnitCommitment:
+    minutes = lookups.minutes_per_snapshot
     max_ramp_up = _optional(source.props, PlexosProperty.MAX_RAMP_UP)
     max_ramp_down = _optional(source.props, PlexosProperty.MAX_RAMP_DOWN)
     min_up_hours = _optional(source.props, PlexosProperty.MIN_UP_TIME)
     min_down_hours = _optional(source.props, PlexosProperty.MIN_DOWN_TIME)
+    stated_start_cost = _optional(source.props, PlexosProperty.START_COST)
     return UnitCommitment(
         max_ramp_up=max_ramp_up,
         max_ramp_down=max_ramp_down,
@@ -456,7 +582,8 @@ def _derive_unit_commitment(source: SourceGenerator, minutes: float) -> UnitComm
         min_down_hours=min_down_hours,
         min_up_time=_hours_to_snapshots(min_up_hours, minutes),
         min_down_time=_hours_to_snapshots(min_down_hours, minutes),
-        start_up_cost=_optional(source.props, PlexosProperty.START_COST),
+        stated_start_cost=stated_start_cost,
+        start_fuel=start_fuel,
         up_time_before=DEFAULT_UP_TIME_BEFORE,
         shut_down_cost=DEFAULT_SHUT_DOWN_COST,
     )

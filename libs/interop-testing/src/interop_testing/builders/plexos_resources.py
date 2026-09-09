@@ -8,19 +8,26 @@ apart keeps the topology and the resources readable on their own.
 from __future__ import annotations
 
 from interop_testing.builders.plexos_generator_specs import GeneratorSpec
-from interop_testing.builders.plexos_tables import DateBand, LineEndpoints, PlexosTables
+from interop_testing.builders.plexos_tables import (
+    ConstraintTerm,
+    DateBand,
+    LineEndpoints,
+    PlexosTables,
+)
 from interop_testing.builders.plexos_vocabulary import (
     BATTERIES_COLLECTION,
     BATTERY_CLASS,
     CAPACITY_PROPERTY,
     CHARGE_EFFICIENCY_PROPERTY,
+    CONSTRAINT_CLASS,
+    CONSTRAINT_MEMBER_COLLECTIONS,
+    CONSTRAINTS_COLLECTION,
     DEFAULT_CATEGORY,
     FUEL_CLASS,
     FUELS_COLLECTION,
     GENERATOR_CLASS,
     GENERATORS_COLLECTION,
     HEAD_STORAGE_COLLECTION,
-    HEAT_RATE_PROPERTY,
     INITIAL_SOC_PROPERTY,
     INITIAL_VOLUME_PROPERTY,
     LINE_CLASS,
@@ -41,12 +48,14 @@ from interop_testing.builders.plexos_vocabulary import (
     NODE_FROM_COLLECTION,
     NODE_TO_COLLECTION,
     NODES_COLLECTION,
+    OFFTAKE_AT_START_PROPERTY,
     PUMP_EFFICIENCY_PROPERTY,
     REACTANCE_PROPERTY,
     RESERVE_CLASS,
     RESERVE_TYPE_PROPERTY,
     RESERVES_COLLECTION,
     RESISTANCE_PROPERTY,
+    START_FUELS_COLLECTION,
     STORAGE_CLASS,
     STORAGES_COLLECTION,
     TAIL_STORAGE_COLLECTION,
@@ -149,17 +158,61 @@ class ResourceBuilder(PlexosTables):
             code,
         )
 
-    def add_heat_rate_band(self, generator: str, band: int, value: float) -> None:
-        """One segment of a generator's heat-rate curve.
+    def add_constraint_over(self, name: str, terms: list[ConstraintTerm]) -> None:
+        """A Constraint over objects of any class, each weighted by its own coefficient.
 
-        PLEXOS exports the segments as repeats of one property, told apart only by band.
+        PLEXOS states the coefficient on the Constraint to member membership and the
+        right-hand side on the Constraint itself, which ``add_constraint_property`` sets.
         """
-        self._check_not_saved(f"heat rate band {band} of generator {generator!r}")
+        self._check_not_saved(f"constraint {name!r}")
+        self._add_system_object(CONSTRAINT_CLASS, name, CONSTRAINTS_COLLECTION)
+        for term in terms:
+            self._add_property(
+                CONSTRAINT_CLASS,
+                name,
+                term.member_class,
+                term.member,
+                CONSTRAINT_MEMBER_COLLECTIONS[term.member_class],
+                term.coefficient_property,
+                term.coefficient,
+            )
+
+    def add_constraint_property(self, name: str, property_name: str, value: float) -> None:
+        """A Constraint's own property, such as its Sense or one of its right-hand sides."""
+        self._check_not_saved(f"property {property_name!r} of constraint {name!r}")
+        self._add_system_property(
+            CONSTRAINT_CLASS, name, CONSTRAINTS_COLLECTION, property_name, value
+        )
+
+    def add_start_fuel(
+        self, generator: str, fuel: str, offtake: float, band: int | None = None
+    ) -> None:
+        """The gigajoules a generator burns to start, on its Generator to Fuel membership."""
+        self._check_not_saved(f"start fuel {fuel!r} of generator {generator!r}")
+        self._add_property(
+            GENERATOR_CLASS,
+            generator,
+            FUEL_CLASS,
+            fuel,
+            START_FUELS_COLLECTION,
+            OFFTAKE_AT_START_PROPERTY,
+            offtake,
+            band=band,
+        )
+
+    def add_generator_property_band(
+        self, generator: str, property_name: str, band: int, value: float
+    ) -> None:
+        """One band of a banded Generator property.
+
+        PLEXOS exports the bands as repeats of one property, told apart only by band.
+        """
+        self._check_not_saved(f"band {band} of {property_name!r} on generator {generator!r}")
         self._add_system_property(
             GENERATOR_CLASS,
             generator,
             GENERATORS_COLLECTION,
-            HEAT_RATE_PROPERTY,
+            property_name,
             value,
             band=band,
         )

@@ -395,6 +395,22 @@ UNSET_BUS_LOCATION: str = ""
 # A component whose source has no availability input is translated as in service.
 DEFAULT_COMPONENT_ACTIVE: bool = True
 
+# Six places holds a per-unit factor down to a millionth of a component's own rating, which
+# is finer than any dispatch decision a solver makes.
+PYPSA_OUTPUT_DECIMAL_PLACES: int = 6
+
+UNROUNDED_OUTPUT_COLUMNS: tuple[str, ...] = (
+    PyPSALineCol.R,
+    PyPSALineCol.X,
+    PyPSALineCol.B,
+    PyPSALineCol.G,
+)
+"""Impedance is not a per-unit factor of a rating, so a fixed decimal place can erase it.
+
+A near-zero-impedance coupler states a reactance of a millionth of an ohm or less, and
+rounding it to zero leaves PyPSA building an admittance from one over nothing.
+"""
+
 
 class PyPSADestinationTable:
     """Keys for ``State.destination_tables``, holding translated PyPSA component rows."""

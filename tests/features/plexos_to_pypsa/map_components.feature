@@ -283,3 +283,14 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     Then the file "decisions.md" contains "PyPSA has no home for a region VoLL"
     And the file "decisions.md" contains "PyPSA has no home for a region Price of Dump Energy"
     And the file "decisions.md" contains "the wheeling charge is dropped"
+
+  Scenario: a near-zero reactance survives the rounding the sink applies
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "North" in region "Grid" with voltage 230
+    And the model contains node "South" in region "Grid" with voltage 230
+    And the model contains electrical line "Coupler" from "North" to "South" resistance 0.0000002 reactance 0.0000003 max rating 900
+    And the model is saved as "inputs/coupler.xml"
+    When I run translate against "inputs/coupler.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" line "Coupler" attribute "x" is 0.0000003
+    And the PyPSA network "outputs/network.nc" line "Coupler" attribute "r" is 0.0000002

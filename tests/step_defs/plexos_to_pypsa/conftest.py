@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 import pytest
@@ -19,6 +19,22 @@ from interop_testing import write_pipeline, write_project_plugin
 from pytest_bdd import given, parsers, then, when
 
 from tests.step_defs.conftest import invoke_translate
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+
+def read_hour(series: pd.DataFrame, name: str, path: str, hour: int) -> float:
+    """The value one column of a time series holds at a one-based hour.
+
+    ``iloc`` counts back from the end for a negative index, so an hour of 0 or less
+    would read some other snapshot instead of failing. The hour is checked first.
+    """
+    assert name in series.columns, f"no time series for {name!r} in {path}"
+    assert 1 <= hour <= len(series), (
+        f"hour {hour} is outside the {len(series)} snapshot(s) of {name!r} in {path}"
+    )
+    return float(series[name].iloc[hour - 1])
 
 
 @when(
@@ -348,6 +364,34 @@ def assert_generator_column(name: str, path: str, column: str, value: float) -> 
     )
 
 
+@then(parsers.parse('the PyPSA generator "{name}" in "{path}" has "{column}" exactly {value:g}'))
+def assert_generator_column_exactly(name: str, path: str, column: str, value: float) -> None:
+    """No tolerance, so a scenario can pin the number of decimal places written."""
+    import pypsa
+
+    network = pypsa.Network(path)
+    assert name in network.generators.index, f"no generator {name!r} in {path}"
+    actual = float(network.generators.at[name, column])
+    assert actual == value, (
+        f"expected generator {name!r} {column} = {value!r} exactly in {path}; got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the PyPSA generator "{name}" in "{path}" has p_max_pu at hour {hour:d} exactly {value:g}'
+    )
+)
+def assert_generator_p_max_pu_exactly(name: str, path: str, hour: int, value: float) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    actual = read_hour(network.generators_t.p_max_pu, name, path, hour)
+    assert actual == value, (
+        f"expected {name!r} p_max_pu hour {hour} = {value!r} exactly in {path}; got {actual!r}"
+    )
+
+
 @then(parsers.parse('the PyPSA generator "{name}" in "{path}" has no "{column}"'))
 def assert_generator_column_unset(name: str, path: str, column: str) -> None:
     import pypsa
@@ -466,9 +510,7 @@ def assert_generator_p_max_pu(name: str, path: str, hour: int, value: float) -> 
     import pypsa
 
     network = pypsa.Network(path)
-    series = network.generators_t.p_max_pu
-    assert name in series.columns, f"no p_max_pu time series for {name!r} in {path}"
-    actual = float(series[name].iloc[hour - 1])
+    actual = read_hour(network.generators_t.p_max_pu, name, path, hour)
     assert actual == pytest.approx(value), (
         f"expected {name!r} p_max_pu hour {hour} = {value!r} in {path}; got {actual!r}"
     )
@@ -484,9 +526,7 @@ def assert_storage_unit_p_max_pu(name: str, path: str, hour: int, value: float) 
     import pypsa
 
     network = pypsa.Network(path)
-    series = network.storage_units_t.p_max_pu
-    assert name in series.columns, f"no p_max_pu time series for {name!r} in {path}"
-    actual = float(series[name].iloc[hour - 1])
+    actual = read_hour(network.storage_units_t.p_max_pu, name, path, hour)
     assert actual == pytest.approx(value), (
         f"expected {name!r} p_max_pu hour {hour} = {value!r} in {path}; got {actual!r}"
     )

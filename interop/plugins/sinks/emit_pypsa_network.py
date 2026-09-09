@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_OUTPUT_DECIMAL_PLACES,
+    UNROUNDED_OUTPUT_COLUMNS,
     PyPSABusCol,
     PyPSAComponent,
     PyPSADestinationTable,
@@ -139,6 +141,11 @@ def _add_in_bulk(
     """
     if frame.height == 0:
         return
+    frame = frame.with_columns(
+        pl.col(pl.Float32, pl.Float64)
+        .exclude(UNROUNDED_OUTPUT_COLUMNS)
+        .round(PYPSA_OUTPUT_DECIMAL_PLACES)
+    )
     names = frame[name_column].to_list()
     columns = {column: frame[column].to_list() for column in required}
     # PyPSA's third positional is a name suffix, so mypy cannot check the attribute kwargs.
@@ -333,7 +340,7 @@ def _attach_time_series(
         metadata, state, sample, series_cache
     ).items():
         target: dict[str, Any] = accessor[table]
-        target[attribute] = _joined(target[attribute], by_component, network.snapshots)
+        target[attribute] = _joined(target[attribute], by_component, network.snapshots, attribute)
 
 
 def _columns_by_attribute(
@@ -372,18 +379,26 @@ def _columns_by_attribute(
 
 
 def _joined(
-    frame: pd.DataFrame, by_component: dict[str, list[float]], snapshots: pd.Index
+    frame: pd.DataFrame,
+    by_component: dict[str, list[float]],
+    snapshots: pd.Index,
+    attribute: str,
 ) -> pd.DataFrame:
     """Add every component's column in one concat.
 
     Inserting them one at a time leaves pandas re-blocking the frame per column, which on a
     model of a few hundred components dominates the time spent writing a network.
+
+    Every column here holds one attribute, one component to a column, so the attribute alone
+    decides whether the numbers round.
     """
     compounded = {
         name: _compound(frame[name].tolist(), values) if name in frame.columns else values
         for name, values in by_component.items()
     }
     added = pd.DataFrame(compounded, index=snapshots)
+    if attribute not in UNROUNDED_OUTPUT_COLUMNS:
+        added = added.round(PYPSA_OUTPUT_DECIMAL_PLACES)
     kept = frame.drop(columns=[name for name in added.columns if name in frame.columns])
     return added if kept.columns.empty else pd.concat([kept, added], axis=1)
 

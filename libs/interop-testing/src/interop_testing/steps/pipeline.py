@@ -46,3 +46,11 @@ def assert_log_contains(caplog: pytest.LogCaptureFixture, expected: str) -> None
     # Logged paths carry the platform's own separator, so compare in one style.
     logged = caplog.text.replace("\\", "/")
     assert expected in logged, f"expected {expected!r} in log, got {caplog.text!r}"
+
+
+@then(parsers.parse('the log does not contain "{unwanted}"'))
+def assert_log_does_not_contain(caplog: pytest.LogCaptureFixture, unwanted: str) -> None:
+    logged = caplog.text.replace("\\", "/")
+    assert unwanted not in logged, (
+        f"expected {unwanted!r} to be absent from log, got {caplog.text!r}"
+    )

@@ -111,6 +111,7 @@ class PlexosCollection(StrEnum):
     ZONES = "Zones"
     GENERATORS = "Generators"
     FUELS = "Fuels"
+    START_FUELS = "Start Fuels"
     EMISSIONS = "Emissions"
     NODE_FROM = "Node From"
     NODE_TO = "Node To"
@@ -155,6 +156,7 @@ class PlexosProperty(StrEnum):
     HEAT_RATE_INCR = "Heat Rate Incr"
     VOM_CHARGE = "VO&M Charge"
     START_COST = "Start Cost"
+    OFFTAKE_AT_START = "Offtake at Start"
     MAX_RAMP_UP = "Max Ramp Up"
     MAX_RAMP_DOWN = "Max Ramp Down"
     MIN_UP_TIME = "Min Up Time"
@@ -194,6 +196,14 @@ class PlexosProperty(StrEnum):
     # Fuel / Emission
     PRICE = "Price"
     PRODUCTION_RATE = "Production Rate"
+    # Constraint
+    SENSE = "Sense"
+    RHS = "RHS"
+    RHS_HOUR = "RHS Hour"
+    RHS_DAY = "RHS Day"
+    RHS_WEEK = "RHS Week"
+    RHS_MONTH = "RHS Month"
+    RHS_YEAR = "RHS Year"
 
 
 def is_plexos_true(value: float) -> bool:

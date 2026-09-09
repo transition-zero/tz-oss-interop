@@ -28,6 +28,13 @@ DEFAULT_SHUT_DOWN_COST: float = 0.0
 DEFAULT_P_MIN_PU: float = 0.0
 """A generator with no ``Min Stable Level`` can turn down to zero."""
 
+NEGLIGIBLE_P_MIN_PU: float = 0.001
+"""One part in a thousand of a unit's own capacity, below which a minimum is written as zero.
+
+A minimum that small binds no dispatch decision a solver would make, and carrying it only
+widens the range of coefficients the solver works over.
+"""
+
 FULL_AVAILABILITY: float = 1.0
 """A dispatchable generator can run at full output; an outage or profile derates this."""
 
@@ -36,6 +43,9 @@ MAX_RAMP_LIMIT_PU: float = 1.0
 
 MARGINAL_COST_CARBON_TERM: str = "marginal_cost carbon term"
 """Names the carbon part of marginal_cost in the audit trail; PyPSA has no such column."""
+
+START_UP_COST_FUEL_TERM: str = "start_up_cost fuel term"
+"""Names what a start's fuel costs in the audit trail; PyPSA has no such column."""
 
 GENERATOR_EXT_CATEGORY_FIELD: str = "extensions.category"
 """Names that sidecar key in the audit trail; the network file itself has no such column."""

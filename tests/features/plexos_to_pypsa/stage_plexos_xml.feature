@@ -59,8 +59,8 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     And the model contains region "Grid"
     And the model contains node "Grid_Node" in region "Grid"
     And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500"
-    And the model contains heat rate 10500 in band 1 for generator "GasPlant"
-    And the model contains heat rate 9200 in band 2 for generator "GasPlant"
+    And the model contains "Heat Rate" 10500 in band 1 for generator "GasPlant"
+    And the model contains "Heat Rate" 9200 in band 2 for generator "GasPlant"
     And the model is saved as "inputs/model.xml"
     And a step plugin "dump_table" that writes a source_topology table to JSON
     And a project-local pipeline "plexos-resolve" that stages plexos and dumps a table
