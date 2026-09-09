@@ -55,15 +55,19 @@ def assert_portfolio_component_field(
 @then(
     parsers.parse(
         'the file "{path}" parses as a portfolio with component "{sienna_type}" named "{name}"'
-        ' without field "{field}"'
+        ' without field "{field_path}"'
     )
 )
 def assert_portfolio_component_field_absent(
-    path: str, sienna_type: str, name: str, field: str
+    path: str, sienna_type: str, name: str, field_path: str
 ) -> None:
+    """A field the component does not hold, named by a dotted path into its nested structs."""
     component = find_portfolio_component(read_json(path), sienna_type, name)
-    assert field not in component, (
-        f"expected field {field!r} absent from [{sienna_type}:{name}] in {path}, got {component!r}"
+    context = f"{path}[{sienna_type}:{name}]"
+    parent_path, _, field = field_path.rpartition(".")
+    holder = navigate_json(component, parent_path, context) if parent_path else component
+    assert field not in holder, (
+        f"expected field {field_path!r} absent from {context}, got {holder!r}"
     )
 
 
@@ -100,24 +104,6 @@ def assert_portfolio_attribute_field(
     context = f"{path}[{attribute_type} of {component_type}:{component_name}]"
     actual = navigate_json(attributes, field_path, context)
     assert actual == expected, f"expected {context}.{field_path!r} = {expected!r}, got {actual!r}"
-
-
-@then(
-    parsers.parse(
-        'the file "{path}" parses as a portfolio with no "{attribute_type}" for'
-        ' "{component_type}" "{component_name}"'
-    )
-)
-def assert_portfolio_attribute_absent(
-    path: str, attribute_type: str, component_type: str, component_name: str
-) -> None:
-    matching = find_portfolio_attributes(
-        read_json(path), attribute_type, component_type, component_name
-    )
-    assert not matching, (
-        f"expected no {attribute_type} for {component_type} {component_name!r} in {path}, "
-        f"got {matching!r}"
-    )
 
 
 @then(

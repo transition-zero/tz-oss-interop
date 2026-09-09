@@ -13,11 +13,14 @@ import polars as pl
 
 from interop.plugins.shared.pypsa_constants import PyPSAComponent, PyPSALoadCol
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    PORTFOLIO_ID_NOTE,
     REGION_COL,
+)
+from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
     sienna_dest_field,
 )
-from interop.plugins.shared.sienna_constants import SIENNA_TYPE_ATTRIBUTE, SiennaComponent
+from interop.plugins.shared.sienna_constants import SIENNA_TYPE_ATTRIBUTE
 from interop.plugins.shared.sienna_investments_constants import (
     SiennaDemandRequirementCol,
     SiennaInvestmentsComponent,
@@ -35,15 +38,11 @@ _dest = partial(sienna_dest_field, SiennaInvestmentsComponent.DEMAND_REQUIREMENT
 
 D = SiennaDemandRequirementCol
 
+# The Sienna type the base system wrote a load as, which the step enriches the table with.
+LOAD_TYPE_COL = "_load_type"
+
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSALoadCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSALoadCol.NAME)
-
-DEMAND_ID = row_position_id_translation(
-    _dest,
-    dest_name_col=D.NAME,
-    id_col=D.ID,
-    note="assigned by 1-based row position in the DemandRequirement DataFrame",
-)
 
 DEMAND_NAME = _direct(source_col=PyPSALoadCol.NAME, dest_col=D.NAME)
 
@@ -71,10 +70,15 @@ DEMAND_SIENNA_TYPE = Translation(
     ],
 )
 
-DEMAND_POWER_SYSTEMS_TYPE = _default(
+DEMAND_POWER_SYSTEMS_TYPE = _direct(
+    source_col=PyPSALoadCol.NAME,
     dest_col=D.POWER_SYSTEMS_TYPE,
-    value=SiennaComponent.POWER_LOAD,
-    note="the base system type the demand is served as",
+    expr=pl.col(LOAD_TYPE_COL),
+    derivation="the base system type the demand is served as",
+    note=(
+        "a load whose bus prices a shortfall is written as a type a solve may cut, so the "
+        "requirement names whichever of the two load types the base system holds it as"
+    ),
 )
 
 DEMAND_REGION = _direct(
@@ -85,10 +89,19 @@ DEMAND_REGION = _direct(
 )
 
 DEMAND_TRANSLATIONS: list[Translation] = [
-    DEMAND_ID,
     DEMAND_NAME,
     DEMAND_AVAILABLE,
     DEMAND_SIENNA_TYPE,
     DEMAND_POWER_SYSTEMS_TYPE,
     DEMAND_REGION,
 ]
+
+
+def build_demand_translations(start: int) -> list[Translation]:
+    """Every DemandRequirement translation, including the one the shared id counter decides."""
+    return [
+        row_position_id_translation(
+            _dest, dest_name_col=D.NAME, id_col=D.ID, note=PORTFOLIO_ID_NOTE, start=start
+        ),
+        *DEMAND_TRANSLATIONS,
+    ]

@@ -26,7 +26,6 @@ _RECORD_NAME = "financial_data"
 
 
 def build_portfolio_financial_data(base_year: int) -> pl.DataFrame:
-    """The one row a portfolio's financial data is."""
     return pl.DataFrame(
         {
             F.ID: [1],

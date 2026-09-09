@@ -22,7 +22,10 @@ from interop.core.extensions import (
     ExtensionKind,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    PORTFOLIO_ID_NOTE,
     investments_skip_report,
+)
+from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
     sienna_dest_field,
 )
@@ -129,20 +132,12 @@ def _read_record(record: ConstraintExtension, model_components: set[str]) -> dic
 
 
 def _choose_limit(record: ConstraintExtension) -> ConstraintLimit | None:
-    """The right-hand side a cap reads, which is the yearly one before the horizon one."""
     for period in _CAP_PERIODS:
         for limit in record.limits:
             if limit.period == period:
                 return limit
     return None
 
-
-CARBON_CAP_ID = row_position_id_translation(
-    _dest,
-    dest_name_col=C.NAME,
-    id_col=C.ID,
-    note="assigned by 1-based row position in the CarbonCaps DataFrame",
-)
 
 CARBON_CAP_NAME = _direct(source_col=CONSTRAINT_NAME, dest_col=C.NAME)
 
@@ -196,9 +191,18 @@ CARBON_CAP_MAX_MTONS = Translation(
 )
 
 CARBON_CAP_TRANSLATIONS: list[Translation] = [
-    CARBON_CAP_ID,
     CARBON_CAP_NAME,
     CARBON_CAP_AVAILABLE,
     CARBON_CAP_SIENNA_TYPE,
     CARBON_CAP_MAX_MTONS,
 ]
+
+
+def build_carbon_cap_translations(start: int) -> list[Translation]:
+    """Every CarbonCaps translation, including the one the shared id counter decides."""
+    return [
+        row_position_id_translation(
+            _dest, dest_name_col=C.NAME, id_col=C.ID, note=PORTFOLIO_ID_NOTE, start=start
+        ),
+        *CARBON_CAP_TRANSLATIONS,
+    ]

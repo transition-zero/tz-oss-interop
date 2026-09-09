@@ -11,9 +11,7 @@ from functools import partial
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
-    sienna_dest_field,
-)
+from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_constants import SiennaACBusCol, SiennaComponent
 from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplementalAttribute,

@@ -1,10 +1,4 @@
-"""Write the SiennaSchemas portfolio document beside the base system it expands.
-
-The sink makes no decisions. It groups the technology tables by type name, flattens the
-supplemental attribute tables into the one array the document carries them in, resolves each
-region name to the base system's area id and each association's component name to that
-component's id, and drops a field no table wrote so the schema's own default applies.
-"""
+"""Write the SiennaSchemas portfolio document beside the base system it expands."""
 
 from __future__ import annotations
 
@@ -35,7 +29,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplementalAttributeAssociationCol,
     SiennaSupplyTechnologyCol,
 )
-from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME
+from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -135,7 +129,6 @@ class EmitSiennaPortfolio(Sink):
 
 
 def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
-    """Each component's id, by name, for the references the document holds as ids."""
     if table is None or table.is_empty():
         return {}
     return dict(
@@ -150,7 +143,7 @@ def _build_components(
     if table is None or table.is_empty():
         return []
     if region:
-        _validate_refs(
+        validate_refs(
             SiennaSupplyTechnologyCol.REGION_NAME,
             table[SiennaSupplyTechnologyCol.REGION_NAME].drop_nulls().unique().to_list(),
             set(area_ids),
@@ -204,7 +197,7 @@ def _build_associations(
         component_type = row[A.COMPONENT_TYPE]
         name = row[A.COMPONENT_NAME]
         by_name = component_ids.get(component_type, {})
-        _validate_refs(A.COMPONENT_NAME, [name], set(by_name), f"attributes -> {component_type}")
+        validate_refs(A.COMPONENT_NAME, [name], set(by_name), f"attributes -> {component_type}")
         if row[A.ATTRIBUTE_ID] not in attribute_ids:
             raise ValueError(
                 f"attributes -> supplemental_attributes: no attribute with id {row[A.ATTRIBUTE_ID]}"
@@ -221,18 +214,15 @@ def _build_associations(
 
 
 def _stated(row: dict[str, Any]) -> dict[str, Any]:
-    """The fields a row actually holds.
+    """The fields a row actually holds, at every depth of a nested struct.
 
     A field no table wrote is absent rather than null, so the schema's own default applies
-    to it rather than a null a consumer would have to read as one.
+    to it rather than a null a consumer would have to read as one. A cost struct carries
+    every variant's fields, so this is also what leaves a renewable technology's cost
+    without the two a thermal one alone states.
     """
-    return {key: value for key, value in row.items() if value is not None}
-
-
-def _validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
-    missing = set(needed) - available
-    if missing:
-        raise ValueError(
-            f"{context}: {len(missing)} reference(s) in {ref_col!r} "
-            f"not found in parent table: {sorted(missing)}"
-        )
+    return {
+        key: _stated(value) if isinstance(value, dict) else value
+        for key, value in row.items()
+        if value is not None
+    }

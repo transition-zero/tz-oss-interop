@@ -27,19 +27,23 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATable,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
     REGION_COL,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
-    ZERO_IO_CURVE,
+    build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
     investments_skip_report,
+)
+from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    ZERO_IO_CURVE,
+    linear_value_curve,
     pypsa_source_field,
     sienna_dest_field,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import linear_value_curve
 from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
@@ -74,49 +78,48 @@ S = SiennaStorageTechnologyCol
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
-_storage_skip = partial(
-    investments_skip_report,
+NO_ENERGY_SKIP = investments_skip_report(
     component=PyPSAComponent.STORAGE_UNIT,
     name_col=PyPSAStorageUnitCol.NAME,
     counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
-)
-
-UNBOUNDED_BUILD_SKIP = _storage_skip(
-    reason="are extendable and put no upper bound on the capacity a build may add",
-    note=(
-        "p_nom_max is not a finite number of MW, so the technology has no maximum installed "
-        "capacity to state"
+    reason="are extendable and hold no energy",
+    note=lambda row: (
+        f"max_hours is {row[PyPSAStorageUnitCol.MAX_HOURS]}, so the energy capacity limits a "
+        "build could add are zero MWh"
     ),
-    attribute_col=PyPSAStorageUnitCol.P_NOM_MAX,
-)
-
-UNBOUNDED_LIFETIME_SKIP = _storage_skip(
-    reason="are extendable and state no finite lifetime",
-    note=(
-        "lifetime is not a finite number of years, so the technology has no capital recovery "
-        "period to annuitise its overnight cost across"
-    ),
-    attribute_col=PyPSAStorageUnitCol.LIFETIME,
+    attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
 )
 
 STORAGE_SKIPS: tuple[SkipRule, ...] = (
-    SkipRule(keep=pl.col(PyPSAStorageUnitCol.P_NOM_MAX).is_finite(), report=UNBOUNDED_BUILD_SKIP),
-    SkipRule(keep=pl.col(PyPSAStorageUnitCol.LIFETIME).is_finite(), report=UNBOUNDED_LIFETIME_SKIP),
+    *build_expansion_skips(
+        PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
+        name_col=PyPSAStorageUnitCol.NAME,
+        build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
+        lifetime_col=PyPSAStorageUnitCol.LIFETIME,
+        overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
+        discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
+    ),
+    SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=NO_ENERGY_SKIP),
 )
 
 
 def fill_storage_technology_defaults(table: pl.DataFrame) -> pl.DataFrame:
-    """Add the expansion columns PyPSA omits when every storage unit shares its default."""
+    """Add the expansion columns PyPSA omits when every storage unit shares its default.
+
+    PyPSA gives ``max_hours`` a default of one hour of the power rating, and defaults an
+    overnight cost and a discount rate to NaN rather than to a number, so both of the latter
+    stay null here and a unit stating neither is dropped rather than built free.
+    """
     return fill_defaults(
         table,
         [
             (PyPSAStorageUnitCol.P_NOM_MIN, 0.0),
             (PyPSAStorageUnitCol.P_NOM_MAX, float("inf")),
-            (PyPSAStorageUnitCol.MAX_HOURS, 0.0),
+            (PyPSAStorageUnitCol.MAX_HOURS, 1.0),
             (PyPSAStorageUnitCol.EFFICIENCY_STORE, 1.0),
             (PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, 1.0),
-            (PyPSAStorageUnitCol.OVERNIGHT_COST, 0.0),
-            (PyPSAStorageUnitCol.DISCOUNT_RATE, 0.0),
+            (PyPSAStorageUnitCol.OVERNIGHT_COST, None),
+            (PyPSAStorageUnitCol.DISCOUNT_RATE, None),
             (PyPSAStorageUnitCol.LIFETIME, float("inf")),
             (PyPSAStorageUnitCol.FOM_COST, 0.0),
         ],
@@ -140,13 +143,6 @@ def storage_capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
         pl.lit(0.0).alias(SiennaStorageCapitalCostField.INTERCONNECTION_COST),
     ).cast(STORAGE_CAPITAL_COST_DTYPE)
 
-
-STORAGE_ID = row_position_id_translation(
-    _dest,
-    dest_name_col=S.NAME,
-    id_col=S.ID,
-    note="assigned by 1-based row position in the StorageTechnology DataFrame",
-)
 
 STORAGE_NAME = _direct(source_col=PyPSAStorageUnitCol.NAME, dest_col=S.NAME)
 
@@ -329,7 +325,6 @@ STORAGE_LIFETIME = _direct(
 )
 
 STORAGE_TECHNOLOGY_TRANSLATIONS: list[Translation] = [
-    STORAGE_ID,
     STORAGE_NAME,
     STORAGE_AVAILABLE,
     STORAGE_SIENNA_TYPE,
@@ -347,9 +342,12 @@ STORAGE_TECHNOLOGY_TRANSLATIONS: list[Translation] = [
 ]
 
 
-def build_storage_technology_translations(base_year: int) -> list[Translation]:
-    """Every StorageTechnology translation, including the one the base year decides."""
+def build_storage_technology_translations(base_year: int, start: int) -> list[Translation]:
+    """Every StorageTechnology translation, including the two the caller's numbers decide."""
     return [
+        row_position_id_translation(
+            _dest, dest_name_col=S.NAME, id_col=S.ID, note=PORTFOLIO_ID_NOTE, start=start
+        ),
         *STORAGE_TECHNOLOGY_TRANSLATIONS,
         build_financial_data_translation(
             _source,

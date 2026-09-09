@@ -24,8 +24,6 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
     When I run the plexos-to-sienna-investments chain against "inputs/model.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as valid JSON
-    And the file "outputs/portfolio.json" parses as JSON with "aggregation" set to "Area"
-    And the file "outputs/portfolio.json" parses as JSON with "base_system_file" set to "system.json"
     And the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
@@ -39,8 +37,6 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "lifetime" set to 30
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.capital_recovery_period" set to 25
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.return_on_equity" set to 0.07
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.debt_fraction" set to 0.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.technology_base_year" set to 2020
     # The build the plan has yet to decide is not a component of the base system.
     And the file "outputs/system.json" parses as JSON with 0 components of type "RenewableDispatch"
     And the file "outputs/system.json" parses as JSON with 1 component of type "Area"

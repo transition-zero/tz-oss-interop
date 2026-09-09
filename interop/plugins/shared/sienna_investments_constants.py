@@ -4,12 +4,6 @@ Every name and every required/optional status here comes from the ``Investments/
 of SiennaSchemas. A portfolio is a separate document from a system: it holds the candidate
 technologies, the policy requirements and the regional aggregations of an expansion problem,
 and it names the base power system it expands rather than embedding it.
-
-Several fields differ from the operations side and are easy to guess wrong, so they are
-spelled out here: a technology's ``region`` is a list of integer ids, its capital cost is a
-``ValueCurve`` inside a ``CapitalCost`` wrapper, and ``ExistingDevices``,
-``RetirementPotential`` and ``TopologyMapping`` are supplemental attributes carried in a flat
-array beside an association table rather than components of their own.
 """
 
 from __future__ import annotations
@@ -341,8 +335,6 @@ NAMED_YEAR_DTYPE: pl.DataType = pl.List(
     pl.Struct({NamedYearField.NAME: pl.Utf8, NamedYearField.YEAR: pl.Int64})
 )
 
-# The MinMax pair a capacity limit is stated as, kept here so the investments modules read
-# one name for it.
 CAPACITY_LIMITS_DTYPE: pl.DataType = MIN_MAX_DTYPE
 
 
@@ -462,14 +454,6 @@ SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
     SiennaSupplementalAttribute.RETIREMENT_POTENTIAL,
     SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
 )
-
-SUPPLEMENTAL_ATTRIBUTE_SCHEMAS: dict[
-    SiennaSupplementalAttribute, dict[str, pl.DataType | type[pl.DataType]]
-] = {
-    SiennaSupplementalAttribute.EXISTING_DEVICES: EXISTING_DEVICES_DESTINATION_SCHEMA,
-    SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
-    SiennaSupplementalAttribute.TOPOLOGY_MAPPING: TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
-}
 
 # Keys for the destination tables that are not components of the document: the association
 # rows and the portfolio-wide financial data.

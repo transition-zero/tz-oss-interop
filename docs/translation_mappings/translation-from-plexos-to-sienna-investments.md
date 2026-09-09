@@ -77,7 +77,8 @@ Where the intermediate form loses something, this document says so.
 | `capital_costs.capital_cost` | $/MW | `Build Cost`, as the slope of a linear cost curve | `derived` |
 | `capital_costs.interconnection_cost` | $ | `0.0`. PLEXOS prices no last-mile connection separately. | `default` |
 | `operation_costs.fixed` | $/MW/yr | `FO&M Charge` | `direct` |
-| `operation_costs.cost_type` | | `THERMAL` where the base system type is `ThermalStandard`, `RENEWABLE` otherwise | `derived` |
+| `operation_costs.cost_type` | | `THERMAL` where the base system type is `ThermalStandard`, `HYDRO_GEN` where it is `HydroDispatch`, `RENEWABLE` otherwise | `derived` |
+| `operation_costs.start_up`, `shut_down` | $ | `0.0`, and only for a `THERMAL` cost. The other two cost representations state neither. | `default` |
 | `operation_costs.variable_operation_cost` | | A zero curve. The `VO&M Charge` and the fuel price price the component in the base system, not the build. | `default` |
 | `lifetime` | yr | `Technical Life`: how long a built unit runs | `direct` |
 | `financial_data.capital_recovery_period` | yr | `Economic Life`: the period the build cost is recovered over | `direct` |
@@ -106,6 +107,7 @@ cost and the energy side is derived from the two.
 | `region` | | The `Region` that contains the object's `Node` | `derived` |
 | `capacity_limits_discharge.min` / `.max` | MW | `Max Power × Units` and `Max Power × (Units + Max Units Built)` | `derived` |
 | `capacity_limits_energy.min` / `.max` | MWh | The discharge limits multiplied by the object's storage hours (`Capacity ÷ Max Power` for a `Battery`) | `derived` |
+| | | A candidate whose storage hours come out at zero is left out, since a build could add power it can never charge. `decisions.md` names each one. | |
 | `unit_size_discharge` | MW | `Max Power`: what one unit of the candidate is | `direct` |
 | `capital_costs.discharge_capital_cost` | $/MW | `Build Cost`, as the slope of a linear cost curve | `derived` |
 | `capital_costs.charge_capital_cost`, `energy_capital_cost` | | Zero curves. PLEXOS prices the object by its power, so it states no separate price for charging or for energy. | `default` |
@@ -134,7 +136,7 @@ region it is drawn in.
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `name` | | `<Region>_load`, the name the demand has in the base system | `direct` |
-| `power_systems_type` | | `PowerLoad` | `default` |
+| `power_systems_type` | | The base system type the demand is held as: `InterruptiblePowerLoad` where the region prices a shortfall, `PowerLoad` otherwise | `derived` |
 | `region` | | The `Region` that contains the demand's node | `derived` |
 | `available` | | `true` | `default` |
 | `new_demand_mw`, `new_construction_year`, `growth_rate`, `conformity` | | These describe a demand a plan adds. The demand your model states is one the base system already holds, with its own profile. | `dropped` |

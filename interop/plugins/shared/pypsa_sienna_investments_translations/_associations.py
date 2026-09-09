@@ -2,7 +2,7 @@
 
 The attributes travel in one flat array, so the association carries the type of the
 attribute as well as its id, and the type of the component as well as its name. The sink
-resolves the name to an id; nothing else about the row is decided anywhere but here.
+resolves the name to an id.
 """
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ def build_association_rows(
     component_names: Sequence[str],
     component_types: Sequence[str],
 ) -> pl.DataFrame:
-    """One row per attribute, naming what it describes."""
     return pl.DataFrame(
         {
             A.COMPONENT_NAME: list(component_names),
@@ -36,8 +35,3 @@ def build_association_rows(
         },
         schema=SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA,
     )
-
-
-def empty_association_rows() -> pl.DataFrame:
-    """The association table a portfolio with no supplemental attributes still states."""
-    return pl.DataFrame(schema=SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA)

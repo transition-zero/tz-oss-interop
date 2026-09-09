@@ -45,6 +45,10 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "capital_costs.interconnection_cost" set to 0.0
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.cost_type" set to "RENEWABLE"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.fixed" set to 15000.0
+    # RenewableGenerationCost states neither a start-up nor a shut-down cost, so the struct
+    # the table carries them in leaves both unset and the document writes neither.
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "operation_costs.start_up"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "operation_costs.shut_down"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "unit_size" set to 100.0
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "lifetime" set to 30
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.capital_recovery_period" set to 25
@@ -174,3 +178,110 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "decisions.md" contains "`pypsa.Generator.Unbounded_REZ.p_nom_max`"
     And the file "decisions.md" contains "p_nom_max is not a finite number of MW"
     And the log contains "1 Generator(s) are extendable and put no upper bound on the capacity a build may add"
+
+  Scenario: a candidate that names a thermal or a hydro carrier gets that cost representation
+    GenericOperationCost is chosen by cost_type, and only the thermal variant states a
+    start-up and a shut-down cost.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "New_CCGT" on "North_bus" carrier "CCGT" p_nom 0 p_nom_extendable True
+    And generator "New_CCGT" has p_nom_max 400
+    And generator "New_CCGT" has overnight_cost 900000
+    And generator "New_CCGT" has discount_rate 0.08
+    And generator "New_CCGT" has lifetime 30
+    And the network contains generator "New_Hydro" on "North_bus" carrier "hydro" p_nom 0 p_nom_extendable True
+    And generator "New_Hydro" has p_nom_max 200
+    And generator "New_Hydro" has overnight_cost 2000000
+    And generator "New_Hydro" has discount_rate 0.05
+    And generator "New_Hydro" has lifetime 40
+    And the network is saved as "inputs/cost_types.nc"
+    When I run the pypsa investments translation against "inputs/cost_types.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_CCGT" having "power_systems_type" set to "ThermalStandard"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_CCGT" having "operation_costs.cost_type" set to "THERMAL"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_CCGT" having "operation_costs.start_up" set to 0.0
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_CCGT" having "operation_costs.shut_down" set to 0.0
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_CCGT" having "fuel" set to ["NATURAL_GAS"]
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_Hydro" having "power_systems_type" set to "HydroDispatch"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_Hydro" having "operation_costs.cost_type" set to "HYDRO_GEN"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "New_Hydro" without field "operation_costs.start_up"
+
+  Scenario: every component of the portfolio takes its id from one counter
+    An association names the component it describes by id alone, so two components of
+    different types may not share one.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains load "North_load" on "North_bus" with static p_set 100
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network contains storage unit "NewBattery" on "North_bus" carrier "PHS" p_nom 0 max_hours 4.0 efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "NewBattery" has p_nom_max 300
+    And storage unit "NewBattery" has overnight_cost 800000
+    And storage unit "NewBattery" has discount_rate 0.07
+    And storage unit "NewBattery" has lifetime 20
+    And the network is saved as "inputs/ids.nc"
+    When I run the pypsa investments translation against "inputs/ids.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "id" set to 1
+    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "id" set to 2
+    And the file "outputs/portfolio.json" parses as a portfolio with component "DemandRequirement" named "North_load" having "id" set to 3
+
+  Scenario: a load whose bus prices a shortfall is a demand the base system may cut
+    The base system writes such a load as an InterruptiblePowerLoad, and power_systems_type
+    names the type the base system holds it as.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains load "North_load" on "North_bus" with static p_set 100
+    And the network is saved as "inputs/voll.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"bus": [{"name": "North_bus", "value_of_lost_load": 9000.0}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/voll.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/system.json" parses as JSON with 1 components of type "InterruptiblePowerLoad"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "DemandRequirement" named "North_load" having "power_systems_type" set to "InterruptiblePowerLoad"
+
+  Scenario: a candidate the network prices nothing for is left out, and the run completes
+    PyPSA leaves overnight_cost and discount_rate at NaN rather than at zero, and a
+    technology written from either would build for free or discount at nothing.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "Free_REZ" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "Free_REZ" has p_nom_max 400
+    And generator "Free_REZ" has discount_rate 0.07
+    And generator "Free_REZ" has lifetime 25
+    And the network contains generator "Unrated_REZ" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "Unrated_REZ" has p_nom_max 400
+    And generator "Unrated_REZ" has overnight_cost 1200000
+    And generator "Unrated_REZ" has lifetime 25
+    And the network contains generator "Priced_REZ" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "Priced_REZ" has p_nom_max 400
+    And generator "Priced_REZ" has overnight_cost 1200000
+    And generator "Priced_REZ" has discount_rate 0.07
+    And generator "Priced_REZ" has lifetime 25
+    And the network is saved as "inputs/unpriced.nc"
+    When I run the pypsa investments translation against "inputs/unpriced.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
+    And the file "outputs/portfolio.json" parses as a portfolio with no component "SupplyTechnology" named "Free_REZ"
+    And the file "outputs/portfolio.json" parses as a portfolio with no component "SupplyTechnology" named "Unrated_REZ"
+    And the file "decisions.md" contains "`pypsa.Generator.Free_REZ.overnight_cost`"
+    And the file "decisions.md" contains "`pypsa.Generator.Unrated_REZ.discount_rate`"
+    And the log contains "1 Generator(s) are extendable and put no overnight cost on the capacity a build adds"
+    And the log contains "1 Generator(s) are extendable and state no discount rate"
+
+  Scenario: a storage candidate that holds no energy is left out, and the run completes
+    A StorageTechnology states the energy a build may add as max_hours of its power, so a
+    unit stating no hours could build power it can never charge.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains storage unit "Flat_PHS" on "North_bus" carrier "PHS" p_nom 0 max_hours 0.0 efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "Flat_PHS" has p_nom_max 300
+    And storage unit "Flat_PHS" has overnight_cost 800000
+    And storage unit "Flat_PHS" has discount_rate 0.07
+    And storage unit "Flat_PHS" has lifetime 20
+    And the network is saved as "inputs/no_energy.nc"
+    When I run the pypsa investments translation against "inputs/no_energy.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "StorageTechnology"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.Flat_PHS.max_hours`"
+    And the file "decisions.md" contains "so the energy capacity limits a build could add are zero MWh"
+    And the log contains "1 StorageUnit(s) are extendable and hold no energy"

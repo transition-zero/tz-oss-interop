@@ -1,9 +1,4 @@
-"""Primitives every PyPSA -> Sienna investments translation module shares.
-
-The field factories, the cost curves, the financial-data derivation and the enrichment
-columns that carry a component's region and its sidecar fields all live here, so a
-technology module states only what makes its own type different.
-"""
+"""Primitives every PyPSA -> Sienna investments translation module shares."""
 
 from __future__ import annotations
 
@@ -15,24 +10,13 @@ import polars as pl
 
 from interop.plugins.shared.constants import UNIT_YEARS, Framework
 from interop.plugins.shared.pypsa_constants import PyPSAComponentNaming
-from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    ZERO_IO_CURVE,
-    linear_value_curve,
-    pypsa_source_field,
-    sienna_dest_field,
-    variable_cost_curve,
-)
 from interop.plugins.shared.sienna_constants import MinMaxField
 from interop.plugins.shared.sienna_investments_constants import (
     ALL_EQUITY_DEBT_FRACTION,
     ALL_EQUITY_DEBT_RATE,
     ALL_EQUITY_TAX_RATE,
     CAPACITY_LIMITS_DTYPE,
-    CAPITAL_COST_DTYPE,
-    GENERIC_OPERATION_COST_DTYPE,
     TECHNOLOGY_FINANCIAL_DATA_DTYPE,
-    SiennaCapitalCostField,
-    SiennaOperationCostField,
     SiennaTechnologyFinancialDataField,
 )
 from interop.plugins.shared.translation_runner import (
@@ -54,6 +38,10 @@ PRIME_MOVER_COL = "_prime_mover"
 FUEL_COL = "_fuel"
 UNIT_SIZE_COL = "_unit_size_mw"
 TECHNICAL_LIFE_COL = "_technical_life_years"
+
+# An association names a component by id alone, so every component of the portfolio takes
+# its id from one counter rather than numbering from one within its own type.
+PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"
 
 # Every drop this leg reports is a PyPSA component the portfolio leaves out.
 investments_skip_report = partial(
@@ -106,6 +94,86 @@ def build_scope_skips(
     ]
 
 
+UNBOUNDED_BUILD_REASON = "are extendable and put no upper bound on the capacity a build may add"
+UNBOUNDED_BUILD_NOTE = (
+    "p_nom_max is not a finite number of MW, so the technology has no maximum installed "
+    "capacity to state"
+)
+UNBOUNDED_LIFETIME_REASON = "are extendable and state no finite lifetime"
+UNBOUNDED_LIFETIME_NOTE = (
+    "lifetime is not a finite number of years, so the technology has no capital recovery "
+    "period to annuitise its overnight cost across"
+)
+UNPRICED_BUILD_REASON = "are extendable and put no overnight cost on the capacity a build adds"
+UNPRICED_BUILD_NOTE = (
+    "PyPSA prices a build through overnight_cost or through the annuity in capital_cost, and "
+    "an annuity cannot be undone into the two terms a capital cost curve states, so the "
+    "technology has no price to build at"
+)
+NO_DISCOUNT_RATE_REASON = "are extendable and state no discount rate"
+NO_DISCOUNT_RATE_NOTE = (
+    "TechnologyFinancialData requires a return on equity, and the discount rate is the only "
+    "cost of capital PyPSA states"
+)
+
+
+def build_expansion_skips(
+    naming: PyPSAComponentNaming,
+    *,
+    name_col: str,
+    build_limit_col: str,
+    lifetime_col: str,
+    overnight_cost_col: str,
+    discount_rate_col: str,
+) -> tuple[SkipRule, ...]:
+    """The four drops every candidate table shares once its scope is settled.
+
+    A build with no ceiling, no finite lifetime, no overnight cost or no discount rate is a
+    technology whose ceiling, recovery period, price or cost of capital would have to be
+    invented, so the candidate is left out and named instead.
+    """
+    skip = partial(
+        investments_skip_report,
+        component=naming.display,
+        name_col=name_col,
+        counted_noun=naming.plural,
+    )
+    return (
+        SkipRule(
+            keep=pl.col(build_limit_col).is_finite(),
+            report=skip(
+                reason=UNBOUNDED_BUILD_REASON,
+                note=UNBOUNDED_BUILD_NOTE,
+                attribute_col=build_limit_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(lifetime_col).is_finite(),
+            report=skip(
+                reason=UNBOUNDED_LIFETIME_REASON,
+                note=UNBOUNDED_LIFETIME_NOTE,
+                attribute_col=lifetime_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(overnight_cost_col).is_not_null(),
+            report=skip(
+                reason=UNPRICED_BUILD_REASON,
+                note=UNPRICED_BUILD_NOTE,
+                attribute_col=overnight_cost_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(discount_rate_col).is_not_null(),
+            report=skip(
+                reason=NO_DISCOUNT_RATE_REASON,
+                note=NO_DISCOUNT_RATE_NOTE,
+                attribute_col=discount_rate_col,
+            ),
+        ),
+    )
+
+
 WACC_DERIVATION = (
     "discount_rate as an all-equity cost of capital: with no debt the weighted average "
     "cost of capital equals the return on equity"
@@ -126,38 +194,12 @@ def enrich_from_names(
 ) -> pl.DataFrame:
     """Add a column looking each row's name up in a mapping, null where the mapping is silent.
 
-    Component-scale: one entry per component, so the lookup happens in Python rather than in
-    a join whose right-hand side would be a frame of the same height.
+    One entry per component: never a time-series frame.
     """
     names: list[str] = table[name_col].to_list() if table.height else []
     return table.with_columns(
         pl.Series(dest_col, [values.get(name) for name in names], dtype=dtype)
     )
-
-
-def capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
-    """A Sienna ``CapitalCost`` whose curve prices one MW of new capacity linearly."""
-    return pl.struct(
-        linear_value_curve(overnight_cost, input_at_zero=pl.lit(None, dtype=pl.Float64)).alias(
-            SiennaCapitalCostField.CAPITAL_COST
-        ),
-        pl.lit(0.0).alias(SiennaCapitalCostField.INTERCONNECTION_COST),
-    ).cast(CAPITAL_COST_DTYPE)
-
-
-def operation_cost_struct(fixed: pl.Expr, cost_type: pl.Expr) -> pl.Expr:
-    """A Sienna ``GenericOperationCost`` carrying the fixed O&M of new capacity.
-
-    A candidate's variable cost belongs to the component the build becomes in the base
-    system, so the curve here is zero and only the fixed term carries a number.
-    """
-    return pl.struct(
-        cost_type.alias(SiennaOperationCostField.COST_TYPE),
-        fixed.alias(SiennaOperationCostField.FIXED),
-        pl.lit(0.0).alias(SiennaOperationCostField.START_UP),
-        pl.lit(0.0).alias(SiennaOperationCostField.SHUT_DOWN),
-        variable_cost_curve(pl.lit(0.0)).alias(SiennaOperationCostField.VARIABLE_OPERATION_COST),
-    ).cast(GENERIC_OPERATION_COST_DTYPE)
 
 
 def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
@@ -258,27 +300,3 @@ def build_financial_data_translation(
         ],
         make_events=make_events,
     )
-
-
-__all__ = [
-    "ALL_EQUITY_NOTE",
-    "build_scope_skips",
-    "FUEL_COL",
-    "POWER_SYSTEMS_TYPE_COL",
-    "PRIME_MOVER_COL",
-    "PYPSA_TO_SIENNA_INVESTMENTS",
-    "REGION_COL",
-    "TECHNICAL_LIFE_COL",
-    "UNIT_SIZE_COL",
-    "WACC_DERIVATION",
-    "ZERO_IO_CURVE",
-    "build_financial_data_translation",
-    "capacity_limits_struct",
-    "capital_cost_struct",
-    "enrich_from_names",
-    "financial_data_struct",
-    "investments_skip_report",
-    "operation_cost_struct",
-    "pypsa_source_field",
-    "sienna_dest_field",
-]

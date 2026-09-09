@@ -26,18 +26,21 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     FUEL_COL,
+    PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
     REGION_COL,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
+    build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
-    capital_cost_struct,
-    investments_skip_report,
-    operation_cost_struct,
+)
+from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    linear_value_curve,
     pypsa_source_field,
     sienna_dest_field,
+    variable_cost_curve,
 )
 from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
@@ -46,7 +49,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
 )
 from interop.plugins.shared.sienna_investments_constants import (
+    CAPITAL_COST_DTYPE,
+    GENERIC_OPERATION_COST_DTYPE,
+    SiennaCapitalCostField,
     SiennaInvestmentsComponent,
+    SiennaOperationCostField,
     SiennaSupplyTechnologyCol,
 )
 from interop.plugins.shared.translation_runner import (
@@ -67,46 +74,29 @@ S = SiennaSupplyTechnologyCol
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
-_generator_skip = partial(
-    investments_skip_report,
-    component=PyPSAComponent.GENERATOR,
+SUPPLY_SKIPS: tuple[SkipRule, ...] = build_expansion_skips(
+    PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS],
     name_col=PyPSAGeneratorCol.NAME,
-    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS].plural,
-)
-
-UNBOUNDED_BUILD_SKIP = _generator_skip(
-    reason="are extendable and put no upper bound on the capacity a build may add",
-    note=(
-        "p_nom_max is not a finite number of MW, so the technology has no maximum installed "
-        "capacity to state"
-    ),
-    attribute_col=PyPSAGeneratorCol.P_NOM_MAX,
-)
-
-UNBOUNDED_LIFETIME_SKIP = _generator_skip(
-    reason="are extendable and state no finite lifetime",
-    note=(
-        "lifetime is not a finite number of years, so the technology has no capital recovery "
-        "period to annuitise its overnight cost across"
-    ),
-    attribute_col=PyPSAGeneratorCol.LIFETIME,
-)
-
-SUPPLY_SKIPS: tuple[SkipRule, ...] = (
-    SkipRule(keep=pl.col(PyPSAGeneratorCol.P_NOM_MAX).is_finite(), report=UNBOUNDED_BUILD_SKIP),
-    SkipRule(keep=pl.col(PyPSAGeneratorCol.LIFETIME).is_finite(), report=UNBOUNDED_LIFETIME_SKIP),
+    build_limit_col=PyPSAGeneratorCol.P_NOM_MAX,
+    lifetime_col=PyPSAGeneratorCol.LIFETIME,
+    overnight_cost_col=PyPSAGeneratorCol.OVERNIGHT_COST,
+    discount_rate_col=PyPSAGeneratorCol.DISCOUNT_RATE,
 )
 
 
 def fill_supply_defaults(table: pl.DataFrame) -> pl.DataFrame:
-    """Add the expansion columns PyPSA omits when every generator shares its default."""
+    """Add the expansion columns PyPSA omits when every generator shares its default.
+
+    PyPSA defaults an overnight cost and a discount rate to NaN rather than to a number, so
+    both stay null here and a generator stating neither is dropped rather than built free.
+    """
     return fill_defaults(
         table,
         [
             (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_NOM_MAX, float("inf")),
-            (PyPSAGeneratorCol.OVERNIGHT_COST, 0.0),
-            (PyPSAGeneratorCol.DISCOUNT_RATE, 0.0),
+            (PyPSAGeneratorCol.OVERNIGHT_COST, None),
+            (PyPSAGeneratorCol.DISCOUNT_RATE, None),
             (PyPSAGeneratorCol.LIFETIME, float("inf")),
             (PyPSAGeneratorCol.FOM_COST, 0.0),
         ],
@@ -114,12 +104,37 @@ def fill_supply_defaults(table: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-SUPPLY_ID = row_position_id_translation(
-    _dest,
-    dest_name_col=S.NAME,
-    id_col=S.ID,
-    note="assigned by 1-based row position in the SupplyTechnology DataFrame",
-)
+def capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
+    """A Sienna ``CapitalCost`` whose curve prices one MW of new capacity linearly."""
+    return pl.struct(
+        linear_value_curve(overnight_cost, input_at_zero=pl.lit(None, dtype=pl.Float64)).alias(
+            SiennaCapitalCostField.CAPITAL_COST
+        ),
+        pl.lit(0.0).alias(SiennaCapitalCostField.INTERCONNECTION_COST),
+    ).cast(CAPITAL_COST_DTYPE)
+
+
+def operation_cost_struct(fixed: pl.Expr, cost_type: pl.Expr) -> pl.Expr:
+    """A Sienna ``GenericOperationCost`` carrying the fixed O&M of new capacity.
+
+    A candidate's variable cost belongs to the component the build becomes in the base
+    system, so the curve here is zero and only the fixed term carries a number. Only
+    ``ThermalGenerationCost`` states a start-up and a shut-down cost, so the other two
+    variants leave both null and the sink writes neither.
+    """
+    thermal_only = (
+        pl.when(cost_type == SiennaCostType.THERMAL)
+        .then(pl.lit(0.0))
+        .otherwise(pl.lit(None, dtype=pl.Float64))
+    )
+    return pl.struct(
+        cost_type.alias(SiennaOperationCostField.COST_TYPE),
+        fixed.alias(SiennaOperationCostField.FIXED),
+        thermal_only.alias(SiennaOperationCostField.START_UP),
+        thermal_only.alias(SiennaOperationCostField.SHUT_DOWN),
+        variable_cost_curve(pl.lit(0.0)).alias(SiennaOperationCostField.VARIABLE_OPERATION_COST),
+    ).cast(GENERIC_OPERATION_COST_DTYPE)
+
 
 SUPPLY_NAME = _direct(source_col=PyPSAGeneratorCol.NAME, dest_col=S.NAME)
 
@@ -194,6 +209,8 @@ SUPPLY_CAPITAL_COSTS = _direct(
 _cost_type = (
     pl.when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.THERMAL_STANDARD)
     .then(pl.lit(SiennaCostType.THERMAL))
+    .when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.HYDRO_DISPATCH)
+    .then(pl.lit(SiennaCostType.HYDRO_GEN))
     .otherwise(pl.lit(SiennaCostType.RENEWABLE))
 )
 
@@ -205,7 +222,8 @@ SUPPLY_OPERATION_COSTS = _direct(
     derivation="fom_cost as the fixed term of the operation cost",
     note=(
         "the cost representation follows the base system type a build becomes: thermal for a "
-        "ThermalStandard and renewable for the rest, and both carry the fixed term"
+        "ThermalStandard, hydro for a HydroDispatch and renewable for the rest, and each "
+        "carries the fixed term"
     ),
 )
 
@@ -263,7 +281,6 @@ SUPPLY_LIFETIME = _direct(
 )
 
 SUPPLY_TRANSLATIONS: list[Translation] = [
-    SUPPLY_ID,
     SUPPLY_NAME,
     SUPPLY_AVAILABLE,
     SUPPLY_SIENNA_TYPE,
@@ -279,9 +296,16 @@ SUPPLY_TRANSLATIONS: list[Translation] = [
 ]
 
 
-def build_supply_translations(base_year: int) -> list[Translation]:
-    """Every SupplyTechnology translation, including the one the base year decides."""
+def build_supply_translations(base_year: int, start: int) -> list[Translation]:
+    """Every SupplyTechnology translation, including the two the caller's numbers decide."""
     return [
+        row_position_id_translation(
+            _dest,
+            dest_name_col=S.NAME,
+            id_col=S.ID,
+            note=PORTFOLIO_ID_NOTE,
+            start=start,
+        ),
         *SUPPLY_TRANSLATIONS,
         build_financial_data_translation(
             _source,
