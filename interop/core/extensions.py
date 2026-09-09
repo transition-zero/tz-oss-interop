@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
 
@@ -508,18 +509,40 @@ class ExtensionLookup(Generic[RecordT]):
         return self._records.get(name) or self._model(name=name)
 
 
+@dataclass
+class ExtensionConsumption:
+    """The names every reader of one hop has read, and the framework they were staged by.
+
+    A hop may split its mappings across more than one step, so the readers those steps build
+    share one of these and the run reports what none of them asked for once the last step
+    has run.
+    """
+
+    framework: str
+    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+
+    def names_for(self, kind: ExtensionKind) -> set[str]:
+        return self.by_kind.setdefault(kind, set())
+
+    def report_unconsumed(self, staged: StagedExtensions, recorder: EventRecorder) -> None:
+        """Report every staged record no mapping of the hop asked for."""
+        for kind, records in staged.items():
+            consumed = self.by_kind.get(kind, set())
+            unread = [record for record in records if record.name not in consumed]
+            report_dropped({kind: unread}, self.framework, recorder)
+
+
 class ExtensionReader:
     """What one hop staged, and what its mappings did with it.
 
     A record only reaches a sidecar because the hop before it had nowhere to put it, so a
     record no mapping here consumes is dropped and reported rather than relayed onward. One
-    reader serves every mapping in a hop, so it can tell what nobody asked for.
+    consumption record serves every mapping of a hop, so it can tell what nobody asked for.
     """
 
-    def __init__(self, staged: StagedExtensions, framework: str) -> None:
+    def __init__(self, staged: StagedExtensions, consumption: ExtensionConsumption) -> None:
         self._staged = staged
-        self._framework = framework
-        self._consumed: dict[ExtensionKind, set[str]] = {}
+        self._consumption = consumption
 
     @overload
     def read(self, kind: Literal[ExtensionKind.BUS]) -> ExtensionLookup[BusExtension]: ...
@@ -549,30 +572,10 @@ class ExtensionReader:
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(
-            model, self._staged.get(kind, []), self._consumed.setdefault(kind, set())
-        )
-
-    def mark_read(self, kind: ExtensionKind) -> None:
-        """Mark a kind's records as read by another step of the same pipeline.
-
-        A hop reports what none of its mappings asked for, and a pipeline may split its
-        mappings across more than one step. This is how the step that does not read a kind
-        says so, rather than reporting as dropped what the step beside it consumes.
-        """
-        self._consumed.setdefault(kind, set()).update(
-            record.name for record in self._staged.get(kind, [])
-        )
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumed.setdefault(kind, set()).update(record.name for record in records)
+        self._consumption.names_for(kind).update(record.name for record in records)
         return records
-
-    def report_unconsumed(self, recorder: EventRecorder) -> None:
-        """Report every staged record no mapping in this hop asked for."""
-        for kind, records in self._staged.items():
-            consumed = self._consumed.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, self._framework, recorder)

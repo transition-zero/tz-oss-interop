@@ -12,7 +12,7 @@ from interop.core.extensions import (
     ExtensionReader,
     append_extensions,
 )
-from interop.core.pipeline import PipelineSteps, State, TranslationStep
+from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_constants import (
@@ -85,9 +85,6 @@ from interop.plugins.shared.translation_runner import (
     apply_translations,
     filter_component,
     finalise,
-)
-from interop.plugins.steps.pypsa_to_sienna_investments_map_technologies import (
-    PypsaToSiennaInvestmentsMapTechnologies,
 )
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
@@ -191,15 +188,9 @@ class PypsaToSiennaMapComponents(TranslationStep):
     name: ClassVar[str] = "pypsa_to_sienna_map_components"
     params_schema: ClassVar[type[BaseModel] | None] = None
 
-    def __init__(
-        self,
-        recorder: ScopedRecorder,
-        carrier_mappings: CarrierMappings,
-        pipeline_steps: PipelineSteps,
-    ) -> None:
+    def __init__(self, recorder: ScopedRecorder, carrier_mappings: CarrierMappings) -> None:
         self._recorder = recorder
         self._carrier_mappings = carrier_mappings
-        self._pipeline_steps = pipeline_steps
 
     @staticmethod
     def _append(state: State, key: str, frame: pl.DataFrame) -> None:
@@ -210,7 +201,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = pl.DataFrame(
             schema=TIME_SERIES_ASSOCIATION_SCHEMA
         )
-        reader = ExtensionReader(state.source_extensions, Framework.PYPSA)
+        reader = state.extension_reader(Framework.PYPSA)
         state = self._map_buses(state)
         # Read once: the loads it prices and the shedding generators it identifies both want
         # it, and reading it twice would report each bus record's unread fields twice.
@@ -223,23 +214,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         _relay_reserves(state, reader)
         _relay_constraints(state, reader)
         choose_ensemble_samples(state, self._recorder)
-        self._leave_expansion_records_to_the_portfolio(reader)
-        # A record no mapping here read is dropped and reported, rather than relayed into a
-        # sidecar this hop's reader cannot say anything about.
-        reader.report_unconsumed(self._recorder)
         return state
-
-    def _leave_expansion_records_to_the_portfolio(self, reader: ExtensionReader) -> None:
-        """Say nothing about the expansion records where a portfolio step reads them.
-
-        The size of one unit and the technical life of a plant describe a build, so this hop
-        has no home for either. Where the pipeline writes a portfolio as well as a system,
-        the step that does have a home for them runs alongside this one.
-        """
-        if not self._pipeline_steps.contains(PypsaToSiennaInvestmentsMapTechnologies.name):
-            return
-        reader.mark_read(ExtensionKind.GENERATOR)
-        reader.mark_read(ExtensionKind.STORAGE)
 
     def _map_generators(self, state: State, voll_by_bus: dict[str, float]) -> State:
         """The generators, less the shedding ones an earlier hop of this translator added."""

@@ -22,6 +22,7 @@ from interop.core.pipeline import (
     TranslationStep,
     Validator,
 )
+from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.validation import (
     EnergyModelValidationError,
@@ -168,6 +169,7 @@ def run_pipeline(
     step_factory: StepFactory,
     sink_factory: SinkFactory,
     validator_factory: ValidatorFactory,
+    recorder: EventRecorder,
     *,
     keep_staging: bool = False,
     on_validators_complete: Callable[[list[EnergyModelValidationError]], None] | None = None,
@@ -182,6 +184,7 @@ def run_pipeline(
         for step_node in spec.steps:
             step = step_factory(step_node.name, pipeline_steps)
             state = step.run(state, _build_params(NodeKind.STEP, step, step_node))
+        _report_unconsumed_extensions(state, recorder)
 
         for sink_node in spec.sinks:
             sink = sink_factory(sink_node.name)
@@ -204,6 +207,17 @@ def run_validation(
     with source.load(source_params, keep_staging=keep_staging) as state:
         _run_validators(state, spec, validator_factory, on_validators_complete)
         return list(state.validation_errors)
+
+
+def _report_unconsumed_extensions(state: State, recorder: EventRecorder) -> None:
+    """Report every staged record no step of the hop read.
+
+    A record only reaches a sidecar because the hop before it had nowhere to put it, so one
+    no mapping here consumes is dropped rather than relayed onward. The hop's steps share
+    one consumption record, so only the run knows when the last of them has had its turn.
+    """
+    if state.consumed_extensions is not None:
+        state.consumed_extensions.report_unconsumed(state.source_extensions, recorder)
 
 
 def _reject_untranslatable_input(state: State) -> None:

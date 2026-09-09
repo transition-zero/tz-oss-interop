@@ -33,9 +33,8 @@ class SiennaToPypsaMapComponents(TranslationStep):
     composite. The inner scope wins because ScopedRecorder keeps an event's existing step
     over its own.
 
-    Every sub-step shares one ``ExtensionReader``, so once they have all run this step can
-    report the staged records no mapping consumed. Such a record is dropped rather than
-    relayed onward: no record outlives the mapping that knew what it meant.
+    Every sub-step shares one ``ExtensionReader``, so what one of them reads off the staged
+    records is read for the lot.
     """
 
     name: ClassVar[str] = "sienna_to_pypsa_map_components"
@@ -46,12 +45,11 @@ class SiennaToPypsaMapComponents(TranslationStep):
         self._off_window_recorder = ScopedRecorder(recorder, step=_DROP_PROFILES_OFF_THE_WINDOW)
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        reader = ExtensionReader(state.source_extensions, Framework.SIENNA)
+        reader = state.extension_reader(Framework.SIENNA)
         map_buses(state, self._recorder, reader)
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)
         self._drop_profiles_off_the_window(state)
-        reader.report_unconsumed(self._recorder)
         return state
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:

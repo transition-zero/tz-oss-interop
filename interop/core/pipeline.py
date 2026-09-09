@@ -23,7 +23,12 @@ from typing import ClassVar, Protocol, runtime_checkable
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import StagedExtensions, StagedExtensionSeries
+from interop.core.extensions import (
+    ExtensionConsumption,
+    ExtensionReader,
+    StagedExtensions,
+    StagedExtensionSeries,
+)
 from interop.core.user_mappings import UserMappingsOutput
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 
@@ -69,6 +74,11 @@ class State:
     sidecar, and the two are not interchangeable. A hop that relays a
     record naming a series relays the series with it, or the record
     points at a file its own sidecar has no companion for.
+
+    `consumed_extensions` is what the steps of this hop have read
+    off `source_extensions`. Every step builds its reader through
+    `extension_reader`, so one record covers the whole hop and the
+    run can report what none of them asked for.
     """
 
     staging_dir: Path
@@ -81,6 +91,15 @@ class State:
     destination_tables: dict[str, pl.DataFrame] = field(default_factory=dict)
     destination_time_series: dict[str, pl.LazyFrame] = field(default_factory=dict)
     validation_errors: list[EnergyModelValidationError] = field(default_factory=list)
+    consumed_extensions: ExtensionConsumption | None = None
+
+    def extension_reader(self, framework: str) -> ExtensionReader:
+        """A reader over the staged records, sharing one consumption record with the
+        reader every other step of this hop builds.
+        """
+        if self.consumed_extensions is None:
+            self.consumed_extensions = ExtensionConsumption(framework)
+        return ExtensionReader(self.source_extensions, self.consumed_extensions)
 
 
 @dataclass(frozen=True)
