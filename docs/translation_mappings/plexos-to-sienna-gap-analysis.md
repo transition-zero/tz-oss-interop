@@ -1,11 +1,7 @@
 # What a PLEXOS to Sienna translation loses
 
-This document lists each thing a `plexos-to-sienna` run loses, and what that loss does to a
-dispatch. It covers the translation and the validation run that proves the system solves in
-PowerSimulations.jl. The entries from
-[A `Constraint` over part of the model](#a-constraint-over-part-of-the-model) onwards cover
-the `plexos-to-sienna-investments` run instead, which writes an expansion portfolio beside a
-base system of its own.
+This document lists each thing a PLEXOS to Sienna run loses. Each part below names the run it
+covers.
 
 For what the translation keeps, refer to
 [Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md), and for the
@@ -27,7 +23,12 @@ expansion your PLEXOS model states.
 
 ---
 
-## Reserve requirements
+## What `plexos-to-sienna` loses from a dispatch
+
+These entries cover the translation and the validation run that proves the system solves in
+PowerSimulations.jl.
+
+### Reserve requirements
 
 **The PLEXOS data.** Each `Reserve` object, its type, its requirement in MW or as a share of
 a profile, and the generators that can provide it.
@@ -46,7 +47,7 @@ model, and a scarcity price your model shows does not appear.
 
 ---
 
-## Load shedding, on a plain run
+### Load shedding, on a plain run
 
 **The PLEXOS data.** Each Region states a `VoLL`, the value of lost load.
 
@@ -64,7 +65,7 @@ than a shortfall in MWh. Run the reliability chain to get the shortfall in MWh i
 
 ---
 
-## Unit commitment, relaxed
+### Unit commitment, relaxed
 
 **The PLEXOS data.** A start cost, a minimum up time and a minimum down time on each thermal
 generator.
@@ -87,7 +88,7 @@ two paths do not compare under that answer.
 
 ---
 
-## Thermal availability where the model states none
+### Thermal availability where the model states none
 
 **The PLEXOS data.** An `Outage Factor`, an `Outage Rating`, a `Rating` profile or a `Units
 Out` profile on some of the thermal fleet, and nothing on the rest.
@@ -107,7 +108,7 @@ number.
 
 ---
 
-## A hydro unit whose inflow is water, not power
+### A hydro unit whose inflow is water, not power
 
 **The PLEXOS data.** A reservoir hydro turbine with a `Natural Inflow` stated in cumec or in
 m³/day, or with no `Natural Inflow` at all.
@@ -126,7 +127,7 @@ The AEMO 2024 ISP states every inflow in cumec, so its whole reservoir fleet is 
 
 ---
 
-## A storage unit that states no energy
+### A storage unit that states no energy
 
 **The PLEXOS data.** A `Battery` with no `Capacity` and no `Duration`, or a pumped storage
 head reservoir whose `Max Volume` is in water.
@@ -142,7 +143,7 @@ across the hours it would have covered.
 
 ---
 
-## A generator that is not a power plant
+### A generator that is not a power plant
 
 **The PLEXOS data.** A generator whose category names a transmission augmentation, a policy
 project or another pseudo-object rather than a technology.
@@ -159,7 +160,7 @@ each run.
 
 ---
 
-## Heat rate bands
+### Heat rate bands
 
 **The PLEXOS data.** A `Heat Rate` stated as several bands, so the efficiency changes with
 output.
@@ -177,7 +178,7 @@ differently.
 
 ---
 
-## A generator that burns more than one fuel
+### A generator that burns more than one fuel
 
 **The PLEXOS data.** Several `Fuels` memberships on one generator.
 
@@ -192,7 +193,7 @@ price. A dual-fuel unit that your model switches to a cheaper fuel does not swit
 
 ---
 
-## A Fuel and a generator category of one name
+### A Fuel and a generator category of one name
 
 **The PLEXOS data.** A `Fuel` and a generator category that share a name, for example a fuel
 `HVO` and a category `HVO`.
@@ -210,7 +211,7 @@ groups of generators then take that type.
 
 ---
 
-## Zones, interfaces and custom constraints
+### Zones, interfaces and custom constraints
 
 **The PLEXOS data.** `Zone` objects, `Interface` flow limits and `Constraint` objects, which
 include energy budgets, running hour limits, RPS targets and emission caps.
@@ -233,7 +234,7 @@ the dispatch.
 
 ---
 
-## Hydro cascades and volumes in water
+### Hydro cascades and volumes in water
 
 **The PLEXOS data.** `Waterway` objects joining reservoirs, and `Max Volume` and `Initial
 Volume` stated in 1000 m³ or a `Natural Inflow` stated in cumec.
@@ -252,7 +253,7 @@ number that depends on hydro.
 
 ---
 
-## One solve, one window
+### One solve, one window
 
 **The PLEXOS data.** A Horizon, which can be many years long.
 
@@ -270,7 +271,7 @@ shorter year.
 
 ---
 
-## Region Price of Dump Energy
+### Region Price of Dump Energy
 
 **The PLEXOS data.** A Region `Price of Dump Energy`, the price of energy the system spills.
 
@@ -285,7 +286,7 @@ objective. The Region `VoLL` beside it does reach a reliability run: refer to
 
 ---
 
-## Sienna holds no Monte Carlo forecast a solve reads
+### Sienna holds no Monte Carlo forecast a solve reads
 
 **The PLEXOS data.** A pre-sampled model states many values for one property at one snapshot,
 one per replication, and a run over it draws a distribution of outcomes.
@@ -303,7 +304,7 @@ counts how many of them lose load. Solve the replications and count the outcomes
 
 ---
 
-## A Sienna objective and a PyPSA objective do not compare
+### A Sienna objective and a PyPSA objective do not compare
 
 **The PLEXOS data.** A Region `VoLL`, in a reliability run on both sides of the PyPSA hub.
 
@@ -322,7 +323,7 @@ not the same quantity and must not be compared or subtracted.
 
 ---
 
-## A profile that reaches only some replications
+### A profile that reaches only some replications
 
 **The PLEXOS data.** An outage draw that takes a unit out in one replication and leaves it
 available through the whole window in another.
@@ -343,7 +344,7 @@ holds.
 
 ---
 
-## A reliability solve reports its unserved energy in the results files
+### A reliability solve reports its unserved energy in the results files
 
 **The PLEXOS data.** The energy a window cannot serve, which a reliability run prices at the
 Region `VoLL`.
@@ -362,29 +363,38 @@ for you.
 
 ---
 
-## A `Constraint` over part of the model
+## What `plexos-to-sienna-investments` loses from an expansion
+
+These entries cover the run that writes an expansion portfolio beside a base system of its
+own.
+
+### A `Constraint` a cap cannot carry
 
 **The PLEXOS data.** A `Constraint` holding a weighted sum over the objects it names to a
 right-hand side: an emission cap over a group of plants, a target over one region, a budget
 over one technology.
 
-**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint whose
-members cover every generator and storage object the base system and the portfolio hold. A
-constraint naming fewer is left out, `decisions.md` names it, and the log warns. Every
-constraint still reaches the `extensions.json` sidecar, whether or not it became a cap.
+**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint that holds
+its weighted sum to `<=`, states a right-hand side for a year or for the whole horizon, and
+names every generator and storage object the base system and the portfolio hold. Every other
+constraint is left out, `decisions.md` names it, and the log warns. Every constraint still
+reaches the `extensions.json` sidecar, whether or not it became a cap.
 
 **The cause.** `CarbonCaps` names no members and no region: a cap in a portfolio holds the
 whole portfolio. A cap written from a constraint over part of the model would hold every
-technology in the problem, which is a different limit from the one your model states.
+technology in the problem, which is a different limit from the one your model states. A cap
+also states one ceiling over the whole run, so a constraint held to `>=` or to `==`, and a
+constraint whose only right-hand side bounds a repeating window inside the run, give it
+nothing to carry.
 
-**The effect on the expansion.** Nothing bounds the group the constraint names, so the plan
-may build and run those objects up to their own limits. A model whose targets are all
-regional or technology-scoped reaches the portfolio with no cap at all. Read the constraints
-in the sidecar before you trust what the plan builds.
+**The effect on the expansion.** Nothing bounds what the constraint names, so the plan may
+build and run those objects up to their own limits. A model whose targets are all regional,
+technology-scoped, or written as a floor reaches the portfolio with no cap at all. Read the
+constraints in the sidecar before you trust what the plan builds.
 
 ---
 
-## A candidate whose build nothing prices
+### A candidate whose build nothing prices
 
 **The PLEXOS data.** A `Generator` or a `Battery` stating `Max Units Built` but not all of
 `Build Cost`, `WACC` and `Economic Life`.
@@ -396,18 +406,18 @@ dropped. The second leg drops a candidate that reaches it with no finite upper b
 capacity, no finite lifetime, no overnight cost or no discount rate, and names each one the
 same way.
 
-**The cause.** PyPSA annuitises an overnight cost with a discount rate over a lifetime, and
-refuses a network that states one of the three without the others. A Sienna technology states
-its own price and its own financing, and `TechnologyFinancialData` requires both a return on
-equity and a capital recovery period.
+**The cause.** PyPSA annuitises an overnight cost with a discount rate over a lifetime. It
+refuses a network that states an overnight cost and no discount rate, it prices a build with
+no lifetime as a perpetuity, and it builds for free a candidate that states no overnight cost
+at all. A Sienna technology states its own price and its own financing, and
+`TechnologyFinancialData` requires both a return on equity and a capital recovery period.
 
 **The effect on the expansion.** That candidate is not in the portfolio, so no plan built
-from it can build that technology. The alternative is worse: a candidate whose build nothing
-prices would be built for free, at whatever size its limits allow.
+from it can build that technology.
 
 ---
 
-## Transmission a plan may build
+### Transmission a plan may build
 
 **The PLEXOS data.** A `Line` or a transformer the plan may expand, and the `Line.Type` that
 says which technology LT Plan expands it with.
@@ -427,7 +437,7 @@ or not at all.
 
 ---
 
-## The requirements a technology names
+### The requirements a technology names
 
 **The PLEXOS data.** The objects a `Constraint` names, and the coefficient weighting each
 one.
@@ -448,7 +458,7 @@ has no way to reach a technology at all.
 
 ---
 
-## The year a cap applies in, and a cap on carbon intensity
+### The year a cap applies in, and a cap on carbon intensity
 
 **The PLEXOS data.** A `Constraint` right-hand side, stated for a year or over the whole
 horizon, and the span it applies over.
@@ -468,7 +478,7 @@ reach, so nothing limits the carbon intensity of what it builds.
 
 ---
 
-## A storage build that prices only its discharge
+### A storage build that prices only its discharge
 
 **The PLEXOS data.** The `Build Cost` of a `Battery`, or of a pumped-storage turbine, which
 prices the unit by its power.
@@ -487,7 +497,7 @@ the right number only if you read the source's build cost as the price of a whol
 
 ---
 
-## The years a plan steps through
+### The years a plan steps through
 
 **The PLEXOS data.** The investment periods of an LT Plan, the years it steps through, and
 the representative days and weights it samples each year with.
@@ -497,9 +507,9 @@ problem, with no schedule of periods and no representative-day weighting.
 
 **The cause.** A portfolio document holds the technologies, the requirements and the regions
 of an expansion problem. The periods and the representative days are terms of the solve, so
-they belong on the request that solves the portfolio rather than in it. interop runs no
-expansion solve to put them on: its `solve` command runs PyPSA and PowerSimulations.jl, and
-both dispatch a fixed fleet.
+they belong on the request that solves the portfolio rather than in it. No solve in interop
+reads a portfolio: its `solve` command runs PyPSA over a network or PowerSimulations.jl over a
+system, and neither steps through investment periods.
 
 **The effect on the expansion.** Whoever solves the portfolio chooses the periods and the
 sampling. A plan built over a different set of years, or against a different set of

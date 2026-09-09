@@ -171,10 +171,9 @@ file plus one row for each carrier a candidate takes. A candidate whose carrier 
 not name is left out of the portfolio, and `decisions.md` names each one.
 
 The dispatch run above leaves seven categories out of its file, because a dispatch system has
-no place for what they hold. The expansion run names the ones that hold candidate plants,
-because those plants are what it is about. A generator takes the name of its `Fuel` where it
-burns one and its category where it does not, so each of those categories takes one
-`category` row:
+no place for what they hold. The expansion run names the ones that hold candidate plants. A
+generator takes the name of its `Fuel` where it burns one and its category where it does not,
+so each of those categories takes one `category` row:
 
 | `plexos_name` | `sienna_component_type` | `sienna_prime_mover_type` |
 | --- | --- | --- |
@@ -185,9 +184,9 @@ burns one and its category where it does not, so each of those categories takes 
 The translator reads no meaning from a category name, so give each row the type of the plant
 that category holds in your copy of the model. A generator candidate becomes a
 `SupplyTechnology`, and its `sienna_component_type` must be a type a generator becomes:
-`ThermalStandard`, `RenewableDispatch` or `HydroDispatch`. A row that sends a generator's
-carrier to `EnergyReservoirStorage` names a type the candidate never becomes, so the run
-leaves that candidate out and `decisions.md` names it.
+`ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch` or `HydroDispatch`. A row that
+sends a generator's carrier to `EnergyReservoirStorage` names a type the candidate never
+becomes, so the run leaves that candidate out and `decisions.md` names it.
 
 A `Battery` candidate and a pumped-storage candidate need no row of their own. Each takes a
 `storage_kind` row, and the mappings pipeline supplies one for all three storage kinds.
@@ -225,13 +224,10 @@ pipeline prompts for the source of its first leg and the sinks of its last, and 
 between, so this run states the default base year of 2020. To state another one, run the two
 legs yourself: `plexos-to-pypsa`, then `pypsa-to-sienna-investments` over the network and the
 sidecar it wrote. That pipeline is one leg, so it prompts for its steps, and the base year is
-the `base_year` of `step[2]`.
-
-The counts for this path are not measured. The sections above give counts from a real run of
-the PyPSA path and the Sienna path; nobody has yet recorded how many technologies, demand
-requirements and caps the portfolio holds, or how many candidates each rule leaves out. The
-`decisions.md` of your own run reports both: each component it left out, with the reason, and
-each source field it did not map.
+the `base_year` of `step[2]`. It asks for a mappings file of its own, in PyPSA words rather
+than PLEXOS ones: the chain derives that file from the PLEXOS file above, and a lone run has
+nothing to derive it from, so write a `carriers` file with a `pypsa_carrier` row for each
+carrier the first leg wrote, the storage carriers included.
 
 [The mapping document](../translation_mappings/translation-from-plexos-to-sienna-investments.md)
 states what each field of the portfolio comes from, and
@@ -307,13 +303,10 @@ The Sienna path also keeps no reserves file at all, because the first leg of the
 that file inside the run's scratch space. Run `plexos-to-pypsa` on its own if you want the
 reserves.
 
-**The expansion path states no number of its own.** interop writes the portfolio and stops
-there. No solve in this repository reads one, so nothing here says what a plan would build or
-what it would cost. The portfolio also states one expansion problem and no schedule: it
-carries no investment periods and no representative days, and it holds no transport
-technology, so a plan built from it cannot build transmission.
-[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) lists everything
-else the portfolio leaves out.
+**The expansion path states no number of its own.** No solve in this repository reads a
+portfolio, so nothing here says what a plan would build or what it would cost.
+[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
+portfolio leaves out and what each loss does to an expansion.
 
 A solve keeps no reserve headroom. Thus the dispatch is less constrained than the dispatch
 in the source model.
@@ -338,7 +331,3 @@ network model `dcp`. Use `copperplate` for a faster answer that ignores the line
 
 The result tables are 440 MB on disk. The solve also writes `problem_results.bin`, which is
 330 MB.
-
-The expansion run reads the same model over the same year as the Sienna path and writes one
-more document beside the three files. It runs no solve, so none of the solve compute above
-applies to it.
