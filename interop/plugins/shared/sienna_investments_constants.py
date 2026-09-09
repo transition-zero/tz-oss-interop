@@ -19,7 +19,6 @@ from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
     PRIME_MOVERS_DTYPE,
-    SIENNA_REGION_COLUMN,
     SIENNA_REGION_NAME_COLUMN,
 )
 
@@ -80,7 +79,6 @@ class SiennaSupplyTechnologyCol:
     NAME = "name"
     AVAILABLE = "available"
     POWER_SYSTEMS_TYPE = "power_systems_type"
-    REGION = SIENNA_REGION_COLUMN
     REGION_NAME = SIENNA_REGION_NAME_COLUMN
     PRIME_MOVER_TYPE = "prime_mover_type"
     FUEL = "fuel"
@@ -110,7 +108,6 @@ class SiennaStorageTechnologyCol:
     ID = "id"
     NAME = "name"
     AVAILABLE = "available"
-    REGION = SIENNA_REGION_COLUMN
     REGION_NAME = SIENNA_REGION_NAME_COLUMN
     POWER_SYSTEMS_TYPE = "power_systems_type"
     MIN_DISCHARGE_FRACTION = "min_discharge_fraction"
@@ -143,7 +140,6 @@ class SiennaDemandRequirementCol:
     GROWTH_RATE = "growth_rate"
     NEW_DEMAND_MW = "new_demand_mw"
     NEW_CONSTRUCTION_YEAR = "new_construction_year"
-    REGION = SIENNA_REGION_COLUMN
     REGION_NAME = SIENNA_REGION_NAME_COLUMN
     VALUE_OF_LOST_LOAD = "value_of_lost_load"
     UNSERVED_DEMAND_CURVE = "unserved_demand_curve"
