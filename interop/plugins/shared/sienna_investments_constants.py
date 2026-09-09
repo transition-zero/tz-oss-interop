@@ -46,17 +46,12 @@ class SiennaSupplementalAttribute(StrEnum):
 class PortfolioDocument:
     """Top-level keys of a SiennaSchemas ``PortfolioDocument``."""
 
-    NAME = "name"
-    DESCRIPTION = "description"
-    DATA_SOURCE = "data_source"
     AGGREGATION = "aggregation"
     FINANCIAL_DATA = "financial_data"
     COMPONENTS = "components"
     SUPPLEMENTAL_ATTRIBUTES = "supplemental_attributes"
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS = "supplemental_attribute_associations"
-    INVESTMENT_SCHEDULE = "investment_schedule"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
-    EXT = "ext"
     BASE_SYSTEM_FILE = "base_system_file"
     TIME_SERIES_STORAGE_FILE = "time_series_storage_file"
 
@@ -446,9 +441,8 @@ SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataT
     SiennaSupplementalAttributeAssociationCol.ATTRIBUTE_TYPE: pl.Utf8,
 }
 
-# The order the flat supplemental attribute array lists its types in. One id counter runs
-# across all three, because an id identifies an attribute within that array rather than
-# within its own type, so the step numbering them and the sink writing them share this.
+# The order the flat supplemental attribute array lists its types in. The step numbering the
+# attributes and the sink writing them both read it.
 SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
     SiennaSupplementalAttribute.EXISTING_DEVICES,
     SiennaSupplementalAttribute.RETIREMENT_POTENTIAL,

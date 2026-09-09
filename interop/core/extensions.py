@@ -508,28 +508,33 @@ class ExtensionLookup(Generic[RecordT]):
         self._consumed.add(name)
         return self._records.get(name) or self._model(name=name)
 
+    def read_all(self) -> list[RecordT]:
+        """Every staged record of this kind, each one marked as read."""
+        self._consumed.update(self._records)
+        return list(self._records.values())
+
 
 @dataclass
 class ExtensionConsumption:
-    """The names every reader of one hop has read, and the framework they were staged by.
+    """The names every reader of one hop has read.
 
     A hop may split its mappings across more than one step, so the readers those steps build
     share one of these and the run reports what none of them asked for once the last step
     has run.
     """
 
-    framework: str
     by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
 
     def names_for(self, kind: ExtensionKind) -> set[str]:
         return self.by_kind.setdefault(kind, set())
 
-    def report_unconsumed(self, staged: StagedExtensions, recorder: EventRecorder) -> None:
-        """Report every staged record no mapping of the hop asked for."""
+    def report_unconsumed(
+        self, staged: StagedExtensions, framework: str, recorder: EventRecorder
+    ) -> None:
         for kind, records in staged.items():
             consumed = self.by_kind.get(kind, set())
             unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, self.framework, recorder)
+            report_dropped({kind: unread}, framework, recorder)
 
 
 class ExtensionReader:

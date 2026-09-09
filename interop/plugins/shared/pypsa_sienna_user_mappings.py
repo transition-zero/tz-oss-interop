@@ -74,10 +74,6 @@ class CarrierMappings(UserMappings):
             return {c.pypsa_carrier for c in self.carriers}
         return {c.pypsa_carrier for c in self.carriers if c.sienna_component_type == sienna_type}
 
-    def get_component_type_map(self) -> dict[str, SiennaComponent]:
-        """Carrier -> the Sienna type the user's file sends it to."""
-        return {c.pypsa_carrier: c.sienna_component_type for c in self.carriers}
-
     def get_thermal_carrier_map(self) -> dict[str, tuple[SiennaThermalFuels, SiennaPrimeMovers]]:
         return {
             c.pypsa_carrier: (c.sienna_fuel_type, c.sienna_prime_mover_type)

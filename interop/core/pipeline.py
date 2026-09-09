@@ -93,12 +93,9 @@ class State:
     validation_errors: list[EnergyModelValidationError] = field(default_factory=list)
     consumed_extensions: ExtensionConsumption | None = None
 
-    def extension_reader(self, framework: str) -> ExtensionReader:
-        """A reader over the staged records, sharing one consumption record with the
-        reader every other step of this hop builds.
-        """
+    def extension_reader(self) -> ExtensionReader:
         if self.consumed_extensions is None:
-            self.consumed_extensions = ExtensionConsumption(framework)
+            self.consumed_extensions = ExtensionConsumption()
         return ExtensionReader(self.source_extensions, self.consumed_extensions)
 
 

@@ -287,6 +287,12 @@ STORAGE_CAPACITY_LIMITS_ENERGY = Translation(
                 ),
                 _source(
                     old[PyPSAStorageUnitCol.NAME],
+                    PyPSAStorageUnitCol.P_NOM_MIN,
+                    old[PyPSAStorageUnitCol.P_NOM_MIN],
+                    UNIT_MW,
+                ),
+                _source(
+                    old[PyPSAStorageUnitCol.NAME],
                     PyPSAStorageUnitCol.P_NOM_MAX,
                     old[PyPSAStorageUnitCol.P_NOM_MAX],
                     UNIT_MW,

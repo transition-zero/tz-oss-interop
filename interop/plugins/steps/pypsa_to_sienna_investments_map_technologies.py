@@ -16,13 +16,11 @@ import polars as pl
 from pydantic import BaseModel, Field
 
 from interop.core.extensions import (
-    ConstraintExtension,
     ExtensionKind,
     ExtensionReader,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
     PYPSA_NAME_COLUMN,
@@ -104,6 +102,13 @@ _BASE_GENERATOR_TYPES: tuple[SiennaComponent, ...] = (
 )
 _BASE_STORAGE_TYPES: tuple[SiennaComponent, ...] = (SiennaComponent.ENERGY_RESERVOIR_STORAGE,)
 
+# The base system types a PyPSA StorageUnit becomes, which is the storage type plus the hydro
+# type the operations steps write a storage unit with an inflow as.
+_STORAGE_BASE_TYPES: tuple[SiennaComponent, ...] = (
+    *_BASE_STORAGE_TYPES,
+    SiennaComponent.HYDRO_DISPATCH,
+)
+
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.POWER_LOAD,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD,
@@ -130,6 +135,7 @@ class _CandidateKind(NamedTuple):
     build: _CandidateTranslations
     schema: _Schema
     component: SiennaInvestmentsComponent
+    base_types: tuple[SiennaComponent, ...]
 
 
 _SUPPLY = _CandidateKind(
@@ -142,6 +148,7 @@ _SUPPLY = _CandidateKind(
     build=build_supply_translations,
     schema=SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
+    base_types=_BASE_GENERATOR_TYPES,
 )
 
 _STORAGE = _CandidateKind(
@@ -154,6 +161,7 @@ _STORAGE = _CandidateKind(
     build=build_storage_technology_translations,
     schema=STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+    base_types=_STORAGE_BASE_TYPES,
 )
 
 
@@ -208,9 +216,13 @@ class _Candidates(NamedTuple):
     source: pl.DataFrame
     destination: pl.DataFrame
 
-    @property
-    def is_empty(self) -> bool:
-        return self.destination.is_empty()
+
+class _CandidateScope(NamedTuple):
+    """What every candidate table reads off the base system, and the year its costs are in."""
+
+    area_by_bus: Mapping[str, str | None]
+    bus_names: Sequence[str]
+    base_year: int
 
 
 class _Years(NamedTuple):
@@ -252,19 +264,15 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         buses = state.destination_tables.get(SiennaComponent.AC_BUS)
         if buses is None:
             return state
-        reader = state.extension_reader(Framework.PYPSA)
-        area_by_bus = dict(
-            zip(
-                buses[SiennaACBusCol.NAME].to_list(),
-                buses[SiennaACBusCol.AREA].to_list(),
-                strict=True,
-            )
-        )
+        reader = state.extension_reader()
+        bus_names = buses[SiennaACBusCol.NAME].to_list()
+        area_by_bus = dict(zip(bus_names, buses[SiennaACBusCol.AREA].to_list(), strict=True))
         numbering = _Numbering()
-        supply = self._map_candidates(state, reader, area_by_bus, base_year, _SUPPLY, numbering)
-        storage = self._map_candidates(state, reader, area_by_bus, base_year, _STORAGE, numbering)
+        scope = _CandidateScope(area_by_bus=area_by_bus, bus_names=bus_names, base_year=base_year)
+        supply = self._map_candidates(state, reader, scope, _SUPPLY, numbering)
+        storage = self._map_candidates(state, reader, scope, _STORAGE, numbering)
         self._map_demand(state, area_by_bus, numbering)
-        self._map_carbon_caps(state, numbering)
+        self._map_carbon_caps(state, reader, numbering)
         self._map_supplemental_attributes(state, buses, reader, supply, storage)
         state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = build_portfolio_financial_data(
             base_year
@@ -279,33 +287,35 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self,
         state: State,
         reader: ExtensionReader,
-        area_by_bus: Mapping[str, str | None],
-        base_year: int,
+        scope: _CandidateScope,
         kind: _CandidateKind,
         numbering: _Numbering,
     ) -> _Candidates:
-        table = self._candidate_rows(state, kind)
+        table = self._candidate_rows(state, kind, scope.bus_names)
         if table.is_empty():
             return _Candidates(table, table)
         lookup = reader.read(kind.extension)
         names = table[PyPSAComponentCol.NAME].to_list()
         table = self._enrich_candidate(
             table,
-            area_by_bus,
+            scope.area_by_bus,
             with_fuel=kind.with_fuel,
             unit_sizes=[lookup.get(name).unit_size_mw for name in names],
             technical_lives=[lookup.get(name).technical_life_years for name in names],
         )
-        return self._translate(
+        destination = self._write_table(
             state,
             table,
-            kind.build(base_year, numbering.next_id),
+            kind.build(scope.base_year, numbering.next_id),
             kind.schema,
             kind.component,
             numbering,
         )
+        return _Candidates(table, destination)
 
-    def _candidate_rows(self, state: State, kind: _CandidateKind) -> pl.DataFrame:
+    def _candidate_rows(
+        self, state: State, kind: _CandidateKind, bus_names: Sequence[str]
+    ) -> pl.DataFrame:
         """The rows of one source table that state a build, less what cannot be translated.
 
         A component whose capacity the network fixes is not a candidate and belongs to the
@@ -322,13 +332,21 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                 carrier_col=PyPSAComponentCol.CARRIER,
                 bus_col=PyPSAComponentCol.BUS,
                 carriers=sorted(self._carrier_mappings.get_carriers()),
-                bus_names=self._ac_bus_names(state),
+                translated_carriers=sorted(self._translated_carriers(kind)),
+                bus_names=bus_names,
             ),
             *kind.skips,
         ]
         for rule in rules:
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         return table
+
+    def _translated_carriers(self, kind: _CandidateKind) -> set[str]:
+        """The carriers the mappings file sends to a type this kind of candidate becomes."""
+        carriers: set[str] = set()
+        for component in kind.base_types:
+            carriers |= self._carrier_mappings.get_carriers(component)
+        return carriers
 
     def _enrich_candidate(
         self,
@@ -341,8 +359,8 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
     ) -> pl.DataFrame:
         """Add what the carrier, the bus and the sidecar say about a candidate."""
         component_types = {
-            carrier: str(component)
-            for carrier, component in self._carrier_mappings.get_component_type_map().items()
+            mapping.pypsa_carrier: str(mapping.sienna_component_type)
+            for mapping in self._carrier_mappings.carriers
         }
         prime_movers = {
             carrier: str(mover)
@@ -366,20 +384,25 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             pl.Series(TECHNICAL_LIFE_COL, list(technical_lives), dtype=pl.Float64),
         )
 
-    def _translate(
+    def _write_table(
         self,
         state: State,
         table: pl.DataFrame,
         translations: list[Translation],
         schema: _Schema,
-        component: SiennaInvestmentsComponent,
+        component: str,
         numbering: _Numbering,
-    ) -> _Candidates:
-        dst = apply_translations(table, translations, self._recorder)
-        out = finalise(dst, schema, self._recorder, component)
+    ) -> pl.DataFrame:
+        """Translate one source table into a destination table, and take its share of the ids."""
+        out = finalise(
+            apply_translations(table, translations, self._recorder),
+            schema,
+            self._recorder,
+            component,
+        )
         state.destination_tables[component] = out
         numbering.take(out.height)
-        return _Candidates(table, out)
+        return out
 
     # --- demand ---
 
@@ -396,26 +419,21 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             return
         table = enrich_from_names(table, PyPSALoadCol.BUS, REGION_COL, dict(area_by_bus), pl.Utf8)
         table = enrich_from_names(table, PyPSALoadCol.NAME, LOAD_TYPE_COL, load_types, pl.Utf8)
-        dst = apply_translations(
-            table, build_demand_translations(numbering.next_id), self._recorder
-        )
-        out = finalise(
-            dst,
+        self._write_table(
+            state,
+            table,
+            build_demand_translations(numbering.next_id),
             DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
-            self._recorder,
             SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
+            numbering,
         )
-        state.destination_tables[SiennaInvestmentsComponent.DEMAND_REQUIREMENT] = out
-        numbering.take(out.height)
 
     # --- policy ---
 
-    def _map_carbon_caps(self, state: State, numbering: _Numbering) -> None:
-        records = [
-            record
-            for record in state.source_extensions.get(ExtensionKind.CONSTRAINT, [])
-            if isinstance(record, ConstraintExtension)
-        ]
+    def _map_carbon_caps(
+        self, state: State, reader: ExtensionReader, numbering: _Numbering
+    ) -> None:
+        records = reader.read(ExtensionKind.CONSTRAINT).read_all()
         if not records:
             return
         table = build_carbon_caps_source_table(records, self._model_components(state))
@@ -423,17 +441,14 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         if table.is_empty():
             return
-        dst = apply_translations(
-            table, build_carbon_cap_translations(numbering.next_id), self._recorder
-        )
-        out = finalise(
-            dst,
+        self._write_table(
+            state,
+            table,
+            build_carbon_cap_translations(numbering.next_id),
             CARBON_CAPS_DESTINATION_SCHEMA,
-            self._recorder,
             SiennaInvestmentsComponent.CARBON_CAPS,
+            numbering,
         )
-        state.destination_tables[SiennaInvestmentsComponent.CARBON_CAPS] = out
-        numbering.take(out.height)
 
     @staticmethod
     def _model_components(state: State) -> set[str]:
@@ -469,9 +484,14 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             source = sources[attribute.kind]
             if source.is_empty():
                 continue
-            dst = apply_translations(source, attribute.build(numbering.next_id), self._recorder)
-            out = finalise(dst, attribute.schema, self._recorder, attribute.kind)
-            state.destination_tables[attribute.kind] = out
+            out = self._write_table(
+                state,
+                source,
+                attribute.build(numbering.next_id),
+                attribute.schema,
+                attribute.kind,
+                numbering,
+            )
             associations.append(
                 build_association_rows(
                     attribute.kind,
@@ -480,7 +500,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                     attribute.describes(source),
                 )
             )
-            numbering.take(out.height)
         state.destination_tables[SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE] = (
             pl.concat(associations)
             if associations
@@ -502,6 +521,8 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         storages = _carrier_groups(
             state, PyPSATable.STORAGE_UNITS, _base_names(state, _BASE_STORAGE_TYPES)
         )
+        generator_years = years[PyPSATable.GENERATORS]
+        storage_years = years[PyPSATable.STORAGE_UNITS]
         return pl.concat(
             [
                 build_existing_fleet_source_table(
@@ -511,8 +532,8 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                         PyPSAComponent.GENERATOR,
                     ),
                     generators,
-                    years.built,
-                    years.retired,
+                    generator_years.built,
+                    generator_years.retired,
                 ),
                 build_existing_fleet_source_table(
                     _technologies(
@@ -521,27 +542,30 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                         PyPSAComponent.STORAGE_UNIT,
                     ),
                     storages,
-                    years.built,
-                    years.retired,
+                    storage_years.built,
+                    storage_years.retired,
                 ),
             ]
         )
 
     @staticmethod
-    def _read_years(state: State, reader: ExtensionReader) -> _Years:
+    def _read_years(state: State, reader: ExtensionReader) -> dict[str, _Years]:
         """Each device's build year, from the network, and its retirement year, from the sidecar.
 
         PyPSA carries a build year on the component and nothing for the other end of a life,
-        which is why one of the pair comes off the sidecar.
+        which is why one of the pair comes off the sidecar. A generator and a storage unit may
+        share a name, so each source table keeps its own pair of maps.
         """
-        built: dict[str, int] = {}
-        retired: dict[str, int] = {}
+        years: dict[str, _Years] = {}
         generators = reader.read(ExtensionKind.GENERATOR)
         storages = reader.read(ExtensionKind.STORAGE)
         for key, lookup in (
             (PyPSATable.GENERATORS, generators),
             (PyPSATable.STORAGE_UNITS, storages),
         ):
+            built: dict[str, int] = {}
+            retired: dict[str, int] = {}
+            years[key] = _Years(built=built, retired=retired)
             src = state.source_topology.get(key)
             if src is None:
                 continue
@@ -555,12 +579,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                 retirement_year = lookup.get(name).retirement_year
                 if retirement_year is not None:
                     retired[name] = retirement_year
-        return _Years(built=built, retired=retired)
-
-    @staticmethod
-    def _ac_bus_names(state: State) -> list[str]:
-        buses = state.destination_tables.get(SiennaComponent.AC_BUS)
-        return buses[SiennaACBusCol.NAME].to_list() if buses is not None else []
+        return years
 
 
 def _base_load_types(state: State) -> dict[str, str]:
@@ -606,7 +625,7 @@ def _technologies(
     candidates: _Candidates, component: SiennaInvestmentsComponent, device_class: str
 ) -> list[CandidateTechnology]:
     """Each translated technology, beside the fleet its base-system devices make up."""
-    if candidates.is_empty:
+    if candidates.destination.is_empty():
         return []
     return [
         CandidateTechnology(

@@ -43,7 +43,6 @@ TECHNICAL_LIFE_COL = "_technical_life_years"
 # its id from one counter rather than numbering from one within its own type.
 PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"
 
-# Every drop this leg reports is a PyPSA component the portfolio leaves out.
 investments_skip_report = partial(
     SkipReport, pipeline=PYPSA_TO_SIENNA_INVESTMENTS, framework=Framework.PYPSA
 )
@@ -52,6 +51,14 @@ UNNAMED_CARRIER_REASON = "may be built and have a carrier the user mappings file
 UNNAMED_CARRIER_NOTE = (
     "the portfolio reads a technology's Sienna type, prime mover and fuel off the carrier, "
     "and the user mappings file names no such carrier"
+)
+UNSUPPORTED_TARGET_REASON = (
+    "may be built and have a carrier the mappings file sends to a Sienna type this kind of "
+    "candidate never becomes"
+)
+UNSUPPORTED_TARGET_NOTE = (
+    "power_systems_type names the base system type a build becomes, and the user mappings "
+    "file sends this carrier to a type this candidate never holds"
 )
 NOT_AN_ELECTRICITY_BUS_REASON = "may be built and sit on a bus that is not an electricity bus"
 NOT_AN_ELECTRICITY_BUS_NOTE = "bus is not an electricity (AC) bus, so it is in no region"
@@ -64,13 +71,15 @@ def build_scope_skips(
     carrier_col: str,
     bus_col: str,
     carriers: Sequence[str],
+    translated_carriers: Sequence[str],
     bus_names: Sequence[str],
 ) -> list[SkipRule]:
-    """The two drops every candidate table shares, in the order they apply.
+    """The three drops every candidate table shares, in the order they apply.
 
-    A carrier the mappings file never names and a bus that is not a translated AC bus are
-    different drops, so each gets its own report. Order matters: a row the mappings file
-    never names must not also report an unusable bus.
+    A carrier the mappings file never names, a carrier it sends to a Sienna type this kind of
+    candidate never becomes, and a bus that is not a translated AC bus are different drops, so
+    each gets its own report. Order matters: a row the mappings file never names must not also
+    report an unusable target type or an unusable bus.
     """
     skip = partial(
         investments_skip_report,
@@ -78,13 +87,22 @@ def build_scope_skips(
         name_col=name_col,
         counted_noun=naming.plural,
     )
+    listed = SkippedNames(column=carrier_col, label="The carriers")
     return [
         SkipRule(
             keep=pl.col(carrier_col).is_in(list(carriers)),
             report=skip(
                 reason=UNNAMED_CARRIER_REASON,
                 note=UNNAMED_CARRIER_NOTE,
-                listed=SkippedNames(column=carrier_col, label="The carriers"),
+                listed=listed,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(carrier_col).is_in(list(translated_carriers)),
+            report=skip(
+                reason=UNSUPPORTED_TARGET_REASON,
+                note=UNSUPPORTED_TARGET_NOTE,
+                listed=listed,
             ),
         ),
         SkipRule(
@@ -126,12 +144,7 @@ def build_expansion_skips(
     overnight_cost_col: str,
     discount_rate_col: str,
 ) -> tuple[SkipRule, ...]:
-    """The four drops every candidate table shares once its scope is settled.
-
-    A build with no ceiling, no finite lifetime, no overnight cost or no discount rate is a
-    technology whose ceiling, recovery period, price or cost of capital would have to be
-    invented, so the candidate is left out and named instead.
-    """
+    """The four drops every candidate table shares once its scope is settled."""
     skip = partial(
         investments_skip_report,
         component=naming.display,

@@ -1,9 +1,6 @@
 """Translation objects for an extensions-sidecar constraint -> Sienna CarbonCaps.
 
-``CarbonCaps`` names no members and no region, so it holds the whole portfolio. A constraint
-over a named subset of the model cannot be written as one without applying it to more than
-the model meant, so only a constraint whose members cover every component of the network
-becomes a cap. Every other one is left out and named in the report.
+``CarbonCaps`` names no members and no region, so it holds the whole portfolio.
 """
 
 from __future__ import annotations

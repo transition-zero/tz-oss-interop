@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from interop.core.extensions import ExtensionReader
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ProfileReporter
 from interop.plugins.steps.sienna_to_pypsa.map_buses import map_buses
@@ -45,7 +44,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
         self._off_window_recorder = ScopedRecorder(recorder, step=_DROP_PROFILES_OFF_THE_WINDOW)
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        reader = state.extension_reader(Framework.SIENNA)
+        reader = state.extension_reader()
         map_buses(state, self._recorder, reader)
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)

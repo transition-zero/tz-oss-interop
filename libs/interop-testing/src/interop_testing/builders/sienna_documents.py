@@ -319,14 +319,6 @@ def find_portfolio_component(data: dict[str, Any], sienna_type: str, name: str) 
     return matching[0]
 
 
-def find_portfolio_attributes(
-    data: dict[str, Any], attribute_type: str, component_type: str, component_name: str
-) -> list[dict[str, Any]]:
-    """The supplemental attributes of one type describing one component of the portfolio."""
-    component_id = find_portfolio_component(data, component_type, component_name)["id"]
-    return portfolio_attributes_for(data, attribute_type, component_type, component_id)
-
-
 def portfolio_attributes_for(
     data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
 ) -> list[dict[str, Any]]:

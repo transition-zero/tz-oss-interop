@@ -13,7 +13,6 @@ import json
 from pytest_bdd import parsers, then
 
 from interop_testing.builders.sienna_documents import (
-    find_portfolio_attributes,
     find_portfolio_component,
     portfolio_attributes_for,
     portfolio_components_of_type,
@@ -134,9 +133,9 @@ def assert_base_system_attribute_field(
 def _one_attribute(
     path: str, attribute_type: str, component_type: str, component_name: str
 ) -> dict[str, object]:
-    matching = find_portfolio_attributes(
-        read_json(path), attribute_type, component_type, component_name
-    )
+    data = read_json(path)
+    component_id = find_portfolio_component(data, component_type, component_name)["id"]
+    matching = portfolio_attributes_for(data, attribute_type, component_type, component_id)
     assert len(matching) == 1, (
         f"expected 1 {attribute_type} for {component_type} {component_name!r} in {path}, "
         f"got {len(matching)}: {matching!r}"

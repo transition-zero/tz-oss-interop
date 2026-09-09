@@ -58,6 +58,10 @@ Where the intermediate form loses something, this document says so.
   `capacity_limits.min` is that same capacity, which a build cannot take away.
 - **A candidate whose carrier your mappings file does not name is left out.** The run
   completes and `decisions.md` names each one.
+- **A candidate whose carrier your mappings file sends to another kind's type is left out.**
+  A generator becomes a `SupplyTechnology` and a battery or a pumped-storage turbine becomes a
+  `StorageTechnology`, so a carrier sent to a base system type the other kind holds names a
+  type the technology never becomes. The run completes and `decisions.md` names each one.
 - **A candidate that prices no build is already gone.** The PLEXOS to PyPSA leg leaves out a
   candidate with no `Build Cost`, no `WACC` or no `Economic Life`, because PyPSA cannot
   annuitise a cost without all three. `decisions.md` names each one.

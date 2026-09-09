@@ -285,3 +285,43 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "decisions.md" contains "`pypsa.StorageUnit.Flat_PHS.max_hours`"
     And the file "decisions.md" contains "so the energy capacity limits a build could add are zero MWh"
     And the log contains "1 StorageUnit(s) are extendable and hold no energy"
+
+  Scenario: a candidate whose carrier names another kind's Sienna type is left out
+    A StorageTechnology states the base system type a build becomes, and the mappings file may
+    send a carrier to a type no storage unit is ever written as.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains storage unit "Odd_PHS" on "North_bus" carrier "solar" p_nom 0 max_hours 4.0 efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "Odd_PHS" has p_nom_max 300
+    And storage unit "Odd_PHS" has overnight_cost 800000
+    And storage unit "Odd_PHS" has discount_rate 0.07
+    And storage unit "Odd_PHS" has lifetime 20
+    And the network is saved as "inputs/wrong_target.nc"
+    When I run the pypsa investments translation against "inputs/wrong_target.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "StorageTechnology"
+    And the file "decisions.md" contains "the user mappings file sends this carrier to a type this candidate never holds"
+    And the log contains "1 StorageUnit(s) may be built and have a carrier the mappings file sends to a Sienna type this kind of candidate never becomes"
+
+  Scenario: a generator and a storage unit of one name keep their own build years
+    PyPSA names a generator and a storage unit independently, so one name may belong to both
+    and each technology reads the year its own class states.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "Shared" on "North_bus" carrier "solar" p_nom 200
+    And generator "Shared" has build_year 1995
+    And the network contains storage unit "Shared" on "North_bus" carrier "PHS" p_nom 100 max_hours 4.0 efficiency_store 0.9 efficiency_dispatch 0.95
+    And storage unit "Shared" has build_year 2005
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network contains storage unit "NewPHS" on "North_bus" carrier "PHS" p_nom 0 max_hours 4.0 efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "NewPHS" has p_nom_max 300
+    And storage unit "NewPHS" has overnight_cost 800000
+    And storage unit "NewPHS" has discount_rate 0.07
+    And storage unit "NewPHS" has lifetime 20
+    And the network is saved as "inputs/shared_names.nc"
+    When I run the pypsa investments translation against "inputs/shared_names.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "REZ_Solar" has "build_year.Shared" set to 1995
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewPHS" has "build_year.Shared" set to 2005

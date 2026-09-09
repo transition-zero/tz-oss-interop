@@ -201,7 +201,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = pl.DataFrame(
             schema=TIME_SERIES_ASSOCIATION_SCHEMA
         )
-        reader = state.extension_reader(Framework.PYPSA)
+        reader = state.extension_reader()
         state = self._map_buses(state)
         # Read once: the loads it prices and the shedding generators it identifies both want
         # it, and reading it twice would report each bus record's unread fields twice.
