@@ -3,12 +3,15 @@
 This document tells you what each part of your PLEXOS model becomes in the Sienna system.
 It gives the source of each field.
 
-> **Scope:** the translator accepts electricity-only models, and it translates them for
-> dispatch. It does not translate capacity expansion, custom constraints or hydro cascades.
-> It does not carry the reserves to a file you keep. Refer to
-> [Not translated](#not-translated) and to
+> **Scope:** the translator accepts electricity-only models, and the `plexos-to-sienna`
+> pipeline translates them for dispatch. It writes no capacity expansion: what your plan may
+> build becomes a Sienna investments portfolio instead, which the
+> `plexos-to-sienna-investments` pipeline writes. Refer to
+> [Translation from PLEXOS to a Sienna investments portfolio](translation-from-plexos-to-sienna-investments.md).
+> This pipeline does not translate custom constraints or hydro cascades, and it does not
+> carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which states what each loss does to a
-> dispatch.
+> dispatch and what the portfolio leaves out of an expansion.
 
 The `plexos-to-sienna` pipeline runs through a PyPSA network on the way. This document does
 not describe that network. It states the mapping as one step, because that is what you give

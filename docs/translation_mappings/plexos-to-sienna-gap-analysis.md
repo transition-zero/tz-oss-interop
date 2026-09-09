@@ -2,10 +2,15 @@
 
 This document lists each thing a `plexos-to-sienna` run loses, and what that loss does to a
 dispatch. It covers the translation and the validation run that proves the system solves in
-PowerSimulations.jl.
+PowerSimulations.jl. The entries from
+[A `Constraint` over part of the model](#a-constraint-over-part-of-the-model) onwards cover
+the `plexos-to-sienna-investments` run instead, which writes an expansion portfolio beside a
+base system of its own.
 
 For what the translation keeps, refer to
-[Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md).
+[Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md), and for the
+portfolio to
+[Translation from PLEXOS to a Sienna investments portfolio](translation-from-plexos-to-sienna-investments.md).
 
 Each entry gives four things:
 
@@ -15,6 +20,10 @@ Each entry gives four things:
 | What happens to it | Where it goes, or that it goes nowhere |
 | The cause | Why |
 | The effect on the dispatch | What the solve then does differently from your PLEXOS model |
+
+Where the subject is an expansion rather than a dispatch, the fourth heading reads **The
+effect on the expansion**: what a plan built from the portfolio does differently from the
+expansion your PLEXOS model states.
 
 ---
 
@@ -350,3 +359,149 @@ does not read yet.
 
 **The effect on the dispatch.** None. The number is in the solve output; no report collects it
 for you.
+
+---
+
+## A `Constraint` over part of the model
+
+**The PLEXOS data.** A `Constraint` holding a weighted sum over the objects it names to a
+right-hand side: an emission cap over a group of plants, a target over one region, a budget
+over one technology.
+
+**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint whose
+members cover every generator and storage object the base system and the portfolio hold. A
+constraint naming fewer is left out, `decisions.md` names it, and the log warns. Every
+constraint still reaches the `extensions.json` sidecar, whether or not it became a cap.
+
+**The cause.** `CarbonCaps` names no members and no region: a cap in a portfolio holds the
+whole portfolio. A cap written from a constraint over part of the model would hold every
+technology in the problem, which is a different limit from the one your model states.
+
+**The effect on the expansion.** Nothing bounds the group the constraint names, so the plan
+may build and run those objects up to their own limits. A model whose targets are all
+regional or technology-scoped reaches the portfolio with no cap at all. Read the constraints
+in the sidecar before you trust what the plan builds.
+
+---
+
+## A candidate whose build nothing prices
+
+**The PLEXOS data.** A `Generator` or a `Battery` stating `Max Units Built` but not all of
+`Build Cost`, `WACC` and `Economic Life`.
+
+**What happens to it.** The PLEXOS leg leaves the build out. An object with nothing running
+yet is its build and nothing else, so the whole object goes and `decisions.md` names it. An
+object that already runs keeps the capacity it runs, and only the build it may add is
+dropped. The second leg drops a candidate that reaches it with no finite upper bound on
+capacity, no finite lifetime, no overnight cost or no discount rate, and names each one the
+same way.
+
+**The cause.** PyPSA annuitises an overnight cost with a discount rate over a lifetime, and
+refuses a network that states one of the three without the others. A Sienna technology states
+its own price and its own financing, and `TechnologyFinancialData` requires both a return on
+equity and a capital recovery period.
+
+**The effect on the expansion.** That candidate is not in the portfolio, so no plan built
+from it can build that technology. The alternative is worse: a candidate whose build nothing
+prices would be built for free, at whatever size its limits allow.
+
+---
+
+## Transmission a plan may build
+
+**The PLEXOS data.** A `Line` or a transformer the plan may expand, and the `Line.Type` that
+says which technology LT Plan expands it with.
+
+**What happens to it.** Neither leg writes an expandable branch. The base system holds each
+line and each link at the rating it already has, and the portfolio holds no technology for a
+corridor.
+
+**The cause.** SiennaSchemas states transport technologies of its own, and this translation
+writes none of them. The PLEXOS leg fixes the capacity of every line and link, so nothing
+reaches the hub for a second leg to read either.
+
+**The effect on the expansion.** The network is fixed. A plan can put new capacity only where
+the corridors that already exist can carry it, so it builds nearer to the demand than your
+model would, and an expansion your model meets by reinforcing a corridor is met by generation
+or not at all.
+
+---
+
+## The requirements a technology names
+
+**The PLEXOS data.** The objects a `Constraint` names, and the coefficient weighting each
+one.
+
+**What happens to it.** The portfolio writes no `requirements` on anything. Every
+`SupplyTechnology`, `StorageTechnology` and `DemandRequirement` leaves the list empty, and
+`decisions.md` records the field as not mapped.
+
+**The cause.** `requirements` holds the ids of the requirements a component is subject to.
+The only requirement this translation writes is a `CarbonCaps` that holds the whole
+portfolio, so it names no members and no component names it. SiennaSchemas states other
+requirement types beside it, and this translation writes none of them.
+
+**The effect on the expansion.** A consumer that applies a requirement to the technologies
+naming it applies nothing to any of them. Nothing is lost for the one cap the portfolio can
+hold, since that cap applies to the whole problem by its own definition. A narrower target
+has no way to reach a technology at all.
+
+---
+
+## The year a cap applies in, and a cap on carbon intensity
+
+**The PLEXOS data.** A `Constraint` right-hand side, stated for a year or over the whole
+horizon, and the span it applies over.
+
+**What happens to it.** The yearly right-hand side becomes `max_mtons`, the cap's limit in
+million tonnes, and the horizon-wide one is read where the constraint states no yearly limit.
+`CarbonCaps.target_year` and `CarbonCaps.max_tons_mwh` are left unmapped and are absent from
+the document; `decisions.md` records both.
+
+**The cause.** PLEXOS states the span a right-hand side applies over, not the year it applies
+in, and it has no rate-based right-hand side for `max_tons_mwh` to carry.
+
+**The effect on the expansion.** The cap states no year, so it is the limit of the whole
+problem the consumer solves, whichever year your model stated it for. With `max_tons_mwh`
+absent the consumer applies the schema's own default of 100000000 Mt/MWh, which no plan can
+reach, so nothing limits the carbon intensity of what it builds.
+
+---
+
+## A storage build that prices only its discharge
+
+**The PLEXOS data.** The `Build Cost` of a `Battery`, or of a pumped-storage turbine, which
+prices the unit by its power.
+
+**What happens to it.** It becomes the technology's `capital_costs.discharge_capital_cost`.
+The `charge_capital_cost` and the `energy_capital_cost` beside it are written as zero curves.
+
+**The cause.** A Sienna storage technology adds charge power, discharge power and energy
+independently and prices each of the three. PLEXOS prices the object by its power alone, and
+PyPSA carries one overnight cost for a storage unit, so neither states the other two prices.
+
+**The effect on the expansion.** A consumer that sizes the three parts separately takes the
+largest energy and the largest charging power its limits allow for nothing, because nothing
+prices either. The whole price of a storage build sits on its discharge capacity, which is
+the right number only if you read the source's build cost as the price of a whole unit.
+
+---
+
+## The years a plan steps through
+
+**The PLEXOS data.** The investment periods of an LT Plan, the years it steps through, and
+the representative days and weights it samples each year with.
+
+**What happens to it.** Neither reaches the portfolio. The portfolio states one expansion
+problem, with no schedule of periods and no representative-day weighting.
+
+**The cause.** A portfolio document holds the technologies, the requirements and the regions
+of an expansion problem. The periods and the representative days are terms of the solve, so
+they belong on the request that solves the portfolio rather than in it. interop runs no
+expansion solve to put them on: its `solve` command runs PyPSA and PowerSimulations.jl, and
+both dispatch a fixed fleet.
+
+**The effect on the expansion.** Whoever solves the portfolio chooses the periods and the
+sampling. A plan built over a different set of years, or against a different set of
+representative days, from the ones your PLEXOS model uses builds a different fleet, so its
+result and your model's LT Plan result are not the same quantity.
