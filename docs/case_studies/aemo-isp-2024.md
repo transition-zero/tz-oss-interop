@@ -121,11 +121,11 @@ Select `translate`. Then give these answers:
 | Source framework | `plexos` |
 | Destination framework | `sienna` |
 | Pipeline | `plexos-to-sienna` |
-| User mappings file | `inputs/plexos_user_mappings.yaml` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/aemo-isp-2024/2024 ISP Step Change Model.xml` |
 | which PLEXOS Model to translate | `Step Change` |
 | a four-digit year such as 2026 | `2025` |
 | the SiennaSchemas system.json | `outputs/system.json` |
+| User mappings file | `inputs/plexos_user_mappings.yaml` |
 
 Give the year `2025` here, unlike the PyPSA run above, which leaves the year empty. The
 chronology of the Model is 2024-07-01 to 2025-06-30, so the year 2025 narrows it to
@@ -305,8 +305,6 @@ reserves.
 
 **The expansion path states no number of its own.** No solve in this repository reads a
 portfolio, so nothing here says what a plan would build or what it would cost.
-[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
-portfolio leaves out and what each loss does to an expansion.
 
 A solve keeps no reserve headroom. Thus the dispatch is less constrained than the dispatch
 in the source model.

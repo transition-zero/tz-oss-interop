@@ -15,11 +15,7 @@ Each entry gives four things:
 | The PLEXOS data | What your model states |
 | What happens to it | Where it goes, or that it goes nowhere |
 | The cause | Why |
-| The effect on the dispatch | What the solve then does differently from your PLEXOS model |
-
-Where the subject is an expansion rather than a dispatch, the fourth heading reads **The
-effect on the expansion**: what a plan built from the portfolio does differently from the
-expansion your PLEXOS model states.
+| The effect on the dispatch, or on the expansion | What the solve, or a plan built from the portfolio, then does differently from your PLEXOS model |
 
 ---
 
@@ -396,8 +392,8 @@ constraints in the sidecar before you trust what the plan builds.
 
 ### A candidate whose build nothing prices
 
-**The PLEXOS data.** A `Generator` or a `Battery` stating `Max Units Built` but not all of
-`Build Cost`, `WACC` and `Economic Life`.
+**The PLEXOS data.** A `Generator`, a `Battery` or a pumped-storage turbine stating `Max Units
+Built` but not all of `Build Cost`, `WACC` and `Economic Life`.
 
 **What happens to it.** The PLEXOS leg leaves the build out. An object with nothing running
 yet is its build and nothing else, so the whole object goes and `decisions.md` names it. An
@@ -442,9 +438,9 @@ or not at all.
 **The PLEXOS data.** The objects a `Constraint` names, and the coefficient weighting each
 one.
 
-**What happens to it.** The portfolio writes no `requirements` on anything. Every
-`SupplyTechnology`, `StorageTechnology` and `DemandRequirement` leaves the list empty, and
-`decisions.md` records the field as not mapped.
+**What happens to it.** The portfolio writes no `requirements`: the field is absent from every
+`SupplyTechnology`, `StorageTechnology` and `DemandRequirement`, and `decisions.md` records it
+as not mapped.
 
 **The cause.** `requirements` holds the ids of the requirements a component is subject to.
 The only requirement this translation writes is a `CarbonCaps` that holds the whole
@@ -473,8 +469,7 @@ in, and it has no rate-based right-hand side for `max_tons_mwh` to carry.
 
 **The effect on the expansion.** The cap states no year, so it is the limit of the whole
 problem the consumer solves, whichever year your model stated it for. With `max_tons_mwh`
-absent the consumer applies the schema's own default of 100000000 Mt/MWh, which no plan can
-reach, so nothing limits the carbon intensity of what it builds.
+absent, nothing limits the carbon intensity of what it builds.
 
 ---
 
