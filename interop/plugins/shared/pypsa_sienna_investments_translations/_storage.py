@@ -45,6 +45,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.sienna_constants import (
+    EFFICIENCY_DTYPE,
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
     SiennaCostType,
@@ -52,7 +53,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
 )
 from interop.plugins.shared.sienna_investments_constants import (
-    IN_OUT_DTYPE,
     STORAGE_CAPITAL_COST_DTYPE,
     STORAGE_OPERATION_COST_DTYPE,
     SiennaInvestmentsComponent,
@@ -317,7 +317,7 @@ STORAGE_EFFICIENCY = _direct(
     expr=pl.struct(
         pl.col(PyPSAStorageUnitCol.EFFICIENCY_STORE).alias(SiennaStructField.IN),
         pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH).alias(SiennaStructField.OUT),
-    ).cast(IN_OUT_DTYPE),
+    ).cast(EFFICIENCY_DTYPE),
     derivation="(in=efficiency_store, out=efficiency_dispatch)",
 )
 

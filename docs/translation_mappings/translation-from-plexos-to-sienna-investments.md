@@ -149,8 +149,10 @@ region it is drawn in.
 ## `Constraint` → `CarbonCaps`
 
 `CarbonCaps` carries a target year and a limit, and **names no members and no region**: a cap
-in a portfolio holds the whole portfolio. So only a `Constraint` whose members cover every
-generator and storage object of your model becomes one.
+in a portfolio holds the whole portfolio. So only a `Constraint` whose members cover the whole
+model becomes one. The whole model is every generator and storage object the two documents
+hold: the plants in the base system and the candidates in the portfolio. An object neither
+document holds emits nothing a cap could bound, so a constraint need not name it.
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |

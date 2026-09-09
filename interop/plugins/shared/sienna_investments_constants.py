@@ -15,10 +15,12 @@ import polars as pl
 from interop.plugins.shared.sienna_constants import (
     COST_CURVE_DTYPE,
     COST_TYPE_DTYPE,
+    EFFICIENCY_DTYPE,
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
     PRIME_MOVERS_DTYPE,
-    SiennaStructField,
+    SIENNA_REGION_COLUMN,
+    SIENNA_REGION_NAME_COLUMN,
 )
 
 
@@ -78,8 +80,8 @@ class SiennaSupplyTechnologyCol:
     NAME = "name"
     AVAILABLE = "available"
     POWER_SYSTEMS_TYPE = "power_systems_type"
-    REGION = "region"
-    REGION_NAME = "region_name"
+    REGION = SIENNA_REGION_COLUMN
+    REGION_NAME = SIENNA_REGION_NAME_COLUMN
     PRIME_MOVER_TYPE = "prime_mover_type"
     FUEL = "fuel"
     COFIRE_START_LIMITS = "cofire_start_limits"
@@ -108,8 +110,8 @@ class SiennaStorageTechnologyCol:
     ID = "id"
     NAME = "name"
     AVAILABLE = "available"
-    REGION = "region"
-    REGION_NAME = "region_name"
+    REGION = SIENNA_REGION_COLUMN
+    REGION_NAME = SIENNA_REGION_NAME_COLUMN
     POWER_SYSTEMS_TYPE = "power_systems_type"
     MIN_DISCHARGE_FRACTION = "min_discharge_fraction"
     PRIME_MOVER_TYPE = "prime_mover_type"
@@ -141,8 +143,8 @@ class SiennaDemandRequirementCol:
     GROWTH_RATE = "growth_rate"
     NEW_DEMAND_MW = "new_demand_mw"
     NEW_CONSTRUCTION_YEAR = "new_construction_year"
-    REGION = "region"
-    REGION_NAME = "region_name"
+    REGION = SIENNA_REGION_COLUMN
+    REGION_NAME = SIENNA_REGION_NAME_COLUMN
     VALUE_OF_LOST_LOAD = "value_of_lost_load"
     UNSERVED_DEMAND_CURVE = "unserved_demand_curve"
     REQUIREMENTS = "requirements"
@@ -235,17 +237,6 @@ class SiennaStorageCapitalCostField:
     INTERCONNECTION_COST = "interconnection_cost"
 
 
-class SiennaOutageFactorsField:
-    """Field names of the Sienna ``OutageFactors`` struct.
-
-    ``min`` is the forced outage factor and ``max`` the planned one, which is why the pair
-    is its own type rather than a ``MinMax``.
-    """
-
-    FORCED = "min"
-    PLANNED = "max"
-
-
 class SiennaOperationCostField:
     """Field names of the Sienna ``GenericOperationCost`` variants this translation writes."""
 
@@ -271,14 +262,6 @@ class SiennaSupplementalAttributeAssociationCol:
 
 
 # --- Nested struct dtypes ---
-
-IN_OUT_DTYPE: pl.DataType = pl.Struct(
-    {SiennaStructField.IN: pl.Float64, SiennaStructField.OUT: pl.Float64}
-)
-
-OUTAGE_FACTORS_DTYPE: pl.DataType = pl.Struct(
-    {SiennaOutageFactorsField.FORCED: pl.Float64, SiennaOutageFactorsField.PLANNED: pl.Float64}
-)
 
 CAPITAL_COST_DTYPE: pl.DataType = pl.Struct(
     {
@@ -349,7 +332,7 @@ SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]]
     SiennaSupplyTechnologyCol.OPERATION_COSTS: GENERIC_OPERATION_COST_DTYPE,
     SiennaSupplyTechnologyCol.UNIT_SIZE: pl.Float64,
     SiennaSupplyTechnologyCol.CAPACITY_LIMITS: CAPACITY_LIMITS_DTYPE,
-    SiennaSupplyTechnologyCol.OUTAGE_FACTOR: OUTAGE_FACTORS_DTYPE,
+    SiennaSupplyTechnologyCol.OUTAGE_FACTOR: pl.Utf8,
     SiennaSupplyTechnologyCol.MIN_GENERATION_FRACTION: pl.Float64,
     SiennaSupplyTechnologyCol.RAMP_LIMITS: pl.Utf8,
     SiennaSupplyTechnologyCol.TIME_LIMITS: pl.Utf8,
@@ -377,7 +360,7 @@ STORAGE_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaStorageTechnologyCol.CAPACITY_LIMITS_DISCHARGE: CAPACITY_LIMITS_DTYPE,
     SiennaStorageTechnologyCol.CAPACITY_LIMITS_ENERGY: CAPACITY_LIMITS_DTYPE,
     SiennaStorageTechnologyCol.DURATION_LIMITS: CAPACITY_LIMITS_DTYPE,
-    SiennaStorageTechnologyCol.EFFICIENCY: IN_OUT_DTYPE,
+    SiennaStorageTechnologyCol.EFFICIENCY: EFFICIENCY_DTYPE,
     SiennaStorageTechnologyCol.LOSSES: pl.Float64,
     SiennaStorageTechnologyCol.LIFETIME: pl.Int64,
     SiennaStorageTechnologyCol.REQUIREMENTS: pl.List(pl.Int64),

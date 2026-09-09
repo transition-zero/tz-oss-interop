@@ -13,6 +13,7 @@ import polars as pl
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.sienna_investments_constants import (
     DEFAULT_PORTFOLIO_RATE,
+    PORTFOLIO_FINANCIAL_DATA_DESTINATION_SCHEMA,
     PORTFOLIO_FINANCIAL_DATA_TABLE,
     SiennaPortfolioFinancialDataCol,
 )
@@ -34,13 +35,7 @@ def build_portfolio_financial_data(base_year: int) -> pl.DataFrame:
             F.INTEREST_RATE: [DEFAULT_PORTFOLIO_RATE],
             F.BASE_YEAR: [base_year],
         },
-        schema={
-            F.ID: pl.Int64,
-            F.DISCOUNT_RATE: pl.Float64,
-            F.INFLATION_RATE: pl.Float64,
-            F.INTEREST_RATE: pl.Float64,
-            F.BASE_YEAR: pl.Int64,
-        },
+        schema=PORTFOLIO_FINANCIAL_DATA_DESTINATION_SCHEMA,
     )
 
 

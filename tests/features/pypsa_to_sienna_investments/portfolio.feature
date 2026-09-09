@@ -325,3 +325,48 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     When I run the pypsa investments translation against "inputs/shared_names.nc" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "REZ_Solar" has "build_year.Shared" set to 1995
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewPHS" has "build_year.Shared" set to 2005
+
+  Scenario: a hydro storage candidate stands for the hydro units already running
+    A StorageUnit whose carrier the mappings file sends to HydroDispatch is still a storage
+    technology, and the base system holds the units of that carrier as HydroDispatch, so
+    those are the devices the technology adds to.
+    Given a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains storage unit "OldHydro" on "North_bus" carrier "hydro" p_nom 200 max_hours 6.0 efficiency_dispatch 0.9 inflow 10.0 20.0 30.0
+    And storage unit "OldHydro" has build_year 1980
+    And the network contains storage unit "NewHydro" on "North_bus" carrier "hydro" p_nom 0 max_hours 6.0 efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "NewHydro" has p_nom_max 300
+    And storage unit "NewHydro" has overnight_cost 900000
+    And storage unit "NewHydro" has discount_rate 0.07
+    And storage unit "NewHydro" has lifetime 30
+    And the network is saved as "inputs/hydro_fleet.nc"
+    When I run the pypsa investments translation against "inputs/hydro_fleet.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/system.json" parses as JSON with 1 components of type "HydroDispatch"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewHydro" having "power_systems_type" set to "HydroDispatch"
+    And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "StorageTechnology" "NewHydro" has "existing_devices" set to ["OldHydro"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "eligible_generators" set to ["OldHydro"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "build_year.OldHydro" set to 1980
+
+  Scenario: a generator neither document holds leaves a whole-model constraint whole
+    A cap holds every component of the portfolio and the base system it expands. A generator
+    an earlier hop of this translator added to shed load reaches neither, so a constraint
+    naming everything both documents hold still covers the model.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains load "North_load" on "North_bus" with static p_set 100
+    And the network contains generator "GasPlant" on "North_bus" carrier "CCGT" p_nom 500
+    And the network contains generator "North_bus_load_shedding" on "North_bus" carrier "load_shedding" p_nom 100 marginal_cost 9000
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/whole_model_cap.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"bus": [{"name": "North_bus", "value_of_lost_load": 9000.0}], "constraint": [{"name": "CarbonBudget", "sense": "<=", "limits": [{"period": "year", "value": 20.0}], "members": [{"name": "GasPlant", "member_class": "Generator"}, {"name": "REZ_Solar", "member_class": "Generator"}]}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/whole_model_cap.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
+    And the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "CarbonCaps"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "CarbonCaps" named "CarbonBudget" having "max_mtons" set to 20.0

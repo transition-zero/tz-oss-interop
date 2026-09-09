@@ -94,6 +94,10 @@ SIENNA_NAME_COLUMN = "name"
 
 SIENNA_ID_COLUMN = "id"
 
+SIENNA_REGION_NAME_COLUMN = "region_name"
+
+SIENNA_REGION_COLUMN = "region"
+
 
 class SiennaACBusCol:
     """Sienna ACBus column names."""

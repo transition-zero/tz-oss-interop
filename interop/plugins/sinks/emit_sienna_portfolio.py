@@ -13,6 +13,8 @@ from interop.core.pipeline import Sink, State
 from interop.plugins.shared.sienna_constants import (
     SIENNA_ID_COLUMN,
     SIENNA_NAME_COLUMN,
+    SIENNA_REGION_COLUMN,
+    SIENNA_REGION_NAME_COLUMN,
     SiennaCompanionFilename,
     SiennaComponent,
 )
@@ -27,7 +29,6 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaInvestmentsComponent,
     SiennaRetirementPotentialCol,
     SiennaSupplementalAttributeAssociationCol,
-    SiennaSupplyTechnologyCol,
 )
 from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
 from interop.ports.outbound.filesystem import FilesystemPort, Location
@@ -39,13 +40,6 @@ _DEFAULT_OUTPUT_DIR = Path("outputs")
 _NAMED_YEAR_FIELDS: tuple[str, ...] = (
     SiennaRetirementPotentialCol.BUILD_YEAR,
     SiennaRetirementPotentialCol.PLANNED_RETIREMENT_YEAR,
-)
-
-# The types whose tables carry a region name for the sink to resolve.
-_REGION_HOLDERS: tuple[SiennaInvestmentsComponent, ...] = (
-    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-    SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
 )
 
 _COMPONENT_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
@@ -100,7 +94,7 @@ class EmitSiennaPortfolio(Sink):
         component_ids: dict[str, dict[str, int]] = {}
         for component in _COMPONENT_TYPES:
             table = state.destination_tables.get(component)
-            objects = _build_components(table, area_ids, region=component in _REGION_HOLDERS)
+            objects = _build_components(table, area_ids)
             if objects:
                 components[str(component)] = objects
             component_ids[str(component)] = _name_to_id(table)
@@ -136,27 +130,24 @@ def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
     )
 
 
-def _build_components(
-    table: pl.DataFrame | None, area_ids: dict[str, int], *, region: bool
-) -> list[dict[str, Any]]:
+def _build_components(table: pl.DataFrame | None, area_ids: dict[str, int]) -> list[dict[str, Any]]:
     """One object per row, with the region name resolved to the area ids it stands for."""
     if table is None or table.is_empty():
         return []
-    if region:
+    holds_region = SIENNA_REGION_NAME_COLUMN in table.columns
+    if holds_region:
         validate_refs(
-            SiennaSupplyTechnologyCol.REGION_NAME,
-            table[SiennaSupplyTechnologyCol.REGION_NAME].drop_nulls().unique().to_list(),
+            SIENNA_REGION_NAME_COLUMN,
+            table[SIENNA_REGION_NAME_COLUMN].drop_nulls().unique().to_list(),
             set(area_ids),
             "technologies -> areas",
         )
     objects: list[dict[str, Any]] = []
     for row in table.iter_rows(named=True):
-        component = _stated(
-            {k: v for k, v in row.items() if k != SiennaSupplyTechnologyCol.REGION_NAME}
-        )
-        area_name = row.get(SiennaSupplyTechnologyCol.REGION_NAME) if region else None
+        component = _stated({k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN})
+        area_name = row.get(SIENNA_REGION_NAME_COLUMN) if holds_region else None
         if area_name is not None:
-            component[SiennaSupplyTechnologyCol.REGION] = [area_ids[area_name]]
+            component[SIENNA_REGION_COLUMN] = [area_ids[area_name]]
         objects.append(component)
     return objects
 

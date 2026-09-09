@@ -31,9 +31,6 @@ class SiennaToPypsaMapComponents(TranslationStep):
     so its decisions stay attributed to its own name even though they run under this
     composite. The inner scope wins because ScopedRecorder keeps an event's existing step
     over its own.
-
-    Every sub-step shares one ``ExtensionReader``, so what one of them reads off the staged
-    records is read for the lot.
     """
 
     name: ClassVar[str] = "sienna_to_pypsa_map_components"
