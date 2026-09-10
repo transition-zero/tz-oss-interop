@@ -111,7 +111,7 @@ cost and the energy side is derived from the two.
 | `region` | | The `Region` that contains the object's `Node` | `derived` |
 | `capacity_limits_discharge.min` / `.max` | MW | `Max Power × Units` and `Max Power × (Units + Max Units Built)` | `derived` |
 | `capacity_limits_energy.min` / `.max` | MWh | The discharge limits multiplied by the object's storage hours (`Capacity ÷ Max Power` for a `Battery`) | `derived` |
-| | | A candidate whose storage hours come out at zero is left out, since a build could add power it can never charge. `decisions.md` names each one. | |
+| | | A candidate whose storage hours come out at zero is left out, since a build could add power it can never charge. A candidate whose storage hours are not a finite number is left out too, since the energy a build may add has no upper bound. `decisions.md` names each one. | |
 | `unit_size_discharge` | MW | `Max Power`: what one unit of the candidate is | `direct` |
 | `capital_costs.discharge_capital_cost` | $/MW | `Build Cost`, as the slope of a linear cost curve | `derived` |
 | `capital_costs.charge_capital_cost`, `energy_capital_cost` | | Zero curves. PLEXOS prices the object by its power, so it states no separate price for charging or for energy. | `default` |

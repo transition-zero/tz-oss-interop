@@ -118,6 +118,11 @@ UNBOUNDED_LIFETIME_NOTE = (
     "lifetime is not a finite number of years, so the technology has no capital recovery "
     "period to annuitise its overnight cost across"
 )
+SHORT_LIFETIME_REASON = "are extendable and state a lifetime below one year"
+SHORT_LIFETIME_NOTE = (
+    "lifetime is below one year, so the capital recovery period truncates to zero or less "
+    "and no annuity can recover the overnight cost across it"
+)
 UNPRICED_BUILD_REASON = "are extendable and put no overnight cost on the capacity a build adds"
 UNPRICED_BUILD_NOTE = (
     "PyPSA prices a build through overnight_cost or through the annuity in capital_cost, and "
@@ -176,6 +181,14 @@ def build_expansion_skips(
             report=skip(
                 reason=UNBOUNDED_LIFETIME_REASON,
                 note=UNBOUNDED_LIFETIME_NOTE,
+                attribute_col=lifetime_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(lifetime_col) >= 1,
+            report=skip(
+                reason=SHORT_LIFETIME_REASON,
+                note=SHORT_LIFETIME_NOTE,
                 attribute_col=lifetime_col,
             ),
         ),

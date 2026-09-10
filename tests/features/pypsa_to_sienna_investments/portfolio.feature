@@ -267,6 +267,22 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the log contains "1 Generator(s) are extendable and put no overnight cost on the capacity a build adds"
     And the log contains "1 Generator(s) are extendable and state no discount rate"
 
+  Scenario: a candidate whose lifetime is below one year is left out, and the run completes
+    A capital recovery period is a whole number of years, so a lifetime below one year leaves
+    no years to recover the overnight cost across.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 0.5
+    And the network is saved as "inputs/short_lifetime.nc"
+    When I run the pypsa investments translation against "inputs/short_lifetime.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "SupplyTechnology"
+    And the log contains "1 Generator(s) are extendable and state a lifetime below one year"
+    And the file "decisions.md" contains "lifetime is below one year"
+
   Scenario: a candidate whose floor is above its ceiling is left out, and the run completes
     A technology states a capacity floor and a capacity ceiling, and no capacity can meet a
     floor above the ceiling.
@@ -285,9 +301,7 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "decisions.md" contains "p_nom_min is above p_nom_max"
 
   Scenario: a storage candidate with no energy ceiling is left out, and the run completes
-    A storage technology states the energy a build may add, which is the power a build may add
-    multiplied by the hours the unit holds. A unit that states no finite number of hours puts
-    no bound on that energy.
+    A unit whose max_hours is not a finite number puts no bound on the energy a build may add.
     Given a PyPSA network
     And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
     And the network contains storage unit "NewPHS" on "North_bus" carrier "PHS" p_nom 0 max_hours inf efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
