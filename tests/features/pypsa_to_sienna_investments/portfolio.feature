@@ -348,6 +348,25 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "eligible_generators" set to ["OldHydro"]
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "build_year.OldHydro" set to 1980
 
+  Scenario: a technology's fleet is the plant of its own region
+    A portfolio groups its technologies by region, so a technology stands for more of what its
+    own region already runs. A plant of the same carrier in another region is not one it adds
+    to, and not one a build of it may retire.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains bus "South_bus" carrier "AC" v_nom 380.0 location "South"
+    And the network contains generator "OldSolar_North" on "North_bus" carrier "solar" p_nom 100
+    And the network contains generator "OldSolar_South" on "South_bus" carrier "solar" p_nom 200
+    And the network contains generator "REZ_Solar_North" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar_North" has p_nom_max 500
+    And generator "REZ_Solar_North" has overnight_cost 1200000
+    And generator "REZ_Solar_North" has discount_rate 0.07
+    And generator "REZ_Solar_North" has lifetime 25
+    And the network is saved as "inputs/two_regions.nc"
+    When I run the pypsa investments translation against "inputs/two_regions.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "REZ_Solar_North" has "existing_devices" set to ["OldSolar_North"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "REZ_Solar_North" has "eligible_generators" set to ["OldSolar_North"]
+
   Scenario: a supply technology takes only the devices of its own PyPSA class
     A Generator and a StorageUnit may share a name, and only a StorageUnit becomes a
     HydroDispatch, so a supply technology's fleet is the generators of its carrier alone.

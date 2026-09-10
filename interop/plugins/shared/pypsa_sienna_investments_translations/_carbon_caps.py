@@ -1,7 +1,4 @@
-"""Translation objects for an extensions-sidecar constraint -> Sienna CarbonCaps.
-
-``CarbonCaps`` names no members and no region, so it holds the whole portfolio.
-"""
+"""Translation objects for an extensions-sidecar constraint -> Sienna CarbonCaps."""
 
 from __future__ import annotations
 

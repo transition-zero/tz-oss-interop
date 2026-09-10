@@ -22,25 +22,6 @@ from interop_testing.files import navigate_json, read_json
 
 @then(
     parsers.parse(
-        'the file "{path}" parses as a portfolio with component "{sienna_type}" named "{name}"'
-        ' without field "{field_path}"'
-    )
-)
-def assert_portfolio_component_field_absent(
-    path: str, sienna_type: str, name: str, field_path: str
-) -> None:
-    """A field the component does not hold, named by a dotted path into its nested structs."""
-    component = find_sienna_component(read_json(path), sienna_type, name)
-    context = f"{path}[{sienna_type}:{name}]"
-    parent_path, _, field = field_path.rpartition(".")
-    holder = navigate_json(component, parent_path, context) if parent_path else component
-    assert field not in holder, (
-        f"expected field {field_path!r} absent from {context}, got {holder!r}"
-    )
-
-
-@then(
-    parsers.parse(
         'the file "{path}" parses as a portfolio with no component "{sienna_type}" named "{name}"'
     )
 )

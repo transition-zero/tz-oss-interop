@@ -22,7 +22,6 @@ from ._shared import (
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
     build_scope_skips,
-    enrich_from_names,
 )
 from ._storage import (
     STORAGE_SKIPS,
@@ -61,7 +60,6 @@ __all__ = [
     "build_supply_translations",
     "build_topology_mapping_translations",
     "build_topology_source_table",
-    "enrich_from_names",
     "fill_storage_technology_defaults",
     "fill_supply_defaults",
 ]

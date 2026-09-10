@@ -142,7 +142,6 @@ def build_expansion_skips(
     overnight_cost_col: str,
     discount_rate_col: str,
 ) -> tuple[SkipRule, ...]:
-    """The four drops every candidate table shares once its scope is settled."""
     skip = partial(
         investments_skip_report,
         component=naming.display,
@@ -196,25 +195,7 @@ ALL_EQUITY_NOTE = (
 )
 
 
-def enrich_from_names(
-    table: pl.DataFrame,
-    name_col: str,
-    dest_col: str,
-    values: dict[str, Any],
-    dtype: pl.DataType | type[pl.DataType],
-) -> pl.DataFrame:
-    """Add a column looking each row's name up in a mapping, null where the mapping is silent.
-
-    One entry per component: never a time-series frame.
-    """
-    names: list[str] = table[name_col].to_list() if table.height else []
-    return table.with_columns(
-        pl.Series(dest_col, [values.get(name) for name in names], dtype=dtype)
-    )
-
-
 def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
-    """The ``MinMax`` a capacity limit is stated as."""
     return pl.struct(
         minimum.cast(pl.Float64).alias(MinMaxField.MIN),
         maximum.cast(pl.Float64).alias(MinMaxField.MAX),
@@ -224,7 +205,6 @@ def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
 def financial_data_struct(
     capital_recovery_period: pl.Expr, return_on_equity: pl.Expr, base_year: int
 ) -> pl.Expr:
-    """A Sienna ``TechnologyFinancialData`` written as all-equity financing."""
     field = SiennaTechnologyFinancialDataField
     return pl.struct(
         capital_recovery_period.cast(pl.Int64).alias(field.CAPITAL_RECOVERY_PERIOD),

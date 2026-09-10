@@ -61,7 +61,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     build_supply_translations,
     build_topology_mapping_translations,
     build_topology_source_table,
-    enrich_from_names,
     fill_storage_technology_defaults,
     fill_supply_defaults,
 )
@@ -82,6 +81,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA,
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE,
+    SUPPLEMENTAL_ATTRIBUTE_ORDER,
     SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA,
     TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
     SiennaInvestmentsComponent,
@@ -116,7 +116,6 @@ _GENERATOR_FLEET_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.RENEWABLE_DISPATCH,
     SiennaComponent.RENEWABLE_NON_DISPATCH,
 )
-_STORAGE_FLEET_TYPES: tuple[SiennaComponent, ...] = _STORAGE_BASE_TYPES
 
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.POWER_LOAD,
@@ -174,7 +173,7 @@ _STORAGE = _CandidateKind(
     schema=STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
     base_types=_STORAGE_BASE_TYPES,
-    fleet_types=_STORAGE_FLEET_TYPES,
+    fleet_types=_STORAGE_BASE_TYPES,
     device_class=PyPSAComponent.STORAGE_UNIT,
     build_year_col=PyPSAStorageUnitCol.BUILD_YEAR,
 )
@@ -184,39 +183,34 @@ _CANDIDATE_KINDS: tuple[_CandidateKind, ...] = (_SUPPLY, _STORAGE)
 
 
 class _Attribute(NamedTuple):
-    """Everything one supplemental attribute is: its schema, its translations and its subject."""
-
-    kind: SiennaSupplementalAttribute
     schema: _Schema
     build: _BuildTranslations
     name_col: str
     describes: Callable[[pl.DataFrame], list[str]]
 
 
-# In the order the flat array lists them, which is the order their ids run in.
-_ATTRIBUTES: tuple[_Attribute, ...] = (
-    _Attribute(
-        kind=SiennaSupplementalAttribute.EXISTING_DEVICES,
+# An attribute takes its id from its place in the flat array, so the step numbers the types in
+# the order the sink writes them, SUPPLEMENTAL_ATTRIBUTE_ORDER.
+_ATTRIBUTES: dict[SiennaSupplementalAttribute, _Attribute] = {
+    SiennaSupplementalAttribute.EXISTING_DEVICES: _Attribute(
         schema=EXISTING_DEVICES_DESTINATION_SCHEMA,
         build=build_existing_devices_translations,
         name_col=TECHNOLOGY_NAME,
         describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
     ),
-    _Attribute(
-        kind=SiennaSupplementalAttribute.RETIREMENT_POTENTIAL,
+    SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: _Attribute(
         schema=RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
         build=build_retirement_potential_translations,
         name_col=TECHNOLOGY_NAME,
         describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
     ),
-    _Attribute(
-        kind=SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
+    SiennaSupplementalAttribute.TOPOLOGY_MAPPING: _Attribute(
         schema=TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
         build=build_topology_mapping_translations,
         name_col=AREA_NAME,
         describes=lambda source: [str(SiennaComponent.AREA)] * source.height,
     ),
-)
+}
 
 
 class PypsaToSiennaInvestmentsMapTechnologiesParams(BaseModel):
@@ -283,7 +277,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         ]
         self._map_demand(state, area_by_bus, numbering)
         self._map_carbon_caps(state, reader, numbering, candidates)
-        self._map_supplemental_attributes(state, buses, reader, candidates)
+        self._map_supplemental_attributes(state, buses, reader, scope, candidates)
         state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = build_portfolio_financial_data(
             base_year
         )
@@ -380,15 +374,11 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             for carrier, target in self._carrier_mappings.get_thermal_carrier_map().items()
         }
         carrier_col = PyPSAComponentCol.CARRIER
-        table = enrich_from_names(
-            table, carrier_col, POWER_SYSTEMS_TYPE_COL, component_types, pl.Utf8
-        )
-        table = enrich_from_names(table, carrier_col, PRIME_MOVER_COL, prime_movers, pl.Utf8)
-        table = enrich_from_names(table, carrier_col, FUEL_COL, fuels, pl.Utf8)
-        table = enrich_from_names(
-            table, PyPSAComponentCol.BUS, REGION_COL, dict(area_by_bus), pl.Utf8
-        )
         return table.with_columns(
+            _looked_up(carrier_col, component_types, POWER_SYSTEMS_TYPE_COL),
+            _looked_up(carrier_col, prime_movers, PRIME_MOVER_COL),
+            _looked_up(carrier_col, fuels, FUEL_COL),
+            _looked_up(PyPSAComponentCol.BUS, dict(area_by_bus), REGION_COL),
             pl.Series(UNIT_SIZE_COL, list(unit_sizes), dtype=pl.Float64),
             pl.Series(TECHNICAL_LIFE_COL, list(technical_lives), dtype=pl.Float64),
         )
@@ -426,8 +416,10 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         table = src.collect().filter(pl.col(PyPSALoadCol.NAME).is_in(list(load_types)))
         if table.is_empty():
             return
-        table = enrich_from_names(table, PyPSALoadCol.BUS, REGION_COL, dict(area_by_bus), pl.Utf8)
-        table = enrich_from_names(table, PyPSALoadCol.NAME, LOAD_TYPE_COL, load_types, pl.Utf8)
+        table = table.with_columns(
+            _looked_up(PyPSALoadCol.BUS, dict(area_by_bus), REGION_COL),
+            _looked_up(PyPSALoadCol.NAME, load_types, LOAD_TYPE_COL),
+        )
         self._write_table(
             state,
             table,
@@ -470,10 +462,11 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         state: State,
         buses: pl.DataFrame,
         reader: ExtensionReader,
+        scope: _CandidateScope,
         candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> None:
         """The three attributes, numbered from the one counter the flat array shares."""
-        fleet = self._build_fleet(state, reader, candidates)
+        fleet = self._build_fleet(state, reader, scope, candidates)
         sources: dict[SiennaSupplementalAttribute, pl.DataFrame] = {
             SiennaSupplementalAttribute.EXISTING_DEVICES: fleet,
             SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: fleet,
@@ -481,21 +474,17 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         }
         associations: list[pl.DataFrame] = []
         numbering = _Numbering()
-        for attribute in _ATTRIBUTES:
-            source = sources[attribute.kind]
+        for kind in SUPPLEMENTAL_ATTRIBUTE_ORDER:
+            attribute = _ATTRIBUTES[kind]
+            source = sources[kind]
             if source.is_empty():
                 continue
             out = self._write_table(
-                state,
-                source,
-                attribute.build,
-                attribute.schema,
-                attribute.kind,
-                numbering,
+                state, source, attribute.build, attribute.schema, kind, numbering
             )
             associations.append(
                 build_association_rows(
-                    attribute.kind,
+                    kind,
                     out[SIENNA_ID_COLUMN].to_list(),
                     source[attribute.name_col].to_list(),
                     attribute.describes(source),
@@ -511,6 +500,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self,
         state: State,
         reader: ExtensionReader,
+        scope: _CandidateScope,
         candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> pl.DataFrame:
         """The base-system devices each technology stands for, and the years they state."""
@@ -520,7 +510,12 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             fleets.append(
                 build_existing_fleet_source_table(
                     _technologies(found, kind.component, kind.device_class),
-                    _carrier_groups(state, kind.source_table, _base_names(state, kind.fleet_types)),
+                    _fleet_groups(
+                        state,
+                        kind.source_table,
+                        _base_names(state, kind.fleet_types),
+                        scope.area_by_bus,
+                    ),
                     years.built,
                     years.retired,
                 )
@@ -552,6 +547,15 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             if retirement_year is not None:
                 retired[name] = retirement_year
         return _Years(built=built, retired=retired)
+
+
+def _looked_up(name_col: str, values: Mapping[str, str | None], dest_col: str) -> pl.Expr:
+    """What a mapping says about each row, null where the mapping names no such row."""
+    return (
+        pl.col(name_col)
+        .replace_strict(dict(values), default=None, return_dtype=pl.Utf8)
+        .alias(dest_col)
+    )
 
 
 def _model_components(
@@ -591,22 +595,30 @@ def _base_names(state: State, types: tuple[SiennaComponent, ...]) -> set[str]:
     return names
 
 
-def _carrier_groups(
-    state: State, source_table: str, in_base_system: set[str]
-) -> dict[str, list[str]]:
-    """The base-system components of each carrier, in the order the network states them."""
+def _fleet_groups(
+    state: State,
+    source_table: str,
+    in_base_system: set[str],
+    area_by_bus: Mapping[str, str | None],
+) -> dict[tuple[str, str | None], list[str]]:
+    """The base-system components of each carrier and area, in the order the network states them.
+
+    A technology sits in one region, so a device of its carrier in another region is not a
+    plant it adds to and not a plant a build of it may retire.
+    """
     src = state.source_topology.get(source_table)
     if src is None:
         return {}
     table = src.collect()
-    groups: dict[str, list[str]] = {}
-    for name, carrier in zip(
+    groups: dict[tuple[str, str | None], list[str]] = {}
+    for name, carrier, bus in zip(
         table[PYPSA_NAME_COLUMN].to_list(),
         table[PyPSAComponentCol.CARRIER].to_list(),
+        table[PyPSAComponentCol.BUS].to_list(),
         strict=True,
     ):
         if name in in_base_system:
-            groups.setdefault(carrier, []).append(name)
+            groups.setdefault((carrier, area_by_bus.get(bus)), []).append(name)
     return groups
 
 
@@ -622,10 +634,12 @@ def _technologies(
             component_type=str(component),
             device_class=device_class,
             carrier=carrier,
+            region=region,
         )
-        for name, carrier in zip(
+        for name, carrier, region in zip(
             candidates[PyPSAComponentCol.NAME].to_list(),
             candidates[PyPSAComponentCol.CARRIER].to_list(),
+            candidates[REGION_COL].to_list(),
             strict=True,
         )
     ]
