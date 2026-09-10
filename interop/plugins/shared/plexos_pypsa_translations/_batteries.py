@@ -6,12 +6,9 @@ when full is its Capacity, or its Duration times its Max Power where it states n
 
 from __future__ import annotations
 
-import logging
-
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_HOURS,
-    UNIT_MW,
     UNIT_MWH,
     UNIT_PERCENT,
 )
@@ -19,19 +16,21 @@ from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    derive_expansion,
+    gather_sources,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import derive_lifespan
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
     CHARGE_NOTE,
     EFFICIENCY_NOTE,
-    EXTENDABLE_NOTE,
     FULL_DISCHARGE_NOTE,
     NO_RESERVOIR_INFLOW_NOTE,
     MappedOrSkipped,
     RatedObject,
     RatedPower,
-    SkippedComponent,
-    StagedObject,
     StorageLookups,
     StorageUnitMapping,
     derive_bus,
@@ -44,16 +43,15 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
     BATTERY_CYCLIC,
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
-    DIRECT_DERIVATION,
     END_EFFECTS_RECYCLE,
     PERCENT,
     STORAGE_FULL_CHARGE_PU,
     STORAGE_FULL_DISCHARGE_PU,
     STORAGE_MARGINAL_COST,
-    STORAGE_P_NOM_EXTENDABLE,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
 )
 from interop.plugins.shared.pypsa_constants import (
@@ -62,8 +60,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_time_series import append_metadata
-
-log = logging.getLogger(__name__)
 
 
 def record_battery_outages(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -90,32 +86,34 @@ _BATTERY_NO_START_NOTE = (
 _BATTERY_RECYCLE_DERIVATION = "End Effects Method recycles the level"
 _CAPACITY_DERIVATION = "Capacity"
 _CAPACITY_FROM_DURATION_DERIVATION = "Duration * Max Power"
-_SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * energy capacity"
+_STORED_ENERGY_DERIVATION = "the power the object already runs * max_hours"
+_SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * the power the object already runs * max_hours"
+_PER_MAX_POWER_DERIVATION = " / Max Power"
 
 # --- batteries ---------------------------------------------------------------
 
 
 def map_battery(name: str, lookups: StorageLookups) -> MappedOrSkipped:
-    rated = rate_object(lookups.battery(name), _BATTERY_POWER)
+    rated = rate_object(lookups.staged(PlexosClass.BATTERY, name), _BATTERY_POWER)
     if isinstance(rated, SkippedComponent):
         return rated
     return _derive_battery(rated)
 
 
-def _battery_p_nom(staged: StagedObject) -> Decision:
-    max_power = staged.properties[PlexosProperty.MAX_POWER]
-    source = SourceValue(
-        PlexosClass.BATTERY, staged.name, PlexosProperty.MAX_POWER, max_power, UNIT_MW
-    )
-    return Decision.derived(max_power, [source], DIRECT_DERIVATION)
-
-
-_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER, _battery_p_nom)
+_BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER)
 
 
 def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
-    capacity = _battery_energy_capacity(rated)
-    max_hours = derive_max_hours(capacity, rated.p_nom.value)
+    unit_size = rated.unit_size
+    capacity = _battery_energy_capacity(rated, unit_size)
+    max_hours = derive_max_hours(capacity, unit_size.value, per=_PER_MAX_POWER_DERIVATION)
+    running = rated.running_power
+    stored = Decision.derived(
+        running.value * max_hours.value,
+        gather_sources(running.sources, max_hours.sources),
+        _STORED_ENERGY_DERIVATION,
+    )
+    expansion = derive_expansion(rated.candidate)
     return StorageUnitMapping(
         name=rated.name,
         bus=derive_bus(PlexosClass.BATTERY, rated.name, rated.node),
@@ -127,11 +125,12 @@ def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
         efficiency=_battery_efficiency(rated),
         marginal_cost=Decision.default(STORAGE_MARGINAL_COST, _BATTERY_MARGINAL_COST_NOTE),
         state_of_charge_initial=derive_state_of_charge_initial(
-            _battery_initial_level(rated, capacity), rated.p_nom.value * max_hours.value
+            _battery_initial_level(rated, capacity, stored), stored.value
         ),
         inflow=Decision.default(DEFAULT_INFLOW, NO_RESERVOIR_INFLOW_NOTE),
         cyclic=_battery_cyclic(rated),
-        p_nom_extendable=Decision.default(STORAGE_P_NOM_EXTENDABLE, EXTENDABLE_NOTE),
+        lifespan=derive_lifespan(PlexosClass.BATTERY, rated.name, rated.lifespan),
+        expansion=expansion,
         units=rated.properties.get(PlexosProperty.UNITS),
     )
 
@@ -155,8 +154,8 @@ def _battery_cyclic(rated: RatedObject) -> Decision:
     return Decision.default(BATTERY_CYCLIC, _BATTERY_CYCLIC_NOTE)
 
 
-def _battery_energy_capacity(rated: RatedObject) -> Decision | None:
-    """The MWh a battery holds when full, from Capacity or from Duration * Max Power."""
+def _battery_energy_capacity(rated: RatedObject, unit_size: Decision) -> Decision | None:
+    """The MWh one unit holds when full, from Capacity or from Duration * Max Power."""
     capacity = rated.properties.get(PlexosProperty.CAPACITY)
     if capacity is not None:
         source = SourceValue(
@@ -166,22 +165,24 @@ def _battery_energy_capacity(rated: RatedObject) -> Decision | None:
     duration = rated.properties.get(PlexosProperty.DURATION)
     if duration is None:
         return None
-    return _capacity_from_duration(rated.name, duration, rated.p_nom.value)
+    return _capacity_from_duration(rated.name, duration, unit_size)
 
 
-def _capacity_from_duration(name: str, duration: float, max_power: float) -> Decision:
+def _capacity_from_duration(name: str, duration: float, unit_size: Decision) -> Decision:
     return Decision.derived(
-        duration * max_power,
+        duration * unit_size.value,
         [
             SourceValue(PlexosClass.BATTERY, name, PlexosProperty.DURATION, duration, UNIT_HOURS),
-            SourceValue(PlexosClass.BATTERY, name, PlexosProperty.MAX_POWER, max_power, UNIT_MW),
+            *unit_size.sources,
         ],
         _CAPACITY_FROM_DURATION_DERIVATION,
     )
 
 
-def _battery_initial_level(rated: RatedObject, capacity: Decision | None) -> Decision | None:
-    """Where the battery starts, as MWh, from Initial SoC against its energy capacity."""
+def _battery_initial_level(
+    rated: RatedObject, capacity: Decision | None, stored: Decision
+) -> Decision | None:
+    """Where the battery starts, as MWh, from Initial SoC against the energy it holds."""
     initial_soc = rated.properties.get(PlexosProperty.INITIAL_SOC)
     if initial_soc is None or capacity is None:
         return None
@@ -189,8 +190,8 @@ def _battery_initial_level(rated: RatedObject, capacity: Decision | None) -> Dec
         PlexosClass.BATTERY, rated.name, PlexosProperty.INITIAL_SOC, initial_soc, UNIT_PERCENT
     )
     return Decision.derived(
-        initial_soc / PERCENT * capacity.value,
-        [source, *capacity.sources],
+        initial_soc / PERCENT * stored.value,
+        [source, *stored.sources],
         _SOC_FROM_PERCENT_DERIVATION,
     )
 

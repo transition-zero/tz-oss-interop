@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
 
@@ -47,6 +48,10 @@ class ExtensionKind(StrEnum):
     # PLEXOS Reserve; Sienna VariableReserve and ConstantReserve. PyPSA has none, which is
     # why the concept needs the sidecar to survive a hop through it.
     RESERVE = "reserve"
+    # PLEXOS Constraint. PyPSA's GlobalConstraint limits one carrier over the whole horizon
+    # and cannot name a set of components, which is why the concept needs the sidecar to
+    # survive a hop through it. Sienna has no equivalent either.
+    CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
 
 
@@ -80,6 +85,25 @@ class ReserveKind(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ConstraintSense(StrEnum):
+    """Which way a constraint holds its weighted sum against the right-hand side."""
+
+    AT_MOST = "<="  # PLEXOS Sense -1
+    EXACTLY = "=="  # PLEXOS Sense 0
+    AT_LEAST = ">="  # PLEXOS Sense 1
+
+
+class ConstraintPeriod(StrEnum):
+    """The span one right-hand side applies over."""
+
+    HORIZON = "horizon"  # PLEXOS RHS
+    HOUR = "hour"  # PLEXOS RHS Hour
+    DAY = "day"  # PLEXOS RHS Day
+    WEEK = "week"  # PLEXOS RHS Week
+    MONTH = "month"  # PLEXOS RHS Month
+    YEAR = "year"  # PLEXOS RHS Year
+
+
 class ExtensionRecord(BaseModel):
     """One component's record. ``name`` is the identifier in every framework."""
 
@@ -97,7 +121,24 @@ class BusExtension(ExtensionRecord):
     value_of_lost_load: float | None = None
 
 
-class GeneratorExtension(ExtensionRecord):
+class ExpansionExtension(ExtensionRecord):
+    """What a candidate states that PyPSA's own expansion columns have no home for."""
+
+    # MW. What one unit of a candidate is. PyPSA sizes a candidate by p_nom_max alone, so
+    # the size of a single unit has no field there.
+    unit_size_mw: float | None = None
+    # yr. How long the plant runs. PyPSA has one lifetime and the capital recovery period
+    # claims it, so this has no field there.
+    technical_life_years: float | None = None
+    # $/MW/yr. PyPSA's fom_cost is a charge for the whole modelled horizon, not a yearly
+    # one, so a yearly charge has no field there.
+    fom_charge_per_mw_year: float | None = None
+    # The year the object leaves service, which PLEXOS states as a dated Units of zero.
+    # PyPSA carries build_year on the component and nothing for the other end of its life.
+    retirement_year: int | None = None
+
+
+class GeneratorExtension(ExpansionExtension):
     # PyPSA Generator.carrier. Sienna states fuel and prime mover instead, and several PyPSA
     # carriers share one (prime_mover, fuel) pair, so the reverse cannot recover this.
     carrier: str | None = None
@@ -143,7 +184,7 @@ class ControllableLineExtension(ExtensionRecord):
     has_time_varying_p_min_pu: bool | None = None
 
 
-class StorageExtension(ExtensionRecord):
+class StorageExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None  # PyPSA only
 
 
@@ -179,6 +220,45 @@ class ReserveExtension(ExtensionRecord):
     is_mutually_exclusive: bool | None = None
 
 
+class ConstraintMember(BaseModel):
+    """One object a constraint weights, and the coefficient it is weighted by.
+
+    Two classes can hold an object of the same name and a constraint can weight a generator
+    and an emission alike, so the member carries the class its name belongs to. The
+    coefficient is absent where the constraint names the object without weighting it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    member_class: str  # PLEXOS Generator, Line, Emission and the rest
+    coefficient: float | None = None
+    # PLEXOS names the coefficient per class: Generation Coefficient, Flow Coefficient, and
+    # so on. The name says which quantity of the member the coefficient weights.
+    coefficient_property: str | None = None
+
+
+class ConstraintLimit(BaseModel):
+    """One right-hand side the weighted sum is held to, and the span it applies over."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    period: ConstraintPeriod
+    value: float
+    unit: str | None = None  # the unit the source stated the limit in
+
+
+class ConstraintExtension(ExtensionRecord):
+    """A weighted sum over named objects, held to one or more right-hand sides."""
+
+    sense: ConstraintSense | None = None
+    limits: list[ConstraintLimit] = []
+    members: list[ConstraintMember] = []
+    # PLEXOS Include in LT Plan: whether the expansion plan has to meet the constraint as
+    # well as the dispatch.
+    applies_to_expansion_plan: bool | None = None
+
+
 class NetworkExtension(ExtensionRecord):
     """The model file's own attributes. PyPSA only: neither Sienna nor PLEXOS has these."""
 
@@ -199,6 +279,7 @@ class Extensions(BaseModel):
     controllable_line: list[ControllableLineExtension] = []
     storage: list[StorageExtension] = []
     reserve: list[ReserveExtension] = []
+    constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
 
 
@@ -210,6 +291,7 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.CONTROLLABLE_LINE: ControllableLineExtension,
     ExtensionKind.STORAGE: StorageExtension,
     ExtensionKind.RESERVE: ReserveExtension,
+    ExtensionKind.CONSTRAINT: ConstraintExtension,
     ExtensionKind.NETWORK: NetworkExtension,
 }
 
@@ -391,6 +473,10 @@ def record_for(
 ) -> ReserveExtension | None: ...
 @overload
 def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.CONSTRAINT], name: str
+) -> ConstraintExtension | None: ...
+@overload
+def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
 
@@ -421,19 +507,46 @@ class ExtensionLookup(Generic[RecordT]):
         self._consumed.add(name)
         return self._records.get(name) or self._model(name=name)
 
+    def read_all(self) -> list[RecordT]:
+        """Every staged record of this kind, each one marked as read."""
+        self._consumed.update(self._records)
+        return list(self._records.values())
+
+
+@dataclass
+class ExtensionConsumption:
+    """The names every reader of one hop has read.
+
+    A hop may split its mappings across more than one step, so the readers those steps build
+    share one of these and the run reports what none of them asked for once the last step
+    has run.
+    """
+
+    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+
+    def names_for(self, kind: ExtensionKind) -> set[str]:
+        return self.by_kind.setdefault(kind, set())
+
+    def report_unconsumed(
+        self, staged: StagedExtensions, framework: str, recorder: EventRecorder
+    ) -> None:
+        for kind, records in staged.items():
+            consumed = self.by_kind.get(kind, set())
+            unread = [record for record in records if record.name not in consumed]
+            report_dropped({kind: unread}, framework, recorder)
+
 
 class ExtensionReader:
     """What one hop staged, and what its mappings did with it.
 
     A record only reaches a sidecar because the hop before it had nowhere to put it, so a
     record no mapping here consumes is dropped and reported rather than relayed onward. One
-    reader serves every mapping in a hop, so it can tell what nobody asked for.
+    consumption record serves every mapping of a hop, so it can tell what nobody asked for.
     """
 
-    def __init__(self, staged: StagedExtensions, framework: str) -> None:
+    def __init__(self, staged: StagedExtensions, consumption: ExtensionConsumption) -> None:
         self._staged = staged
-        self._framework = framework
-        self._consumed: dict[ExtensionKind, set[str]] = {}
+        self._consumption = consumption
 
     @overload
     def read(self, kind: Literal[ExtensionKind.BUS]) -> ExtensionLookup[BusExtension]: ...
@@ -454,24 +567,19 @@ class ExtensionReader:
     @overload
     def read(self, kind: Literal[ExtensionKind.RESERVE]) -> ExtensionLookup[ReserveExtension]: ...
     @overload
+    def read(
+        self, kind: Literal[ExtensionKind.CONSTRAINT]
+    ) -> ExtensionLookup[ConstraintExtension]: ...
+    @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(
-            model, self._staged.get(kind, []), self._consumed.setdefault(kind, set())
-        )
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumed.setdefault(kind, set()).update(record.name for record in records)
+        self._consumption.names_for(kind).update(record.name for record in records)
         return records
-
-    def report_unconsumed(self, recorder: EventRecorder) -> None:
-        """Report every staged record no mapping in this hop asked for."""
-        for kind, records in self._staged.items():
-            consumed = self._consumed.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, self._framework, recorder)

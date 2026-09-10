@@ -27,7 +27,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.bus` = bus_1 | `sienna.RenewableDispatch.solar_1.bus_name` = bus_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.carrier` = solar | `sienna.RenewableDispatch.solar_1.type` = RenewableDispatch | renewable carrier -> RenewableDispatch |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.carrier` = solar | `sienna.RenewableDispatch.solar_1.prime_mover_type` = PVe | carrier -> PrimeMovers via user defined mapping |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_nom` = 200.0 MW | `sienna.RenewableDispatch.solar_1.base_power` = 200.0 MW | p_nom_opt when p_nom_extendable else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_nom` = 200.0 MW | `sienna.RenewableDispatch.solar_1.base_power` = 200.0 MW | p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a build cannot take away, else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_max_pu` = 1.0 | `sienna.RenewableDispatch.solar_1.rating` = 1.0 | p_max_pu (per-unit nameplate rating; typically 1.0) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # TRANSLATOR_DEFAULT_APPLIED decisions
     And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.id` = 1 |  | assigned by 1-based row position in renewable generators DataFrame | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -108,6 +108,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "solar_1" on "bus_1" carrier "solar" p_nom 200.0 p_nom_extendable True
+    And generator "solar_1" has p_nom_opt 200
     And the network is saved as "inputs/solar_extendable.nc"
     When I run translate against "inputs/solar_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "solar_1" having "p_nom_extendable" set to true

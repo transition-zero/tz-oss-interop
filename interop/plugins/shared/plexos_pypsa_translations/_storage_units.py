@@ -6,11 +6,11 @@ staged tables once, runs all three, and records what each decided, skipped or dr
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 
+from interop.core.extensions import ExtensionKind, StorageExtension, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
@@ -26,6 +26,15 @@ from interop.plugins.shared.plexos_pypsa_translations._batteries import (
     map_battery,
     record_battery_outages,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    read_sidecar_value,
+    record_expansion,
+    warn_about_dropped_builds,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    read_year,
+    record_lifespan,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
 )
@@ -35,21 +44,21 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_hydro import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
-    SkippedComponent,
     StorageLookups,
     StorageUnitMapping,
     build_lookups,
     orphan_storage_skips,
     read_object_names,
-    warn_about_skipped,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
+    SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
@@ -58,8 +67,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_destination import append_destination_rows
-
-log = logging.getLogger(__name__)
 
 
 def write_storage_units(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -177,7 +184,7 @@ def _dropped_values(state: State, lookups: StorageLookups) -> list[_DroppedValue
         *_dropped_from(
             read_object_names(state, PlexosClass.BATTERY),
             PlexosClass.BATTERY,
-            lookups.battery_properties,
+            lookups.properties_of(PlexosClass.BATTERY),
             _BATTERY_DROPPED,
         ),
         *_dropped_from(storages, PlexosClass.STORAGE, lookups.storage_properties, _STORAGE_DROPPED),
@@ -213,6 +220,7 @@ def map_storage_units(state: State, recorder: ScopedRecorder) -> None:
     storage_units = derive_storage_units(state)
     _record(storage_units, recorder)
     write_storage_units(state, storage_units.mappings)
+    _carry_to_extensions(state, storage_units.mappings)
     record_battery_outages(state, storage_units.mappings)
     record_reservoir_inflows(state, storage_units.mappings)
 
@@ -221,8 +229,25 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
     reporter = ComponentReporter(recorder, PyPSAComponent.STORAGE_UNIT)
     for mapping in storage_units.mappings:
         reporter.record_mapping(mapping.name, mapping)
+        record_expansion(mapping.name, mapping.expansion, reporter)
+        record_lifespan(mapping.name, mapping.lifespan, reporter)
+    warn_about_dropped_builds(mapping.expansion for mapping in storage_units.mappings)
     for skipped in storage_units.skipped:
         reporter.record_skipped(skipped.source, skipped.note)
-        warn_about_skipped(skipped)
+    warn_about_skips(storage_units.skipped)
     for dropped in storage_units.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
+
+
+def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> None:
+    records = [
+        StorageExtension(
+            name=mapping.name,
+            unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
+            technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
+            retirement_year=read_year(mapping.lifespan.retirement_year),
+            fom_charge_per_mw_year=read_sidecar_value(mapping.expansion.fom_charge),
+        )
+        for mapping in mappings
+    ]
+    append_extensions(state.destination_extensions, ExtensionKind.STORAGE, records)

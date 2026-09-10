@@ -222,7 +222,7 @@ def given_network_contains_storage_unit(
     p_min_pu_m = re.search(r"p_min_pu (-?[\d.]+)", rest)
     p_max_pu_m = re.search(r"p_max_pu ([\d.]+)", rest)
     marginal_cost_m = re.search(r"marginal_cost ([\d.]+)", rest)
-    max_hours_m = re.search(r"max_hours ([\d.]+)", rest)
+    max_hours_m = re.search(r"max_hours ([\d.]+|inf)", rest)
     eff_store_m = re.search(r"efficiency_store ([\d.]+)", rest)
     eff_dispatch_m = re.search(r"efficiency_dispatch ([\d.]+)", rest)
     soc_initial_m = re.search(r"state_of_charge_initial ([\d.]+)", rest)

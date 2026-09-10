@@ -11,23 +11,36 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
+from functools import cached_property
 from typing import Any
 
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.plexos_constants import (
+    PlexosClass,
     PlexosObjectCol,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    CandidateSource,
+    ExpansionDecisions,
+    RatedCapacity,
+    derive_expansion,
+    derive_p_nom,
+)
 from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import Lookups
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import NO_LIFESPAN, Lifespan
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_P_MIN_PU,
     DEFAULT_SHUT_DOWN_COST,
     DEFAULT_UNITS,
     DEFAULT_UP_TIME_BEFORE,
+    DIRECT_DERIVATION,
     FULL_AVAILABILITY,
     MAX_RAMP_LIMIT_PU,
     NEGLIGIBLE_P_MIN_PU,
     PERCENT,
 )
+from interop.plugins.shared.plexos_pypsa_translations.decisions import Decision, SourceValue
 
 
 @dataclass(frozen=True)
@@ -76,6 +89,9 @@ _HEAT_RATE_PROPERTIES = (PlexosProperty.HEAT_RATE_INCR, PlexosProperty.HEAT_RATE
 # percentage; the other two are MW.
 _MIN_STABLE_MEGAWATT_PROPERTIES = (PlexosProperty.MIN_STABLE_LEVEL, PlexosProperty.MIN_PUMP_LOAD)
 
+P_NOM_DERIVATION = "Max Capacity x Units"
+P_NOM_RATING_DERIVATION = "Rating above Max Capacity x Units, so the Rating is the capacity"
+
 
 @dataclass(frozen=True)
 class SourceGenerator:
@@ -85,7 +101,17 @@ class SourceGenerator:
     category: str
     units: float
     props: dict[str, float]
+    stated_units: dict[str, str | None]
     max_capacity: float
+    lifespan: Lifespan
+
+    @cached_property
+    def candidate(self) -> CandidateSource:
+        return read_candidate(self)
+
+    @property
+    def is_candidate(self) -> bool:
+        return self.candidate.is_candidate
 
     @property
     def nameplate(self) -> float:
@@ -93,14 +119,20 @@ class SourceGenerator:
 
     @property
     def rating_as_capacity(self) -> float | None:
-        """A Rating above the nameplate replaces Max Capacity rather than derating it."""
+        """A Rating above the nameplate replaces Max Capacity rather than derating it.
+
+        A candidate with no units has no nameplate for a Rating to replace, so its Rating
+        derates the capacity it may build like any other generator's.
+        """
+        if not self.units:
+            return None
         rating = _optional(self.props, PlexosProperty.RATING)
         return rating if rating is not None and rating > self.nameplate else None
 
     @property
     def p_nom(self) -> float:
-        capacity = self.rating_as_capacity
-        return self.nameplate if capacity is None else capacity
+        """What the generator has, or what it may build where it has nothing yet."""
+        return float(derive_p_nom(self.candidate).value)
 
 
 def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> SourceGenerator:
@@ -110,7 +142,9 @@ def read_source(generator: dict[str, Any], name: str, lookups: Lookups) -> Sourc
         category=generator.get(PlexosObjectCol.CATEGORY) or "",
         units=_value(props, PlexosProperty.UNITS, DEFAULT_UNITS),
         props=props,
+        stated_units=lookups.gen_units.get(name, {}),
         max_capacity=_rated_capacity(name, props, lookups),
+        lifespan=lookups.lifespans.get(name, NO_LIFESPAN),
     )
 
 
@@ -125,6 +159,35 @@ def _rated_capacity(name: str, props: dict[str, float], lookups: Lookups) -> flo
     if static:
         return static
     return lookups.profile_peaks[PlexosProperty.RATING].get(name, static)
+
+
+def read_candidate(source: SourceGenerator) -> CandidateSource:
+    capacity = SourceValue(
+        PlexosClass.GENERATOR,
+        source.name,
+        PlexosProperty.MAX_CAPACITY,
+        source.max_capacity,
+        UNIT_MW,
+    )
+    counted = SourceValue(PlexosClass.GENERATOR, source.name, PlexosProperty.UNITS, source.units)
+    return CandidateSource(
+        PlexosClass.GENERATOR,
+        source.name,
+        source.props,
+        source.stated_units,
+        RatedCapacity(
+            existing=_existing(source, capacity, counted),
+            unit_size=Decision.derived(source.max_capacity, [capacity], DIRECT_DERIVATION),
+        ),
+    )
+
+
+def _existing(source: SourceGenerator, capacity: SourceValue, counted: SourceValue) -> Decision:
+    rating = source.rating_as_capacity
+    if rating is None:
+        return Decision.derived(source.nameplate, [capacity, counted], P_NOM_DERIVATION)
+    stated = SourceValue(PlexosClass.GENERATOR, source.name, PlexosProperty.RATING, rating, UNIT_MW)
+    return Decision.derived(rating, [stated, capacity, counted], P_NOM_RATING_DERIVATION)
 
 
 @dataclass(frozen=True)
@@ -143,15 +206,16 @@ class GeneratorMapping:
     carrier: str
     fuel: FuelUse | None
     discarded_fuels: tuple[str, ...]
-    max_capacity: float
     units: float
     p_nom: float
-    rating_as_capacity: float | None
     minimum: MinimumGeneration
     availability: Availability
     cost: Cost
     efficiency: float | None
     unit_commitment: UnitCommitment | None
+    candidate: CandidateSource
+    expansion: ExpansionDecisions
+    lifespan: Lifespan
 
     @property
     def is_committable(self) -> bool:
@@ -171,6 +235,7 @@ def has_infeasible_dispatch_range(mapping: GeneratorMapping) -> bool:
 
 
 def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> GeneratorMapping:
+    candidate = source.candidate
     fuels = lookups.gen_fuels.get(source.name, [])
     fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
@@ -184,10 +249,8 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         carrier=_classify(fuel, source),
         fuel=fuel,
         discarded_fuels=tuple(fuels[1:]),
-        max_capacity=source.max_capacity,
         units=source.units,
         p_nom=source.p_nom,
-        rating_as_capacity=source.rating_as_capacity,
         minimum=minimum,
         availability=availability,
         cost=_assemble_cost(source.props, fuel),
@@ -197,6 +260,9 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         )
         if _commits(fuel, minimum)
         else None,
+        candidate=candidate,
+        expansion=derive_expansion(candidate),
+        lifespan=source.lifespan,
     )
 
 
@@ -410,12 +476,23 @@ def _outage_derate(source: SourceGenerator) -> float:
     return FULL_AVAILABILITY
 
 
+def _rating_is_stated_against(source: SourceGenerator) -> float:
+    """The capacity a static Rating derates.
+
+    PLEXOS states a Rating for one unit, as it states Max Capacity. A generator that runs
+    has a p_nom of however many units it runs, so the two agree. A candidate has a p_nom of
+    every unit it may build, so the Rating derates one unit's Max Capacity instead.
+    """
+    return source.p_nom if source.units else source.max_capacity
+
+
 def _static_rating_derate(source: SourceGenerator) -> float:
     if source.rating_as_capacity is not None:
         return FULL_AVAILABILITY
     rating = _optional(source.props, PlexosProperty.RATING)
-    if rating is not None and source.p_nom:
-        return rating / source.p_nom
+    stated_against = _rating_is_stated_against(source)
+    if rating is not None and stated_against:
+        return min(rating / stated_against, FULL_AVAILABILITY)
     factor = _optional(source.props, PlexosProperty.RATING_FACTOR)
     if factor is not None:
         return factor / PERCENT

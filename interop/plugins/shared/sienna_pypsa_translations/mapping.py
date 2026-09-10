@@ -13,6 +13,10 @@ from interop.core.pipeline import State
 from interop.plugins.shared.sienna_constants import SiennaACBusCol, SiennaStructField, SiennaTable
 
 
+def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
+    return rated if is_extendable else None
+
+
 def per_unit_of(value: float, base_power: float) -> float:
     """Express ``value`` (MW) as a per-unit fraction of ``base_power``.
 

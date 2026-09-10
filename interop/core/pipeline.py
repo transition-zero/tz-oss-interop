@@ -23,7 +23,13 @@ from typing import ClassVar, Protocol, runtime_checkable
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import StagedExtensions, StagedExtensionSeries
+from interop.core.extensions import (
+    ExtensionConsumption,
+    ExtensionReader,
+    StagedExtensions,
+    StagedExtensionSeries,
+)
+from interop.core.reporting import EventRecorder
 from interop.core.user_mappings import UserMappingsOutput
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 
@@ -69,6 +75,11 @@ class State:
     sidecar, and the two are not interchangeable. A hop that relays a
     record naming a series relays the series with it, or the record
     points at a file its own sidecar has no companion for.
+
+    `consumed_extensions` is what the steps of this hop have read
+    off `source_extensions`. Every step builds its reader through
+    `extension_reader`, so one record covers the whole hop and the
+    run can report what none of them asked for.
     """
 
     staging_dir: Path
@@ -81,6 +92,21 @@ class State:
     destination_tables: dict[str, pl.DataFrame] = field(default_factory=dict)
     destination_time_series: dict[str, pl.LazyFrame] = field(default_factory=dict)
     validation_errors: list[EnergyModelValidationError] = field(default_factory=list)
+    consumed_extensions: ExtensionConsumption | None = None
+
+    def extension_reader(self) -> ExtensionReader:
+        if self.consumed_extensions is None:
+            self.consumed_extensions = ExtensionConsumption()
+        return ExtensionReader(self.source_extensions, self.consumed_extensions)
+
+    def report_unread_extensions(self, framework: str, recorder: EventRecorder) -> None:
+        """Report every staged record no step of this hop read.
+
+        A hop whose steps build no reader has no mapping for a sidecar, so it reports nothing.
+        """
+        if self.consumed_extensions is None:
+            return
+        self.consumed_extensions.report_unconsumed(self.source_extensions, framework, recorder)
 
 
 @dataclass(frozen=True)
