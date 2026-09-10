@@ -15,6 +15,7 @@ time_at_status, and reactive_power_limits have no StorageUnit source and are omi
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 from typing import Any
 
@@ -95,6 +96,28 @@ HYDRO_NO_INFLOW_SKIP = pypsa_skip_report(
     ),
 )
 
+HYDRO_NO_CAPACITY_SKIP = pypsa_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun="hydro StorageUnit(s)",
+    reason="state no capacity to convert their inflow with",
+    note=(
+        "the capacity an operations model may dispatch is 0, so the energy budget the h5 "
+        "sink scales by it has no finite value"
+    ),
+)
+
+HYDRO_NO_EFFICIENCY_SKIP = pypsa_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun="hydro StorageUnit(s)",
+    reason="state a dispatch efficiency of zero",
+    note=(
+        "efficiency_dispatch is 0, so the unit converts no water and the energy budget "
+        "the h5 sink scales by it has no finite value"
+    ),
+)
+
 
 def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
     """Add PyPSA StorageUnit columns absent when all units share the PyPSA default."""
@@ -154,12 +177,6 @@ def _kept_columns(inflow_lf: pl.LazyFrame) -> list[str]:
     return kept
 
 
-def _hydro_budget_scale(src_row: dict[str, Any]) -> float:
-    """A unit that states no dispatch efficiency converts no water, so the budget is 0."""
-    efficiency = src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
-    return float(src_row[EFFECTIVE_P_NOM] / efficiency) if efficiency else 0.0
-
-
 def build_hydro_ts_associations(
     enriched_src: pl.DataFrame,
     dst: pl.DataFrame,
@@ -206,7 +223,9 @@ def build_hydro_ts_associations(
                 ts_info=ts_info,
                 source_table=PyPSATable.STORAGE_UNITS,
                 source_attribute=PyPSAStorageUnitCol.INFLOW,
-                scaling_factor=_hydro_budget_scale(src_row),
+                scaling_factor=(
+                    src_row[EFFECTIVE_P_NOM] / src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
+                ),
             )
         )
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
@@ -368,12 +387,15 @@ def _enrich_hydro(
     return enrich_hydro_carrier(table, carrier_mappings.get_prime_mover_map())
 
 
-def _skip_without_inflow(inflow: pl.LazyFrame | None) -> SkipRule:
-    """A unit with no inflow has no energy budget, so it would run at full output on nothing."""
+def _hydro_skips(inflow: pl.LazyFrame | None) -> Sequence[SkipRule]:
     named = [] if inflow is None else series_components(inflow)
-    return SkipRule(
-        keep=pl.col(PyPSAStorageUnitCol.NAME).is_in(named),
-        report=HYDRO_NO_INFLOW_SKIP,
+    return (
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.NAME).is_in(named), report=HYDRO_NO_INFLOW_SKIP),
+        SkipRule(keep=pl.col(EFFECTIVE_P_NOM) > 0, report=HYDRO_NO_CAPACITY_SKIP),
+        SkipRule(
+            keep=pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH) > 0,
+            report=HYDRO_NO_EFFICIENCY_SKIP,
+        ),
     )
 
 
@@ -386,7 +408,7 @@ HYDRO_DISPATCH_MAPPING = ComponentMapping(
     schema=HYDRO_DISPATCH_DESTINATION_SCHEMA,
     sienna_component=SiennaComponent.HYDRO_DISPATCH,
     time_series_attr=PyPSAStorageUnitCol.INFLOW,
-    skip=_skip_without_inflow,
+    skips=_hydro_skips,
     derived_series=DerivedSeries(
         attribute=HYDRO_MAX_ACTIVE_POWER_ATTR,
         build=build_hydro_max_active_power_series,

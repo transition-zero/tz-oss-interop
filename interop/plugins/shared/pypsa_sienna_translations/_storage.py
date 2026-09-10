@@ -12,6 +12,7 @@ limits, and up/down times have no home and are dropped (the model is a closed lo
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 
 import polars as pl
@@ -138,9 +139,11 @@ STORAGE_NO_ENERGY_SKIP = pypsa_skip_report(
 )
 
 
-def _skip_without_energy(_series: pl.LazyFrame | None) -> SkipRule:
+def _storage_skips(_series: pl.LazyFrame | None) -> Sequence[SkipRule]:
     """A unit of no storage hours holds no energy, whatever series it carries."""
-    return SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP)
+    return (
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP),
+    )
 
 
 # --- Reusable expressions ---
@@ -430,6 +433,6 @@ PHS_STORAGE_MAPPING = ComponentMapping(
     translations=ENERGY_RESERVOIR_STORAGE_TRANSLATIONS,
     schema=ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
     sienna_component=SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-    skip=_skip_without_energy,
+    skips=_storage_skips,
     extensions=ExtensionSpec(ExtensionKind.STORAGE, build_storage_extensions),
 )

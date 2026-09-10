@@ -1,8 +1,7 @@
 """Primitives shared across the PyPSA -> Sienna component translation modules.
 
-Deduplicates the field factories, the linear cost-curve structs, and the TimeSeriesAssociation
-row builder that the generator, renewable, hydro, and storage modules would otherwise each
-repeat verbatim.
+Holds the capacity a component is rated from, the drops every component module reports, the
+field factories, the linear cost-curve structs and the TimeSeriesAssociation row builder.
 """
 
 from __future__ import annotations
@@ -83,27 +82,24 @@ def has_capacity_floor() -> pl.Expr:
     return pl.col(_EXTENDABLE) & (capacity_floor() > 0)
 
 
-def _floor_attribute() -> pl.Expr:
-    return pl.when(pl.col(_NOM_MIN) <= pl.col(_NOM)).then(pl.lit(_NOM_MIN)).otherwise(pl.lit(_NOM))
+_ATTRIBUTE = "attribute"
+_VALUE = "value"
 
 
-def effective_p_nom() -> pl.Expr:
+def _rated_by(column: str) -> pl.Expr:
+    """The capacity one column states, beside the name of that column."""
+    return pl.struct(attribute=pl.lit(column), value=pl.col(column))
+
+
+def capacity_choice() -> pl.Expr:
+    """The column a component is rated from, and the capacity that column states."""
+    floor = pl.when(pl.col(_NOM_MIN) <= pl.col(_NOM)).then(_rated_by(_NOM_MIN))
     return (
         pl.when(has_solved_capacity())
-        .then(pl.col(_OPT))
+        .then(_rated_by(_OPT))
         .when(has_capacity_floor())
-        .then(capacity_floor())
-        .otherwise(pl.col(_NOM))
-    )
-
-
-def capacity_attribute() -> pl.Expr:
-    return (
-        pl.when(has_solved_capacity())
-        .then(pl.lit(_OPT))
-        .when(has_capacity_floor())
-        .then(_floor_attribute())
-        .otherwise(pl.lit(_NOM))
+        .then(floor.otherwise(_rated_by(_NOM)))
+        .otherwise(_rated_by(_NOM))
     )
 
 
@@ -119,9 +115,10 @@ def states_built_capacity() -> pl.Expr:
 
 
 def with_effective_p_nom(table: pl.DataFrame) -> pl.DataFrame:
+    choice = capacity_choice()
     return table.with_columns(
-        effective_p_nom().alias(EFFECTIVE_P_NOM),
-        capacity_attribute().alias(CAPACITY_ATTRIBUTE),
+        choice.struct.field(_VALUE).alias(EFFECTIVE_P_NOM),
+        choice.struct.field(_ATTRIBUTE).alias(CAPACITY_ATTRIBUTE),
         states_built_capacity().alias(STATES_BUILT_CAPACITY),
     )
 
@@ -192,8 +189,9 @@ def carrier_scope_skips(naming: PyPSAComponentNaming) -> ScopeSkips:
 
 UNBUILT_CANDIDATE_REASON = "are extendable and state no capacity they already hold"
 UNBUILT_CANDIDATE_NOTE = (
-    "p_nom_extendable is true, the network states no p_nom_opt and p_nom_min is 0, so this is "
-    "capacity the plan may build rather than capacity an operations model may dispatch"
+    "p_nom_extendable is true, the network states no p_nom_opt, and the lower of p_nom_min "
+    "and p_nom is 0, so this is capacity the plan may build rather than capacity an "
+    "operations model may dispatch"
 )
 
 

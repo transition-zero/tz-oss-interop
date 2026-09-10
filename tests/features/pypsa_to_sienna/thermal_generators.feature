@@ -189,7 +189,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     When I run translate against "inputs/gen_candidate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
     And the log contains "1 Generator(s) are extendable and state no capacity they already hold, so each is left out"
-    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt and p_nom_min is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
+    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt, and the lower of p_nom_min and p_nom is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
 
   Scenario: an extendable generator no solve has sized keeps the capacity a build cannot take away
     Given a PyPSA network
@@ -205,9 +205,6 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "`pypsa.Generator.running_ccgt.p_nom_min` = 200.0 MW | `sienna.ThermalStandard.running_ccgt.base_power` = 200.0 MW"
 
   Scenario: a forced minimum build is a plan, not capacity an operations model may dispatch
-    PyPSA reads p_nom_min as the lower bound of the build, which a user also sets to force a
-    minimum build on a candidate nobody has built. Only the part of that bound the network
-    also states as p_nom is capacity that already exists.
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "forced_ccgt" on "bus_1" carrier "CCGT" p_nom 0.0 p_nom_extendable True

@@ -17,12 +17,6 @@ PERCENT: float = 100.0
 DEFAULT_UNITS: float = 1.0
 """A generator with no ``Units`` property is a single unit."""
 
-EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
-
-EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
-
-EXT_FOM_CHARGE_FIELD: str = "extensions.fom_charge_per_mw_year"
-
 # --- generators ---------------------------------------------------------------
 
 DEFAULT_UP_TIME_BEFORE: float = 0.0

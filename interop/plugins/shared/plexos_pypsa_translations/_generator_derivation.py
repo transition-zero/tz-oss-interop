@@ -471,12 +471,23 @@ def _outage_derate(source: SourceGenerator) -> float:
     return FULL_AVAILABILITY
 
 
+def _rating_is_stated_against(source: SourceGenerator) -> float:
+    """The capacity a static Rating derates.
+
+    PLEXOS states a Rating for one unit, as it states Max Capacity. A generator that runs
+    has a p_nom of however many units it runs, so the two agree. A candidate has a p_nom of
+    every unit it may build, so the Rating derates one unit's Max Capacity instead.
+    """
+    return source.p_nom if source.units else source.max_capacity
+
+
 def _static_rating_derate(source: SourceGenerator) -> float:
     if source.rating_as_capacity is not None:
         return FULL_AVAILABILITY
     rating = _optional(source.props, PlexosProperty.RATING)
-    if rating is not None and source.p_nom:
-        return rating / source.p_nom
+    stated_against = _rating_is_stated_against(source)
+    if rating is not None and stated_against:
+        return min(rating / stated_against, FULL_AVAILABILITY)
     factor = _optional(source.props, PlexosProperty.RATING_FACTOR)
     if factor is not None:
         return factor / PERCENT

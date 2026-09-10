@@ -85,7 +85,7 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the network is saved as "inputs/planned_link.nc"
     When I run translate against "inputs/planned_link.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 components of type "TwoTerminalGenericHVDCLine"
-    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt and p_nom_min is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
+    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt, and the lower of p_nom_min and p_nom is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
     And the log contains "1 Link(s) are extendable and state no capacity they already hold"
 
   Scenario: a non-default p_max_pu and positive p_min_pu travel in extensions for a lossless round-trip

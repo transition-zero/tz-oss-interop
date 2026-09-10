@@ -308,8 +308,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         table = mapping.fill_defaults(source)
         table = table.filter(pl.col(mapping.carrier_col).is_in(list(carriers)))
         series = self._source_time_series(state, mapping)
-        if mapping.skip is not None:
-            rule = mapping.skip(series)
+        for rule in mapping.skips(series) if mapping.skips is not None else ():
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         ts_info = collect_ts_info(series)
         return _PreparedSource(
