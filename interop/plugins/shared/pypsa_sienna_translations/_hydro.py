@@ -15,6 +15,7 @@ time_at_status, and reactive_power_limits have no StorageUnit source and are omi
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 from typing import Any
 
@@ -35,12 +36,13 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -65,6 +67,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -93,29 +96,41 @@ HYDRO_NO_INFLOW_SKIP = pypsa_skip_report(
     ),
 )
 
+HYDRO_NO_CAPACITY_SKIP = pypsa_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun="hydro StorageUnit(s)",
+    reason="state no capacity to convert their inflow with",
+    note=(
+        "the capacity an operations model may dispatch is 0, so the energy budget the h5 "
+        "sink scales by it has no finite value"
+    ),
+)
+
+HYDRO_NO_EFFICIENCY_SKIP = pypsa_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun="hydro StorageUnit(s)",
+    reason="state a dispatch efficiency of zero",
+    note=(
+        "efficiency_dispatch is 0, so the unit converts no water and the energy budget "
+        "the h5 sink scales by it has no finite value"
+    ),
+)
+
 
 def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
     """Add PyPSA StorageUnit columns absent when all units share the PyPSA default."""
     table = fill_defaults(
         table,
         [
-            (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, None),
-            (PyPSAStorageUnitCol.P_NOM_MIN, 0.0),
             (PyPSAStorageUnitCol.P_MIN_PU, 0.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
             (PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, 1.0),
         ],
-        [(PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False)],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
-        PyPSAStorageUnitCol.P_NOM_OPT,
-        PyPSAStorageUnitCol.P_NOM,
-        PyPSAStorageUnitCol.P_NOM_MIN,
-    )
+    return fill_capacity_columns(table)
 
 
 def enrich_hydro_carrier(
@@ -221,6 +236,13 @@ def build_hydro_ts_associations(
 H = SiennaHydroGeneratorCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 HYDRO_ID = row_position_id_translation(
@@ -271,16 +293,14 @@ HYDRO_PRIME_MOVER = _direct(
     derivation="carrier -> PrimeMovers via user defined mapping",
 )
 
-HYDRO_BASE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+HYDRO_BASE_POWER = _rated(
     dest_col=H.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
     derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
-HYDRO_ACTIVE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+HYDRO_ACTIVE_POWER = _rated(
     dest_col=H.ACTIVE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU),
     unit=UNIT_MW,
@@ -299,8 +319,7 @@ HYDRO_RATING = _direct(
     derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
 )
 
-HYDRO_APL = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+HYDRO_APL = _rated(
     dest_col=H.ACTIVE_POWER_LIMITS,
     expr=pl.struct(
         min=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU)).cast(pl.Float64),
@@ -368,12 +387,15 @@ def _enrich_hydro(
     return enrich_hydro_carrier(table, carrier_mappings.get_prime_mover_map())
 
 
-def _skip_without_inflow(inflow: pl.LazyFrame | None) -> SkipRule:
-    """A unit with no inflow has no energy budget, so it would run at full output on nothing."""
+def _hydro_skips(inflow: pl.LazyFrame | None) -> Sequence[SkipRule]:
     named = [] if inflow is None else series_components(inflow)
-    return SkipRule(
-        keep=pl.col(PyPSAStorageUnitCol.NAME).is_in(named),
-        report=HYDRO_NO_INFLOW_SKIP,
+    return (
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.NAME).is_in(named), report=HYDRO_NO_INFLOW_SKIP),
+        SkipRule(keep=pl.col(EFFECTIVE_P_NOM) > 0, report=HYDRO_NO_CAPACITY_SKIP),
+        SkipRule(
+            keep=pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH) > 0,
+            report=HYDRO_NO_EFFICIENCY_SKIP,
+        ),
     )
 
 
@@ -386,7 +408,7 @@ HYDRO_DISPATCH_MAPPING = ComponentMapping(
     schema=HYDRO_DISPATCH_DESTINATION_SCHEMA,
     sienna_component=SiennaComponent.HYDRO_DISPATCH,
     time_series_attr=PyPSAStorageUnitCol.INFLOW,
-    skip=_skip_without_inflow,
+    skips=_hydro_skips,
     derived_series=DerivedSeries(
         attribute=HYDRO_MAX_ACTIVE_POWER_ATTR,
         build=build_hydro_max_active_power_series,

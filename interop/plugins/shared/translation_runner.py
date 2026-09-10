@@ -42,6 +42,39 @@ class Translation:
     make_events: Callable[[dict[str, Any], dict[str, Any]], Sequence[TranslationEvent]]
 
 
+def row_source_translation(
+    source_field: SourceFieldFactory,
+    dest_field: DestinationFieldFactory,
+    *,
+    name_col: str,
+    source_col_of: Callable[[dict[str, Any]], str],
+    dest_col: str,
+    expr: pl.Expr,
+    unit: str | None = None,
+    derivation: str = "direct",
+    note: str | None = None,
+) -> Translation:
+    """A VALUE_DERIVED translation whose expression reads a different column for each row.
+
+    ``source_col_of`` reads the row and answers the column that row was read from, so the
+    event names it rather than one column the whole table shares.
+    """
+
+    def make_events(old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
+        attribute = source_col_of(old)
+        return [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[source_field(old[name_col], attribute, old[attribute], unit)],
+                destinations=[dest_field(old[name_col], dest_col, new[dest_col], unit)],
+                derivation=derivation,
+                note=note,
+            )
+        ]
+
+    return Translation(exprs=[expr.alias(dest_col)], make_events=make_events)
+
+
 def direct_translation(
     source_field: SourceFieldFactory,
     dest_field: DestinationFieldFactory,
@@ -61,20 +94,17 @@ def direct_translation(
     column holding the component instance name used in both the source and destination fields.
     ``note`` is what the report carries against the component beside the derivation.
     """
-    column = (pl.col(source_col) if expr is None else expr).alias(dest_col)
-
-    def make_events(old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
-        return [
-            TranslationEvent(
-                kind=EventKind.VALUE_DERIVED,
-                sources=[source_field(old[name_col], source_col, old[source_col], unit)],
-                destinations=[dest_field(old[name_col], dest_col, new[dest_col], unit)],
-                derivation=derivation,
-                note=note,
-            )
-        ]
-
-    return Translation(exprs=[column], make_events=make_events)
+    return row_source_translation(
+        source_field,
+        dest_field,
+        name_col=name_col,
+        source_col_of=lambda _row: source_col,
+        dest_col=dest_col,
+        expr=pl.col(source_col) if expr is None else expr,
+        unit=unit,
+        derivation=derivation,
+        note=note,
+    )
 
 
 def default_translation(

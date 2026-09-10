@@ -6,7 +6,6 @@ staged tables once, runs all three, and records what each decided, skipped or dr
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -68,8 +67,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_destination import append_destination_rows
-
-log = logging.getLogger(__name__)
 
 
 def write_storage_units(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -249,6 +246,7 @@ def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> No
             unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
             technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
             retirement_year=read_year(mapping.lifespan.retirement_year),
+            fom_charge_per_mw_year=read_sidecar_value(mapping.expansion.fom_charge),
         )
         for mapping in mappings
     ]

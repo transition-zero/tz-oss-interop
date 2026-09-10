@@ -12,6 +12,7 @@ limits, and up/down times have no home and are dropped (the model is a closed lo
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 
 import polars as pl
@@ -31,11 +32,12 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -63,6 +65,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -81,9 +84,6 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, None),
-            (PyPSAStorageUnitCol.P_NOM_MIN, 0.0),
             (PyPSAStorageUnitCol.P_MIN_PU, -1.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -94,16 +94,9 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [
             (PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False),
-            (PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
-        PyPSAStorageUnitCol.P_NOM_OPT,
-        PyPSAStorageUnitCol.P_NOM,
-        PyPSAStorageUnitCol.P_NOM_MIN,
-    )
+    return fill_capacity_columns(table)
 
 
 def build_storage_extensions(
@@ -146,9 +139,11 @@ STORAGE_NO_ENERGY_SKIP = pypsa_skip_report(
 )
 
 
-def _skip_without_energy(_series: pl.LazyFrame | None) -> SkipRule:
+def _storage_skips(_series: pl.LazyFrame | None) -> Sequence[SkipRule]:
     """A unit of no storage hours holds no energy, whatever series it carries."""
-    return SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP)
+    return (
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP),
+    )
 
 
 # --- Reusable expressions ---
@@ -181,6 +176,13 @@ def _min_max(max_expr: pl.Expr) -> pl.Expr:
 S = SiennaEnergyReservoirStorageCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 STORAGE_ID = row_position_id_translation(
@@ -316,8 +318,7 @@ STORAGE_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for storage units",
 )
 
-STORAGE_BASE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+STORAGE_BASE_POWER = _rated(
     dest_col=S.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     derivation=EFFECTIVE_P_NOM_DERIVATION,
@@ -432,6 +433,6 @@ PHS_STORAGE_MAPPING = ComponentMapping(
     translations=ENERGY_RESERVOIR_STORAGE_TRANSLATIONS,
     schema=ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
     sienna_component=SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-    skip=_skip_without_energy,
+    skips=_storage_skips,
     extensions=ExtensionSpec(ExtensionKind.STORAGE, build_storage_extensions),
 )

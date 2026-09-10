@@ -488,7 +488,6 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.OVERNIGHT_COST: pl.Float64,
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
-    PyPSAGeneratorCol.FOM_COST: pl.Float64,
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
 }
 
@@ -526,7 +525,6 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.OVERNIGHT_COST: pl.Float64,
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
-    PyPSAStorageUnitCol.FOM_COST: pl.Float64,
     PyPSAStorageUnitCol.BUILD_YEAR: pl.Int64,
 }
 
@@ -554,6 +552,7 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALineCol.V_ANG_MIN: pl.Float64,
     PyPSALineCol.V_ANG_MAX: pl.Float64,
     PyPSALineCol.S_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALineCol.S_NOM_MIN: pl.Float64,
 }
 
 LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -568,6 +567,7 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.ACTIVE: pl.Boolean,
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALinkCol.P_NOM_MIN: pl.Float64,
 }
 
 REVERSE_TIME_SERIES_METADATA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

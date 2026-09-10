@@ -6,8 +6,6 @@ when full is its Capacity, or its Duration times its Max Power where it states n
 
 from __future__ import annotations
 
-import logging
-
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_HOURS,
@@ -63,8 +61,6 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_time_series import append_metadata
 
-log = logging.getLogger(__name__)
-
 
 def record_battery_outages(state: State, mappings: list[StorageUnitMapping]) -> None:
     """Derate each battery by its units-out trace, against the unit count it states."""
@@ -90,8 +86,8 @@ _BATTERY_NO_START_NOTE = (
 _BATTERY_RECYCLE_DERIVATION = "End Effects Method recycles the level"
 _CAPACITY_DERIVATION = "Capacity"
 _CAPACITY_FROM_DURATION_DERIVATION = "Duration * Max Power"
-_STORED_ENERGY_DERIVATION = "p_nom * max_hours"
-_SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * p_nom * max_hours"
+_STORED_ENERGY_DERIVATION = "the power the object already runs * max_hours"
+_SOC_FROM_PERCENT_DERIVATION = "Initial SoC / 100 * the power the object already runs * max_hours"
 _PER_MAX_POWER_DERIVATION = " / Max Power"
 
 # --- batteries ---------------------------------------------------------------
@@ -108,12 +104,13 @@ _BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER)
 
 
 def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
-    unit_size = rated.candidate.rated.unit_size
+    unit_size = rated.unit_size
     capacity = _battery_energy_capacity(rated, unit_size)
     max_hours = derive_max_hours(capacity, unit_size.value, per=_PER_MAX_POWER_DERIVATION)
+    running = rated.running_power
     stored = Decision.derived(
-        rated.p_nom.value * max_hours.value,
-        gather_sources(rated.p_nom.sources, max_hours.sources),
+        running.value * max_hours.value,
+        gather_sources(running.sources, max_hours.sources),
         _STORED_ENERGY_DERIVATION,
     )
     expansion = derive_expansion(rated.candidate)

@@ -24,9 +24,10 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    choose_capacity_attribute,
-    effective_p_nom,
+    EFFECTIVE_P_NOM,
+    fill_capacity_columns,
     pypsa_skip_report,
+    rated_from,
 )
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
@@ -38,7 +39,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaFunctionType,
     SiennaLinkCol,
 )
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, fill_defaults
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -86,40 +87,17 @@ TIME_VARYING_LINK_ATTRS: tuple[str, ...] = (
 
 def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
     """Add optional PyPSA link columns absent when all links share the PyPSA default."""
-    float_defaults: list[tuple[str, float | None]] = [
-        (PyPSALinkCol.P_NOM, 0.0),
-        (PyPSALinkCol.P_NOM_OPT, None),
-        (PyPSALinkCol.P_NOM_MIN, 0.0),
-        (PyPSALinkCol.P_MIN_PU, 0.0),
-        (PyPSALinkCol.P_MAX_PU, 1.0),
-        (PyPSALinkCol.EFFICIENCY, 1.0),
-    ]
-    for col, default in float_defaults:
-        if col not in table.columns:
-            table = table.with_columns(pl.lit(default, dtype=pl.Float64).alias(col))
-    if PyPSALinkCol.P_NOM_EXTENDABLE not in table.columns:
-        table = table.with_columns(
-            pl.lit(False, dtype=pl.Boolean).alias(PyPSALinkCol.P_NOM_EXTENDABLE)
-        )
-    if PyPSALinkCol.ACTIVE not in table.columns:
-        table = table.with_columns(pl.lit(True, dtype=pl.Boolean).alias(PyPSALinkCol.ACTIVE))
-    for str_col in (PyPSALinkCol.CARRIER, PyPSALinkCol.BUS2, PyPSALinkCol.BUS3):
-        if str_col not in table.columns:
-            table = table.with_columns(pl.lit("", dtype=pl.Utf8).alias(str_col))
-    return table.with_columns(
+    table = fill_defaults(
+        table,
         [
-            pl.col(PyPSALinkCol.P_NOM).fill_nan(0.0).fill_null(0.0),
-            pl.col(PyPSALinkCol.P_NOM_OPT).fill_nan(None),
-            pl.col(PyPSALinkCol.P_NOM_MIN).fill_nan(0.0).fill_null(0.0),
-            pl.col(PyPSALinkCol.P_MIN_PU).fill_nan(0.0).fill_null(0.0),
-            pl.col(PyPSALinkCol.P_MAX_PU).fill_nan(1.0).fill_null(1.0),
-            pl.col(PyPSALinkCol.EFFICIENCY).fill_nan(1.0).fill_null(1.0),
-            pl.col(PyPSALinkCol.ACTIVE).fill_null(True),
-            pl.col(PyPSALinkCol.CARRIER).fill_null(""),
-            pl.col(PyPSALinkCol.BUS2).fill_null(""),
-            pl.col(PyPSALinkCol.BUS3).fill_null(""),
-        ]
+            (PyPSALinkCol.P_MIN_PU, 0.0),
+            (PyPSALinkCol.P_MAX_PU, 1.0),
+            (PyPSALinkCol.EFFICIENCY, 1.0),
+        ],
+        [(PyPSALinkCol.ACTIVE, True)],
+        [(col, "") for col in (PyPSALinkCol.CARRIER, PyPSALinkCol.BUS2, PyPSALinkCol.BUS3)],
     )
+    return fill_capacity_columns(table)
 
 
 def link_in_scope(ac_bus_names: list[str]) -> pl.Expr:
@@ -214,12 +192,7 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 
 # --- Limit / loss expressions ---
 
-_effective_p_nom = effective_p_nom(
-    PyPSALinkCol.P_NOM_EXTENDABLE,
-    PyPSALinkCol.P_NOM_OPT,
-    PyPSALinkCol.P_NOM,
-    PyPSALinkCol.P_NOM_MIN,
-)
+_effective_p_nom = pl.col(EFFECTIVE_P_NOM)
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
 _from_min = (
     pl.when(_is_bidirectional).then(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU)).otherwise(0.0)
@@ -235,13 +208,7 @@ _to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
     """The PyPSA capacity attribute actually used for the power limits, and its value."""
-    attribute = choose_capacity_attribute(
-        old,
-        PyPSALinkCol.P_NOM_EXTENDABLE,
-        PyPSALinkCol.P_NOM_OPT,
-        PyPSALinkCol.P_NOM,
-        PyPSALinkCol.P_NOM_MIN,
-    )
+    attribute = rated_from(old)
     return attribute, old[attribute]
 
 

@@ -59,8 +59,10 @@ default.
 
 PyPSA 1.2 states that `overnight_cost` "takes precedence over `capital_cost`" and that PyPSA
 "calculates annuity using `discount_rate` and `lifetime`". So the translator writes
-`overnight_cost` from `Build Cost`, `discount_rate` from `WACC`, `lifetime` from `Economic
-Life` and `fom_cost` from `FO&M Charge`, and never assembles a capital cost of its own.
+`overnight_cost` from `Build Cost`, `discount_rate` from `WACC` and `lifetime` from
+`Economic Life`, and never assembles a capital cost of its own. PyPSA reads `fom_cost` as a
+charge for the whole modelled horizon rather than a yearly one, so the yearly `FO&M Charge`
+travels in the extensions sidecar as `fom_charge_per_mw_year`.
 
 `Economic Life` is the capital recovery period, which is the period PyPSA annuitises across.
 `Technical Life` is how long the plant runs, and PyPSA has one lifetime field which the
@@ -81,9 +83,10 @@ categories a dispatch run leaves out.
 `ExistingDevices.existing_devices`, `RetirementPotential.eligible_generators` and
 `TopologyMapping.buses` are all lists of names in the base system. Without a base system they
 point at nothing, so `pypsa-to-sienna-investments` runs the operations steps and the new
-investments steps over one network and writes both documents. A component whose
-`p_nom_extendable` is true is not a base system component, and the operations steps report
-each one as skipped on that leg.
+investments steps over one network and writes both documents. An extendable component that
+states neither a `p_nom_opt` nor a capacity a build cannot take away is a build and nothing
+else, and the operations steps report each one as skipped on that leg. An extendable
+component that states one of the two keeps that capacity and stays in the base system.
 
 ### `WACC` is written as all-equity financing
 

@@ -260,7 +260,7 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `name` | | `Generator.name` | `direct` |
 | `bus` | | The `Node` of the generator | `direct` |
 | `carrier` | | Refer to the section above | `derived` |
-| `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity | `derived` |
+| `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity. Where the generator runs no units yet, `Max Capacity × Max Units Built` | `derived` |
 | `p_min_pu` | | [Minimum generation](#minimum-generation) | `derived` |
 | `p_max_pu` | | `1.0`, or the [`Rating` and the outage derates](#availability-and-outages) | `derived` |
 | `marginal_cost` | $/MWh | `fuel price × Heat Rate Incr + VO&M`, and the carbon term if there is one. Where the fuel is [priced by date](#a-fuel-priced-by-date), the fuel price here is the mean of its own series | `derived` |
@@ -271,13 +271,13 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `start_up_cost` | $ | Refer to [What a start costs](#what-a-start-costs) | `derived` |
 | `shut_down_cost` | $ | `0.0` | `default` |
 | `up_time_before` | snapshots | `0` | `default` |
-| `p_nom_extendable` | | `True` where `Max Units Built` is above zero. If not, `False`. | `derived` / `default` |
-| `p_nom_min` | MW | The capacity the generator already has, for a candidate only | `derived` |
-| `p_nom_max` | MW | That capacity plus `Max Capacity × Max Units Built`, for a candidate only | `derived` |
-| `overnight_cost` | $/MW | `Build Cost`, for a candidate only | `direct` |
-| `discount_rate` | | `WACC`, for a candidate only | `derived` |
-| `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
-| `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate only | `direct` |
+| `p_nom_extendable` | | `True` where `Max Units Built` is above zero and the model prices the build. If not, `False`. | `derived` / `default` |
+| `p_nom_min` | MW | The capacity the generator already has, for a candidate whose build the model prices | `derived` |
+| `p_nom_max` | MW | That capacity plus `Max Capacity × Max Units Built`, for a candidate whose build the model prices | `derived` |
+| `overnight_cost` | $/MW | `Build Cost`, for a candidate whose build the model prices | `direct` |
+| `discount_rate` | | `WACC`, for a candidate whose build the model prices | `derived` |
+| `lifetime` | yr | `Economic Life`, for a candidate whose build the model prices | `direct` |
+| `extensions.fom_charge_per_mw_year` | $/MW/yr | `FO&M Charge`, for a candidate whose build the model prices | `direct` |
 | `build_year` | yr | The first year the dated [`Units`](#which-entry-applies-when) rise above zero. The field is absent where the model dates no `Units`, and PyPSA reads `0`. | `derived` |
 
 **The translator does not translate seven cases.** It records each one as a skipped
@@ -289,9 +289,9 @@ component:
 | The generator has no [`Units`](#which-entry-applies-when) at any time in the horizon, and no `Max Units Built` | The unit is retired. |
 | `Max Capacity` comes from a data file | There is no single `p_nom`. Thus the translator cannot set the size of the generator, and it cannot calculate the availability per unit. |
 | `p_nom` is 0 | The generator can never dispatch. |
-| The generator has no units yet and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
-| The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
-| The generator has no units yet and gives no `Economic Life` | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
+| The generator has no units yet and gives no `Build Cost`, or gives one of zero | Nothing prices building it, so an expansion would take it for free. |
+| The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. A `WACC` of zero is a rate, so it prices a build. |
+| The generator has no units yet and gives no `Economic Life`, or gives one of zero | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -355,22 +355,22 @@ has more than one fuel uses its primary fuel.
 | `name` | | `Battery.name` | `direct` |
 | `bus` | | The `Node` of the battery | `direct` |
 | `carrier` | | `battery` | `default` |
-| `p_nom` | MW | `Max Power × Units` | `derived` |
+| `p_nom` | MW | `Max Power × Units`. Where the battery runs no units yet, `Max Power × Max Units Built` | `derived` |
 | `max_hours` | h | The energy capacity divided by `p_nom` | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Charge Efficiency)` for each | `derived` |
-| `state_of_charge_initial` | MWh | `Initial SoC % × p_nom × max_hours` | `derived` |
+| `state_of_charge_initial` | MWh | `Initial SoC % × Max Power × Units × max_hours` | `derived` |
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE`, or if the model gives no `Initial SoC` | `derived` |
 | `marginal_cost` | $/MWh | `0.0` | `default` |
-| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
+| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
 | `build_year` | yr | The first year the dated [`Units`](#which-entry-applies-when) rise above zero. The field is absent where the model dates no `Units`, and PyPSA reads `0`. | `derived` |
 
 The energy one unit of a battery holds is its `Capacity`. If the model gives a duration in
 place of a capacity, that energy is `Duration × Max Power`. `max_hours` is that energy
-divided by `Max Power`, which is the power of the same one unit, so `p_nom × max_hours` is
-the energy of however many units the `p_nom` stands for. `state_of_charge_initial` reads
-`Initial SoC` against that same energy. Thus they cannot disagree about the energy of the
-battery.
+divided by `Max Power`, which is the power of the same one unit. `state_of_charge_initial`
+reads `Initial SoC` against `Max Power × Units × max_hours`, the energy of the units the
+battery already runs. A battery that runs no units starts at 0 MWh, because it holds no
+charge until a solve builds it.
 
 `Charge Efficiency` is a round trip value. The translator divides it equally between the
 charge and the discharge. Thus the round trip value does not change. `Min SoC` and `Max
@@ -393,15 +393,15 @@ name of the turbine is the name of that `StorageUnit`.
 | `name` | | The `Generator.name` of the turbine | `direct` |
 | `bus` | | The `Node` of the turbine | `direct` |
 | `carrier` | | `PHS` | `default` |
-| `p_nom` | MW | `Max Capacity × Units` | `derived` |
+| `p_nom` | MW | `Max Capacity × Units`. Where the turbine runs no units yet, `Max Capacity × Max Units Built` | `derived` |
 | `max_hours` | h | The `Max Volume` of the head reservoir divided by `p_nom`, if the model gives that volume in MWh | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Pump Efficiency)` for each | `derived` |
-| `state_of_charge_initial` | MWh | The `Initial Volume` of the head reservoir, if the model gives it in MWh. The translator holds the value between 0 and `p_nom × max_hours`. | `derived` |
+| `state_of_charge_initial` | MWh | The `Initial Volume` of the head reservoir, if the model gives it in MWh. The translator holds the value between 0 and the energy of the units the turbine already runs. | `derived` |
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE` | `derived` |
 | `marginal_cost` | $/MWh | `VO&M Charge`. If there is none, `0.0`. | `derived` |
 | `inflow` | MW | The `Natural Inflow` of the head reservoir, if the model gives it in a unit that converts to MW. A `Natural Inflow` that reads a data file becomes a time series. | `derived` |
-| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `fom_cost` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
+| `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime` | | Refer to [What a candidate is](#what-a-candidate-is) | `derived` / `default` |
 
 The turbine finds its reservoirs through its `Head Storage` membership and its
 `Tail Storage` membership. The translator never compares the names of the reservoirs. The
@@ -724,11 +724,14 @@ PLEXOS property each one comes from:
 | `overnight_cost` | $/MW | `Build Cost` |
 | `discount_rate` | | `WACC`, read as a fraction where the model states a percentage |
 | `lifetime` | yr | `Economic Life` |
-| `fom_cost` | $/MW/yr | `FO&M Charge` |
+| `extensions.fom_charge_per_mw_year` | $/MW/yr | `FO&M Charge` |
 
 PyPSA works out what a year of new capacity costs from `overnight_cost`, `discount_rate` and
 `lifetime` together, and `overnight_cost` takes precedence over `capital_cost`. So the
-translator writes those three and never assembles an annuity of its own.
+translator writes those three and never assembles an annuity of its own. PyPSA's `fom_cost`
+is a charge for the whole modelled horizon rather than a yearly one, and it is added without
+scaling, so a yearly `FO&M Charge` written there would price a two-day run as if it lasted a
+year. The charge travels in the sidecar instead.
 
 `Economic Life` is the period the capital is recovered over, which is the period PyPSA
 annuitises across. `Technical Life` is how long the plant runs, and PyPSA has one lifetime
@@ -746,15 +749,17 @@ The rated power of one unit is the `Max Capacity` of a `Generator` or a pumped-s
 turbine, and the `Max Power` of a `Battery`. An object that states `Units` above one already
 holds that many, so a build adds units to what it has rather than multiplying it.
 
-A candidate that states no `Build Cost`, no `WACC` or no `Economic Life` prices no build.
-Without a build cost nothing prices building it, so an expansion would take it for free.
-Without a discount rate PyPSA cannot annuitise the build cost, and refuses the network.
-Without an economic life PyPSA annuitises across its own default lifetime of infinity, which
-prices the build as a perpetuity.
+A candidate prices no build where it states no `Build Cost`, no `WACC` or no `Economic
+Life`, and where it states a `Build Cost` or an `Economic Life` of zero. A `WACC` of zero is
+the rate of a model that does not discount, so it prices a build. Without a build cost
+nothing prices building it, so an expansion would take it for free. Without a discount rate
+PyPSA cannot annuitise the build cost, and refuses the network. Without an economic life
+PyPSA annuitises across its own default lifetime of infinity, which prices the build as a
+perpetuity.
 
 What happens next depends on whether the object already runs. An object with units in
 service keeps the capacity it runs: the translator writes it with that capacity fixed, and
-records a `NOT_MAPPED` event naming the property the model left out. An object with no units
+records a `NOT_MAPPED` event naming that property. An object with no units
 yet is the build and nothing else, so nothing is left to write: the translator records a
 `COMPONENT_SKIPPED` event naming the object, and warns once naming a few of them.
 
@@ -812,7 +817,9 @@ the static `Max Capacity` on a generator, or the static `Max Flow` on a line.
 A static `Rating` above `Max Capacity × Units` is the capacity of the generator, not an
 availability above its own nameplate. The translator gives that generator a `p_nom` equal to
 its `Rating`, so `p_max_pu` is 1 and every other per-unit field divides by the capacity the
-unit can reach.
+unit can reach. A generator that runs no units has no nameplate for a `Rating` to stand
+above, so its `Rating` derates the capacity it may build, as it does for any other
+generator.
 
 The translator takes the capacity during an outage from the first of these properties that
 the model has:

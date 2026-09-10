@@ -13,7 +13,7 @@ declaration rather than repeating the column list.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from typing import Any, NamedTuple
@@ -67,7 +67,10 @@ class SkipGroup(NamedTuple):
     """What stands where "Generator(s)" does, already plural."""
 
     reason: str
-    """Completes "N <counted> <reason>, so each is left out"."""
+    """Completes "N <counted> <reason>"."""
+
+    outcome: str = "so each is left out"
+    """Completes "N <counted> <reason>, <outcome>"."""
 
 
 @dataclass(frozen=True)
@@ -83,27 +86,30 @@ class SkippedComponent:
     warn_with: SkipGroup | None = None
 
 
-def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
-    """One line for each object that stands alone, and one line for each group.
-
-    A skip is recorded per component and warned about, so neither view alone hides it.
-    """
+def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
     grouped: dict[SkipGroup, list[str]] = {}
+    for group, name in named:
+        grouped.setdefault(group, []).append(name)
+    for group, names in sorted(grouped.items()):
+        log.warning(
+            "plexos: %d %s %s, %s. Each one: %s",
+            len(names),
+            group.counted,
+            group.reason,
+            group.outcome,
+            name_a_few(sorted(names)),
+        )
+
+
+def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
     for one in skipped:
         if one.warn_with is None:
             log.warning(
                 "plexos: dropping %s %r: %s", one.source.component, one.source.name, one.note
             )
-        else:
-            grouped.setdefault(one.warn_with, []).append(one.source.name)
-    for group, names in sorted(grouped.items()):
-        log.warning(
-            "plexos: %d %s %s, so each is left out. Each one: %s",
-            len(names),
-            group.counted,
-            group.reason,
-            name_a_few(sorted(names)),
-        )
+    warn_about_groups(
+        (one.warn_with, one.source.name) for one in skipped if one.warn_with is not None
+    )
 
 
 class DecisionKind(Enum):

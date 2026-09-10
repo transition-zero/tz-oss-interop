@@ -42,6 +42,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna TwoTerminalGenericHVDCLine t
     When I run translate against "inputs/link_ext.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "link_1" has carrier "DC"
     And the PyPSA network "outputs/network.nc" link "link_1" is extendable
+    And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom_min" is 2500.0
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.extensions.carrier` = DC | `pypsa.Link.link_1.carrier` = DC | extensions.carrier (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.extensions.p_nom_extendable` = True | `pypsa.Link.link_1.p_nom_extendable` = True | extensions.p_nom_extendable (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 

@@ -96,7 +96,7 @@ _VOLUME_PROPERTIES = (PlexosProperty.MAX_VOLUME, PlexosProperty.INITIAL_VOLUME)
 
 _TIMES_UNITS_DERIVATION = " * Units"
 _PER_P_NOM_DERIVATION = " / p_nom"
-_CLAMPED_DERIVATION = ", clamped to 0..p_nom * max_hours"
+_CLAMPED_DERIVATION = ", clamped to 0..the power the object already runs * max_hours"
 
 
 @dataclass(frozen=True)
@@ -362,12 +362,27 @@ class RatedPower:
 class RatedObject:
     """A storage object that passed every guard: what it states, its bus, its rated power."""
 
-    name: str
-    properties: dict[str, float]
     node: str
     p_nom: Decision
     candidate: CandidateSource
     lifespan: Lifespan
+
+    @property
+    def name(self) -> str:
+        return self.candidate.name
+
+    @property
+    def properties(self) -> dict[str, float]:
+        return self.candidate.props
+
+    @property
+    def running_power(self) -> Decision:
+        """The rated power the object already has, which is zero for a candidate built of none."""
+        return self.candidate.rated.existing
+
+    @property
+    def unit_size(self) -> Decision:
+        return self.candidate.rated.unit_size
 
 
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
@@ -391,9 +406,7 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
     p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
-    return RatedObject(
-        staged.name, staged.properties, staged.node, p_nom, candidate, staged.lifespan
-    )
+    return RatedObject(staged.node, p_nom, candidate, staged.lifespan)
 
 
 def skip_object(
@@ -448,7 +461,6 @@ def derive_max_hours(
 
 
 def derive_state_of_charge_initial(level: Decision | None, usable_mwh: float) -> Decision:
-    """The starting level, held inside the capacity PyPSA enforces (``p_nom * max_hours``)."""
     if level is None:
         return Decision.default(DEFAULT_STATE_OF_CHARGE_INITIAL, _SOC_NOTE)
     held = min(max(level.value, 0.0), usable_mwh)

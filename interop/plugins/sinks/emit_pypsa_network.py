@@ -235,6 +235,7 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
             PyPSALineCol.V_ANG_MIN,
             PyPSALineCol.V_ANG_MAX,
             PyPSALineCol.S_NOM_EXTENDABLE,
+            PyPSALineCol.S_NOM_MIN,
         ),
     )
 
@@ -261,6 +262,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_NOM_EXTENDABLE,
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
+            PyPSALinkCol.P_NOM_MIN,
         ),
     )
 
@@ -300,7 +302,6 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.OVERNIGHT_COST,
             PyPSAGeneratorCol.DISCOUNT_RATE,
             PyPSAGeneratorCol.LIFETIME,
-            PyPSAGeneratorCol.FOM_COST,
             PyPSAGeneratorCol.BUILD_YEAR,
         ),
     )
@@ -337,7 +338,6 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.OVERNIGHT_COST,
             PyPSAStorageUnitCol.DISCOUNT_RATE,
             PyPSAStorageUnitCol.LIFETIME,
-            PyPSAStorageUnitCol.FOM_COST,
             PyPSAStorageUnitCol.BUILD_YEAR,
         ),
     )

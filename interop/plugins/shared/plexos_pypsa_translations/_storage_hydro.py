@@ -7,7 +7,6 @@ two paths differ only in whether the unit can pump and whether its level has to 
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from interop.core.pipeline import State
@@ -75,8 +74,6 @@ from interop.plugins.shared.pypsa_time_series import (
     series_components,
     series_timing,
 )
-
-log = logging.getLogger(__name__)
 
 
 def record_reservoir_inflows(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -220,7 +217,7 @@ def _derive_turbine(
         efficiency=_turbine_efficiency(rated, variant),
         marginal_cost=_marginal_cost(rated),
         state_of_charge_initial=derive_state_of_charge_initial(
-            _reservoir_initial_level(head), rated.p_nom.value * max_hours.value
+            _reservoir_initial_level(head), rated.running_power.value * max_hours.value
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),

@@ -31,11 +31,12 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    fill_capacity_columns,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -61,6 +62,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -82,22 +84,12 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, None),
-            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
         ],
-        [(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False)],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-        PyPSAGeneratorCol.P_NOM_OPT,
-        PyPSAGeneratorCol.P_NOM,
-        PyPSAGeneratorCol.P_NOM_MIN,
-    )
+    return fill_capacity_columns(table)
 
 
 def build_renewable_extensions(
@@ -245,6 +237,13 @@ def _renewable_translations(
     (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
+    rated = partial(
+        row_source_translation,
+        _source,
+        dest,
+        name_col=PyPSAGeneratorCol.NAME,
+        source_col_of=rated_from,
+    )
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
         row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
@@ -262,15 +261,13 @@ def _renewable_translations(
             expr=pl.col(_PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
             derivation="carrier -> PrimeMovers via user defined mapping",
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+        rated(
             dest_col=R.BASE_POWER,
             expr=pl.col(EFFECTIVE_P_NOM),
             unit=UNIT_MW,
             derivation=EFFECTIVE_P_NOM_DERIVATION,
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+        rated(
             dest_col=R.ACTIVE_POWER,
             expr=active_power_expr,
             unit=UNIT_MW,

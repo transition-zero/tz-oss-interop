@@ -443,7 +443,7 @@ value that changes during that year becomes a time series over the snapshots.
 
 | Property | Meaning |
 | --- | --- |
-| `Units` | The quantity of units in service. `0` at every date is a retired unit. |
+| `Units` | The quantity of units in service. `0` at every date is a retired unit, unless the object also states `Max Units Built`, which makes it a candidate. |
 | `Max Capacity` | The capacity of one unit. |
 
 ### Availability and outages

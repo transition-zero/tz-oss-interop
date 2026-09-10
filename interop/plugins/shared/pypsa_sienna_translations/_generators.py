@@ -29,13 +29,13 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
-    choose_capacity_attribute,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -61,6 +61,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -81,9 +82,6 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, None),
-            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
@@ -97,16 +95,9 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [
             (PyPSAGeneratorCol.COMMITTABLE, False),
-            (PyPSAGeneratorCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-        PyPSAGeneratorCol.P_NOM_OPT,
-        PyPSAGeneratorCol.P_NOM,
-        PyPSAGeneratorCol.P_NOM_MIN,
-    )
+    return fill_capacity_columns(table)
 
 
 def enrich_carrier_lookup(
@@ -249,6 +240,13 @@ _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
 _dest = partial(sienna_dest_field, SiennaComponent.THERMAL_STANDARD)
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAGeneratorCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
 GENERATOR_ID = row_position_id_translation(
@@ -360,16 +358,14 @@ GENERATOR_PRIME_MOVER = Translation(
     ],
 )
 
-GENERATOR_BASE_POWER = _direct(
-    source_col=PyPSAGeneratorCol.P_NOM,
+GENERATOR_BASE_POWER = _rated(
     dest_col=T.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
     derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
-GENERATOR_ACTIVE_POWER = _direct(
-    source_col=PyPSAGeneratorCol.P_NOM,
+GENERATOR_ACTIVE_POWER = _rated(
     dest_col=T.ACTIVE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
     unit=UNIT_MW,
@@ -408,13 +404,7 @@ GENERATOR_APL = Translation(
                     framework=Framework.PYPSA,
                     component=PyPSAComponent.GENERATOR,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=choose_capacity_attribute(
-                        old,
-                        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-                        PyPSAGeneratorCol.P_NOM_OPT,
-                        PyPSAGeneratorCol.P_NOM,
-                        PyPSAGeneratorCol.P_NOM_MIN,
-                    ),
+                    attribute=rated_from(old),
                     value=old[EFFECTIVE_P_NOM],
                     unit=UNIT_MW,
                 )
