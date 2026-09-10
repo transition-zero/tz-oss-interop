@@ -313,8 +313,7 @@ STANDARD_CARRIER_MAP: dict[str, tuple[str, str]] = {
     "hydrogen": ("OTHER_GAS", "FC"),
 }
 
-# carrier -> (sienna_component_type, sienna_prime_mover_type) for the non-thermal generator and
-# storage targets translated from the user carrier mapping.
+# carrier -> (sienna_component_type, sienna_prime_mover_type) for the non-thermal targets.
 STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "solar": ("RenewableDispatch", "PVe"),
     "solar-utility": ("RenewableDispatch", "PVe"),
@@ -356,6 +355,11 @@ def write_user_mappings(
     for carrier, component_type in (skipped or {}).items():
         entries.append({"pypsa_carrier": carrier, "sienna_component_type": component_type})
     path.write_text(yaml.dump({"carriers": entries}, sort_keys=False), encoding="utf-8")
+
+
+@given("a user mappings file with all standard carriers")
+def given_standard_mapping() -> None:
+    write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
 
 
 def invoke_translate(

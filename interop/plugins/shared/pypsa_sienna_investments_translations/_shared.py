@@ -223,9 +223,7 @@ ALL_EQUITY_NOTE = (
 
 
 def finite_or_null(column: pl.Expr) -> pl.Expr:
-    """The number a portfolio can state, and null for a NaN or an Infinity.
-
-    A sidecar is JSON, and json.load reads the NaN and Infinity tokens, so a sidecar number
+    """A sidecar is JSON, and json.load reads the NaN and Infinity tokens, so a sidecar number
     is not always finite. A cast to a whole number raises on one, and the sink writes a token
     no strict JSON reader accepts.
     """

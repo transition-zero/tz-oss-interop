@@ -5,10 +5,7 @@ from interop_testing import write_pipeline
 from pytest_bdd import given, parsers, scenarios, when
 
 from tests.step_defs.conftest import (
-    STANDARD_CARRIER_MAP,
-    STANDARD_PRIME_MOVER_MAP,
     invoke_translate,
-    write_user_mappings,
 )
 
 scenarios("../features/pypsa_to_sienna_to_pypsa.feature")
@@ -40,11 +37,6 @@ compose:
 @given(parsers.parse('a project-local pipeline "{name}" chaining pypsa-to-sienna then back'))
 def given_round_trip_pipeline(name: str) -> None:
     write_pipeline(name, _ROUND_TRIP_PIPELINE)
-
-
-@given("a user mappings file with all standard carriers")
-def given_standard_mapping() -> None:
-    write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
 
 
 @when(

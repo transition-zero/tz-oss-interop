@@ -18,11 +18,6 @@ def default_user_mappings() -> None:
     write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
 
 
-@given("a user mappings file with all standard carriers")
-def given_standard_mapping() -> None:
-    write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
-
-
 @given(parsers.parse('a user mappings file covering only carrier "{carrier}"'))
 def given_mapping_single_carrier(carrier: str) -> None:
     write_user_mappings({carrier: STANDARD_CARRIER_MAP[carrier]})

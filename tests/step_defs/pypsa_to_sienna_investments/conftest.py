@@ -14,7 +14,6 @@ from tests.step_defs.conftest import (
 
 _MAPPINGS_PATH = "user_mappings.yaml"
 
-# The five carriers these scenarios name, taken from the maps every PyPSA scenario shares.
 _CARRIERS = ("solar", "onwind", "hydro", "PHS")
 _THERMAL_CARRIER = "CCGT"
 

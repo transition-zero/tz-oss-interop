@@ -24,19 +24,19 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
     When I run the plexos-to-sienna-investments chain against "inputs/model.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as valid JSON
-    And the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "available" set to true
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "region" set to [1]
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.min" set to 0.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.max" set to 500.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "capital_costs.capital_cost.function_data.proportional_term" set to 1200000.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.fixed" set to 15000.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "unit_size" set to 100.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "lifetime" set to 30
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.capital_recovery_period" set to 25
-    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.return_on_equity" set to 0.07
+    And the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "available" set to true
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "region" set to [1]
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.min" set to 0.0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.max" set to 500.0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capital_costs.capital_cost.function_data.proportional_term" set to 1200000.0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.fixed" set to 15000.0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "unit_size" set to 100.0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "lifetime" set to 30
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "financial_data.capital_recovery_period" set to 25
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "financial_data.return_on_equity" set to 0.07
     And the file "outputs/system.json" parses as JSON with 0 components of type "RenewableDispatch"
     And the file "outputs/system.json" parses as JSON with 1 component of type "Area"
 
@@ -56,16 +56,16 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
     When I run the plexos-to-sienna-investments chain against "inputs/battery.xml" writing "outputs/portfolio.json"
-    Then the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "StorageTechnology"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "power_systems_type" set to "EnergyReservoirStorage"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "prime_mover_type" set to "BA"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "storage_tech" set to "OTHER_MECH"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "capacity_limits_discharge.max" set to 300.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "capacity_limits_energy.max" set to 1200.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "capital_costs.discharge_capital_cost.function_data.proportional_term" set to 800000.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "unit_size_discharge" set to 50.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "lifetime" set to 15
-    And the file "outputs/portfolio.json" parses as a portfolio with component "StorageTechnology" named "NewBattery" having "financial_data.capital_recovery_period" set to 20
+    Then the file "outputs/portfolio.json" parses as JSON with 1 component of type "StorageTechnology"
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "power_systems_type" set to "EnergyReservoirStorage"
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "prime_mover_type" set to "BA"
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "storage_tech" set to "OTHER_MECH"
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "capacity_limits_discharge.max" set to 300.0
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "capacity_limits_energy.max" set to 1200.0
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "capital_costs.discharge_capital_cost.function_data.proportional_term" set to 800000.0
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "unit_size_discharge" set to 50.0
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "lifetime" set to 15
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "financial_data.capital_recovery_period" set to 20
 
   Scenario: a plant that already runs is the fleet its technology adds to
     Given a Plexos model
@@ -101,10 +101,10 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
     When I run the plexos-to-sienna-investments chain against "inputs/cap.xml" writing "outputs/portfolio.json"
-    Then the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "CarbonCaps"
-    And the file "outputs/portfolio.json" parses as a portfolio with component "CarbonCaps" named "CarbonBudget" having "max_mtons" set to 20.0
-    And the file "outputs/portfolio.json" parses as a portfolio with component "CarbonCaps" named "CarbonBudget" having "available" set to true
-    And the file "outputs/portfolio.json" parses as a portfolio with component "CarbonCaps" named "CarbonBudget" without field "target_year"
+    Then the file "outputs/portfolio.json" parses as JSON with 1 component of type "CarbonCaps"
+    And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CarbonBudget" having "max_mtons" set to 20.0
+    And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CarbonBudget" having "available" set to true
+    And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CarbonBudget" without field "target_year"
     And the file "decisions.md" contains "the year right-hand side of the constraint"
 
   Scenario: a Constraint over part of the model is left out, and the run completes
@@ -127,8 +127,8 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
     When I run the plexos-to-sienna-investments chain against "inputs/scoped.xml" writing "outputs/portfolio.json"
-    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "CarbonCaps"
-    And the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
+    Then the file "outputs/portfolio.json" parses as JSON with 0 components of type "CarbonCaps"
+    And the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
     And the file "decisions.md" contains "`pypsa.constraint.GasCap`"
     And the file "decisions.md" contains "CarbonCaps names no members and no region"
     And the log contains "1 constraint(s) weight a named subset of the model rather than all of it, so each is left out"

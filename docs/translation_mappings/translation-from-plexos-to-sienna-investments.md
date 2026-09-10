@@ -162,14 +162,16 @@ document holds emits nothing a cap could bound, so a constraint need not name it
 | `target_year` | | PLEXOS states the span a right-hand side applies over, not the year it applies in. | `dropped` |
 | `max_tons_mwh` | | PLEXOS has no rate-based right-hand side. | `dropped` |
 
-Four kinds of `Constraint` are left out, each named in `decisions.md`:
+Five kinds of `Constraint` are left out, each named in `decisions.md`:
 
 - one whose `Include in LT Plan` is false, because the expansion plan does not have to meet
   it, and a cap written from it would bound a problem the model leaves free;
 - one whose members cover only part of the model, because a cap written from it would hold
   more than the model meant;
 - one whose `Sense` is not `<=`, because a cap is a ceiling and nothing else;
-- one stating neither an `RHS Year` nor an `RHS`, because no other span bounds the whole run.
+- one stating neither an `RHS Year` nor an `RHS`, because no other span bounds the whole run;
+- one whose right-hand side is not a finite number, because `max_mtons` would be NaN or
+  Infinity, which no JSON reader accepts as a number.
 
 Every `Constraint` still reaches `extensions.json` unchanged, whether or not it became a cap.
 

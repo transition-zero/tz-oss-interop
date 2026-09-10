@@ -414,12 +414,6 @@ def given_system_is_saved_as(sienna_system_builder: SiennaSystemBuilder, json_pa
 
 @then(
     parsers.re(
-        r'the file "(?P<path>[^"]+)" parses as a portfolio with '
-        r'(?P<count>\d+) components? of type "(?P<sienna_type>[^"]+)"'
-    )
-)
-@then(
-    parsers.re(
         r'the file "(?P<path>[^"]+)" parses as JSON with '
         r'(?P<count>\d+) components? of type "(?P<sienna_type>[^"]+)"'
     )
@@ -433,12 +427,6 @@ def assert_sienna_component_count(path: str, count: str, sienna_type: str) -> No
     )
 
 
-@then(
-    parsers.parse(
-        'the file "{path}" parses as a portfolio with component "{sienna_type}" named "{name}"'
-        ' having "{field_path}" set to {value}'
-    )
-)
 @then(
     parsers.parse(
         'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
@@ -457,12 +445,6 @@ def assert_sienna_component_field(
     )
 
 
-@then(
-    parsers.parse(
-        'the file "{path}" parses as a portfolio with component "{sienna_type}" named "{name}"'
-        ' without field "{field_path}"'
-    )
-)
 @then(
     parsers.parse(
         'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
