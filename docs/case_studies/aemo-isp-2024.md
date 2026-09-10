@@ -170,9 +170,10 @@ Write a second mappings file, `inputs/plexos_expansion_mappings.yaml`. It is the
 file plus one row for each carrier a candidate takes. A candidate whose carrier the file does
 not name is left out of the portfolio, and `decisions.md` names each one.
 
-The dispatch run above leaves seven categories out of its file. The expansion run names the
-ones that hold candidate plants. A generator takes the name of its `Fuel` where it burns one
-and its category where it does not, so add one `category` row for each of these:
+The dispatch run above leaves seven named categories, and their siblings, out of its file.
+The expansion run names the ones that hold candidate plants. A generator takes the name of its
+`Fuel` where it burns one at a heat rate, and its category where it does not, so add one
+`category` row for each of these:
 
 - `2023 REZ NSW`, and the sibling category of each other state: a wind or a solar candidate,
   so `RenewableDispatch` with the prime mover `WT` or `PVe`;

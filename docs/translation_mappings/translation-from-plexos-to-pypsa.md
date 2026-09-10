@@ -202,7 +202,7 @@ PyPSA `Line` has no cost for its flow. Thus for such a line the charge is `not m
 | `length` | km | `Length` | `direct` |
 | `active` | | `True` | `default` |
 | `carrier` | | `AC` | `default` |
-| `s_nom_extendable` | | `False`. Version 1 dispatches only. | `default` |
+| `s_nom_extendable` | | `False`. The translator writes no expandable line. | `default` |
 | `v_ang_min` / `v_ang_max` | | PLEXOS states no voltage-angle limit. | `not mapped` |
 
 `s_nom` is one rating for the two directions. Thus if the forward limit and the reverse

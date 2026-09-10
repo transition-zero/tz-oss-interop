@@ -178,12 +178,12 @@ Select `translate`. Then give these answers:
 | Source framework | `plexos` |
 | Destination framework | `sienna` |
 | Pipeline | `plexos-to-sienna-monte-carlo` |
-| User mappings file | `inputs/plexos_user_mappings.yaml` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml` |
 | which PLEXOS Model to translate | `M09Y2026 SA26` |
 | a four-digit year such as 2026 | Leave empty, as for the PyPSA run above. |
 | directory to hold the ensemble | `outputs/caiso-m09-sienna` |
 | names each replication's directory | Keep the default, `{sample}` |
+| User mappings file | `inputs/plexos_user_mappings.yaml` |
 
 That run writes one directory per replication, `1`, `2` and `3`, each holding four files:
 `system.json`, its HDF5 companion `system_time_series_storage.h5`, `extensions.json`, and the
