@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 from pytest_bdd import given, parsers, when
 
-from tests.step_defs.conftest import invoke_translate
+from tests.step_defs.conftest import invoke_translate, write_user_mappings
 
 _STANDARD_CARRIER_MAP: dict[str, tuple[str, str]] = {
     "nuclear": ("NUCLEAR", "ST"),
@@ -37,35 +36,6 @@ _STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "hydro": ("HydroDispatch", "HY"),
     "PHS": ("EnergyReservoirStorage", "PS"),
 }
-
-
-def write_user_mappings(
-    thermal: dict[str, tuple[str, str]],
-    path: Path = Path("user_mappings.yaml"),
-    *,
-    prime_mover: dict[str, tuple[str, str]] | None = None,
-    skipped: dict[str, str] | None = None,
-) -> None:
-    entries: list[dict[str, str]] = [
-        {
-            "pypsa_carrier": carrier,
-            "sienna_component_type": "ThermalStandard",
-            "sienna_fuel_type": fuel_type,
-            "sienna_prime_mover_type": prime_mover_type,
-        }
-        for carrier, (fuel_type, prime_mover_type) in thermal.items()
-    ]
-    for carrier, (component_type, prime_mover_type) in (prime_mover or {}).items():
-        entries.append(
-            {
-                "pypsa_carrier": carrier,
-                "sienna_component_type": component_type,
-                "sienna_prime_mover_type": prime_mover_type,
-            }
-        )
-    for carrier, component_type in (skipped or {}).items():
-        entries.append({"pypsa_carrier": carrier, "sienna_component_type": component_type})
-    path.write_text(yaml.dump({"carriers": entries}, sort_keys=False), encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)

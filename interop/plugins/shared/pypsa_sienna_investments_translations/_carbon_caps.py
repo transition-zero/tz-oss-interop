@@ -102,11 +102,19 @@ NOT_IN_PLAN_SKIP = _constraint_skip(
     attribute_col=APPLIES_TO_PLAN,
 )
 
+NON_FINITE_LIMIT_SKIP = _constraint_skip(
+    reason="state a right-hand side that is not a finite number",
+    note="max_mtons would be NaN or Infinity, which no JSON reader accepts as a number",
+    attribute_col=LIMIT_VALUE,
+)
+
 CARBON_CAP_SKIPS: tuple[SkipRule, ...] = (
     # A source that states nothing about the plan leaves every constraint in it.
     SkipRule(keep=pl.col(APPLIES_TO_PLAN).fill_null(value=True), report=NOT_IN_PLAN_SKIP),
     SkipRule(keep=pl.col(CONSTRAINT_SENSE) == ConstraintSense.AT_MOST, report=WRONG_SENSE_SKIP),
     SkipRule(keep=pl.col(LIMIT_VALUE).is_not_null(), report=NO_LIMIT_SKIP),
+    # is_finite answers null for a null limit, so this rule follows the one that drops those.
+    SkipRule(keep=pl.col(LIMIT_VALUE).is_finite(), report=NON_FINITE_LIMIT_SKIP),
     SkipRule(keep=pl.col(COVERS_MODEL), report=SCOPED_CONSTRAINT_SKIP),
 )
 

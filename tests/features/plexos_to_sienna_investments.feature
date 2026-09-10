@@ -37,7 +37,6 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "lifetime" set to 30
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.capital_recovery_period" set to 25
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "financial_data.return_on_equity" set to 0.07
-    # The build the plan has yet to decide is not a component of the base system.
     And the file "outputs/system.json" parses as JSON with 0 components of type "RenewableDispatch"
     And the file "outputs/system.json" parses as JSON with 1 component of type "Area"
 

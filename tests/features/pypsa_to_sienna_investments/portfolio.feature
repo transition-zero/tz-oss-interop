@@ -267,6 +267,25 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the log contains "1 Generator(s) are extendable and put no overnight cost on the capacity a build adds"
     And the log contains "1 Generator(s) are extendable and state no discount rate"
 
+  Scenario: a sidecar number that is not finite leaves its field out, and the run completes
+    A sidecar is JSON, and a JSON reader accepts the words NaN and Infinity. Neither is a
+    number a portfolio can state, so the field is left out rather than written.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/non_finite_sidecar.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"generator": [{"name": "REZ_Solar", "unit_size_mw": Infinity, "technical_life_years": NaN}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/non_finite_sidecar.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "unit_size"
+    And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "lifetime"
+
   Scenario: a candidate whose lifetime is below one year is left out, and the run completes
     A capital recovery period is a whole number of years, so a lifetime below one year leaves
     no years to recover the overnight cost across.
@@ -431,6 +450,24 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     Then the file "outputs/system.json" parses as JSON with 1 component of type "HydroDispatch"
     And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "Shared" has "existing_devices" set to ["OldSolar"]
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "Shared" has "eligible_generators" set to ["OldSolar"]
+
+  Scenario: a constraint whose limit is not a finite number is left out, and the run completes
+    A cap states a number of million tonnes, and neither NaN nor Infinity is one.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "GasPlant" on "North_bus" carrier "CCGT" p_nom 500
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/non_finite_cap.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"constraint": [{"name": "CarbonBudget", "sense": "<=", "limits": [{"period": "year", "value": Infinity}], "members": [{"name": "GasPlant", "member_class": "Generator"}, {"name": "REZ_Solar", "member_class": "Generator"}]}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/non_finite_cap.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "CarbonCaps"
+    And the log contains "1 constraint(s) state a right-hand side that is not a finite number"
 
   Scenario: a constraint the expansion plan need not meet is left out, and the run completes
     A source says whether its expansion plan has to meet a constraint. A cap written from a

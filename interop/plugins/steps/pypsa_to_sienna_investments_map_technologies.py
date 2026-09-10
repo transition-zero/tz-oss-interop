@@ -9,6 +9,7 @@ system already holds.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import ClassVar, Literal, NamedTuple
@@ -377,8 +378,8 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             _looked_up(carrier_col, prime_movers, PRIME_MOVER_COL),
             _looked_up(carrier_col, fuels, FUEL_COL),
             _looked_up(PyPSAComponentCol.BUS, dict(area_by_bus), REGION_COL),
-            pl.Series(UNIT_SIZE_COL, list(unit_sizes), dtype=pl.Float64),
-            pl.Series(TECHNICAL_LIFE_COL, list(technical_lives), dtype=pl.Float64),
+            pl.Series(UNIT_SIZE_COL, _finite_only(unit_sizes), dtype=pl.Float64),
+            pl.Series(TECHNICAL_LIFE_COL, _finite_only(technical_lives), dtype=pl.Float64),
         )
 
     def _write_table(
@@ -534,6 +535,16 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             if retirement_year is not None:
                 retired[name] = retirement_year
         return _Years(built=built, retired=retired)
+
+
+def _finite_only(values: Sequence[float | None]) -> list[float | None]:
+    """A sidecar number the portfolio can state, and null for one it cannot.
+
+    A sidecar is JSON, and json.load reads the NaN and Infinity tokens, so a number that
+    reaches here is not always finite. A cast to a whole number raises on one, and the sink
+    writes a token no strict JSON reader accepts.
+    """
+    return [value if value is not None and math.isfinite(value) else None for value in values]
 
 
 def _looked_up(name_col: str, values: Mapping[str, str | None], dest_col: str) -> pl.Expr:
