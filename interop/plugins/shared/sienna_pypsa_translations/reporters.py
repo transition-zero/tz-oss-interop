@@ -101,9 +101,8 @@ _START_UP_COST_DERIVATION = "operation_cost.start_up -> start_up_cost"
 _SHUT_DOWN_COST_DERIVATION = "operation_cost.shut_down -> shut_down_cost"
 _P_NOM_EXTENDABLE_DEFAULT = "no ext.p_nom_extendable; p_nom_extendable defaults to False"
 _EXTENDABLE_FLOOR_DERIVATION = (
-    "base_power -> p_nom_min: PyPSA ignores the p_nom of an extendable component, so the "
-    "capacity an operations system already dispatches states itself as the floor a build "
-    "cannot take away"
+    "PyPSA ignores the p_nom of an extendable component, so the capacity an operations "
+    "system already dispatches states itself as the floor a build cannot take away"
 )
 _HYDRO_MAX_HOURS_DEFAULT = (
     "HydroDispatch carries no storage capacity; max_hours uses the PyPSA storage default"

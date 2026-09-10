@@ -410,6 +410,8 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
         reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    if m.p_nom_extendable:
+        reporter.record_p_nom_min(m.sienna_type, m.name, m.base_power)
 
 
 def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:

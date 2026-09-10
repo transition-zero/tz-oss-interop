@@ -32,7 +32,6 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" generator "coal_1" has carrier "coal"
     And the PyPSA network "outputs/network.nc" generator "coal_1" is committable
     And the PyPSA network "outputs/network.nc" generator "built_ccgt" is extendable
-    # The solve built 400 MW, so the hop back has to state that as capacity, not as a plan.
     And the PyPSA network "outputs/network.nc" generator "built_ccgt" attribute "p_nom_min" is 400.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "length" is 120.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "num_parallel" is 2.0

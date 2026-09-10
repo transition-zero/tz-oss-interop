@@ -35,7 +35,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
-    rated_from,
+    rated_translation,
     sienna_dest_field,
     variable_cost_curve,
 )
@@ -65,7 +65,6 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
-    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -174,13 +173,7 @@ def _min_max(max_expr: pl.Expr) -> pl.Expr:
 S = SiennaEnergyReservoirStorageCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
-_rated = partial(
-    row_source_translation,
-    _source,
-    _dest,
-    name_col=PyPSAStorageUnitCol.NAME,
-    source_col_of=rated_from,
-)
+_rated = rated_translation(_source, _dest, PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 STORAGE_ID = row_position_id_translation(

@@ -158,6 +158,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `up_time_before` | snapshots | `time_at_status` × 60 ÷ the snapshot duration in minutes | `derived` |
 | `committable` | | `extensions.committable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
+| `p_nom_min` | MW | `base_power`, for an extendable generator only. | `derived` |
 | `efficiency` | | The translator sets nothing, so PyPSA applies its own default of 1.0 | `default` |
 
 Sienna states a ramp rate in MW for each minute, and PyPSA states it as a share of `p_nom`
@@ -188,6 +189,7 @@ placeholder, so the translator does not divide by it.
 | `p_min_pu` | per unit of `p_nom` | `active_power` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
+| `p_nom_min` | MW | `base_power`, for an extendable generator only. | `derived` |
 | `committable` | | `False` | `default` |
 
 These two types differ from a thermal generator in three ways:
@@ -253,6 +255,7 @@ The translator reads no sidecar record for a `HydroDispatch`. `p_nom_extendable`
 | `state_of_charge_initial` | MWh | `initial_storage_capacity_level` × `base_power` × `storage_capacity` | `derived` |
 | `cyclic_state_of_charge` | | `True` where `operation_cost.energy_shortage_cost` is above zero. If not, `False`. | `derived` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `storage` record. If absent, `False`. | `sidecar` or `default` |
+| `p_nom_min` | MW | `base_power`, for an extendable storage unit only. | `derived` |
 
 PyPSA states charge and discharge on one `p_nom`, with a negative `p_min_pu` for the charge
 side. Sienna states them as two separate limits. The translator changes the sign of the
@@ -353,6 +356,7 @@ either. Check the length of each line if you plan to use it.
 | `active` | | `available` | `direct` |
 | `carrier` | | `extensions.carrier` of the `controllable_line` record | `sidecar` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `controllable_line` record | `sidecar` |
+| `p_nom_min` | MW | The derived `p_nom`, for an extendable link only. | `derived` |
 
 Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
 `active_power_limits_from.max` as `p_nom` × `p_max_pu`. The translator undoes this in three
@@ -462,9 +466,10 @@ each of them comes back as the one carrier that [the table](#carriers) gives.
 `rating`. A line with an `s_max_pu` of 0.7 comes back with an `s_nom` that is 30% lower, and
 with `s_max_pu` at PyPSA's default of 1.0.
 
-**The capacity of an extendable component.** The opposite direction writes the optimised
-capacity of a solved network into `base_power`. That capacity comes back as `p_nom`. The
-sidecar restores `p_nom_extendable`, but the expansion bounds are gone.
+**The build limits of an extendable component.** The opposite direction writes the capacity
+of a solved network into `base_power`. The sidecar restores `p_nom_extendable`, and that
+capacity comes back as both `p_nom` and `p_nom_min`, because PyPSA ignores the `p_nom` of an
+extendable component. The `p_nom_max` is gone, so the component may build without limit.
 
 **The hydro inflow.** The opposite direction divides the inflow by the dispatch efficiency.
 This translator multiplies by `base_power` and assumes an efficiency of 1.0. Thus the inflow

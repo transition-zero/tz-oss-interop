@@ -261,6 +261,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_NOM_EXTENDABLE,
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
+            PyPSALinkCol.P_NOM_MIN,
         ),
     )
 
