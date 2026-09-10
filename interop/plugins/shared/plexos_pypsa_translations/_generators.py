@@ -155,6 +155,7 @@ def _carry_to_extensions(
             category=mapping.category,
             unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
             technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
+            fom_charge_per_mw_year=read_sidecar_value(mapping.expansion.fom_charge),
         )
         for mapping in mappings
     ]

@@ -33,6 +33,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     bus_id_to_v_nom,
+    extendable_floor,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
 
@@ -55,11 +56,6 @@ class _LineImpedance:
     x_ohm: float
     b_siemens: float
     g_siemens: float
-
-
-def _extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
-    """The capacity a build cannot take away, which only an extendable component states."""
-    return rated if is_extendable else None
 
 
 def _convert_line_impedance(
@@ -227,7 +223,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             impedance = _convert_line_impedance(reporter, sienna_type, name, row, z_base)
             angle = _convert_line_angle_limits(reporter, sienna_type, name, row)
             line_ext = _read_line_ext(reporter, sienna_type, name, ext)
-            s_nom_min = _extendable_floor(impedance.s_nom, line_ext.s_nom_extendable)
+            s_nom_min = extendable_floor(impedance.s_nom, line_ext.s_nom_extendable)
             if s_nom_min is not None:
                 reporter.record_s_nom_min(
                     sienna_type, name, float(row[SiennaLineCol.RATING]), s_nom_min
@@ -289,7 +285,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             p_nom_extendable = ext.p_nom_extendable
             if p_nom_extendable is not None:
                 reporter.record_p_nom_extendable_from_ext(name, p_nom_extendable)
-            p_nom_min = _extendable_floor(limits.p_nom, p_nom_extendable)
+            p_nom_min = extendable_floor(limits.p_nom, p_nom_extendable)
             if p_nom_min is not None:
                 reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
             rows.append(

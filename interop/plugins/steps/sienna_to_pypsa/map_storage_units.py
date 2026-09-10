@@ -43,6 +43,7 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
+    extendable_floor,
     per_unit_of,
     variable_proportional_term,
 )
@@ -257,7 +258,7 @@ def _derive_phs(
         cyclic=float(operation_cost.get(SiennaStructField.ENERGY_SHORTAGE_COST, 0.0)) > 0.0,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=base_power if ext.p_nom_extendable is True else None,
+        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
     )
 
 

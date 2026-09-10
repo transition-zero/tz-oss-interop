@@ -259,13 +259,11 @@ class PypsaToSiennaMapComponents(TranslationStep):
     ) -> list[SkipRule]:
         """The drops a whole source table shares, in the order they apply.
 
-        Each drop gets its own report, so a row never carries the wrong reason. ``own_rows``
-        holds the drops for rows
-        an earlier hop of this translator wrote into the source model itself, which only the
-        generators have. Order matters: a row the mappings file never names must not also
-        report an unusable bus, and a row this translator wrote itself must report that
-        rather than an unnamed carrier, because no mappings file entry would make it
-        translatable.
+        ``own_rows`` holds the drops for rows an earlier hop of this translator wrote into
+        the source model itself, which only the generators have. Order matters: a row the
+        mappings file never names must not also report an unusable bus, and a row this
+        translator wrote itself must report that rather than an unnamed carrier, because no
+        mappings file entry would make it translatable.
         """
         carrier = pl.col(PyPSAComponentCol.CARRIER)
         skips = group.scope_skips()

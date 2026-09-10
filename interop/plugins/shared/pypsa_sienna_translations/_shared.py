@@ -31,14 +31,10 @@ from interop.plugins.shared.sienna_constants import (
     time_series_uuid,
 )
 from interop.plugins.shared.translation_runner import (
-    DestinationFieldFactory,
     SkippedNames,
     SkipReport,
     SkipRule,
-    SourceFieldFactory,
-    Translation,
     fill_defaults,
-    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -108,28 +104,6 @@ def capacity_attribute(columns: CapacityColumns) -> pl.Expr:
 
 def rated_from(row: dict[str, Any]) -> str:
     return str(row[CAPACITY_ATTRIBUTE])
-
-
-def rated_translation(
-    source_field: SourceFieldFactory,
-    dest_field: DestinationFieldFactory,
-    name_col: str,
-    *,
-    dest_col: str,
-    expr: pl.Expr,
-    unit: str | None = None,
-    derivation: str = "direct",
-) -> Translation:
-    return row_source_translation(
-        source_field,
-        dest_field,
-        name_col=name_col,
-        source_col_of=rated_from,
-        dest_col=dest_col,
-        expr=expr,
-        unit=unit,
-        derivation=derivation,
-    )
 
 
 def states_built_capacity(columns: CapacityColumns) -> pl.Expr:

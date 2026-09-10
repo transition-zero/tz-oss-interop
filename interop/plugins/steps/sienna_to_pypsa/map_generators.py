@@ -44,6 +44,7 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
+    extendable_floor,
     per_unit_of,
     variable_proportional_term,
 )
@@ -154,7 +155,7 @@ def _ramp_limit(
     """Invert ramp_limits.up/down (MW/min) to a PyPSA ramp_limit (pu of p_nom per snapshot)."""
     if value_mw_per_min is None:
         return None
-    return value_mw_per_min * dt_minutes / base_power
+    return per_unit_of(value_mw_per_min * dt_minutes, base_power)
 
 
 def _hours_to_snapshots(hours: float, dt_minutes: float) -> float:
@@ -244,7 +245,7 @@ def _derive_thermal(
         committable_from_ext=ext.committable is not None,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=base_power if ext.p_nom_extendable is True else None,
+        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -387,7 +388,7 @@ def _derive_renewable(
         ext_carrier=ext.carrier,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=base_power if ext.p_nom_extendable is True else None,
+        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,

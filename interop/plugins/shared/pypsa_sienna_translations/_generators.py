@@ -34,7 +34,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_skip_report,
     pypsa_source_field,
     rated_from,
-    rated_translation,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -63,6 +62,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -241,7 +241,13 @@ _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
 _dest = partial(sienna_dest_field, SiennaComponent.THERMAL_STANDARD)
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
-_rated = partial(rated_translation, _source, _dest, PyPSAGeneratorCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAGeneratorCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
 GENERATOR_ID = row_position_id_translation(

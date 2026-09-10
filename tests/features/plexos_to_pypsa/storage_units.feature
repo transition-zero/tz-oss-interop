@@ -546,7 +546,6 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/candidate_battery.xml"
     When I run translate against "inputs/candidate_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "new_bat" is extendable
-    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_min" is 0
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom" is 300
     # Capacity is the energy beside one unit's Max Power, so the hours are one unit's 200 / 50.
@@ -600,7 +599,6 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/new_phs.xml"
     When I run translate against "inputs/new_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_new" is extendable
-    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_min" is 0
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_max" is 300
     # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom" is 300

@@ -113,6 +113,9 @@ class GeneratorExtension(ExtensionRecord):
     # yr. PLEXOS Technical Life: how long the plant runs. PyPSA has one lifetime and the
     # capital recovery period claims it, so this has no field there.
     technical_life_years: float | None = None
+    # $/MW/yr. PLEXOS FO&M Charge. PyPSA's fom_cost is a charge for the whole modelled
+    # horizon, not a yearly one, so a yearly charge has no field there.
+    fom_charge_per_mw_year: float | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -157,6 +160,9 @@ class StorageExtension(ExtensionRecord):
     # yr. PLEXOS Technical Life: how long the plant runs. PyPSA has one lifetime and the
     # capital recovery period claims it, so this has no field there.
     technical_life_years: float | None = None
+    # $/MW/yr. PLEXOS FO&M Charge. PyPSA's fom_cost is a charge for the whole modelled
+    # horizon, not a yearly one, so a yearly charge has no field there.
+    fom_charge_per_mw_year: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):

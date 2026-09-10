@@ -18,10 +18,10 @@ DEFAULT_UNITS: float = 1.0
 """A generator with no ``Units`` property is a single unit."""
 
 EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
-"""Names that sidecar key in the audit trail; the network file itself has no such column."""
 
 EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
-"""Names that sidecar key in the audit trail; the network file itself has no such column."""
+
+EXT_FOM_CHARGE_FIELD: str = "extensions.fom_charge_per_mw_year"
 
 # --- generators ---------------------------------------------------------------
 

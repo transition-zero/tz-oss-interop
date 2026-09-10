@@ -34,7 +34,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     POWER_CAPACITY,
     fill_capacity_columns,
     pypsa_source_field,
-    rated_translation,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -63,6 +63,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -237,7 +238,13 @@ def _renewable_translations(
     (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
-    rated = partial(rated_translation, _source, dest, PyPSAGeneratorCol.NAME)
+    rated = partial(
+        row_source_translation,
+        _source,
+        dest,
+        name_col=PyPSAGeneratorCol.NAME,
+        source_col_of=rated_from,
+    )
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
         row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),

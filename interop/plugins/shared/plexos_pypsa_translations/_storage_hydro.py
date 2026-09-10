@@ -217,7 +217,7 @@ def _derive_turbine(
         efficiency=_turbine_efficiency(rated, variant),
         marginal_cost=_marginal_cost(rated),
         state_of_charge_initial=derive_state_of_charge_initial(
-            _reservoir_initial_level(head), rated.p_nom.value * max_hours.value
+            _reservoir_initial_level(head), rated.running_power.value * max_hours.value
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),

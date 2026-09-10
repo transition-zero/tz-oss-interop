@@ -506,12 +506,13 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/candidate.xml"
     When I run translate against "inputs/candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "REZ_Solar" is extendable
-    And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom_min" equal to 0
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom_max" equal to 500
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "overnight_cost" equal to 1200000
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "discount_rate" equal to 0.07
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "lifetime" equal to 25
-    And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "fom_cost" equal to 15000
+    # PyPSA reads fom_cost as a charge for the whole modelled horizon, so a yearly charge
+    # would price a two-day run as if it lasted a year. It travels beside the generator.
+    And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "fom_charge_per_mw_year" set to 15000.0
     # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom" equal to 500
     # The unit size and the technical life have no PyPSA column, so they travel beside it.

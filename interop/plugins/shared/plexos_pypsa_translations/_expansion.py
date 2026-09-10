@@ -16,6 +16,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_UNITS,
     DIRECT_DERIVATION,
+    EXT_FOM_CHARGE_FIELD,
     EXT_TECHNICAL_LIFE_FIELD,
     EXT_UNIT_SIZE_FIELD,
     NOTHING_TO_BUILD,
@@ -51,6 +52,10 @@ _TECHNICAL_LIFE_DERIVATION = (
     "PyPSA's one lifetime holds the capital recovery period, so the technology lifetime "
     "travels beside it"
 )
+_FOM_CHARGE_DERIVATION = (
+    "PyPSA's fom_cost is a charge for the whole modelled horizon, not a yearly one, so a "
+    "yearly charge travels beside the component instead"
+)
 _NO_BUILD_COST_NOTE = (
     "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
 )
@@ -71,6 +76,7 @@ _UNPRICED_BUILD_DERIVATION = (
 
 UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
 TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
+FOM_CHARGE_COLUMN = MappedColumns((EXT_FOM_CHARGE_FIELD,), UNIT_DOLLARS_PER_MW_YEAR)
 
 
 @dataclass(frozen=True)
@@ -122,10 +128,10 @@ class ExpansionDecisions:
     overnight_cost: Decision = maps_to(PyPSAGeneratorCol.OVERNIGHT_COST, unit=UNIT_DOLLARS_PER_MW)
     discount_rate: Decision = maps_to(PyPSAGeneratorCol.DISCOUNT_RATE)
     lifetime: Decision = maps_to(PyPSAGeneratorCol.LIFETIME, unit=UNIT_YEARS)
-    fom_cost: Decision = maps_to(PyPSAGeneratorCol.FOM_COST, unit=UNIT_DOLLARS_PER_MW_YEAR)
     # What the sidecar carries because the network file has no column for it.
     unit_size: Decision = NOTHING_TO_REPORT
     technical_life: Decision = NOTHING_TO_REPORT
+    fom_charge: Decision = NOTHING_TO_REPORT
     dropped_build: SkippedComponent | None = None
 
 
@@ -136,7 +142,6 @@ FIXED_CAPACITY = ExpansionDecisions(
     overnight_cost=NOTHING_TO_REPORT,
     discount_rate=NOTHING_TO_REPORT,
     lifetime=NOTHING_TO_REPORT,
-    fom_cost=NOTHING_TO_REPORT,
 )
 
 
@@ -165,14 +170,14 @@ def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
         lifetime=_from_property(
             source, PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, DIRECT_DERIVATION
         ),
-        fom_cost=_from_property(
-            source, PlexosProperty.FOM_CHARGE, UNIT_DOLLARS_PER_MW_YEAR, DIRECT_DERIVATION
-        ),
         unit_size=Decision.derived(
             rated.unit_size.value, rated.unit_size.sources, _UNIT_SIZE_DERIVATION
         ),
         technical_life=_from_property(
             source, PlexosProperty.TECHNICAL_LIFE, UNIT_YEARS, _TECHNICAL_LIFE_DERIVATION
+        ),
+        fom_charge=_from_property(
+            source, PlexosProperty.FOM_CHARGE, UNIT_DOLLARS_PER_MW_YEAR, _FOM_CHARGE_DERIVATION
         ),
     )
 
@@ -245,6 +250,7 @@ def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
 def record_expansion(name: str, expansion: ExpansionDecisions, reporter: ComponentReporter) -> None:
     reporter.record(name, UNIT_SIZE_COLUMN, expansion.unit_size)
     reporter.record(name, TECHNICAL_LIFE_COLUMN, expansion.technical_life)
+    reporter.record(name, FOM_CHARGE_COLUMN, expansion.fom_charge)
     if expansion.dropped_build is not None:
         reporter.record_dropped(expansion.dropped_build.source, expansion.dropped_build.note)
 

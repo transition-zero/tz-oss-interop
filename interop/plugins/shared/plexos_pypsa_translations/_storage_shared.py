@@ -431,7 +431,6 @@ def derive_max_hours(
 
 
 def derive_state_of_charge_initial(level: Decision | None, usable_mwh: float) -> Decision:
-    """The starting level, held inside the capacity PyPSA enforces (``p_nom * max_hours``)."""
     if level is None:
         return Decision.default(DEFAULT_STATE_OF_CHARGE_INITIAL, _SOC_NOTE)
     held = min(max(level.value, 0.0), usable_mwh)
