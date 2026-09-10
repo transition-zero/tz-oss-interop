@@ -78,6 +78,7 @@ SUPPLY_SKIPS: tuple[SkipRule, ...] = build_expansion_skips(
     PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS],
     name_col=PyPSAGeneratorCol.NAME,
     build_limit_col=PyPSAGeneratorCol.P_NOM_MAX,
+    capacity_floor_col=PyPSAGeneratorCol.P_NOM_MIN,
     lifetime_col=PyPSAGeneratorCol.LIFETIME,
     overnight_cost_col=PyPSAGeneratorCol.OVERNIGHT_COST,
     discount_rate_col=PyPSAGeneratorCol.DISCOUNT_RATE,

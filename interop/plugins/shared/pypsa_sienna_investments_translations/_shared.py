@@ -126,6 +126,13 @@ UNPRICED_BUILD_NOTE = (
     "an annuity cannot be undone into the two terms a capital cost curve states, so the "
     "technology has no price to build at"
 )
+CAPACITY_FLOOR_ABOVE_CEILING_REASON = (
+    "are extendable and state a capacity floor above the capacity a build may reach"
+)
+CAPACITY_FLOOR_ABOVE_CEILING_NOTE = (
+    "p_nom_min is above p_nom_max, so capacity_limits.min would be above capacity_limits.max "
+    "and no capacity could meet the technology's own bounds"
+)
 NO_DISCOUNT_RATE_REASON = "are extendable and state no discount rate"
 NO_DISCOUNT_RATE_NOTE = (
     "TechnologyFinancialData requires a return on equity, and the discount rate is the only "
@@ -138,6 +145,7 @@ def build_expansion_skips(
     *,
     name_col: str,
     build_limit_col: str,
+    capacity_floor_col: str,
     lifetime_col: str,
     overnight_cost_col: str,
     discount_rate_col: str,
@@ -155,6 +163,14 @@ def build_expansion_skips(
                 reason=UNBOUNDED_BUILD_REASON,
                 note=UNBOUNDED_BUILD_NOTE,
                 attribute_col=build_limit_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(capacity_floor_col) <= pl.col(build_limit_col),
+            report=skip(
+                reason=CAPACITY_FLOOR_ABOVE_CEILING_REASON,
+                note=CAPACITY_FLOOR_ABOVE_CEILING_NOTE,
+                attribute_col=capacity_floor_col,
             ),
         ),
         SkipRule(

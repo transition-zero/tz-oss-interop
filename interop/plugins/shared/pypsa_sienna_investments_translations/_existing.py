@@ -64,7 +64,7 @@ class CandidateTechnology(NamedTuple):
 
 def build_existing_fleet_source_table(
     technologies: Sequence[CandidateTechnology],
-    devices_by_carrier: Mapping[tuple[str, str | None], Sequence[str]],
+    devices_by_carrier_and_region: Mapping[tuple[str, str | None], Sequence[str]],
     build_years: Mapping[str, int],
     retirement_years: Mapping[str, int],
 ) -> pl.DataFrame:
@@ -76,7 +76,8 @@ def build_existing_fleet_source_table(
     """
     rows: list[dict[str, Any]] = []
     for technology in technologies:
-        devices = list(devices_by_carrier.get((technology.carrier, technology.region), []))
+        fleet = (technology.carrier, technology.region)
+        devices = list(devices_by_carrier_and_region.get(fleet, []))
         if not devices:
             continue
         rows.append(

@@ -95,6 +95,7 @@ STORAGE_SKIPS: tuple[SkipRule, ...] = (
         PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
         name_col=PyPSAStorageUnitCol.NAME,
         build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
+        capacity_floor_col=PyPSAStorageUnitCol.P_NOM_MIN,
         lifetime_col=PyPSAStorageUnitCol.LIFETIME,
         overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
         discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
@@ -128,12 +129,7 @@ def fill_storage_technology_defaults(table: pl.DataFrame) -> pl.DataFrame:
 
 
 def storage_capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
-    """A Sienna ``StorageCapitalCost`` pricing the discharge side alone.
-
-    PyPSA prices a storage unit by its power rating and holds its energy as hours of that
-    rating, so the one overnight cost it states belongs to the discharge capacity. Charging
-    and energy are added at no cost of their own.
-    """
+    """A Sienna ``StorageCapitalCost`` pricing the discharge side alone."""
     return pl.struct(
         ZERO_IO_CURVE.alias(SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST),
         linear_value_curve(overnight_cost, input_at_zero=pl.lit(None, dtype=pl.Float64)).alias(

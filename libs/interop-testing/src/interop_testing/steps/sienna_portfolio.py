@@ -2,8 +2,6 @@
 
 A portfolio groups its components by type name the way a system does, but it also carries a
 flat array of supplemental attributes linked to those components by an association table.
-The steps here read a written portfolio back: its components, and the attributes describing
-each of them.
 """
 
 from __future__ import annotations

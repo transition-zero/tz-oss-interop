@@ -269,6 +269,23 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the log contains "1 Generator(s) are extendable and put no overnight cost on the capacity a build adds"
     And the log contains "1 Generator(s) are extendable and state no discount rate"
 
+  Scenario: a candidate whose floor is above its ceiling is left out, and the run completes
+    A technology states a capacity floor and a capacity ceiling, and no capacity can meet a
+    floor above the ceiling.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_min 600
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/inverted_limits.nc"
+    When I run the pypsa investments translation against "inputs/inverted_limits.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "SupplyTechnology"
+    And the log contains "1 Generator(s) are extendable and state a capacity floor above the capacity a build may reach"
+    And the file "decisions.md" contains "p_nom_min is above p_nom_max"
+
   Scenario: a storage candidate that holds no energy is left out, and the run completes
     A StorageTechnology states the energy a build may add as max_hours of its power, so a
     unit stating no hours could build power it can never charge.
