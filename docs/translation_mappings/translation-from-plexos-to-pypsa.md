@@ -162,7 +162,6 @@ The translator does **not** read the `Line.Type` property. That property sets th
 technology that LT Plan uses when it expands a line: `0` for AC and `1` for DC. It does not
 set the operation of a line that exists. The translator writes no expandable line either:
 only a `Generator`, a `Battery` and a pumped-storage turbine become extendable components.
-Refer to [What a candidate is](#what-a-candidate-is).
 
 A line must have a `Node From` membership and a `Node To` membership. If a line does not
 have both, it connects nothing. The translator does not write it, and it records this.

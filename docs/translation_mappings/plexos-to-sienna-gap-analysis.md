@@ -361,9 +361,6 @@ for you.
 
 ## What `plexos-to-sienna-investments` loses from an expansion
 
-These entries cover the run that writes an expansion portfolio beside a base system of its
-own.
-
 ### A `Constraint` a cap cannot carry
 
 **The PLEXOS data.** A `Constraint` holding a weighted sum over the objects it names to a
@@ -377,11 +374,9 @@ constraint is left out, `decisions.md` names it, and the log warns. Every constr
 reaches the `extensions.json` sidecar, whether or not it became a cap.
 
 **The cause.** `CarbonCaps` names no members and no region: a cap in a portfolio holds the
-whole portfolio. A cap written from a constraint over part of the model would hold every
-technology in the problem, which is a different limit from the one your model states. A cap
-also states one ceiling over the whole run, so a constraint held to `>=` or to `==`, and a
-constraint whose only right-hand side bounds a repeating window inside the run, give it
-nothing to carry.
+whole portfolio. A cap also states one ceiling over the whole run, so a constraint held to
+`>=` or to `==`, and a constraint whose only right-hand side bounds a repeating window inside
+the run, give it nothing to carry.
 
 **The effect on the expansion.** Nothing bounds what the constraint names, so the plan may
 build and run those objects up to their own limits. A model whose targets are all regional,
@@ -443,14 +438,12 @@ one.
 as not mapped.
 
 **The cause.** `requirements` holds the ids of the requirements a component is subject to.
-The only requirement this translation writes is a `CarbonCaps` that holds the whole
-portfolio, so it names no members and no component names it. SiennaSchemas states other
-requirement types beside it, and this translation writes none of them.
+The only requirement this translation writes is the cap above, which names no members, so no
+component names it. SiennaSchemas states other requirement types beside it, and this
+translation writes none of them.
 
 **The effect on the expansion.** A consumer that applies a requirement to the technologies
-naming it applies nothing to any of them. Nothing is lost for the one cap the portfolio can
-hold, since that cap applies to the whole problem by its own definition. A narrower target
-has no way to reach a technology at all.
+naming it applies nothing to any of them.
 
 ---
 
@@ -467,9 +460,9 @@ the document; `decisions.md` records both.
 **The cause.** PLEXOS states the span a right-hand side applies over, not the year it applies
 in, and it has no rate-based right-hand side for `max_tons_mwh` to carry.
 
-**The effect on the expansion.** The cap states no year, so it is the limit of the whole
-problem the consumer solves, whichever year your model stated it for. With `max_tons_mwh`
-absent, nothing limits the carbon intensity of what it builds.
+**The effect on the expansion.** The cap applies to every year of the run, whichever year
+your model stated it for. With `max_tons_mwh` absent, nothing limits the carbon intensity of
+what it builds.
 
 ---
 
@@ -502,9 +495,7 @@ problem, with no schedule of periods and no representative-day weighting.
 
 **The cause.** A portfolio document holds the technologies, the requirements and the regions
 of an expansion problem. The periods and the representative days are terms of the solve, so
-they belong on the request that solves the portfolio rather than in it. No solve in interop
-reads a portfolio: its `solve` command runs PyPSA over a network or PowerSimulations.jl over a
-system, and neither steps through investment periods.
+they belong on the request that solves the portfolio rather than in it.
 
 **The effect on the expansion.** Whoever solves the portfolio chooses the periods and the
 sampling. A plan built over a different set of years, or against a different set of

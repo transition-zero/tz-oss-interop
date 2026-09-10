@@ -5,11 +5,10 @@ It gives the source of each field.
 
 > **Scope:** the translator accepts electricity-only models, and the `plexos-to-sienna`
 > pipeline translates them for dispatch. It writes no capacity expansion: what your plan may
-> build becomes a Sienna investments portfolio instead, which the
-> `plexos-to-sienna-investments` pipeline writes. Refer to
-> [Translation from PLEXOS to a Sienna investments portfolio](translation-from-plexos-to-sienna-investments.md).
-> This pipeline does not translate custom constraints or hydro cascades, and it does not
-> carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
+> build becomes a Sienna investments portfolio instead, which
+> [the `plexos-to-sienna-investments` pipeline](translation-from-plexos-to-sienna-investments.md)
+> writes. This pipeline does not translate custom constraints or hydro cascades, and it does
+> not carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which states what each loss does to a
 > dispatch and what the portfolio leaves out of an expansion.
 

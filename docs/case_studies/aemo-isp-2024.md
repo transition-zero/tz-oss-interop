@@ -173,20 +173,23 @@ not name is left out of the portfolio, and `decisions.md` names each one.
 The dispatch run above leaves seven categories out of its file, because a dispatch system has
 no place for what they hold. The expansion run names the ones that hold candidate plants. A
 generator takes the name of its `Fuel` where it burns one and its category where it does not,
-so each of those categories takes one `category` row:
+so add one `category` row for each of these:
 
-| `plexos_name` | `sienna_component_type` | `sienna_prime_mover_type` |
-| --- | --- | --- |
-| `2023 REZ NSW`, and the sibling category of each other state | `RenewableDispatch` | `WT` for a wind candidate, `PVe` for a solar one |
-| `New Entrants NSW`, and the sibling category of each other state | `RenewableDispatch`, or `ThermalStandard` with the `sienna_fuel_type` of the fuel the plant burns | The prime mover of the plant: `WT`, `PVe`, `CC` or `CT` |
-| `LTESA Projects`, `Policy Projects`, `VRET Projects` | The type of the plant the project builds | The prime mover of that plant |
+- `2023 REZ NSW`, and the sibling category of each other state: a wind or a solar candidate,
+  so `RenewableDispatch` with the prime mover `WT` or `PVe`;
+- `New Entrants NSW`, and the sibling category of each other state: a wind, a solar or a gas
+  candidate, so the prime mover `WT`, `PVe`, `CC` or `CT`;
+- `LTESA Projects`, `Policy Projects` and `VRET Projects`: the type and the prime mover of the
+  plant the project builds.
 
-The translator reads no meaning from a category name, so give each row the type of the plant
-that category holds in your copy of the model. A generator candidate becomes a
-`SupplyTechnology`, and its `sienna_component_type` must be a type a generator becomes:
-`ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch` or `HydroDispatch`. A row that
-sends a generator's carrier to `EnergyReservoirStorage` names a type the candidate never
-becomes, so the run leaves that candidate out and `decisions.md` names it.
+The translator reads no meaning from a category name, so give each row the
+`sienna_component_type` and the `sienna_prime_mover_type` of the plant that category holds in
+your copy of the model. A generator candidate becomes a `SupplyTechnology`, so its
+`sienna_component_type` must be `ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch`
+or `HydroDispatch`. A `ThermalStandard` row also takes the `sienna_fuel_type` of the fuel the
+plant burns.
+[Across all components](../translation_mappings/translation-from-plexos-to-sienna-investments.md#across-all-components)
+states what happens to a candidate whose carrier your file sends to the other kind's type.
 
 A `Battery` candidate and a pumped-storage candidate need no row of their own. Each takes a
 `storage_kind` row, and the mappings pipeline supplies one for all three storage kinds.
@@ -216,8 +219,7 @@ prompts of both sinks.
 
 That run writes four files: the three the Sienna path writes, and `outputs/portfolio.json`
 beside them. The portfolio names `system.json` in its `base_system_file`, so the two are read
-together. The base system holds the fleet that already runs, and a build the plan has yet to
-decide is in the portfolio and not in it.
+together.
 
 Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. A chained
 pipeline prompts for the source of its first leg and the sinks of its last, and for no step in
