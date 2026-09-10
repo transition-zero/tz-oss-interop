@@ -32,9 +32,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
     POWER_CAPACITY,
-    fill_capacity_defaults,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     variable_cost_curve,
 )
@@ -94,7 +95,7 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False),
         ],
     )
-    return fill_capacity_defaults(table, POWER_CAPACITY)
+    return fill_capacity_columns(table, POWER_CAPACITY)
 
 
 def build_storage_extensions(
@@ -308,7 +309,7 @@ STORAGE_REACTIVE_POWER = _default(
 )
 
 STORAGE_BASE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+    source_col=rated_from,
     dest_col=S.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     derivation=EFFECTIVE_P_NOM_DERIVATION,

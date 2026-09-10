@@ -59,7 +59,6 @@ from ._renewables import (
 )
 from ._shared import (
     POWER_CAPACITY,
-    CapacityColumns,
     ScopeSkips,
     carrier_scope_skips,
     fill_capacity_defaults,
@@ -81,7 +80,6 @@ __all__ = [
     "ScopeSkips",
     "carrier_scope_skips",
     "POWER_CAPACITY",
-    "CapacityColumns",
     "fill_capacity_defaults",
     "unbuilt_candidate_skip",
     "with_effective_p_nom",

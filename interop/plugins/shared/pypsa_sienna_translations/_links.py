@@ -25,9 +25,9 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     POWER_CAPACITY,
-    choose_capacity_attribute,
     effective_p_nom,
     pypsa_skip_report,
+    rated_from,
 )
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
@@ -231,7 +231,7 @@ _to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
     """The PyPSA capacity attribute actually used for the power limits, and its value."""
-    attribute = choose_capacity_attribute(old, POWER_CAPACITY)
+    attribute = rated_from(old)
     return attribute, old[attribute]
 
 

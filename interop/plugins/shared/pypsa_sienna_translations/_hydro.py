@@ -36,9 +36,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
     POWER_CAPACITY,
-    fill_capacity_defaults,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -106,7 +107,7 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, 1.0),
         ],
     )
-    return fill_capacity_defaults(table, POWER_CAPACITY)
+    return fill_capacity_columns(table, POWER_CAPACITY)
 
 
 def enrich_hydro_carrier(
@@ -263,7 +264,7 @@ HYDRO_PRIME_MOVER = _direct(
 )
 
 HYDRO_BASE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+    source_col=rated_from,
     dest_col=H.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
@@ -271,7 +272,7 @@ HYDRO_BASE_POWER = _direct(
 )
 
 HYDRO_ACTIVE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+    source_col=rated_from,
     dest_col=H.ACTIVE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU),
     unit=UNIT_MW,
@@ -291,7 +292,7 @@ HYDRO_RATING = _direct(
 )
 
 HYDRO_APL = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+    source_col=rated_from,
     dest_col=H.ACTIVE_POWER_LIMITS,
     expr=pl.struct(
         min=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU)).cast(pl.Float64),

@@ -32,8 +32,9 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
     POWER_CAPACITY,
-    fill_capacity_defaults,
+    fill_capacity_columns,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -88,7 +89,7 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
         ],
     )
-    return fill_capacity_defaults(table, POWER_CAPACITY)
+    return fill_capacity_columns(table, POWER_CAPACITY)
 
 
 def build_renewable_extensions(
@@ -254,14 +255,14 @@ def _renewable_translations(
             derivation="carrier -> PrimeMovers via user defined mapping",
         ),
         direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+            source_col=rated_from,
             dest_col=R.BASE_POWER,
             expr=pl.col(EFFECTIVE_P_NOM),
             unit=UNIT_MW,
             derivation=EFFECTIVE_P_NOM_DERIVATION,
         ),
         direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+            source_col=rated_from,
             dest_col=R.ACTIVE_POWER,
             expr=active_power_expr,
             unit=UNIT_MW,

@@ -30,10 +30,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
     POWER_CAPACITY,
-    choose_capacity_attribute,
-    fill_capacity_defaults,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -97,7 +97,7 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAGeneratorCol.COMMITTABLE, False),
         ],
     )
-    return fill_capacity_defaults(table, POWER_CAPACITY)
+    return fill_capacity_columns(table, POWER_CAPACITY)
 
 
 def enrich_carrier_lookup(
@@ -352,7 +352,7 @@ GENERATOR_PRIME_MOVER = Translation(
 )
 
 GENERATOR_BASE_POWER = _direct(
-    source_col=PyPSAGeneratorCol.P_NOM,
+    source_col=rated_from,
     dest_col=T.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
@@ -360,7 +360,7 @@ GENERATOR_BASE_POWER = _direct(
 )
 
 GENERATOR_ACTIVE_POWER = _direct(
-    source_col=PyPSAGeneratorCol.P_NOM,
+    source_col=rated_from,
     dest_col=T.ACTIVE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
     unit=UNIT_MW,
@@ -399,7 +399,7 @@ GENERATOR_APL = Translation(
                     framework=Framework.PYPSA,
                     component=PyPSAComponent.GENERATOR,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=choose_capacity_attribute(old, POWER_CAPACITY),
+                    attribute=rated_from(old),
                     value=old[EFFECTIVE_P_NOM],
                     unit=UNIT_MW,
                 )

@@ -87,7 +87,6 @@ class SkippedComponent:
 
 
 def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
-    """One warning line for each group, counting its objects and naming a few of them."""
     grouped: dict[SkipGroup, list[str]] = {}
     for group, name in named:
         grouped.setdefault(group, []).append(name)

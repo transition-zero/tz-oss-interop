@@ -202,6 +202,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "running_ccgt" having "base_power" set to 200.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "running_ccgt" having "active_power_limits.max" set to 200.0
     And the file "decisions.md" contains "`pypsa.Generator.running_ccgt.p_nom_min` = 200.0 MW | `sienna.ThermalStandard.running_ccgt.active_power_limits`"
+    And the file "decisions.md" contains "`pypsa.Generator.running_ccgt.p_nom_min` = 200.0 MW | `sienna.ThermalStandard.running_ccgt.base_power` = 200.0 MW"
 
   Scenario: generator without p_nom_extendable records the flag false in extensions
     Given a PyPSA network
@@ -223,5 +224,6 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And a user mappings file with all standard carriers
     When I run translate against "inputs/solved_expansion.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "built_ccgt" having "base_power" set to 400.0
+    And the file "decisions.md" contains "`pypsa.Generator.built_ccgt.p_nom_opt` = 400.0 MW | `sienna.ThermalStandard.built_ccgt.base_power` = 400.0 MW"
     # The plan refused this build, so its p_nom is not capacity the operations system may dispatch.
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "rejected_ccgt" having "base_power" set to 0.0

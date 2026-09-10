@@ -47,7 +47,7 @@ def direct_translation(
     dest_field: DestinationFieldFactory,
     *,
     name_col: str,
-    source_col: str,
+    source_col: str | Callable[[dict[str, Any]], str],
     dest_col: str,
     expr: pl.Expr | None = None,
     unit: str | None = None,
@@ -57,17 +57,25 @@ def direct_translation(
     """A VALUE_DERIVED translation carrying one source column to one destination column.
 
     ``expr`` defaults to ``pl.col(source_col)`` for a verbatim copy; pass an expression for a
-    computed value (the event still attributes it to ``source_col``). ``name_col`` is the source
-    column holding the component instance name used in both the source and destination fields.
-    ``note`` is what the report carries against the component beside the derivation.
+    computed value. Where the expression reads a different source column for each row, pass a
+    callable as ``source_col``, so the event names the column that row was read from.
+    ``name_col`` is the source column holding the component instance name used in both the
+    source and destination fields. ``note`` is what the report carries against the component
+    beside the derivation.
     """
-    column = (pl.col(source_col) if expr is None else expr).alias(dest_col)
+    if expr is None:
+        if not isinstance(source_col, str):
+            message = "a per-row source_col needs an expr, because no one column holds the value"
+            raise ValueError(message)
+        expr = pl.col(source_col)
+    column = expr.alias(dest_col)
 
     def make_events(old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
+        attribute = source_col if isinstance(source_col, str) else source_col(old)
         return [
             TranslationEvent(
                 kind=EventKind.VALUE_DERIVED,
-                sources=[source_field(old[name_col], source_col, old[source_col], unit)],
+                sources=[source_field(old[name_col], attribute, old[attribute], unit)],
                 destinations=[dest_field(old[name_col], dest_col, new[dest_col], unit)],
                 derivation=derivation,
                 note=note,

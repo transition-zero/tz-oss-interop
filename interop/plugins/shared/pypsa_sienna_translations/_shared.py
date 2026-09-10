@@ -45,6 +45,7 @@ PYPSA_TO_SIENNA = "pypsa-to-sienna"
 
 # Enrichment columns on the source table, which finalise() drops.
 EFFECTIVE_P_NOM = "_effective_p_nom"
+CAPACITY_ATTRIBUTE = "_capacity_attribute"
 STATES_BUILT_CAPACITY = "_states_built_capacity"
 
 EFFECTIVE_P_NOM_DERIVATION = (
@@ -54,16 +55,13 @@ EFFECTIVE_P_NOM_DERIVATION = (
 
 
 class CapacityColumns(NamedTuple):
-    """The four PyPSA columns that together state what capacity a component holds."""
-
     extendable: str
     opt: str
     nom: str
     nom_min: str
 
 
-# PyPSA names these four columns the same on a Generator, a StorageUnit and a Link. A Line
-# names them s_nom, so it needs a second bundle rather than a second set of helpers.
+# A Line names these columns s_nom, so POWER_CAPACITY does not fit a Line table.
 POWER_CAPACITY = CapacityColumns(
     PyPSAGeneratorCol.P_NOM_EXTENDABLE,
     PyPSAGeneratorCol.P_NOM_OPT,
@@ -86,52 +84,55 @@ def has_capacity_floor(columns: CapacityColumns) -> pl.Expr:
     return pl.col(columns.extendable) & (pl.col(columns.nom_min) > 0)
 
 
-def choose_capacity_attribute(row: dict[str, Any], columns: CapacityColumns) -> str:
-    """The PyPSA attribute ``effective_p_nom`` read for one row, so an event names it."""
-    if row[columns.extendable]:
-        if row[columns.opt] is not None:
-            return columns.opt
-        if row[columns.nom_min] > 0:
-            return columns.nom_min
-    return columns.nom
+def _pick_capacity(columns: CapacityColumns, of_column: Callable[[str], pl.Expr]) -> pl.Expr:
+    """The three-way capacity choice, over the column values or over the column names."""
+    return (
+        pl.when(has_solved_capacity(columns))
+        .then(of_column(columns.opt))
+        .when(has_capacity_floor(columns))
+        .then(of_column(columns.nom_min))
+        .otherwise(of_column(columns.nom))
+    )
 
 
 def effective_p_nom(columns: CapacityColumns) -> pl.Expr:
-    return (
-        pl.when(has_solved_capacity(columns))
-        .then(pl.col(columns.opt))
-        .when(has_capacity_floor(columns))
-        .then(pl.col(columns.nom_min))
-        .otherwise(pl.col(columns.nom))
-    )
+    return _pick_capacity(columns, pl.col)
+
+
+def capacity_attribute(columns: CapacityColumns) -> pl.Expr:
+    return _pick_capacity(columns, pl.lit)
+
+
+def rated_from(row: dict[str, Any]) -> str:
+    """The PyPSA attribute a row was rated from, which the row itself carries."""
+    return str(row[CAPACITY_ATTRIBUTE])
 
 
 def states_built_capacity(columns: CapacityColumns) -> pl.Expr:
     """PyPSA ignores the p_nom of an extendable component, so p_nom alone cannot say whether
     such a component holds capacity an operations model may dispatch.
     """
-    return (
-        ~pl.col(columns.extendable)
-        | pl.col(columns.opt).is_not_null()
-        | (pl.col(columns.nom_min) > 0)
-    )
+    return ~pl.col(columns.extendable) | has_solved_capacity(columns) | has_capacity_floor(columns)
 
 
 def with_effective_p_nom(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
     return table.with_columns(
         effective_p_nom(columns).alias(EFFECTIVE_P_NOM),
+        capacity_attribute(columns).alias(CAPACITY_ATTRIBUTE),
         states_built_capacity(columns).alias(STATES_BUILT_CAPACITY),
     )
 
 
-def fill_capacity_defaults(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
-    """The four PyPSA capacity columns at their defaults, and the two rated from them."""
-    table = fill_defaults(
+def fill_capacity_columns(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+    return fill_defaults(
         table,
         [(columns.opt, None), (columns.nom, 0.0), (columns.nom_min, 0.0)],
         [(columns.extendable, False)],
     )
-    return with_effective_p_nom(table, columns)
+
+
+def fill_capacity_defaults(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+    return with_effective_p_nom(fill_capacity_columns(table, columns), columns)
 
 
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"

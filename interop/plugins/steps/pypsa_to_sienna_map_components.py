@@ -43,7 +43,6 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     RENEWABLE_DISPATCH_MAPPING,
     RENEWABLE_NON_DISPATCH_MAPPING,
     THERMAL_MAPPING,
-    CapacityColumns,
     ComponentMapping,
     ScopeSkips,
     TimeSeriesInfo,
@@ -122,7 +121,6 @@ class _CarrierGroup:
 
     source_table: str
     mappings: tuple[ComponentMapping, ...]
-    capacity: CapacityColumns = POWER_CAPACITY
 
     @property
     def naming(self) -> PyPSAComponentNaming:
@@ -252,7 +250,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         src = state.source_topology.get(group.source_table)
         if src is None:
             return None
-        table = fill_capacity_defaults(src.collect(), group.capacity)
+        table = fill_capacity_defaults(src.collect(), POWER_CAPACITY)
         for rule in self._scope_rules(state, group, own_rows):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         return table

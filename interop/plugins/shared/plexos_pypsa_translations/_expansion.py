@@ -28,7 +28,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SkippedComponent,
     SourceValue,
     maps_to,
-    warn_about_groups,
+    warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 
@@ -126,8 +126,7 @@ class ExpansionDecisions:
     # What the sidecar carries because the network file has no column for it.
     unit_size: Decision = NOTHING_TO_REPORT
     technical_life: Decision = NOTHING_TO_REPORT
-    # The build of an object that runs already and prices no expansion of itself.
-    dropped_build: DroppedBuild | None = None
+    dropped_build: SkippedComponent | None = None
 
 
 FIXED_CAPACITY = ExpansionDecisions(
@@ -222,15 +221,6 @@ _PRICES_A_BUILD = (
 )
 
 
-@dataclass(frozen=True)
-class DroppedBuild:
-    """A build the model prices nothing for, on an object that keeps the capacity it runs."""
-
-    source: SourceValue
-    note: str
-    warn_with: SkipGroup
-
-
 def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
     """A candidate with nothing running yet whose build the model prices nothing for.
 
@@ -261,11 +251,7 @@ def record_expansion(name: str, expansion: ExpansionDecisions, reporter: Compone
 
 def warn_about_dropped_builds(expansions: Iterable[ExpansionDecisions]) -> None:
     """One line for each property that left a running object's build unpriced."""
-    warn_about_groups(
-        (one.dropped_build.warn_with, one.dropped_build.source.name)
-        for one in expansions
-        if one.dropped_build is not None
-    )
+    warn_about_skips([one.dropped_build for one in expansions if one.dropped_build is not None])
 
 
 def read_sidecar_value(decision: Decision) -> float | None:
@@ -294,7 +280,7 @@ def _fixed_at_what_it_runs(source: CandidateSource, unpriced: UnpricedBuild) -> 
             [source.name_units_built()],
             _UNPRICED_BUILD_DERIVATION,
         ),
-        dropped_build=DroppedBuild(
+        dropped_build=SkippedComponent(
             source=_names_unpriced(source, unpriced),
             note=unpriced.note + _BUILD_LEFT_OUT_NOTE,
             warn_with=SkipGroup(
