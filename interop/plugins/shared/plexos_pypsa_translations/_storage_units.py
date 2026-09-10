@@ -184,7 +184,7 @@ def _dropped_values(state: State, lookups: StorageLookups) -> list[_DroppedValue
         *_dropped_from(
             read_object_names(state, PlexosClass.BATTERY),
             PlexosClass.BATTERY,
-            lookups.by_class[PlexosClass.BATTERY].properties,
+            lookups.properties_of(PlexosClass.BATTERY),
             _BATTERY_DROPPED,
         ),
         *_dropped_from(storages, PlexosClass.STORAGE, lookups.storage_properties, _STORAGE_DROPPED),

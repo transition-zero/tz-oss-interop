@@ -261,7 +261,6 @@ def _source(
 
 
 def _not_carried_note(constraint: _Constraint) -> str:
-    """Why the Constraint holds no inequality: a sense it lacks, or one nothing reads."""
     if constraint.sense is None and constraint.stated_sense is not None:
         return _UNREADABLE_SENSE_NOTE
     return _NOT_CARRIED_NOTE

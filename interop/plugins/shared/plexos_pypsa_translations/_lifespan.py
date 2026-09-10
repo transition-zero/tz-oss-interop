@@ -44,7 +44,7 @@ _NOT_IN_SERVICE = 0.0
 RETIREMENT_YEAR_COLUMN = MappedColumns((EXT_RETIREMENT_YEAR_FIELD,))
 
 _BUILD_DERIVATION = "the first year the dated Units rise above zero"
-_RETIREMENT_DERIVATION = "the first year the dated Units fall back to zero"
+_RETIREMENT_DERIVATION = "the last year the dated Units fall back to zero"
 
 
 class Milestone(NamedTuple):
@@ -55,10 +55,7 @@ class Milestone(NamedTuple):
 
 
 class Lifespan(NamedTuple):
-    """When a dated ``Units`` schedule brings an object in, and when it takes it out.
-
-    Either end can be absent: a schedule may only build, only retire, or say neither.
-    """
+    """When a dated ``Units`` schedule brings an object in, and when it takes it out."""
 
     build: Milestone | None
     retirement: Milestone | None
@@ -145,17 +142,24 @@ def _read_bands(dated: pl.LazyFrame, plexos_class: PlexosClass) -> dict[str, lis
 
 
 def _read_lifespan(bands: list[_UnitsBand]) -> Lifespan:
+    """An object running before its first dated change was built before the model starts,
+    and one running again after a zero band was mothballed rather than retired, so a
+    schedule that runs at both ends of itself states neither year.
+    """
     changes = _changes(bands)
-    build = next((one for one in changes if not _runs(one.was) and _runs(one.units)), None)
-    retirement = next(
-        (
-            one
-            for one in changes
-            if _runs(one.was) and not _runs(one.units) and (build is None or one.at > build.at)
-        ),
-        None,
-    )
+    if not changes:
+        return NO_LIFESPAN
+    build = _first_start(changes) if not _runs(changes[0].was) else None
+    retirement = _last_stop(changes) if not _runs(changes[-1].units) else None
     return Lifespan(_milestone(build), _milestone(retirement))
+
+
+def _first_start(changes: list[_Change]) -> _Change | None:
+    return next((one for one in changes if _runs(one.units)), None)
+
+
+def _last_stop(changes: list[_Change]) -> _Change | None:
+    return next((one for one in reversed(changes) if _runs(one.was) and not _runs(one.units)), None)
 
 
 def _milestone(change: _Change | None) -> Milestone | None:

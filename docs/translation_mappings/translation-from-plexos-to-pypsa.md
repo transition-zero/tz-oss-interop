@@ -779,7 +779,7 @@ Two properties use dated entries as a schedule. They do not use them as correcti
 
 | Property | Meaning |
 | --- | --- |
-| `Units` | A capacity that starts, retires or partly derates. A static value above zero with a later entry of zero is a **retirement**. A static zero, or no value, with a later entry above zero is a **new build**. The translator reads both years off the entries as the model dates them, whatever year it translates: the first year the value rises above zero is the `build_year` of the component it writes, and the first year after that in which the value falls back to zero is the `retirement_year` in the extensions sidecar. |
+| `Units` | A capacity that starts, retires or partly derates. A static value above zero with a later entry of zero is a **retirement**. A static zero, or no value, with a later entry above zero is a **new build**. The translator reads both years off the entries as the model dates them, whatever year it translates: the first year the value rises above zero is the `build_year` of the component it writes, and the last year in which it falls back to zero is the `retirement_year` in the extensions sidecar. An object that already runs before its first dated entry states no `build_year`, and one that runs again after an entry of zero states no `retirement_year`, because that entry is a mothball rather than a retirement. A generator that runs no units in the year being translated and states no `Max Units Built` is left out as retired, so no `build_year` reaches the network for it. |
 | `Max Capacity` | A capacity expansion schedule. The translator applies the entry that is in force at the snapshot. Where it needs one value, it uses the entry that is in force at the start of the model. |
 
 ### Timeslice patterns

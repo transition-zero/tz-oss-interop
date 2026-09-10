@@ -152,7 +152,23 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/retires_later.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "OldCoal" attribute "p_nom" is 1000
     And the file "outputs/extensions.json" parses as JSON with "generator.0.retirement_year" set to 2035
-    And the file "decisions.md" contains "the first year the dated Units fall back to zero"
+    And the file "decisions.md" contains "the last year the dated Units fall back to zero"
+
+  Scenario: a generator whose units return after a dated zero is mothballed, not retired
+    A zero band that gives way again to the units the generator already runs takes the
+    plant out for those years alone, so neither end of a life is stated.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Mothball" with "node=Grid_Node, category=Coal, Max Capacity=500, Units=2"
+    And generator "Mothball" states "Units" of 0 from "2035-01-01" to "2040-12-31"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/mothballed.xml"
+    When I run translate against "inputs/mothballed.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Mothball" attribute "p_nom" is 1000
+    And the PyPSA network "outputs/network.nc" generator "Mothball" attribute "build_year" is 0
+    And the file "outputs/extensions.json" does not contain "retirement_year"
 
   Scenario: a generator that dates no units states neither year
     Given a Plexos model

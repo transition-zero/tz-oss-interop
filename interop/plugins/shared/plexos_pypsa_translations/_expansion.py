@@ -16,6 +16,9 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_UNITS,
     DIRECT_DERIVATION,
+    EXT_FOM_CHARGE_FIELD,
+    EXT_TECHNICAL_LIFE_FIELD,
+    EXT_UNIT_SIZE_FIELD,
     NOTHING_TO_BUILD,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -71,9 +74,9 @@ _UNPRICED_BUILD_DERIVATION = (
     "capacity is fixed"
 )
 
-UNIT_SIZE_COLUMN = MappedColumns(("extensions.unit_size_mw",), UNIT_MW)
-TECHNICAL_LIFE_COLUMN = MappedColumns(("extensions.technical_life_years",), UNIT_YEARS)
-FOM_CHARGE_COLUMN = MappedColumns(("extensions.fom_charge_per_mw_year",), UNIT_DOLLARS_PER_MW_YEAR)
+UNIT_SIZE_COLUMN = MappedColumns((EXT_UNIT_SIZE_FIELD,), UNIT_MW)
+TECHNICAL_LIFE_COLUMN = MappedColumns((EXT_TECHNICAL_LIFE_FIELD,), UNIT_YEARS)
+FOM_CHARGE_COLUMN = MappedColumns((EXT_FOM_CHARGE_FIELD,), UNIT_DOLLARS_PER_MW_YEAR)
 
 
 @dataclass(frozen=True)

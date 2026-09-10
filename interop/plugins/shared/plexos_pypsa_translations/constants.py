@@ -21,6 +21,7 @@ DEFAULT_UNITS: float = 1.0
 EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
 EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
 EXT_RETIREMENT_YEAR_FIELD: str = "extensions.retirement_year"
+EXT_FOM_CHARGE_FIELD: str = "extensions.fom_charge_per_mw_year"
 
 # --- generators ---------------------------------------------------------------
 
