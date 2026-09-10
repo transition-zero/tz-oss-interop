@@ -374,7 +374,7 @@ all five of these conditions:
 - it holds its weighted sum to `<=`;
 - it states a right-hand side for a year or for the whole horizon;
 - that right-hand side is a finite number;
-- its `Include in LT Plan` is true.
+- its `Include in LT Plan` is not false, and a constraint that states nothing stays in.
 
 Every other constraint is left out, `decisions.md` names it, and the log warns. Every
 constraint still reaches the `extensions.json` sidecar, whether or not it became a cap.
