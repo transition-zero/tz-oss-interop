@@ -309,6 +309,8 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    if m.p_nom_extendable:
+        reporter.record_p_nom_min(sienna_type, m.name, m.base_power)
 
 
 def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
@@ -329,6 +331,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.START_UP_COST: m.start_up_cost,
         PyPSAGeneratorCol.SHUT_DOWN_COST: m.shut_down_cost,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
+        PyPSAGeneratorCol.P_NOM_MIN: m.base_power if m.p_nom_extendable else None,
     }
 
 
@@ -422,5 +425,6 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
+        PyPSAGeneratorCol.P_NOM_MIN: m.base_power if m.p_nom_extendable else None,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

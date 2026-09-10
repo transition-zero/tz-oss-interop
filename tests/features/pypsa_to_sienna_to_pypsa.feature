@@ -19,6 +19,8 @@ Feature: PyPSA out and back through Sienna
     And the network contains bus "bus_2" carrier "AC" v_nom 380.0
     And the network contains load "load_1" on "bus_1" with static p_set 100.0 carrier "electricity" type "residential"
     And the network contains generator "coal_1" on "bus_1" carrier "coal" p_nom 500.0 committable True
+    And the network contains generator "built_ccgt" on "bus_1" carrier "CCGT" p_nom 100.0 p_nom_extendable True
+    And generator "built_ccgt" has p_nom_opt 400
     And the network contains line "line_1" from "bus_1" to "bus_2" with resistance 2.0 ohms reactance 8.0 ohms rating 500.0 MVA length 120.0 km 2.0 parallel circuits
     And the network contains link "link_1" from "bus_1" to "bus_2" with capacity 1000.0 MW efficiency 1.0 min dispatch fraction 0.2 max dispatch fraction 0.5 carrier "DC"
     And the network is saved as "inputs/round_trip.nc"
@@ -29,6 +31,9 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" load "load_1" has type "residential"
     And the PyPSA network "outputs/network.nc" generator "coal_1" has carrier "coal"
     And the PyPSA network "outputs/network.nc" generator "coal_1" is committable
+    And the PyPSA network "outputs/network.nc" generator "built_ccgt" is extendable
+    # The solve built 400 MW, so the hop back has to state that as capacity, not as a plan.
+    And the PyPSA network "outputs/network.nc" generator "built_ccgt" attribute "p_nom_min" is 400.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "length" is 120.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "num_parallel" is 2.0
     And the PyPSA network "outputs/network.nc" link "link_1" has carrier "DC"

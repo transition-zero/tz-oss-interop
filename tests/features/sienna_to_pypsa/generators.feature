@@ -167,6 +167,9 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
     And the system is saved as "inputs/thermal_extendable.json"
     When I run translate against "inputs/thermal_extendable.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "coal_1" is extendable
+    # PyPSA ignores the p_nom of an extendable generator, so the capacity it already runs
+    # has to stand as p_nom_min, or the hop back reads it as a plan the solve has not made.
+    And the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_nom_min" is 100.0
     And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.extensions.p_nom_extendable` = True | `pypsa.Generator.coal_1.p_nom_extendable` = True | extensions.p_nom_extendable (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
 
   Scenario: a RenewableDispatch p_nom_extendable in ext round-trips to PyPSA

@@ -287,9 +287,9 @@ component:
 | The generator has no [`Units`](#which-entry-applies-when) at any time in the horizon, and no `Max Units Built` | The unit is retired. |
 | `Max Capacity` comes from a data file | There is no single `p_nom`. Thus the translator cannot set the size of the generator, and it cannot calculate the availability per unit. |
 | `p_nom` is 0 | The generator can never dispatch. |
-| The generator has no units yet and gives no `Build Cost` | Nothing prices building it, so an expansion would take it for free. |
-| The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. |
-| The generator has no units yet and gives no `Economic Life` | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
+| The generator has no units yet and gives no `Build Cost`, or gives one of zero | Nothing prices building it, so an expansion would take it for free. |
+| The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. A `WACC` of zero is a rate, so it prices a build. |
+| The generator has no units yet and gives no `Economic Life`, or gives one of zero | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -743,15 +743,17 @@ The rated power of one unit is the `Max Capacity` of a `Generator` or a pumped-s
 turbine, and the `Max Power` of a `Battery`. An object that states `Units` above one already
 holds that many, so a build adds units to what it has rather than multiplying it.
 
-A candidate that states no `Build Cost`, no `WACC` or no `Economic Life` prices no build.
-Without a build cost nothing prices building it, so an expansion would take it for free.
-Without a discount rate PyPSA cannot annuitise the build cost, and refuses the network.
-Without an economic life PyPSA annuitises across its own default lifetime of infinity, which
-prices the build as a perpetuity.
+A candidate prices no build where it states no `Build Cost`, no `WACC` or no `Economic
+Life`, and where it states a `Build Cost` or an `Economic Life` of zero. A `WACC` of zero is
+the rate of a model that does not discount, so it prices a build. Without a build cost
+nothing prices building it, so an expansion would take it for free. Without a discount rate
+PyPSA cannot annuitise the build cost, and refuses the network. Without an economic life
+PyPSA annuitises across its own default lifetime of infinity, which prices the build as a
+perpetuity.
 
 What happens next depends on whether the object already runs. An object with units in
 service keeps the capacity it runs: the translator writes it with that capacity fixed, and
-records a `NOT_MAPPED` event naming the property the model left out. An object with no units
+records a `NOT_MAPPED` event naming that property. An object with no units
 yet is the build and nothing else, so nothing is left to write: the translator records a
 `COMPONENT_SKIPPED` event naming the object, and warns once naming a few of them.
 

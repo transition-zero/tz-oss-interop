@@ -85,7 +85,6 @@ def has_capacity_floor(columns: CapacityColumns) -> pl.Expr:
 
 
 def _pick_capacity(columns: CapacityColumns, of_column: Callable[[str], pl.Expr]) -> pl.Expr:
-    """The three-way capacity choice, over the column values or over the column names."""
     return (
         pl.when(has_solved_capacity(columns))
         .then(of_column(columns.opt))
@@ -104,7 +103,6 @@ def capacity_attribute(columns: CapacityColumns) -> pl.Expr:
 
 
 def rated_from(row: dict[str, Any]) -> str:
-    """The PyPSA attribute a row was rated from, which the row itself carries."""
     return str(row[CAPACITY_ATTRIBUTE])
 
 

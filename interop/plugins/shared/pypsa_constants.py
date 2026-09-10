@@ -564,6 +564,7 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.ACTIVE: pl.Boolean,
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALinkCol.P_NOM_MIN: pl.Float64,
 }
 
 REVERSE_TIME_SERIES_METADATA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

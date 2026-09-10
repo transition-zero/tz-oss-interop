@@ -65,6 +65,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -173,6 +174,13 @@ def _min_max(max_expr: pl.Expr) -> pl.Expr:
 S = SiennaEnergyReservoirStorageCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 STORAGE_ID = row_position_id_translation(
@@ -308,8 +316,7 @@ STORAGE_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for storage units",
 )
 
-STORAGE_BASE_POWER = _direct(
-    source_col=rated_from,
+STORAGE_BASE_POWER = _rated(
     dest_col=S.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     derivation=EFFECTIVE_P_NOM_DERIVATION,

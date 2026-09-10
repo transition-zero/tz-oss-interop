@@ -268,7 +268,6 @@ def gather_sources(*groups: tuple[SourceValue, ...] | list[SourceValue]) -> list
 
 
 def _find_unpriced_build(source: CandidateSource) -> UnpricedBuild | None:
-    """The first property a candidate leaves out that stops PyPSA pricing its build."""
     return next((one for one in _PRICES_A_BUILD if not one.prices_a_build(source.props)), None)
 
 

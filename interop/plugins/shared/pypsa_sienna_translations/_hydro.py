@@ -67,6 +67,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -213,6 +214,13 @@ def build_hydro_ts_associations(
 H = SiennaHydroGeneratorCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 HYDRO_ID = row_position_id_translation(
@@ -263,16 +271,14 @@ HYDRO_PRIME_MOVER = _direct(
     derivation="carrier -> PrimeMovers via user defined mapping",
 )
 
-HYDRO_BASE_POWER = _direct(
-    source_col=rated_from,
+HYDRO_BASE_POWER = _rated(
     dest_col=H.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
     unit=UNIT_MW,
     derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
-HYDRO_ACTIVE_POWER = _direct(
-    source_col=rated_from,
+HYDRO_ACTIVE_POWER = _rated(
     dest_col=H.ACTIVE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU),
     unit=UNIT_MW,
@@ -291,8 +297,7 @@ HYDRO_RATING = _direct(
     derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
 )
 
-HYDRO_APL = _direct(
-    source_col=rated_from,
+HYDRO_APL = _rated(
     dest_col=H.ACTIVE_POWER_LIMITS,
     expr=pl.struct(
         min=(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MIN_PU)).cast(pl.Float64),

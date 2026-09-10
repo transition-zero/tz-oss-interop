@@ -102,7 +102,6 @@ def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
 
 
 def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
-    """A skip is recorded per component and warned about, so neither view alone hides it."""
     for one in skipped:
         if one.warn_with is None:
             log.warning(

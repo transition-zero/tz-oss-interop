@@ -277,6 +277,8 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             p_nom_extendable = ext.p_nom_extendable
             if p_nom_extendable is not None:
                 reporter.record_p_nom_extendable_from_ext(name, p_nom_extendable)
+            if p_nom_extendable:
+                reporter.record_p_nom_min(name, limits.p_nom)
             rows.append(
                 {
                     PyPSALinkCol.NAME: name,
@@ -289,6 +291,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
                     PyPSALinkCol.ACTIVE: available,
                     PyPSALinkCol.CARRIER: carrier,
                     PyPSALinkCol.P_NOM_EXTENDABLE: p_nom_extendable,
+                    PyPSALinkCol.P_NOM_MIN: limits.p_nom if p_nom_extendable else None,
                 }
             )
         if rows:

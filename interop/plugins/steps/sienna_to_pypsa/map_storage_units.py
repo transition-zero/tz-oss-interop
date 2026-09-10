@@ -282,6 +282,8 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    if m.p_nom_extendable:
+        reporter.record_p_nom_min(sienna_type, m.name, m.base_power)
 
 
 def _phs_row(m: _PhsMapping) -> dict[str, Any]:
@@ -299,4 +301,5 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: m.state_of_charge_initial,
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: m.cyclic,
         PyPSAStorageUnitCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
+        PyPSAStorageUnitCol.P_NOM_MIN: m.base_power if m.p_nom_extendable else None,
     }
