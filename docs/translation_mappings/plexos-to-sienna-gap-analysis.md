@@ -367,16 +367,25 @@ for you.
 right-hand side: an emission cap over a group of plants, a target over one region, a budget
 over one technology.
 
-**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint that holds
-its weighted sum to `<=`, states a right-hand side for a year or for the whole horizon, and
-names every generator and storage object the base system and the portfolio hold. Every other
-constraint is left out, `decisions.md` names it, and the log warns. Every constraint still
-reaches the `extensions.json` sidecar, whether or not it became a cap.
+**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint that meets
+all five of these conditions:
+
+- it names every generator and storage object the base system and the portfolio hold;
+- it holds its weighted sum to `<=`;
+- it states a right-hand side for a year or for the whole horizon;
+- that right-hand side is a finite number;
+- its `Include in LT Plan` is true.
+
+Every other constraint is left out, `decisions.md` names it, and the log warns. Every
+constraint still reaches the `extensions.json` sidecar, whether or not it became a cap.
 
 **The cause.** `CarbonCaps` names no members and no region: a cap in a portfolio holds the
 whole portfolio. A cap also states one ceiling over the whole run, so a constraint held to
 `>=` or to `==`, and a constraint whose only right-hand side bounds a repeating window inside
-the run, give it nothing to carry.
+the run, give it nothing to carry. A cap states a number of million tonnes, and neither NaN
+nor Infinity is one, so a right-hand side that is not a finite number gives it nothing either.
+A constraint the expansion plan does not have to meet would bound a problem your model leaves
+free.
 
 **The effect on the expansion.** Nothing bounds what the constraint names, so the plan may
 build and run those objects up to their own limits. A model whose targets are all regional,
@@ -394,8 +403,10 @@ Built` but not all of `Build Cost`, `WACC` and `Economic Life`.
 yet is its build and nothing else, so the whole object goes and `decisions.md` names it. An
 object that already runs keeps the capacity it runs, and only the build it may add is
 dropped. The second leg drops a candidate that reaches it with no finite upper bound on
-capacity, no finite lifetime, no overnight cost or no discount rate, and names each one the
-same way.
+capacity, a capacity floor above that upper bound, no finite lifetime, a lifetime below one
+year, no overnight cost or no discount rate. It drops a storage candidate that holds no
+energy, or that puts no upper bound on the energy a build may add. It names each one the same
+way.
 
 **The cause.** PyPSA annuitises an overnight cost with a discount rate over a lifetime. It
 refuses a network that states an overnight cost and no discount rate, it prices a build with

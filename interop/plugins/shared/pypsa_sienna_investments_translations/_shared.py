@@ -39,8 +39,6 @@ FUEL_COL = "_fuel"
 UNIT_SIZE_COL = "_unit_size_mw"
 TECHNICAL_LIFE_COL = "_technical_life_years"
 
-# An association names a component by id alone, so every component of the portfolio takes
-# its id from one counter rather than numbering from one within its own type.
 PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"
 
 investments_skip_report = partial(
@@ -74,12 +72,10 @@ def build_scope_skips(
     translated_carriers: Sequence[str],
     bus_names: Sequence[str],
 ) -> list[SkipRule]:
-    """The three drops every candidate table shares, in the order they apply.
+    """The drops every candidate table shares, in the order they apply.
 
-    A carrier the mappings file never names, a carrier it sends to a Sienna type this kind of
-    candidate never becomes, and a bus that is not a translated AC bus are different drops, so
-    each gets its own report. Order matters: a row the mappings file never names must not also
-    report an unusable target type or an unusable bus.
+    Order matters: a row the mappings file never names must not also report an unusable
+    target type or an unusable bus.
     """
     skip = partial(
         investments_skip_report,
@@ -122,11 +118,23 @@ UNBOUNDED_LIFETIME_NOTE = (
     "lifetime is not a finite number of years, so the technology has no capital recovery "
     "period to annuitise its overnight cost across"
 )
+SHORT_LIFETIME_REASON = "are extendable and state a lifetime below one year"
+SHORT_LIFETIME_NOTE = (
+    "lifetime is below one year, so the capital recovery period truncates to zero or less "
+    "and no annuity can recover the overnight cost across it"
+)
 UNPRICED_BUILD_REASON = "are extendable and put no overnight cost on the capacity a build adds"
 UNPRICED_BUILD_NOTE = (
     "PyPSA prices a build through overnight_cost or through the annuity in capital_cost, and "
     "an annuity cannot be undone into the two terms a capital cost curve states, so the "
     "technology has no price to build at"
+)
+CAPACITY_FLOOR_ABOVE_CEILING_REASON = (
+    "are extendable and state a capacity floor above the capacity a build may reach"
+)
+CAPACITY_FLOOR_ABOVE_CEILING_NOTE = (
+    "p_nom_min is above p_nom_max, so capacity_limits.min would be above capacity_limits.max "
+    "and no capacity could meet the technology's own bounds"
 )
 NO_DISCOUNT_RATE_REASON = "are extendable and state no discount rate"
 NO_DISCOUNT_RATE_NOTE = (
@@ -140,11 +148,11 @@ def build_expansion_skips(
     *,
     name_col: str,
     build_limit_col: str,
+    capacity_floor_col: str,
     lifetime_col: str,
     overnight_cost_col: str,
     discount_rate_col: str,
 ) -> tuple[SkipRule, ...]:
-    """The four drops every candidate table shares once its scope is settled."""
     skip = partial(
         investments_skip_report,
         component=naming.display,
@@ -161,10 +169,26 @@ def build_expansion_skips(
             ),
         ),
         SkipRule(
+            keep=pl.col(capacity_floor_col) <= pl.col(build_limit_col),
+            report=skip(
+                reason=CAPACITY_FLOOR_ABOVE_CEILING_REASON,
+                note=CAPACITY_FLOOR_ABOVE_CEILING_NOTE,
+                attribute_col=capacity_floor_col,
+            ),
+        ),
+        SkipRule(
             keep=pl.col(lifetime_col).is_finite(),
             report=skip(
                 reason=UNBOUNDED_LIFETIME_REASON,
                 note=UNBOUNDED_LIFETIME_NOTE,
+                attribute_col=lifetime_col,
+            ),
+        ),
+        SkipRule(
+            keep=pl.col(lifetime_col) >= 1,
+            report=skip(
+                reason=SHORT_LIFETIME_REASON,
+                note=SHORT_LIFETIME_NOTE,
                 attribute_col=lifetime_col,
             ),
         ),
@@ -198,25 +222,15 @@ ALL_EQUITY_NOTE = (
 )
 
 
-def enrich_from_names(
-    table: pl.DataFrame,
-    name_col: str,
-    dest_col: str,
-    values: dict[str, Any],
-    dtype: pl.DataType | type[pl.DataType],
-) -> pl.DataFrame:
-    """Add a column looking each row's name up in a mapping, null where the mapping is silent.
-
-    One entry per component: never a time-series frame.
+def finite_or_null(column: pl.Expr) -> pl.Expr:
+    """A sidecar is JSON, and json.load reads the NaN and Infinity tokens, so a sidecar number
+    is not always finite. A cast to a whole number raises on one, and the sink writes a token
+    no strict JSON reader accepts.
     """
-    names: list[str] = table[name_col].to_list() if table.height else []
-    return table.with_columns(
-        pl.Series(dest_col, [values.get(name) for name in names], dtype=dtype)
-    )
+    return pl.when(column.is_finite()).then(column)
 
 
 def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
-    """The ``MinMax`` a capacity limit is stated as."""
     return pl.struct(
         minimum.cast(pl.Float64).alias(MinMaxField.MIN),
         maximum.cast(pl.Float64).alias(MinMaxField.MAX),
@@ -226,7 +240,6 @@ def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
 def financial_data_struct(
     capital_recovery_period: pl.Expr, return_on_equity: pl.Expr, base_year: int
 ) -> pl.Expr:
-    """A Sienna ``TechnologyFinancialData`` written as all-equity financing."""
     field = SiennaTechnologyFinancialDataField
     return pl.struct(
         capital_recovery_period.cast(pl.Int64).alias(field.CAPITAL_RECOVERY_PERIOD),

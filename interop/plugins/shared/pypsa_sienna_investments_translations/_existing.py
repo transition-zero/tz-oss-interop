@@ -1,9 +1,7 @@
 """The base-system fleet one technology stands for: ExistingDevices and RetirementPotential.
 
 Both attributes are lists of names in the base system, so they are built from the technology
-table and the components the operations steps wrote, not from the PyPSA source alone. A
-technology's carrier says which of the base system's devices it stands for: they are the
-plant already running that a build of this technology adds to.
+table and the components the operations steps wrote, not from the PyPSA source alone.
 """
 
 from __future__ import annotations
@@ -52,30 +50,34 @@ EXISTING_FLEET_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 class CandidateTechnology(NamedTuple):
     """One technology in the portfolio, and the fleet it stands for.
 
-    ``carrier`` is what its base-system devices share, and ``device_class`` is the PyPSA
-    class those devices belong to, so the report names each one by the class it came from.
+    ``carrier`` and ``region`` are what its base-system devices share, and ``device_class``
+    is the PyPSA class those devices belong to, so the report names each one by the class it
+    came from.
     """
 
     name: str
     component_type: str
     device_class: str
     carrier: str
+    region: str | None
 
 
 def build_existing_fleet_source_table(
     technologies: Sequence[CandidateTechnology],
-    devices_by_carrier: Mapping[str, Sequence[str]],
+    devices_by_carrier_and_region: Mapping[tuple[str, str | None], Sequence[str]],
     build_years: Mapping[str, int],
     retirement_years: Mapping[str, int],
 ) -> pl.DataFrame:
     """One row per technology that has a fleet in the base system already.
 
-    A technology whose carrier no base-system device shares has no fleet to name, so it gets
-    no row and neither attribute.
+    A technology stands for more of what its own region already runs, so a device counts only
+    where it shares both the carrier and the region. A technology no such device matches has
+    no fleet to name, so it gets no row and neither attribute.
     """
     rows: list[dict[str, Any]] = []
     for technology in technologies:
-        devices = list(devices_by_carrier.get(technology.carrier, []))
+        fleet = (technology.carrier, technology.region)
+        devices = list(devices_by_carrier_and_region.get(fleet, []))
         if not devices:
             continue
         rows.append(

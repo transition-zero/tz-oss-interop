@@ -48,7 +48,6 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
 
 
 def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
-    """Stop a write whose rows name a parent the document does not hold."""
     missing = set(needed) - available
     if missing:
         raise ValueError(

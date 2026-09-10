@@ -36,6 +36,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
+    finite_or_null,
     investments_skip_report,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
@@ -90,14 +91,31 @@ NO_ENERGY_SKIP = investments_skip_report(
     attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
 )
 
+UNBOUNDED_ENERGY_SKIP = investments_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+    reason="are extendable and put no upper bound on the energy a build may add",
+    note=(
+        "max_hours is not a finite number of hours, so the technology has no energy "
+        "capacity limits to state"
+    ),
+    attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
+)
+
 STORAGE_SKIPS: tuple[SkipRule, ...] = (
     *build_expansion_skips(
         PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
         name_col=PyPSAStorageUnitCol.NAME,
         build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
+        capacity_floor_col=PyPSAStorageUnitCol.P_NOM_MIN,
         lifetime_col=PyPSAStorageUnitCol.LIFETIME,
         overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
         discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
+    ),
+    SkipRule(
+        keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS).is_finite(),
+        report=UNBOUNDED_ENERGY_SKIP,
     ),
     SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=NO_ENERGY_SKIP),
 )
@@ -128,12 +146,7 @@ def fill_storage_technology_defaults(table: pl.DataFrame) -> pl.DataFrame:
 
 
 def storage_capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
-    """A Sienna ``StorageCapitalCost`` pricing the discharge side alone.
-
-    PyPSA prices a storage unit by its power rating and holds its energy as hours of that
-    rating, so the one overnight cost it states belongs to the discharge capacity. Charging
-    and energy are added at no cost of their own.
-    """
+    """A Sienna ``StorageCapitalCost`` pricing the discharge side alone."""
     return pl.struct(
         ZERO_IO_CURVE.alias(SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST),
         linear_value_curve(overnight_cost, input_at_zero=pl.lit(None, dtype=pl.Float64)).alias(
@@ -227,7 +240,7 @@ STORAGE_OPERATION_COSTS = _direct(
 STORAGE_UNIT_SIZE_DISCHARGE = _direct(
     source_col=UNIT_SIZE_COL,
     dest_col=S.UNIT_SIZE_DISCHARGE,
-    expr=pl.col(UNIT_SIZE_COL),
+    expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
     unit=UNIT_MW,
     derivation="the size of one unit, from the extensions sidecar",
 )
@@ -324,7 +337,7 @@ STORAGE_EFFICIENCY = _direct(
 STORAGE_LIFETIME = _direct(
     source_col=TECHNICAL_LIFE_COL,
     dest_col=S.LIFETIME,
-    expr=pl.col(TECHNICAL_LIFE_COL).cast(pl.Int64),
+    expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
     unit=UNIT_YEARS,
     derivation="the technical life, from the extensions sidecar",
     note="how long a built unit runs, which is not the period its cost is recovered over",

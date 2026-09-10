@@ -302,23 +302,6 @@ def sienna_time_series_uuid(sienna_type: str, name: str, attribute: str) -> str:
     return str(uuid.uuid5(_TIME_SERIES_UUID_NAMESPACE, f"ts.{sienna_type}.{name}.{attribute}"))
 
 
-def portfolio_components_of_type(data: dict[str, Any], sienna_type: str) -> list[Any]:
-    """Every component of one investments type in a parsed portfolio document."""
-    return data.get("components", {}).get(sienna_type, [])  # type: ignore[no-any-return]
-
-
-def find_portfolio_component(data: dict[str, Any], sienna_type: str, name: str) -> dict[str, Any]:
-    """The single component of `sienna_type` named `name`, failing if it is not unique."""
-    components = portfolio_components_of_type(data, sienna_type)
-    matching = [c for c in components if isinstance(c, dict) and c.get("name") == name]
-    type_names = [c.get("name") for c in components]
-    assert len(matching) == 1, (
-        f"expected 1 portfolio component type={sienna_type!r} name={name!r}, "
-        f"got {len(matching)} (all {sienna_type!r} names: {type_names})"
-    )
-    return matching[0]
-
-
 def portfolio_attributes_for(
     data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
 ) -> list[dict[str, Any]]:

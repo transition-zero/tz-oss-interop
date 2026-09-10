@@ -18,12 +18,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaTopologyMappingCol,
 )
 from interop.plugins.shared.translation_runner import Translation, row_position_id_translation
-from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
-    SourceField,
-    TranslationEvent,
-)
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 # Source-table column holding the region a mapping describes; not a schema field.
 AREA_NAME = "area_name"
@@ -59,15 +54,7 @@ TOPOLOGY_BUSES = Translation(
                 )
                 for bus in old[T.BUSES]
             ],
-            destinations=[
-                DestinationField(
-                    framework=Framework.SIENNA,
-                    component=SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
-                    name=old[AREA_NAME],
-                    attribute=T.BUSES,
-                    value=new[T.BUSES],
-                )
-            ],
+            destinations=[_dest(old[AREA_NAME], T.BUSES, new[T.BUSES])],
             derivation="the buses of the base system that sit in this area",
         )
     ],

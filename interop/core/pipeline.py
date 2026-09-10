@@ -29,6 +29,7 @@ from interop.core.extensions import (
     StagedExtensions,
     StagedExtensionSeries,
 )
+from interop.core.reporting import EventRecorder
 from interop.core.user_mappings import UserMappingsOutput
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 
@@ -97,6 +98,15 @@ class State:
         if self.consumed_extensions is None:
             self.consumed_extensions = ExtensionConsumption()
         return ExtensionReader(self.source_extensions, self.consumed_extensions)
+
+    def report_unread_extensions(self, framework: str, recorder: EventRecorder) -> None:
+        """Report every staged record no step of this hop read.
+
+        A hop whose steps build no reader has no mapping for a sidecar, so it reports nothing.
+        """
+        if self.consumed_extensions is None:
+            return
+        self.consumed_extensions.report_unconsumed(self.source_extensions, framework, recorder)
 
 
 @dataclass(frozen=True)

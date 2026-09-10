@@ -1,7 +1,4 @@
-"""Translation objects for an extensions-sidecar constraint -> Sienna CarbonCaps.
-
-``CarbonCaps`` names no members and no region, so it holds the whole portfolio.
-"""
+"""Translation objects for an extensions-sidecar constraint -> Sienna CarbonCaps."""
 
 from __future__ import annotations
 
@@ -47,6 +44,7 @@ LIMIT_PERIOD = "limit_period"
 LIMIT_VALUE = "limit_value"
 LIMIT_UNIT = "limit_unit"
 COVERS_MODEL = "covers_model"
+APPLIES_TO_PLAN = "applies_to_expansion_plan"
 
 CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     CONSTRAINT_NAME: pl.Utf8,
@@ -55,11 +53,10 @@ CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     LIMIT_VALUE: pl.Float64,
     LIMIT_UNIT: pl.Utf8,
     COVERS_MODEL: pl.Boolean,
+    APPLIES_TO_PLAN: pl.Boolean,
 }
 
-# The span a cap is read from, most specific first. A yearly right-hand side is the one a
-# cap on a target year holds, and a horizon-wide one is the only other span that bounds the
-# whole run rather than a repeating window inside it.
+# The spans a cap is read from, most specific first: no other span bounds the whole run.
 _CAP_PERIODS: tuple[ConstraintPeriod, ...] = (ConstraintPeriod.YEAR, ConstraintPeriod.HORIZON)
 
 _source = partial(pypsa_source_field, ExtensionKind.CONSTRAINT)
@@ -96,28 +93,52 @@ NO_LIMIT_SKIP = _constraint_skip(
     note="a cap with no limit bounds nothing, and no other span bounds the whole run",
 )
 
+NOT_IN_PLAN_SKIP = _constraint_skip(
+    reason="the expansion plan does not have to meet",
+    note=(
+        "the source states that the plan need not meet this constraint, so a cap written "
+        "from it would bound an expansion problem the model leaves free"
+    ),
+    attribute_col=APPLIES_TO_PLAN,
+)
+
+NON_FINITE_LIMIT_SKIP = _constraint_skip(
+    reason="state a right-hand side that is not a finite number",
+    note="max_mtons would be NaN or Infinity, which no JSON reader accepts as a number",
+    attribute_col=LIMIT_VALUE,
+)
+
 CARBON_CAP_SKIPS: tuple[SkipRule, ...] = (
+    # A source that states nothing about the plan leaves every constraint in it.
+    SkipRule(keep=pl.col(APPLIES_TO_PLAN).fill_null(value=True), report=NOT_IN_PLAN_SKIP),
     SkipRule(keep=pl.col(CONSTRAINT_SENSE) == ConstraintSense.AT_MOST, report=WRONG_SENSE_SKIP),
     SkipRule(keep=pl.col(LIMIT_VALUE).is_not_null(), report=NO_LIMIT_SKIP),
+    # is_finite answers null for a null limit, so this rule follows the one that drops those.
+    SkipRule(keep=pl.col(LIMIT_VALUE).is_finite(), report=NON_FINITE_LIMIT_SKIP),
     SkipRule(keep=pl.col(COVERS_MODEL), report=SCOPED_CONSTRAINT_SKIP),
 )
 
 
 def build_carbon_caps_source_table(
-    records: Sequence[ConstraintExtension], model_components: set[str]
+    records: Sequence[ConstraintExtension], model_components: set[tuple[str, str]]
 ) -> pl.DataFrame:
     """One row per sidecar constraint, with the limit a cap would read and its reach.
 
-    ``model_components`` is every component of the network a constraint could weight. A
-    constraint naming all of them holds the whole model; one naming fewer holds a subset.
+    ``model_components`` is every component of the network a constraint could weight, each
+    named with the class it belongs to. A constraint naming all of them holds the whole
+    model; one naming fewer holds a subset. Two classes can hold an object of one name, so a
+    member counts only where its class matches as well, and a member whose class the network
+    states differently leaves the constraint short of the whole model.
     """
     rows = [_read_record(record, model_components) for record in records]
     return pl.DataFrame(rows, schema=CARBON_CAPS_SOURCE_SCHEMA)
 
 
-def _read_record(record: ConstraintExtension, model_components: set[str]) -> dict[str, Any]:
+def _read_record(
+    record: ConstraintExtension, model_components: set[tuple[str, str]]
+) -> dict[str, Any]:
     limit = _choose_limit(record)
-    members = {member.name for member in record.members}
+    members = {(member.name, member.member_class) for member in record.members}
     return {
         CONSTRAINT_NAME: record.name,
         CONSTRAINT_SENSE: None if record.sense is None else str(record.sense),
@@ -125,6 +146,7 @@ def _read_record(record: ConstraintExtension, model_components: set[str]) -> dic
         LIMIT_VALUE: None if limit is None else limit.value,
         LIMIT_UNIT: None if limit is None else limit.unit,
         COVERS_MODEL: bool(model_components) and model_components <= members,
+        APPLIES_TO_PLAN: record.applies_to_expansion_plan,
     }
 
 

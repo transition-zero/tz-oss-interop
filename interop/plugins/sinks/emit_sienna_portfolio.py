@@ -35,8 +35,6 @@ from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
 
-# The fields a supplemental attribute states as an object keyed by device name, which travel
-# through the tables as a list of name/year pairs.
 _NAMED_YEAR_FIELDS: tuple[str, ...] = (
     SiennaRetirementPotentialCol.BUILD_YEAR,
     SiennaRetirementPotentialCol.PLANNED_RETIREMENT_YEAR,
