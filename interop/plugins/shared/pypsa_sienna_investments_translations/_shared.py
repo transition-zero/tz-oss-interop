@@ -39,8 +39,6 @@ FUEL_COL = "_fuel"
 UNIT_SIZE_COL = "_unit_size_mw"
 TECHNICAL_LIFE_COL = "_technical_life_years"
 
-# An association names a component by id alone, so every component of the portfolio takes
-# its id from one counter rather than numbering from one within its own type.
 PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"
 
 investments_skip_report = partial(
