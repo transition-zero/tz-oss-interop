@@ -859,6 +859,15 @@ class LineReporter(_Reporter):
             derivation=_S_NOM_EXTENDABLE_FROM_EXT,
         )
 
+    def record_s_nom_min(
+        self, sienna_type: SiennaComponent, name: str, rating: float, s_nom: float
+    ) -> None:
+        self._derived(
+            sources=[self._source(sienna_type, name, SiennaLineCol.RATING, rating)],
+            destinations=[self._destination(name, PyPSALineCol.S_NOM_MIN, s_nom, UNIT_MVA)],
+            derivation=_EXTENDABLE_FLOOR_DERIVATION,
+        )
+
 
 class LinkReporter(_Reporter):
     """Records translation events for Sienna TwoTerminalGenericHVDCLine -> PyPSA Link."""
@@ -956,9 +965,9 @@ class LinkReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
-    def record_p_nom_min(self, name: str, p_nom: float) -> None:
+    def record_p_nom_min(self, name: str, limit_max: float, p_nom: float) -> None:
         self._derived(
-            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, p_nom, UNIT_MW)],
+            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
             derivation=_EXTENDABLE_FLOOR_DERIVATION,
         )

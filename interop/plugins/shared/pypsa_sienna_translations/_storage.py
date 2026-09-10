@@ -173,7 +173,7 @@ def _min_max(max_expr: pl.Expr) -> pl.Expr:
 S = SiennaEnergyReservoirStorageCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
-_rated = rated_translation(_source, _dest, PyPSAStorageUnitCol.NAME)
+_rated = partial(rated_translation, _source, _dest, PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 STORAGE_ID = row_position_id_translation(

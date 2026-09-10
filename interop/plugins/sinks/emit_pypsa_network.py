@@ -235,6 +235,7 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
             PyPSALineCol.V_ANG_MIN,
             PyPSALineCol.V_ANG_MAX,
             PyPSALineCol.S_NOM_EXTENDABLE,
+            PyPSALineCol.S_NOM_MIN,
         ),
     )
 

@@ -275,7 +275,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_duration.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "max_hours" is 2.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "state_of_charge_initial" is 100.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * p_nom * max_hours |"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * the power the object already runs * max_hours |"
 
   Scenario: a mothballed turbine has no rated power and is skipped
     Given a Plexos model
@@ -551,7 +551,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom" is 300
     # Capacity is the energy beside one unit's Max Power, so the hours are one unit's 200 / 50.
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "max_hours" is 4
-    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "state_of_charge_initial" is 600
+    # Nothing is built yet, so the battery holds no charge to start with.
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "state_of_charge_initial" is 0
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "overnight_cost" is 800000
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "lifetime" is 20
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "discount_rate" is 0.07

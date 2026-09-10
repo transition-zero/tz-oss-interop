@@ -259,7 +259,7 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `name` | | `Generator.name` | `direct` |
 | `bus` | | The `Node` of the generator | `direct` |
 | `carrier` | | Refer to the section above | `derived` |
-| `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity | `derived` |
+| `p_nom` | MW | `Max Capacity × Units`, or the static `Rating` where that is higher, or the peak of the profile that supplies the capacity. Where the generator runs no units yet, `Max Capacity × Max Units Built` | `derived` |
 | `p_min_pu` | | [Minimum generation](#minimum-generation) | `derived` |
 | `p_max_pu` | | `1.0`, or the [`Rating` and the outage derates](#availability-and-outages) | `derived` |
 | `marginal_cost` | $/MWh | `fuel price × Heat Rate Incr + VO&M`, and the carbon term if there is one. Where the fuel is [priced by date](#a-fuel-priced-by-date), the fuel price here is the mean of its own series | `derived` |
@@ -270,13 +270,13 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `start_up_cost` | $ | Refer to [What a start costs](#what-a-start-costs) | `derived` |
 | `shut_down_cost` | $ | `0.0` | `default` |
 | `up_time_before` | snapshots | `0` | `default` |
-| `p_nom_extendable` | | `True` where `Max Units Built` is above zero. If not, `False`. | `derived` / `default` |
-| `p_nom_min` | MW | The capacity the generator already has, for a candidate only | `derived` |
-| `p_nom_max` | MW | That capacity plus `Max Capacity × Max Units Built`, for a candidate only | `derived` |
-| `overnight_cost` | $/MW | `Build Cost`, for a candidate only | `direct` |
-| `discount_rate` | | `WACC`, for a candidate only | `derived` |
-| `lifetime` | yr | `Economic Life`, for a candidate only | `direct` |
-| `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate only | `direct` |
+| `p_nom_extendable` | | `True` where `Max Units Built` is above zero and the model prices the build. If not, `False`. | `derived` / `default` |
+| `p_nom_min` | MW | The capacity the generator already has, for a candidate whose build the model prices | `derived` |
+| `p_nom_max` | MW | That capacity plus `Max Capacity × Max Units Built`, for a candidate whose build the model prices | `derived` |
+| `overnight_cost` | $/MW | `Build Cost`, for a candidate whose build the model prices | `direct` |
+| `discount_rate` | | `WACC`, for a candidate whose build the model prices | `derived` |
+| `lifetime` | yr | `Economic Life`, for a candidate whose build the model prices | `direct` |
+| `fom_cost` | $/MW/yr | `FO&M Charge`, for a candidate whose build the model prices | `direct` |
 
 **The translator does not translate seven cases.** It records each one as a skipped
 component:

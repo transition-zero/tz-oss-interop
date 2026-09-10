@@ -213,7 +213,7 @@ def build_hydro_ts_associations(
 H = SiennaHydroGeneratorCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
-_rated = rated_translation(_source, _dest, PyPSAStorageUnitCol.NAME)
+_rated = partial(rated_translation, _source, _dest, PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 HYDRO_ID = row_position_id_translation(

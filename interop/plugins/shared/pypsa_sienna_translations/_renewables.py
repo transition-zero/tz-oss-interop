@@ -237,7 +237,7 @@ def _renewable_translations(
     (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
-    rated = rated_translation(_source, dest, PyPSAGeneratorCol.NAME)
+    rated = partial(rated_translation, _source, dest, PyPSAGeneratorCol.NAME)
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
         row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),

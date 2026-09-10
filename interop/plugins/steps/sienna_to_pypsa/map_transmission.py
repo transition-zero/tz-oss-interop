@@ -57,6 +57,11 @@ class _LineImpedance:
     g_siemens: float
 
 
+def _extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
+    """The capacity a build cannot take away, which only an extendable component states."""
+    return rated if is_extendable else None
+
+
 def _convert_line_impedance(
     reporter: LineReporter,
     sienna_type: SiennaComponent,
@@ -145,6 +150,7 @@ def _read_line_ext(
 class _LinkPowerLimits:
     """The PyPSA capacity and flow bounds reconstructed from a Sienna link's power limits."""
 
+    limit_max: float
     p_nom: float
     p_min_pu: float
     p_max_pu: float | None
@@ -181,7 +187,7 @@ def _reconstruct_link_power_limits(
     else:
         p_min_pu = limit_min / p_nom
         reporter.record_p_min_pu(name, limit_min, p_min_pu)
-    return _LinkPowerLimits(p_nom=p_nom, p_min_pu=p_min_pu, p_max_pu=p_max_pu)
+    return _LinkPowerLimits(limit_max=limit_max, p_nom=p_nom, p_min_pu=p_min_pu, p_max_pu=p_max_pu)
 
 
 class SiennaToPypsaMapTransmission(TranslationStep):
@@ -221,6 +227,11 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             impedance = _convert_line_impedance(reporter, sienna_type, name, row, z_base)
             angle = _convert_line_angle_limits(reporter, sienna_type, name, row)
             line_ext = _read_line_ext(reporter, sienna_type, name, ext)
+            s_nom_min = _extendable_floor(impedance.s_nom, line_ext.s_nom_extendable)
+            if s_nom_min is not None:
+                reporter.record_s_nom_min(
+                    sienna_type, name, float(row[SiennaLineCol.RATING]), s_nom_min
+                )
             rows.append(
                 {
                     PyPSALineCol.NAME: name,
@@ -238,6 +249,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
                     PyPSALineCol.V_ANG_MIN: angle.v_ang_min,
                     PyPSALineCol.V_ANG_MAX: angle.v_ang_max,
                     PyPSALineCol.S_NOM_EXTENDABLE: line_ext.s_nom_extendable,
+                    PyPSALineCol.S_NOM_MIN: s_nom_min,
                 }
             )
         if rows:
@@ -277,8 +289,9 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             p_nom_extendable = ext.p_nom_extendable
             if p_nom_extendable is not None:
                 reporter.record_p_nom_extendable_from_ext(name, p_nom_extendable)
-            if p_nom_extendable:
-                reporter.record_p_nom_min(name, limits.p_nom)
+            p_nom_min = _extendable_floor(limits.p_nom, p_nom_extendable)
+            if p_nom_min is not None:
+                reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
             rows.append(
                 {
                     PyPSALinkCol.NAME: name,
@@ -291,7 +304,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
                     PyPSALinkCol.ACTIVE: available,
                     PyPSALinkCol.CARRIER: carrier,
                     PyPSALinkCol.P_NOM_EXTENDABLE: p_nom_extendable,
-                    PyPSALinkCol.P_NOM_MIN: limits.p_nom if p_nom_extendable else None,
+                    PyPSALinkCol.P_NOM_MIN: p_nom_min,
                 }
             )
         if rows:

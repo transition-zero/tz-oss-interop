@@ -349,6 +349,11 @@ class RatedObject:
     p_nom: Decision
     candidate: CandidateSource
 
+    @property
+    def running_power(self) -> Decision:
+        """The rated power the object already has, which is zero for a candidate built of none."""
+        return self.candidate.rated.existing
+
 
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
     """The object with its rated power, or the recorded reason it cannot become a unit."""

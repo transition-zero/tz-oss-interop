@@ -329,6 +329,7 @@ below uses a base of 100 MVA and the `v_nom` of the `bus0` end.
 | `length` | km | `extensions.length` of the `line` record. If absent, `0.0`. | `sidecar` or `default` |
 | `num_parallel` | | `extensions.num_parallel` of the `line` record. If absent, `1.0`. | `sidecar` or `default` |
 | `s_nom_extendable` | | `extensions.s_nom_extendable` of the `line` record | `sidecar` |
+| `s_nom_min` | MVA | `rating × the system base`, for an extendable line only. | `derived` |
 
 Sienna splits the shunt susceptance and the shunt conductance between the two ends of the
 line. PyPSA holds one total for each. The translator adds the two ends together.

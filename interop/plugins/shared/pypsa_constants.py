@@ -550,6 +550,7 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALineCol.V_ANG_MIN: pl.Float64,
     PyPSALineCol.V_ANG_MAX: pl.Float64,
     PyPSALineCol.S_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALineCol.S_NOM_MIN: pl.Float64,
 }
 
 LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

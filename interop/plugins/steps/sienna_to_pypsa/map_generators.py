@@ -177,6 +177,7 @@ class _ThermalMapping:
     committable_from_ext: bool
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
+    p_nom_min: float | None
     base_power: float
     rating: float
     active_power_min: float
@@ -243,6 +244,7 @@ def _derive_thermal(
         committable_from_ext=ext.committable is not None,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
+        p_nom_min=base_power if ext.p_nom_extendable is True else None,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -309,8 +311,8 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
-    if m.p_nom_extendable:
-        reporter.record_p_nom_min(sienna_type, m.name, m.base_power)
+    if m.p_nom_min is not None:
+        reporter.record_p_nom_min(sienna_type, m.name, m.p_nom_min)
 
 
 def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
@@ -331,7 +333,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.START_UP_COST: m.start_up_cost,
         PyPSAGeneratorCol.SHUT_DOWN_COST: m.shut_down_cost,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
-        PyPSAGeneratorCol.P_NOM_MIN: m.base_power if m.p_nom_extendable else None,
+        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
     }
 
 
@@ -348,6 +350,7 @@ class _RenewableMapping:
     ext_carrier: str | None
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
+    p_nom_min: float | None
     base_power: float
     rating: float
     active_power: float
@@ -384,6 +387,7 @@ def _derive_renewable(
         ext_carrier=ext.carrier,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
+        p_nom_min=base_power if ext.p_nom_extendable is True else None,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,
@@ -410,8 +414,8 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
         reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
-    if m.p_nom_extendable:
-        reporter.record_p_nom_min(m.sienna_type, m.name, m.base_power)
+    if m.p_nom_min is not None:
+        reporter.record_p_nom_min(m.sienna_type, m.name, m.p_nom_min)
 
 
 def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
@@ -427,6 +431,6 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
-        PyPSAGeneratorCol.P_NOM_MIN: m.base_power if m.p_nom_extendable else None,
+        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

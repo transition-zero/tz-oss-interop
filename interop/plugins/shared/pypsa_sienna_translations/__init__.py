@@ -63,7 +63,6 @@ from ._shared import (
     carrier_scope_skips,
     fill_capacity_defaults,
     unbuilt_candidate_skip,
-    with_effective_p_nom,
 )
 from ._storage import (
     ENERGY_RESERVOIR_STORAGE_TRANSLATIONS,
@@ -82,7 +81,6 @@ __all__ = [
     "POWER_CAPACITY",
     "fill_capacity_defaults",
     "unbuilt_candidate_skip",
-    "with_effective_p_nom",
     "THERMAL_MAPPING",
     "RENEWABLE_DISPATCH_MAPPING",
     "RENEWABLE_NON_DISPATCH_MAPPING",

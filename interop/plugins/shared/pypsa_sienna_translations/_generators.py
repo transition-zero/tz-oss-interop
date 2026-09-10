@@ -241,7 +241,7 @@ _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
 _dest = partial(sienna_dest_field, SiennaComponent.THERMAL_STANDARD)
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
-_rated = rated_translation(_source, _dest, PyPSAGeneratorCol.NAME)
+_rated = partial(rated_translation, _source, _dest, PyPSAGeneratorCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
 GENERATOR_ID = row_position_id_translation(

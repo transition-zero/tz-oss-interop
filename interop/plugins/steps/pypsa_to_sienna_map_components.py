@@ -69,7 +69,6 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     load_in_scope,
     load_is_interruptible,
     unbuilt_candidate_skip,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -260,9 +259,8 @@ class PypsaToSiennaMapComponents(TranslationStep):
     ) -> list[SkipRule]:
         """The drops a whole source table shares, in the order they apply.
 
-        A carrier the user mappings file never names, a carrier it sends to a Sienna type
-        this table does not become, and a bus that is not a translated AC bus are three
-        different drops, so each gets its own report. ``own_rows`` holds the drops for rows
+        Each drop gets its own report, so a row never carries the wrong reason. ``own_rows``
+        holds the drops for rows
         an earlier hop of this translator wrote into the source model itself, which only the
         generators have. Order matters: a row the mappings file never names must not also
         report an unusable bus, and a row this translator wrote itself must report that
@@ -508,7 +506,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         if buses is None:
             return state
 
-        table = with_effective_p_nom(fill_link_defaults(src.collect()), POWER_CAPACITY)
+        table = fill_capacity_defaults(fill_link_defaults(src.collect()), POWER_CAPACITY)
         table, _ = filter_component(
             table,
             link_in_scope(buses[SiennaACBusCol.NAME].to_list()),

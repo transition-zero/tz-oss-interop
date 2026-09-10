@@ -24,8 +24,8 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
     POWER_CAPACITY,
-    effective_p_nom,
     fill_capacity_columns,
     pypsa_skip_report,
     rated_from,
@@ -193,7 +193,7 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 
 # --- Limit / loss expressions ---
 
-_effective_p_nom = effective_p_nom(POWER_CAPACITY)
+_effective_p_nom = pl.col(EFFECTIVE_P_NOM)
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
 _from_min = (
     pl.when(_is_bidirectional).then(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU)).otherwise(0.0)

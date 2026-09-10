@@ -111,15 +111,24 @@ def rated_from(row: dict[str, Any]) -> str:
 
 
 def rated_translation(
-    source_field: SourceFieldFactory, dest_field: DestinationFieldFactory, name_col: str
-) -> Callable[..., Translation]:
-    """The translation factory whose event names the capacity column the row was rated from."""
-    return partial(
-        row_source_translation,
+    source_field: SourceFieldFactory,
+    dest_field: DestinationFieldFactory,
+    name_col: str,
+    *,
+    dest_col: str,
+    expr: pl.Expr,
+    unit: str | None = None,
+    derivation: str = "direct",
+) -> Translation:
+    return row_source_translation(
         source_field,
         dest_field,
         name_col=name_col,
         source_col_of=rated_from,
+        dest_col=dest_col,
+        expr=expr,
+        unit=unit,
+        derivation=derivation,
     )
 
 
