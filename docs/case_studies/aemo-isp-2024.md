@@ -170,29 +170,21 @@ Write a second mappings file, `inputs/plexos_expansion_mappings.yaml`. It is the
 file plus one row for each carrier a candidate takes. A candidate whose carrier the file does
 not name is left out of the portfolio, and `decisions.md` names each one.
 
-The dispatch run above leaves seven categories out of its file, because a dispatch system has
-no place for what they hold. The expansion run names the ones that hold candidate plants. A
-generator takes the name of its `Fuel` where it burns one and its category where it does not,
-so add one `category` row for each of these:
+The dispatch run above leaves seven categories out of its file. The expansion run names the
+ones that hold candidate plants. A generator takes the name of its `Fuel` where it burns one
+and its category where it does not, so add one `category` row for each of these:
 
 - `2023 REZ NSW`, and the sibling category of each other state: a wind or a solar candidate,
   so `RenewableDispatch` with the prime mover `WT` or `PVe`;
 - `New Entrants NSW`, and the sibling category of each other state: a wind, a solar or a gas
   candidate, so the prime mover `WT`, `PVe`, `CC` or `CT`;
-- `LTESA Projects`, `Policy Projects` and `VRET Projects`: the type and the prime mover of the
-  plant the project builds.
+- `LTESA Projects`, `Policy Projects` and `VRET Projects`.
 
 The translator reads no meaning from a category name, so give each row the
 `sienna_component_type` and the `sienna_prime_mover_type` of the plant that category holds in
-your copy of the model. A generator candidate becomes a `SupplyTechnology`, so its
-`sienna_component_type` must be `ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch`
-or `HydroDispatch`. A `ThermalStandard` row also takes the `sienna_fuel_type` of the fuel the
-plant burns.
+your copy of the model.
 [Across all components](../translation_mappings/translation-from-plexos-to-sienna-investments.md#across-all-components)
-states what happens to a candidate whose carrier your file sends to the other kind's type.
-
-A `Battery` candidate and a pumped-storage candidate need no row of their own. Each takes a
-`storage_kind` row, and the mappings pipeline supplies one for all three storage kinds.
+states the types a row may name, and what happens to a row that names another kind's type.
 
 Leave `REZ Augmentation` and `Group REZ Augmentation` out of this file as well. They are
 transmission augmentations written as generators, and the portfolio holds no transport
@@ -212,28 +204,18 @@ Select `translate`. Then give these answers:
 | the SiennaSchemas portfolio document to write | `outputs/portfolio.json` |
 | User mappings file | `inputs/plexos_expansion_mappings.yaml` |
 
-Keep the default at every other prompt. The two sinks also ask for the HDF5 companion, the
-extensions sidecar, the JSON indent width, and the basenames the portfolio names its base
-system and its time-series companion by. The mappings prompt comes last, after the file
+Keep the default at every other prompt. The mappings prompt comes last, after the file
 prompts of both sinks.
 
 That run writes four files: the three the Sienna path writes, and `outputs/portfolio.json`
 beside them. The portfolio names `system.json` in its `base_system_file`, so the two are read
 together.
 
-Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. A chained
-pipeline prompts for the source of its first leg and the sinks of its last, and for no step in
-between, so this run states the default base year of 2020. To state another one, run the two
-legs yourself: `plexos-to-pypsa`, then `pypsa-to-sienna-investments` over the network and the
-sidecar it wrote. That pipeline is one leg, so it prompts for its steps, and the base year is
-the `base_year` of `step[2]`. It asks for a mappings file of its own, in PyPSA words rather
-than PLEXOS ones: the chain derives that file from the PLEXOS file above, and a lone run has
-nothing to derive it from, so write a `carriers` file with a `pypsa_carrier` row for each
-carrier the first leg wrote, the storage carriers included.
+Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. This run
+takes the default base year of 2020. To state another one, refer to
+[The base year](../translation_mappings/translation-from-plexos-to-sienna-investments.md#the-base-year).
 
-[The mapping document](../translation_mappings/translation-from-plexos-to-sienna-investments.md)
-states what each field of the portfolio comes from, and
-[the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
+[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
 portfolio leaves out and what each loss does to an expansion.
 
 ## The headline number
@@ -304,9 +286,6 @@ other thing the Sienna path loses.
 The Sienna path also keeps no reserves file at all, because the first leg of the chain writes
 that file inside the run's scratch space. Run `plexos-to-pypsa` on its own if you want the
 reserves.
-
-**The expansion path states no number of its own.** No solve in this repository reads a
-portfolio, so nothing here says what a plan would build or what it would cost.
 
 A solve keeps no reserve headroom. Thus the dispatch is less constrained than the dispatch
 in the source model.

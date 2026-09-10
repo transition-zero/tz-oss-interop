@@ -60,6 +60,11 @@ Where the intermediate form loses something, this document says so.
   `capacity_limits.min` is that same capacity, which a build cannot take away.
 - **A candidate whose carrier your mappings file does not name is left out.** The run
   completes and `decisions.md` names each one.
+- **A generator candidate names one of four base system types.** Your mappings file must send
+  its carrier to `ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch` or
+  `HydroDispatch`, and a `ThermalStandard` row also states the `sienna_fuel_type`. A `Battery`
+  candidate and a pumped-storage candidate need no row of their own, because the mappings
+  pipeline supplies a `storage_kind` row for all three storage kinds.
 - **A candidate whose carrier your mappings file sends to another kind's type is left out.**
   A generator becomes a `SupplyTechnology` and a battery or a pumped-storage turbine becomes a
   `StorageTechnology`, so a carrier sent to a base system type the other kind holds names a
@@ -213,6 +218,15 @@ are the economic year a cost is quoted in. No PLEXOS field and no PyPSA field st
 both come from the `base_year` parameter of the `pypsa_to_sienna_investments_map_technologies`
 step. It defaults to **2020**, which is the year SiennaSchemas itself defaults a construction
 year to. Set it to the dollar year your `Build Cost` and `FO&M Charge` are quoted in.
+
+A chained pipeline prompts for the source of its first leg and the sinks of its last, and for
+no step in between, so a `plexos-to-sienna-investments` run always takes the default. To state
+another year, run the two legs yourself: `plexos-to-pypsa`, then `pypsa-to-sienna-investments`
+over the network and the sidecar it wrote. The second leg prompts for its steps, so the base
+year is the `base_year` of `step[2]`. That leg also asks for a mappings file in PyPSA words,
+which the chain derives from your PLEXOS file and a lone run cannot, so write a `carriers`
+file with one `pypsa_carrier` row for each carrier the first leg wrote, the storage carriers
+included.
 
 ### What the PyPSA hub cannot carry
 

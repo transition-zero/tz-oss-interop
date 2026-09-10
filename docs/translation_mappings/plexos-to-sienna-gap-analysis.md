@@ -1,7 +1,6 @@
 # What a PLEXOS to Sienna translation loses
 
-This document lists each thing a PLEXOS to Sienna run loses. Each part below names the run it
-covers.
+This document lists each thing a PLEXOS to Sienna run loses.
 
 For what the translation keeps, refer to
 [Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md), and for the
@@ -15,7 +14,8 @@ Each entry gives four things:
 | The PLEXOS data | What your model states |
 | What happens to it | Where it goes, or that it goes nowhere |
 | The cause | Why |
-| The effect on the dispatch, or on the expansion | What the solve, or a plan built from the portfolio, then does differently from your PLEXOS model |
+| The effect on the dispatch | What the solve then does differently from your PLEXOS model |
+| The effect on the expansion | What a plan built from the portfolio then does differently from your PLEXOS model |
 
 ---
 
@@ -428,25 +428,6 @@ or not at all.
 
 ---
 
-### The requirements a technology names
-
-**The PLEXOS data.** The objects a `Constraint` names, and the coefficient weighting each
-one.
-
-**What happens to it.** The portfolio writes no `requirements`: the field is absent from every
-`SupplyTechnology`, `StorageTechnology` and `DemandRequirement`, and `decisions.md` records it
-as not mapped.
-
-**The cause.** `requirements` holds the ids of the requirements a component is subject to.
-The only requirement this translation writes is the cap above, which names no members, so no
-component names it. SiennaSchemas states other requirement types beside it, and this
-translation writes none of them.
-
-**The effect on the expansion.** A consumer that applies a requirement to the technologies
-naming it applies nothing to any of them.
-
----
-
 ### The year a cap applies in, and a cap on carbon intensity
 
 **The PLEXOS data.** A `Constraint` right-hand side, stated for a year or over the whole
@@ -460,9 +441,9 @@ the document; `decisions.md` records both.
 **The cause.** PLEXOS states the span a right-hand side applies over, not the year it applies
 in, and it has no rate-based right-hand side for `max_tons_mwh` to carry.
 
-**The effect on the expansion.** The cap applies to every year of the run, whichever year
-your model stated it for. With `max_tons_mwh` absent, nothing limits the carbon intensity of
-what it builds.
+**The effect on the expansion.** The cap holds the whole run, whichever year your model
+stated it for, so a yearly right-hand side becomes a budget for the whole run. With
+`max_tons_mwh` absent, nothing limits the carbon intensity of what it builds.
 
 ---
 
@@ -494,8 +475,7 @@ the representative days and weights it samples each year with.
 problem, with no schedule of periods and no representative-day weighting.
 
 **The cause.** A portfolio document holds the technologies, the requirements and the regions
-of an expansion problem. The periods and the representative days are terms of the solve, so
-they belong on the request that solves the portfolio rather than in it.
+of an expansion problem. The periods and the representative days are terms of the solve.
 
 **The effect on the expansion.** Whoever solves the portfolio chooses the periods and the
 sampling. A plan built over a different set of years, or against a different set of
