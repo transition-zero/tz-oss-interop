@@ -285,8 +285,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             self._recorder.append(event)
         return state
 
-    # --- candidates ---
-
     def _map_candidates(
         self,
         state: State,
@@ -403,8 +401,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         numbering.next_id += out.height
         return out
 
-    # --- demand ---
-
     def _map_demand(
         self, state: State, area_by_bus: Mapping[str, str | None], numbering: _Numbering
     ) -> None:
@@ -429,8 +425,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             numbering,
         )
 
-    # --- policy ---
-
     def _map_carbon_caps(
         self,
         state: State,
@@ -454,8 +448,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             SiennaInvestmentsComponent.CARBON_CAPS,
             numbering,
         )
-
-    # --- supplemental attributes ---
 
     def _map_supplemental_attributes(
         self,
