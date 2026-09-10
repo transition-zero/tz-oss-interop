@@ -284,6 +284,23 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the log contains "1 Generator(s) are extendable and state a capacity floor above the capacity a build may reach"
     And the file "decisions.md" contains "p_nom_min is above p_nom_max"
 
+  Scenario: a storage candidate with no energy ceiling is left out, and the run completes
+    A storage technology states the energy a build may add, which is the power a build may add
+    multiplied by the hours the unit holds. A unit that states no finite number of hours puts
+    no bound on that energy.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains storage unit "NewPHS" on "North_bus" carrier "PHS" p_nom 0 max_hours inf efficiency_store 0.9 efficiency_dispatch 0.95 p_nom_extendable True
+    And storage unit "NewPHS" has p_nom_max 300
+    And storage unit "NewPHS" has overnight_cost 800000
+    And storage unit "NewPHS" has discount_rate 0.07
+    And storage unit "NewPHS" has lifetime 20
+    And the network is saved as "inputs/unbounded_energy.nc"
+    When I run the pypsa investments translation against "inputs/unbounded_energy.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "StorageTechnology"
+    And the log contains "1 StorageUnit(s) are extendable and put no upper bound on the energy a build may add"
+    And the file "decisions.md" contains "max_hours is not a finite number of hours"
+
   Scenario: a storage candidate that holds no energy is left out, and the run completes
     A StorageTechnology states the energy a build may add as max_hours of its power, so a
     unit stating no hours could build power it can never charge.

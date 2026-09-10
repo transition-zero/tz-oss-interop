@@ -90,6 +90,18 @@ NO_ENERGY_SKIP = investments_skip_report(
     attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
 )
 
+UNBOUNDED_ENERGY_SKIP = investments_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+    reason="are extendable and put no upper bound on the energy a build may add",
+    note=(
+        "max_hours is not a finite number of hours, so the technology has no energy "
+        "capacity limits to state"
+    ),
+    attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
+)
+
 STORAGE_SKIPS: tuple[SkipRule, ...] = (
     *build_expansion_skips(
         PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
@@ -99,6 +111,10 @@ STORAGE_SKIPS: tuple[SkipRule, ...] = (
         lifetime_col=PyPSAStorageUnitCol.LIFETIME,
         overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
         discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
+    ),
+    SkipRule(
+        keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS).is_finite(),
+        report=UNBOUNDED_ENERGY_SKIP,
     ),
     SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=NO_ENERGY_SKIP),
 )
