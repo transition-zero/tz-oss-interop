@@ -83,9 +83,10 @@ categories a dispatch run leaves out.
 `ExistingDevices.existing_devices`, `RetirementPotential.eligible_generators` and
 `TopologyMapping.buses` are all lists of names in the base system. Without a base system they
 point at nothing, so `pypsa-to-sienna-investments` runs the operations steps and the new
-investments steps over one network and writes both documents. A component whose
-`p_nom_extendable` is true is not a base system component, and the operations steps report
-each one as skipped on that leg.
+investments steps over one network and writes both documents. An extendable component that
+states neither a `p_nom_opt` nor a capacity a build cannot take away is a build and nothing
+else, and the operations steps report each one as skipped on that leg. An extendable
+component that states one of the two keeps that capacity and stays in the base system.
 
 ### `WACC` is written as all-equity financing
 

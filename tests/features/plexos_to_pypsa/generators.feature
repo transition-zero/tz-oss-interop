@@ -510,11 +510,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "overnight_cost" equal to 1200000
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "discount_rate" equal to 0.07
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "lifetime" equal to 25
-    # PyPSA reads fom_cost as a charge for the whole modelled horizon, so a yearly charge
-    # would price a two-day run as if it lasted a year. It travels beside the generator.
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "fom_charge_per_mw_year" set to 15000.0
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom" equal to 500
-    # The unit size and the technical life have no PyPSA column, so they travel beside it.
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "unit_size_mw" set to 100.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"

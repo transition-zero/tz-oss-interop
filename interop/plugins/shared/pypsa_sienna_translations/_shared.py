@@ -54,83 +54,86 @@ EFFECTIVE_P_NOM_DERIVATION = (
 )
 
 
-class CapacityColumns(NamedTuple):
-    extendable: str
-    opt: str
-    nom: str
-    nom_min: str
+# PyPSA names these four columns the same on a Generator, a StorageUnit and a Link. A Line
+# names them s_nom, and this leg still rates a Line by its own rule in _lines.py.
+_EXTENDABLE = PyPSAGeneratorCol.P_NOM_EXTENDABLE
+_OPT = PyPSAGeneratorCol.P_NOM_OPT
+_NOM = PyPSAGeneratorCol.P_NOM
+_NOM_MIN = PyPSAGeneratorCol.P_NOM_MIN
 
 
-# A Line names these columns s_nom, so POWER_CAPACITY does not fit a Line table.
-POWER_CAPACITY = CapacityColumns(
-    PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-    PyPSAGeneratorCol.P_NOM_OPT,
-    PyPSAGeneratorCol.P_NOM,
-    PyPSAGeneratorCol.P_NOM_MIN,
-)
-
-
-def has_solved_capacity(columns: CapacityColumns) -> pl.Expr:
+def has_solved_capacity() -> pl.Expr:
     """A solve that builds none of a component writes p_nom_opt 0; only a network no solve
     has touched leaves the column out, which stages as null.
     """
-    return pl.col(columns.extendable) & pl.col(columns.opt).is_not_null()
+    return pl.col(_EXTENDABLE) & pl.col(_OPT).is_not_null()
 
 
-def has_capacity_floor(columns: CapacityColumns) -> pl.Expr:
-    """An extendable component's p_nom_min is capacity it already has, which a build cannot
-    take away, so an operations model may dispatch it whether or not a solve has run.
+def capacity_floor() -> pl.Expr:
+    """Capacity a build cannot take away, which the network also has to state as p_nom.
+
+    PyPSA reads p_nom_min as the lower bound of the build, which a user also sets to force a
+    minimum build on a candidate nobody has built. Only the part of that bound the network
+    also states as p_nom is capacity an operations model may dispatch.
     """
-    return pl.col(columns.extendable) & (pl.col(columns.nom_min) > 0)
+    return pl.min_horizontal(pl.col(_NOM_MIN), pl.col(_NOM))
 
 
-def _pick_capacity(columns: CapacityColumns, of_column: Callable[[str], pl.Expr]) -> pl.Expr:
+def has_capacity_floor() -> pl.Expr:
+    return pl.col(_EXTENDABLE) & (capacity_floor() > 0)
+
+
+def _floor_attribute() -> pl.Expr:
+    return pl.when(pl.col(_NOM_MIN) <= pl.col(_NOM)).then(pl.lit(_NOM_MIN)).otherwise(pl.lit(_NOM))
+
+
+def effective_p_nom() -> pl.Expr:
     return (
-        pl.when(has_solved_capacity(columns))
-        .then(of_column(columns.opt))
-        .when(has_capacity_floor(columns))
-        .then(of_column(columns.nom_min))
-        .otherwise(of_column(columns.nom))
+        pl.when(has_solved_capacity())
+        .then(pl.col(_OPT))
+        .when(has_capacity_floor())
+        .then(capacity_floor())
+        .otherwise(pl.col(_NOM))
     )
 
 
-def effective_p_nom(columns: CapacityColumns) -> pl.Expr:
-    return _pick_capacity(columns, pl.col)
-
-
-def capacity_attribute(columns: CapacityColumns) -> pl.Expr:
-    return _pick_capacity(columns, pl.lit)
+def capacity_attribute() -> pl.Expr:
+    return (
+        pl.when(has_solved_capacity())
+        .then(pl.lit(_OPT))
+        .when(has_capacity_floor())
+        .then(_floor_attribute())
+        .otherwise(pl.lit(_NOM))
+    )
 
 
 def rated_from(row: dict[str, Any]) -> str:
     return str(row[CAPACITY_ATTRIBUTE])
 
 
-def states_built_capacity(columns: CapacityColumns) -> pl.Expr:
+def states_built_capacity() -> pl.Expr:
     """PyPSA ignores the p_nom of an extendable component, so p_nom alone cannot say whether
     such a component holds capacity an operations model may dispatch.
     """
-    return ~pl.col(columns.extendable) | has_solved_capacity(columns) | has_capacity_floor(columns)
+    return ~pl.col(_EXTENDABLE) | has_solved_capacity() | has_capacity_floor()
 
 
-def with_effective_p_nom(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+def with_effective_p_nom(table: pl.DataFrame) -> pl.DataFrame:
     return table.with_columns(
-        effective_p_nom(columns).alias(EFFECTIVE_P_NOM),
-        capacity_attribute(columns).alias(CAPACITY_ATTRIBUTE),
-        states_built_capacity(columns).alias(STATES_BUILT_CAPACITY),
+        effective_p_nom().alias(EFFECTIVE_P_NOM),
+        capacity_attribute().alias(CAPACITY_ATTRIBUTE),
+        states_built_capacity().alias(STATES_BUILT_CAPACITY),
     )
 
 
-def fill_capacity_columns(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+def fill_capacity_columns(table: pl.DataFrame) -> pl.DataFrame:
     return fill_defaults(
-        table,
-        [(columns.opt, None), (columns.nom, 0.0), (columns.nom_min, 0.0)],
-        [(columns.extendable, False)],
+        table, [(_OPT, None), (_NOM, 0.0), (_NOM_MIN, 0.0)], [(_EXTENDABLE, False)]
     )
 
 
-def fill_capacity_defaults(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
-    return with_effective_p_nom(fill_capacity_columns(table, columns), columns)
+def fill_capacity_defaults(table: pl.DataFrame) -> pl.DataFrame:
+    return with_effective_p_nom(fill_capacity_columns(table))
 
 
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"

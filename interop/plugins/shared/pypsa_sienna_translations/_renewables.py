@@ -31,7 +31,6 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
-    POWER_CAPACITY,
     fill_capacity_columns,
     pypsa_source_field,
     rated_from,
@@ -90,7 +89,7 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
         ],
     )
-    return fill_capacity_columns(table, POWER_CAPACITY)
+    return fill_capacity_columns(table)
 
 
 def build_renewable_extensions(

@@ -25,7 +25,6 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
-    POWER_CAPACITY,
     fill_capacity_columns,
     pypsa_skip_report,
     rated_from,
@@ -98,7 +97,7 @@ def fill_link_defaults(table: pl.DataFrame) -> pl.DataFrame:
         [(PyPSALinkCol.ACTIVE, True)],
         [(col, "") for col in (PyPSALinkCol.CARRIER, PyPSALinkCol.BUS2, PyPSALinkCol.BUS3)],
     )
-    return fill_capacity_columns(table, POWER_CAPACITY)
+    return fill_capacity_columns(table)
 
 
 def link_in_scope(ac_bus_names: list[str]) -> pl.Expr:

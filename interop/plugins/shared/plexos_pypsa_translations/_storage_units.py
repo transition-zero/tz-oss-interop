@@ -6,7 +6,6 @@ staged tables once, runs all three, and records what each decided, skipped or dr
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -64,8 +63,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_destination import append_destination_rows
-
-log = logging.getLogger(__name__)
 
 
 def write_storage_units(state: State, mappings: list[StorageUnitMapping]) -> None:

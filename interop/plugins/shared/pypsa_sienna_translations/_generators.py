@@ -29,7 +29,6 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
-    POWER_CAPACITY,
     fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
@@ -98,7 +97,7 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAGeneratorCol.COMMITTABLE, False),
         ],
     )
-    return fill_capacity_columns(table, POWER_CAPACITY)
+    return fill_capacity_columns(table)
 
 
 def enrich_carrier_lookup(

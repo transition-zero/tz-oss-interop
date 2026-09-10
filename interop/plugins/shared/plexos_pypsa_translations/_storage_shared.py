@@ -88,9 +88,7 @@ _VOLUME_PROPERTIES = (PlexosProperty.MAX_VOLUME, PlexosProperty.INITIAL_VOLUME)
 
 _TIMES_UNITS_DERIVATION = " * Units"
 _PER_P_NOM_DERIVATION = " / p_nom"
-_CLAMPED_DERIVATION = (
-    ", clamped to 0..the power the object already runs * max_hours"
-)
+_CLAMPED_DERIVATION = ", clamped to 0..the power the object already runs * max_hours"
 
 
 @dataclass(frozen=True)

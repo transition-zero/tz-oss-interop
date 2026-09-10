@@ -58,7 +58,6 @@ from ._renewables import (
     fill_renewable_defaults,
 )
 from ._shared import (
-    POWER_CAPACITY,
     ScopeSkips,
     carrier_scope_skips,
     fill_capacity_defaults,
@@ -78,7 +77,6 @@ __all__ = [
     "choose_ensemble_samples",
     "ScopeSkips",
     "carrier_scope_skips",
-    "POWER_CAPACITY",
     "fill_capacity_defaults",
     "unbuilt_candidate_skip",
     "THERMAL_MAPPING",

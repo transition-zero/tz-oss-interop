@@ -7,7 +7,6 @@ two paths differ only in whether the unit can pump and whether its level has to 
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from interop.core.pipeline import State
@@ -72,8 +71,6 @@ from interop.plugins.shared.pypsa_time_series import (
     series_components,
     series_timing,
 )
-
-log = logging.getLogger(__name__)
 
 
 def record_reservoir_inflows(state: State, mappings: list[StorageUnitMapping]) -> None:

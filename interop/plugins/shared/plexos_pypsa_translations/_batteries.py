@@ -6,8 +6,6 @@ when full is its Capacity, or its Duration times its Max Power where it states n
 
 from __future__ import annotations
 
-import logging
-
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_HOURS,
@@ -61,8 +59,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_time_series import append_metadata
-
-log = logging.getLogger(__name__)
 
 
 def record_battery_outages(state: State, mappings: list[StorageUnitMapping]) -> None:

@@ -35,7 +35,6 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
-    POWER_CAPACITY,
     fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
@@ -108,7 +107,7 @@ def fill_hydro_defaults(table: pl.DataFrame) -> pl.DataFrame:
             (PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, 1.0),
         ],
     )
-    return fill_capacity_columns(table, POWER_CAPACITY)
+    return fill_capacity_columns(table)
 
 
 def enrich_hydro_carrier(
@@ -153,6 +152,12 @@ def _kept_columns(inflow_lf: pl.LazyFrame) -> list[str]:
     if PyPSATimeSeriesCol.SAMPLE in inflow_lf.collect_schema().names():
         kept.append(PyPSATimeSeriesCol.SAMPLE)
     return kept
+
+
+def _hydro_budget_scale(src_row: dict[str, Any]) -> float:
+    """A unit that states no dispatch efficiency converts no water, so the budget is 0."""
+    efficiency = src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
+    return float(src_row[EFFECTIVE_P_NOM] / efficiency) if efficiency else 0.0
 
 
 def build_hydro_ts_associations(
@@ -201,9 +206,7 @@ def build_hydro_ts_associations(
                 ts_info=ts_info,
                 source_table=PyPSATable.STORAGE_UNITS,
                 source_attribute=PyPSAStorageUnitCol.INFLOW,
-                scaling_factor=(
-                    src_row[EFFECTIVE_P_NOM] / src_row[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH]
-                ),
+                scaling_factor=_hydro_budget_scale(src_row),
             )
         )
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
