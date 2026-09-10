@@ -44,6 +44,7 @@ LIMIT_PERIOD = "limit_period"
 LIMIT_VALUE = "limit_value"
 LIMIT_UNIT = "limit_unit"
 COVERS_MODEL = "covers_model"
+APPLIES_TO_PLAN = "applies_to_expansion_plan"
 
 CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     CONSTRAINT_NAME: pl.Utf8,
@@ -52,6 +53,7 @@ CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     LIMIT_VALUE: pl.Float64,
     LIMIT_UNIT: pl.Utf8,
     COVERS_MODEL: pl.Boolean,
+    APPLIES_TO_PLAN: pl.Boolean,
 }
 
 # The spans a cap is read from, most specific first: no other span bounds the whole run.
@@ -91,7 +93,18 @@ NO_LIMIT_SKIP = _constraint_skip(
     note="a cap with no limit bounds nothing, and no other span bounds the whole run",
 )
 
+NOT_IN_PLAN_SKIP = _constraint_skip(
+    reason="the expansion plan does not have to meet",
+    note=(
+        "the source states that the plan need not meet this constraint, so a cap written "
+        "from it would bound an expansion problem the model leaves free"
+    ),
+    attribute_col=APPLIES_TO_PLAN,
+)
+
 CARBON_CAP_SKIPS: tuple[SkipRule, ...] = (
+    # A source that states nothing about the plan leaves every constraint in it.
+    SkipRule(keep=pl.col(APPLIES_TO_PLAN).fill_null(value=True), report=NOT_IN_PLAN_SKIP),
     SkipRule(keep=pl.col(CONSTRAINT_SENSE) == ConstraintSense.AT_MOST, report=WRONG_SENSE_SKIP),
     SkipRule(keep=pl.col(LIMIT_VALUE).is_not_null(), report=NO_LIMIT_SKIP),
     SkipRule(keep=pl.col(COVERS_MODEL), report=SCOPED_CONSTRAINT_SKIP),
@@ -120,6 +133,7 @@ def _read_record(record: ConstraintExtension, model_components: set[str]) -> dic
         LIMIT_VALUE: None if limit is None else limit.value,
         LIMIT_UNIT: None if limit is None else limit.unit,
         COVERS_MODEL: bool(model_components) and model_components <= members,
+        APPLIES_TO_PLAN: record.applies_to_expansion_plan,
     }
 
 

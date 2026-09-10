@@ -386,6 +386,25 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "Shared" has "existing_devices" set to ["OldSolar"]
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "Shared" has "eligible_generators" set to ["OldSolar"]
 
+  Scenario: a constraint the expansion plan need not meet is left out, and the run completes
+    A source says whether its expansion plan has to meet a constraint. A cap written from a
+    constraint the plan need not meet would bound a problem the model leaves free.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "GasPlant" on "North_bus" carrier "CCGT" p_nom 500
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/dispatch_only_cap.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"constraint": [{"name": "DispatchOnlyBudget", "sense": "<=", "limits": [{"period": "year", "value": 20.0}], "applies_to_expansion_plan": false, "members": [{"name": "GasPlant", "member_class": "Generator"}, {"name": "REZ_Solar", "member_class": "Generator"}]}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/dispatch_only_cap.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "CarbonCaps"
+    And the log contains "1 constraint(s) the expansion plan does not have to meet"
+
   Scenario: a generator neither document holds leaves a whole-model constraint whole
     A cap holds every component of the portfolio and the base system it expands. A generator
     an earlier hop of this translator added to shed load reaches neither, so a constraint

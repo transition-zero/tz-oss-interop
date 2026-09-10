@@ -162,8 +162,10 @@ document holds emits nothing a cap could bound, so a constraint need not name it
 | `target_year` | | PLEXOS states the span a right-hand side applies over, not the year it applies in. | `dropped` |
 | `max_tons_mwh` | | PLEXOS has no rate-based right-hand side. | `dropped` |
 
-Three kinds of `Constraint` are left out, each named in `decisions.md`:
+Four kinds of `Constraint` are left out, each named in `decisions.md`:
 
+- one whose `Include in LT Plan` is false, because the expansion plan does not have to meet
+  it, and a cap written from it would bound a problem the model leaves free;
 - one whose members cover only part of the model, because a cap written from it would hold
   more than the model meant;
 - one whose `Sense` is not `<=`, because a cap is a ceiling and nothing else;
@@ -173,19 +175,19 @@ Every `Constraint` still reaches `extensions.json` unchanged, whether or not it 
 
 ## A plant that already runs → `ExistingDevices` and `RetirementPotential`
 
-A technology stands for more of what a carrier already runs. So for each technology, the
-translator writes two supplemental attributes naming the base system's components of the same
-carrier:
+A technology stands for more of what its own region already runs. So for each technology, the
+translator writes two supplemental attributes naming the base system's components that share
+both its carrier and its region:
 
 | Sienna field | From | Mapping |
 | --- | --- | --- |
-| `ExistingDevices.existing_devices` | The base system components sharing the technology's carrier | `derived` |
+| `ExistingDevices.existing_devices` | The base system components sharing the technology's carrier and region | `derived` |
 | `RetirementPotential.eligible_generators` | The same list | `derived` |
 | `RetirementPotential.build_year` | The first year the object's dated `Units` rise above zero, per object | `derived` |
 | `RetirementPotential.planned_retirement_year` | The first year the object's dated `Units` fall back to zero, per object | `derived` |
 | `RetirementPotential.retirement_cost` | A zero curve. PLEXOS prices no retirement. | `default` |
 
-A technology whose carrier no base system component shares gets neither attribute.
+A technology that no such base system component matches gets neither attribute.
 
 ## Special business rules
 
