@@ -348,6 +348,25 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "eligible_generators" set to ["OldHydro"]
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "StorageTechnology" "NewHydro" has "build_year.OldHydro" set to 1980
 
+  Scenario: a supply technology takes only the devices of its own PyPSA class
+    A Generator and a StorageUnit may share a name, and only a StorageUnit becomes a
+    HydroDispatch, so a supply technology's fleet is the generators of its carrier alone.
+    Given a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains storage unit "Shared" on "North_bus" carrier "hydro" p_nom 200 max_hours 6.0 efficiency_dispatch 0.9 inflow 10.0 20.0 30.0
+    And the network contains generator "OldSolar" on "North_bus" carrier "solar" p_nom 200
+    And the network contains generator "Shared" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "Shared" has p_nom_max 500
+    And generator "Shared" has overnight_cost 1200000
+    And generator "Shared" has discount_rate 0.07
+    And generator "Shared" has lifetime 25
+    And the network is saved as "inputs/shared_hydro_name.nc"
+    When I run the pypsa investments translation against "inputs/shared_hydro_name.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "HydroDispatch"
+    And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "Shared" has "existing_devices" set to ["OldSolar"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "Shared" has "eligible_generators" set to ["OldSolar"]
+
   Scenario: a generator neither document holds leaves a whole-model constraint whole
     A cap holds every component of the portfolio and the base system it expands. A generator
     an earlier hop of this translator added to shed load reaches neither, so a constraint

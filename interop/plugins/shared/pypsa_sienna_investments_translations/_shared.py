@@ -74,12 +74,10 @@ def build_scope_skips(
     translated_carriers: Sequence[str],
     bus_names: Sequence[str],
 ) -> list[SkipRule]:
-    """The three drops every candidate table shares, in the order they apply.
+    """The drops every candidate table shares, in the order they apply.
 
-    A carrier the mappings file never names, a carrier it sends to a Sienna type this kind of
-    candidate never becomes, and a bus that is not a translated AC bus are different drops, so
-    each gets its own report. Order matters: a row the mappings file never names must not also
-    report an unusable target type or an unusable bus.
+    Order matters: a row the mappings file never names must not also report an unusable
+    target type or an unusable bus.
     """
     skip = partial(
         investments_skip_report,

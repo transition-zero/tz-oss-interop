@@ -10,6 +10,7 @@ system already holds.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from typing import ClassVar, Literal, NamedTuple
 
 import polars as pl
@@ -108,6 +109,15 @@ _STORAGE_BASE_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.HYDRO_DISPATCH,
 )
 
+# The base system types each PyPSA class alone writes, which a fleet is matched against. Only
+# a StorageUnit becomes HydroDispatch, and a Generator may carry the name of a StorageUnit.
+_GENERATOR_FLEET_TYPES: tuple[SiennaComponent, ...] = (
+    SiennaComponent.THERMAL_STANDARD,
+    SiennaComponent.RENEWABLE_DISPATCH,
+    SiennaComponent.RENEWABLE_NON_DISPATCH,
+)
+_STORAGE_FLEET_TYPES: tuple[SiennaComponent, ...] = _STORAGE_BASE_TYPES
+
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.POWER_LOAD,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD,
@@ -130,11 +140,11 @@ class _CandidateKind(NamedTuple):
     fill: _FillDefaults
     skips: tuple[SkipRule, ...]
     extension: Literal[ExtensionKind.GENERATOR, ExtensionKind.STORAGE]
-    with_fuel: bool
     build: _CandidateTranslations
     schema: _Schema
     component: SiennaInvestmentsComponent
     base_types: tuple[SiennaComponent, ...]
+    fleet_types: tuple[SiennaComponent, ...]
     device_class: str
     build_year_col: str
 
@@ -145,11 +155,11 @@ _SUPPLY = _CandidateKind(
     fill=fill_supply_defaults,
     skips=SUPPLY_SKIPS,
     extension=ExtensionKind.GENERATOR,
-    with_fuel=True,
     build=build_supply_translations,
     schema=SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
     base_types=_GENERATOR_BASE_TYPES,
+    fleet_types=_GENERATOR_FLEET_TYPES,
     device_class=PyPSAComponent.GENERATOR,
     build_year_col=PyPSAGeneratorCol.BUILD_YEAR,
 )
@@ -160,11 +170,11 @@ _STORAGE = _CandidateKind(
     fill=fill_storage_technology_defaults,
     skips=STORAGE_SKIPS,
     extension=ExtensionKind.STORAGE,
-    with_fuel=False,
     build=build_storage_technology_translations,
     schema=STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
     base_types=_STORAGE_BASE_TYPES,
+    fleet_types=_STORAGE_FLEET_TYPES,
     device_class=PyPSAComponent.STORAGE_UNIT,
     build_year_col=PyPSAStorageUnitCol.BUILD_YEAR,
 )
@@ -216,13 +226,6 @@ class PypsaToSiennaInvestmentsMapTechnologiesParams(BaseModel):
             "the economic year every cost in the portfolio is quoted in; no PyPSA field states one"
         ),
     )
-
-
-class _Candidates(NamedTuple):
-    """One candidate table as translated, beside the rows it was translated from."""
-
-    source: pl.DataFrame
-    destination: pl.DataFrame
 
 
 class _CandidateScope(NamedTuple):
@@ -297,28 +300,28 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         scope: _CandidateScope,
         kind: _CandidateKind,
         numbering: _Numbering,
-    ) -> _Candidates:
+    ) -> pl.DataFrame:
+        """The rows one candidate table was translated from, once the table is written."""
         table = self._candidate_rows(state, kind, scope.bus_names)
         if table.is_empty():
-            return _Candidates(table, table)
+            return table
         lookup = reader.read(kind.extension)
         names = table[PyPSAComponentCol.NAME].to_list()
         table = self._enrich_candidate(
             table,
             scope.area_by_bus,
-            with_fuel=kind.with_fuel,
             unit_sizes=[lookup.get(name).unit_size_mw for name in names],
             technical_lives=[lookup.get(name).technical_life_years for name in names],
         )
-        destination = self._write_table(
+        self._write_table(
             state,
             table,
-            kind.build(scope.base_year, numbering.next_id),
+            partial(kind.build, scope.base_year),
             kind.schema,
             kind.component,
             numbering,
         )
-        return _Candidates(table, destination)
+        return table
 
     def _candidate_rows(
         self, state: State, kind: _CandidateKind, bus_names: Sequence[str]
@@ -360,7 +363,6 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         table: pl.DataFrame,
         area_by_bus: Mapping[str, str | None],
         *,
-        with_fuel: bool,
         unit_sizes: Sequence[float | None],
         technical_lives: Sequence[float | None],
     ) -> pl.DataFrame:
@@ -382,7 +384,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             table, carrier_col, POWER_SYSTEMS_TYPE_COL, component_types, pl.Utf8
         )
         table = enrich_from_names(table, carrier_col, PRIME_MOVER_COL, prime_movers, pl.Utf8)
-        table = enrich_from_names(table, carrier_col, FUEL_COL, fuels if with_fuel else {}, pl.Utf8)
+        table = enrich_from_names(table, carrier_col, FUEL_COL, fuels, pl.Utf8)
         table = enrich_from_names(
             table, PyPSAComponentCol.BUS, REGION_COL, dict(area_by_bus), pl.Utf8
         )
@@ -395,14 +397,14 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self,
         state: State,
         table: pl.DataFrame,
-        translations: list[Translation],
+        build: _BuildTranslations,
         schema: _Schema,
         component: str,
         numbering: _Numbering,
     ) -> pl.DataFrame:
         """Translate one source table into a destination table, and take its share of the ids."""
         out = finalise(
-            apply_translations(table, translations, self._recorder),
+            apply_translations(table, build(numbering.next_id), self._recorder),
             schema,
             self._recorder,
             component,
@@ -429,7 +431,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._write_table(
             state,
             table,
-            build_demand_translations(numbering.next_id),
+            build_demand_translations,
             DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
             numbering,
@@ -442,7 +444,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         state: State,
         reader: ExtensionReader,
         numbering: _Numbering,
-        candidates: Sequence[tuple[_CandidateKind, _Candidates]],
+        candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> None:
         records = reader.read(ExtensionKind.CONSTRAINT).read_all()
         if not records:
@@ -455,7 +457,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._write_table(
             state,
             table,
-            build_carbon_cap_translations(numbering.next_id),
+            build_carbon_cap_translations,
             CARBON_CAPS_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.CARBON_CAPS,
             numbering,
@@ -468,7 +470,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         state: State,
         buses: pl.DataFrame,
         reader: ExtensionReader,
-        candidates: Sequence[tuple[_CandidateKind, _Candidates]],
+        candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> None:
         """The three attributes, numbered from the one counter the flat array shares."""
         fleet = self._build_fleet(state, reader, candidates)
@@ -486,7 +488,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             out = self._write_table(
                 state,
                 source,
-                attribute.build(numbering.next_id),
+                attribute.build,
                 attribute.schema,
                 attribute.kind,
                 numbering,
@@ -509,7 +511,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self,
         state: State,
         reader: ExtensionReader,
-        candidates: Sequence[tuple[_CandidateKind, _Candidates]],
+        candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> pl.DataFrame:
         """The base-system devices each technology stands for, and the years they state."""
         fleets: list[pl.DataFrame] = []
@@ -518,7 +520,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             fleets.append(
                 build_existing_fleet_source_table(
                     _technologies(found, kind.component, kind.device_class),
-                    _carrier_groups(state, kind.source_table, _base_names(state, kind.base_types)),
+                    _carrier_groups(state, kind.source_table, _base_names(state, kind.fleet_types)),
                     years.built,
                     years.retired,
                 )
@@ -553,7 +555,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
 
 
 def _model_components(
-    state: State, candidates: Sequence[tuple[_CandidateKind, _Candidates]]
+    state: State, candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]]
 ) -> set[str]:
     """Every component of the network a constraint could weight.
 
@@ -564,8 +566,8 @@ def _model_components(
     names: set[str] = set()
     for kind, found in candidates:
         names |= _base_names(state, kind.base_types)
-        if not found.destination.is_empty():
-            names |= set(found.destination[SIENNA_NAME_COLUMN].to_list())
+        if not found.is_empty():
+            names |= set(found[PyPSAComponentCol.NAME].to_list())
     return names
 
 
@@ -609,10 +611,10 @@ def _carrier_groups(
 
 
 def _technologies(
-    candidates: _Candidates, component: SiennaInvestmentsComponent, device_class: str
+    candidates: pl.DataFrame, component: SiennaInvestmentsComponent, device_class: str
 ) -> list[CandidateTechnology]:
     """Each translated technology, beside the fleet its base-system devices make up."""
-    if candidates.destination.is_empty():
+    if candidates.is_empty():
         return []
     return [
         CandidateTechnology(
@@ -622,8 +624,8 @@ def _technologies(
             carrier=carrier,
         )
         for name, carrier in zip(
-            candidates.destination[SIENNA_NAME_COLUMN].to_list(),
-            candidates.source[PyPSAComponentCol.CARRIER].to_list(),
+            candidates[PyPSAComponentCol.NAME].to_list(),
+            candidates[PyPSAComponentCol.CARRIER].to_list(),
             strict=True,
         )
     ]

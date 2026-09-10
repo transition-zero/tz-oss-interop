@@ -130,8 +130,6 @@ class SiennaStorageTechnologyCol:
 
 
 class SiennaDemandRequirementCol:
-    """SiennaSchemas ``DemandRequirement`` field names."""
-
     ID = "id"
     NAME = "name"
     AVAILABLE = "available"
@@ -161,8 +159,6 @@ class SiennaCarbonCapsCol:
 
 
 class SiennaExistingDevicesCol:
-    """SiennaSchemas ``ExistingDevices`` field names."""
-
     ID = "id"
     EXISTING_DEVICES = "existing_devices"
 
@@ -190,15 +186,11 @@ class NamedYearField:
 
 
 class SiennaTopologyMappingCol:
-    """SiennaSchemas ``TopologyMapping`` field names."""
-
     ID = "id"
     BUSES = "buses"
 
 
 class SiennaPortfolioFinancialDataCol:
-    """SiennaSchemas ``PortfolioFinancialData`` field names."""
-
     ID = "id"
     DISCOUNT_RATE = "discount_rate"
     INFLATION_RATE = "inflation_rate"
@@ -218,15 +210,11 @@ class SiennaTechnologyFinancialDataField:
 
 
 class SiennaCapitalCostField:
-    """Field names of the Sienna ``CapitalCost`` struct."""
-
     CAPITAL_COST = "capital_cost"
     INTERCONNECTION_COST = "interconnection_cost"
 
 
 class SiennaStorageCapitalCostField:
-    """Field names of the Sienna ``StorageCapitalCost`` struct."""
-
     CHARGE_CAPITAL_COST = "charge_capital_cost"
     DISCHARGE_CAPITAL_COST = "discharge_capital_cost"
     ENERGY_CAPITAL_COST = "energy_capital_cost"

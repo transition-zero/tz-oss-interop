@@ -184,10 +184,7 @@ def run_pipeline(
         for step_node in spec.steps:
             step = step_factory(step_node.name, pipeline_steps)
             state = step.run(state, _build_params(NodeKind.STEP, step, step_node))
-        if state.consumed_extensions is not None:
-            state.consumed_extensions.report_unconsumed(
-                state.source_extensions, spec.source_framework, recorder
-            )
+        state.report_unread_extensions(spec.source_framework, recorder)
 
         for sink_node in spec.sinks:
             sink = sink_factory(sink_node.name)

@@ -57,9 +57,7 @@ CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     COVERS_MODEL: pl.Boolean,
 }
 
-# The span a cap is read from, most specific first. A yearly right-hand side is the one a
-# cap on a target year holds, and a horizon-wide one is the only other span that bounds the
-# whole run rather than a repeating window inside it.
+# The spans a cap is read from, most specific first: no other span bounds the whole run.
 _CAP_PERIODS: tuple[ConstraintPeriod, ...] = (ConstraintPeriod.YEAR, ConstraintPeriod.HORIZON)
 
 _source = partial(pypsa_source_field, ExtensionKind.CONSTRAINT)
