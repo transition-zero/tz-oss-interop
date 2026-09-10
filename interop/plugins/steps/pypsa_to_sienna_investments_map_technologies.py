@@ -506,7 +506,8 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         """The base-system devices each technology stands for, and the years they state."""
         fleets: list[pl.DataFrame] = []
         for kind, found in candidates:
-            devices = _source_rows(state, kind.source_table)
+            source = state.source_topology.get(kind.source_table)
+            devices = pl.DataFrame() if source is None else source.collect()
             years = self._years(devices, reader, kind)
             fleets.append(
                 build_existing_fleet_source_table(
@@ -589,12 +590,6 @@ def _base_names(state: State, types: tuple[SiennaComponent, ...]) -> set[str]:
         if table is not None:
             names |= set(table[SIENNA_NAME_COLUMN].to_list())
     return names
-
-
-def _source_rows(state: State, source_table: str) -> pl.DataFrame:
-    """One source table as rows, or an empty frame where the network holds no such table."""
-    src = state.source_topology.get(source_table)
-    return pl.DataFrame() if src is None else src.collect()
 
 
 def _fleet_groups(
