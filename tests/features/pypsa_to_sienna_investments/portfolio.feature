@@ -45,8 +45,6 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "capital_costs.interconnection_cost" set to 0.0
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.cost_type" set to "RENEWABLE"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "operation_costs.fixed" set to 15000.0
-    # RenewableGenerationCost states neither a start-up nor a shut-down cost, so the struct
-    # the table carries them in leaves both unset and the document writes neither.
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "operation_costs.start_up"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "operation_costs.shut_down"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" having "unit_size" set to 100.0
