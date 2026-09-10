@@ -302,7 +302,6 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.OVERNIGHT_COST,
             PyPSAGeneratorCol.DISCOUNT_RATE,
             PyPSAGeneratorCol.LIFETIME,
-            PyPSAGeneratorCol.FOM_COST,
         ),
     )
 
@@ -338,7 +337,6 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.OVERNIGHT_COST,
             PyPSAStorageUnitCol.DISCOUNT_RATE,
             PyPSAStorageUnitCol.LIFETIME,
-            PyPSAStorageUnitCol.FOM_COST,
         ),
     )
 

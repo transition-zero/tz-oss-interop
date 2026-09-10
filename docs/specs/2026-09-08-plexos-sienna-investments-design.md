@@ -59,8 +59,10 @@ default.
 
 PyPSA 1.2 states that `overnight_cost` "takes precedence over `capital_cost`" and that PyPSA
 "calculates annuity using `discount_rate` and `lifetime`". So the translator writes
-`overnight_cost` from `Build Cost`, `discount_rate` from `WACC`, `lifetime` from `Economic
-Life` and `fom_cost` from `FO&M Charge`, and never assembles a capital cost of its own.
+`overnight_cost` from `Build Cost`, `discount_rate` from `WACC` and `lifetime` from
+`Economic Life`, and never assembles a capital cost of its own. PyPSA reads `fom_cost` as a
+charge for the whole modelled horizon rather than a yearly one, so the yearly `FO&M Charge`
+travels in the extensions sidecar as `fom_charge_per_mw_year`.
 
 `Economic Life` is the capital recovery period, which is the period PyPSA annuitises across.
 `Technical Life` is how long the plant runs, and PyPSA has one lifetime field which the

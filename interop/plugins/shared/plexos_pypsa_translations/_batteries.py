@@ -107,7 +107,7 @@ _BATTERY_POWER = RatedPower(PlexosClass.BATTERY, PlexosProperty.MAX_POWER)
 
 
 def _derive_battery(rated: RatedObject) -> StorageUnitMapping:
-    unit_size = rated.candidate.rated.unit_size
+    unit_size = rated.unit_size
     capacity = _battery_energy_capacity(rated, unit_size)
     max_hours = derive_max_hours(capacity, unit_size.value, per=_PER_MAX_POWER_DERIVATION)
     running = rated.running_power

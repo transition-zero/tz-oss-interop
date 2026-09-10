@@ -204,7 +204,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_full.xml"
     When I run translate against "inputs/phs_full.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_full" attribute "state_of_charge_initial" is 3000.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 MWh | head Storage.Initial Volume, clamped to 0..p_nom * max_hours |"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 MWh | head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours |"
 
   Scenario: a reservoir-hydro Generator becomes a PyPSA hydro StorageUnit that only generates
     Given a Plexos model
@@ -320,7 +320,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/unbounded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "unbounded" attribute "max_hours" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "unbounded" attribute "state_of_charge_initial" is 500.0
-    And the file "decisions.md" contains "head Storage.Initial Volume, clamped to 0..p_nom * max_hours"
+    And the file "decisions.md" contains "head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours"
 
   Scenario: a pumped-storage plant with a VO&M charge prices its marginal cost
     Given a Plexos model
@@ -548,7 +548,6 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Then the PyPSA network "outputs/network.nc" storage unit "new_bat" is extendable
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom" is 300
-    # Capacity is the energy beside one unit's Max Power, so the hours are one unit's 200 / 50.
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "max_hours" is 4
     # Nothing is built yet, so the battery holds no charge to start with.
     And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "state_of_charge_initial" is 0
@@ -600,7 +599,6 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/new_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_new" is extendable
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_max" is 300
-    # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
     And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom" is 300
 
   Scenario: a battery that already runs keeps its capacity when its build is unpriced

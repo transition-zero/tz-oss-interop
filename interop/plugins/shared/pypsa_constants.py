@@ -486,7 +486,6 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.OVERNIGHT_COST: pl.Float64,
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
-    PyPSAGeneratorCol.FOM_COST: pl.Float64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -523,7 +522,6 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.OVERNIGHT_COST: pl.Float64,
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
-    PyPSAStorageUnitCol.FOM_COST: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

@@ -88,8 +88,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     thermal = _derive_thermal(row, bus_names, extensions, dt_minutes)
                     _record_thermal(reporter, thermal)
                     rows.append(_thermal_row(thermal))
-                    p_max_pu_scale_by_name[thermal.name] = (
-                        thermal.active_power_max / thermal.base_power
+                    p_max_pu_scale_by_name[thermal.name] = per_unit_of(
+                        thermal.active_power_max, thermal.base_power
                     )
                 case SiennaComponent.RENEWABLE_DISPATCH:
                     dispatch = _derive_renewable(
