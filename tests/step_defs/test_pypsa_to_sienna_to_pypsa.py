@@ -4,9 +4,7 @@ import pytest
 from interop_testing import write_pipeline
 from pytest_bdd import given, parsers, scenarios, when
 
-from tests.step_defs.conftest import (
-    invoke_translate,
-)
+from tests.step_defs.conftest import invoke_translate
 
 scenarios("../features/pypsa_to_sienna_to_pypsa.feature")
 

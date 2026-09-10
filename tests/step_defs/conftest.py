@@ -313,7 +313,6 @@ STANDARD_CARRIER_MAP: dict[str, tuple[str, str]] = {
     "hydrogen": ("OTHER_GAS", "FC"),
 }
 
-# carrier -> (sienna_component_type, sienna_prime_mover_type) for the non-thermal targets.
 STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "solar": ("RenewableDispatch", "PVe"),
     "solar-utility": ("RenewableDispatch", "PVe"),

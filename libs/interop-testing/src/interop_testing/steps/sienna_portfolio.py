@@ -46,11 +46,10 @@ def assert_portfolio_attribute_field(
     field_path: str,
     value: str,
 ) -> None:
-    expected = json.loads(value)
-    attributes = _one_attribute(path, attribute_type, component_type, component_name)
-    context = f"{path}[{attribute_type} of {component_type}:{component_name}]"
-    actual = navigate_json(attributes, field_path, context)
-    assert actual == expected, f"expected {context}.{field_path!r} = {expected!r}, got {actual!r}"
+    component_id = find_sienna_component(read_json(path), component_type, component_name)["id"]
+    assert_base_system_attribute_field(
+        path, attribute_type, component_type, component_id, field_path, value
+    )
 
 
 @then(
@@ -76,16 +75,3 @@ def assert_base_system_attribute_field(
     assert len(matching) == 1, f"expected 1 {context}, got {len(matching)}: {matching!r}"
     actual = navigate_json(matching[0], field_path, context)
     assert actual == expected, f"expected {context}.{field_path!r} = {expected!r}, got {actual!r}"
-
-
-def _one_attribute(
-    path: str, attribute_type: str, component_type: str, component_name: str
-) -> dict[str, object]:
-    data = read_json(path)
-    component_id = find_sienna_component(data, component_type, component_name)["id"]
-    matching = portfolio_attributes_for(data, attribute_type, component_type, component_id)
-    assert len(matching) == 1, (
-        f"expected 1 {attribute_type} for {component_type} {component_name!r} in {path}, "
-        f"got {len(matching)}: {matching!r}"
-    )
-    return matching[0]

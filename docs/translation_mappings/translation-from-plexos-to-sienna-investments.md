@@ -170,8 +170,8 @@ Five kinds of `Constraint` are left out, each named in `decisions.md`:
   more than the model meant;
 - one whose `Sense` is not `<=`, because a cap is a ceiling and nothing else;
 - one stating neither an `RHS Year` nor an `RHS`, because no other span bounds the whole run;
-- one whose right-hand side is not a finite number, because `max_mtons` would be NaN or
-  Infinity, which no JSON reader accepts as a number.
+- one whose right-hand side is not a finite number, because a cap states a number of
+  million tonnes, and neither NaN nor Infinity is one.
 
 Every `Constraint` still reaches `extensions.json` unchanged, whether or not it became a cap.
 
