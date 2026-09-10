@@ -31,11 +31,12 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    POWER_CAPACITY,
+    fill_capacity_defaults,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -81,9 +82,6 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, None),
-            (PyPSAStorageUnitCol.P_NOM_MIN, 0.0),
             (PyPSAStorageUnitCol.P_MIN_PU, -1.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -94,16 +92,9 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [
             (PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False),
-            (PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
-        PyPSAStorageUnitCol.P_NOM_OPT,
-        PyPSAStorageUnitCol.P_NOM,
-        PyPSAStorageUnitCol.P_NOM_MIN,
-    )
+    return fill_capacity_defaults(table, POWER_CAPACITY)
 
 
 def build_storage_extensions(

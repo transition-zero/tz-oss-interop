@@ -15,7 +15,11 @@ from typing import Any, NamedTuple
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.pypsa_constants import PyPSAComponentCol, PyPSAComponentNaming
+from interop.plugins.shared.pypsa_constants import (
+    PyPSAComponentCol,
+    PyPSAComponentNaming,
+    PyPSAGeneratorCol,
+)
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
@@ -26,7 +30,12 @@ from interop.plugins.shared.sienna_constants import (
     SiennaVariableCostType,
     time_series_uuid,
 )
-from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, SkipRule
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    SkipRule,
+    fill_defaults,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     SourceField,
@@ -44,60 +53,85 @@ EFFECTIVE_P_NOM_DERIVATION = (
 )
 
 
-def has_solved_capacity(extendable: str, opt: str) -> pl.Expr:
+class CapacityColumns(NamedTuple):
+    """The four PyPSA columns that together state what capacity a component holds."""
+
+    extendable: str
+    opt: str
+    nom: str
+    nom_min: str
+
+
+# PyPSA names these four columns the same on a Generator, a StorageUnit and a Link. A Line
+# names them s_nom, so it needs a second bundle rather than a second set of helpers.
+POWER_CAPACITY = CapacityColumns(
+    PyPSAGeneratorCol.P_NOM_EXTENDABLE,
+    PyPSAGeneratorCol.P_NOM_OPT,
+    PyPSAGeneratorCol.P_NOM,
+    PyPSAGeneratorCol.P_NOM_MIN,
+)
+
+
+def has_solved_capacity(columns: CapacityColumns) -> pl.Expr:
     """A solve that builds none of a component writes p_nom_opt 0; only a network no solve
     has touched leaves the column out, which stages as null.
     """
-    return pl.col(extendable) & pl.col(opt).is_not_null()
+    return pl.col(columns.extendable) & pl.col(columns.opt).is_not_null()
 
 
-def has_capacity_floor(extendable: str, nom_min: str) -> pl.Expr:
+def has_capacity_floor(columns: CapacityColumns) -> pl.Expr:
     """An extendable component's p_nom_min is capacity it already has, which a build cannot
     take away, so an operations model may dispatch it whether or not a solve has run.
     """
-    return pl.col(extendable) & (pl.col(nom_min) > 0)
+    return pl.col(columns.extendable) & (pl.col(columns.nom_min) > 0)
 
 
-def choose_capacity_attribute(
-    row: dict[str, Any], extendable: str, opt: str, nom: str, nom_min: str
-) -> str:
+def choose_capacity_attribute(row: dict[str, Any], columns: CapacityColumns) -> str:
     """The PyPSA attribute ``effective_p_nom`` read for one row, so an event names it."""
-    if row[extendable]:
-        if row[opt] is not None:
-            return opt
-        if row[nom_min] > 0:
-            return nom_min
-    return nom
+    if row[columns.extendable]:
+        if row[columns.opt] is not None:
+            return columns.opt
+        if row[columns.nom_min] > 0:
+            return columns.nom_min
+    return columns.nom
 
 
-def effective_p_nom(extendable: str, opt: str, nom: str, nom_min: str) -> pl.Expr:
+def effective_p_nom(columns: CapacityColumns) -> pl.Expr:
     return (
-        pl.when(has_solved_capacity(extendable, opt))
-        .then(pl.col(opt))
-        .when(has_capacity_floor(extendable, nom_min))
-        .then(pl.col(nom_min))
-        .otherwise(pl.col(nom))
+        pl.when(has_solved_capacity(columns))
+        .then(pl.col(columns.opt))
+        .when(has_capacity_floor(columns))
+        .then(pl.col(columns.nom_min))
+        .otherwise(pl.col(columns.nom))
     )
 
 
-def states_built_capacity(extendable: str, opt: str, nom_min: str) -> pl.Expr:
-    """Whether the component has capacity an operations model may dispatch.
-
-    A component that is not extendable is rated at its p_nom. An extendable one is rated at
-    the capacity a solve gave it, or at the p_nom_min a build cannot take away. An extendable
-    component with neither states its capacity as a build the plan has yet to decide, and
-    PyPSA ignores the p_nom of an extendable component altogether.
+def states_built_capacity(columns: CapacityColumns) -> pl.Expr:
+    """PyPSA ignores the p_nom of an extendable component, so p_nom alone cannot say whether
+    such a component holds capacity an operations model may dispatch.
     """
-    return ~pl.col(extendable) | pl.col(opt).is_not_null() | (pl.col(nom_min) > 0)
-
-
-def with_effective_p_nom(
-    table: pl.DataFrame, extendable: str, opt: str, nom: str, nom_min: str
-) -> pl.DataFrame:
-    return table.with_columns(
-        effective_p_nom(extendable, opt, nom, nom_min).alias(EFFECTIVE_P_NOM),
-        states_built_capacity(extendable, opt, nom_min).alias(STATES_BUILT_CAPACITY),
+    return (
+        ~pl.col(columns.extendable)
+        | pl.col(columns.opt).is_not_null()
+        | (pl.col(columns.nom_min) > 0)
     )
+
+
+def with_effective_p_nom(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+    return table.with_columns(
+        effective_p_nom(columns).alias(EFFECTIVE_P_NOM),
+        states_built_capacity(columns).alias(STATES_BUILT_CAPACITY),
+    )
+
+
+def fill_capacity_defaults(table: pl.DataFrame, columns: CapacityColumns) -> pl.DataFrame:
+    """The four PyPSA capacity columns at their defaults, and the two rated from them."""
+    table = fill_defaults(
+        table,
+        [(columns.opt, None), (columns.nom, 0.0), (columns.nom_min, 0.0)],
+        [(columns.extendable, False)],
+    )
+    return with_effective_p_nom(table, columns)
 
 
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"

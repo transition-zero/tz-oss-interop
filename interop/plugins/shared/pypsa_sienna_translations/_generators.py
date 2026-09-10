@@ -29,13 +29,14 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    POWER_CAPACITY,
     choose_capacity_attribute,
+    fill_capacity_defaults,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -81,9 +82,6 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, None),
-            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
@@ -97,16 +95,9 @@ def fill_generator_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [
             (PyPSAGeneratorCol.COMMITTABLE, False),
-            (PyPSAGeneratorCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-        PyPSAGeneratorCol.P_NOM_OPT,
-        PyPSAGeneratorCol.P_NOM,
-        PyPSAGeneratorCol.P_NOM_MIN,
-    )
+    return fill_capacity_defaults(table, POWER_CAPACITY)
 
 
 def enrich_carrier_lookup(
@@ -408,13 +399,7 @@ GENERATOR_APL = Translation(
                     framework=Framework.PYPSA,
                     component=PyPSAComponent.GENERATOR,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=choose_capacity_attribute(
-                        old,
-                        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-                        PyPSAGeneratorCol.P_NOM_OPT,
-                        PyPSAGeneratorCol.P_NOM,
-                        PyPSAGeneratorCol.P_NOM_MIN,
-                    ),
+                    attribute=choose_capacity_attribute(old, POWER_CAPACITY),
                     value=old[EFFECTIVE_P_NOM],
                     unit=UNIT_MW,
                 )

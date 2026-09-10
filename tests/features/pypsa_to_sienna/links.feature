@@ -70,11 +70,23 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 100.0
     And the network contains bus "bus_2" carrier "AC" v_nom 100.0
-    And the network contains link "link_ext" from "bus_1" to "bus_2" with capacity 600.0 MW efficiency 1.0 carrier "DC" extendable
+    And the network contains link "link_ext" from "bus_1" to "bus_2" with capacity 600.0 MW optimised capacity 600.0 MW efficiency 1.0 carrier "DC" extendable
     And the network is saved as "inputs/link_ext.nc"
     When I run translate against "inputs/link_ext.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON controllable_line extension record for "link_ext" having "carrier" set to "DC"
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "link_ext" having "p_nom_extendable" set to true
+
+  Scenario: an extendable link no solve has sized is left out, as a candidate generator is
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 100.0
+    And the network contains bus "bus_2" carrier "AC" v_nom 100.0
+    And the network contains link "planned_dc" from "bus_1" to "bus_2" with capacity 2000.0 MW efficiency 1.0 extendable
+    And the network contains link "built_dc" from "bus_1" to "bus_2" with capacity 600.0 MW efficiency 1.0
+    And the network is saved as "inputs/planned_link.nc"
+    When I run translate against "inputs/planned_link.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 components of type "TwoTerminalGenericHVDCLine"
+    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt and p_nom_min is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
+    And the log contains "1 Link(s) are extendable and state no capacity they already hold"
 
   Scenario: a non-default p_max_pu and positive p_min_pu travel in extensions for a lossless round-trip
     Given a PyPSA network

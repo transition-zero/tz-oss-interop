@@ -514,8 +514,6 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "fom_cost" equal to 15000
     # Nothing is built yet, so the capacity it may build is what its per-unit fields read against.
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom" equal to 500
-    # PyPSA works the annuity out itself from the three fields above, so nothing writes one.
-    And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "capital_cost" equal to 0
     # The unit size and the technical life have no PyPSA column, so they travel beside it.
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "unit_size_mw" set to 100.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
@@ -550,6 +548,20 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the file "decisions.md" contains "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over"
     And the log contains "1 candidate Generator(s) state no Build Cost, so each is left out"
     And the log contains "1 candidate Generator(s) state no WACC, so each is left out"
+    And the log contains "1 candidate Generator(s) state no Economic Life, so each is left out"
+
+  Scenario: a candidate that states a price of zero is left out, but a zero WACC is a rate
+    Given a Plexos model
+    And the model contains generator "FreeBuild_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=0, WACC=0.07, Economic Life=25"
+    And the model contains generator "Instant_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07, Economic Life=0"
+    And the model contains generator "Undiscounted_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0, Economic Life=25"
+    And the model is saved as "inputs/zero_priced_candidate.xml"
+    When I run translate against "inputs/zero_priced_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has no generator "FreeBuild_REZ"
+    And the PyPSA network "outputs/network.nc" has no generator "Instant_REZ"
+    And the PyPSA network "outputs/network.nc" generator "Undiscounted_REZ" is extendable
+    And the PyPSA generator "Undiscounted_REZ" in "outputs/network.nc" has "discount_rate" equal to 0
+    And the log contains "1 candidate Generator(s) state no Build Cost, so each is left out"
     And the log contains "1 candidate Generator(s) state no Economic Life, so each is left out"
 
   Scenario: a generator the model cannot build states nothing about expansion

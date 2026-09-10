@@ -31,11 +31,12 @@ from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     EFFECTIVE_P_NOM,
     EFFECTIVE_P_NOM_DERIVATION,
+    POWER_CAPACITY,
+    fill_capacity_defaults,
     pypsa_source_field,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
-    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -82,22 +83,12 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, None),
-            (PyPSAGeneratorCol.P_NOM_MIN, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
         ],
-        [(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False)],
     )
-    return with_effective_p_nom(
-        table,
-        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-        PyPSAGeneratorCol.P_NOM_OPT,
-        PyPSAGeneratorCol.P_NOM,
-        PyPSAGeneratorCol.P_NOM_MIN,
-    )
+    return fill_capacity_defaults(table, POWER_CAPACITY)
 
 
 def build_renewable_extensions(

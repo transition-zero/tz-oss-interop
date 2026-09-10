@@ -39,9 +39,11 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     LOAD_TRANSLATIONS_PHASE_1,
     LOAD_TRANSLATIONS_PHASE_2,
     PHS_STORAGE_MAPPING,
+    POWER_CAPACITY,
     RENEWABLE_DISPATCH_MAPPING,
     RENEWABLE_NON_DISPATCH_MAPPING,
     THERMAL_MAPPING,
+    CapacityColumns,
     ComponentMapping,
     ScopeSkips,
     TimeSeriesInfo,
@@ -57,6 +59,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     enrich_load_ts_stats,
     enrich_load_voll,
     fill_bus_defaults,
+    fill_capacity_defaults,
     fill_line_defaults,
     fill_link_defaults,
     fill_load_defaults,
@@ -67,6 +70,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     load_in_scope,
     load_is_interruptible,
     unbuilt_candidate_skip,
+    with_effective_p_nom,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -118,6 +122,7 @@ class _CarrierGroup:
 
     source_table: str
     mappings: tuple[ComponentMapping, ...]
+    capacity: CapacityColumns = POWER_CAPACITY
 
     @property
     def naming(self) -> PyPSAComponentNaming:
@@ -247,7 +252,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         src = state.source_topology.get(group.source_table)
         if src is None:
             return None
-        table = src.collect()
+        table = fill_capacity_defaults(src.collect(), group.capacity)
         for rule in self._scope_rules(state, group, own_rows):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         return table
@@ -282,6 +287,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
                 keep=pl.col(PyPSAComponentCol.BUS).is_in(self._ac_bus_names(state)),
                 report=skips.bus_scope,
             ),
+            unbuilt_candidate_skip(group.naming),
         ]
 
     def _translated_carriers(self, group: _CarrierGroup) -> set[str]:
@@ -308,8 +314,6 @@ class PypsaToSiennaMapComponents(TranslationStep):
         carriers = self._carrier_mappings.get_carriers(mapping.sienna_component)
         table = mapping.fill_defaults(source)
         table = table.filter(pl.col(mapping.carrier_col).is_in(list(carriers)))
-        candidates = unbuilt_candidate_skip(PYPSA_COMPONENT_NAMING[mapping.source_table])
-        table, _ = filter_component(table, candidates.keep, candidates.report, self._recorder)
         series = self._source_time_series(state, mapping)
         if mapping.skip is not None:
             rule = mapping.skip(series)
@@ -506,13 +510,15 @@ class PypsaToSiennaMapComponents(TranslationStep):
         if buses is None:
             return state
 
-        table = fill_link_defaults(src.collect())
+        table = with_effective_p_nom(fill_link_defaults(src.collect()), POWER_CAPACITY)
         table, _ = filter_component(
             table,
             link_in_scope(buses[SiennaACBusCol.NAME].to_list()),
             LINK_SKIP,
             self._recorder,
         )
+        candidates = unbuilt_candidate_skip(PYPSA_COMPONENT_NAMING[PyPSATable.LINKS])
+        table, _ = filter_component(table, candidates.keep, candidates.report, self._recorder)
 
         dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE

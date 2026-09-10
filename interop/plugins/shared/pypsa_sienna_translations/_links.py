@@ -24,6 +24,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    POWER_CAPACITY,
     choose_capacity_attribute,
     effective_p_nom,
     pypsa_skip_report,
@@ -214,12 +215,7 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 
 # --- Limit / loss expressions ---
 
-_effective_p_nom = effective_p_nom(
-    PyPSALinkCol.P_NOM_EXTENDABLE,
-    PyPSALinkCol.P_NOM_OPT,
-    PyPSALinkCol.P_NOM,
-    PyPSALinkCol.P_NOM_MIN,
-)
+_effective_p_nom = effective_p_nom(POWER_CAPACITY)
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
 _from_min = (
     pl.when(_is_bidirectional).then(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU)).otherwise(0.0)
@@ -235,13 +231,7 @@ _to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
     """The PyPSA capacity attribute actually used for the power limits, and its value."""
-    attribute = choose_capacity_attribute(
-        old,
-        PyPSALinkCol.P_NOM_EXTENDABLE,
-        PyPSALinkCol.P_NOM_OPT,
-        PyPSALinkCol.P_NOM,
-        PyPSALinkCol.P_NOM_MIN,
-    )
+    attribute = choose_capacity_attribute(old, POWER_CAPACITY)
     return attribute, old[attribute]
 
 

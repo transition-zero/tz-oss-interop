@@ -1,13 +1,7 @@
-"""What a PLEXOS object may build, and what building it costs.
-
-A Generator, a Battery and a pumped-storage turbine all state a build the same way, so each
-path hands this module the rated power of one unit beside the rated power the object already
-has, and reads the destination decisions back.
-"""
+"""What a PLEXOS object may build, and what building it costs."""
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
@@ -34,11 +28,9 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SkippedComponent,
     SourceValue,
     maps_to,
+    warn_about_groups,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
-from interop.plugins.shared.warning_text import name_a_few
-
-log = logging.getLogger(__name__)
 
 NOTHING_TO_REPORT = Decision.unreported(None)
 
@@ -71,6 +63,7 @@ _NO_ECONOMIC_LIFE_NOTE = (
     "so PyPSA prices the build as a perpetuity"
 )
 _BUILD_LEFT_OUT_NOTE = "; the object keeps the capacity it runs and only its build is left out"
+_BUILD_LEFT_OUT_OUTCOME = "so each keeps the capacity it runs and none of the build it may make"
 _UNPRICED_BUILD_DERIVATION = (
     "the model prices no build for this object, so it keeps the capacity it runs and that "
     "capacity is fixed"
@@ -186,13 +179,11 @@ def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
 
 
 def derive_buildable(source: CandidateSource) -> Decision:
-    """The capacity a candidate may build, which stands as its p_nom while it has none.
+    """PyPSA reads ``p_nom`` only where a capacity is fixed, so this value binds no dispatch.
 
-    PyPSA optimises ``p_nom_opt`` between ``p_nom_min`` and ``p_nom_max`` and reads ``p_nom``
-    only for an object whose capacity is fixed, so what stands here does not bind the
-    dispatch. It is what every per-unit field on the component is read against --
-    ``p_min_pu``, a ramp limit, an availability profile stated in MW -- and against nothing
-    each of those would come out at zero.
+    Do not leave a candidate's ``p_nom`` at zero. ``p_min_pu``, a ramp limit and an
+    availability profile stated in MW are all read against it, and each one comes out at zero
+    against nothing.
     """
     return Decision.derived(
         source.rated.unit_size.value * source.max_units_built,
@@ -214,11 +205,19 @@ class UnpricedBuild:
     plexos_property: str
     unit: str | None
     note: str
+    zero_is_a_price: bool = False
+    """A WACC of zero is the rate of a model that does not discount, so it prices a build."""
+
+    def prices_a_build(self, props: dict[str, float]) -> bool:
+        stated = props.get(self.plexos_property)
+        if stated is None:
+            return False
+        return stated > 0.0 or self.zero_is_a_price
 
 
 _PRICES_A_BUILD = (
     UnpricedBuild(PlexosProperty.BUILD_COST, UNIT_DOLLARS_PER_MW, _NO_BUILD_COST_NOTE),
-    UnpricedBuild(PlexosProperty.WACC, None, _NO_WACC_NOTE),
+    UnpricedBuild(PlexosProperty.WACC, None, _NO_WACC_NOTE, zero_is_a_price=True),
     UnpricedBuild(PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, _NO_ECONOMIC_LIFE_NOTE),
 )
 
@@ -229,6 +228,7 @@ class DroppedBuild:
 
     source: SourceValue
     note: str
+    warn_with: SkipGroup
 
 
 def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
@@ -243,7 +243,7 @@ def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
     if unpriced is None:
         return None
     return SkippedComponent(
-        source=_names_absent(source, unpriced),
+        source=_names_unpriced(source, unpriced),
         note=unpriced.note,
         warn_with=SkipGroup(
             counted=f"candidate {source.plexos_class}(s)",
@@ -253,7 +253,6 @@ def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
 
 
 def record_expansion(name: str, expansion: ExpansionDecisions, reporter: ComponentReporter) -> None:
-    """What travels beside the destination row: the sidecar fields, and a build left out."""
     reporter.record(name, UNIT_SIZE_COLUMN, expansion.unit_size)
     reporter.record(name, TECHNICAL_LIFE_COLUMN, expansion.technical_life)
     if expansion.dropped_build is not None:
@@ -262,20 +261,11 @@ def record_expansion(name: str, expansion: ExpansionDecisions, reporter: Compone
 
 def warn_about_dropped_builds(expansions: Iterable[ExpansionDecisions]) -> None:
     """One line for each property that left a running object's build unpriced."""
-    dropped = [one.dropped_build for one in expansions if one.dropped_build is not None]
-    grouped: dict[tuple[str, str], list[str]] = {}
-    for one in dropped:
-        key = (one.source.component, str(one.source.attribute))
-        grouped.setdefault(key, []).append(one.source.name)
-    for (component, plexos_property), names in sorted(grouped.items()):
-        log.warning(
-            "plexos: %d %s(s) that already run state no %s, so each keeps the capacity it "
-            "runs and none of the build it may make. Each one: %s",
-            len(names),
-            component,
-            plexos_property,
-            name_a_few(sorted(names)),
-        )
+    warn_about_groups(
+        (one.dropped_build.warn_with, one.dropped_build.source.name)
+        for one in expansions
+        if one.dropped_build is not None
+    )
 
 
 def read_sidecar_value(decision: Decision) -> float | None:
@@ -293,7 +283,7 @@ def gather_sources(*groups: tuple[SourceValue, ...] | list[SourceValue]) -> list
 
 def _find_unpriced_build(source: CandidateSource) -> UnpricedBuild | None:
     """The first property a candidate leaves out that stops PyPSA pricing its build."""
-    return next((one for one in _PRICES_A_BUILD if one.plexos_property not in source.props), None)
+    return next((one for one in _PRICES_A_BUILD if not one.prices_a_build(source.props)), None)
 
 
 def _fixed_at_what_it_runs(source: CandidateSource, unpriced: UnpricedBuild) -> ExpansionDecisions:
@@ -305,15 +295,24 @@ def _fixed_at_what_it_runs(source: CandidateSource, unpriced: UnpricedBuild) -> 
             _UNPRICED_BUILD_DERIVATION,
         ),
         dropped_build=DroppedBuild(
-            source=_names_absent(source, unpriced),
+            source=_names_unpriced(source, unpriced),
             note=unpriced.note + _BUILD_LEFT_OUT_NOTE,
+            warn_with=SkipGroup(
+                counted=f"{source.plexos_class}(s) that already run",
+                reason=f"state no {unpriced.plexos_property}",
+                outcome=_BUILD_LEFT_OUT_OUTCOME,
+            ),
         ),
     )
 
 
-def _names_absent(source: CandidateSource, unpriced: UnpricedBuild) -> SourceValue:
+def _names_unpriced(source: CandidateSource, unpriced: UnpricedBuild) -> SourceValue:
     return SourceValue(
-        source.plexos_class, source.name, unpriced.plexos_property, None, unpriced.unit
+        source.plexos_class,
+        source.name,
+        unpriced.plexos_property,
+        source.props.get(unpriced.plexos_property),
+        unpriced.unit,
     )
 
 
