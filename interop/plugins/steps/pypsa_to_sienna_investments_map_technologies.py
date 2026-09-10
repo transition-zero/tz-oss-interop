@@ -506,16 +506,12 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         """The base-system devices each technology stands for, and the years they state."""
         fleets: list[pl.DataFrame] = []
         for kind, found in candidates:
-            years = self._years(state, reader, kind)
+            devices = _source_rows(state, kind.source_table)
+            years = self._years(devices, reader, kind)
             fleets.append(
                 build_existing_fleet_source_table(
                     _technologies(found, kind.component, kind.device_class),
-                    _fleet_groups(
-                        state,
-                        kind.source_table,
-                        _base_names(state, kind.fleet_types),
-                        scope.area_by_bus,
-                    ),
+                    _fleet_groups(devices, _base_names(state, kind.fleet_types), scope.area_by_bus),
                     years.built,
                     years.retired,
                 )
@@ -523,7 +519,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         return pl.concat(fleets)
 
     @staticmethod
-    def _years(state: State, reader: ExtensionReader, kind: _CandidateKind) -> _Years:
+    def _years(devices: pl.DataFrame, reader: ExtensionReader, kind: _CandidateKind) -> _Years:
         """Each device's build year, from the network, and its retirement year, from the sidecar.
 
         PyPSA carries a build year on the component and nothing for the other end of a life,
@@ -532,13 +528,11 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         """
         built: dict[str, int] = {}
         retired: dict[str, int] = {}
-        src = state.source_topology.get(kind.source_table)
-        if src is None:
+        if devices.is_empty():
             return _Years(built=built, retired=retired)
         lookup = reader.read(kind.extension)
-        table = src.collect()
-        has_build_year = kind.build_year_col in table.columns
-        for row in table.iter_rows(named=True):
+        has_build_year = kind.build_year_col in devices.columns
+        for row in devices.iter_rows(named=True):
             name = row[PYPSA_NAME_COLUMN]
             year = row[kind.build_year_col] if has_build_year else None
             if year is not None and int(year) != _UNSTATED_BUILD_YEAR:
@@ -560,19 +554,21 @@ def _looked_up(name_col: str, values: Mapping[str, str | None], dest_col: str) -
 
 def _model_components(
     state: State, candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]]
-) -> set[str]:
-    """Every component of the network a constraint could weight.
+) -> set[tuple[str, str]]:
+    """Every component of the network a constraint could weight, with the class that wrote it.
 
     The devices the base system holds, and the candidates the portfolio holds. A generator
     neither document carries emits nothing a cap could bound, so a constraint reaches the
-    whole model without naming it.
+    whole model without naming it. Each name travels with its PyPSA class, because a
+    constraint can weight an object of another class that carries the same name.
     """
-    names: set[str] = set()
+    components: set[tuple[str, str]] = set()
     for kind, found in candidates:
-        names |= _base_names(state, kind.base_types)
+        names = set(_base_names(state, kind.fleet_types))
         if not found.is_empty():
             names |= set(found[PyPSAComponentCol.NAME].to_list())
-    return names
+        components |= {(name, kind.device_class) for name in names}
+    return components
 
 
 def _base_load_types(state: State) -> dict[str, str]:
@@ -595,9 +591,14 @@ def _base_names(state: State, types: tuple[SiennaComponent, ...]) -> set[str]:
     return names
 
 
+def _source_rows(state: State, source_table: str) -> pl.DataFrame:
+    """One source table as rows, or an empty frame where the network holds no such table."""
+    src = state.source_topology.get(source_table)
+    return pl.DataFrame() if src is None else src.collect()
+
+
 def _fleet_groups(
-    state: State,
-    source_table: str,
+    devices: pl.DataFrame,
     in_base_system: set[str],
     area_by_bus: Mapping[str, str | None],
 ) -> dict[tuple[str, str | None], list[str]]:
@@ -606,15 +607,13 @@ def _fleet_groups(
     A technology sits in one region, so a device of its carrier in another region is not a
     plant it adds to and not a plant a build of it may retire.
     """
-    src = state.source_topology.get(source_table)
-    if src is None:
-        return {}
-    table = src.collect()
     groups: dict[tuple[str, str | None], list[str]] = {}
+    if devices.is_empty():
+        return groups
     for name, carrier, bus in zip(
-        table[PYPSA_NAME_COLUMN].to_list(),
-        table[PyPSAComponentCol.CARRIER].to_list(),
-        table[PyPSAComponentCol.BUS].to_list(),
+        devices[PYPSA_NAME_COLUMN].to_list(),
+        devices[PyPSAComponentCol.CARRIER].to_list(),
+        devices[PyPSAComponentCol.BUS].to_list(),
         strict=True,
     ):
         if name in in_base_system:

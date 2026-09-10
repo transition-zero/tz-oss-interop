@@ -112,20 +112,25 @@ CARBON_CAP_SKIPS: tuple[SkipRule, ...] = (
 
 
 def build_carbon_caps_source_table(
-    records: Sequence[ConstraintExtension], model_components: set[str]
+    records: Sequence[ConstraintExtension], model_components: set[tuple[str, str]]
 ) -> pl.DataFrame:
     """One row per sidecar constraint, with the limit a cap would read and its reach.
 
-    ``model_components`` is every component of the network a constraint could weight. A
-    constraint naming all of them holds the whole model; one naming fewer holds a subset.
+    ``model_components`` is every component of the network a constraint could weight, each
+    named with the class it belongs to. A constraint naming all of them holds the whole
+    model; one naming fewer holds a subset. Two classes can hold an object of one name, so a
+    member counts only where its class matches as well, and a member whose class the network
+    states differently leaves the constraint short of the whole model.
     """
     rows = [_read_record(record, model_components) for record in records]
     return pl.DataFrame(rows, schema=CARBON_CAPS_SOURCE_SCHEMA)
 
 
-def _read_record(record: ConstraintExtension, model_components: set[str]) -> dict[str, Any]:
+def _read_record(
+    record: ConstraintExtension, model_components: set[tuple[str, str]]
+) -> dict[str, Any]:
     limit = _choose_limit(record)
-    members = {member.name for member in record.members}
+    members = {(member.name, member.member_class) for member in record.members}
     return {
         CONSTRAINT_NAME: record.name,
         CONSTRAINT_SENSE: None if record.sense is None else str(record.sense),

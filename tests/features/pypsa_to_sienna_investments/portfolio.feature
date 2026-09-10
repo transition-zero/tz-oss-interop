@@ -405,6 +405,25 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "CarbonCaps"
     And the log contains "1 constraint(s) the expansion plan does not have to meet"
 
+  Scenario: a constraint over another class of one name does not reach the whole model
+    Two classes may hold an object of one name, so a member counts against the model only
+    where its class matches as well.
+    Given a PyPSA network
+    And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
+    And the network contains generator "Shared" on "North_bus" carrier "CCGT" p_nom 500
+    And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
+    And generator "REZ_Solar" has p_nom_max 500
+    And generator "REZ_Solar" has overnight_cost 1200000
+    And generator "REZ_Solar" has discount_rate 0.07
+    And generator "REZ_Solar" has lifetime 25
+    And the network is saved as "inputs/name_clash_cap.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"constraint": [{"name": "NodeFlowLimit", "sense": "<=", "limits": [{"period": "year", "value": 20.0}], "members": [{"name": "Shared", "member_class": "Bus"}, {"name": "REZ_Solar", "member_class": "Generator"}]}]} |
+    When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/name_clash_cap.nc" writing "outputs/portfolio.json"
+    Then the file "outputs/portfolio.json" parses as a portfolio with 0 components of type "CarbonCaps"
+    And the log contains "1 constraint(s) weight a named subset of the model rather than all of it"
+
   Scenario: a generator neither document holds leaves a whole-model constraint whole
     A cap holds every component of the portfolio and the base system it expands. A generator
     an earlier hop of this translator added to shed load reaches neither, so a constraint

@@ -1,9 +1,7 @@
 """The base-system fleet one technology stands for: ExistingDevices and RetirementPotential.
 
 Both attributes are lists of names in the base system, so they are built from the technology
-table and the components the operations steps wrote, not from the PyPSA source alone. A
-technology's carrier says which of the base system's devices it stands for: they are the
-plant already running that a build of this technology adds to.
+table and the components the operations steps wrote, not from the PyPSA source alone.
 """
 
 from __future__ import annotations
