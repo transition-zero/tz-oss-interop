@@ -269,7 +269,7 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
 
   Scenario: a sidecar number that is not finite leaves its field out, and the run completes
     A sidecar is JSON, and a JSON reader accepts the words NaN and Infinity. Neither is a
-    number a portfolio can state, so the field is left out rather than written.
+    number a portfolio can state.
     Given a PyPSA network
     And the network contains bus "North_bus" carrier "AC" v_nom 380.0 location "North"
     And the network contains generator "REZ_Solar" on "North_bus" carrier "solar" p_nom 0 p_nom_extendable True
@@ -285,6 +285,7 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     Then the file "outputs/portfolio.json" parses as a portfolio with 1 component of type "SupplyTechnology"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "unit_size"
     And the file "outputs/portfolio.json" parses as a portfolio with component "SupplyTechnology" named "REZ_Solar" without field "lifetime"
+    And the file "decisions.md" contains "`pypsa.Generator.REZ_Solar._unit_size_mw` = inf"
 
   Scenario: a candidate whose lifetime is below one year is left out, and the run completes
     A capital recovery period is a whole number of years, so a lifetime below one year leaves

@@ -4,10 +4,10 @@ import pytest
 from interop_testing import write_pipeline
 from pytest_bdd import given, parsers, scenarios, when
 
-from tests.step_defs.conftest import invoke_translate
-from tests.step_defs.pypsa_to_sienna.conftest import (
-    _STANDARD_CARRIER_MAP,
-    _STANDARD_PRIME_MOVER_MAP,
+from tests.step_defs.conftest import (
+    STANDARD_CARRIER_MAP,
+    STANDARD_PRIME_MOVER_MAP,
+    invoke_translate,
     write_user_mappings,
 )
 
@@ -44,7 +44,7 @@ def given_round_trip_pipeline(name: str) -> None:
 
 @given("a user mappings file with all standard carriers")
 def given_standard_mapping() -> None:
-    write_user_mappings(_STANDARD_CARRIER_MAP, prime_mover=_STANDARD_PRIME_MOVER_MAP)
+    write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
 
 
 @when(

@@ -35,6 +35,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
+    finite_or_null,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     linear_value_curve,
@@ -231,7 +232,7 @@ SUPPLY_OPERATION_COSTS = _direct(
 SUPPLY_UNIT_SIZE = _direct(
     source_col=UNIT_SIZE_COL,
     dest_col=S.UNIT_SIZE,
-    expr=pl.col(UNIT_SIZE_COL),
+    expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
     unit=UNIT_MW,
     derivation="the size of one unit, from the extensions sidecar",
 )
@@ -275,7 +276,7 @@ SUPPLY_CAPACITY_LIMITS = Translation(
 SUPPLY_LIFETIME = _direct(
     source_col=TECHNICAL_LIFE_COL,
     dest_col=S.LIFETIME,
-    expr=pl.col(TECHNICAL_LIFE_COL).cast(pl.Int64),
+    expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
     unit=UNIT_YEARS,
     derivation="the technical life, from the extensions sidecar",
     note="how long a built unit runs, which is not the period its cost is recovered over",

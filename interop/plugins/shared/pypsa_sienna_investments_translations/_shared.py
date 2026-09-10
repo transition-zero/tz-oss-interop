@@ -222,6 +222,16 @@ ALL_EQUITY_NOTE = (
 )
 
 
+def finite_or_null(column: pl.Expr) -> pl.Expr:
+    """The number a portfolio can state, and null for a NaN or an Infinity.
+
+    A sidecar is JSON, and json.load reads the NaN and Infinity tokens, so a sidecar number
+    is not always finite. A cast to a whole number raises on one, and the sink writes a token
+    no strict JSON reader accepts.
+    """
+    return pl.when(column.is_finite()).then(column)
+
+
 def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
     return pl.struct(
         minimum.cast(pl.Float64).alias(MinMaxField.MIN),
