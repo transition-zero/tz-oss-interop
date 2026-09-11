@@ -25,8 +25,34 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "state_of_charge_initial" is 100.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "marginal_cost" is 0.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" is not cyclic
-    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | direct |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW<br>`plexos.Battery.bat_1.Units` = 1.0 | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `plexos.Battery.bat_1.Charge Efficiency` = 81.0 % | `pypsa.StorageUnit.bat_1.efficiency_store` = 0.9 | sqrt(round-trip / 100), split symmetrically |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a Battery of several units is rated at the power of all of them
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_u" in region "West"
+    And the model contains battery "bat_pair" on node "node_u" with max_power 50 capacity 200 charge_efficiency 81 initial_soc 50
+    And battery "bat_pair" has property "Units" 2
+    And the model is saved as "inputs/battery_units.xml"
+    When I run translate against "inputs/battery_units.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "p_nom" is 100.0
+    # Max Power and Capacity both describe one unit, so the hours are one unit's 200 / 50.
+    And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "max_hours" is 4.0
+    And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "state_of_charge_initial" is 200.0
+    And the file "decisions.md" contains "| `plexos.Battery.bat_pair.Max Power` = 50.0 MW<br>`plexos.Battery.bat_pair.Units` = 2.0 | `pypsa.StorageUnit.bat_pair.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a Battery with no units in service cannot dispatch and is left out
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_z" in region "West"
+    And the model contains battery "bat_stored" on node "node_z" with max_power 50 capacity 200 charge_efficiency 81 initial_soc 50
+    And battery "bat_stored" has property "Units" 0
+    And the model is saved as "inputs/battery_stored.xml"
+    When I run translate against "inputs/battery_stored.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 0 storage units
+    And the log contains "dropping Battery 'bat_stored'"
+    And the file "decisions.md" contains "rated power works out to 0.0 MW, so this unit cannot dispatch"
 
   Scenario: a pumped-storage plant becomes a cyclic PyPSA PHS StorageUnit
     Given a Plexos model
@@ -178,7 +204,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_full.xml"
     When I run translate against "inputs/phs_full.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_full" attribute "state_of_charge_initial" is 3000.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 MWh | head Storage.Initial Volume, clamped to 0..p_nom * max_hours |"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 MWh | head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours |"
 
   Scenario: a reservoir-hydro Generator becomes a PyPSA hydro StorageUnit that only generates
     Given a Plexos model
@@ -249,7 +275,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_duration.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "max_hours" is 2.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "state_of_charge_initial" is 100.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * energy capacity |"
+    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * the power the object already runs * max_hours |"
 
   Scenario: a mothballed turbine has no rated power and is skipped
     Given a Plexos model
@@ -294,7 +320,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/unbounded.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "unbounded" attribute "max_hours" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "unbounded" attribute "state_of_charge_initial" is 500.0
-    And the file "decisions.md" contains "head Storage.Initial Volume, clamped to 0..p_nom * max_hours"
+    And the file "decisions.md" contains "head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours"
 
   Scenario: a pumped-storage plant with a VO&M charge prices its marginal cost
     Given a Plexos model
@@ -504,3 +530,87 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/orphan_inflow.xml"
     When I run translate against "inputs/orphan_inflow.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "decisions.md" contains "| `plexos.Storage.orphan_head.Natural Inflow` = 40.0 MW |  |  | no turbine draws from this reservoir, so its Natural Inflow is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+
+  Scenario: a candidate battery becomes an extendable storage unit priced by its build cost
+    Given a Plexos model
+    And the model states "Build Cost" in "$/kW"
+    And the model contains region "East"
+    And the model contains node "node_c" in region "East"
+    And the model contains battery "new_bat" on node "node_c" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And battery "new_bat" has property "Units" 0
+    And battery "new_bat" has property "Max Units Built" 6
+    And battery "new_bat" has property "Build Cost" 800
+    And battery "new_bat" has property "WACC" 0.07
+    And battery "new_bat" has property "Economic Life" 20
+    And battery "new_bat" has property "Technical Life" 15
+    And the model is saved as "inputs/candidate_battery.xml"
+    When I run translate against "inputs/candidate_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "new_bat" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom_max" is 300
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "p_nom" is 300
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "max_hours" is 4
+    # Nothing is built yet, so the battery holds no charge to start with.
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "state_of_charge_initial" is 0
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "overnight_cost" is 800000
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "lifetime" is 20
+    And the PyPSA network "outputs/network.nc" storage unit "new_bat" attribute "discount_rate" is 0.07
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "unit_size_mw" set to 50.0
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "new_bat" having "technical_life_years" set to 15.0
+
+  Scenario: a battery the model cannot build stays fixed
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_f" in region "East"
+    And the model contains battery "old_bat" on node "node_f" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And the model is saved as "inputs/fixed_battery.xml"
+    When I run translate against "inputs/fixed_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "old_bat" is not extendable
+    And the file "decisions.md" contains "the object states no Max Units Built, so its capacity is fixed"
+
+  Scenario: a pumped-storage turbine that may build more keeps the units it runs as its floor
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_p" in region "East"
+    And the model contains pumped storage "phs_grow" on node "node_p" with max_capacity 100 pump_efficiency 64 head "grow_head" tail "grow_tail" max_volume 3000 initial_volume 1500
+    And generator "phs_grow" has property "Units" 2
+    And generator "phs_grow" has property "Max Units Built" 1
+    And generator "phs_grow" has property "Build Cost" 1500000
+    And generator "phs_grow" has property "WACC" 0.07
+    And generator "phs_grow" has property "Economic Life" 40
+    And the model is saved as "inputs/growing_phs.xml"
+    When I run translate against "inputs/growing_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_grow" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom" is 200
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom_min" is 200
+    # One more unit of 100 MW, not one more of everything the two units come to.
+    And the PyPSA network "outputs/network.nc" storage unit "phs_grow" attribute "p_nom_max" is 300
+
+  Scenario: a pumped-storage turbine the model has yet to build becomes a candidate
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_n" in region "East"
+    And the model contains pumped storage "phs_new" on node "node_n" with max_capacity 100 pump_efficiency 64 head "new_head" tail "new_tail" max_volume 3000 initial_volume 1500
+    And generator "phs_new" has property "Units" 0
+    And generator "phs_new" has property "Max Units Built" 3
+    And generator "phs_new" has property "Build Cost" 1500000
+    And generator "phs_new" has property "WACC" 0.07
+    And generator "phs_new" has property "Economic Life" 40
+    And the model is saved as "inputs/new_phs.xml"
+    When I run translate against "inputs/new_phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_new" is extendable
+    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom_max" is 300
+    And the PyPSA network "outputs/network.nc" storage unit "phs_new" attribute "p_nom" is 300
+
+  Scenario: a battery that already runs keeps its capacity when its build is unpriced
+    Given a Plexos model
+    And the model contains region "East"
+    And the model contains node "node_k" in region "East"
+    And the model contains battery "bat_running" on node "node_k" with max_power 50 capacity 200 charge_efficiency 90 initial_soc 50
+    And battery "bat_running" has property "Units" 2
+    And battery "bat_running" has property "Max Units Built" 3
+    And the model is saved as "inputs/unpriced_battery.xml"
+    When I run translate against "inputs/unpriced_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "bat_running" attribute "p_nom" is 100.0
+    And the PyPSA network "outputs/network.nc" storage unit "bat_running" is not extendable
+    And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
+    And the log contains "1 Battery(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"
