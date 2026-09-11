@@ -31,7 +31,8 @@ It gives the source of each field.
 | [`Market`](#market--generator) | An import `Generator` |
 | [`Reserve`](#reserve--extensions-sidecar) | No component. The translator carries it to the reserves sidecar, but nothing applies it. |
 | [Region `VoLL`](#load-shedding) | No component in the two faithful pipelines. In `plexos-to-pypsa-monte-carlo-reliability`, a load shedding `Generator` at each bus. |
-| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated) |
+| [`Constraint`](#constraint--extensions-sidecar) | No component. The translator carries it to the sidecar, but nothing applies it. |
+| `Zone`, `Interface`, `Transformer`, `Waterway`, `Decision Variable` | [Not translated](#not-translated) |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -1004,7 +1005,7 @@ reservoir and no head reservoir.
 | `Interface` | Nothing applies the group flow limits. Thus the dispatch can be more than a transfer limit that your PLEXOS model obeys. |
 | `Transformer` | The translator does not carry it. |
 | `Reserve` requirements | Nothing applies them. The generators that contribute can operate at full output. The translator does carry the reserves. Refer to [`Reserve`](#reserve--extensions-sidecar). |
-| `Constraint` | Nothing applies the custom constraints. This includes the energy budgets, the running hour limits, the RPS targets and the emission targets. The translator reports every one. Refer to [`Constraint`](#constraint). |
+| `Constraint` | Nothing applies the custom constraints. This includes the energy budgets, the running hour limits, the RPS targets and the emission targets. The translator reports every one, and carries each one it can read to the extensions sidecar. Refer to [`Constraint`](#constraint--extensions-sidecar). |
 | `Waterway` | The cascade route between reservoirs is lost. Each reservoir is independent. |
 | `Decision Variable` | The translator does not carry it. |
 | Emission caps | Nothing applies them. Only the carbon price goes into the cost. |
@@ -1013,7 +1014,7 @@ reservoir and no head reservoir.
 | Ancillary service and demand response pseudo-generators | The translator skips nothing. Refer to [`Generator`](#generator--generator). |
 | Gas, heat and water networks | The translator accepts electricity only. |
 
-## `Constraint`
+## `Constraint` → extensions sidecar
 
 A PLEXOS `Constraint` holds a weighted sum over the objects it names to a right-hand side.
 It weights each object by a coefficient on the membership — `Generation Coefficient`,
@@ -1023,14 +1024,32 @@ group of hydro units and an annual running hour cap on a group of peakers are bo
 this way.
 
 A PyPSA `GlobalConstraint` limits one **carrier** over the whole horizon, and it has no way
-to name a set of components. Thus no shape of `Constraint` fits it, and the translator
-carries none of them.
+to name a set of components. Thus no shape of `Constraint` fits it, and the network file
+holds none of them.
 
-It does report all of them. Every right-hand side a `Constraint` states becomes a not
-mapped entry against the object that states it, giving the value, the sense, and each term
-of the weighted sum: the object, the class it belongs to, and the coefficient weighting it.
-A `Constraint` stating no right-hand side is reported against the object itself. One
-warning names a few of them and counts the rest.
+Each one the translator can read travels in the `extensions.json` file adjacent to the
+network instead, as a `constraint` record in framework-neutral terms. The contract is in
+`interop/core/extensions.py`. Nothing applies the limit, in the network or in the solve;
+the sidecar carries it for a program that decides to use it, and for a later hop into a
+framework that can express it.
+
+| Sidecar field | From |
+| --- | --- |
+| `name` | `Constraint.name` |
+| `sense` | `Sense`, as the inequality it holds in: `<=`, `==` or `>=` |
+| `limits` | One entry per right-hand side the `Constraint` states, each giving the value, the span it applies over (`horizon`, `hour`, `day`, `week`, `month` or `year`) and the unit the model stated it in |
+| `members` | One entry per object the sum names, each giving the name, the PLEXOS class it belongs to, the coefficient and the property that states the coefficient |
+| `applies_to_expansion_plan` | `Include in LT Plan` |
+
+A `Constraint` that states no sense, a `Sense` other than `-1`, `0` or `1`, or no
+right-hand side at all, states no inequality to carry. The translator leaves that one out
+and reports it, naming the `Sense` it could not read where that is the reason.
+
+The report carries all of them either way. Every right-hand side a `Constraint` states
+becomes a not mapped entry against the object that states it, giving the value, the sense,
+and each term of the weighted sum: the object, the class it belongs to, and the coefficient
+weighting it. A `Constraint` stating no right-hand side is reported against the object
+itself. One warning names a few of them and counts the rest.
 
 **Read that section of the report before you trust the dispatch.** A model that caps hydro
 energy or peaker running hours with a `Constraint` gives a translated network in which

@@ -51,6 +51,7 @@ class ExtensionKind(StrEnum):
     # PLEXOS Constraint. PyPSA's GlobalConstraint limits one carrier over the whole horizon
     # and cannot name a set of components, which is why the concept needs the sidecar to
     # survive a hop through it. Sienna has no equivalent either.
+    CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
 
 
@@ -82,6 +83,25 @@ class ReserveKind(StrEnum):
     # Ours: a source code we cannot map, and a code naming only a direction (PLEXOS's plain
     # Raise and Lower say which way the reserve moves output but not which product it is).
     UNKNOWN = "unknown"
+
+
+class ConstraintSense(StrEnum):
+    """Which way a constraint holds its weighted sum against the right-hand side."""
+
+    AT_MOST = "<="  # PLEXOS Sense -1
+    EXACTLY = "=="  # PLEXOS Sense 0
+    AT_LEAST = ">="  # PLEXOS Sense 1
+
+
+class ConstraintPeriod(StrEnum):
+    """The span one right-hand side applies over."""
+
+    HORIZON = "horizon"  # PLEXOS RHS
+    HOUR = "hour"  # PLEXOS RHS Hour
+    DAY = "day"  # PLEXOS RHS Day
+    WEEK = "week"  # PLEXOS RHS Week
+    MONTH = "month"  # PLEXOS RHS Month
+    YEAR = "year"  # PLEXOS RHS Year
 
 
 class ExtensionRecord(BaseModel):
@@ -200,6 +220,45 @@ class ReserveExtension(ExtensionRecord):
     is_mutually_exclusive: bool | None = None
 
 
+class ConstraintMember(BaseModel):
+    """One object a constraint weights, and the coefficient it is weighted by.
+
+    Two classes can hold an object of the same name and a constraint can weight a generator
+    and an emission alike, so the member carries the class its name belongs to. The
+    coefficient is absent where the constraint names the object without weighting it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    member_class: str  # PLEXOS Generator, Line, Emission and the rest
+    coefficient: float | None = None
+    # PLEXOS names the coefficient per class: Generation Coefficient, Flow Coefficient, and
+    # so on. The name says which quantity of the member the coefficient weights.
+    coefficient_property: str | None = None
+
+
+class ConstraintLimit(BaseModel):
+    """One right-hand side the weighted sum is held to, and the span it applies over."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    period: ConstraintPeriod
+    value: float
+    unit: str | None = None  # the unit the source stated the limit in
+
+
+class ConstraintExtension(ExtensionRecord):
+    """A weighted sum over named objects, held to one or more right-hand sides."""
+
+    sense: ConstraintSense | None = None
+    limits: list[ConstraintLimit] = []
+    members: list[ConstraintMember] = []
+    # PLEXOS Include in LT Plan: whether the expansion plan has to meet the constraint as
+    # well as the dispatch.
+    applies_to_expansion_plan: bool | None = None
+
+
 class NetworkExtension(ExtensionRecord):
     """The model file's own attributes. PyPSA only: neither Sienna nor PLEXOS has these."""
 
@@ -220,6 +279,7 @@ class Extensions(BaseModel):
     controllable_line: list[ControllableLineExtension] = []
     storage: list[StorageExtension] = []
     reserve: list[ReserveExtension] = []
+    constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
 
 
@@ -231,6 +291,7 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.CONTROLLABLE_LINE: ControllableLineExtension,
     ExtensionKind.STORAGE: StorageExtension,
     ExtensionKind.RESERVE: ReserveExtension,
+    ExtensionKind.CONSTRAINT: ConstraintExtension,
     ExtensionKind.NETWORK: NetworkExtension,
 }
 
@@ -412,6 +473,10 @@ def record_for(
 ) -> ReserveExtension | None: ...
 @overload
 def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.CONSTRAINT], name: str
+) -> ConstraintExtension | None: ...
+@overload
+def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
 
@@ -501,6 +566,10 @@ class ExtensionReader:
     def read(self, kind: Literal[ExtensionKind.STORAGE]) -> ExtensionLookup[StorageExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.RESERVE]) -> ExtensionLookup[ReserveExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.CONSTRAINT]
+    ) -> ExtensionLookup[ConstraintExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
 

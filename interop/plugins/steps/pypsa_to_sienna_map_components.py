@@ -213,6 +213,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state = self._map_lines(state)
         state = self._map_links(state)
         _relay_reserves(state, reader)
+        _relay_constraints(state, reader)
         choose_ensemble_samples(state, self._recorder)
         return state
 
@@ -523,6 +524,19 @@ class PypsaToSiennaMapComponents(TranslationStep):
             ),
         )
         return state
+
+
+def _relay_constraints(state: State, reader: ExtensionReader) -> None:
+    """Carry each constraint the hop before set aside into this hop's own sidecar.
+
+    Neither PyPSA nor Sienna holds a weighted sum over a named set of components, so a
+    constraint survives the chain only in the sidecar and travels on as it stands.
+    """
+    append_extensions(
+        state.destination_extensions,
+        ExtensionKind.CONSTRAINT,
+        reader.relay(ExtensionKind.CONSTRAINT),
+    )
 
 
 def _relay_reserves(state: State, reader: ExtensionReader) -> None:
