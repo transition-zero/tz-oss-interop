@@ -57,6 +57,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     enrich_load_ts_stats,
     enrich_load_voll,
     fill_bus_defaults,
+    fill_capacity_defaults,
     fill_line_defaults,
     fill_link_defaults,
     fill_load_defaults,
@@ -66,6 +67,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     link_time_varying_owners,
     load_in_scope,
     load_is_interruptible,
+    unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -187,11 +189,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
     name: ClassVar[str] = "pypsa_to_sienna_map_components"
     params_schema: ClassVar[type[BaseModel] | None] = None
 
-    def __init__(
-        self,
-        recorder: ScopedRecorder,
-        carrier_mappings: CarrierMappings,
-    ) -> None:
+    def __init__(self, recorder: ScopedRecorder, carrier_mappings: CarrierMappings) -> None:
         self._recorder = recorder
         self._carrier_mappings = carrier_mappings
 
@@ -204,7 +202,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = pl.DataFrame(
             schema=TIME_SERIES_ASSOCIATION_SCHEMA
         )
-        reader = ExtensionReader(state.source_extensions, Framework.PYPSA)
+        reader = state.extension_reader()
         state = self._map_buses(state)
         # Read once: the loads it prices and the shedding generators it identifies both want
         # it, and reading it twice would report each bus record's unread fields twice.
@@ -216,9 +214,6 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state = self._map_links(state)
         _relay_reserves(state, reader)
         choose_ensemble_samples(state, self._recorder)
-        # A record no mapping here read is dropped and reported, rather than relayed into a
-        # sidecar this hop's reader cannot say anything about.
-        reader.report_unconsumed(self._recorder)
         return state
 
     def _map_generators(self, state: State, voll_by_bus: dict[str, float]) -> State:
@@ -246,7 +241,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         src = state.source_topology.get(group.source_table)
         if src is None:
             return None
-        table = src.collect()
+        table = fill_capacity_defaults(src.collect())
         for rule in self._scope_rules(state, group, own_rows):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         return table
@@ -256,14 +251,11 @@ class PypsaToSiennaMapComponents(TranslationStep):
     ) -> list[SkipRule]:
         """The drops a whole source table shares, in the order they apply.
 
-        A carrier the user mappings file never names, a carrier it sends to a Sienna type
-        this table does not become, and a bus that is not a translated AC bus are three
-        different drops, so each gets its own report. ``own_rows`` holds the drops for rows
-        an earlier hop of this translator wrote into the source model itself, which only the
-        generators have. Order matters: a row the mappings file never names must not also
-        report an unusable bus, and a row this translator wrote itself must report that
-        rather than an unnamed carrier, because no mappings file entry would make it
-        translatable.
+        ``own_rows`` holds the drops for rows an earlier hop of this translator wrote into
+        the source model itself, which only the generators have. Order matters: a row the
+        mappings file never names must not also report an unusable bus, and a row this
+        translator wrote itself must report that rather than an unnamed carrier, because no
+        mappings file entry would make it translatable.
         """
         carrier = pl.col(PyPSAComponentCol.CARRIER)
         skips = group.scope_skips()
@@ -281,6 +273,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
                 keep=pl.col(PyPSAComponentCol.BUS).is_in(self._ac_bus_names(state)),
                 report=skips.bus_scope,
             ),
+            unbuilt_candidate_skip(group.naming),
         ]
 
     def _translated_carriers(self, group: _CarrierGroup) -> set[str]:
@@ -308,8 +301,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         table = mapping.fill_defaults(source)
         table = table.filter(pl.col(mapping.carrier_col).is_in(list(carriers)))
         series = self._source_time_series(state, mapping)
-        if mapping.skip is not None:
-            rule = mapping.skip(series)
+        for rule in mapping.skips(series) if mapping.skips is not None else ():
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         ts_info = collect_ts_info(series)
         return _PreparedSource(
@@ -503,13 +495,15 @@ class PypsaToSiennaMapComponents(TranslationStep):
         if buses is None:
             return state
 
-        table = fill_link_defaults(src.collect())
+        table = fill_capacity_defaults(fill_link_defaults(src.collect()))
         table, _ = filter_component(
             table,
             link_in_scope(buses[SiennaACBusCol.NAME].to_list()),
             LINK_SKIP,
             self._recorder,
         )
+        candidates = unbuilt_candidate_skip(PYPSA_COMPONENT_NAMING[PyPSATable.LINKS])
+        table, _ = filter_component(table, candidates.keep, candidates.report, self._recorder)
 
         dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE

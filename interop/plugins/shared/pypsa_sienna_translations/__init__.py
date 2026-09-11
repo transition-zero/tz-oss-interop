@@ -57,7 +57,12 @@ from ._renewables import (
     enrich_renewable_ts_stats,
     fill_renewable_defaults,
 )
-from ._shared import ScopeSkips, carrier_scope_skips
+from ._shared import (
+    ScopeSkips,
+    carrier_scope_skips,
+    fill_capacity_defaults,
+    unbuilt_candidate_skip,
+)
 from ._storage import (
     ENERGY_RESERVOIR_STORAGE_TRANSLATIONS,
     PHS_STORAGE_MAPPING,
@@ -72,6 +77,8 @@ __all__ = [
     "choose_ensemble_samples",
     "ScopeSkips",
     "carrier_scope_skips",
+    "fill_capacity_defaults",
+    "unbuilt_candidate_skip",
     "THERMAL_MAPPING",
     "RENEWABLE_DISPATCH_MAPPING",
     "RENEWABLE_NON_DISPATCH_MAPPING",

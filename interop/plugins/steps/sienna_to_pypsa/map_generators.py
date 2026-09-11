@@ -44,6 +44,7 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
+    extendable_floor,
     per_unit_of,
     variable_proportional_term,
 )
@@ -87,8 +88,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     thermal = _derive_thermal(row, bus_names, extensions, dt_minutes)
                     _record_thermal(reporter, thermal)
                     rows.append(_thermal_row(thermal))
-                    p_max_pu_scale_by_name[thermal.name] = (
-                        thermal.active_power_max / thermal.base_power
+                    p_max_pu_scale_by_name[thermal.name] = per_unit_of(
+                        thermal.active_power_max, thermal.base_power
                     )
                 case SiennaComponent.RENEWABLE_DISPATCH:
                     dispatch = _derive_renewable(
@@ -154,7 +155,7 @@ def _ramp_limit(
     """Invert ramp_limits.up/down (MW/min) to a PyPSA ramp_limit (pu of p_nom per snapshot)."""
     if value_mw_per_min is None:
         return None
-    return value_mw_per_min * dt_minutes / base_power
+    return per_unit_of(value_mw_per_min * dt_minutes, base_power)
 
 
 def _hours_to_snapshots(hours: float, dt_minutes: float) -> float:
@@ -177,6 +178,7 @@ class _ThermalMapping:
     committable_from_ext: bool
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
+    p_nom_min: float | None
     base_power: float
     rating: float
     active_power_min: float
@@ -243,6 +245,7 @@ def _derive_thermal(
         committable_from_ext=ext.committable is not None,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
+        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -309,6 +312,8 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    if m.p_nom_min is not None:
+        reporter.record_p_nom_min(sienna_type, m.name, m.p_nom_min)
 
 
 def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
@@ -329,6 +334,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.START_UP_COST: m.start_up_cost,
         PyPSAGeneratorCol.SHUT_DOWN_COST: m.shut_down_cost,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
+        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
     }
 
 
@@ -345,6 +351,7 @@ class _RenewableMapping:
     ext_carrier: str | None
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
+    p_nom_min: float | None
     base_power: float
     rating: float
     active_power: float
@@ -381,6 +388,7 @@ def _derive_renewable(
         ext_carrier=ext.carrier,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
+        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,
@@ -407,6 +415,8 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
         reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    if m.p_nom_min is not None:
+        reporter.record_p_nom_min(m.sienna_type, m.name, m.p_nom_min)
 
 
 def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
@@ -422,5 +432,6 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
+        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

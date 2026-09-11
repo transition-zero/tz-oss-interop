@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
 
@@ -47,6 +48,9 @@ class ExtensionKind(StrEnum):
     # PLEXOS Reserve; Sienna VariableReserve and ConstantReserve. PyPSA has none, which is
     # why the concept needs the sidecar to survive a hop through it.
     RESERVE = "reserve"
+    # PLEXOS Constraint. PyPSA's GlobalConstraint limits one carrier over the whole horizon
+    # and cannot name a set of components, which is why the concept needs the sidecar to
+    # survive a hop through it. Sienna has no equivalent either.
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
 
 
@@ -421,19 +425,46 @@ class ExtensionLookup(Generic[RecordT]):
         self._consumed.add(name)
         return self._records.get(name) or self._model(name=name)
 
+    def read_all(self) -> list[RecordT]:
+        """Every staged record of this kind, each one marked as read."""
+        self._consumed.update(self._records)
+        return list(self._records.values())
+
+
+@dataclass
+class ExtensionConsumption:
+    """The names every reader of one hop has read.
+
+    A hop may split its mappings across more than one step, so the readers those steps build
+    share one of these and the run reports what none of them asked for once the last step
+    has run.
+    """
+
+    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+
+    def names_for(self, kind: ExtensionKind) -> set[str]:
+        return self.by_kind.setdefault(kind, set())
+
+    def report_unconsumed(
+        self, staged: StagedExtensions, framework: str, recorder: EventRecorder
+    ) -> None:
+        for kind, records in staged.items():
+            consumed = self.by_kind.get(kind, set())
+            unread = [record for record in records if record.name not in consumed]
+            report_dropped({kind: unread}, framework, recorder)
+
 
 class ExtensionReader:
     """What one hop staged, and what its mappings did with it.
 
     A record only reaches a sidecar because the hop before it had nowhere to put it, so a
     record no mapping here consumes is dropped and reported rather than relayed onward. One
-    reader serves every mapping in a hop, so it can tell what nobody asked for.
+    consumption record serves every mapping of a hop, so it can tell what nobody asked for.
     """
 
-    def __init__(self, staged: StagedExtensions, framework: str) -> None:
+    def __init__(self, staged: StagedExtensions, consumption: ExtensionConsumption) -> None:
         self._staged = staged
-        self._framework = framework
-        self._consumed: dict[ExtensionKind, set[str]] = {}
+        self._consumption = consumption
 
     @overload
     def read(self, kind: Literal[ExtensionKind.BUS]) -> ExtensionLookup[BusExtension]: ...
@@ -459,19 +490,10 @@ class ExtensionReader:
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(
-            model, self._staged.get(kind, []), self._consumed.setdefault(kind, set())
-        )
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumed.setdefault(kind, set()).update(record.name for record in records)
+        self._consumption.names_for(kind).update(record.name for record in records)
         return records
-
-    def report_unconsumed(self, recorder: EventRecorder) -> None:
-        """Report every staged record no mapping in this hop asked for."""
-        for kind, records in self._staged.items():
-            consumed = self._consumed.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, self._framework, recorder)

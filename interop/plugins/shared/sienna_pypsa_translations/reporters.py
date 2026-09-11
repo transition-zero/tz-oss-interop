@@ -100,6 +100,10 @@ _OPERATION_COST_SHUT_DOWN = f"{SiennaGeneratorCol.OPERATION_COST}.{SiennaStructF
 _START_UP_COST_DERIVATION = "operation_cost.start_up -> start_up_cost"
 _SHUT_DOWN_COST_DERIVATION = "operation_cost.shut_down -> shut_down_cost"
 _P_NOM_EXTENDABLE_DEFAULT = "no ext.p_nom_extendable; p_nom_extendable defaults to False"
+_EXTENDABLE_FLOOR_DERIVATION = (
+    "PyPSA ignores the p_nom of an extendable component, so the capacity an operations "
+    "system already dispatches states itself as the floor a build cannot take away"
+)
 _HYDRO_MAX_HOURS_DEFAULT = (
     "HydroDispatch carries no storage capacity; max_hours uses the PyPSA storage default"
 )
@@ -424,6 +428,17 @@ class GeneratorReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
+    def record_p_nom_min(self, sienna_type: SiennaComponent, name: str, base_power: float) -> None:
+        self._derived(
+            sources=[
+                self._source(sienna_type, name, SiennaGeneratorCol.BASE_POWER, base_power, UNIT_MVA)
+            ],
+            destinations=[
+                self._destination(name, PyPSAGeneratorCol.P_NOM_MIN, base_power, UNIT_MW)
+            ],
+            derivation=_EXTENDABLE_FLOOR_DERIVATION,
+        )
+
     def record_p_nom_extendable_default(self, name: str) -> None:
         self._default_applied(
             destinations=[self._destination(name, PyPSAGeneratorCol.P_NOM_EXTENDABLE, False)],
@@ -613,6 +628,17 @@ class StorageUnitReporter(_Reporter):
                 self._destination(name, PyPSAStorageUnitCol.P_NOM_EXTENDABLE, extendable)
             ],
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
+        )
+
+    def record_p_nom_min(self, sienna_type: SiennaComponent, name: str, base_power: float) -> None:
+        self._derived(
+            sources=[
+                self._source(sienna_type, name, SiennaStorageCol.BASE_POWER, base_power, UNIT_MVA)
+            ],
+            destinations=[
+                self._destination(name, PyPSAStorageUnitCol.P_NOM_MIN, base_power, UNIT_MW)
+            ],
+            derivation=_EXTENDABLE_FLOOR_DERIVATION,
         )
 
     def record_p_nom_extendable_default(self, name: str) -> None:
@@ -833,6 +859,15 @@ class LineReporter(_Reporter):
             derivation=_S_NOM_EXTENDABLE_FROM_EXT,
         )
 
+    def record_s_nom_min(
+        self, sienna_type: SiennaComponent, name: str, rating: float, s_nom: float
+    ) -> None:
+        self._derived(
+            sources=[self._source(sienna_type, name, SiennaLineCol.RATING, rating)],
+            destinations=[self._destination(name, PyPSALineCol.S_NOM_MIN, s_nom, UNIT_MVA)],
+            derivation=_EXTENDABLE_FLOOR_DERIVATION,
+        )
+
 
 class LinkReporter(_Reporter):
     """Records translation events for Sienna TwoTerminalGenericHVDCLine -> PyPSA Link."""
@@ -928,4 +963,11 @@ class LinkReporter(_Reporter):
             sources=[self._source(name, _EXT_P_NOM_EXTENDABLE_ATTR, extendable)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_EXTENDABLE, extendable)],
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
+        )
+
+    def record_p_nom_min(self, name: str, limit_max: float, p_nom: float) -> None:
+        self._derived(
+            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW)],
+            destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
+            derivation=_EXTENDABLE_FLOOR_DERIVATION,
         )
