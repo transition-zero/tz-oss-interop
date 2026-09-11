@@ -10,6 +10,8 @@ Parses the ``<MasterDataSet>`` XML into its ``t_*`` tables, then stages:
   ``t_data`` value under the selected Model's Scenario overlays (highest Read
   Order wins, base value otherwise), with a ``data_file`` path where the value
   is file-backed;
+- ``topology/dated_properties.parquet``, every row of a property the model dates
+  before it is narrowed to the window, each beside the dates it applies between;
 - one ``source_time_series`` frame per (owner class, property) whose value comes
   from an external CSV, streamed in as ``(snapshot, component, sample, value)`` rows.
   ``sample`` is null except where the CSV carries one column per Monte Carlo
@@ -46,6 +48,7 @@ from interop.plugins.shared.plexos_constants import (
     PlexosPropertyCol,
     PlexosResolvedTable,
 )
+from interop.plugins.shared.plexos_dates import UNDATED, DateBand
 from interop.plugins.shared.plexos_units import (
     StatedValue,
     UnitConversions,
@@ -62,11 +65,10 @@ from interop.plugins.sources.plexos_csv_layouts import (
     warn_unstageable_layout,
 )
 from interop.plugins.sources.plexos_dated_properties import (
-    UNDATED,
-    DateBand,
     DatedRow,
     apply_window,
     date_bands,
+    dated_rows,
     stepped_series_parts,
 )
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
@@ -255,8 +257,10 @@ class StagePlexosXml(StagedSource):
         topology = self._stage(resolved.objects_by_class, staging_dir)
         memberships = PlexosResolvedTable.MEMBERSHIPS
         properties = PlexosResolvedTable.PROPERTIES
+        dated = PlexosResolvedTable.DATED_PROPERTIES
         topology[memberships] = self._stage_table(memberships, resolved.memberships, staging_dir)
         topology[properties] = self._stage_table(properties, resolved.properties, staging_dir)
+        topology[dated] = self._stage_table(dated, resolved.dated_properties, staging_dir)
         return topology
 
     def _stage(self, objects_by_class: _RowsByClass, staging_dir: Path) -> dict[str, pl.LazyFrame]:
@@ -376,17 +380,20 @@ class StagePlexosXmlEnsemble(StagePlexosXml):
 
 @dataclass(frozen=True)
 class _ResolvedDataset:
-    """The three staged topology tables, resolved from the raw ``t_*`` tables.
+    """The staged topology tables, resolved from the raw ``t_*`` tables.
 
     ``properties`` holds one row per property, the value in force when the window opens.
     ``stepped_properties`` holds every value a property takes within the window, and only
     for the properties that take more than one, so a consumer can read the shape.
+    ``dated_properties`` holds every row of a property the model dates, with the dates it
+    applies between, narrowed to no window at all.
     """
 
     objects_by_class: _RowsByClass
     memberships: _Rows
     properties: _Rows
     stepped_properties: _Rows
+    dated_properties: _Rows
 
 
 def _resolve_dataset(
@@ -400,6 +407,7 @@ def _resolve_dataset(
         memberships=memberships,
         properties=in_force,
         stepped_properties=stepped,
+        dated_properties=dated_rows(resolved),
     )
 
 

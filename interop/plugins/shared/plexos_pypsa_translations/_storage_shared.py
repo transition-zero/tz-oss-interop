@@ -8,10 +8,10 @@ recorded as skipped rather than written half-formed.
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from math import sqrt
+
+import polars as pl
 
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
@@ -27,6 +27,19 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
     PlexosResolvedTable,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    CandidateSource,
+    ExpansionDecisions,
+    RatedCapacity,
+    derive_p_nom,
+    find_unpriced_candidate,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    NO_LIFESPAN,
+    Lifespan,
+    LifespanDecisions,
+    read_lifespans,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
     ObjectUnits,
@@ -38,11 +51,15 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_STATE_OF_CHARGE_INITIAL,
     DEFAULT_STORAGE_MAX_HOURS,
+    DEFAULT_UNITS,
+    DIRECT_DERIVATION,
     PERCENT,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
+    holds,
     maps_to,
 )
 from interop.plugins.shared.plexos_units import conversion_factor
@@ -53,15 +70,11 @@ from interop.plugins.shared.pypsa_time_series import (
     series_components,
 )
 
-log = logging.getLogger(__name__)
-
 NO_RESERVOIR_INFLOW_NOTE = "this unit has no reservoir, so nothing flows into it"
 
 MAX_HOURS_NOTE = "PLEXOS states no reservoir capacity; max_hours uses the PyPSA default"
 
 FULL_DISCHARGE_NOTE = "full rated power available for discharge"
-
-EXTENDABLE_NOTE = "v1 translates a dispatch model; capacity is fixed"
 
 EFFICIENCY_NOTE = "PLEXOS states no round-trip efficiency; storage is modelled lossless"
 
@@ -81,8 +94,9 @@ _ROUND_TRIP_DERIVATION = "sqrt(round-trip / 100), split symmetrically"
 # The Storage properties whose stated unit decides whether they are energy at all.
 _VOLUME_PROPERTIES = (PlexosProperty.MAX_VOLUME, PlexosProperty.INITIAL_VOLUME)
 
+_TIMES_UNITS_DERIVATION = " * Units"
 _PER_P_NOM_DERIVATION = " / p_nom"
-_CLAMPED_DERIVATION = ", clamped to 0..p_nom * max_hours"
+_CLAMPED_DERIVATION = ", clamped to 0..the power the object already runs * max_hours"
 
 
 @dataclass(frozen=True)
@@ -109,30 +123,13 @@ class StorageUnitMapping:
     )
     inflow: Decision = maps_to(PyPSAStorageUnitCol.INFLOW, unit=UNIT_MW)
     cyclic: Decision = maps_to(PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE)
-    p_nom_extendable: Decision = maps_to(PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
+    lifespan: LifespanDecisions = holds()
+    expansion: ExpansionDecisions = holds()
     # Units is a Battery-only reading; a units-out trace derates against it.
     units: float | None = None
     # The head Storage whose Natural Inflow this unit reads, where that inflow is power. An
     # inflow profile is keyed by the Storage's name, not by this unit's.
     inflow_storage: str | None = None
-
-
-def warn_about_skipped(skipped: SkippedComponent) -> None:
-    """A skip is recorded per component, and warned about, so neither view alone hides it."""
-    log.warning(
-        "plexos: dropping %s %r: %s",
-        skipped.source.component,
-        skipped.source.name,
-        skipped.note,
-    )
-
-
-@dataclass(frozen=True)
-class SkippedComponent:
-    """A PLEXOS object the mapping deliberately did not translate, and why."""
-
-    source: SourceValue
-    note: str
 
 
 # Every storage object ends as one or the other: a unit to write, or a recorded reason not to.
@@ -179,40 +176,50 @@ class StagedObject:
 
     name: str
     properties: dict[str, float]
+    stated_units: dict[str, str | None]
     node: str | None
     file_backed: list[str]
+    lifespan: Lifespan
+
+
+@dataclass(frozen=True)
+class ClassLookups:
+    """What one PLEXOS class states about each of its objects."""
+
+    properties: ObjectProperties
+    stated_units: ObjectUnits
+    nodes: dict[str, str]
+    file_backed: dict[str, list[str]]
+    lifespans: dict[str, Lifespan]
 
 
 @dataclass(frozen=True)
 class StorageLookups:
-    """The per-object properties and memberships the three storage paths read."""
+    """The per-object properties and memberships the three storage paths read.
 
-    battery_properties: ObjectProperties
-    generator_properties: ObjectProperties
+    ``by_class`` holds the Battery and the Generator only, because a Storage states no
+    capacity of its own and its properties stand beside it in ``storage_properties``.
+    """
+
+    by_class: dict[PlexosClass, ClassLookups]
     storage_properties: ObjectProperties
-    node_by_battery: dict[str, str]
-    node_by_generator: dict[str, str]
+    storage_units: ObjectUnits
     head_by_generator: dict[str, str]
     tail_by_generator: dict[str, str]
-    file_backed_by_battery: dict[str, list[str]]
-    file_backed_by_generator: dict[str, list[str]]
-    storage_units: ObjectUnits
     storages_with_inflow_profile: set[str]
 
-    def battery(self, name: str) -> StagedObject:
-        return StagedObject(
-            name=name,
-            properties=self.battery_properties.get(name, {}),
-            node=self.node_by_battery.get(name),
-            file_backed=self.file_backed_by_battery.get(name, []),
-        )
+    def properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
+        return self.by_class[plexos_class].properties
 
-    def generator(self, name: str) -> StagedObject:
+    def staged(self, plexos_class: PlexosClass, name: str) -> StagedObject:
+        one = self.by_class[plexos_class]
         return StagedObject(
             name=name,
-            properties=self.generator_properties.get(name, {}),
-            node=self.node_by_generator.get(name),
-            file_backed=self.file_backed_by_generator.get(name, []),
+            properties=one.properties.get(name, {}),
+            stated_units=one.stated_units.get(name, {}),
+            node=one.nodes.get(name),
+            file_backed=one.file_backed.get(name, []),
+            lifespan=one.lifespans.get(name, NO_LIFESPAN),
         )
 
     def has_head_and_tail(self, generator: str) -> bool:
@@ -285,22 +292,36 @@ def _states_inflow_in_other_units(volumes: dict[str, float], units: dict[str, st
 def build_lookups(state: State) -> StorageLookups:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    dated = state.source_topology[PlexosResolvedTable.DATED_PROPERTIES]
     return StorageLookups(
-        battery_properties=collapse_properties_by_object(properties, PlexosClass.BATTERY),
-        generator_properties=collapse_properties_by_object(properties, PlexosClass.GENERATOR),
+        by_class={
+            plexos_class: _read_class(properties, memberships, dated, plexos_class)
+            for plexos_class in (PlexosClass.BATTERY, PlexosClass.GENERATOR)
+        },
         storage_properties=collapse_properties_by_object(properties, PlexosClass.STORAGE),
-        node_by_battery=relate_child(memberships, PlexosClass.BATTERY, PlexosCollection.NODES),
-        node_by_generator=relate_child(memberships, PlexosClass.GENERATOR, PlexosCollection.NODES),
+        storage_units=collapse_units_by_object(properties, PlexosClass.STORAGE),
         head_by_generator=relate_child(
             memberships, PlexosClass.GENERATOR, PlexosCollection.HEAD_STORAGE
         ),
         tail_by_generator=relate_child(
             memberships, PlexosClass.GENERATOR, PlexosCollection.TAIL_STORAGE
         ),
-        file_backed_by_battery=read_file_backed_properties(properties, PlexosClass.BATTERY),
-        file_backed_by_generator=read_file_backed_properties(properties, PlexosClass.GENERATOR),
-        storage_units=collapse_units_by_object(properties, PlexosClass.STORAGE),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
+    )
+
+
+def _read_class(
+    properties: pl.LazyFrame,
+    memberships: pl.LazyFrame,
+    dated: pl.LazyFrame,
+    plexos_class: PlexosClass,
+) -> ClassLookups:
+    return ClassLookups(
+        properties=collapse_properties_by_object(properties, plexos_class),
+        stated_units=collapse_units_by_object(properties, plexos_class),
+        nodes=relate_child(memberships, plexos_class, PlexosCollection.NODES),
+        file_backed=read_file_backed_properties(properties, plexos_class),
+        lifespans=read_lifespans(dated, plexos_class),
     )
 
 
@@ -328,17 +349,47 @@ class RatedPower:
 
     plexos_class: PlexosClass
     capacity_property: PlexosProperty
-    derive: Callable[[StagedObject], Decision]
+
+    def rate(self, staged: StagedObject) -> RatedCapacity:
+        power = staged.properties[self.capacity_property]
+        units = staged.properties.get(PlexosProperty.UNITS, DEFAULT_UNITS)
+        stated = SourceValue(self.plexos_class, staged.name, self.capacity_property, power, UNIT_MW)
+        counted = SourceValue(self.plexos_class, staged.name, PlexosProperty.UNITS, units)
+        return RatedCapacity(
+            existing=Decision.derived(
+                power * units,
+                [stated, counted],
+                f"{self.capacity_property}{_TIMES_UNITS_DERIVATION}",
+            ),
+            unit_size=Decision.derived(power, [stated], DIRECT_DERIVATION),
+        )
 
 
 @dataclass(frozen=True)
 class RatedObject:
     """A storage object that passed every guard: what it states, its bus, its rated power."""
 
-    name: str
-    properties: dict[str, float]
     node: str
     p_nom: Decision
+    candidate: CandidateSource
+    lifespan: Lifespan
+
+    @property
+    def name(self) -> str:
+        return self.candidate.name
+
+    @property
+    def properties(self) -> dict[str, float]:
+        return self.candidate.props
+
+    @property
+    def running_power(self) -> Decision:
+        """The rated power the object already has, which is zero for a candidate built of none."""
+        return self.candidate.rated.existing
+
+    @property
+    def unit_size(self) -> Decision:
+        return self.candidate.rated.unit_size
 
 
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
@@ -349,10 +400,20 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
         return _skipped_without_capacity(rating, staged.name)
-    p_nom = rating.derive(staged)
+    candidate = CandidateSource(
+        rating.plexos_class,
+        staged.name,
+        staged.properties,
+        staged.stated_units,
+        rating.rate(staged),
+    )
+    unpriced = find_unpriced_candidate(candidate)
+    if unpriced is not None:
+        return unpriced
+    p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)
-    return RatedObject(staged.name, staged.properties, staged.node, p_nom)
+    return RatedObject(staged.node, p_nom, candidate, staged.lifespan)
 
 
 def skip_object(
@@ -388,18 +449,25 @@ def _skipped_zero_p_nom(rating: RatedPower, name: str, p_nom: float) -> SkippedC
 
 
 def derive_max_hours(
-    capacity: Decision | None, p_nom: float, absent_note: str = MAX_HOURS_NOTE
+    capacity: Decision | None,
+    rated_power: float,
+    absent_note: str = MAX_HOURS_NOTE,
+    per: str = _PER_P_NOM_DERIVATION,
 ) -> Decision:
-    """Hours of storage at rated power, from whichever property stated the energy capacity."""
+    """Hours of storage at rated power, from whichever property stated the energy capacity.
+
+    ``capacity`` and ``rated_power`` have to describe the same thing: a reservoir shared by
+    every unit divides by the power of all of them, and an energy stated beside one unit's
+    power divides by that one power.
+    """
     if capacity is None:
         return Decision.default(DEFAULT_STORAGE_MAX_HOURS, absent_note)
     return Decision.derived(
-        capacity.value / p_nom, capacity.sources, capacity.explanation + _PER_P_NOM_DERIVATION
+        capacity.value / rated_power, capacity.sources, capacity.explanation + per
     )
 
 
 def derive_state_of_charge_initial(level: Decision | None, usable_mwh: float) -> Decision:
-    """The starting level, held inside the capacity PyPSA enforces (``p_nom * max_hours``)."""
     if level is None:
         return Decision.default(DEFAULT_STATE_OF_CHARGE_INITIAL, _SOC_NOTE)
     held = min(max(level.value, 0.0), usable_mwh)

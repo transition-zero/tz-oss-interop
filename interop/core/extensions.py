@@ -101,7 +101,24 @@ class BusExtension(ExtensionRecord):
     value_of_lost_load: float | None = None
 
 
-class GeneratorExtension(ExtensionRecord):
+class ExpansionExtension(ExtensionRecord):
+    """What a candidate states that PyPSA's own expansion columns have no home for."""
+
+    # MW. What one unit of a candidate is. PyPSA sizes a candidate by p_nom_max alone, so
+    # the size of a single unit has no field there.
+    unit_size_mw: float | None = None
+    # yr. How long the plant runs. PyPSA has one lifetime and the capital recovery period
+    # claims it, so this has no field there.
+    technical_life_years: float | None = None
+    # $/MW/yr. PyPSA's fom_cost is a charge for the whole modelled horizon, not a yearly
+    # one, so a yearly charge has no field there.
+    fom_charge_per_mw_year: float | None = None
+    # The year the object leaves service, which PLEXOS states as a dated Units of zero.
+    # PyPSA carries build_year on the component and nothing for the other end of its life.
+    retirement_year: int | None = None
+
+
+class GeneratorExtension(ExpansionExtension):
     # PyPSA Generator.carrier. Sienna states fuel and prime mover instead, and several PyPSA
     # carriers share one (prime_mover, fuel) pair, so the reverse cannot recover this.
     carrier: str | None = None
@@ -147,7 +164,7 @@ class ControllableLineExtension(ExtensionRecord):
     has_time_varying_p_min_pu: bool | None = None
 
 
-class StorageExtension(ExtensionRecord):
+class StorageExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None  # PyPSA only
 
 
