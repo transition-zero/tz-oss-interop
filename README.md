@@ -304,6 +304,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/translation_mappings/translation-from-pypsa-to-sienna.md` is the authoritative mapping reference for PyPSA / Sienna field translation.
 - `docs/translation_mappings/translation-from-plexos-to-pypsa.md` states what each part of a PLEXOS model becomes in PyPSA.
 - `docs/translation_mappings/translation-from-plexos-to-sienna.md` states the same for Sienna, and `plexos-to-sienna-gap-analysis.md` beside it states what that translation loses and what each loss does to a dispatch.
+- `docs/translation_mappings/translation-from-plexos-to-sienna-investments.md` states what a PLEXOS expansion plan becomes in a Sienna investments portfolio, which `plexos-to-sienna-investments` writes beside the base system, and `plexos-to-sienna-gap-analysis.md` states what the portfolio leaves out and what each loss does to an expansion.
 - `docs/developer_documentation/mutation-testing.md` covers the mutmut workflow.
 - `tests/features/README.md` explains the in-process REPL-driven BDD harness and when subprocess is needed.
 

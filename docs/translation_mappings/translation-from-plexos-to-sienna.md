@@ -3,12 +3,14 @@
 This document tells you what each part of your PLEXOS model becomes in the Sienna system.
 It gives the source of each field.
 
-> **Scope:** the translator accepts electricity-only models, and it translates them for
-> dispatch. It does not translate capacity expansion, custom constraints or hydro cascades.
-> It does not carry the reserves to a file you keep. Refer to
-> [Not translated](#not-translated) and to
+> **Scope:** the translator accepts electricity-only models, and the `plexos-to-sienna`
+> pipeline translates them for dispatch. It writes no capacity expansion: what your plan may
+> build becomes a Sienna investments portfolio instead, which
+> [the `plexos-to-sienna-investments` pipeline](translation-from-plexos-to-sienna-investments.md)
+> writes. This pipeline does not translate custom constraints or hydro cascades, and it does
+> not carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which states what each loss does to a
-> dispatch.
+> dispatch and what the portfolio leaves out of an expansion.
 
 The `plexos-to-sienna` pipeline runs through a PyPSA network on the way. This document does
 not describe that network. It states the mapping as one step, because that is what you give
@@ -35,7 +37,7 @@ property of the PLEXOS to Sienna mapping.
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
 | `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
 | [Region `VoLL`](#region-load--interruptiblepowerload) | The `operation_cost` of an `InterruptiblePowerLoad`, on a reliability run only. |
-| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated) |
+| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -55,6 +57,10 @@ property of the PLEXOS to Sienna mapping.
   [The carrier mappings file](#the-carrier-mappings-file).
 - **A component whose carrier your file does not name is left out.** The run completes and
   `decisions.md` names each one.
+- **A build the plan has yet to decide is not a plant.** A `Generator`, a `Battery` or a
+  turbine that states `Max Units Built` and runs no units yet is a build and nothing else, and
+  a dispatch system has no capacity for one, so it is left out and `decisions.md` names it. One
+  that already runs keeps the capacity it runs, and only the build it may add is left out.
 - **One scenario only.** The Model you select applies its own Scenario overlays. The
   translator reads no other scenario.
 - **One calendar year at a time.** The year you give narrows the Horizon of the Model. Every
@@ -263,13 +269,14 @@ An availability that changes with time becomes a `TimeSeriesAssociation` on
 `max_active_power`. That is the name PowerSimulations reads an availability forecast under.
 The stored shape peaks at 1.0 and scales back to MW through `active_power_limits.max`.
 
-**The translator does not translate four cases.** It records each one as a skipped
+**The translator does not translate five cases.** It records each one as a skipped
 component:
 
 | Case | Cause |
 | --- | --- |
 | The generator has no `Node` | There is no bus to connect it to. |
 | The generator has no `Units` at any time in the horizon | The unit is retired. |
+| The generator states `Max Units Built` and runs no units yet | It is a build to decide, not capacity to dispatch. |
 | `Max Capacity` comes from a data file | There is no single capacity to divide the per-unit fields by. |
 | The capacity is 0 | The generator can never dispatch. |
 
@@ -438,7 +445,7 @@ value that changes during that year becomes a time series over the snapshots.
 
 | Property | Meaning |
 | --- | --- |
-| `Units` | The quantity of units in service. `0` at every date is a retired unit. |
+| `Units` | The quantity of units in service. `0` at every date is a retired unit, unless the object also states `Max Units Built`, which makes it a candidate. |
 | `Max Capacity` | The capacity of one unit. |
 
 ### Availability and outages
@@ -499,7 +506,7 @@ energy than your model gives it.
 | `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
 | `Transformer` | The translator does not carry it. |
-| `Constraint` | Nothing applies the custom constraints, which include the RPS targets and the emission targets. |
+| `Constraint` | The record reaches `extensions.json`, but nothing applies the custom constraints, which include the RPS targets and the emission targets. |
 | `Waterway` | The cascade route between reservoirs is lost. Each reservoir is independent. |
 | `Decision Variable` | The translator does not carry it. |
 | Emission caps | Nothing applies them. Only the carbon price reaches the cost. |
