@@ -1,0 +1,23 @@
+source_framework: pypsa
+destination_framework: sienna
+source:
+  name: stage_pypsa_network_file
+steps:
+  - name: pypsa_to_sienna_map_components
+  - name: pypsa_to_sienna_relate_components
+  - name: pypsa_to_sienna_investments_map_technologies
+validators:
+  - name: pypsa_bus_reference_integrity
+  - name: pypsa_generators
+  - name: pypsa_storage_units
+  - name: pypsa_loads
+  - name: pypsa_lines
+  - name: pypsa_links
+  - name: pypsa_unique_names
+sinks:
+  - name: emit_sienna_files
+    params:
+      output_system_json_file_path: outputs/system.json
+  - name: emit_sienna_portfolio
+    params:
+      output_path: outputs/portfolio.json
