@@ -221,12 +221,14 @@ class TranslateUsingPipeline(TranslateUseCase):
     def _run_leg(self, leg: PlannedLeg, run: _Run) -> list[EnergyModelValidationError]:
         user_mappings_lookup = self._load_user_mappings(leg, run)
         errors_so_far = list(run.errors)
+        recorder = run.recorder_for(leg)
         return run_pipeline(
             leg.spec,
             self._factories.source(run.track(leg.reads_handoff_from), user_mappings_lookup),
-            self._factories.step(run.recorder_for(leg), user_mappings_lookup),
+            self._factories.step(recorder, user_mappings_lookup),
             self._factories.sink(run.track(leg.writes_handoff_to)),
             self._factories.validator(user_mappings_lookup),
+            recorder,
             keep_staging=run.keep_staging,
             on_validators_complete=lambda found: self._validation_report.render(
                 errors_so_far + found, DEFAULT_VALIDATION_REPORT_PATH

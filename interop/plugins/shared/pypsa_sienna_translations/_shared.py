@@ -1,8 +1,7 @@
 """Primitives shared across the PyPSA -> Sienna component translation modules.
 
-Deduplicates the field factories, the linear cost-curve structs, and the TimeSeriesAssociation
-row builder that the generator, renewable, hydro, and storage modules would otherwise each
-repeat verbatim.
+Holds the capacity a component is rated from, the drops every component module reports, the
+field factories, the linear cost-curve structs and the TimeSeriesAssociation row builder.
 """
 
 from __future__ import annotations
@@ -15,7 +14,11 @@ from typing import Any, NamedTuple
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.pypsa_constants import PyPSAComponentCol, PyPSAComponentNaming
+from interop.plugins.shared.pypsa_constants import (
+    PyPSAComponentCol,
+    PyPSAComponentNaming,
+    PyPSAGeneratorCol,
+)
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
@@ -26,13 +29,109 @@ from interop.plugins.shared.sienna_constants import (
     SiennaVariableCostType,
     time_series_uuid,
 )
-from interop.plugins.shared.translation_runner import SkippedNames, SkipReport
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    SkipRule,
+    fill_defaults,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     SourceField,
 )
 
 PYPSA_TO_SIENNA = "pypsa-to-sienna"
+
+# Enrichment columns on the source table, which finalise() drops.
+EFFECTIVE_P_NOM = "_effective_p_nom"
+CAPACITY_ATTRIBUTE = "_capacity_attribute"
+STATES_BUILT_CAPACITY = "_states_built_capacity"
+
+EFFECTIVE_P_NOM_DERIVATION = (
+    "p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a "
+    "build cannot take away, else p_nom"
+)
+
+
+# PyPSA names these four columns the same on a Generator, a StorageUnit and a Link. A Line
+# names them s_nom, and this leg still rates a Line by its own rule in _lines.py.
+_EXTENDABLE = PyPSAGeneratorCol.P_NOM_EXTENDABLE
+_OPT = PyPSAGeneratorCol.P_NOM_OPT
+_NOM = PyPSAGeneratorCol.P_NOM
+_NOM_MIN = PyPSAGeneratorCol.P_NOM_MIN
+
+
+def has_solved_capacity() -> pl.Expr:
+    """A solve that builds none of a component writes p_nom_opt 0; only a network no solve
+    has touched leaves the column out, which stages as null.
+    """
+    return pl.col(_EXTENDABLE) & pl.col(_OPT).is_not_null()
+
+
+def capacity_floor() -> pl.Expr:
+    """Capacity a build cannot take away, which the network also has to state as p_nom.
+
+    PyPSA reads p_nom_min as the lower bound of the build, which a user also sets to force a
+    minimum build on a candidate nobody has built. Only the part of that bound the network
+    also states as p_nom is capacity an operations model may dispatch.
+    """
+    return pl.min_horizontal(pl.col(_NOM_MIN), pl.col(_NOM))
+
+
+def has_capacity_floor() -> pl.Expr:
+    return pl.col(_EXTENDABLE) & (capacity_floor() > 0)
+
+
+_ATTRIBUTE = "attribute"
+_VALUE = "value"
+
+
+def _rated_by(column: str) -> pl.Expr:
+    """The capacity one column states, beside the name of that column."""
+    return pl.struct(attribute=pl.lit(column), value=pl.col(column))
+
+
+def capacity_choice() -> pl.Expr:
+    """The column a component is rated from, and the capacity that column states."""
+    floor = pl.when(pl.col(_NOM_MIN) <= pl.col(_NOM)).then(_rated_by(_NOM_MIN))
+    return (
+        pl.when(has_solved_capacity())
+        .then(_rated_by(_OPT))
+        .when(has_capacity_floor())
+        .then(floor.otherwise(_rated_by(_NOM)))
+        .otherwise(_rated_by(_NOM))
+    )
+
+
+def rated_from(row: dict[str, Any]) -> str:
+    return str(row[CAPACITY_ATTRIBUTE])
+
+
+def states_built_capacity() -> pl.Expr:
+    """PyPSA ignores the p_nom of an extendable component, so p_nom alone cannot say whether
+    such a component holds capacity an operations model may dispatch.
+    """
+    return ~pl.col(_EXTENDABLE) | has_solved_capacity() | has_capacity_floor()
+
+
+def with_effective_p_nom(table: pl.DataFrame) -> pl.DataFrame:
+    choice = capacity_choice()
+    return table.with_columns(
+        choice.struct.field(_VALUE).alias(EFFECTIVE_P_NOM),
+        choice.struct.field(_ATTRIBUTE).alias(CAPACITY_ATTRIBUTE),
+        states_built_capacity().alias(STATES_BUILT_CAPACITY),
+    )
+
+
+def fill_capacity_columns(table: pl.DataFrame) -> pl.DataFrame:
+    return fill_defaults(
+        table, [(_OPT, None), (_NOM, 0.0), (_NOM_MIN, 0.0)], [(_EXTENDABLE, False)]
+    )
+
+
+def fill_capacity_defaults(table: pl.DataFrame) -> pl.DataFrame:
+    return with_effective_p_nom(fill_capacity_columns(table))
+
 
 UNNAMED_CARRIER_NOTE = "the user mappings file names no such carrier"
 
@@ -85,6 +184,27 @@ def carrier_scope_skips(naming: PyPSAComponentNaming) -> ScopeSkips:
             listed=listed,
         ),
         bus_scope=skip(reason=NOT_AN_ELECTRICITY_BUS_REASON, note=NOT_AN_ELECTRICITY_BUS_NOTE),
+    )
+
+
+UNBUILT_CANDIDATE_REASON = "are extendable and state no capacity they already hold"
+UNBUILT_CANDIDATE_NOTE = (
+    "p_nom_extendable is true, the network states no p_nom_opt, and the lower of p_nom_min "
+    "and p_nom is 0, so this is capacity the plan may build rather than capacity an "
+    "operations model may dispatch"
+)
+
+
+def unbuilt_candidate_skip(naming: PyPSAComponentNaming) -> SkipRule:
+    return SkipRule(
+        keep=pl.col(STATES_BUILT_CAPACITY),
+        report=pypsa_skip_report(
+            component=naming.display,
+            name_col=PyPSAComponentCol.NAME,
+            counted_noun=naming.plural,
+            reason=UNBUILT_CANDIDATE_REASON,
+            note=UNBUILT_CANDIDATE_NOTE,
+        ),
     )
 
 

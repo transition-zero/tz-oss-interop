@@ -12,11 +12,13 @@ limits, and up/down times have no home and are dropped (the model is a closed lo
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import partial
 
 import polars as pl
 
 from interop.core.extensions import ExtensionKind, StorageExtension
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
     PyPSAComponent,
@@ -29,8 +31,12 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 )
 from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich_prime_mover
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
+    EFFECTIVE_P_NOM_DERIVATION,
+    fill_capacity_columns,
     pypsa_skip_report,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     variable_cost_curve,
 )
@@ -60,6 +66,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -67,7 +74,6 @@ from interop.ports.outbound.reporting import (
 )
 
 _PRIME_MOVER_COL = "_prime_mover_raw"
-_EFFECTIVE_P_NOM = "_effective_p_nom"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
@@ -79,8 +85,6 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAStorageUnitCol.P_NOM, 0.0),
-            (PyPSAStorageUnitCol.P_NOM_OPT, 0.0),
             (PyPSAStorageUnitCol.P_MIN_PU, -1.0),
             (PyPSAStorageUnitCol.P_MAX_PU, 1.0),
             (PyPSAStorageUnitCol.MARGINAL_COST, 0.0),
@@ -91,15 +95,9 @@ def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
         ],
         [
             (PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False),
-            (PyPSAStorageUnitCol.P_NOM_EXTENDABLE, False),
         ],
     )
-    return table.with_columns(
-        pl.when(pl.col(PyPSAStorageUnitCol.P_NOM_EXTENDABLE))
-        .then(pl.col(PyPSAStorageUnitCol.P_NOM_OPT))
-        .otherwise(pl.col(PyPSAStorageUnitCol.P_NOM))
-        .alias(_EFFECTIVE_P_NOM)
-    )
+    return fill_capacity_columns(table)
 
 
 def build_storage_extensions(
@@ -142,21 +140,23 @@ STORAGE_NO_ENERGY_SKIP = pypsa_skip_report(
 )
 
 
-def _skip_without_energy(_series: pl.LazyFrame | None) -> SkipRule:
+def _storage_skips(_series: pl.LazyFrame | None) -> Sequence[SkipRule]:
     """A unit of no storage hours holds no energy, whatever series it carries."""
-    return SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP)
+    return (
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=STORAGE_NO_ENERGY_SKIP),
+    )
 
 
 # --- Reusable expressions ---
 
-# state_of_charge_initial / (effective_p_nom * max_hours), clamped to [0, 1].
-# Defaults to 0.0 when capacity is zero (e.g. unsolved extendable unit) to
-# avoid a division-by-zero that would clip to 1.0 (incorrectly "fully charged").
+# state_of_charge_initial / (effective_p_nom * max_hours), clamped to [0, 1]. A capacity of
+# zero, from a solve that built none of an extendable unit or from a p_nom of zero, gives 0.0
+# rather than a division by zero that would clip to 1.0 and read as fully charged.
 _initial_level = (
-    pl.when(pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0)
+    pl.when(pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0)
     .then(
         pl.col(PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL)
-        / (pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS))
+        / (pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.MAX_HOURS))
     )
     .otherwise(0.0)
     .clip(0.0, 1.0)
@@ -177,6 +177,13 @@ def _min_max(max_expr: pl.Expr) -> pl.Expr:
 S = SiennaEnergyReservoirStorageCol
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
+_rated = partial(
+    row_source_translation,
+    _source,
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    source_col_of=rated_from,
+)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
 STORAGE_ID = row_position_id_translation(
@@ -312,11 +319,11 @@ STORAGE_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for storage units",
 )
 
-STORAGE_BASE_POWER = _direct(
-    source_col=PyPSAStorageUnitCol.P_NOM,
+STORAGE_BASE_POWER = _rated(
     dest_col=S.BASE_POWER,
-    expr=pl.col(_EFFECTIVE_P_NOM),
-    derivation="p_nom_opt when p_nom_extendable else p_nom",
+    expr=pl.col(EFFECTIVE_P_NOM),
+    unit=UNIT_MW,
+    derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
 STORAGE_COST = Translation(
@@ -428,6 +435,6 @@ PHS_STORAGE_MAPPING = ComponentMapping(
     translations=ENERGY_RESERVOIR_STORAGE_TRANSLATIONS,
     schema=ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
     sienna_component=SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-    skip=_skip_without_energy,
+    skips=_storage_skips,
     extensions=ExtensionSpec(ExtensionKind.STORAGE, build_storage_extensions),
 )

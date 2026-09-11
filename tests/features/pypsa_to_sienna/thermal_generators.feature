@@ -25,7 +25,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     # VALUE_DERIVED decisions
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.name` = ccgt_1 | `sienna.ThermalStandard.ccgt_1.name` = ccgt_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.bus` = bus_1 | `sienna.ThermalStandard.ccgt_1.bus_name` = bus_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.base_power` = 500.0 MW | p_nom_opt when p_nom_extendable else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.base_power` = 500.0 MW | p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a build cannot take away, else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power` = 100.0 MW | effective_p_nom * p_min_pu (initial dispatch = min operating point) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_max_pu` = 1.0 | `sienna.ThermalStandard.ccgt_1.rating` = 1.0 | p_max_pu (per-unit nameplate rating; typically 1.0) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power_limits` = {'min': 100.0, 'max': 500.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu (static) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -174,10 +174,46 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "coal_1" on "bus_1" carrier "coal" p_nom 500.0 p_nom_extendable True
+    And generator "coal_1" has p_nom_opt 500
     And the network is saved as "inputs/gen_extendable.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/gen_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "coal_1" having "p_nom_extendable" set to true
+
+  Scenario: an extendable generator with nothing built yet is a candidate, so it is left out
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "planned_ccgt" on "bus_1" carrier "CCGT" p_nom 500.0 p_nom_extendable True
+    And the network is saved as "inputs/gen_candidate.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/gen_candidate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
+    And the log contains "1 Generator(s) are extendable and state no capacity they already hold, so each is left out"
+    And the file "decisions.md" contains "p_nom_extendable is true, the network states no p_nom_opt, and the lower of p_nom_min and p_nom is 0, so this is capacity the plan may build rather than capacity an operations model may dispatch"
+
+  Scenario: an extendable generator no solve has sized keeps the capacity a build cannot take away
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "running_ccgt" on "bus_1" carrier "CCGT" p_nom 500.0 p_nom_extendable True
+    And generator "running_ccgt" has p_nom_min 200
+    And the network is saved as "inputs/gen_floor.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/gen_floor.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "running_ccgt" having "base_power" set to 200.0
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "running_ccgt" having "active_power_limits.max" set to 200.0
+    And the file "decisions.md" contains "`pypsa.Generator.running_ccgt.p_nom_min` = 200.0 MW | `sienna.ThermalStandard.running_ccgt.active_power_limits`"
+    And the file "decisions.md" contains "`pypsa.Generator.running_ccgt.p_nom_min` = 200.0 MW | `sienna.ThermalStandard.running_ccgt.base_power` = 200.0 MW"
+
+  Scenario: a forced minimum build is a plan, not capacity an operations model may dispatch
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "forced_ccgt" on "bus_1" carrier "CCGT" p_nom 0.0 p_nom_extendable True
+    And generator "forced_ccgt" has p_nom_min 500
+    And the network is saved as "inputs/forced_build.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/forced_build.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
+    And the log contains "1 Generator(s) are extendable and state no capacity they already hold"
 
   Scenario: generator without p_nom_extendable records the flag false in extensions
     Given a PyPSA network
@@ -187,3 +223,18 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And a user mappings file with all standard carriers
     When I run translate against "inputs/gen_not_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "nuclear_1" having "p_nom_extendable" set to false
+
+  Scenario: a solve that built none of an extendable generator rates it at nothing, not at p_nom
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "built_ccgt" on "bus_1" carrier "CCGT" p_nom 100.0 p_nom_extendable True
+    And generator "built_ccgt" has p_nom_opt 400
+    And the network contains generator "rejected_ccgt" on "bus_1" carrier "CCGT" p_nom 500.0 p_nom_extendable True
+    And generator "rejected_ccgt" has p_nom_opt 0
+    And the network is saved as "inputs/solved_expansion.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/solved_expansion.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "built_ccgt" having "base_power" set to 400.0
+    And the file "decisions.md" contains "`pypsa.Generator.built_ccgt.p_nom_opt` = 400.0 MW | `sienna.ThermalStandard.built_ccgt.base_power` = 400.0 MW"
+    # The plan refused this build, so its p_nom is not capacity the operations system may dispatch.
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "rejected_ccgt" having "base_power" set to 0.0

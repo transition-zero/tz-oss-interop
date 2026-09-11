@@ -22,6 +22,7 @@ from interop.core.pipeline import (
     TranslationStep,
     Validator,
 )
+from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.validation import (
     EnergyModelValidationError,
@@ -168,6 +169,7 @@ def run_pipeline(
     step_factory: StepFactory,
     sink_factory: SinkFactory,
     validator_factory: ValidatorFactory,
+    recorder: EventRecorder,
     *,
     keep_staging: bool = False,
     on_validators_complete: Callable[[list[EnergyModelValidationError]], None] | None = None,
@@ -182,6 +184,7 @@ def run_pipeline(
         for step_node in spec.steps:
             step = step_factory(step_node.name, pipeline_steps)
             state = step.run(state, _build_params(NodeKind.STEP, step, step_node))
+        state.report_unread_extensions(spec.source_framework, recorder)
 
         for sink_node in spec.sinks:
             sink = sink_factory(sink_node.name)

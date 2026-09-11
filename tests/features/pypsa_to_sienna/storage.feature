@@ -80,6 +80,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit PHS to Sien
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains storage unit "phs_1" on "bus_1" carrier "PHS" p_nom 1000.0 max_hours 6.0 p_nom_extendable True
+    And storage unit "phs_1" has p_nom_opt 1000
     And the network is saved as "inputs/phs_extendable.nc"
     When I run translate against "inputs/phs_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON storage extension record for "phs_1" having "p_nom_extendable" set to true
