@@ -22,6 +22,12 @@ from interop.plugins.shared.plexos_constants import (
     PlexosObjectCol,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    find_unpriced_candidate,
+    read_sidecar_value,
+    record_expansion,
+    warn_about_dropped_builds,
+)
 from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
     GeneratorDecisions,
     decide_generator,
@@ -38,6 +44,10 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     Lookups,
     build_lookups,
 )
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    read_year,
+    record_lifespan,
+)
 from interop.plugins.shared.plexos_pypsa_translations._shared import outage_time_series
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
@@ -49,8 +59,10 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
     Decision,
     MappedColumns,
+    SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     GENERATORS_DESTINATION_SCHEMA,
@@ -75,7 +87,7 @@ _FILE_BACKED_NOTE = (
     "Max Capacity comes from a data file rather than a value, so the generator "
     "has no p_nom to size it or to per-unitise its availability against"
 )
-_RETIRED_NOTE = "Units = 0 marks a retired generator"
+_RETIRED_NOTE = "Units = 0 and no Max Units Built marks a retired generator"
 _CATEGORY_DERIVATION = "a PyPSA generator carries one carrier, so the category travels beside it"
 _PROFILE_NOT_STAGED_NOTE = (
     "the source staged no series for this profile, so p_max_pu keeps the static "
@@ -97,12 +109,16 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
     lookups = build_lookups(state)
     reporter = ComponentReporter(recorder, PyPSAComponent.GENERATOR)
     storage_turbines = storage_turbine_names(state)
-    translated = [
-        one
+    outcomes = [
+        _map_one(generator, lookups, reporter)
         for generator in generators.collect().iter_rows(named=True)
         if generator[PlexosObjectCol.NAME] not in storage_turbines
-        if (one := _map_one(generator, lookups, reporter)) is not None
     ]
+    skipped = [one for one in outcomes if isinstance(one, SkippedComponent)]
+    for one in skipped:
+        reporter.record_skipped(one.source, one.note)
+    warn_about_skips(skipped)
+    translated = [one for one in outcomes if isinstance(one, _TranslatedGenerator)]
     if not translated:
         return
     append_destination_rows(
@@ -114,9 +130,8 @@ def map_generators(state: State, recorder: ScopedRecorder) -> None:
         ],
         GENERATORS_DESTINATION_SCHEMA,
     )
-    mappings = [one.mapping for one in translated]
-    _carry_categories_to_extensions(state, mappings, reporter)
-    _record_availability_time_series(state, mappings, reporter)
+    _carry_to_extensions(state, translated, reporter)
+    _record_availability_time_series(state, [one.mapping for one in translated], reporter)
 
 
 @dataclass(frozen=True)
@@ -127,18 +142,30 @@ class _TranslatedGenerator:
     decisions: GeneratorDecisions
 
 
-def _carry_categories_to_extensions(
-    state: State, mappings: list[GeneratorMapping], reporter: ComponentReporter
+def _carry_to_extensions(
+    state: State, translated: list[_TranslatedGenerator], reporter: ComponentReporter
 ) -> None:
-    """Put every generator's PLEXOS category in the sidecar, since only one of it and the
-    fuel could become the carrier. The one that did not is what the report names.
+    """Put what the network file cannot hold in the sidecar, starting with the PLEXOS
+    category, since only one of it and the fuel could become the carrier.
     """
-    for mapping in mappings:
+    for one in translated:
+        mapping = one.mapping
         if mapping.carrier != mapping.category:
             reporter.record(mapping.name, _CATEGORY_COLUMN, _category_decision(mapping))
+        record_expansion(mapping.name, mapping.expansion, reporter)
+        record_lifespan(mapping.name, one.decisions.lifespan, reporter)
     records = [
-        GeneratorExtension(name=mapping.name, category=mapping.category) for mapping in mappings
+        GeneratorExtension(
+            name=one.mapping.name,
+            category=one.mapping.category,
+            unit_size_mw=read_sidecar_value(one.mapping.expansion.unit_size),
+            technical_life_years=read_sidecar_value(one.mapping.expansion.technical_life),
+            fom_charge_per_mw_year=read_sidecar_value(one.mapping.expansion.fom_charge),
+            retirement_year=read_year(one.decisions.lifespan.retirement_year),
+        )
+        for one in translated
     ]
+    warn_about_dropped_builds(one.mapping.expansion for one in translated)
     append_extensions(state.destination_extensions, ExtensionKind.GENERATOR, records)
 
 
@@ -149,52 +176,41 @@ def _category_decision(mapping: GeneratorMapping) -> Decision:
 
 def _map_one(
     generator: dict[str, Any], lookups: Lookups, reporter: ComponentReporter
-) -> _TranslatedGenerator | None:
+) -> _TranslatedGenerator | SkippedComponent:
     name = generator[PlexosObjectCol.NAME]
     node = lookups.gen_to_node.get(name)
     if node is None:
-        reporter.record_skipped(_source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE)
-        return None
+        return SkippedComponent(_source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE)
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
-        reporter.record_skipped(
+        return SkippedComponent(
             _source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW), _FILE_BACKED_NOTE
         )
-        return None
     source = read_source(generator, name, lookups)
-    if source.units == 0.0:
-        reporter.record_skipped(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
-        return None
+    if source.units == 0.0 and not source.is_candidate:
+        return SkippedComponent(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
     if source.p_nom <= 0.0:
-        reporter.record_skipped(
+        return SkippedComponent(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
-        return None
+    unpriced = find_unpriced_candidate(source.candidate)
+    if unpriced is not None:
+        return unpriced
     mapping = derive_generator(source, node, lookups)
     if has_infeasible_dispatch_range(mapping):
-        _report_infeasible_dispatch_range(mapping, reporter)
-        return None
+        return _infeasible_dispatch_range(mapping)
     decisions = decide_generator(mapping)
     record_generator(reporter, decisions)
     return _TranslatedGenerator(mapping, decisions)
 
 
-def _report_infeasible_dispatch_range(
-    mapping: GeneratorMapping, reporter: ComponentReporter
-) -> None:
+def _infeasible_dispatch_range(mapping: GeneratorMapping) -> SkippedComponent:
     p_min_pu = mapping.minimum.p_min_pu
     p_max_pu = mapping.availability.static_p_max_pu
-    reporter.record_skipped(
+    return SkippedComponent(
         _source(mapping.name, mapping.minimum.source_property, mapping.minimum.source_value),
         f"p_min_pu {p_min_pu} sits above p_max_pu {p_max_pu}, which PyPSA cannot dispatch, "
         "so the generator is dropped",
-    )
-    log.warning(
-        "plexos: dropping Generator %r: p_min_pu %s is above p_max_pu %s, which PyPSA "
-        "cannot dispatch",
-        mapping.name,
-        p_min_pu,
-        p_max_pu,
     )
 
 
@@ -318,7 +334,7 @@ def _dated_capacity_rows(state: State, mappings: list[GeneratorMapping]) -> list
             attribute=PyPSAGeneratorCol.P_MAX_PU,
             source_owner_type=PlexosClass.GENERATOR,
             source_series_name=PlexosProperty.MAX_CAPACITY,
-            scaling_factor=mapping.units / mapping.p_nom,
+            scaling_factor=mapping.candidate.rated_unit_count / mapping.p_nom,
             timing=timing,
         )
         for mapping in mappings

@@ -30,6 +30,10 @@ from interop.plugins.shared.plexos_constants import (
     PlexosObjectCol,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    ExpansionDecisions,
+    derive_p_nom,
+)
 from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import (
     CarbonTerm,
     GeneratorMapping,
@@ -37,6 +41,10 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_derivation impo
     StartPricing,
     ThermalCostTerms,
     UnitCommitment,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    LifespanDecisions,
+    derive_lifespan,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
@@ -49,13 +57,12 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     MappedColumns,
     SourceValue,
     declares,
+    holds,
     maps_to,
 )
 from interop.plugins.shared.pypsa_constants import PyPSAComponent, PyPSAGeneratorCol
 
 _BUS_DERIVATION = "the Nodes membership names the bus"
-_P_NOM_DERIVATION = "Max Capacity x Units"
-_P_NOM_RATING_DERIVATION = "Rating above Max Capacity x Units, so the Rating is the capacity"
 _THERMAL_CARRIER_DERIVATION = "the fuel names the carrier"
 _CATEGORY_CARRIER_DERIVATION = "the category names the carrier"
 _P_MIN_PU_DERIVATION = "the first available minimum-generation property, converted to per unit"
@@ -106,8 +113,6 @@ _UP_TIME_BEFORE_NOTE = (
 _SHUT_DOWN_NOTE = "PLEXOS prices only starts, so shutting down is free"
 _EFFICIENCY_DERIVATION = "p_nom / (Heat Rate Base + Heat Rate Incr x p_nom) x 3.6"
 _DISCARDED_FUEL_NOTE = "a multi-fuel generator keeps its first fuel; this one is discarded"
-_EXTENDABLE_NOTE = "v1 translates a dispatch model, so capacity is fixed"
-_NOT_EXTENDABLE = False
 
 # The value a p_max_pu event carries when the ceiling varies over the horizon.
 _PROFILE = "profile"
@@ -149,7 +154,8 @@ class GeneratorDecisions:
     up_time_before: Decision = maps_to(PyPSAGeneratorCol.UP_TIME_BEFORE, unit=UNIT_SNAPSHOTS)
     start_up_cost: Decision = maps_to(PyPSAGeneratorCol.START_UP_COST, unit=UNIT_DOLLARS)
     shut_down_cost: Decision = maps_to(PyPSAGeneratorCol.SHUT_DOWN_COST, unit=UNIT_DOLLARS)
-    p_nom_extendable: Decision = maps_to(PyPSAGeneratorCol.P_NOM_EXTENDABLE)
+    lifespan: LifespanDecisions = holds()
+    expansion: ExpansionDecisions = holds()
 
 
 def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
@@ -179,7 +185,8 @@ def decide_generator(mapping: GeneratorMapping) -> GeneratorDecisions:
         up_time_before=commitment.up_time_before,
         start_up_cost=commitment.start_up_cost,
         shut_down_cost=commitment.shut_down_cost,
-        p_nom_extendable=Decision.default(_NOT_EXTENDABLE, _EXTENDABLE_NOTE),
+        lifespan=derive_lifespan(PlexosClass.GENERATOR, mapping.name, mapping.lifespan),
+        expansion=mapping.expansion,
     )
 
 
@@ -231,15 +238,7 @@ def _carrier(mapping: GeneratorMapping) -> Decision:
 
 
 def _p_nom(mapping: GeneratorMapping) -> Decision:
-    nameplate = [
-        _source(mapping.name, PlexosProperty.MAX_CAPACITY, mapping.max_capacity, UNIT_MW),
-        _source(mapping.name, PlexosProperty.UNITS, mapping.units),
-    ]
-    capacity = mapping.rating_as_capacity
-    if capacity is None:
-        return Decision.derived(mapping.p_nom, nameplate, _P_NOM_DERIVATION)
-    rating = _source(mapping.name, PlexosProperty.RATING, capacity, UNIT_MW)
-    return Decision.derived(mapping.p_nom, [rating, *nameplate], _P_NOM_RATING_DERIVATION)
+    return derive_p_nom(mapping.candidate)
 
 
 def _p_min_pu(mapping: GeneratorMapping) -> Decision:

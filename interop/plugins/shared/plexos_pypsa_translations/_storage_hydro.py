@@ -7,7 +7,6 @@ two paths differ only in whether the unit can pump and whether its level has to 
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from interop.core.pipeline import State
@@ -22,11 +21,16 @@ from interop.plugins.shared.plexos_constants import (
     PlexosCollection,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    derive_expansion,
+)
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
+    derive_lifespan,
+)
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
     CHARGE_NOTE,
     EFFICIENCY_NOTE,
-    EXTENDABLE_NOTE,
     FULL_DISCHARGE_NOTE,
     MAX_HOURS_NOTE,
     NO_RESERVOIR_INFLOW_NOTE,
@@ -34,7 +38,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     MappedOrSkipped,
     RatedObject,
     RatedPower,
-    SkippedComponent,
     StagedObject,
     StorageLookups,
     StorageUnitMapping,
@@ -48,17 +51,16 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
-    DEFAULT_UNITS,
     HYDRO_CYCLIC,
     PUMPED_STORAGE_CYCLIC,
     STORAGE_FULL_CHARGE_PU,
     STORAGE_FULL_DISCHARGE_PU,
     STORAGE_GENERATE_ONLY_PU,
     STORAGE_MARGINAL_COST,
-    STORAGE_P_NOM_EXTENDABLE,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkippedComponent,
     SourceValue,
 )
 from interop.plugins.shared.pypsa_constants import (
@@ -72,8 +74,6 @@ from interop.plugins.shared.pypsa_time_series import (
     series_components,
     series_timing,
 )
-
-log = logging.getLogger(__name__)
 
 
 def record_reservoir_inflows(state: State, mappings: list[StorageUnitMapping]) -> None:
@@ -127,7 +127,6 @@ _MAX_VOLUME_DERIVATION = "head Storage.Max Volume"
 _NO_INFLOW_STATED_NOTE = "the head Storage states no Natural Inflow; the reservoir does not refill"
 _NO_VOM_NOTE = "the PLEXOS Generator states no VO&M Charge"
 _PUMPED_STORAGE_CYCLIC_NOTE = "a pumped-storage plant returns to its starting level"
-_P_NOM_FROM_UNITS_DERIVATION = "Max Capacity * Units"
 _SOC_FROM_VOLUME_DERIVATION = "head Storage.Initial Volume"
 _VOLUME_NOT_ENERGY_NOTE = (
     "the head Storage names a volume unit that is not megawatt-hours, so how much energy "
@@ -170,7 +169,7 @@ _RESERVOIR_HYDRO = _GeneratorStorageVariant(
 
 
 def map_turbine(name: str, lookups: StorageLookups) -> MappedOrSkipped:
-    staged = lookups.generator(name)
+    staged = lookups.staged(PlexosClass.GENERATOR, name)
     variant = _classify_turbine(staged, lookups)
     if variant is None:
         return skip_object(
@@ -194,27 +193,7 @@ def _classify_turbine(
     return None
 
 
-def _generator_p_nom(staged: StagedObject) -> Decision:
-    max_capacity = staged.properties[PlexosProperty.MAX_CAPACITY]
-    stated_units = staged.properties.get(PlexosProperty.UNITS)
-    units = DEFAULT_UNITS if stated_units is None else stated_units
-    return Decision.derived(
-        max_capacity * units,
-        [
-            SourceValue(
-                PlexosClass.GENERATOR,
-                staged.name,
-                PlexosProperty.MAX_CAPACITY,
-                max_capacity,
-                UNIT_MW,
-            ),
-            SourceValue(PlexosClass.GENERATOR, staged.name, PlexosProperty.UNITS, units),
-        ],
-        _P_NOM_FROM_UNITS_DERIVATION,
-    )
-
-
-_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY, _generator_p_nom)
+_GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY)
 
 
 def _derive_turbine(
@@ -226,6 +205,7 @@ def _derive_turbine(
         rated.p_nom.value,
         _VOLUME_NOT_ENERGY_NOTE if unreadable else MAX_HOURS_NOTE,
     )
+    expansion = derive_expansion(rated.candidate)
     return StorageUnitMapping(
         name=rated.name,
         bus=derive_bus(PlexosClass.GENERATOR, rated.name, rated.node),
@@ -237,11 +217,12 @@ def _derive_turbine(
         efficiency=_turbine_efficiency(rated, variant),
         marginal_cost=_marginal_cost(rated),
         state_of_charge_initial=derive_state_of_charge_initial(
-            _reservoir_initial_level(head), rated.p_nom.value * max_hours.value
+            _reservoir_initial_level(head), rated.running_power.value * max_hours.value
         ),
         inflow=_reservoir_inflow(head),
         cyclic=Decision.default(variant.cyclic, variant.cyclic_note),
-        p_nom_extendable=Decision.default(STORAGE_P_NOM_EXTENDABLE, EXTENDABLE_NOTE),
+        lifespan=derive_lifespan(PlexosClass.GENERATOR, rated.name, rated.lifespan),
+        expansion=expansion,
         inflow_storage=_inflow_storage(head),
     )
 

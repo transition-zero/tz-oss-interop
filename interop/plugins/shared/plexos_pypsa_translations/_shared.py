@@ -21,7 +21,11 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
     PlexosPropertyCol,
 )
-from interop.plugins.shared.plexos_pypsa_translations.constants import FULL_AVAILABILITY
+from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    FULL_AVAILABILITY,
+    PERCENT,
+)
+from interop.plugins.shared.plexos_units import is_percent
 from interop.plugins.shared.pypsa_constants import (
     PyPSABusCol,
     PyPSADestinationTable,
@@ -236,6 +240,13 @@ def _read_membership_property_rows(
         .collect()
     )
     return frame.iter_rows()
+
+
+def as_rate(stated: float | None, stated_unit: str | None) -> float | None:
+    """A rate the model writes as a percentage, read as the fraction the destination wants."""
+    if stated is None:
+        return None
+    return stated / PERCENT if is_percent(stated_unit) else stated
 
 
 def collapse_units_by_object(properties: pl.LazyFrame, plexos_class: PlexosClass) -> ObjectUnits:
