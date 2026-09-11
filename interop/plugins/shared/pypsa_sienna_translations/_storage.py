@@ -18,6 +18,7 @@ from functools import partial
 import polars as pl
 
 from interop.core.extensions import ExtensionKind, StorageExtension
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
     PyPSAComponent,
@@ -321,6 +322,7 @@ STORAGE_REACTIVE_POWER = _default(
 STORAGE_BASE_POWER = _rated(
     dest_col=S.BASE_POWER,
     expr=pl.col(EFFECTIVE_P_NOM),
+    unit=UNIT_MW,
     derivation=EFFECTIVE_P_NOM_DERIVATION,
 )
 
