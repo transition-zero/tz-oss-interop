@@ -96,3 +96,5 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     Then the PyPSA network "outputs/network.nc" line "line_1" is extendable
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "s_nom_min" is 500.0
     And the file "decisions.md" contains "| `sienna.Line.line_1.extensions.s_nom_extendable` = True | `pypsa.Line.line_1.s_nom_extendable` = True | extensions.s_nom_extendable (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "PyPSA ignores the s_nom of an extendable component"
+    And the file "decisions.md" does not contain "PyPSA ignores the p_nom of an extendable component"

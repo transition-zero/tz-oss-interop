@@ -433,25 +433,25 @@ class ExtensionLookup(Generic[RecordT]):
 
 @dataclass
 class ExtensionConsumption:
-    """The names every reader of one hop has read.
+    """The names every reader of one hop has read, and the step to report a drop against.
 
     A hop may split its mappings across more than one step, so the readers those steps build
     share one of these and the run reports what none of them asked for once the last step
-    has run.
+    has run. ``recorder`` belongs to the step that opened the sidecar, which is the step a
+    record it holds no mapping for was offered to.
     """
 
+    recorder: EventRecorder
     by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
 
     def names_for(self, kind: ExtensionKind) -> set[str]:
         return self.by_kind.setdefault(kind, set())
 
-    def report_unconsumed(
-        self, staged: StagedExtensions, framework: str, recorder: EventRecorder
-    ) -> None:
+    def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
         for kind, records in staged.items():
             consumed = self.by_kind.get(kind, set())
             unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, framework, recorder)
+            report_dropped({kind: unread}, framework, self.recorder)
 
 
 class ExtensionReader:

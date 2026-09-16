@@ -41,7 +41,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
         self._off_window_recorder = ScopedRecorder(recorder, step=_DROP_PROFILES_OFF_THE_WINDOW)
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        reader = state.extension_reader()
+        reader = state.extension_reader(self._recorder)
         map_buses(state, self._recorder, reader)
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)

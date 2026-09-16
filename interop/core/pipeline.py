@@ -77,9 +77,10 @@ class State:
     points at a file its own sidecar has no companion for.
 
     `consumed_extensions` is what the steps of this hop have read
-    off `source_extensions`. Every step builds its reader through
-    `extension_reader`, so one record covers the whole hop and the
-    run can report what none of them asked for.
+    off `source_extensions`, beside the recorder a drop is reported
+    through. Every step builds its reader through `extension_reader`,
+    so one record covers the whole hop and the run can report what
+    none of them asked for.
     """
 
     staging_dir: Path
@@ -94,19 +95,24 @@ class State:
     validation_errors: list[EnergyModelValidationError] = field(default_factory=list)
     consumed_extensions: ExtensionConsumption | None = None
 
-    def extension_reader(self) -> ExtensionReader:
+    def extension_reader(self, recorder: EventRecorder) -> ExtensionReader:
+        """A reader over this hop's sidecar, recorded against the step that asks for one.
+
+        The first step to ask fixes the recorder a drop is reported through, so the report
+        names a step of the pipeline rather than the run that runs them.
+        """
         if self.consumed_extensions is None:
-            self.consumed_extensions = ExtensionConsumption()
+            self.consumed_extensions = ExtensionConsumption(recorder)
         return ExtensionReader(self.source_extensions, self.consumed_extensions)
 
-    def report_unread_extensions(self, framework: str, recorder: EventRecorder) -> None:
+    def report_unread_extensions(self, framework: str) -> None:
         """Report every staged record no step of this hop read.
 
         A hop whose steps build no reader has no mapping for a sidecar, so it reports nothing.
         """
         if self.consumed_extensions is None:
             return
-        self.consumed_extensions.report_unconsumed(self.source_extensions, framework, recorder)
+        self.consumed_extensions.report_unconsumed(self.source_extensions, framework)
 
 
 @dataclass(frozen=True)

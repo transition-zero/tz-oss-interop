@@ -228,7 +228,6 @@ class TranslateUsingPipeline(TranslateUseCase):
             self._factories.step(recorder, user_mappings_lookup),
             self._factories.sink(run.track(leg.writes_handoff_to)),
             self._factories.validator(user_mappings_lookup),
-            recorder,
             keep_staging=run.keep_staging,
             on_validators_complete=lambda found: self._validation_report.render(
                 errors_so_far + found, DEFAULT_VALIDATION_REPORT_PATH

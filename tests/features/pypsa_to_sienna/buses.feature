@@ -141,3 +141,16 @@ Feature: pypsa_to_sienna_map_components and pypsa_to_sienna_relate_components tr
     When I run translate against "inputs/bus_sidecar.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 components of type "ACBus"
     And the file "decisions.md" contains "| `pypsa.bus.bus_AL.carrier` = AC |  |  | this translation reads only the price of a shortfall off a bus record, so the record's other fields are dropped | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+
+  Scenario: a record no mapping reads is reported against the step that read the sidecar
+    A record naming a bus the network does not contain is offered to this leg and read by
+    nothing, so the leg reports it as dropped. The report names the step that opened the
+    sidecar, because that is the step the record was offered to.
+    Given a PyPSA network
+    And the network contains bus "bus_AL" carrier "AC" v_nom 380.0
+    And the network is saved as "inputs/unread_record.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"bus": [{"name": "bus_GHOST", "value_of_lost_load": 9000.0}]} |
+    When I run translate against "inputs/unread_record.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "decisions.md" contains "| `pypsa.bus.bus_GHOST` |  |  | no mapping in this translation reads this extension record, so it is dropped rather than carried into the next sidecar | pypsa-to-sienna | pypsa_to_sienna_map_components |"
