@@ -124,6 +124,14 @@ def with_effective_p_nom(table: pl.DataFrame) -> pl.DataFrame:
 
 
 def fill_capacity_columns(table: pl.DataFrame) -> pl.DataFrame:
+    """Add the four capacity columns at their PyPSA default, once per table.
+
+    The step fills a whole source table before any mapping runs, and each mapping's own fill
+    then calls this again because a validator calls that fill too. EFFECTIVE_P_NOM marks a
+    table the step has already filled, so the second call does no work.
+    """
+    if EFFECTIVE_P_NOM in table.columns:
+        return table
     return fill_defaults(
         table, [(_OPT, None), (_NOM, 0.0), (_NOM_MIN, 0.0)], [(_EXTENDABLE, False)]
     )
@@ -204,6 +212,35 @@ def unbuilt_candidate_skip(naming: PyPSAComponentNaming) -> SkipRule:
             counted_noun=naming.plural,
             reason=UNBUILT_CANDIDATE_REASON,
             note=UNBUILT_CANDIDATE_NOTE,
+        ),
+    )
+
+
+NO_DISPATCHABLE_CAPACITY_REASON = "state no capacity an operations model may dispatch"
+
+
+def no_dispatchable_capacity_note(row: dict[str, Any]) -> str:
+    """The note for a component the network rates at nothing, naming the column it read."""
+    return (
+        f"{row[CAPACITY_ATTRIBUTE]} is 0, so the component holds no capacity an operations "
+        "model may dispatch"
+    )
+
+
+def no_dispatchable_capacity_skip(naming: PyPSAComponentNaming) -> SkipRule:
+    """Drop a component rated at nothing, whichever column the rating came from.
+
+    This runs after ``unbuilt_candidate_skip``, so a component the network never decided
+    reports that rather than the zero the decision would have carried.
+    """
+    return SkipRule(
+        keep=pl.col(EFFECTIVE_P_NOM) > 0,
+        report=pypsa_skip_report(
+            component=naming.display,
+            name_col=PyPSAComponentCol.NAME,
+            counted_noun=naming.plural,
+            reason=NO_DISPATCHABLE_CAPACITY_REASON,
+            note=no_dispatchable_capacity_note,
         ),
     )
 

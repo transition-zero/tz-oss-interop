@@ -67,6 +67,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     link_time_varying_owners,
     load_in_scope,
     load_is_interruptible,
+    no_dispatchable_capacity_skip,
     unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -253,9 +254,10 @@ class PypsaToSiennaMapComponents(TranslationStep):
 
         ``own_rows`` holds the drops for rows an earlier hop of this translator wrote into
         the source model itself, which only the generators have. Order matters: a row the
-        mappings file never names must not also report an unusable bus, and a row this
+        mappings file never names must not also report an unusable bus, a row this
         translator wrote itself must report that rather than an unnamed carrier, because no
-        mappings file entry would make it translatable.
+        mappings file entry would make it translatable, and a row the network never decided
+        must report that rather than the zero the decision would have carried.
         """
         carrier = pl.col(PyPSAComponentCol.CARRIER)
         skips = group.scope_skips()
@@ -274,6 +276,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
                 report=skips.bus_scope,
             ),
             unbuilt_candidate_skip(group.naming),
+            no_dispatchable_capacity_skip(group.naming),
         ]
 
     def _translated_carriers(self, group: _CarrierGroup) -> set[str]:
@@ -502,8 +505,9 @@ class PypsaToSiennaMapComponents(TranslationStep):
             LINK_SKIP,
             self._recorder,
         )
-        candidates = unbuilt_candidate_skip(PYPSA_COMPONENT_NAMING[PyPSATable.LINKS])
-        table, _ = filter_component(table, candidates.keep, candidates.report, self._recorder)
+        naming = PYPSA_COMPONENT_NAMING[PyPSATable.LINKS]
+        for rule in (unbuilt_candidate_skip(naming), no_dispatchable_capacity_skip(naming)):
+            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
 
         dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE

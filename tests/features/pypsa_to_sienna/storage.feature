@@ -84,3 +84,17 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit PHS to Sien
     And the network is saved as "inputs/phs_extendable.nc"
     When I run translate against "inputs/phs_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON storage extension record for "phs_1" having "p_nom_extendable" set to true
+
+  Scenario: a solve that built none of an extendable PHS unit leaves it out
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains storage unit "built_phs" on "bus_1" carrier "PHS" p_nom 200.0 max_hours 6.0 p_nom_extendable True
+    And storage unit "built_phs" has p_nom_opt 800
+    And the network contains storage unit "rejected_phs" on "bus_1" carrier "PHS" p_nom 1000.0 max_hours 6.0 p_nom_extendable True
+    And storage unit "rejected_phs" has p_nom_opt 0
+    And the network is saved as "inputs/phs_solved.nc"
+    When I run translate against "inputs/phs_solved.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 components of type "EnergyReservoirStorage"
+    And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "built_phs" having "base_power" set to 800.0
+    And the log contains "1 StorageUnit(s) state no capacity an operations model may dispatch"
+    And the file "decisions.md" contains "p_nom_opt is 0, so the component holds no capacity an operations model may dispatch"

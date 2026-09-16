@@ -224,7 +224,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     When I run translate against "inputs/gen_not_extendable.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "nuclear_1" having "p_nom_extendable" set to false
 
-  Scenario: a solve that built none of an extendable generator rates it at nothing, not at p_nom
+  Scenario: a solve that built none of an extendable generator leaves it out, rather than rating it at p_nom
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
     And the network contains generator "built_ccgt" on "bus_1" carrier "CCGT" p_nom 100.0 p_nom_extendable True
@@ -236,5 +236,6 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     When I run translate against "inputs/solved_expansion.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "built_ccgt" having "base_power" set to 400.0
     And the file "decisions.md" contains "`pypsa.Generator.built_ccgt.p_nom_opt` = 400.0 MW | `sienna.ThermalStandard.built_ccgt.base_power` = 400.0 MW"
-    # The plan refused this build, so its p_nom is not capacity the operations system may dispatch.
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "rejected_ccgt" having "base_power" set to 0.0
+    And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
+    And the log contains "1 Generator(s) state no capacity an operations model may dispatch"
+    And the file "decisions.md" contains "p_nom_opt is 0, so the component holds no capacity an operations model may dispatch"

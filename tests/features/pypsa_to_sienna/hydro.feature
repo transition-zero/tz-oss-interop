@@ -15,8 +15,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     And the network is saved as "inputs/dead_hydro.nc"
     When I run translate against "inputs/dead_hydro.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 0 components of type "HydroDispatch"
-    And the log contains "1 hydro StorageUnit(s) state no capacity to convert their inflow with"
-    And the file "decisions.md" contains "the capacity an operations model may dispatch is 0"
+    And the log contains "1 StorageUnit(s) state no capacity an operations model may dispatch"
+    And the file "decisions.md" contains "p_nom is 0, so the component holds no capacity an operations model may dispatch"
 
   Scenario: reservoir hydro StorageUnit translates to HydroDispatch with both time series
     Given a PyPSA network
