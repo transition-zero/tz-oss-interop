@@ -96,6 +96,18 @@ HYDRO_NO_INFLOW_SKIP = pypsa_skip_report(
     ),
 )
 
+HYDRO_NO_CAPACITY_SKIP = pypsa_skip_report(
+    component=PyPSAComponent.STORAGE_UNIT,
+    name_col=PyPSAStorageUnitCol.NAME,
+    counted_noun="hydro StorageUnit(s)",
+    reason="state no capacity to convert their inflow with",
+    note=(
+        "the capacity an operations model may dispatch is 0, so the scale the h5 sink "
+        "stores the energy budget at, p_nom / efficiency_dispatch, is 0 and the stored "
+        "budget is infinite"
+    ),
+)
+
 HYDRO_NO_EFFICIENCY_SKIP = pypsa_skip_report(
     component=PyPSAComponent.STORAGE_UNIT,
     name_col=PyPSAStorageUnitCol.NAME,
@@ -380,6 +392,7 @@ def _hydro_skips(inflow: pl.LazyFrame | None) -> Sequence[SkipRule]:
     named = [] if inflow is None else series_components(inflow)
     return (
         SkipRule(keep=pl.col(PyPSAStorageUnitCol.NAME).is_in(named), report=HYDRO_NO_INFLOW_SKIP),
+        SkipRule(keep=pl.col(EFFECTIVE_P_NOM) > 0, report=HYDRO_NO_CAPACITY_SKIP),
         SkipRule(
             keep=pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH) > 0,
             report=HYDRO_NO_EFFICIENCY_SKIP,

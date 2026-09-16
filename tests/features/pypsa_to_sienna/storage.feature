@@ -96,5 +96,5 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit PHS to Sien
     When I run translate against "inputs/phs_solved.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 components of type "EnergyReservoirStorage"
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "built_phs" having "base_power" set to 800.0
-    And the log contains "1 StorageUnit(s) state no capacity an operations model may dispatch"
-    And the file "decisions.md" contains "p_nom_opt is 0, so the component holds no capacity an operations model may dispatch"
+    And the log contains "1 StorageUnit(s) are extendable and a solve built none of them"
+    And the file "decisions.md" contains "p_nom_opt is 0, so the plan refused this build and no capacity stands here for an operations model to dispatch"

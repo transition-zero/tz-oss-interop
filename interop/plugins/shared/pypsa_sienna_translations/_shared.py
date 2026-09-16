@@ -216,31 +216,32 @@ def unbuilt_candidate_skip(naming: PyPSAComponentNaming) -> SkipRule:
     )
 
 
-NO_DISPATCHABLE_CAPACITY_REASON = "state no capacity an operations model may dispatch"
+REJECTED_BUILD_REASON = "are extendable and a solve built none of them"
 
 
-def no_dispatchable_capacity_note(row: dict[str, Any]) -> str:
-    """The note for a component the network rates at nothing, naming the column it read."""
+def rejected_build_note(row: dict[str, Any]) -> str:
+    """The note for an extendable component a solve sized at nothing, naming the column read."""
     return (
-        f"{row[CAPACITY_ATTRIBUTE]} is 0, so the component holds no capacity an operations "
-        "model may dispatch"
+        f"{row[CAPACITY_ATTRIBUTE]} is 0, so the plan refused this build and no capacity "
+        "stands here for an operations model to dispatch"
     )
 
 
-def no_dispatchable_capacity_skip(naming: PyPSAComponentNaming) -> SkipRule:
-    """Drop a component rated at nothing, whichever column the rating came from.
+def rejected_build_skip(naming: PyPSAComponentNaming) -> SkipRule:
+    """Drop an extendable component a solve sized at nothing.
 
-    This runs after ``unbuilt_candidate_skip``, so a component the network never decided
-    reports that rather than the zero the decision would have carried.
+    A non-extendable component stating a capacity of 0 is a placeholder PyPSA carries, so it
+    stays. Only an extendable one can reach here rating at 0, and only through a p_nom_opt a
+    solve wrote, because ``unbuilt_candidate_skip`` already took the rest.
     """
     return SkipRule(
-        keep=pl.col(EFFECTIVE_P_NOM) > 0,
+        keep=~pl.col(_EXTENDABLE) | (pl.col(EFFECTIVE_P_NOM) > 0),
         report=pypsa_skip_report(
             component=naming.display,
             name_col=PyPSAComponentCol.NAME,
             counted_noun=naming.plural,
-            reason=NO_DISPATCHABLE_CAPACITY_REASON,
-            note=no_dispatchable_capacity_note,
+            reason=REJECTED_BUILD_REASON,
+            note=rejected_build_note,
         ),
     )
 

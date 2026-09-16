@@ -67,7 +67,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     link_time_varying_owners,
     load_in_scope,
     load_is_interruptible,
-    no_dispatchable_capacity_skip,
+    rejected_build_skip,
     unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -276,7 +276,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
                 report=skips.bus_scope,
             ),
             unbuilt_candidate_skip(group.naming),
-            no_dispatchable_capacity_skip(group.naming),
+            rejected_build_skip(group.naming),
         ]
 
     def _translated_carriers(self, group: _CarrierGroup) -> set[str]:
@@ -506,7 +506,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
             self._recorder,
         )
         naming = PYPSA_COMPONENT_NAMING[PyPSATable.LINKS]
-        for rule in (unbuilt_candidate_skip(naming), no_dispatchable_capacity_skip(naming)):
+        for rule in (unbuilt_candidate_skip(naming), rejected_build_skip(naming)):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
 
         dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)

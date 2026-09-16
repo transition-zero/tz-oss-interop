@@ -237,5 +237,18 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "built_ccgt" having "base_power" set to 400.0
     And the file "decisions.md" contains "`pypsa.Generator.built_ccgt.p_nom_opt` = 400.0 MW | `sienna.ThermalStandard.built_ccgt.base_power` = 400.0 MW"
     And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
-    And the log contains "1 Generator(s) state no capacity an operations model may dispatch"
-    And the file "decisions.md" contains "p_nom_opt is 0, so the component holds no capacity an operations model may dispatch"
+    And the log contains "1 Generator(s) are extendable and a solve built none of them"
+    And the file "decisions.md" contains "p_nom_opt is 0, so the plan refused this build and no capacity stands here for an operations model to dispatch"
+
+  Scenario: a generator nobody may build, stating no capacity, is a placeholder and stays
+    PyPSA carries a generator of no capacity as a placeholder, and a network that never made
+    it extendable states no plan to build one. Nothing decided against it, so it translates
+    at the capacity it states.
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "placeholder_ccgt" on "bus_1" carrier "CCGT" p_nom 0.0
+    And the network is saved as "inputs/placeholder.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/placeholder.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "placeholder_ccgt" having "base_power" set to 0.0
+    And the printed output does not contain "are extendable and a solve built none of them"

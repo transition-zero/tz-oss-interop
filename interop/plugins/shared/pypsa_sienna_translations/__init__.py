@@ -61,7 +61,7 @@ from ._shared import (
     ScopeSkips,
     carrier_scope_skips,
     fill_capacity_defaults,
-    no_dispatchable_capacity_skip,
+    rejected_build_skip,
     unbuilt_candidate_skip,
 )
 from ._storage import (
@@ -79,7 +79,7 @@ __all__ = [
     "ScopeSkips",
     "carrier_scope_skips",
     "fill_capacity_defaults",
-    "no_dispatchable_capacity_skip",
+    "rejected_build_skip",
     "unbuilt_candidate_skip",
     "THERMAL_MAPPING",
     "RENEWABLE_DISPATCH_MAPPING",
