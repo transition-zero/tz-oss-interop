@@ -235,6 +235,7 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
             PyPSALineCol.V_ANG_MIN,
             PyPSALineCol.V_ANG_MAX,
             PyPSALineCol.S_NOM_EXTENDABLE,
+            PyPSALineCol.S_NOM_MIN,
         ),
     )
 
@@ -261,6 +262,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_NOM_EXTENDABLE,
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
+            PyPSALinkCol.P_NOM_MIN,
         ),
     )
 
@@ -294,6 +296,7 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.UP_TIME_BEFORE,
             PyPSAGeneratorCol.START_UP_COST,
             PyPSAGeneratorCol.SHUT_DOWN_COST,
+            PyPSAGeneratorCol.P_NOM_MIN,
         ),
     )
 
@@ -321,6 +324,9 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
             PyPSAStorageUnitCol.INFLOW,
         ),
+        # A restored storage unit states a floor only where it is extendable; let PyPSA
+        # default it otherwise.
+        optional=(PyPSAStorageUnitCol.P_NOM_MIN,),
     )
 
 

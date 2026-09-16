@@ -29,7 +29,11 @@ from interop.plugins.shared.pypsa_sienna_translations._component_mapping import 
 )
 from interop.plugins.shared.pypsa_sienna_translations._prime_mover import enrich_prime_mover
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
+    EFFECTIVE_P_NOM,
+    EFFECTIVE_P_NOM_DERIVATION,
+    fill_capacity_columns,
     pypsa_source_field,
+    rated_from,
     sienna_dest_field,
     ts_association_row,
     variable_cost_curve,
@@ -58,6 +62,7 @@ from interop.plugins.shared.translation_runner import (
     direct_translation,
     fill_defaults,
     row_position_id_translation,
+    row_source_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -67,7 +72,6 @@ from interop.ports.outbound.reporting import (
 # Enrichment column names added before translations; never written to destination table.
 _PRIME_MOVER_COL = "_prime_mover_raw"
 _TS_PTP = "_ts_ptp_pmax"
-_EFFECTIVE_P_NOM = "_effective_p_nom"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
@@ -80,20 +84,12 @@ def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:
     table = fill_defaults(
         table,
         [
-            (PyPSAGeneratorCol.P_NOM, 0.0),
-            (PyPSAGeneratorCol.P_NOM_OPT, 0.0),
             (PyPSAGeneratorCol.P_MIN_PU, 0.0),
             (PyPSAGeneratorCol.P_MAX_PU, 1.0),
             (PyPSAGeneratorCol.MARGINAL_COST, 0.0),
         ],
-        [(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False)],
     )
-    return table.with_columns(
-        pl.when(pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE))
-        .then(pl.col(PyPSAGeneratorCol.P_NOM_OPT))
-        .otherwise(pl.col(PyPSAGeneratorCol.P_NOM))
-        .alias(_EFFECTIVE_P_NOM)
-    )
+    return fill_capacity_columns(table)
 
 
 def build_renewable_extensions(
@@ -241,6 +237,13 @@ def _renewable_translations(
     (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
+    rated = partial(
+        row_source_translation,
+        _source,
+        dest,
+        name_col=PyPSAGeneratorCol.NAME,
+        source_col_of=rated_from,
+    )
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
         row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
@@ -258,15 +261,13 @@ def _renewable_translations(
             expr=pl.col(_PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
             derivation="carrier -> PrimeMovers via user defined mapping",
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+        rated(
             dest_col=R.BASE_POWER,
-            expr=pl.col(_EFFECTIVE_P_NOM),
+            expr=pl.col(EFFECTIVE_P_NOM),
             unit=UNIT_MW,
-            derivation="p_nom_opt when p_nom_extendable else p_nom",
+            derivation=EFFECTIVE_P_NOM_DERIVATION,
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_NOM,
+        rated(
             dest_col=R.ACTIVE_POWER,
             expr=active_power_expr,
             unit=UNIT_MW,
@@ -368,7 +369,7 @@ RENEWABLE_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
     sienna_component=SiennaComponent.RENEWABLE_DISPATCH,
     id_note="assigned by 1-based row position in renewable generators DataFrame",
     sienna_type_derivation="renewable carrier -> RenewableDispatch",
-    active_power_expr=pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
+    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
     active_power_derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
     tail=[_renewable_reactive_power_limits(_dest), _renewable_cost(_dest)],
 )
@@ -378,7 +379,7 @@ RENEWABLE_NON_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations
     sienna_component=SiennaComponent.RENEWABLE_NON_DISPATCH,
     id_note="assigned by 1-based row position in renewable non-dispatch generators DataFrame",
     sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
-    active_power_expr=pl.col(_EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
+    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
     active_power_derivation=(
         "effective_p_nom * p_max_pu (must-take initial dispatch = peak available)"
     ),

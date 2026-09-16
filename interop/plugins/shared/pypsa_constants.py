@@ -479,6 +479,9 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.START_UP_COST: pl.Float64,
     PyPSAGeneratorCol.SHUT_DOWN_COST: pl.Float64,
     PyPSAGeneratorCol.P_NOM_EXTENDABLE: pl.Boolean,
+    # The floor a build cannot take away, which the sink omits where it is null so PyPSA
+    # applies its own default.
+    PyPSAGeneratorCol.P_NOM_MIN: pl.Float64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -508,6 +511,9 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: pl.Boolean,
     PyPSAStorageUnitCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSAStorageUnitCol.INFLOW: pl.Float64,
+    # The floor a build cannot take away, which the sink omits where it is null so PyPSA
+    # applies its own default.
+    PyPSAStorageUnitCol.P_NOM_MIN: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -534,6 +540,7 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALineCol.V_ANG_MIN: pl.Float64,
     PyPSALineCol.V_ANG_MAX: pl.Float64,
     PyPSALineCol.S_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALineCol.S_NOM_MIN: pl.Float64,
 }
 
 LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -548,6 +555,7 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.ACTIVE: pl.Boolean,
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
+    PyPSALinkCol.P_NOM_MIN: pl.Float64,
 }
 
 REVERSE_TIME_SERIES_METADATA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
