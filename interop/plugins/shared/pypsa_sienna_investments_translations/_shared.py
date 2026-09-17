@@ -53,7 +53,7 @@ def yearly_fixed_charge(fom_cost_col: str) -> pl.Expr:
     ``fom_cost`` as a charge for the whole modelled horizon rather than a yearly one. A
     network a user wrote states no sidecar record, so ``fom_cost`` is all there is.
     """
-    return pl.coalesce(pl.col(FOM_CHARGE_COL), pl.col(fom_cost_col), pl.lit(0.0))
+    return pl.coalesce(finite_or_null(pl.col(FOM_CHARGE_COL)), pl.col(fom_cost_col), pl.lit(0.0))
 
 
 PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"

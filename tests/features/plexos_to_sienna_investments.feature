@@ -66,6 +66,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "unit_size_discharge" set to 50.0
     And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "lifetime" set to 15
     And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "financial_data.capital_recovery_period" set to 20
+    And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "financial_data.return_on_equity" set to 0.07
 
   Scenario: a plant that already runs is the fleet its technology adds to
     Given a Plexos model

@@ -123,6 +123,7 @@ cost and the energy side is derived from the two.
 | `capital_costs.discharge_capital_cost` | $/MW | `Build Cost`, as the slope of a linear cost curve | `derived` |
 | `capital_costs.charge_capital_cost`, `energy_capital_cost` | | Zero curves. PLEXOS prices the object by its power, so it states no separate price for charging or for energy. | `default` |
 | `operation_costs.fixed` | $/MW/yr | `FO&M Charge` | `direct` |
+| `operation_costs.cost_type` | | `STORAGE`, the one cost representation a storage technology has | `default` |
 | `efficiency.in` / `.out` | | `Charge Efficiency` or `Pump Efficiency`, read as a round trip and split evenly | `derived` |
 | `lifetime` | yr | `Technical Life` | `direct` |
 | `financial_data` | | As for a [`SupplyTechnology`](#generator-that-may-be-built--supplytechnology) | |

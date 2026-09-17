@@ -327,14 +327,34 @@ STORAGE_CAPACITY_LIMITS_ENERGY = Translation(
     ],
 )
 
-STORAGE_EFFICIENCY = _direct(
-    source_col=PyPSAStorageUnitCol.EFFICIENCY_STORE,
-    dest_col=S.EFFICIENCY,
-    expr=pl.struct(
-        pl.col(PyPSAStorageUnitCol.EFFICIENCY_STORE).alias(SiennaStructField.IN),
-        pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH).alias(SiennaStructField.OUT),
-    ).cast(EFFICIENCY_DTYPE),
-    derivation="(in=efficiency_store, out=efficiency_dispatch)",
+STORAGE_EFFICIENCY = Translation(
+    exprs=[
+        pl.struct(
+            pl.col(PyPSAStorageUnitCol.EFFICIENCY_STORE).alias(SiennaStructField.IN),
+            pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH).alias(SiennaStructField.OUT),
+        )
+        .cast(EFFICIENCY_DTYPE)
+        .alias(S.EFFICIENCY)
+    ],
+    make_events=lambda old, new: [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
+                _source(
+                    old[PyPSAStorageUnitCol.NAME],
+                    PyPSAStorageUnitCol.EFFICIENCY_STORE,
+                    old[PyPSAStorageUnitCol.EFFICIENCY_STORE],
+                ),
+                _source(
+                    old[PyPSAStorageUnitCol.NAME],
+                    PyPSAStorageUnitCol.EFFICIENCY_DISPATCH,
+                    old[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH],
+                ),
+            ],
+            destinations=[_dest(old[PyPSAStorageUnitCol.NAME], S.EFFICIENCY, new[S.EFFICIENCY])],
+            derivation="(in=efficiency_store, out=efficiency_dispatch)",
+        )
+    ],
 )
 
 STORAGE_LIFETIME = _direct(
