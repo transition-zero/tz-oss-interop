@@ -526,7 +526,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 $/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 $/MW | direct |"
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 % | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
 
   Scenario: a plant that may also expand keeps the capacity it has as its floor
     Given a Plexos model

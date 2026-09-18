@@ -348,11 +348,13 @@ def _name_blocking_property(source: CandidateSource, blocking: BuildRule) -> Sou
 
 
 def _derive_discount_rate(source: CandidateSource) -> Decision:
+    """The event names the WACC as the model wrote it, so the divide by 100 is visible."""
     wacc = source.props.get(PlexosProperty.WACC)
-    rate = read_as_rate(wacc, source.stated_units.get(PlexosProperty.WACC))
+    stated_unit = source.stated_units.get(PlexosProperty.WACC)
+    rate = read_as_rate(wacc, stated_unit)
     if rate is None:
         return NOTHING_TO_REPORT
-    stated = SourceValue(source.plexos_class, source.name, PlexosProperty.WACC, wacc)
+    stated = SourceValue(source.plexos_class, source.name, PlexosProperty.WACC, wacc, stated_unit)
     return Decision.derived(rate, [stated], _DISCOUNT_RATE_DERIVATION)
 
 
