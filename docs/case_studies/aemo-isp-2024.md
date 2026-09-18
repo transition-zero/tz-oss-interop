@@ -121,11 +121,11 @@ Select `translate`. Then give these answers:
 | Source framework | `plexos` |
 | Destination framework | `sienna` |
 | Pipeline | `plexos-to-sienna` |
-| User mappings file | `inputs/plexos_user_mappings.yaml` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/aemo-isp-2024/2024 ISP Step Change Model.xml` |
 | which PLEXOS Model to translate | `Step Change` |
 | a four-digit year such as 2026 | `2025` |
 | the SiennaSchemas system.json | `outputs/system.json` |
+| User mappings file | `inputs/plexos_user_mappings.yaml` |
 
 Give the year `2025` here, unlike the PyPSA run above, which leaves the year empty. The
 chronology of the Model is 2024-07-01 to 2025-06-30, so the year 2025 narrows it to
@@ -157,6 +157,67 @@ Then select `solve`. Give the model type `sienna` and the system
 `outputs/power_simulations_system.json`. Give the network model `dcp`, the unit commitment
 `linearised`, and the HiGHS defaults. Leave the time limit empty. For more data about these
 prompts, refer to [the solve tutorial](../tutorials/solve.md#sienna-path).
+
+### The expansion path
+
+The same model also translates to a Sienna investments portfolio, which is what a partner
+running an expansion in PowerSystemsInvestments.jl needs. That run writes the expansion
+problem: the technologies the plan may build, the demand they meet, and the caps they run
+under. It is a translation only. interop runs no expansion solve, so this path stops at the
+files. This section covers the Step Change scenario. The other two follow the same steps.
+
+Write a second mappings file, `inputs/plexos_expansion_mappings.yaml`. It is the dispatch
+file plus one row for each carrier a candidate takes. A candidate whose carrier the file does
+not name is left out of the portfolio, and `decisions.md` names each one.
+
+The dispatch run above leaves seven named categories, and their siblings, out of its file.
+The expansion run names the ones that hold candidate plants. A generator takes the name of its
+`Fuel` where it burns one at a heat rate, and its category where it does not, so add one
+`category` row for each of these:
+
+- `2023 REZ NSW`, and the sibling category of each other state: a wind or a solar candidate,
+  so `RenewableDispatch` with the prime mover `WT` or `PVe`;
+- `New Entrants NSW`, and the sibling category of each other state: a wind, a solar or a gas
+  candidate, so the prime mover `WT`, `PVe`, `CC` or `CT`;
+- `LTESA Projects`, `Policy Projects` and `VRET Projects`.
+
+The translator reads no meaning from a category name, so give each row the
+`sienna_component_type` and the `sienna_prime_mover_type` of the plant that category holds in
+your copy of the model.
+[Across all components](../translation_mappings/translation-from-plexos-to-sienna-investments.md#across-all-components)
+states the types a row may name, and what happens to a row that names another kind's type.
+
+Leave `REZ Augmentation` and `Group REZ Augmentation` out of this file as well. They are
+transmission augmentations written as generators, and the portfolio holds no transport
+technology, so a row for one states a plant your model does not mean.
+
+Select `translate`. Then give these answers:
+
+| Prompt | Answer |
+| --- | --- |
+| Source framework | `plexos` |
+| Destination framework | `sienna` |
+| Pipeline | `plexos-to-sienna-investments` |
+| the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/aemo-isp-2024/2024 ISP Step Change Model.xml` |
+| which PLEXOS Model to translate | `Step Change` |
+| a four-digit year such as 2026 | `2025` |
+| the SiennaSchemas system.json | `outputs/system.json` |
+| the SiennaSchemas portfolio document to write | `outputs/portfolio.json` |
+| User mappings file | `inputs/plexos_expansion_mappings.yaml` |
+
+Keep the default at every other prompt. The mappings prompt comes last, after the file
+prompts of both sinks.
+
+That run writes four files: the three the Sienna path writes, and `outputs/portfolio.json`
+beside them. The portfolio names `system.json` in its `base_system_file`, so the two are read
+together.
+
+Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. This run
+takes the default base year of 2020. To state another one, refer to
+[The base year](../translation_mappings/translation-from-plexos-to-sienna-investments.md#the-base-year).
+
+[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
+portfolio leaves out and what each loss does to an expansion.
 
 ## The headline number
 
