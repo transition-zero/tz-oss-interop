@@ -40,10 +40,11 @@ class PlexosClass(StrEnum):
 
 
 class PlexosResolvedTable:
-    """Keys of the two long tables ``stage_plexos_xml`` resolves from the raw ``t_*`` tables."""
+    """Keys of the long tables ``stage_plexos_xml`` resolves from the raw ``t_*`` tables."""
 
     MEMBERSHIPS = "memberships"
     PROPERTIES = "properties"
+    DATED_PROPERTIES = "dated_properties"
 
 
 class PlexosObjectCol:
@@ -93,6 +94,19 @@ class PlexosPropertyCol:
     UNIT = "unit"
     DATA_FILE = "data_file"
     SCALING = "scaling"
+
+
+class PlexosDatedPropertyCol(PlexosPropertyCol):
+    """Columns of the resolved ``dated_properties`` table.
+
+    The ``properties`` columns, plus the dates the value on the row applies between. Every
+    row of a property the model dates is here, whether or not the window being translated
+    covers its band, so a mapping reading a schedule sees the years the model states rather
+    than one value.
+    """
+
+    DATE_FROM = "date_from"
+    DATE_TO = "date_to"
 
 
 class PlexosCollection(StrEnum):
@@ -162,6 +176,13 @@ class PlexosProperty(StrEnum):
     MIN_UP_TIME = "Min Up Time"
     MIN_DOWN_TIME = "Min Down Time"
     PUMP_EFFICIENCY = "Pump Efficiency"
+    # Expansion, which a Generator and a Battery state alike
+    BUILD_COST = "Build Cost"
+    MAX_UNITS_BUILT = "Max Units Built"
+    WACC = "WACC"
+    ECONOMIC_LIFE = "Economic Life"
+    TECHNICAL_LIFE = "Technical Life"
+    FOM_CHARGE = "FO&M Charge"
     # Battery
     CAPACITY = "Capacity"
     MAX_POWER = "Max Power"
@@ -204,6 +225,7 @@ class PlexosProperty(StrEnum):
     RHS_WEEK = "RHS Week"
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
+    INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 
 def is_plexos_true(value: float) -> bool:
