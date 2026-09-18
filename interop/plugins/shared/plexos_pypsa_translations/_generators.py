@@ -23,7 +23,7 @@ from interop.plugins.shared.plexos_constants import (
     PlexosProperty,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
-    find_unpriced_candidate,
+    find_blocked_candidate,
     read_sidecar_value,
     record_expansion,
     warn_about_dropped_builds,
@@ -193,9 +193,9 @@ def _map_one(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
         )
-    unpriced = find_unpriced_candidate(source.candidate)
-    if unpriced is not None:
-        return unpriced
+    blocked = find_blocked_candidate(source.candidate)
+    if blocked is not None:
+        return blocked
     mapping = derive_generator(source, node, lookups)
     if has_infeasible_dispatch_range(mapping):
         return _infeasible_dispatch_range(mapping)

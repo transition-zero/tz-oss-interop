@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 
 from interop.plugins.shared.constants import (
@@ -11,7 +11,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
     UNIT_YEARS,
 )
-from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
+from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty, is_plexos_true
 from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_UNITS,
@@ -67,10 +67,17 @@ _NO_ECONOMIC_LIFE_NOTE = (
     "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over, "
     "so PyPSA prices the build as a perpetuity"
 )
+_OUT_OF_THE_PLAN_NOTE = (
+    "the model leaves this object out of its long-term plan, so the plan may build none of it"
+)
+_NO_BUILD_COST_REASON = f"state no {PlexosProperty.BUILD_COST}"
+_NO_WACC_REASON = f"state no {PlexosProperty.WACC}"
+_NO_ECONOMIC_LIFE_REASON = f"state no {PlexosProperty.ECONOMIC_LIFE}"
+_OUT_OF_THE_PLAN_REASON = "sit outside the long-term plan"
 _BUILD_LEFT_OUT_NOTE = "; the object keeps the capacity it runs and only its build is left out"
 _BUILD_LEFT_OUT_OUTCOME = "so each keeps the capacity it runs and none of the build it may make"
-_UNPRICED_BUILD_DERIVATION = (
-    "the model prices no build for this object, so it keeps the capacity it runs and that "
+_BLOCKED_BUILD_DERIVATION = (
+    "the model allows no build for this object, so it keeps the capacity it runs and that "
     "capacity is fixed"
 )
 
@@ -148,9 +155,9 @@ FIXED_CAPACITY = ExpansionDecisions(
 def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
     if not source.is_candidate:
         return FIXED_CAPACITY
-    unpriced = _find_unpriced_build(source)
-    if unpriced is not None:
-        return _fixed_at_what_it_runs(source, unpriced)
+    blocking = _find_blocking_rule(source)
+    if blocking is not None:
+        return _fixed_at_what_it_runs(source, blocking)
     rated = source.rated
     built = source.name_units_built()
     return ExpansionDecisions(
@@ -202,47 +209,80 @@ def derive_p_nom(source: CandidateSource) -> Decision:
     return derive_buildable(source)
 
 
+def _is_priced(stated: float | None) -> bool:
+    return stated is not None and stated > 0.0
+
+
+def _is_a_rate(stated: float | None) -> bool:
+    """A WACC of zero is the rate of a model that does not discount, so it prices a build."""
+    return stated is not None
+
+
+def _is_in_the_plan(stated: float | None) -> bool:
+    """An object saying nothing about the long-term plan is in it."""
+    return stated is None or is_plexos_true(stated)
+
+
 @dataclass(frozen=True)
-class UnpricedBuild:
-    """A property a candidate has to state before PyPSA can price building it."""
+class BuildRule:
+    """A property that decides whether the translator writes a build for an object."""
 
     plexos_property: str
     unit: str | None
     note: str
-    zero_is_a_price: bool = False
-    """A WACC of zero is the rate of a model that does not discount, so it prices a build."""
+    reason: str
+    """Completes "N <objects> <reason>" in the one warning this rule speaks with."""
 
-    def prices_a_build(self, props: dict[str, float]) -> bool:
-        stated = props.get(self.plexos_property)
-        if stated is None:
-            return False
-        return stated > 0.0 or self.zero_is_a_price
+    is_satisfied: Callable[[float | None], bool]
+
+    def allows_a_build(self, props: dict[str, float]) -> bool:
+        return self.is_satisfied(props.get(self.plexos_property))
 
 
-_PRICES_A_BUILD = (
-    UnpricedBuild(PlexosProperty.BUILD_COST, UNIT_DOLLARS_PER_MW, _NO_BUILD_COST_NOTE),
-    UnpricedBuild(PlexosProperty.WACC, None, _NO_WACC_NOTE, zero_is_a_price=True),
-    UnpricedBuild(PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, _NO_ECONOMIC_LIFE_NOTE),
+# The plan comes first, so an excluded object reads as excluded rather than as unpriced.
+_BUILD_RULES = (
+    BuildRule(
+        PlexosProperty.INCLUDE_IN_LT_PLAN,
+        None,
+        _OUT_OF_THE_PLAN_NOTE,
+        _OUT_OF_THE_PLAN_REASON,
+        _is_in_the_plan,
+    ),
+    BuildRule(
+        PlexosProperty.BUILD_COST,
+        UNIT_DOLLARS_PER_MW,
+        _NO_BUILD_COST_NOTE,
+        _NO_BUILD_COST_REASON,
+        _is_priced,
+    ),
+    BuildRule(PlexosProperty.WACC, None, _NO_WACC_NOTE, _NO_WACC_REASON, _is_a_rate),
+    BuildRule(
+        PlexosProperty.ECONOMIC_LIFE,
+        UNIT_YEARS,
+        _NO_ECONOMIC_LIFE_NOTE,
+        _NO_ECONOMIC_LIFE_REASON,
+        _is_priced,
+    ),
 )
 
 
-def find_unpriced_candidate(source: CandidateSource) -> SkippedComponent | None:
-    """A candidate with nothing running yet whose build the model prices nothing for.
+def find_blocked_candidate(source: CandidateSource) -> SkippedComponent | None:
+    """A candidate with nothing running yet that the model allows no build for.
 
     Its whole capacity is the build, so there is nothing to write once the build goes. An
     object that already runs states capacity a dispatch model needs, so it stays.
     """
     if source.rated.existing.value or not source.is_candidate:
         return None
-    unpriced = _find_unpriced_build(source)
-    if unpriced is None:
+    blocking = _find_blocking_rule(source)
+    if blocking is None:
         return None
     return SkippedComponent(
-        source=_names_unpriced(source, unpriced),
-        note=unpriced.note,
+        source=_name_blocking_property(source, blocking),
+        note=blocking.note,
         warn_with=SkipGroup(
             counted=f"candidate {source.plexos_class}(s)",
-            reason=f"state no {unpriced.plexos_property}",
+            reason=blocking.reason,
         ),
     )
 
@@ -273,37 +313,37 @@ def gather_sources(*groups: tuple[SourceValue, ...] | list[SourceValue]) -> list
     return list(gathered)
 
 
-def _find_unpriced_build(source: CandidateSource) -> UnpricedBuild | None:
-    return next((one for one in _PRICES_A_BUILD if not one.prices_a_build(source.props)), None)
+def _find_blocking_rule(source: CandidateSource) -> BuildRule | None:
+    return next((one for one in _BUILD_RULES if not one.allows_a_build(source.props)), None)
 
 
-def _fixed_at_what_it_runs(source: CandidateSource, unpriced: UnpricedBuild) -> ExpansionDecisions:
+def _fixed_at_what_it_runs(source: CandidateSource, blocking: BuildRule) -> ExpansionDecisions:
     return replace(
         FIXED_CAPACITY,
         p_nom_extendable=Decision.derived(
             False,  # noqa: FBT003
             [source.name_units_built()],
-            _UNPRICED_BUILD_DERIVATION,
+            _BLOCKED_BUILD_DERIVATION,
         ),
         dropped_build=SkippedComponent(
-            source=_names_unpriced(source, unpriced),
-            note=unpriced.note + _BUILD_LEFT_OUT_NOTE,
+            source=_name_blocking_property(source, blocking),
+            note=blocking.note + _BUILD_LEFT_OUT_NOTE,
             warn_with=SkipGroup(
                 counted=f"{source.plexos_class}(s) that already run",
-                reason=f"state no {unpriced.plexos_property}",
+                reason=blocking.reason,
                 outcome=_BUILD_LEFT_OUT_OUTCOME,
             ),
         ),
     )
 
 
-def _names_unpriced(source: CandidateSource, unpriced: UnpricedBuild) -> SourceValue:
+def _name_blocking_property(source: CandidateSource, blocking: BuildRule) -> SourceValue:
     return SourceValue(
         source.plexos_class,
         source.name,
-        unpriced.plexos_property,
-        source.props.get(unpriced.plexos_property),
-        unpriced.unit,
+        blocking.plexos_property,
+        source.props.get(blocking.plexos_property),
+        blocking.unit,
     )
 
 

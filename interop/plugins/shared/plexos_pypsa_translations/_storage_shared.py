@@ -32,7 +32,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     ExpansionDecisions,
     RatedCapacity,
     derive_p_nom,
-    find_unpriced_candidate,
+    find_blocked_candidate,
 )
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
     NO_LIFESPAN,
@@ -407,9 +407,9 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
         staged.stated_units,
         rating.rate(staged),
     )
-    unpriced = find_unpriced_candidate(candidate)
-    if unpriced is not None:
-        return unpriced
+    blocked = find_blocked_candidate(candidate)
+    if blocked is not None:
+        return blocked
     p_nom = derive_p_nom(candidate)
     if p_nom.value <= 0.0:
         return _skipped_zero_p_nom(rating, staged.name, p_nom.value)

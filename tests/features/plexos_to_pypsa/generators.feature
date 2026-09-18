@@ -614,5 +614,35 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA network "outputs/network.nc" generator "CoalUnit" is not extendable
     And the PyPSA generator "CoalUnit" in "outputs/network.nc" has no "overnight_cost"
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
-    And the file "decisions.md" contains "the model prices no build for this object, so it keeps the capacity it runs and that capacity is fixed"
+    And the file "decisions.md" contains "the model allows no build for this object, so it keeps the capacity it runs and that capacity is fixed"
     And the log contains "1 Generator(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"
+
+  Scenario: a candidate the long-term plan leaves out is left out and named
+    Given a Plexos model
+    And the model contains generator "Excluded_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07, Economic Life=25, Include in LT Plan=0"
+    And the model is saved as "inputs/excluded_candidate.xml"
+    When I run translate against "inputs/excluded_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has no generator "Excluded_REZ"
+    And the file "decisions.md" contains "the model leaves this object out of its long-term plan, so the plan may build none of it"
+    And the log contains "1 candidate Generator(s) sit outside the long-term plan, so each is left out"
+
+  Scenario: a plant the long-term plan leaves out keeps the capacity it runs
+    Given a Plexos model
+    And the model contains generator "ExcludedUnit" with "node=Grid_Node, category=Coal, Max Capacity=100, Units=2, Max Units Built=1, Build Cost=900000, WACC=0.07, Economic Life=25, Include in LT Plan=0"
+    And the model is saved as "inputs/excluded_plant.xml"
+    When I run translate against "inputs/excluded_plant.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "ExcludedUnit" in "outputs/network.nc" has "p_nom" equal to 200
+    And the PyPSA network "outputs/network.nc" generator "ExcludedUnit" is not extendable
+    And the PyPSA generator "ExcludedUnit" in "outputs/network.nc" has no "overnight_cost"
+    And the file "decisions.md" contains "the model leaves this object out of its long-term plan, so the plan may build none of it; the object keeps the capacity it runs and only its build is left out"
+    And the log contains "1 Generator(s) that already run sit outside the long-term plan, so each keeps the capacity it runs and none of the build it may make"
+
+  Scenario: a long-term plan flag that says yes leaves the build alone
+    PLEXOS marks a true flag with any value other than zero, and a model that says nothing
+    about the plan puts the object in it.
+    Given a Plexos model
+    And the model contains generator "Included_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4, Build Cost=900000, WACC=0.07, Economic Life=25, Include in LT Plan=-1"
+    And the model is saved as "inputs/included_candidate.xml"
+    When I run translate against "inputs/included_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Included_REZ" is extendable
+    And the PyPSA generator "Included_REZ" in "outputs/network.nc" has "p_nom_max" equal to 200

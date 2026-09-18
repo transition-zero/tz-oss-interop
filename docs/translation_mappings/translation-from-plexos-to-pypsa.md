@@ -280,7 +280,7 @@ is `committable` when it is thermal, or when its `p_min_pu` is more than `0`.
 | `extensions.fom_charge_per_mw_year` | $/MW/yr | `FO&M Charge`, for a candidate whose build the model prices | `direct` |
 | `build_year` | yr | The first year the dated [`Units`](#which-entry-applies-when) rise above zero. The field is absent where the model dates no `Units`, and PyPSA reads `0`. | `derived` |
 
-**The translator does not translate seven cases.** It records each one as a skipped
+**The translator does not translate eight cases.** It records each one as a skipped
 component:
 
 | Case | Cause |
@@ -292,6 +292,7 @@ component:
 | The generator has no units yet and gives no `Build Cost`, or gives one of zero | Nothing prices building it, so an expansion would take it for free. |
 | The generator has no units yet and gives no `WACC` | PyPSA annuitises a build cost with a discount rate, and refuses a network that states one without the other. A `WACC` of zero is a rate, so it prices a build. |
 | The generator has no units yet and gives no `Economic Life`, or gives one of zero | PyPSA annuitises a build cost across a lifetime. The PyPSA default is infinity, which prices the build as a perpetuity. |
+| The generator has no units yet and gives an `Include in LT Plan` of zero | The model leaves the generator out of its long-term plan, so the plan may build none of it, and the build is all the generator has. |
 
 The repair rates, the unit commitment solver options and the energy budgets are `dropped`.
 
@@ -756,6 +757,12 @@ nothing prices building it, so an expansion would take it for free. Without a di
 PyPSA cannot annuitise the build cost, and refuses the network. Without an economic life
 PyPSA annuitises across its own default lifetime of infinity, which prices the build as a
 perpetuity.
+
+`Include in LT Plan` is how a model excludes one object from its own long-term plan. An
+object stating a zero there may build nothing, whatever `Max Units Built` it also states.
+PLEXOS marks a true flag with any value other than zero, so an `Include in LT Plan` of `-1`
+puts the object in the plan. An object that states the property at all is read; an object
+that says nothing about the plan is in it.
 
 What happens next depends on whether the object already runs. An object with units in
 service keeps the capacity it runs: the translator writes it with that capacity fixed, and
