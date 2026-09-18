@@ -16,6 +16,7 @@ import logging
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
+from operator import itemgetter
 from typing import Any, NamedTuple
 
 from interop.core.reporting import ScopedRecorder
@@ -90,7 +91,7 @@ def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
     grouped: dict[SkipGroup, list[str]] = {}
     for group, name in named:
         grouped.setdefault(group, []).append(name)
-    for group, names in sorted(grouped.items()):
+    for group, names in sorted(grouped.items(), key=itemgetter(0)):
         log.warning(
             "plexos: %d %s %s, %s. Each one: %s",
             len(names),

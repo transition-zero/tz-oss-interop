@@ -357,7 +357,7 @@ has more than one fuel uses its primary fuel.
 | `bus` | | The `Node` of the battery | `direct` |
 | `carrier` | | `battery` | `default` |
 | `p_nom` | MW | `Max Power × Units`. Where the battery runs no units yet, `Max Power × Max Units Built` | `derived` |
-| `max_hours` | h | The energy capacity divided by `p_nom` | `derived` |
+| `max_hours` | h | The energy one unit holds divided by `Max Power`, the power of that same one unit | `derived` |
 | `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Charge Efficiency)` for each | `derived` |
 | `state_of_charge_initial` | MWh | `Initial SoC % × Max Power × Units × max_hours` | `derived` |

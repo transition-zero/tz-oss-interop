@@ -240,14 +240,21 @@ def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> No
 
 
 def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> None:
-    records = [
-        StorageExtension(
-            name=mapping.name,
-            unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
-            technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
-            retirement_year=read_year(mapping.lifespan.retirement_year),
-            fom_charge_per_mw_year=read_sidecar_value(mapping.expansion.fom_charge),
-        )
-        for mapping in mappings
-    ]
+    """A storage unit stating none of these carries nothing, so it gets no record.
+
+    A record the next hop has no reader for becomes one NOT_MAPPED event there, and a unit
+    the model never offers to build states none of these fields.
+    """
+    built = (_build_extension_record(mapping) for mapping in mappings)
+    records = [record for record in built if record.has_any_value()]
     append_extensions(state.destination_extensions, ExtensionKind.STORAGE, records)
+
+
+def _build_extension_record(mapping: StorageUnitMapping) -> StorageExtension:
+    return StorageExtension(
+        name=mapping.name,
+        unit_size_mw=read_sidecar_value(mapping.expansion.unit_size),
+        technical_life_years=read_sidecar_value(mapping.expansion.technical_life),
+        retirement_year=read_year(mapping.lifespan.retirement_year),
+        fom_charge_per_mw_year=read_sidecar_value(mapping.expansion.fom_charge),
+    )

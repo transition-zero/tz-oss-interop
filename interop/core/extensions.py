@@ -91,6 +91,10 @@ class ExtensionRecord(BaseModel):
 
     name: str
 
+    def has_any_value(self) -> bool:
+        """Whether the record states anything, rather than only the name it is keyed by."""
+        return bool(self.model_dump(exclude={"name"}, exclude_none=True))
+
 
 class BusExtension(ExtensionRecord):
     # PyPSA Bus.carrier (AC or DC). Sienna ACBus and PLEXOS Node have no carrier field.

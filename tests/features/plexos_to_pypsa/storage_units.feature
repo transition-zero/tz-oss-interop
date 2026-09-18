@@ -611,6 +611,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/unpriced_battery.xml"
     When I run translate against "inputs/unpriced_battery.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_running" attribute "p_nom" is 100.0
+    # Max Power and Capacity both state one unit, so two units hold 2 x 200 MWh.
+    And the PyPSA network "outputs/network.nc" storage unit "bat_running" attribute "max_hours" is 4.0
+    And the PyPSA network "outputs/network.nc" storage unit "bat_running" attribute "state_of_charge_initial" is 200.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_running" is not extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
     And the log contains "1 Battery(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"
