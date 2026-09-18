@@ -372,6 +372,16 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "OverRated" in "outputs/network.nc" has "p_max_pu" equal to 1
     And the file "decisions.md" contains "Rating above Max Capacity x Units"
 
+  Scenario: a static Rating below the nameplate derates every unit the generator runs
+    A Rating states what the whole generator reaches, so it divides by Max Capacity x Units
+    rather than by one unit's Max Capacity.
+    Given a Plexos model
+    And the model contains generator "DeRated" with "node=Grid_Node, category=Coal, Max Capacity=50, Units=2, Rating=80"
+    And the model is saved as "inputs/derated.xml"
+    When I run translate against "inputs/derated.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "DeRated" in "outputs/network.nc" has "p_nom" equal to 100
+    And the PyPSA generator "DeRated" in "outputs/network.nc" has "p_max_pu" equal to 0.8
+
   Scenario: a minimum stable level far below the capacity is written as no minimum at all
     Given a Plexos model
     And the model contains generator "WindFleet" with "node=Grid_Node, category=Wind, Max Capacity=15000, Min Stable Level=0.0067"
@@ -537,6 +547,20 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/derated_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "Curtailed_REZ" in "outputs/network.nc" has "p_nom" equal to 500
     And the PyPSA generator "Curtailed_REZ" in "outputs/network.nc" has "p_max_pu" equal to 0.1
+
+  Scenario: a Rating that became the capacity still builds new units at Max Capacity
+    The Rating says what the units the generator runs reach. A unit it has yet to build has
+    only its Max Capacity to state its size, so p_nom_max adds that.
+    Given a Plexos model
+    And the model contains generator "OverRated_Grower" with "node=Grid_Node, category=Coal, Max Capacity=60, Units=1, Rating=68, Max Units Built=1, Build Cost=900000, WACC=0.07, Economic Life=25"
+    And the model is saved as "inputs/overrated_grower.xml"
+    When I run translate against "inputs/overrated_grower.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "OverRated_Grower" is extendable
+    And the PyPSA generator "OverRated_Grower" in "outputs/network.nc" has "p_nom" equal to 68
+    And the PyPSA generator "OverRated_Grower" in "outputs/network.nc" has "p_nom_min" equal to 68
+    And the PyPSA generator "OverRated_Grower" in "outputs/network.nc" has "p_nom_max" equal to 128
+    And the PyPSA generator "OverRated_Grower" in "outputs/network.nc" has "p_max_pu" equal to 1
+    And the file "outputs/extensions.json" parses as JSON generator extension record for "OverRated_Grower" having "unit_size_mw" set to 60.0
 
   Scenario: a candidate that prices building nothing is left out and named
     Given a Plexos model
