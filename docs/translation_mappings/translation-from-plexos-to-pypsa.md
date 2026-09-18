@@ -955,7 +955,7 @@ Then the translator converts these PLEXOS values. It does not copy them:
 | --- | --- |
 | `Max Ramp Up` / `Max Ramp Down` | From MW/min to a fraction of the capacity for one snapshot: × the snapshot minutes ÷ capacity. A rate that covers the whole capacity within one snapshot becomes 1, because PyPSA holds no larger value. |
 | `Min Stable Factor`, `Rating Factor`, `Outage Factor` | The percentage ÷ 100 |
-| `Min Stable Level`, `Min Pump Load`, `Rating` | MW ÷ `p_nom`, that is, ÷ (`Max Capacity × Units`) |
+| `Min Stable Level`, `Min Pump Load`, `Rating` | MW ÷ `p_nom`, that is, ÷ (`Max Capacity × Units`), or ÷ (`Max Capacity × Max Units Built`) where the object runs no units |
 | Efficiency | `(capacity ÷ fuel) × 3.6`, where `fuel = Heat Rate Base + Heat Rate Incr × capacity` |
 | Marginal cost | `fuel price × Heat Rate Incr + VO&M Charge` |
 
