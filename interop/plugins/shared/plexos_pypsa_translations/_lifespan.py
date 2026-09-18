@@ -21,9 +21,9 @@ from interop.plugins.shared.plexos_constants import (
 )
 from interop.plugins.shared.plexos_dates import (
     DateBand,
-    band_edges,
-    latest_covering,
+    find_latest_covering,
     opens_at,
+    read_band_edges,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import NOTHING_TO_REPORT
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
@@ -146,42 +146,45 @@ def _read_lifespan(bands: list[_UnitsBand]) -> Lifespan:
     and one running again after a zero band was mothballed rather than retired, so a
     schedule that runs at both ends of itself states neither year.
     """
-    changes = _changes(bands)
+    changes = _read_changes(bands)
     if not changes:
         return NO_LIFESPAN
-    build = _first_start(changes) if not _runs(changes[0].was) else None
-    retirement = _last_stop(changes) if not _runs(changes[-1].units) else None
-    return Lifespan(_milestone(build), _milestone(retirement))
+    build = _find_first_start(changes) if not _is_running(changes[0].was) else None
+    retirement = _find_last_stop(changes) if not _is_running(changes[-1].units) else None
+    return Lifespan(_derive_milestone(build), _derive_milestone(retirement))
 
 
-def _first_start(changes: list[_Change]) -> _Change | None:
-    return next((one for one in changes if _runs(one.units)), None)
+def _find_first_start(changes: list[_Change]) -> _Change | None:
+    return next((one for one in changes if _is_running(one.units)), None)
 
 
-def _last_stop(changes: list[_Change]) -> _Change | None:
-    return next((one for one in reversed(changes) if _runs(one.was) and not _runs(one.units)), None)
+def _find_last_stop(changes: list[_Change]) -> _Change | None:
+    stops = (
+        one for one in reversed(changes) if _is_running(one.was) and not _is_running(one.units)
+    )
+    return next(stops, None)
 
 
-def _milestone(change: _Change | None) -> Milestone | None:
+def _derive_milestone(change: _Change | None) -> Milestone | None:
     return None if change is None else Milestone(change.at.year, change.units)
 
 
-def _runs(units: float) -> bool:
+def _is_running(units: float) -> bool:
     return units > _NOT_IN_SERVICE
 
 
-def _changes(bands: list[_UnitsBand]) -> list[_Change]:
+def _read_changes(bands: list[_UnitsBand]) -> list[_Change]:
     """What the schedule runs from each of its edges, beside what it ran before that edge."""
     changes: list[_Change] = []
-    running = _units_at(bands, datetime.min)
-    for moment in band_edges(bands):
-        units = _units_at(bands, moment)
+    running = _read_units_at(bands, datetime.min)
+    for moment in read_band_edges(bands):
+        units = _read_units_at(bands, moment)
         changes.append(_Change(moment, units, running))
         running = units
     return changes
 
 
-def _units_at(bands: list[_UnitsBand], moment: datetime) -> float:
+def _read_units_at(bands: list[_UnitsBand], moment: datetime) -> float:
     """What the schedule runs at a moment; no band covering it means none of the object."""
-    units = latest_covering(bands, moment)
+    units = find_latest_covering(bands, moment)
     return _NOT_IN_SERVICE if units is None else units

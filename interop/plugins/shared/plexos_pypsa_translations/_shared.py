@@ -242,7 +242,7 @@ def _read_membership_property_rows(
     return frame.iter_rows()
 
 
-def as_rate(stated: float | None, stated_unit: str | None) -> float | None:
+def read_as_rate(stated: float | None, stated_unit: str | None) -> float | None:
     """A rate the model writes as a percentage, read as the fraction the destination wants."""
     if stated is None:
         return None

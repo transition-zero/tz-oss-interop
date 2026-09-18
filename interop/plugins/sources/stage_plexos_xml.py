@@ -68,7 +68,7 @@ from interop.plugins.sources.plexos_dated_properties import (
     DatedRow,
     apply_window,
     date_bands,
-    dated_rows,
+    read_dated_rows,
     stepped_series_parts,
 )
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
@@ -407,7 +407,7 @@ def _resolve_dataset(
         memberships=memberships,
         properties=in_force,
         stepped_properties=stepped,
-        dated_properties=dated_rows(resolved),
+        dated_properties=read_dated_rows(resolved),
     )
 
 

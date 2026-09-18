@@ -208,10 +208,10 @@ class StorageLookups:
     tail_by_generator: dict[str, str]
     storages_with_inflow_profile: set[str]
 
-    def properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
+    def read_properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
         return self.by_class[plexos_class].properties
 
-    def staged(self, plexos_class: PlexosClass, name: str) -> StagedObject:
+    def read_staged(self, plexos_class: PlexosClass, name: str) -> StagedObject:
         one = self.by_class[plexos_class]
         return StagedObject(
             name=name,

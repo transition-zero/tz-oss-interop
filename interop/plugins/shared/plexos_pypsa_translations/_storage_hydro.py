@@ -169,7 +169,7 @@ _RESERVOIR_HYDRO = _GeneratorStorageVariant(
 
 
 def map_turbine(name: str, lookups: StorageLookups) -> MappedOrSkipped:
-    staged = lookups.staged(PlexosClass.GENERATOR, name)
+    staged = lookups.read_staged(PlexosClass.GENERATOR, name)
     variant = _classify_turbine(staged, lookups)
     if variant is None:
         return skip_object(

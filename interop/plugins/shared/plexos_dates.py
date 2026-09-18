@@ -29,12 +29,12 @@ UNDATED = DateBand(None, None)
 T = TypeVar("T")
 
 
-def latest_covering(bands: Sequence[tuple[DateBand, T]], moment: datetime) -> T | None:
+def find_latest_covering(bands: Sequence[tuple[DateBand, T]], moment: datetime) -> T | None:
     covering = [value for band, value in bands if band.covers(moment)]
     return covering[-1] if covering else None
 
 
-def band_edges(bands: Iterable[tuple[DateBand, object]]) -> list[datetime]:
+def read_band_edges(bands: Iterable[tuple[DateBand, object]]) -> list[datetime]:
     """Every moment a band opens or closes, earliest first."""
     moments = {edge for band, _ in bands for edge in (band.date_from, band.ends)}
     return sorted(moment for moment in moments if moment is not None)

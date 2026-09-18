@@ -24,9 +24,9 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_dates import (
     UNDATED,
     DateBand,
-    band_edges,
-    latest_covering,
+    find_latest_covering,
     opens_at,
+    read_band_edges,
 )
 from interop.plugins.sources.plexos_horizon import Window
 from interop.plugins.sources.plexos_tables import Rows, RowsByTable
@@ -72,18 +72,18 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     """
     by_property: dict[tuple[Any, ...], list[DatedRow]] = {}
     for dated in resolved:
-        by_property.setdefault(_property_identity(dated.row), []).append(dated)
+        by_property.setdefault(_identify_property(dated.row), []).append(dated)
     in_force: Rows = []
     stepped: Rows = []
-    for dated_rows in by_property.values():
-        steps = _steps_within(sorted(dated_rows, key=opens_at), window)
+    for read_dated_rows in by_property.values():
+        steps = _steps_within(sorted(read_dated_rows, key=opens_at), window)
         in_force.append(steps[0].row)
         if len(steps) > 1:
             stepped.extend({**step.row, StagedTimeSeriesCol.SNAPSHOT: step.at} for step in steps)
     return in_force, stepped
 
 
-def dated_rows(resolved: list[DatedRow]) -> Rows:
+def read_dated_rows(resolved: list[DatedRow]) -> Rows:
     """Every row of a property the model dates, beside the dates it applies between.
 
     ``apply_window`` reads one value per property for the window being translated, which
@@ -93,7 +93,7 @@ def dated_rows(resolved: list[DatedRow]) -> Rows:
     """
     by_property: dict[tuple[Any, ...], list[DatedRow]] = {}
     for dated in resolved:
-        by_property.setdefault(_property_name(dated.row), []).append(dated)
+        by_property.setdefault(_name_property(dated.row), []).append(dated)
     return [
         {
             **dated.row,
@@ -106,7 +106,7 @@ def dated_rows(resolved: list[DatedRow]) -> Rows:
     ]
 
 
-def _property_name(row: dict[str, Any]) -> tuple[Any, ...]:
+def _name_property(row: dict[str, Any]) -> tuple[Any, ...]:
     """What names one property across its bands: its membership and its property name."""
     return (
         *(row[column] for column in _MEMBERSHIP_NAME_COLUMNS),
@@ -114,25 +114,25 @@ def _property_name(row: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _property_identity(row: dict[str, Any]) -> tuple[Any, ...]:
+def _identify_property(row: dict[str, Any]) -> tuple[Any, ...]:
     """What makes a property one property: its membership, its name, and its band."""
-    return (*_property_name(row), row[PlexosPropertyCol.BAND])
+    return (*_name_property(row), row[PlexosPropertyCol.BAND])
 
 
 def _steps_within(ordered: list[DatedRow], window: Window) -> list[_Step]:
     """One step per moment the property's value changes inside the window."""
     template = ordered[0].row
     return [
-        _Step(moment, {**template, PlexosPropertyCol.VALUE: _value_at(ordered, moment)})
+        _Step(moment, {**template, PlexosPropertyCol.VALUE: _read_value_at(ordered, moment)})
         for moment in _change_moments(ordered, window)
     ]
 
 
-def _value_at(ordered: list[DatedRow], moment: datetime) -> float | None:
+def _read_value_at(ordered: list[DatedRow], moment: datetime) -> float | None:
     """A property stated only for a period is not in effect outside one, and a property
     with no value in effect is a property the model is not applying: it reads as zero.
     """
-    stating = latest_covering(ordered, moment)
+    stating = find_latest_covering(ordered, moment)
     if stating is None:
         return _NOT_IN_EFFECT
     value: float | None = stating[PlexosPropertyCol.VALUE]
@@ -142,7 +142,7 @@ def _value_at(ordered: list[DatedRow], moment: datetime) -> float | None:
 def _change_moments(ordered: list[DatedRow], window: Window) -> list[datetime]:
     """When the window opens, and every band edge inside it."""
     moments = {window.start}
-    moments.update(edge for edge in band_edges(ordered) if window.start < edge < window.end)
+    moments.update(edge for edge in read_band_edges(ordered) if window.start < edge < window.end)
     return sorted(moments)
 
 

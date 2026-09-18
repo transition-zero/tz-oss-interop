@@ -12,7 +12,7 @@ from interop.plugins.shared.constants import (
     UNIT_YEARS,
 )
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty, is_plexos_true
-from interop.plugins.shared.plexos_pypsa_translations._shared import as_rate
+from interop.plugins.shared.plexos_pypsa_translations._shared import read_as_rate
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_UNITS,
     DIRECT_DERIVATION,
@@ -157,7 +157,7 @@ def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
         return FIXED_CAPACITY
     blocking = _find_blocking_rule(source)
     if blocking is not None:
-        return _fixed_at_what_it_runs(source, blocking)
+        return _derive_fixed_capacity(source, blocking)
     rated = source.rated
     built = source.name_units_built()
     return ExpansionDecisions(
@@ -170,20 +170,20 @@ def derive_expansion(source: CandidateSource) -> ExpansionDecisions:
             gather_sources(rated.existing.sources, rated.unit_size.sources, [built]),
             _P_NOM_MAX_DERIVATION,
         ),
-        overnight_cost=_from_property(
+        overnight_cost=_read_from_property(
             source, PlexosProperty.BUILD_COST, UNIT_DOLLARS_PER_MW, DIRECT_DERIVATION
         ),
-        discount_rate=_discount_rate(source),
-        lifetime=_from_property(
+        discount_rate=_derive_discount_rate(source),
+        lifetime=_read_from_property(
             source, PlexosProperty.ECONOMIC_LIFE, UNIT_YEARS, DIRECT_DERIVATION
         ),
         unit_size=Decision.derived(
             rated.unit_size.value, rated.unit_size.sources, _UNIT_SIZE_DERIVATION
         ),
-        technical_life=_from_property(
+        technical_life=_read_from_property(
             source, PlexosProperty.TECHNICAL_LIFE, UNIT_YEARS, _TECHNICAL_LIFE_DERIVATION
         ),
-        fom_charge=_from_property(
+        fom_charge=_read_from_property(
             source, PlexosProperty.FOM_CHARGE, UNIT_DOLLARS_PER_MW_YEAR, _FOM_CHARGE_DERIVATION
         ),
     )
@@ -317,7 +317,7 @@ def _find_blocking_rule(source: CandidateSource) -> BuildRule | None:
     return next((one for one in _BUILD_RULES if not one.allows_a_build(source.props)), None)
 
 
-def _fixed_at_what_it_runs(source: CandidateSource, blocking: BuildRule) -> ExpansionDecisions:
+def _derive_fixed_capacity(source: CandidateSource, blocking: BuildRule) -> ExpansionDecisions:
     return replace(
         FIXED_CAPACITY,
         p_nom_extendable=Decision.derived(
@@ -347,16 +347,16 @@ def _name_blocking_property(source: CandidateSource, blocking: BuildRule) -> Sou
     )
 
 
-def _discount_rate(source: CandidateSource) -> Decision:
+def _derive_discount_rate(source: CandidateSource) -> Decision:
     wacc = source.props.get(PlexosProperty.WACC)
-    rate = as_rate(wacc, source.stated_units.get(PlexosProperty.WACC))
+    rate = read_as_rate(wacc, source.stated_units.get(PlexosProperty.WACC))
     if rate is None:
         return NOTHING_TO_REPORT
     stated = SourceValue(source.plexos_class, source.name, PlexosProperty.WACC, wacc)
     return Decision.derived(rate, [stated], _DISCOUNT_RATE_DERIVATION)
 
 
-def _from_property(
+def _read_from_property(
     source: CandidateSource, plexos_property: str, unit: str | None, derivation: str
 ) -> Decision:
     value = source.props.get(plexos_property)

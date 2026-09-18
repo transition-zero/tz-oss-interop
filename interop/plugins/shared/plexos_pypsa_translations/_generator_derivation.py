@@ -176,13 +176,15 @@ def read_candidate(source: SourceGenerator) -> CandidateSource:
         source.props,
         source.stated_units,
         RatedCapacity(
-            existing=_existing(source, capacity, counted),
+            existing=_derive_existing_capacity(source, capacity, counted),
             unit_size=Decision.derived(source.max_capacity, [capacity], DIRECT_DERIVATION),
         ),
     )
 
 
-def _existing(source: SourceGenerator, capacity: SourceValue, counted: SourceValue) -> Decision:
+def _derive_existing_capacity(
+    source: SourceGenerator, capacity: SourceValue, counted: SourceValue
+) -> Decision:
     rating = source.rating_as_capacity
     if rating is None:
         return Decision.derived(source.nameplate, [capacity, counted], P_NOM_DERIVATION)
