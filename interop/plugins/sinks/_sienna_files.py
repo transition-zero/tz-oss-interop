@@ -47,6 +47,15 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         self._fs.write_bytes(paths.system_json, _serialise(paths, payload, indent))
 
 
+def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
+    missing = set(needed) - available
+    if missing:
+        raise ValueError(
+            f"{context}: {len(missing)} reference(s) in {ref_col!r} "
+            f"not found in parent table: {sorted(missing)}"
+        )
+
+
 def _serialise(paths: SiennaFilePaths, payload: dict[str, Any], indent: int) -> bytes:
     """The system JSON, naming its companions by the bare filenames a reader expects."""
     named = {

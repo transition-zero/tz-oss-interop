@@ -90,6 +90,14 @@ class SiennaComponent(StrEnum):
 SIENNA_TYPE_ATTRIBUTE = "type"
 """Attribute name used in event-only sienna_type Translation objects."""
 
+SIENNA_NAME_COLUMN = "name"
+
+SIENNA_ID_COLUMN = "id"
+
+SIENNA_REGION_NAME_COLUMN = "region_name"
+
+SIENNA_REGION_COLUMN = "region"
+
 
 class SiennaACBusCol:
     """Sienna ACBus column names."""
