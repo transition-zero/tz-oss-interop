@@ -528,6 +528,16 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "CoalUnit" in "outputs/network.nc" has "p_nom_min" equal to 200
     And the PyPSA generator "CoalUnit" in "outputs/network.nc" has "p_nom_max" equal to 300
 
+  Scenario: a candidate that runs nothing derates its Rating against everything it may build
+    A candidate has no units, so its p_nom is the capacity it may build. The Rating divides
+    by that whole capacity, not by one unit's Max Capacity.
+    Given a Plexos model
+    And the model contains generator "Curtailed_REZ" with "node=Grid_Node, category=Wind, Max Capacity=100, Units=0, Max Units Built=5, Rating=50, Build Cost=900000, WACC=0.07, Economic Life=25"
+    And the model is saved as "inputs/derated_candidate.xml"
+    When I run translate against "inputs/derated_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "Curtailed_REZ" in "outputs/network.nc" has "p_nom" equal to 500
+    And the PyPSA generator "Curtailed_REZ" in "outputs/network.nc" has "p_max_pu" equal to 0.1
+
   Scenario: a candidate that prices building nothing is left out and named
     Given a Plexos model
     And the model contains generator "Unpriced_REZ" with "node=Grid_Node, category=Wind, Max Capacity=50, Units=0, Max Units Built=4"
