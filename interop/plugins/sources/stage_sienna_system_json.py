@@ -12,6 +12,7 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_SOURCE_AREAS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
     Hdf5TimeSeriesStore,
     SiennaACBusCol,
@@ -75,7 +76,7 @@ class StageSiennaSystemJson(StagesExtensionsSidecar, StagedSource):
             system = json.load(system_file)
         topology_frames = stage_topology(system, staging_dir)
         with self._fs.open_read(params.time_series_h5_path) as h5_file:
-            time_series_frames = _stage_time_series(system, h5_file, staging_dir)
+            time_series_frames = stage_time_series(system, h5_file, staging_dir)
         extensions = self._stage_extensions_sidecar(params.extensions_json_path)
         return State(
             staging_dir=staging_dir,
@@ -94,6 +95,12 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     }
 
     frames: dict[str, pl.LazyFrame] = {}
+    area_rows = [
+        {SiennaACBusCol.ID: area_id, SiennaACBusCol.NAME: area_name}
+        for area_id, area_name in area_name_by_id.items()
+    ]
+    _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
+
     bus_rows = [_bus_row(c, area_name_by_id) for c in components.get(SiennaComponent.AC_BUS, [])]
     _stage_table(bus_rows, SIENNA_SOURCE_BUSES_SCHEMA, SiennaTable.BUSES, staging_dir, frames)
 
@@ -195,7 +202,7 @@ def _stage_table(
     frames[name] = pl.scan_parquet(out)
 
 
-def _stage_time_series(
+def stage_time_series(
     system: dict[str, Any], h5_file: IO[bytes], staging_dir: Path
 ) -> dict[tuple[str, str], pl.LazyFrame]:
     """Read the JSON TimeSeriesAssociation records plus the HDF5 value store and stage one

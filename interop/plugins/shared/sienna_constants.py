@@ -908,3 +908,10 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLinkCol.REACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
     SiennaLinkCol.LOSS: IO_CURVE_DTYPE,
 }
+
+
+SIENNA_SOURCE_AREAS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaACBusCol.ID: pl.Int64,
+    SiennaACBusCol.NAME: pl.Utf8,
+}
+"""An Area as a reverse pipeline stages it: the id a portfolio names it by, and its name."""
