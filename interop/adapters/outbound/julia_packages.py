@@ -36,6 +36,7 @@ JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
     JuliaPackage("HydroPowerSimulations", "fc1677e0-6ad7-4515-bf3a-bd6bf20a0b1b", "~0.15"),
     JuliaPackage("StorageSystemsSimulations", "e2f1a126-19d0-4674-9252-42b2384f8e3c", "~0.16"),
     JuliaPackage("HiGHS", "87dc4568-4c63-4d18-b0c0-bb2238e4078b"),
+    JuliaPackage("InfrastructureSystems", "2cd47ed4-ca9b-11e9-27f2-ab636a7671f1"),
     JuliaPackage("TimeSeries", "9e3dc215-6440-5c97-bce1-76c03772f85e"),
     JuliaPackage("CSV", "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"),
     JuliaPackage("DataFrames", "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"),

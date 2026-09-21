@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
@@ -23,12 +24,14 @@ from interop.ports.inbound.pipeline_catalog import PipelineCatalogUseCase, Pipel
 from interop.ports.inbound.solve import (
     DEFAULT_LOOK_AHEAD_DAYS,
     ModelType,
+    SolveExpansionRequest,
     SolveNetworkRequest,
     SolveSiennaRequest,
     SolveUseCase,
 )
 from interop.ports.inbound.translate import TranslateUseCase
 from interop.ports.inbound.validate import ValidateUseCase
+from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.filesystem import Location, to_location
 from interop.ports.outbound.network_solver import SolveWindowLength
 from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
@@ -355,6 +358,19 @@ _PRESOLVE_OPTIONS = [s.value for s in HiGHSPresolve]
 _CROSSOVER_OPTIONS = [s.value for s in HiGHSCrossover]
 _UNIT_COMMITMENT_TREATMENTS = [t.value for t in UnitCommitmentTreatment]
 _SOLVE_WINDOWS = [w.value for w in SolveWindowLength]
+_BALANCE_MODELS = [b.value for b in BalanceModel]
+_INVESTMENT_TREATMENTS = [t.value for t in InvestmentTreatment]
+
+# ContinuousInvestment builds any amount of capacity; IntegerInvestment builds whole units
+# only, which is a mixed-integer problem and much slower.
+_BALANCE_MODEL_PROMPT = (
+    "Balance model? (single-region = one zone; multi-region = zone by zone; nodal = bus by bus)"
+)
+
+_INVESTMENT_TREATMENT_PROMPT = (
+    "Investment treatment? (continuous = build any amount of capacity; integer = build "
+    "whole units only, which is slower)"
+)
 
 # PowerSimulations has no relaxed unit commitment formulation, so the two answers mean
 # something different here from what they mean on the PyPSA path.
@@ -376,23 +392,11 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
         return None
     if model_type == ModelType.PYPSA:
         return _run_solve_pypsa(container, replay)
+    if model_type == ModelType.SIENNA_INVESTMENTS:
+        return _run_solve_expansion(container, replay, model_type)
 
-    try:
-        with container() as scope:
-            solver_is_provisioned = scope.get(SolveUseCase).is_provisioned()
-    except UserInputError as exc:
-        _print_user_error(exc)
+    if not _confirm_download(container, _POWER_SIMULATIONS_PACKAGES, dispatch=True):
         return None
-    if not solver_is_provisioned:
-        questionary.print(
-            "Julia and the PowerSimulations.jl solver packages will be downloaded and "
-            "compiled before solving. This needs an internet connection; progress is "
-            "printed as it runs."
-        )
-        download_accepted = questionary.confirm("Download and continue?").ask()
-        if not download_accepted:
-            questionary.print("Solve cancelled.")
-            return None
 
     raw_path = questionary.path(
         f"Path to PowerSimulations.jl system JSON?  {PATH_PROMPT_HINT}",
@@ -422,43 +426,13 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if unit_commitment is None:
         return None
 
-    solver = questionary.select(
-        "HiGHS solver algorithm?",
-        choices=_SOLVER_ALGORITHMS,
-        default=_select_default(replay.get(DetailKey.SOLVER), _SOLVER_ALGORITHMS),
-    ).ask()
-    if solver is None:
+    highs = _ask_highs_options(replay)
+    if highs is None:
         return None
-
-    presolve = questionary.select(
-        "Presolve? (choose = HiGHS decides automatically)",
-        choices=_PRESOLVE_OPTIONS,
-        default=_select_default(replay.get(DetailKey.PRESOLVE), _PRESOLVE_OPTIONS),
-    ).ask()
-    if presolve is None:
-        return None
-
-    run_crossover = questionary.select(
-        "Run crossover after IPM? (choose = HiGHS decides automatically)",
-        choices=_CROSSOVER_OPTIONS,
-        default=_select_default(replay.get(DetailKey.RUN_CROSSOVER), _CROSSOVER_OPTIONS),
-    ).ask()
-    if run_crossover is None:
-        return None
-
-    raw_time_limit = questionary.text(
-        "Time limit in seconds? (blank = no limit)",
-        default=str(replay.get(DetailKey.TIME_LIMIT_SECONDS, "")),
-    ).ask()
-    if raw_time_limit is None:
-        return None
-    time_limit_seconds: float | None = None
-    if raw_time_limit.strip():
-        try:
-            time_limit_seconds = float(raw_time_limit.strip())
-        except ValueError:
-            _print_user_error(UserInputError(f"invalid time limit: {raw_time_limit!r}"))
-            return None
+    solver = highs.solver
+    presolve = highs.presolve
+    run_crossover = highs.run_crossover
+    time_limit_seconds = highs.time_limit_seconds
 
     default_output = str(replay.get(DetailKey.OUTPUT_DIR) or sienna_json_path.parent / "solved")
     raw_output = questionary.path(
@@ -504,6 +478,220 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     style = "fg:green" if result.is_success() else "fg:red"
     questionary.print(result.summary(), style=style)
     return details
+
+
+@dataclass(frozen=True)
+class _HiGHSAnswers:
+    """What the solver is told about how to run, which both Sienna paths ask for alike."""
+
+    solver: str
+    presolve: str
+    run_crossover: str
+    time_limit_seconds: float | None
+
+
+def _ask_highs_options(replay: dict[str, Any]) -> _HiGHSAnswers | None:
+    """The four HiGHS answers, or None where the user cancelled or typed an unreadable limit."""
+    solver = questionary.select(
+        "HiGHS solver algorithm?",
+        choices=_SOLVER_ALGORITHMS,
+        default=_select_default(replay.get(DetailKey.SOLVER), _SOLVER_ALGORITHMS),
+    ).ask()
+    presolve = questionary.select(
+        "Presolve? (choose = HiGHS decides automatically)",
+        choices=_PRESOLVE_OPTIONS,
+        default=_select_default(replay.get(DetailKey.PRESOLVE), _PRESOLVE_OPTIONS),
+    ).ask()
+    run_crossover = questionary.select(
+        "Run crossover after IPM? (choose = HiGHS decides automatically)",
+        choices=_CROSSOVER_OPTIONS,
+        default=_select_default(replay.get(DetailKey.RUN_CROSSOVER), _CROSSOVER_OPTIONS),
+    ).ask()
+    raw_time_limit = questionary.text(
+        "Time limit in seconds? (blank = no limit)",
+        default=str(replay.get(DetailKey.TIME_LIMIT_SECONDS, "")),
+    ).ask()
+    if None in (solver, presolve, run_crossover, raw_time_limit):
+        return None
+    time_limit_seconds = _parse_time_limit(raw_time_limit)
+    if time_limit_seconds is _UNREADABLE:
+        return None
+    return _HiGHSAnswers(solver, presolve, run_crossover, time_limit_seconds)
+
+
+_UNREADABLE = object()
+"""What a time limit nobody can read parses to, told apart from a blank answer."""
+
+
+def _parse_time_limit(raw: str) -> Any:
+    if not raw.strip():
+        return None
+    try:
+        return float(raw.strip())
+    except ValueError:
+        _print_user_error(UserInputError(f"invalid time limit: {raw!r}"))
+        return _UNREADABLE
+
+
+_POWER_SIMULATIONS_PACKAGES = "the PowerSimulations.jl solver packages"
+_POWER_SYSTEMS_INVESTMENTS_PACKAGES = "the PowerSystemsInvestments.jl packages"
+
+
+def _confirm_download(container: Container, packages: str, *, dispatch: bool) -> bool:
+    """Warn before a first run downloads Julia, and ask whether to go on.
+
+    A run whose packages are already installed asks nothing.
+    """
+    try:
+        with container() as scope:
+            use_case = scope.get(SolveUseCase)
+            provisioned = (
+                use_case.is_provisioned() if dispatch else use_case.is_expansion_provisioned()
+            )
+    except UserInputError as exc:
+        _print_user_error(exc)
+        return False
+    if provisioned:
+        return True
+    questionary.print(
+        f"Julia and {packages} will be downloaded and compiled before solving. This needs "
+        "an internet connection; progress is printed as it runs."
+    )
+    if questionary.confirm("Download and continue?").ask():
+        return True
+    questionary.print("Solve cancelled.")
+    return False
+
+
+def _run_solve_expansion(
+    container: Container, replay: dict[str, Any], model_type: str
+) -> dict[str, Any] | None:
+    """Expand a Sienna portfolio, asking only what the portfolio itself does not state."""
+    if not _confirm_download(container, _POWER_SYSTEMS_INVESTMENTS_PACKAGES, dispatch=False):
+        return None
+    answers = _ask_expansion_answers(replay)
+    if answers is None:
+        return None
+    details = _expansion_details(model_type, answers)
+    try:
+        with container() as scope:
+            result = scope.get(SolveUseCase)(_build_expansion_request(answers))
+    except UserInputError as exc:
+        _print_user_error(exc)
+        return details
+    questionary.print(result.summary(), style="fg:green" if result.is_success() else "fg:red")
+    return details
+
+
+@dataclass(frozen=True)
+class _ExpansionAnswers:
+    """Everything the expansion prompts collected, past what the portfolio states itself."""
+
+    portfolio_json_path: Path
+    balance_model: str
+    investment_treatment: str
+    discount_rate: float | None
+    highs: _HiGHSAnswers
+    output_dir: Path
+
+
+def _ask_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
+    portfolio_json_path = _ask_portfolio_path(replay)
+    if portfolio_json_path is None:
+        return None
+    balance_model = questionary.select(
+        _BALANCE_MODEL_PROMPT,
+        choices=_BALANCE_MODELS,
+        default=_select_default(replay.get(DetailKey.BALANCE_MODEL), _BALANCE_MODELS),
+    ).ask()
+    investment_treatment = questionary.select(
+        _INVESTMENT_TREATMENT_PROMPT,
+        choices=_INVESTMENT_TREATMENTS,
+        default=_select_default(replay.get(DetailKey.INVESTMENT_TREATMENT), _INVESTMENT_TREATMENTS),
+    ).ask()
+    raw_discount_rate = questionary.text(
+        "Discount rate? (blank = the rate the portfolio states)",
+        default=str(replay.get(DetailKey.DISCOUNT_RATE, "")),
+    ).ask()
+    if None in (balance_model, investment_treatment, raw_discount_rate):
+        return None
+    discount_rate = _parse_discount_rate(raw_discount_rate)
+    if discount_rate is _UNREADABLE:
+        return None
+    highs = _ask_highs_options(replay)
+    if highs is None:
+        return None
+    output_dir = _ask_output_dir(replay, portfolio_json_path.parent / "expanded")
+    if output_dir is None:
+        return None
+    return _ExpansionAnswers(
+        portfolio_json_path, balance_model, investment_treatment, discount_rate, highs, output_dir
+    )
+
+
+def _ask_portfolio_path(replay: dict[str, Any]) -> Path | None:
+    raw_path = questionary.path(
+        f"Path to the PowerSystemsInvestments portfolio JSON?  {PATH_PROMPT_HINT}",
+        default=str(replay.get(DetailKey.PORTFOLIO_JSON_PATH, "")),
+    ).ask()
+    if raw_path is None:
+        return None
+    portfolio_json_path = Path(raw_path.strip()).expanduser()
+    if not portfolio_json_path.is_file():
+        _print_user_error(UserInputError(f"file not found: {portfolio_json_path}"))
+        return None
+    return portfolio_json_path
+
+
+def _ask_output_dir(replay: dict[str, Any], fallback: Path) -> Path | None:
+    default_output = str(replay.get(DetailKey.OUTPUT_DIR) or fallback)
+    raw_output = questionary.path(
+        f"Output directory?  {PATH_PROMPT_HINT}", default=default_output
+    ).ask()
+    return None if raw_output is None else Path(raw_output.strip()).expanduser()
+
+
+def _parse_discount_rate(raw: str) -> Any:
+    if not raw.strip():
+        return None
+    try:
+        return float(raw.strip())
+    except ValueError:
+        _print_user_error(UserInputError(f"invalid discount rate: {raw!r}"))
+        return _UNREADABLE
+
+
+def _build_expansion_request(answers: _ExpansionAnswers) -> SolveExpansionRequest:
+    return SolveExpansionRequest(
+        portfolio_json_path=answers.portfolio_json_path,
+        balance_model=BalanceModel(answers.balance_model),
+        output_dir=answers.output_dir,
+        investment_treatment=InvestmentTreatment(answers.investment_treatment),
+        discount_rate=answers.discount_rate,
+        solver=HiGHSSolver(answers.highs.solver),
+        presolve=HiGHSPresolve(answers.highs.presolve),
+        run_crossover=HiGHSCrossover(answers.highs.run_crossover),
+        time_limit_seconds=answers.highs.time_limit_seconds,
+    )
+
+
+def _expansion_details(model_type: str, answers: _ExpansionAnswers) -> dict[str, Any]:
+    return {
+        DetailKey.MODEL_TYPE: model_type,
+        DetailKey.PORTFOLIO_JSON_PATH: str(answers.portfolio_json_path),
+        DetailKey.BALANCE_MODEL: answers.balance_model,
+        DetailKey.INVESTMENT_TREATMENT: answers.investment_treatment,
+        DetailKey.DISCOUNT_RATE: _as_text(answers.discount_rate),
+        DetailKey.SOLVER: answers.highs.solver,
+        DetailKey.PRESOLVE: answers.highs.presolve,
+        DetailKey.RUN_CROSSOVER: answers.highs.run_crossover,
+        DetailKey.TIME_LIMIT_SECONDS: _as_text(answers.highs.time_limit_seconds),
+        DetailKey.OUTPUT_DIR: str(answers.output_dir),
+    }
+
+
+def _as_text(value: float | None) -> str:
+    return "" if value is None else str(value)
 
 
 def _parse_optional_date(raw: str) -> date | None:
