@@ -339,6 +339,65 @@ class _StagingProbe(TranslationStep):
 """
 
 
+_FAKE_EXPANSION_TEMPLATE = """\
+from pathlib import Path
+from typing import ClassVar
+
+from interop.ports.outbound.expansion import BalanceModel, ExpansionPort, InvestmentTreatment
+from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+
+
+class FakeExpansionAdapter(ExpansionPort):
+    name: ClassVar[str] = "fake_expansion"
+    port: ClassVar[type] = ExpansionPort
+
+    def is_provisioned(self) -> bool:
+        return {provisioned}
+
+    def solve_expansion(
+        self,
+        portfolio_json_path: Path,
+        balance_model: BalanceModel,
+        output_dir: Path | None = None,
+        *,
+        investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS,
+        discount_rate: float | None = None,
+        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
+        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
+        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
+        time_limit_seconds: float | None = None,
+    ) -> tuple[str, float]:
+        Path("outputs").mkdir(parents=True, exist_ok=True)
+        # Posix form, so a scenario can name a path the same way on every platform.
+        recorded_portfolio_path = portfolio_json_path.as_posix()
+        recorded_output_dir = output_dir.as_posix() if output_dir else output_dir
+        Path("outputs/expansion-call.txt").write_text(
+            "\\n".join(
+                [
+                    f"portfolio_json_path={{recorded_portfolio_path}}",
+                    f"balance_model={{balance_model}}",
+                    f"output_dir={{recorded_output_dir}}",
+                    f"investment_treatment={{investment_treatment}}",
+                    f"discount_rate={{discount_rate}}",
+                    f"solver={{solver}}",
+                    f"presolve={{presolve}}",
+                    f"run_crossover={{run_crossover}}",
+                    f"time_limit_seconds={{time_limit_seconds}}",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        return ("SUCCESSFULLY_FINALIZED", 987.654)
+"""
+
+
+@given("a fake expansion adapter in project plugins")
+def given_fake_expansion_plugin() -> None:
+    write_project_plugin(
+        "adapters", "fake_expansion", _FAKE_EXPANSION_TEMPLATE.format(provisioned=True)
+    )
+
+
 @given("a staging probe step plugin")
 def given_staging_probe_step_plugin() -> None:
     write_project_plugin("steps", "staging_probe", _STAGING_PROBE_STEP_PY)
