@@ -299,6 +299,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/tutorials/developer-tutorial.md` extends that example with a custom pipeline step (writing your own translation logic).
 - `docs/tutorials/solve.md` covers the `solve` command (Julia and PowerSimulations.jl install automatically on first run).
 - `docs/case_studies/` holds one page per published model interop has been run against: where to download it, what to answer at the prompts, and what the run measured.
+- `docs/developer_documentation/capacity-expansion.md` covers running a Sienna portfolio as a capacity expansion in PowerSystemsInvestments.jl.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
 - `docs/translation_mappings/translation-from-pypsa-to-sienna.md` is the authoritative mapping reference for PyPSA / Sienna field translation.

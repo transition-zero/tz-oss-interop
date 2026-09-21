@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import polars as pl
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
@@ -28,9 +28,15 @@ from interop.ports.outbound.filesystem import FilesystemPort, InputFile
 
 
 class StageSiennaPortfolioJsonParams(BaseModel):
-    portfolio_json_path: InputFile
-    system_json_path: InputFile
-    time_series_h5_path: InputFile
+    portfolio_json_path: InputFile = Field(
+        description="the SiennaSchemas portfolio document to read"
+    )
+    system_json_path: InputFile = Field(
+        description="the SiennaSchemas system.json the portfolio expands"
+    )
+    time_series_h5_path: InputFile = Field(
+        description="the HDF5 companion holding that system's time series"
+    )
     # What the hop before this one set aside. Only this translator writes a sidecar, so a
     # portfolio from a partner is the two documents and the HDF5 companion and nothing more.
     extensions_json_path: InputFile | None = None
