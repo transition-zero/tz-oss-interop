@@ -143,8 +143,9 @@ must come from the table.
 
 - A `pl.DataFrame` or a `pl.LazyFrame` is a **table**. Do not call it a frame.
 - A `list[dict]` is **rows**.
-- A `FilesystemPort` value is a **location**. `interop/ports/outbound/filesystem.py`
-  states the type `Location`.
+- A value of type `Location` is a **location**
+  (`interop/ports/outbound/filesystem.py`). A `FilesystemPort` takes one and gives one
+  back; the port is not itself a location.
 - A name that stands for data in `State` keeps the `source_` or `destination_` prefix
   that `State` uses.
 - Do not name a type `...Set` unless it holds a `set`.
@@ -194,11 +195,12 @@ above, and they are correct as they stand.
   `StagedSource.load_into_state`, `TranslationStep.run`, `Sink.write` and
   `Validator.validate` are the contract in `interop/core/pipeline.py`. A downstream
   project implements them.
-- **The outbound ports keep their method names.** `FilesystemPort.read_bytes`,
-  `open_read`, `can_read`, `locate` and `resolve`, and `ReportingPort.render`, are the
-  contract that an adapter implements. `locate` and `resolve` both build a location and
-  neither one reads a file, so the table would rename them. An adapter outside this
-  repository implements the port, so they stay.
+- **The outbound ports keep their method names.** The whole `FilesystemPort` protocol is
+  the contract that an adapter implements: `read_bytes`, `write_bytes`, `open_read`,
+  `open_write`, `copy_tree`, `can_read`, `locate` and `resolve`. `ReportingPort.render`
+  is the same. The table would rename four of them. `open_` is not a verb in the table,
+  and `locate_` and `resolve_` are words that leave the vocabulary. An adapter
+  outside this repository implements the port, so all eight stay.
 - **`fs` keeps its short form.** It names the `FilesystemPort` value. "Quality gates"
   below states `self._fs`, and `interop/lints/plugin_filesystem.py` holds the constant
   `FS_ATTRIBUTE = "_fs"`, so the lint fails a rename. Use `fs` for this one type, and
