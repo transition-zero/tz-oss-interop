@@ -216,8 +216,8 @@ Every cost in a portfolio is quoted in a base year, and no PLEXOS field states o
 takes the default base year of 2020. To state another one, refer to
 [The base year](../translation_mappings/translation-from-plexos-to-sienna-investments.md#the-base-year).
 
-[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) states what the
-portfolio leaves out and what each loss does to an expansion.
+[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
+this model states that the Sienna investments schema holds no type and no field for.
 
 ## The headline number
 
@@ -281,8 +281,8 @@ The demand result above does not depend on hydro, so it stands.
 cumec, which is water, and the energy budget a Sienna `HydroDispatch` is dispatched against
 is its inflow. A unit with no budget would run at full output every snapshot, so the
 translation leaves all 31 reservoir units out and names each one in `decisions.md`.
-[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) lists every
-other thing the Sienna path loses.
+[The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
+this model states that SiennaSchemas holds no type and no field for.
 
 The Sienna path also keeps no reserves file at all, because the first leg of the chain writes
 that file inside the run's scratch space. Run `plexos-to-pypsa` on its own if you want the
