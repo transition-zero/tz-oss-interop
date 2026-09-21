@@ -235,6 +235,7 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
             PyPSALineCol.V_ANG_MIN,
             PyPSALineCol.V_ANG_MAX,
             PyPSALineCol.S_NOM_EXTENDABLE,
+            PyPSALineCol.S_NOM_MIN,
         ),
     )
 
@@ -261,6 +262,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_NOM_EXTENDABLE,
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
+            PyPSALinkCol.P_NOM_MIN,
         ),
     )
 
@@ -284,7 +286,8 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.P_NOM_EXTENDABLE,
         ),
         # Efficiency and the unit-commitment fields are null for renewables and unset
-        # thermals; let PyPSA default them.
+        # thermals, and the expansion fields are null for a generator the source fixes;
+        # let PyPSA default them.
         optional=(
             PyPSAGeneratorCol.EFFICIENCY,
             PyPSAGeneratorCol.RAMP_LIMIT_UP,
@@ -294,6 +297,12 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.UP_TIME_BEFORE,
             PyPSAGeneratorCol.START_UP_COST,
             PyPSAGeneratorCol.SHUT_DOWN_COST,
+            PyPSAGeneratorCol.P_NOM_MIN,
+            PyPSAGeneratorCol.P_NOM_MAX,
+            PyPSAGeneratorCol.OVERNIGHT_COST,
+            PyPSAGeneratorCol.DISCOUNT_RATE,
+            PyPSAGeneratorCol.LIFETIME,
+            PyPSAGeneratorCol.BUILD_YEAR,
         ),
     )
 
@@ -320,6 +329,16 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE,
             PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
             PyPSAStorageUnitCol.INFLOW,
+        ),
+        # The expansion fields are null for a storage unit the source fixes; let PyPSA
+        # default them.
+        optional=(
+            PyPSAStorageUnitCol.P_NOM_MIN,
+            PyPSAStorageUnitCol.P_NOM_MAX,
+            PyPSAStorageUnitCol.OVERNIGHT_COST,
+            PyPSAStorageUnitCol.DISCOUNT_RATE,
+            PyPSAStorageUnitCol.LIFETIME,
+            PyPSAStorageUnitCol.BUILD_YEAR,
         ),
     )
 

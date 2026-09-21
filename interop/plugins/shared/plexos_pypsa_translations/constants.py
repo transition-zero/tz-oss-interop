@@ -17,6 +17,12 @@ PERCENT: float = 100.0
 DEFAULT_UNITS: float = 1.0
 """A generator with no ``Units`` property is a single unit."""
 
+# Each names a sidecar key in the audit trail; the network file itself has no such column.
+EXT_UNIT_SIZE_FIELD: str = "extensions.unit_size_mw"
+EXT_TECHNICAL_LIFE_FIELD: str = "extensions.technical_life_years"
+EXT_RETIREMENT_YEAR_FIELD: str = "extensions.retirement_year"
+EXT_FOM_CHARGE_FIELD: str = "extensions.fom_charge_per_mw_year"
+
 # --- generators ---------------------------------------------------------------
 
 DEFAULT_UP_TIME_BEFORE: float = 0.0
@@ -37,6 +43,9 @@ widens the range of coefficients the solver works over.
 
 FULL_AVAILABILITY: float = 1.0
 """A dispatchable generator can run at full output; an outage or profile derates this."""
+
+NOTHING_TO_BUILD: float = 0.0
+"""``Max Units Built`` for an object the model does not allow to be built."""
 
 MAX_RAMP_LIMIT_PU: float = 1.0
 """A ramp of the whole of ``p_nom`` in one snapshot, which is as far as PyPSA reads."""
@@ -87,9 +96,6 @@ PUMPED_STORAGE_CYCLIC: bool = True
 
 HYDRO_CYCLIC: bool = False
 """Reservoir hydro follows its inflow, so its level need not close the loop."""
-
-STORAGE_P_NOM_EXTENDABLE: bool = False
-"""v1 translates a dispatch model; storage capacity is fixed."""
 
 # --- load shedding ------------------------------------------------------------
 

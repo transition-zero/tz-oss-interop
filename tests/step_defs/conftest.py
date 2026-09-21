@@ -298,6 +298,69 @@ def assert_path_answer_rejected(answer: str, text: str) -> None:
     )
 
 
+STANDARD_CARRIER_MAP: dict[str, tuple[str, str]] = {
+    "nuclear": ("NUCLEAR", "ST"),
+    "coal": ("COAL", "ST"),
+    "lignite": ("COAL", "ST"),
+    "CCGT": ("NATURAL_GAS", "CC"),
+    "OCGT": ("NATURAL_GAS", "GT"),
+    "gas": ("NATURAL_GAS", "CC"),
+    "oil": ("DISTILLATE_FUEL_OIL", "GT"),
+    "geothermal": ("GEOTHERMAL", "BT"),
+    "biomass": ("OTHER_BIOMASS_SOLIDS", "ST"),
+    "bioenergy": ("OTHER_BIOMASS_SOLIDS", "ST"),
+    "waste": ("MUNICIPAL_WASTE", "ST"),
+    "hydrogen": ("OTHER_GAS", "FC"),
+}
+
+STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
+    "solar": ("RenewableDispatch", "PVe"),
+    "solar-utility": ("RenewableDispatch", "PVe"),
+    "onwind": ("RenewableDispatch", "WT"),
+    "on-wind": ("RenewableDispatch", "WT"),
+    "offwind-ac": ("RenewableDispatch", "WS"),
+    "offwind-dc": ("RenewableDispatch", "WS"),
+    "off-wind": ("RenewableDispatch", "WS"),
+    "solar-rooftop": ("RenewableNonDispatch", "PVe"),
+    "hydro": ("HydroDispatch", "HY"),
+    "PHS": ("EnergyReservoirStorage", "PS"),
+}
+
+
+def write_user_mappings(
+    thermal: dict[str, tuple[str, str]],
+    path: Path = Path("user_mappings.yaml"),
+    *,
+    prime_mover: dict[str, tuple[str, str]] | None = None,
+    skipped: dict[str, str] | None = None,
+) -> None:
+    entries: list[dict[str, str]] = [
+        {
+            "pypsa_carrier": carrier,
+            "sienna_component_type": "ThermalStandard",
+            "sienna_fuel_type": fuel_type,
+            "sienna_prime_mover_type": prime_mover_type,
+        }
+        for carrier, (fuel_type, prime_mover_type) in thermal.items()
+    ]
+    for carrier, (component_type, prime_mover_type) in (prime_mover or {}).items():
+        entries.append(
+            {
+                "pypsa_carrier": carrier,
+                "sienna_component_type": component_type,
+                "sienna_prime_mover_type": prime_mover_type,
+            }
+        )
+    for carrier, component_type in (skipped or {}).items():
+        entries.append({"pypsa_carrier": carrier, "sienna_component_type": component_type})
+    path.write_text(yaml.dump({"carriers": entries}, sort_keys=False), encoding="utf-8")
+
+
+@given("a user mappings file with all standard carriers")
+def given_standard_mapping() -> None:
+    write_user_mappings(STANDARD_CARRIER_MAP, prime_mover=STANDARD_PRIME_MOVER_MAP)
+
+
 def invoke_translate(
     monkeypatch: pytest.MonkeyPatch,
     src: str,

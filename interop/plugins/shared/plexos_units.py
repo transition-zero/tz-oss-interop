@@ -15,6 +15,8 @@ from typing import Any, NamedTuple
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_GJ,
+    UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_DOLLARS_PER_TONNE,
     UNIT_GJ,
@@ -28,6 +30,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW_PER_MINUTE,
     UNIT_MWH,
     UNIT_PERCENT,
+    UNIT_YEARS,
 )
 from interop.plugins.shared.plexos_constants import PlexosCollection, PlexosProperty
 from interop.plugins.shared.warning_text import name_a_few
@@ -53,7 +56,7 @@ _MILLION = 1_000_000.0
 _KM_PER_MILE = 1.609344
 
 # One unit written two ways, so the conversion table states each of them once.
-_SPELLINGS = {"MMBtu": "MMBTU", "hr": "h"}
+_SPELLINGS = {"MMBtu": "MMBTU", "hr": "h", "year": "yr", "years": "yr", "yrs": "yr"}
 
 # The unit each property is converted into as it stages, which is the one every mapping
 # reading it already assumes. A property absent here stages as the model wrote it.
@@ -75,6 +78,10 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.GENERATORS, PlexosProperty.MIN_PUMP_LOAD): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.LOAD_POINT): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.START_COST): UNIT_DOLLARS,
+    (PlexosCollection.GENERATORS, PlexosProperty.BUILD_COST): UNIT_DOLLARS_PER_MW,
+    (PlexosCollection.GENERATORS, PlexosProperty.FOM_CHARGE): UNIT_DOLLARS_PER_MW_YEAR,
+    (PlexosCollection.GENERATORS, PlexosProperty.ECONOMIC_LIFE): UNIT_YEARS,
+    (PlexosCollection.GENERATORS, PlexosProperty.TECHNICAL_LIFE): UNIT_YEARS,
     (PlexosCollection.START_FUELS, PlexosProperty.OFFTAKE_AT_START): UNIT_GJ,
     (PlexosCollection.LINES, PlexosProperty.MAX_FLOW): UNIT_MW,
     (PlexosCollection.LINES, PlexosProperty.MIN_FLOW): UNIT_MW,
@@ -87,6 +94,10 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.BATTERIES, PlexosProperty.MAX_POWER): UNIT_MW,
     (PlexosCollection.BATTERIES, PlexosProperty.CAPACITY): UNIT_MWH,
     (PlexosCollection.BATTERIES, PlexosProperty.DURATION): UNIT_HOURS,
+    (PlexosCollection.BATTERIES, PlexosProperty.BUILD_COST): UNIT_DOLLARS_PER_MW,
+    (PlexosCollection.BATTERIES, PlexosProperty.FOM_CHARGE): UNIT_DOLLARS_PER_MW_YEAR,
+    (PlexosCollection.BATTERIES, PlexosProperty.ECONOMIC_LIFE): UNIT_YEARS,
+    (PlexosCollection.BATTERIES, PlexosProperty.TECHNICAL_LIFE): UNIT_YEARS,
     (PlexosCollection.STORAGES, PlexosProperty.MAX_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.INITIAL_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.NATURAL_INFLOW): UNIT_MW,
@@ -157,6 +168,17 @@ _FACTOR_TO_CANONICAL: dict[str, dict[str, float]] = {
     UNIT_KV: {UNIT_KV: 1.0, "V": 1.0 / _THOUSAND, "MV": _THOUSAND},
     UNIT_KM: {UNIT_KM: 1.0, "m": 1.0 / _THOUSAND, "mile": _KM_PER_MILE},
     UNIT_DOLLARS: {UNIT_DOLLARS: 1.0, "$000": _THOUSAND},
+    UNIT_DOLLARS_PER_MW: {
+        UNIT_DOLLARS_PER_MW: 1.0,
+        "$/kW": _THOUSAND,
+        "$/GW": 1.0 / _THOUSAND,
+    },
+    UNIT_DOLLARS_PER_MW_YEAR: {
+        UNIT_DOLLARS_PER_MW_YEAR: 1.0,
+        "$/kW/yr": _THOUSAND,
+        "$/GW/yr": 1.0 / _THOUSAND,
+    },
+    UNIT_YEARS: {UNIT_YEARS: 1.0},
 }
 
 # A currency symbol, optionally prefixed by up to two letters as in A$. Cents and named

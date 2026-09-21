@@ -20,6 +20,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
 )
+from interop.plugins.sinks._sienna_files import validate_refs
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 # Internal-only columns in TIME_SERIES_ASSOCIATION that are not part of the JSON schema.
@@ -189,7 +190,7 @@ class EmitSiennaSystemJson(Sink):
         if buses_df is None:
             return [], {}
         referenced_areas = buses_df[SiennaACBusCol.AREA].drop_nulls().unique().to_list()
-        _validate_refs(SiennaACBusCol.AREA, referenced_areas, set(area_ids), "buses -> areas")
+        validate_refs(SiennaACBusCol.AREA, referenced_areas, set(area_ids), "buses -> areas")
         components: list[dict[str, Any]] = []
         bus_ids: dict[str, int] = {}
         for row in buses_df.iter_rows(named=True):
@@ -216,7 +217,7 @@ class EmitSiennaSystemJson(Sink):
         """
         if df is None:
             return []
-        _validate_refs(name_col, df[name_col].unique().to_list(), set(bus_ids), context)
+        validate_refs(name_col, df[name_col].unique().to_list(), set(bus_ids), context)
         components: list[dict[str, Any]] = []
         for row in df.iter_rows(named=True):
             component: dict[str, Any] = {k: v for k, v in row.items() if k != name_col}
@@ -262,7 +263,7 @@ class EmitSiennaSystemJson(Sink):
             .unique()
             .to_list()
         )
-        _validate_refs(
+        validate_refs(
             f"{SiennaLineCol.BUS0}/{SiennaLineCol.BUS1}",
             referenced_buses,
             set(bus_ids),
@@ -291,18 +292,4 @@ class EmitSiennaSystemJson(Sink):
             ts_df.select(emit_cols)
             .with_row_index(name=SiennaTimeSeriesAssociationCol.ID, offset=1)
             .iter_rows(named=True)
-        )
-
-
-def _validate_refs(
-    ref_col: str,
-    needed: list[str],
-    available: set[str],
-    context: str,
-) -> None:
-    missing = set(needed) - available
-    if missing:
-        raise ValueError(
-            f"{context}: {len(missing)} reference(s) in {ref_col!r} "
-            f"not found in parent table: {sorted(missing)}"
         )

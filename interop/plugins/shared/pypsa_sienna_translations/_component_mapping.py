@@ -37,7 +37,7 @@ class DerivedSeries:
 
 
 # A skip reads the mapping's own source series, which is None where the network states none.
-SkipForSeries = Callable[[pl.LazyFrame | None], SkipRule]
+SkipsForSeries = Callable[[pl.LazyFrame | None], Sequence[SkipRule]]
 
 
 @dataclass(frozen=True)
@@ -67,7 +67,7 @@ class ComponentMapping:
     schema: dict[str, pl.DataType | type[pl.DataType]]
     sienna_component: SiennaComponent
     time_series_attr: str | None = None
-    skip: SkipForSeries | None = None
+    skips: SkipsForSeries | None = None
     derived_series: DerivedSeries | None = None
     build_ts_association: (
         Callable[[pl.DataFrame, pl.DataFrame, TimeSeriesInfo], pl.DataFrame] | None

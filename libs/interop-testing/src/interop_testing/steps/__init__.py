@@ -16,6 +16,7 @@ pytest_plugins = [
     "interop_testing.steps.pypsa_network",
     "interop_testing.steps.caiso_stack_model",
     "interop_testing.steps.sienna_system",
+    "interop_testing.steps.sienna_portfolio",
     "interop_testing.steps.sienna_results",
     "interop_testing.steps.plexos_model",
     "interop_testing.steps.plexos_resources",
