@@ -72,11 +72,162 @@ The REPL menu entry for an action resolves the matching use-case port from the D
 - `ruff` for linting and formatting.
 - Typed (mypy strict) where practical.
 - Never fail silently, but prefer reporting to stopping. See "A model's data never stops a translation" below.
-- Function and method names are verb phrases (`build_x`, `stage_y`, `read_z`, `choose_z`), not nouns (`x_frame`, `carrier_lookup`, `first_existing`). Boolean queries may use `is_`/`has_`/`wants_`.
+- Names come from the closed verb table in "Names" below. A function or a method takes a verb from that table, and never a noun.
 - Prose (docstrings, comments, PR descriptions) uses plain English: say what something is or does directly, in short sentences, rather than dense or convoluted phrasing.
 - Never write comments or docstrings that explain or refer to an issue, ticket, or unit of work. Code prose describes the code as it stands: it must not mention issue/ticket identifiers (e.g. `ISSUE-186`, `ENG-7311`), must not say "this ticket" or "component tickets", and must not justify what a given issue owns, defers, or leaves to another issue. Delete such comments outright rather than rephrasing them; the code stands on its own and the rationale belongs in the PR description. For example, never write "Buses are the real subject of ISSUE-186; this maps only what a bus-referencing component needs … it leaves the node's region location and voltage to ISSUE-186 and applies PyPSA's defaults meanwhile."
 - Never name a specific real-world model in the general translator. This is a general-purpose translator: no behaviour, default, constant, threshold, prompt, docstring, comment, or test fixture in the shared translation path may be described, justified, or illustrated by one particular model, utility, or ISO (e.g. CAISO, ERCOT, NEM). Say what the code does in the source format's own vocabulary and explain a value by the property it comes from, never by the model it was observed in. Never write "exact = true mixed-integer, matches CAISO" or "the CAISO model ties Spin to 0.012"; write what the option does and where the number comes from. A named plugin that reads one publisher's format is the one exception, and its name belongs in the plugin, not in the shared path.
 - Prefer a small named object (a `NamedTuple` or dataclass with named fields) over a bare tuple when the tuple's positions are not self-evident at the call site.
+
+## Names
+
+This section holds the whole name vocabulary. A name must tell the reader what a call
+does, and what happens when the thing that the name states is absent.
+
+### The verb table
+
+Each row answers two questions. What does the call do? What happens when the thing that
+it names is absent? `no absent case` means the call looks nothing up, so nothing can be
+absent. That column does not say whether the call can fail for another reason. A call
+that touches the disk can still raise.
+
+| Verb | Means | When absent | Do not use for |
+| --- | --- | --- | --- |
+| `stage_` | A source copies external input into `staging_dir` and builds a `State` | raises | a step, which changes a `State` in memory |
+| `read_` | Bytes, rows or fields from a named source | raises | an in-memory projection |
+| `load_` | A whole model or config from a source, parsed and checked | raises | raw bytes, which is `read_` |
+| `parse_` | Text or a raw mapping into an object | raises | a call that opens a file, which is `read_` |
+| `get_` | One existing thing, by key | **raises** | a read that can answer nothing, which is `find_` |
+| `find_` | One thing, by key | **returns `None`** | a read whose absence is a fault |
+| `list_` | Every known member, as a `list` | empty list | one member; a scalar |
+| `choose_` | The winner among candidates, by a stated rule | returns `None` | a read by key, which is `get_` or `find_` |
+| `build_` | Assemble a value or a wired object, in memory | no absent case | a destination column, which is `map_` or `derive_` |
+| `map_` | Translate source rows into destination rows, and record one event for each | no absent case | a value with no event behind it |
+| `derive_` | Compute one destination value from source values, and record the event | no absent case | a value the source states directly, which is `map_` |
+| `convert_` | The same quantity, in different units | no absent case | a different quantity, which is `derive_` |
+| `enrich_` | Add computed columns to a table, and keep its rows | no absent case | a table with different rows, which is `reshape_` |
+| `reshape_` | The same values, in a different table shape | no absent case | a change to a value |
+| `express_` | Build a `pl.Expr` that a later `with_columns`, `filter` or `select` evaluates | no absent case | a value the call computes itself, which is `build_` or `derive_` |
+| `add_` | Attach a new member to a container that exists | raises on a duplicate | the container itself, which is `build_` |
+| `set_` | Replace the value of a named slot, in memory | writes it anyway | a file, which is `write_` |
+| `fill_` | Give a value to each empty slot | no absent case | a slot that already states a value |
+| `drop_` | Take rows or columns out of a table | returns, never raises | a file, which is `delete_` |
+| `write_` | Persist bytes or an object to a named place | no absent case | an in-memory change, which is `set_` |
+| `delete_` | Remove a file or a directory | raises | a container in memory, which is `drop_` |
+| `copy_` | Duplicate a file or a directory | raises | a copy in memory |
+| `record_` | Append a `TranslationEvent` through the recorder | no absent case | the console, which is `warn_` |
+| `warn_` | Write one `log.warning`, and name at most three components | no absent case | the audit trail, which is `record_` |
+| `report_` | Record the events **and** write the warning | no absent case | one of the two alone |
+| `reject_` | A guard. Raises when the named condition holds | no absent case | a call that returns a value |
+| `require_` | **Return the thing**, or raise | raises | a guard that returns nothing, which is `reject_` |
+| `is_` / `has_` / `can_` / `wants_` | A predicate, returning `bool` | answers `False` | a call that raises; a call that returns a `pl.Expr`, which is `express_` |
+| `normalise_` | The canonical form of a value | raises | a check that returns nothing |
+| `serialise_` | A model, in its wire or storage shape | no absent case | a read back, which is `parse_` |
+| `render_` | A report, in its output format, through a report port | no absent case | data a later node reads |
+
+A domain verb is not in the table. A name can use a domain verb when it names an action
+of the domain: `solve`, `translate`, `compare`, `discover` and `init`. Every other verb
+must come from the table.
+
+### The words that leave the vocabulary
+
+| Out | Use |
+| --- | --- |
+| `make_`, `assemble_`, `construct_` | `build_` |
+| `select_`, `resolve_`, `locate_`, `lookup_`, `fetch_`, `retrieve_` | `get_`, `find_` or `choose_` |
+| `check_`, `verify_`, `refuse_` | `reject_`, or a predicate |
+| `collect_` | `build_` or `list_`, because Polars owns `.collect()` |
+| `emit_` | `write_` in Python. The sink plugin names keep `emit_`. |
+| `save_` | `write_` |
+
+### The nouns
+
+- A `pl.DataFrame` or a `pl.LazyFrame` is a **table**. Do not call it a frame.
+- A `list[dict]` is **rows**.
+- A value of type `Location` is a **location**
+  (`interop/ports/outbound/filesystem.py`). A `FilesystemPort` takes one and gives one
+  back; the port is not itself a location.
+- A name that stands for data in `State` keeps the `source_` or `destination_` prefix
+  that `State` uses.
+- Do not name a type `...Set` unless it holds a `set`.
+
+### A property against a method
+
+- A property takes a noun name. A property that answers `bool` takes `is_` or `has_`.
+- A call with parentheses takes a verb. The test is what the caller writes, and not what
+  the signature holds. `run.status` is right and `run.status()` is wrong.
+- A method with a noun name has two ways out. Make it a property when it answers a
+  question, takes no argument, costs almost nothing and changes nothing. Give it a verb
+  in every other case.
+
+### A name must not abbreviate
+
+Write the whole word. A single letter is for a small loop and for nothing else. A name
+that mirrors an external vocabulary is not ours to rename. PyPSA states the attribute
+`idx` and `argparse` states the keyword `dest`, so both keep their form.
+
+### A factory must say that it builds
+
+A classmethod called `of(...)` or `at(...)` reads as a setting on the class. It does not
+tell the reader that a new object comes back. A call that makes an object in memory
+starts with `build_`. The rest of the name says what the call makes.
+
+### How to add a verb
+
+The table is the whole vocabulary. Add a new verb to the table in the same pull request
+that first uses it. Never use a new verb first and write it down later, because the next
+author reads the table and not the code. A new verb must earn its row:
+
+1. No verb in the table already holds that meaning.
+2. The new row can say what happens when the thing is absent.
+
+Fill in all four columns. Then say in the pull request which verb you rejected, and why.
+
+### The exceptions
+
+A rule with no written exception gets broken quietly. These names disagree with the rules
+above, and they are correct as they stand.
+
+- **A plugin `name` is a published key.** A pipeline YAML file and a downstream project
+  both name it. `stage_plexos_xml`, `plexos_to_pypsa_map_buses` and
+  `emit_power_simulations_system_json` are three of them. A validator named for the
+  component that it checks, such as `pypsa_generators`, is correct.
+- **The plugin protocols keep their method names.** `Source.load`,
+  `StagedSource.load_into_state`, `TranslationStep.run`, `Sink.write` and
+  `Validator.validate` are the contract in `interop/core/pipeline.py`. A downstream
+  project implements them.
+- **The outbound ports keep their method names.** The whole `FilesystemPort` protocol is
+  the contract that an adapter implements: `read_bytes`, `write_bytes`, `open_read`,
+  `open_write`, `copy_tree`, `can_read`, `locate` and `resolve`. `ReportingPort.render`
+  is the same. The table would rename four of them. `open_` is not a verb in the table,
+  and `locate_` and `resolve_` are words that leave the vocabulary. An adapter
+  outside this repository implements the port, so all eight stay.
+- **`fs` keeps its short form.** It names the `FilesystemPort` value. "Quality gates"
+  below states `self._fs`, and `interop/lints/plugin_filesystem.py` holds the constant
+  `FS_ATTRIBUTE = "_fs"`, so the lint fails a rename. Use `fs` for this one type, and
+  write the whole word everywhere else.
+- **The Dishka container names a provider for the type that it gives.**
+  `interop/di/container.py` holds `@provide` methods such as `filesystem` and `solver`.
+  Dishka reads the return type, and no reader calls the method.
+- **`Translation.make_events` keeps its name.** "Translation utilities" below documents
+  it, and every translation module states it. It changes everywhere at once, or not at
+  all.
+- **A pydantic validator keeps `_validate_...`.** Pydantic calls it, and no reader calls
+  it. `model_post_init` and every pydantic field name also keep their form.
+- **The shared utility surface keeps its names.**
+  `interop/plugins/shared/translation_runner.py` publishes `Translation`, `make_events`,
+  `apply_translations`, `filter_component`, `finalise`, `SkipReport` and `SkipRule`.
+  "Translation utilities" below documents all seven, and every translation module states
+  them.
+- **A BDD step function is named for its Gherkin phrase.**
+  `libs/interop-testing/src/interop_testing/steps/` holds `given_` and `assert_`
+  functions. Each one takes its name from the scenario line that it binds, so
+  `given_env_var_set` is correct.
+
+### What a rename must not change
+
+No published name changes. A plugin `name`, a pipeline YAML key and a params field all
+stay as they are. A column name in a destination table and a key in `extensions.json`
+also stay.
 
 ## A model's data never stops a translation
 
