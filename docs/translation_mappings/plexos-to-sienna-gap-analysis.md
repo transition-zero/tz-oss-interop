@@ -1,5 +1,36 @@
 # What a PLEXOS model states that Sienna has no home for
 
+## The short version
+
+Most of what a PLEXOS model loses on the way to Sienna is a thing Sienna was never meant to
+hold. Two groups cover nearly all of it, and neither is a surprise:
+
+- **A `Constraint` you wrote yourself.** SiennaSchemas states no generic constraint, so a
+  weighted sum over objects you name has nowhere to go.
+- **The settings that tune a PLEXOS solve.** A SiennaSchemas document states a system, and
+  never a study, so a random number seed or a penalty on a relaxed constraint has no home and
+  needs none.
+
+**Ten properties are the exception.** Each one is a property of a generating unit, and each
+one is the kind of thing a power system model would be expected to carry:
+
+| The property | What it states |
+| --- | --- |
+| `Marginal Loss Factor` | The factor that derates what a unit delivers to the market |
+| `Aux Incr` | The auxiliary load a unit draws for each MW it makes |
+| `Firm Capacity` | The share of its capacity that counts towards a reserve margin |
+| `Max Capacity Factor`, `Min Capacity Factor`, `Min Capacity Factor Year` | Bounds on the share of the year it may run at |
+| `Max Energy Day`, `Max Starts Day` | How much it may make, and how often it may start, in one day |
+| `Max Replacement` | How much plant one maintenance schedule may take out at once |
+| `Run Up Rate` | The rate it takes from zero up to its minimum stable level |
+
+[On a `Generator`](#on-a-generator) gives the schema evidence for each one, and the model each
+was found in.
+
+Four other rows are also plant data, rather than a market rule or a solver setting: the loss
+curve of an AC line, the blend share of a unit that burns two fuels at once, a daily limit on
+storage cycles, and the rule that a unit may serve one reserve or another and never both.
+
 ## What this document is for
 
 tz-oss-interop translates a PLEXOS model into a Sienna one. Two pipelines do it, and this document
