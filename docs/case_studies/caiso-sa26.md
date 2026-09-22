@@ -201,7 +201,7 @@ snapshot reach `reserves.parquet` beside it. Nothing applies them.
 The run warns that 4 generators carry an outage profile in some of the three replications but
 not in all of them, and leaves those four profiles out. Every replication of an ensemble must
 hold the same components, so a profile that reaches only some of them is left out of all of
-them. Those four generators run at full output in every replication.
+them. Those four generators stay available at full output in every replication.
 
 To prove that a system dispatches, run `translate` a second time over one replication:
 
@@ -311,8 +311,8 @@ hours, and the deepest hour is 4,089 MW short. That shortfall is why the plain c
 solve: a `PowerLoad` must be served in full, so a system that cannot serve it has no solution
 at all. Two replications behave the same way, so the shortfall belongs to the month rather
 than to one draw. Run the reliability chain for September. Only that chain adds a load
-shedding resource, so a plain run drops the `VoLL` of each region and gets a system a solve
-cannot cut.
+shedding resource. A plain run drops the `VoLL` of each region, and `decisions.md` records
+each drop, so the system it writes holds no resource the solve can cut.
 
 The Sienna objective is negative because a `LoadCost` prices the load that is served rather
 than the load that is cut, and PowerSimulations applies it with a negative multiplier. PyPSA

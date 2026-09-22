@@ -19,8 +19,10 @@ Three other kinds of loss exist. None of them is here.
 | The PyPSA hub between the two legs cannot carry the value | [Translation from PLEXOS to PyPSA](translation-from-plexos-to-pypsa.md) |
 | PowerSimulations.jl solves a different problem from the one PLEXOS solves | [The solve tutorial](../tutorials/solve.md) and the case studies |
 
-A value that reaches the `extensions.json` sidecar is not lost, so it is not here either.
-The sidecar carries each `Reserve` and each `Constraint` that the translator can read.
+The `extensions.json` sidecar carries each `Reserve` and each `Constraint` that the
+translator can read. The sidecar is not part of the SiennaSchemas document, so a record in it
+is not a Sienna home. A `Reserve` is not here, because SiennaSchemas states three reserve
+types. A `Constraint` is here, because SiennaSchemas states no generic constraint.
 
 For what the translation keeps, refer to
 [Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md) and to
@@ -62,7 +64,7 @@ A `plexos-to-sienna` run builds no Sienna component from any class below.
 
 | What your model states | Why Sienna has no home | Seen in |
 | --- | --- | --- |
-| `Constraint`. A weighted sum over named objects, held above or below a right-hand side. | SiennaSchemas states no generic constraint. No type in `Core/`, `Operations/`, `Investments/`, `TimeSeries/` or `Dynamics/` holds a field that weights one component inside a sum. The seven `Investments/Requirements/` types are fixed policy forms, and each one holds the whole portfolio or a named member list, not a weighted sum. | CAISO 373, AEMO 186, SEM 18 |
+| `Constraint`. A weighted sum over named objects, held above or below a right-hand side. | SiennaSchemas states no generic constraint. No type in `Core/`, `Operations/`, `Investments/`, `TimeSeries/` or `Dynamics/` holds a field that weights one component inside a sum. The seven `Investments/Requirements/` types are fixed policy forms. Each one holds the whole portfolio, or takes one `Investments/Associations/RequirementAssociation.json` row for each member, and no row holds a weight. | CAISO 373, AEMO 186, SEM 18 |
 | `Decision Variable`. A variable of the user's own, with an upper bound, a lower bound and a coefficient in the objective. | SiennaSchemas states no user variable. No type holds a bound or an objective coefficient of the user's own. | CAISO 3 |
 | `Timeslice`. A named set of periods, which a value is stated against. | SiennaSchemas states no timeslice. A `TimeSeriesAssociation` names a time axis by its start, its resolution and its length, and no type groups periods under a name. | AEMO 29, SEM 18, CAISO 3 |
 | `Company`. The owner of a plant. | SiennaSchemas states no owner type and no owner field. The `owner_id` field of a `TimeSeriesAssociation` names the component the series belongs to, and not a company. | SEM 36, AEMO 4 |
@@ -76,7 +78,7 @@ table above is also absent from the portfolio. One row differs.
 
 | What your model states | Why Sienna has no home | Seen in |
 | --- | --- | --- |
-| A `Constraint` that weights a named subset of the model. | The `Investments/Requirements/` types hold a cap, a floor, a share and a reserve margin. Each one takes an eligible member list through `Investments/Associations/RequirementAssociation.json`, and no field holds a per-member weight. So a constraint whose members carry different coefficients has no home. | AEMO 84 of 186 |
+| A `Constraint` that weights a named subset of the model. | The `Investments/Requirements/` types hold a cap, a floor, a share and a reserve margin. Each one takes one `Investments/Associations/RequirementAssociation.json` row for each member, and that row states a `requirement_id` and an `entity_id` and nothing else. No field holds a per-member weight. So a constraint whose members carry different coefficients has no home. | AEMO 84 of 186 |
 
 ---
 
