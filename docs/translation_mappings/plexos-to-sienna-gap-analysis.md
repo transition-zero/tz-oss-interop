@@ -2,7 +2,7 @@
 
 ## What this document is for
 
-interop translates a PLEXOS model into a Sienna one. Two pipelines do it, and this document
+tz-oss-interop translates a PLEXOS model into a Sienna one. Two pipelines do it, and this document
 covers both:
 
 - `plexos-to-sienna` writes a **dispatch system**. That is a `system.json` file holding the
@@ -30,8 +30,8 @@ some other way.
 | **SiennaSchemas** | The published definition of what a Sienna file may hold. Refer to [Where the evidence comes from](#where-the-evidence-comes-from). |
 | **A dispatch** | What `plexos-to-sienna` writes, and what PowerSimulations.jl then solves. |
 | **A portfolio** | What `plexos-to-sienna-investments` writes beside the system, for an expansion plan. |
-| `extensions.json` | A file interop writes beside `system.json`. It holds values that interop reads and Sienna has no field for, so that a later run of ours can read them back. Sienna never reads it. |
-| `decisions.md` | A file interop writes beside the output of every run. It holds one row for each component and each field the run left out, with the reason. |
+| `extensions.json` | A file tz-oss-interop writes beside `system.json`. It holds values that tz-oss-interop reads and Sienna has no field for, so that a later run of ours can read them back. Sienna never reads it. |
+| `decisions.md` | A file tz-oss-interop writes beside the output of every run. It holds one row for each component and each field the run left out, with the reason. |
 
 ## What counts as a row here
 
@@ -111,7 +111,7 @@ searched.
 
 ### The three runs
 
-Each run used interop 0.1.0, and the model and the pipeline below. Each case study under
+Each run used tz-oss-interop 0.1.0, and the model and the pipeline below. Each case study under
 [`docs/case_studies/`](../case_studies/) gives the download and the checksum of its model.
 
 | Model | Pipeline | What it gives this document |
