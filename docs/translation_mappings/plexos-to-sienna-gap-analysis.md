@@ -19,9 +19,19 @@ Two other kinds of loss exist. Neither of them is here.
 | PowerSimulations.jl solves a different problem from the one PLEXOS solves | [The solve tutorial](../tutorials/solve.md) and the case studies |
 
 The `extensions.json` sidecar carries each `Reserve` and each `Constraint` that the
-translator can read. The sidecar is not part of the SiennaSchemas document, so a record in it
-is not a Sienna home. A `Reserve` is not here, because SiennaSchemas states three reserve
-types. A `Constraint` is here, because SiennaSchemas states no generic constraint.
+translator can read. The sidecar is our own file, and Sienna does not read it, so a record in
+it is not a Sienna home. The two objects go to the same file, and they are not the same kind
+of loss. What SiennaSchemas states tells them apart:
+
+- **A `Reserve` is not in this document.** Your model asks for 75 MW of spinning reserve, and
+  names the generators that can supply it. `Operations/Service/OnlineReserve.json` states a
+  `requirement` in MW and a `reserve_direction` of `UP`, and one
+  `Operations/Associations/ServiceAssociation.json` row names each of those generators. Every
+  part of what your model said has somewhere to go, and this translation does not write it
+  yet, so it is a ticket.
+- **A `Constraint` is in this document.** Your model holds 0.5 times the output of one unit,
+  plus 1.0 times the output of another, at or below 250 MW. No SiennaSchemas type states a
+  weight against one component, so no translation can write this constraint.
 
 For what the translation keeps, refer to
 [Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md) and to
