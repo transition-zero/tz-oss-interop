@@ -11,12 +11,11 @@ A row is here only if both of these are true:
 
 ## What this document does not hold
 
-Three other kinds of loss exist. None of them is here.
+Two other kinds of loss exist. Neither of them is here.
 
 | The loss | Where it belongs |
 | --- | --- |
-| SiennaSchemas holds the thing, and this translation does not write it yet | A ticket. The pull request that wrote this document lists each one. |
-| The PyPSA hub between the two legs cannot carry the value | [Translation from PLEXOS to PyPSA](translation-from-plexos-to-pypsa.md) |
+| SiennaSchemas holds the thing, and this translation does not write it yet | A ticket. The pull request that wrote this document lists each one. The route through a PyPSA network is our choice, so a value the route loses is a ticket too. |
 | PowerSimulations.jl solves a different problem from the one PLEXOS solves | [The solve tutorial](../tutorials/solve.md) and the case studies |
 
 The `extensions.json` sidecar carries each `Reserve` and each `Constraint` that the
