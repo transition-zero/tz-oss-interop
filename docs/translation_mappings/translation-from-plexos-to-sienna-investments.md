@@ -8,8 +8,8 @@ portfolio. It gives the source of each field.
 > days or their weights. It does not translate an expansion of a transmission line, and it
 > writes no aggregation of candidates by category. Refer to
 > [Not translated](#not-translated) and to
-> [the gap analysis](plexos-to-sienna-gap-analysis.md), which states what each loss does to an
-> expansion.
+> [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
+> states that the Sienna investments schema holds no type and no field for.
 
 One run of `plexos-to-sienna-investments` writes **two documents**. `system.json` is the base
 power system: the fleet that already runs. `portfolio.json` is the expansion problem: the

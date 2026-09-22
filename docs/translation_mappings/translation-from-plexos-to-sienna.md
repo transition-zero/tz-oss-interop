@@ -9,8 +9,8 @@ It gives the source of each field.
 > [the `plexos-to-sienna-investments` pipeline](translation-from-plexos-to-sienna-investments.md)
 > writes. This pipeline does not translate custom constraints or hydro cascades, and it does
 > not carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
-> [the gap analysis](plexos-to-sienna-gap-analysis.md), which states what each loss does to a
-> dispatch and what the portfolio leaves out of an expansion.
+> [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
+> states that SiennaSchemas holds no type and no field for.
 
 The `plexos-to-sienna` pipeline runs through a PyPSA network on the way. This document does
 not describe that network. It states the mapping as one step, because that is what you give
@@ -193,8 +193,10 @@ which is the price the PyPSA side of the same run sheds at.
 The cost is a `LoadCost` whose `variable` is a linear `CostCurve` in natural units, holding
 the price as its proportional term. PowerSimulations applies that curve to the power the
 solve serves rather than to the power it cuts, with a negative multiplier, so the objective
-number it reports is not the same quantity as a PyPSA objective. Refer to
-[the gap analysis](plexos-to-sienna-gap-analysis.md#a-sienna-objective-and-a-pypsa-objective-do-not-compare).
+number it reports is not the same quantity as a PyPSA objective. The two solves shed the same
+energy at the same price, and PyPSA adds the cost of the energy it cuts while Sienna subtracts
+the cost of the energy it serves. So the dispatches agree and the two objective numbers do not.
+Do not compare them.
 
 ## `Line` → `Line` or `TwoTerminalGenericHVDCLine`
 
@@ -419,8 +421,9 @@ prompt:
 | `linearised` | `ThermalBasicDispatch` | Neither the start cost nor the time limits. There is no on/off variable at all. |
 
 PowerSimulations has no relaxed unit commitment formulation, so the answer `linearised` means
-something different here from what it means on the PyPSA path. Refer to
-[the gap analysis](plexos-to-sienna-gap-analysis.md#unit-commitment-relaxed).
+something different here from what it means on the PyPSA path. On the PyPSA path, `linearised`
+keeps the start cost and the minimum up and down times, and relaxes the on/off variable to a
+number between 0 and 1. Here it drops all three. Answer `exact` to keep them.
 
 ---
 

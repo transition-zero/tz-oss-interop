@@ -199,8 +199,9 @@ All seven CAISO reserves reach `extensions.json`, and the six whose requirement 
 snapshot reach `reserves.parquet` beside it. Nothing applies them.
 
 The run warns that 4 generators carry an outage profile in some of the three replications but
-not in all of them, and leaves those four profiles out. Refer to
-[the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#a-profile-that-reaches-only-some-replications).
+not in all of them, and leaves those four profiles out. Every replication of an ensemble must
+hold the same components, so a profile that reaches only some of them is left out of all of
+them. Those four generators stay available at full output in every replication.
 
 To prove that a system dispatches, run `translate` a second time over one replication:
 
@@ -238,9 +239,9 @@ Read the unserved energy from the solve output. The power each load was asked fo
 `results/parameters/ActivePowerTimeSeriesParameter__InterruptiblePowerLoad.csv`, in per-unit
 of the 100 MVA system base; the power the solve served is in
 `results_wide/variables/ActivePowerVariable__InterruptiblePowerLoad.csv`, in MW. Multiply the
-first by 100, subtract the second, and sum over the month. No report collects it for you.
-Refer to
-[the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#a-reliability-solve-reports-its-unserved-energy-in-the-results-files).
+first by 100, subtract the second, and sum over the month. No report collects it for you,
+because the results pipeline reads the parameter file alone and the shortfall needs both
+files.
 
 ## Compare against the published stack model
 
@@ -309,14 +310,14 @@ The reliability solve cuts 7,467 MWh, all of it at `SDGE_load`, in 2 of the mont
 hours, and the deepest hour is 4,089 MW short. That shortfall is why the plain chain does not
 solve: a `PowerLoad` must be served in full, so a system that cannot serve it has no solution
 at all. Two replications behave the same way, so the shortfall belongs to the month rather
-than to one draw. Run the reliability chain for September. This is the loss
-[the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#load-shedding-on-a-plain-run)
-describes, seen on a real model.
+than to one draw. Run the reliability chain for September. Only that chain adds a load
+shedding resource. A plain run drops the `VoLL` of each region, and `decisions.md` records
+each drop, so the system it writes holds no resource the solve can cut.
 
 The Sienna objective is negative because a `LoadCost` prices the load that is served rather
-than the load that is cut, and PowerSimulations applies it with a negative multiplier. Do not
-compare it against a PyPSA objective; refer to
-[the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#a-sienna-objective-and-a-pypsa-objective-do-not-compare).
+than the load that is cut, and PowerSimulations applies it with a negative multiplier. PyPSA
+adds the cost of the energy it cuts, so the two numbers are not the same quantity. Do not
+compare them.
 
 The PyPSA path reports zero unserved energy for the same month, so the two paths disagree
 here. Three differences could account for it, and we did not measure which: PLEXOS's import

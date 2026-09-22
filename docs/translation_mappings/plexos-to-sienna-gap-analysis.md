@@ -1,494 +1,324 @@
-# What a PLEXOS to Sienna translation loses
+# What a PLEXOS model states that Sienna has no home for
 
-This document lists each thing a PLEXOS to Sienna run loses.
+## The short version
 
-For what the translation keeps, refer to
-[Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md), and for the
-portfolio to
+This document holds 36 rows. Most of them are things Sienna was never meant to hold, and
+three groups cover those:
+
+| Group | Rows | Why it is no surprise |
+| --- | --- | --- |
+| A `Constraint` you wrote yourself, and a `Decision Variable` | 6 | SiennaSchemas states no generic constraint and no user variable, so a weighted sum over objects you name has nowhere to go. |
+| The settings that tune a PLEXOS solve or a PLEXOS study, and the form it reads a curve in | 5 | A SiennaSchemas document states a system, and never a study. |
+| How a market settles a dispatch: a price cap, an uplift rule, a wheeling charge, a settlement model, a tax on a fuel | 6 | SiennaSchemas states the physical system and what it costs to run, and holds no market design. |
+
+Four more rows name a contract term, an owner or a named set of periods, which are all things
+a Sienna system has no place for.
+
+**The remaining 14 rows are plant and network data, and those are the ones worth knowing
+about.** Ten of them are properties of a generating unit:
+
+| The property | What it states |
+| --- | --- |
+| `Marginal Loss Factor` | The factor that derates what a unit delivers to the market |
+| `Aux Incr` | The auxiliary load a unit draws for each MW it makes |
+| `Firm Capacity` | The share of its capacity that counts towards a reserve margin |
+| `Max Capacity Factor`, `Min Capacity Factor`, `Min Capacity Factor Year` | Bounds on the share of the year it may run at |
+| `Max Energy Day`, `Max Starts Day` | How much it may make, and how often it may start, in one day |
+| `Max Replacement` | How much plant one maintenance schedule may take out at once |
+| `Run Up Rate` | The rate it takes from zero up to its minimum stable level |
+
+[On a `Generator`](#on-a-generator) gives the schema evidence for each one, and the model each
+was found in.
+
+Seven rows carry plant and network data on something other than a generator:
+
+| What your model states | Where the row is |
+| --- | --- |
+| The loss curve of an AC line, as a base term and up to two incremental terms per direction | [On a `Line`](#on-a-line) |
+| An `MLF` object, which states a loss factor as an intercept and a flow coefficient | [The object level, for a dispatch](#the-object-level-for-a-dispatch) |
+| Where in the network a load is measured, and whether it includes losses | [On a `Region` or a `Node`](#on-a-region-or-a-node) |
+| The blend share of a unit that burns two fuels at once | [On a `Fuel`](#on-a-fuel) |
+| A daily limit on how many times a storage unit may cycle | [On a `Storage` or a `Battery`](#on-a-storage-or-a-battery) |
+| That a unit may serve one reserve or another, and never both | [On a `Reserve`](#on-a-reserve) |
+| What it costs to push more water down a route than the route allows | [On a `Waterway`](#on-a-waterway) |
+
+To the best of our knowledge, that is the whole of the plant and network group. That
+knowledge comes from translating the three case study models, so a model we have not read may
+state more.
+
+## What this document is for
+
+tz-oss-interop translates a PLEXOS model into a Sienna one. Two pipelines do it, and this document
+covers both:
+
+- `plexos-to-sienna` writes a **dispatch system**. That is a `system.json` file holding the
+  buses, the generators, the lines and the loads that a solve dispatches over a year.
+- `plexos-to-sienna-investments` writes the same system, and a **portfolio** beside it. A
+  portfolio is a `portfolio.json` file holding the technologies a plan may build, and the
+  policy limits the plan must meet.
+
+A PLEXOS model states more than either file can hold. This document answers one question
+about the difference:
+
+> Which things does a PLEXOS model state that these runs do not translate, **because Sienna
+> itself has nowhere to put them**?
+
+Read it before you trust a Sienna system built from your PLEXOS model. A row here is a thing
+your model says that no version of this translator can carry, so you must account for it
+some other way.
+
+## The words this document uses
+
+| Word | What it means |
+| --- | --- |
+| A PLEXOS **class** | A kind of object in your model. `Generator`, `Line` and `Constraint` are three classes. This document calls a loss at this level an **object-level** loss. |
+| A PLEXOS **property** | A named value on one object, such as `Max Capacity` on a generator. This document calls a loss at this level a **property-level** loss. |
+| **SiennaSchemas** | The published definition of what a Sienna file may hold. Refer to [Where the evidence comes from](#where-the-evidence-comes-from). |
+| **A dispatch** | What `plexos-to-sienna` writes, and what PowerSimulations.jl then solves. |
+| **A portfolio** | What `plexos-to-sienna-investments` writes beside the system, for an expansion plan. |
+| `extensions.json` | A file tz-oss-interop writes beside `system.json`. It holds values that tz-oss-interop reads and Sienna has no field for, so that a later run of ours can read them back. Sienna never reads it. |
+| `decisions.md` | A file tz-oss-interop writes beside the output of every run. It holds one row for each component and each field the run left out, with the reason. |
+
+## What counts as a row here
+
+A row is here only when both of these are true:
+
+1. **SiennaSchemas holds no type and no field for the thing.** A citation proves it.
+2. **One of the three published models states it.** A run proves it. A loss nobody's model
+   states is a guess, and a guess does not go in.
+
+## What this document does not hold
+
+Two other kinds of loss exist. Neither is a limit of Sienna, so neither is here.
+
+| The loss | Where it belongs |
+| --- | --- |
+| SiennaSchemas holds the thing, and this translation does not write it yet | A ticket. The pull request that wrote this document lists each one. The route through a PyPSA network is our choice, so a value that route loses is a ticket too. |
+| PowerSimulations.jl solves a different problem from the one PLEXOS solves | [The solve tutorial](../tutorials/solve.md) and the case studies |
+
+### A worked example of the difference
+
+Both a `Reserve` object and a `Constraint` object end up in the same place today: the
+`extensions.json` file beside your `system.json`. Neither becomes a Sienna component. So the
+two look like one kind of loss, and they are not. What SiennaSchemas states tells them apart.
+
+**A `Reserve` is not in this document.** Say your model asks for 75 MW of spinning reserve
+and names the 40 generators that can supply it. SiennaSchemas has a shape for exactly that.
+The schema for a spinning reserve, `Operations/Service/OnlineReserve.json`, states a
+`requirement` field in MW and a `reserve_direction` field that takes `UP`. The schema that
+joins a device to a service, `Operations/Associations/ServiceAssociation.json`, gives one row
+for each of the 40 generators. Every part of what your model said has somewhere to go. This
+translation does not write it yet, which makes it our defect and a ticket.
+
+**A `Constraint` is in this document.** Say your model holds 0.5 times the output of one unit,
+plus 1.0 times the output of another, at or below 250 MW. No SiennaSchemas type anywhere
+holds a weight against one component. So however well we write the translator, that
+constraint has nowhere to go. That is a limit of Sienna, and it is a row below.
+
+The sidecar changes neither answer. `extensions.json` is our own file, and Sienna does not
+read it, so a record in it is not a Sienna home.
+
+For what the translation does keep, refer to
+[Translation from PLEXOS to Sienna](translation-from-plexos-to-sienna.md) and to
 [Translation from PLEXOS to a Sienna investments portfolio](translation-from-plexos-to-sienna-investments.md).
 
-Each entry gives four things:
+## Where the evidence comes from
 
-| Heading | Meaning |
+### SiennaSchemas, and how to check a citation
+
+SiennaSchemas is the published definition of what a Sienna file may hold. It is a set of JSON
+Schema files at [github.com/NREL-Sienna/SiennaSchemas](https://github.com/NREL-Sienna/SiennaSchemas).
+One file states one Sienna type: the name of each field, the type each field takes, and which
+fields a document must state. If a value has no field in those files, then no Sienna system
+can carry it, whatever a translator does. That is why this document tests every claim against
+them and not against the Julia packages that read them.
+
+**Every claim below is against one version.** The repository's own README says it is pre-1.0,
+that any release may change the schemas incompatibly, and that a reader must pin an exact
+tag. Its change log already records one type that went: `TopologyMapping.json`. So a sentence
+about SiennaSchemas is only true against a stated version. Every claim below is against commit
+`0057d603d697f616e19ee863db527117ededf470`, of 2026-09-18.
+
+**How to read a citation.** A citation names the file, and then the field inside that file
+after a `#`. So `Operations/Service/OnlineReserve.json#/properties/time_frame` means: open the
+file `Operations/Service/OnlineReserve.json`, and read the `time_frame` entry in its
+`properties` block. To check one yourself:
+
+```bash
+git clone https://github.com/NREL-Sienna/SiennaSchemas.git
+cd SiennaSchemas
+git checkout 0057d603d697f616e19ee863db527117ededf470
+```
+
+Some rows below name no file, because they state that nothing holds the value. Such a row
+rests on a search of every field name in the repository at that commit, which is 823 distinct
+names across the five namespaces. Where a row gives that number, it is naming the set that was
+searched.
+
+### The three runs
+
+Each run used tz-oss-interop 0.1.0, and the model and the pipeline below. Each case study under
+[`docs/case_studies/`](../case_studies/) gives the download and the checksum of its model.
+
+| Model | Pipeline | What it gives this document |
+| --- | --- | --- |
+| CAISO 2026 Summer Assessment | `plexos-to-sienna` | A `Decision Variable`, the solver instructions on a generator, and a daily energy budget |
+| SEM 2024-2032 | `plexos-to-sienna` | The settlement rules of a market, a wheeling charge, and a fuel blend |
+| AEMO 2024 ISP Step Change | `plexos-to-sienna-investments` | An `MLF`, a `Purchaser`, the loss terms on a line, and every portfolio row |
+
+## How to read a table
+
+Every table below has the same three columns.
+
+| Column | What it holds |
 | --- | --- |
-| The PLEXOS data | What your model states |
-| What happens to it | Where it goes, or that it goes nowhere |
-| The cause | Why |
-| The effect on the dispatch | What the solve then does differently from your PLEXOS model |
-| The effect on the expansion | What a plan built from the portfolio then does differently from your PLEXOS model |
+| What your model states | The PLEXOS class or the PLEXOS property, and what it means |
+| Why Sienna has no home | The SiennaSchemas evidence. A named file, or the set that was searched. |
+| Seen in | The model a run found it in, and how many |
+
+A count in **Seen in** counts one of two things. For a class, it counts the objects of that
+class in the model: `CAISO 373` means that model holds 373 `Constraint` objects. For a
+property, it counts the rows that state the property: `AEMO 744` means 744 rows state a
+`Marginal Loss Factor`. One object can state a property on several rows, because PLEXOS gives
+a property one row for each date band or scenario it applies under.
 
 ---
 
-## What `plexos-to-sienna` loses from a dispatch
+## The object level, for a dispatch
 
-These entries cover the translation and the validation run that proves the system solves in
-PowerSimulations.jl.
+A `plexos-to-sienna` run builds no Sienna component from any class below, and no version of
+it could.
 
-### Reserve requirements
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Constraint`. A limit your model writes itself: a weighted sum over objects you name, held above or below a right-hand side. | SiennaSchemas states no generic constraint. No type in any of its five namespaces (`Core/`, `Operations/`, `Investments/`, `TimeSeries/` and `Dynamics/`) holds a field that weights one component inside a sum. The nearest things are the seven policy types under `Investments/Requirements/`, and each of those is one fixed form, such as a carbon cap in tonnes or a capacity floor in MW. Each one either covers the whole portfolio, or names its members through one row of `Investments/Associations/RequirementAssociation.json` for each member. No row holds a weight. | CAISO 373, AEMO 186, SEM 18 |
+| `Decision Variable`. A variable you add to the optimisation yourself, with an upper bound, a lower bound and a coefficient in the objective. | SiennaSchemas states no user variable. No type holds a bound or an objective coefficient that a user writes. | CAISO 3 |
+| `Timeslice`. A named set of periods, such as "summer weekday evenings", which you then state a value against. | SiennaSchemas states no timeslice. A time series record names its time axis by a start, a resolution and a length, so every period is the same length and no period carries a name. | AEMO 29, SEM 18, CAISO 3 |
+| `Company`. The owner of a plant. | SiennaSchemas states no owner type and no owner field. The one field named `owner_id` belongs to a time series record, where it names the component the series belongs to, and not a company. | SEM 36, AEMO 4 |
+| `MLF`. A marginal loss factor, written as an intercept and a flow coefficient, which derates what a generator delivers to the market. | SiennaSchemas states no loss factor on any component. The schema for an AC line, `Operations/Branch/Line.json`, holds resistance, reactance, susceptance, conductance, three ratings and its angle limits, and no loss term. | AEMO 6 |
+| The run settings: `Model`, `Horizon`, `PASA`, `MT Schedule`, `ST Schedule`, `Production`, `Competition`, `Performance`, `Diagnostic`, `Report` and `Transmission`. | These tell PLEXOS how to run a study. A SiennaSchemas document states a system, and never a run. PowerSimulations.jl takes the settings of a solve from its own code, and reads none of them from the system file. | All three models |
 
-**The PLEXOS data.** Each `Reserve` object, its type, its requirement in MW or as a share of
-a profile, and the generators that can provide it.
+## The object level, for a portfolio
 
-**What happens to it.** The reserve reaches the `extensions.json` sidecar beside the system,
-and a requirement that varies reaches the `reserves.parquet` companion beside that. No Sienna
-component is built from it.
+Every row above is also absent from a portfolio. One row differs, because a portfolio holds
+policy limits that a dispatch system does not.
 
-**The cause.** SiennaSchemas has `VariableReserve` and `ConstantReserve`, and this translation
-writes neither yet. The record carries everything one needs, so the reserve is set aside
-rather than lost.
-
-**The effect on the dispatch.** The dispatch keeps no reserve headroom. Every generator can
-run at full output, so the dispatch is less constrained than the dispatch in your PLEXOS
-model, and a scarcity price your model shows does not appear.
-
----
-
-### Load shedding, on a plain run
-
-**The PLEXOS data.** Each Region states a `VoLL`, the value of lost load.
-
-**What happens to it.** A `plexos-to-sienna` or `plexos-to-sienna-monte-carlo` run drops it,
-and the system gets no resource a solve can cut. A `plexos-to-sienna-monte-carlo-reliability`
-run keeps it: refer to
-[Region `Load` -> `InterruptiblePowerLoad`](translation-from-plexos-to-sienna.md#region-load--interruptiblepowerload).
-
-**The cause.** Only the reliability chain adds a load shedding resource, on both sides of the
-PyPSA hub. The plain chains stay faithful to a model that states no such resource.
-
-**The effect on the dispatch.** A window whose capacity is less than its load does not solve,
-and no run reports the unserved energy. The solve returns a status that is not optimal rather
-than a shortfall in MWh. Run the reliability chain to get the shortfall in MWh instead.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| A `Constraint` that weights a named subset of your model, such as "count each wind farm once and each solar farm at 0.6". | The seven types under `Investments/Requirements/` hold a cap, a floor, a share and a reserve margin. Each one names its members through one row of `Investments/Associations/RequirementAssociation.json` for each member, and that row states a `requirement_id` and an `entity_id` and nothing else. No field anywhere holds a weight for a member. So a constraint whose members carry different coefficients cannot be written. | AEMO 84 of 186 |
 
 ---
 
-### Unit commitment, relaxed
+## The property level, for a dispatch
 
-**The PLEXOS data.** A start cost, a minimum up time and a minimum down time on each thermal
-generator.
+Each property below sits on a component that does translate. The component reaches Sienna and
+this one value does not.
 
-**What happens to it.** The translation carries all three onto `ThermalStandard`. The solve
-applies them only when you answer `exact` at the unit commitment prompt. The answer
-`linearised` selects `ThermalBasicDispatch`, which has no on/off variable, so it applies
-neither.
+### On a `Generator`
 
-**The cause.** PowerSimulations exposes no relaxed unit commitment formulation. Its thermal
-formulations are either a true mixed-integer commitment or a dispatch with no commitment at
-all. PyPSA has a relaxation, so the same answer keeps the start cost and the time limits on
-that path and drops them here.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Marginal Loss Factor`. The factor that derates what a unit delivers, to account for the losses between it and the market. | No Sienna type holds a loss factor. None of the 823 field names in SiennaSchemas is one. | AEMO 744, SEM 107 |
+| `Aux Incr`. The auxiliary load a unit draws for each MW it makes, such as the power its own pumps and fans use. | The schema for a thermal generator, `Operations/StaticInjection/ThermalStandard.json`, holds no auxiliary load and no parasitic load. No other type holds one either. | AEMO 748 |
+| `Firm Capacity`. The share of a unit's capacity that counts towards a reserve margin. | SiennaSchemas states no firm capacity and no derating factor. The reserve margin type, `Investments/Requirements/CapacityReserveMargin.json`, states one fraction for the whole requirement, and nothing per unit. | AEMO 8480 |
+| `Max Capacity Factor`, `Min Capacity Factor`, `Min Capacity Factor Year`. Bounds on the share of the year a unit may run at. | SiennaSchemas states no capacity factor limit on a plant that runs. The build candidate type, `Investments/Technologies/SupplyTechnology.json`, holds a `min_generation_fraction`, and no operations type holds the same bound. | AEMO 12, 44 and 222 |
+| `Max Energy Day`, `Max Starts Day`. How much a unit may make in one day, and how often it may start in one day. | SiennaSchemas holds no energy budget and no start budget over a period you choose. It states two period limits, and neither fits: a weekly energy limit that applies to an import cost alone (`Core/common.json#/$defs/ImportExportCost`), and a count of storage cycles in a year (`EnergyReservoirStorage.cycle_limits`). | CAISO 6 and 18 |
+| `Max Replacement`. How much plant a maintenance schedule may take out at once. | The planned outage type, `Operations/SupplementalAttributes/PlannedOutage.json`, holds an outage schedule and no limit on how much plant that schedule may cover. | CAISO 67 |
+| `Run Up Rate`. The rate a unit takes from zero up to its minimum stable level, which is slower than its ramp rate above that level. | The thermal generator type holds one `ramp_limits` field, giving one up rate and one down rate. SiennaSchemas states no separate rate for synchronising. | CAISO 591 |
+| `Offer Quantity Format`, `Max Heat Rate Tranches`. How many bands PLEXOS reads a curve in, and in what form. | A SiennaSchemas curve states its own points: the piecewise type `Core/common.json#/$defs/PiecewiseStepData` holds the breakpoints and the rate in each band. So the curve carries its own shape, and a count of bands tells a reader nothing more. | SEM 113 and 86 |
+| The solver instructions: `Random Number Seed`, `Unit Commitment Optimality`, `Min Up Time Penalty`, `Max Ramp Up Penalty` and `Max Ramp Down Penalty`. | These tune the PLEXOS solve, and are not properties of the plant. A SiennaSchemas document states a system, and no penalty a solve charges for breaking a constraint. | CAISO 453, 231, 201, 2 and 2 |
 
-**The effect on the dispatch.** A `linearised` Sienna solve starts a generator for free and
-holds it on for as little as one snapshot. It therefore costs less than the same window
-solved as `exact`, and less than the same window solved in PyPSA with the answer
-`linearised`. Sienna should expose a relaxed commitment formulation, and until it does the
-two paths do not compare under that answer.
+### On a `Region` or a `Node`
 
----
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Price of Dump Energy`. What it costs to spill electricity the system cannot use. | SiennaSchemas prices no spilled electricity. No field name in the repository holds `dump`. The one nearby field, `spillage_cost` on a hydro reservoir, prices spilled water. | CAISO 5, SEM 1 |
+| `Allow Dump Energy`, `Allow Unserved Energy`. Two switches that let a solve spill energy, or fail to serve a load. | Sienna states a resource, not a switch. A system either holds a sheddable load (`Operations/StaticInjection/InterruptiblePowerLoad.json`) or does not, and that is the whole answer. | SEM 1 and 1 |
+| `Price Cap`, `Price Floor`. The highest and lowest price the market may settle at. | SiennaSchemas bounds no market price. No field name holds `price_cap`. | SEM 2 and 1 |
+| `Pool Type`, `Generator Settlement Model`, `Load Settlement Model`, `Uplift Enabled`, `Uplift Compatibility`, `Uplift Detect Active Ramp Constraints`, `Uplift Detect Active Min Stable Level Constraints`. | These state how a market settles a dispatch, and pays generators on top of the energy price. SiennaSchemas states the physical system and its costs, and holds no settlement rule. | SEM 12 rows, CAISO 10 rows |
+| `Load Risk`, `Maintenance Factor`. Two inputs that scale a reliability study. | SiennaSchemas holds outage data on each component, through the forced outage type `Operations/SupplementalAttributes/GeometricDistributionForcedOutage.json`. It holds no factor that scales a whole study. | CAISO 8 and 48 |
+| `Load Includes Losses`, `Load Metering Point`. Where in the network the model measures a load. | A Sienna load states the bus it sits on, and nothing about where it was metered. | AEMO 5 and 5 |
 
-### Thermal availability where the model states none
+### On a `Line`
 
-**The PLEXOS data.** An `Outage Factor`, an `Outage Rating`, a `Rating` profile or a `Units
-Out` profile on some of the thermal fleet, and nothing on the rest.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Wheeling Charge`, `Wheeling Charge Back`. What it costs to move a MW along the line, in each direction. | The AC line type, `Operations/Branch/Line.json`, prices no flow. It holds resistance, reactance, susceptance, conductance, three ratings and its angle limits, and no cost field. The limited variant, `MonitoredLine.json`, adds flow limits and still no cost. | SEM 20,736 rows each |
+| `Loss Allocation`, `Loss Incr`, `Loss Incr Back`, `Loss Incr2`, `Loss Incr2 Back`, `Loss Base`, `Loss Base Back`, `Marginal Loss Factor`, `Marginal Loss Factor Back`. The loss curve of the line, as a base term and one or two incremental terms per direction. | A Sienna AC line carries no loss term of any kind. A loss field does exist on the HVDC types and on the transport technology a plan may build, and on no AC line. | AEMO 18, 5, 5, 5, 5, 3, 3, 3 and 3 |
+| `Max Capacity Reserves`, `Min Capacity Reserves`. What the line contributes to a capacity reserve, which is a measure of whether enough plant exists to meet the peak. | The `Operations/` namespace holds no capacity reserve requirement at all, so nothing there could read a contribution to one. The operating reserve types hold MW of headroom during a dispatch, which is a different quantity. | AEMO 111 each |
 
-**What happens to it.** The translation gives an availability series only to a generator
-whose availability changes with time. The validation run then gives a flat series at full
-output to every other generator of that type, so the whole type carries one.
+### On a `Storage` or a `Battery`
 
-**The cause.** PowerSimulations binds an availability forecast for a whole component type or
-for none of it. One generator without the series would stop every other generator's outage
-profile from reaching the dispatch.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Max Cycles Day`. How many times the unit may charge and discharge in one day. | The storage type, `Operations/StaticInjection/EnergyReservoirStorage.json`, holds a `cycle_limits` field, and its own description states that the number counts cycles per year. SiennaSchemas holds no daily limit. | AEMO 24 |
+| `Balance Period`, `Decomposition Method`. How PLEXOS splits the horizon when it solves the storage. | These describe a solve, and not the unit. A SiennaSchemas document states a system. | AEMO 18, CAISO 6 |
 
-**The effect on the dispatch.** None on the generators that state an availability. A
-generator that states none can run at its own static limit, which is what it could do
-before. The flat series is redundant data in the PowerSimulations file, not a changed
-number.
+### On a `Reserve`
 
----
+A reserve requirement itself is **not** in this document, because SiennaSchemas states three
+reserve types and we simply do not write them yet. Refer to
+[A worked example of the difference](#a-worked-example-of-the-difference). One property of a
+reserve has no home even after we do write them.
 
-### A hydro unit whose inflow is water, not power
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Mutually Exclusive`. That a unit may serve this reserve or another one, and never both at once. | The two reserve types, `Operations/Service/OnlineReserve.json` and `OfflineReserve.json`, hold no exclusion between one service and another. A unit joins a service through one `Operations/Associations/ServiceAssociation.json` row, which states the service and the unit and nothing more. | CAISO 7 reserves |
 
-**The PLEXOS data.** A reservoir hydro turbine with a `Natural Inflow` stated in cumec or in
-m³/day, or with no `Natural Inflow` at all.
+### On a `Fuel`
 
-**What happens to it.** The translation leaves that unit out. `decisions.md` names it, and
-the log warns.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Ratio`. The share of the heat input that one fuel gives, where a unit burns several at once. | A Sienna fuel curve (`Core/common.json#/$defs/FuelCurve`) states one fuel price for one curve, and a thermal generator names one fuel. A blend does have a home on a build candidate, in `SupplyTechnology.cofire_level_limits`, and no type holds a blend for a plant that already runs. | SEM 29 |
+| `Tax`. A tax on the fuel a unit burns. | SiennaSchemas taxes an emission, through `Investments/Requirements/CarbonTax.json`, and taxes no fuel. | AEMO 82 |
 
-**The cause.** A `HydroDispatch` is dispatched against an energy budget, and the budget is
-the inflow. Converting a flow of water into a power needs the head of the reservoir and the
-efficiency of the turbine, and the translation reads neither. A unit with no budget would run
-at full output every snapshot on water nobody stated.
+### On a `Purchaser`
 
-**The effect on the dispatch.** That hydro capacity is absent, so the rest of the fleet
-covers its output. Do not use a number from a model whose hydro states its inflow in water.
-The AEMO 2024 ISP states every inflow in cumec, so its whole reservoir fleet is absent.
+A purchaser is an entity that buys energy under an obligation. The object itself is not in
+this document, because SiennaSchemas holds demand-side types that suit it. Two of its
+properties have no home.
 
----
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Max Energy Month`, `Min Energy Month`. The band of energy the purchaser must take in a month. | SiennaSchemas holds no monthly energy band. No field name in the repository holds `month`. The nearest field states one week, and applies to an import cost alone. | AEMO 5040 each |
+| `Load Obligation`. The share of a region's load this purchaser must serve. | SiennaSchemas states no obligation to serve a share of a load. | AEMO 15 |
 
-### A storage unit that states no energy
+### On a `Waterway`
 
-**The PLEXOS data.** A `Battery` with no `Capacity` and no `Duration`, or a pumped storage
-head reservoir whose `Max Volume` is in water.
+A waterway is the route that carries water from one reservoir to the next. The object itself
+is not in this document, because a Sienna reservoir names the reservoir above it, which gives
+a cascade a home. One property of the route has no home.
 
-**What happens to it.** The translation leaves that unit out, and `decisions.md` names it.
-
-**The cause.** A Sienna `EnergyReservoirStorage` holds a `storage_capacity`. A unit whose
-capacity is zero can neither charge nor discharge, so writing it would add a device that does
-nothing.
-
-**The effect on the dispatch.** That storage capacity is absent, so nothing shifts energy
-across the hours it would have covered.
-
----
-
-### A generator that is not a power plant
-
-**The PLEXOS data.** A generator whose category names a transmission augmentation, a policy
-project or another pseudo-object rather than a technology.
-
-**What happens to it.** Your carrier mappings file names the categories you want translated.
-A generator whose category the file does not name is left out, and `decisions.md` names it.
-
-**The cause.** PLEXOS models several things as generators, and only you know which of your
-categories are power plants. The translation reads no meaning from a name.
-
-**The effect on the dispatch.** A pseudo-object left out changes nothing, which is the point.
-A real fleet left out by mistake is absent from the dispatch, so read `decisions.md` after
-each run.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| `Max Flow Penalty`. What it costs to push more water down the route than the route allows. | The reservoir type, `Operations/StaticInjection/HydroReservoir.json`, holds spillage limits and a spillage cost, which price spilled water at one reservoir. No type prices a flow above a limit on the route between two of them. | CAISO 1 |
 
 ---
 
-### Heat rate bands
+## The property level, for a portfolio
 
-**The PLEXOS data.** A `Heat Rate` stated as several bands, so the efficiency changes with
-output.
+A portfolio holds the technologies a plan may build and the policy limits it must meet. Every
+row above still applies, because the portfolio names the dispatch system it sits beside. This
+section holds only what the portfolio itself cannot state.
 
-**What happens to it.** The translation reads one average heat rate and writes one flat
-`marginal_cost`, which becomes one linear `operation_cost.variable` cost curve on
-`ThermalStandard`.
-
-**The cause.** The chain goes through PyPSA, which holds one `marginal_cost` for each
-generator. Sienna can hold a piecewise curve, but nothing reaches it through the hub.
-
-**The effect on the dispatch.** A generator costs the same at every output, so the merit
-order does not change as units load up. A model whose bands differ widely dispatches
-differently.
+| What your model states | Why Sienna has no home | Seen in |
+| --- | --- | --- |
+| A `Constraint` that holds its weighted sum to an equality, rather than to a ceiling or a floor. | Each type under `Investments/Requirements/` states one side only. `MaximumCapacityRequirements.json` states a ceiling in MW, `MinimumCapacityRequirements.json` a floor in MW, `CarbonCaps.json` a ceiling in tonnes, and `EnergyShareRequirements.json` a floor as a fraction of generation. No type states two sides together, and none states an equality. | AEMO 3 of 186 |
+| `RHS Day`, `RHS Hour` on a `Constraint`. A right-hand side that applies again in each day, or in each hour, rather than once over the horizon. | Each type under `Investments/Requirements/` states one limit and one `target_year`, which is the year the limit applies in. SiennaSchemas states no limit that repeats over a shorter span. | `RHS Day`: AEMO 354, CAISO 211, SEM 48. `RHS Hour`: SEM 1 |
+| `RHS Custom` on a `Constraint`. A right-hand side over a span you define yourself. | A custom span is a span the schema does not name, and each requirement type states a `target_year` and nothing else. | AEMO 21 |
 
 ---
 
-### A generator that burns more than one fuel
-
-**The PLEXOS data.** Several `Fuels` memberships on one generator.
-
-**What happens to it.** The translation keeps the first fuel and drops the rest.
-`decisions.md` names each dropped fuel.
-
-**The cause.** A PyPSA generator carries one `carrier`, and a Sienna `ThermalStandard`
-carries one `fuel`.
-
-**The effect on the dispatch.** The generator always burns its first fuel, at that fuel's
-price. A dual-fuel unit that your model switches to a cheaper fuel does not switch.
-
----
-
-### A Fuel and a generator category of one name
-
-**The PLEXOS data.** A `Fuel` and a generator category that share a name, for example a fuel
-`HVO` and a category `HVO`.
-
-**What happens to it.** Both become one PyPSA carrier, so both take one row of the carrier
-mappings file. The run refuses to start when your mappings file gives that name two
-different Sienna types.
-
-**The cause.** A PyPSA `carrier` is free text with one namespace. The translation gives a
-generator the name of its Fuel when it burns one and its category when it does not, so two
-different PLEXOS concepts can produce one string.
-
-**The effect on the dispatch.** None, once you state one Sienna type for the name. Both
-groups of generators then take that type.
-
----
-
-### Zones, interfaces and custom constraints
-
-**The PLEXOS data.** `Zone` objects, `Interface` flow limits and `Constraint` objects, which
-include energy budgets, running hour limits, RPS targets and emission caps.
-
-**What happens to it.** The translation carries none of them. It does report every
-`Constraint`, one entry for each right-hand side the constraint states, naming the sense
-and every term of the weighted sum: the object, the class it belongs to, and the
-coefficient weighting it.
-
-**The cause.** The hub has no equivalent, and the Sienna types this translation writes have
-none either. Nor does a PyPSA `GlobalConstraint`, which limits one carrier over the whole
-horizon and cannot name a set of components.
-
-**The effect on the dispatch.** Nothing applies a group flow limit, so a transfer your
-PLEXOS model bounds can go higher. Nothing applies a renewable target or an emission cap.
-Only the carbon price reaches the cost. Where a model caps the energy of a group of hydro
-units, or the running hours of a group of peakers, with a `Constraint`, those resources are
-free to run at nameplate over the whole horizon: read the reported entries before you trust
-the dispatch.
-
----
-
-### Hydro cascades and volumes in water
-
-**The PLEXOS data.** `Waterway` objects joining reservoirs, and `Max Volume` and `Initial
-Volume` stated in 1000 m³ or a `Natural Inflow` stated in cumec.
-
-**What happens to it.** The translation drops the cascade route and leaves out a volume or
-an inflow that it cannot convert into MWh. `decisions.md` names each one.
-
-**The cause.** A conversion from a volume of water into an energy needs the head of the
-reservoir and the efficiency of the turbine, and the translation reads neither.
-
-**The effect on the dispatch.** Each reservoir is independent, so water released upstream
-does not arrive downstream. A pumped storage unit whose `Max Volume` is dropped holds no
-energy, so the translation leaves that unit out as well; refer to
-[A storage unit that states no energy](#a-storage-unit-that-states-no-energy). Do not use a
-number that depends on hydro.
-
----
-
-### One solve, one window
-
-**The PLEXOS data.** A Horizon, which can be many years long.
-
-**What happens to it.** The translation writes one calendar year of snapshots at a time. The
-Sienna solve then builds one optimisation covering every snapshot in the system.
-
-**The cause.** The Sienna solve takes no date range, unlike the PyPSA solve. It reads the
-length of the series and makes the horizon and the interval the whole of it.
-
-**The effect on the dispatch.** A long series makes one very large program. The SEM
-2024-2032 model is 66 thermal generators over 8,760 hourly snapshots. The AEMO 2024 ISP is
-252 thermal generators over 8,688 half-hourly snapshots. As a linear program it takes much
-more compute than the SEM 2024-2032 model does. To solve a shorter window, translate a
-shorter year.
-
----
-
-### Region Price of Dump Energy
-
-**The PLEXOS data.** A Region `Price of Dump Energy`, the price of energy the system spills.
-
-**What happens to it.** The translation drops it. `decisions.md` names it.
-
-**The cause.** PyPSA has no home for it, and neither does the Sienna type this translation
-writes for a Region.
-
-**The effect on the dispatch.** Nothing prices spilled energy, so it does not appear in the
-objective. The Region `VoLL` beside it does reach a reliability run: refer to
-[Load shedding, on a plain run](#load-shedding-on-a-plain-run).
-
----
-
-### Sienna holds no Monte Carlo forecast a solve reads
-
-**The PLEXOS data.** A pre-sampled model states many values for one property at one snapshot,
-one per replication, and a run over it draws a distribution of outcomes.
-
-**What happens to it.** `plexos-to-sienna-monte-carlo` writes one whole Sienna system per
-replication, each in a directory of its own, rather than one system holding every replication.
-
-**The cause.** `InfrastructureSystems.jl` defines a `Scenarios` forecast, and PowerSimulations
-refuses it: `add_parameters!` takes `AbstractDeterministic` and `StaticTimeSeries` and nothing
-else. Attaching many same-named series to one component fails too, because a lookup by name
-and type throws where it finds more than one. SiennaSchemas has no schema for either.
-
-**The effect on the dispatch.** Each replication solves on its own, and nothing inside Sienna
-counts how many of them lose load. Solve the replications and count the outcomes yourself.
-
----
-
-### A Sienna objective and a PyPSA objective do not compare
-
-**The PLEXOS data.** A Region `VoLL`, in a reliability run on both sides of the PyPSA hub.
-
-**What happens to it.** PyPSA gets a shedding generator per bus whose marginal cost is the
-`VoLL`. Sienna gets an `InterruptiblePowerLoad` per load whose `operation_cost` states the
-same `VoLL`. Both shed the same energy at the same price.
-
-**The cause.** The two frameworks price the same thing with opposite signs. A PyPSA shedding
-generator adds `VoLL` times the shed MWh to the objective. PowerSimulations applies a
-`LoadCost` to the load that is served, with a negative multiplier, so Sienna subtracts `VoLL`
-times the supplied MWh instead.
-
-**The effect on the dispatch.** None: the two dispatches match, because the two objectives
-differ by a constant, and a constant changes no decision. But the two objective numbers are
-not the same quantity and must not be compared or subtracted.
-
----
-
-### A profile that reaches only some replications
-
-**The PLEXOS data.** An outage draw that takes a unit out in one replication and leaves it
-available through the whole window in another.
-
-**What happens to it.** The ensemble leaves that unit's profile out of every replication, and
-the unit keeps its static value throughout. The run warns and names a few of the units.
-
-**The cause.** PyPSA writes no time-varying column for a component whose values never move off
-the static value, so the unit has a profile in the replication that takes it out and none in
-the replication that does not. One `system.json` serves the whole ensemble, so it states one
-set of time-series associations, and a profile that does not reach every replication has no
-place in them.
-
-**The effect on the dispatch.** Those units are available throughout, in every replication, so
-the replication that would have taken one out has more capacity than your PLEXOS model gives
-it. On the CAISO 2026 Summer Assessment this covered 4 generators of the 411 the ensemble
-holds.
-
----
-
-### A reliability solve reports its unserved energy in the results files
-
-**The PLEXOS data.** The energy a window cannot serve, which a reliability run prices at the
-Region `VoLL`.
-
-**What happens to it.** PowerSimulations writes the served power of each
-`InterruptiblePowerLoad` to `results/.../variables/ActivePowerVariable__InterruptiblePowerLoad`.
-The unserved energy is the load's `max_active_power` profile less that, summed over the window.
-
-**The cause.** The results pipeline reads a load's dispatch from the parameter file
-PowerSimulations writes for a `PowerLoad`. An interruptible load's served power is a decision
-variable rather than a parameter, so it lands in a different file that the results pipeline
-does not read yet.
-
-**The effect on the dispatch.** None. The number is in the solve output; no report collects it
-for you.
-
----
-
-## What `plexos-to-sienna-investments` loses from an expansion
-
-### A `Constraint` a cap cannot carry
-
-**The PLEXOS data.** A `Constraint` holding a weighted sum over the objects it names to a
-right-hand side: an emission cap over a group of plants, a target over one region, a budget
-over one technology.
-
-**What happens to it.** The portfolio writes a `CarbonCaps` only for a constraint that meets
-all five of these conditions:
-
-- it names every generator and storage object the base system and the portfolio hold;
-- it holds its weighted sum to `<=`;
-- it states a right-hand side for a year or for the whole horizon;
-- that right-hand side is a finite number;
-- its `Include in LT Plan` is not false, and a constraint that states nothing stays in.
-
-Every other constraint is left out, `decisions.md` names it, and the log warns. Every
-constraint still reaches the `extensions.json` sidecar, whether or not it became a cap.
-
-**The cause.** `CarbonCaps` names no members and no region: a cap in a portfolio holds the
-whole portfolio. A cap also states one ceiling over the whole run, so a constraint held to
-`>=` or to `==`, and a constraint whose only right-hand side bounds a repeating window inside
-the run, give it nothing to carry. A cap states a number of million tonnes, and neither NaN
-nor Infinity is one, so a right-hand side that is not a finite number gives it nothing either.
-A constraint the expansion plan does not have to meet would bound a problem your model leaves
-free.
-
-**The effect on the expansion.** Nothing bounds what the constraint names, so the plan may
-build and run those objects up to their own limits. A model whose targets are all regional,
-technology-scoped, or written as a floor reaches the portfolio with no cap at all. Read the
-constraints in the sidecar before you trust what the plan builds.
-
----
-
-### A candidate whose build nothing prices
-
-**The PLEXOS data.** A `Generator`, a `Battery` or a pumped-storage turbine stating `Max Units
-Built` but not all of `Build Cost`, `WACC` and `Economic Life`.
-
-**What happens to it.** The PLEXOS leg leaves the build out. An object with nothing running
-yet is its build and nothing else, so the whole object goes and `decisions.md` names it. An
-object that already runs keeps the capacity it runs, and only the build it may add is
-dropped. The second leg drops a candidate that reaches it with no finite upper bound on
-capacity, a capacity floor above that upper bound, no finite lifetime, a lifetime below one
-year, no overnight cost or no discount rate. It drops a storage candidate that holds no
-energy, or that puts no upper bound on the energy a build may add. It names each one the same
-way.
-
-**The cause.** PyPSA annuitises an overnight cost with a discount rate over a lifetime. It
-refuses a network that states an overnight cost and no discount rate, it prices a build with
-no lifetime as a perpetuity, and it builds for free a candidate that states no overnight cost
-at all. A Sienna technology states its own price and its own financing, and
-`TechnologyFinancialData` requires both a return on equity and a capital recovery period.
-
-**The effect on the expansion.** That candidate is not in the portfolio, so no plan built
-from it can build that technology.
-
----
-
-### Transmission a plan may build
-
-**The PLEXOS data.** A `Line` or a transformer the plan may expand, and the `Line.Type` that
-says which technology LT Plan expands it with.
-
-**What happens to it.** Neither leg writes an expandable branch. The base system holds each
-line and each link at the rating it already has, and the portfolio holds no technology for a
-corridor.
-
-**The cause.** SiennaSchemas states transport technologies of its own, and this translation
-writes none of them. The PLEXOS leg fixes the capacity of every line and link, so nothing
-reaches the hub for a second leg to read either.
-
-**The effect on the expansion.** The network is fixed. A plan can put new capacity only where
-the corridors that already exist can carry it, so it builds nearer to the demand than your
-model would, and an expansion your model meets by reinforcing a corridor is met by generation
-or not at all.
-
----
-
-### The year a cap applies in, and a cap on carbon intensity
-
-**The PLEXOS data.** A `Constraint` right-hand side, stated for a year or over the whole
-horizon, and the span it applies over.
-
-**What happens to it.** The yearly right-hand side becomes `max_mtons`, the cap's limit in
-million tonnes, and the horizon-wide one is read where the constraint states no yearly limit.
-`CarbonCaps.target_year` and `CarbonCaps.max_tons_mwh` are left unmapped and are absent from
-the document; `decisions.md` records both.
-
-**The cause.** PLEXOS states the span a right-hand side applies over, not the year it applies
-in, and it has no rate-based right-hand side for `max_tons_mwh` to carry.
-
-**The effect on the expansion.** The cap holds the whole run, whichever year your model
-stated it for, so a yearly right-hand side becomes a budget for the whole run. With
-`max_tons_mwh` absent, nothing limits the carbon intensity of what it builds.
-
----
-
-### A storage build that prices only its discharge
-
-**The PLEXOS data.** The `Build Cost` of a `Battery`, or of a pumped-storage turbine, which
-prices the unit by its power.
-
-**What happens to it.** It becomes the technology's `capital_costs.discharge_capital_cost`.
-The `charge_capital_cost` and the `energy_capital_cost` beside it are written as zero curves.
-
-**The cause.** A Sienna storage technology adds charge power, discharge power and energy
-independently and prices each of the three. PLEXOS prices the object by its power alone, and
-PyPSA carries one overnight cost for a storage unit, so neither states the other two prices.
-
-**The effect on the expansion.** A consumer that sizes the three parts separately takes the
-largest energy and the largest charging power its limits allow for nothing, because nothing
-prices either. The whole price of a storage build sits on its discharge capacity, which is
-the right number only if you read the source's build cost as the price of a whole unit.
-
----
-
-### The years a plan steps through
-
-**The PLEXOS data.** The investment periods of an LT Plan, the years it steps through, and
-the representative days and weights it samples each year with.
-
-**What happens to it.** Neither reaches the portfolio. The portfolio states one expansion
-problem, with no schedule of periods and no representative-day weighting.
-
-**The cause.** A portfolio document holds the technologies, the requirements and the regions
-of an expansion problem. The periods and the representative days are terms of the solve.
-
-**The effect on the expansion.** Whoever solves the portfolio chooses the periods and the
-sampling. A plan built over a different set of years, or against a different set of
-representative days, from the ones your PLEXOS model uses builds a different fleet, so its
-result and your model's LT Plan result are not the same quantity.
+## What a row here does not say
+
+A row says that SiennaSchemas has no home for the thing. It does not say that the thing is
+unimportant, and it does not say that a solve gives a wrong answer without it. The two differ
+by a lot: a `Constraint` that caps the emissions of a fleet changes a dispatch, and a
+`Generator Settlement Model` does not.
+
+Two places say what each loss does to your numbers:
+
+- The case study of your model, under [`docs/case_studies/`](../case_studies/). Each one
+  states what its run measured, and what the measurement does not cover.
+- The `decisions.md` file the run writes beside its output. It names every component and every
+  field the run left out, one row each, with the reason.
