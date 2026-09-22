@@ -11,8 +11,10 @@ hold. Two groups cover nearly all of it, and neither is a surprise:
   never a study, so a random number seed or a penalty on a relaxed constraint has no home and
   needs none.
 
-**Ten properties are the exception.** Each one is a property of a generating unit, and each
-one is the kind of thing a power system model would be expected to carry:
+**Ten properties are the exception.** Each one is a property of a generating unit. Each one is
+the kind of value a power system model would be expected to carry. To the best of our
+knowledge, these ten are the whole of that group. That knowledge comes from translating the
+three case study models, so a model we have not read may state more:
 
 | The property | What it states |
 | --- | --- |
