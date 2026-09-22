@@ -2,19 +2,20 @@
 
 ## The short version
 
-Most of what a PLEXOS model loses on the way to Sienna is a thing Sienna was never meant to
-hold. Two groups cover nearly all of it, and neither is a surprise:
+This document holds 36 rows. Most of them are things Sienna was never meant to hold, and
+three groups cover those:
 
-- **A `Constraint` you wrote yourself.** SiennaSchemas states no generic constraint, so a
-  weighted sum over objects you name has nowhere to go.
-- **The settings that tune a PLEXOS solve.** A SiennaSchemas document states a system, and
-  never a study, so a random number seed or a penalty on a relaxed constraint has no home and
-  needs none.
+| Group | Rows | Why it is no surprise |
+| --- | --- | --- |
+| A `Constraint` you wrote yourself, and a `Decision Variable` | 6 | SiennaSchemas states no generic constraint and no user variable, so a weighted sum over objects you name has nowhere to go. |
+| The settings that tune a PLEXOS solve or a PLEXOS study, and the form it reads a curve in | 5 | A SiennaSchemas document states a system, and never a study. |
+| How a market settles a dispatch: a price cap, an uplift rule, a wheeling charge, a settlement model, a tax on a fuel | 6 | SiennaSchemas states the physical system and what it costs to run, and holds no market design. |
 
-**Ten properties are the exception.** Each one is a property of a generating unit. Each one is
-the kind of value a power system model would be expected to carry. To the best of our
-knowledge, these ten are the whole of that group. That knowledge comes from translating the
-three case study models, so a model we have not read may state more:
+Four more rows name a contract term, an owner or a named set of periods, which are all things
+a Sienna system has no place for.
+
+**The remaining 14 rows are plant and network data, and those are the ones worth knowing
+about.** Ten of them are properties of a generating unit:
 
 | The property | What it states |
 | --- | --- |
@@ -29,9 +30,21 @@ three case study models, so a model we have not read may state more:
 [On a `Generator`](#on-a-generator) gives the schema evidence for each one, and the model each
 was found in.
 
-Four other rows are also plant data, rather than a market rule or a solver setting: the loss
-curve of an AC line, the blend share of a unit that burns two fuels at once, a daily limit on
-storage cycles, and the rule that a unit may serve one reserve or another and never both.
+Seven rows carry plant and network data on something other than a generator:
+
+| What your model states | Where the row is |
+| --- | --- |
+| The loss curve of an AC line, as a base term and up to two incremental terms per direction | [On a `Line`](#on-a-line) |
+| An `MLF` object, which states a loss factor as an intercept and a flow coefficient | [The object level, for a dispatch](#the-object-level-for-a-dispatch) |
+| Where in the network a load is measured, and whether it includes losses | [On a `Region` or a `Node`](#on-a-region-or-a-node) |
+| The blend share of a unit that burns two fuels at once | [On a `Fuel`](#on-a-fuel) |
+| A daily limit on how many times a storage unit may cycle | [On a `Storage` or a `Battery`](#on-a-storage-or-a-battery) |
+| That a unit may serve one reserve or another, and never both | [On a `Reserve`](#on-a-reserve) |
+| What it costs to push more water down a route than the route allows | [On a `Waterway`](#on-a-waterway) |
+
+To the best of our knowledge, that is the whole of the plant and network group. That
+knowledge comes from translating the three case study models, so a model we have not read may
+state more.
 
 ## What this document is for
 
