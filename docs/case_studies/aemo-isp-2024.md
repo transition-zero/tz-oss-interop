@@ -160,11 +160,12 @@ prompts, refer to [the solve tutorial](../tutorials/solve.md#sienna-path).
 
 ### The expansion path
 
-The same model also translates to a Sienna investments portfolio, which is what a partner
-running an expansion in PowerSystemsInvestments.jl needs. That run writes the expansion
-problem: the technologies the plan may build, the demand they meet, and the caps they run
-under. It is a translation only. interop runs no expansion solve, so this path stops at the
-files. This section covers the Step Change scenario. The other two follow the same steps.
+The same model also translates to a Sienna investments portfolio: the expansion problem
+itself, holding the technologies the plan may build, the demand they meet, and the caps they
+run under. This section covers the Step Change scenario. The other two follow the same steps.
+[Running an expansion](../developer_documentation/capacity-expansion.md) covers the second
+leg, which turns this portfolio into the document PowerSystemsInvestments.jl reads, and the
+`solve` run over it.
 
 Write a second mappings file, `inputs/plexos_expansion_mappings.yaml`. It is the dispatch
 file plus one row for each carrier a candidate takes. A candidate whose carrier the file does
@@ -218,6 +219,28 @@ takes the default base year of 2020. To state another one, refer to
 
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
 this model states that the Sienna investments schema holds no type and no field for.
+
+### Expanding the portfolio
+
+Run the portfolio through the second leg, then solve it. Select `translate` again and give
+these answers:
+
+| Prompt | Answer |
+| --- | --- |
+| Source framework | `sienna` |
+| Destination framework | `power-systems-investments` |
+| Pipeline | `sienna-to-power-systems-investments` |
+| the SiennaSchemas portfolio document to read | `outputs/portfolio.json` |
+| the SiennaSchemas system.json | `outputs/system.json` |
+| the HDF5 companion | `outputs/system_time_series_storage.h5` |
+
+That run writes `psi/portfolio.json`, the base system beside it, and
+`psi/portfolio_series.json` holding the profiles the envelope cannot carry.
+
+Then select `solve`, answer `sienna-investments` at the model type, and give it
+`psi/portfolio.json`. A PLEXOS model states no portfolio-wide discount rate, so give one at
+the discount rate prompt; a rate of zero is refused, because the capital recovery factor
+divides by it.
 
 ## The headline number
 

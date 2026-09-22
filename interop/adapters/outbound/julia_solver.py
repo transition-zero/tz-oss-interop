@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
 from pydantic import BaseModel
 
+from interop.adapters.outbound.julia_packages import declare_julia_packages
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver, SolverPort
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
@@ -51,27 +51,6 @@ _NETWORK_MODEL_MAP: dict[str, str] = {
 }
 
 
-@dataclass(frozen=True)
-class _JuliaPackage:
-    name: str
-    uuid: str
-    version: str | None = None
-
-
-# Versions are pinned to the releases the solve pipeline was developed against;
-# unpinned packages are constrained transitively by the pinned ones.
-_JULIA_PACKAGES: tuple[_JuliaPackage, ...] = (
-    _JuliaPackage("PowerSystems", "bcd98974-b02a-5e2f-9ee0-a103f5c450dd", "~5.9"),
-    _JuliaPackage("PowerSimulations", "e690365d-45e2-57bb-ac84-44ba829e73c4", "~0.34"),
-    _JuliaPackage("HydroPowerSimulations", "fc1677e0-6ad7-4515-bf3a-bd6bf20a0b1b", "~0.15"),
-    _JuliaPackage("StorageSystemsSimulations", "e2f1a126-19d0-4674-9252-42b2384f8e3c", "~0.16"),
-    _JuliaPackage("HiGHS", "87dc4568-4c63-4d18-b0c0-bb2238e4078b"),
-    _JuliaPackage("TimeSeries", "9e3dc215-6440-5c97-bce1-76c03772f85e"),
-    _JuliaPackage("CSV", "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"),
-    _JuliaPackage("DataFrames", "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"),
-)
-
-
 class JuliaSolveConfig(BaseModel):
     powersystems_jl_path: Path | None = None
     powersimulations_jl_path: Path | None = None
@@ -100,7 +79,7 @@ class JuliaSolveAdapter(SolverPort):
         declarations match the last successful resolution, i.e. nothing would
         be downloaded; it never installs anything itself.
         """
-        self._declare_julia_packages()
+        declare_julia_packages(self._dev_checkout_paths)
         import juliapkg  # noqa: PLC0415
 
         return bool(juliapkg.resolve(dry_run=True))
@@ -144,7 +123,7 @@ class JuliaSolveAdapter(SolverPort):
 
     def _bootstrap_julia(self) -> Any:
         os.environ.setdefault("PYTHON_JULIACALL_HANDLE_SIGNALS", "yes")
-        self._declare_julia_packages()
+        declare_julia_packages(self._dev_checkout_paths)
 
         log.info(
             "Preparing the Julia environment. The first run downloads Julia and the "
@@ -156,28 +135,6 @@ class JuliaSolveAdapter(SolverPort):
         from juliacall import Main as jl  # noqa: PLC0415
 
         return jl
-
-    def _declare_julia_packages(self) -> None:
-        """Declare the Julia dependencies with juliapkg before juliacall imports.
-
-        juliapkg resolves the declarations on `import juliacall`: it finds a
-        compatible Julia (downloading one if none is installed) and installs the
-        declared packages into its managed project. Re-declaring an unchanged set
-        is free; juliapkg skips resolution when the declarations' hash matches.
-        """
-        import juliapkg  # noqa: PLC0415
-
-        for package in _JULIA_PACKAGES:
-            checkout = self._dev_checkout_paths.get(package.name)
-            if checkout is None:
-                juliapkg.add(package.name, package.uuid, version=package.version)
-            else:
-                if not checkout.is_dir():
-                    raise UserInputError(
-                        f"{package.name} checkout not found at {checkout}. Fix the "
-                        "path in adapters.yaml, or remove it to use the registry release."
-                    )
-                juliapkg.add(package.name, package.uuid, dev=True, path=str(checkout))
 
 
 class _SeriesCoverage(NamedTuple):

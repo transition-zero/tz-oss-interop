@@ -19,6 +19,7 @@ from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
     PRIME_MOVERS_DTYPE,
+    SIENNA_REGION_COLUMN,
     SIENNA_REGION_NAME_COLUMN,
 )
 
@@ -436,3 +437,32 @@ DEFAULT_BASE_YEAR: int = 2020
 # A portfolio this translation writes carries no rate of its own beside the per-technology
 # return on equity, so the document-level rates take the schema's own defaults.
 DEFAULT_PORTFOLIO_RATE: float = 0.0
+
+
+SIENNA_REGION_COLUMN_LIST_DTYPE: pl.DataType = pl.List(pl.Int64)
+"""How a written portfolio states a region: the ids of the areas the technology sits in."""
+
+
+def _read_back(
+    schema: dict[str, pl.DataType | type[pl.DataType]],
+) -> dict[str, pl.DataType | type[pl.DataType]]:
+    """The same schema as the document states it, with region ids where the writer held a name."""
+    read_back = {
+        column: dtype for column, dtype in schema.items() if column != SIENNA_REGION_NAME_COLUMN
+    }
+    if SIENNA_REGION_NAME_COLUMN in schema:
+        read_back[SIENNA_REGION_COLUMN] = SIENNA_REGION_COLUMN_LIST_DTYPE
+    return read_back
+
+
+# What each type looks like in a portfolio document on disk, for a source reading one back.
+PORTFOLIO_DOCUMENT_SCHEMAS: dict[str, dict[str, pl.DataType | type[pl.DataType]]] = {
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: _read_back(SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA),
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: _read_back(
+        STORAGE_TECHNOLOGY_DESTINATION_SCHEMA
+    ),
+    SiennaInvestmentsComponent.DEMAND_REQUIREMENT: _read_back(
+        DEMAND_REQUIREMENT_DESTINATION_SCHEMA
+    ),
+    SiennaInvestmentsComponent.CARBON_CAPS: _read_back(CARBON_CAPS_DESTINATION_SCHEMA),
+}

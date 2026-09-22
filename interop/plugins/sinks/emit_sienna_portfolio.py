@@ -30,7 +30,11 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaRetirementPotentialCol,
     SiennaSupplementalAttributeAssociationCol,
 )
-from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
+from interop.plugins.sinks._sienna_files import (
+    SYSTEM_JSON_FILENAME,
+    drop_absent_fields,
+    validate_refs,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -114,7 +118,7 @@ class EmitSiennaPortfolio(Sink):
         }
         financial_data = state.destination_tables.get(PORTFOLIO_FINANCIAL_DATA_TABLE)
         if financial_data is not None and not financial_data.is_empty():
-            payload[PortfolioDocument.FINANCIAL_DATA] = _stated(
+            payload[PortfolioDocument.FINANCIAL_DATA] = drop_absent_fields(
                 next(financial_data.iter_rows(named=True))
             )
         return payload
@@ -142,7 +146,9 @@ def _build_components(table: pl.DataFrame | None, area_ids: dict[str, int]) -> l
         )
     objects: list[dict[str, Any]] = []
     for row in table.iter_rows(named=True):
-        component = _stated({k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN})
+        component = drop_absent_fields(
+            {k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN}
+        )
         area_name = row.get(SIENNA_REGION_NAME_COLUMN) if holds_region else None
         if area_name is not None:
             component[SIENNA_REGION_COLUMN] = [area_ids[area_name]]
@@ -160,7 +166,7 @@ def _build_attributes(state: State) -> tuple[list[dict[str, Any]], set[int]]:
             continue
         for row in table.iter_rows(named=True):
             ids.add(row[SIENNA_ID_COLUMN])
-            attributes.append(_stated({k: _named_years(k, v) for k, v in row.items()}))
+            attributes.append(drop_absent_fields({k: _named_years(k, v) for k, v in row.items()}))
     return attributes, ids
 
 
@@ -200,18 +206,3 @@ def _build_associations(
             }
         )
     return rows
-
-
-def _stated(row: dict[str, Any]) -> dict[str, Any]:
-    """The fields a row actually holds, at every depth of a nested struct.
-
-    A field no table wrote is absent rather than null, so the schema's own default applies
-    to it rather than a null a consumer would have to read as one. A cost struct carries
-    every variant's fields, so this is also what leaves a renewable technology's cost
-    without the two a thermal one alone states.
-    """
-    return {
-        key: _stated(value) if isinstance(value, dict) else value
-        for key, value in row.items()
-        if value is not None
-    }

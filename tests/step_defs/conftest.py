@@ -428,6 +428,40 @@ def invoke_solve(
     _dispatch(Command.SOLVE, make_container())
 
 
+def invoke_expand(
+    monkeypatch: pytest.MonkeyPatch,
+    portfolio_json_path: str,
+    balance_model: str = "multi-region",
+    output_dir: str = "expanded",
+    download_consent: bool = True,
+    investment_treatment: str = "continuous",
+    discount_rate: str = "",
+    solver: str = "simplex",
+    presolve: str = "choose",
+    run_crossover: str = "choose",
+    time_limit_seconds: str = "",
+) -> None:
+    """Stub every expansion prompt, then dispatch solve with the investments model type."""
+    stub_questionary_attr(monkeypatch, "path", iter([portfolio_json_path, output_dir]))
+    stub_questionary_attr(
+        monkeypatch,
+        "select",
+        iter(
+            [
+                "sienna-investments",
+                balance_model,
+                investment_treatment,
+                solver,
+                presolve,
+                run_crossover,
+            ]
+        ),
+    )
+    stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
+    stub_questionary_attr(monkeypatch, "text", iter([discount_rate, time_limit_seconds]))
+    _dispatch(Command.SOLVE, make_container())
+
+
 def invoke_solve_pypsa(
     monkeypatch: pytest.MonkeyPatch,
     network_path: str,
@@ -705,8 +739,17 @@ def assert_written_into_project_once(caplog: pytest.LogCaptureFixture, filename:
 
 @given(parsers.parse('adapters.yaml binds solver to "{name}"'))
 def given_solver_binding(name: str) -> None:
+    _write_binding("solver", name)
+
+
+@given(parsers.parse('adapters.yaml binds expansion to "{name}"'))
+def given_expansion_binding(name: str) -> None:
+    _write_binding("expansion", name)
+
+
+def _write_binding(port: str, name: str) -> None:
     write_adapters_config(
-        f"bindings:\n  solver: {name}\nadapters: {{}}\nobservability:\n  log_level: INFO\n"
+        f"bindings:\n  {port}: {name}\nadapters: {{}}\nobservability:\n  log_level: INFO\n"
     )
 
 

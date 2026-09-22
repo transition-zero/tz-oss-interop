@@ -21,4 +21,5 @@ pytest_plugins = [
     "interop_testing.steps.plexos_model",
     "interop_testing.steps.plexos_resources",
     "interop_testing.steps.power_simulations",
+    "interop_testing.steps.power_systems_investments",
 ]
