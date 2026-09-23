@@ -78,7 +78,11 @@ class SiennaToPypsaMapGenerators(TranslationStep):
         extensions = self._extensions.read(ExtensionKind.GENERATOR)
         # Snapshot duration the forward used to express ramp_limits (MW/min) and time_limits
         # / time_at_status (hours); the reverse needs it to recover the per-snapshot fields.
-        dt_minutes = resolution_minutes(state, _GENERATOR_SERIES_KEYS, DEFAULT_SNAPSHOT_MINUTES)
+        # Every series in one system shares its snapshots, so any staged series fixes the
+        # resolution. A model whose only profile is a load still reads its ramp rates right.
+        dt_minutes = resolution_minutes(
+            state, tuple(state.source_time_series), DEFAULT_SNAPSHOT_MINUTES
+        )
         reporter = GeneratorReporter(self._recorder)
         rows: list[dict[str, Any]] = []
         p_max_pu_scale_by_name: dict[str, float] = {}

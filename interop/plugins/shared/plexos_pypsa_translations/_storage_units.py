@@ -140,9 +140,9 @@ class _DroppedProperty:
     unit: str | None = None
 
 
-_USABLE_IN_FULL = "PyPSA treats the full energy capacity as usable, so {property} is dropped"
+_USABLE_IN_FULL = "the storage level limits are left at the full range, so {property} is dropped"
 _ONE_ROUND_TRIP = (
-    "PyPSA takes one round-trip efficiency, split evenly across charge and discharge, "
+    "the round-trip efficiency is split evenly across charge and discharge, "
     "so {property} is dropped"
 )
 _NO_INFLOW_READ = "no turbine draws from this reservoir, so its {property} is dropped"

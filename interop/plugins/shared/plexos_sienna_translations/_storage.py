@@ -11,19 +11,26 @@ it, where PLEXOS states both in megawatt hours.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from interop.core.extensions import StorageExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_HOURS, UNIT_MVA, UNIT_MW, UNIT_MWH
+from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MWH,
+    UNIT_HOURS,
+    UNIT_MVA,
+    UNIT_MW,
+)
 from interop.plugins.shared.plexos_constants import PlexosClass
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import StorageUnitMapping
 from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    MappedColumns,
     SourceValue,
+    declares,
     destination_row,
     maps_to,
     warn_about_skips,
@@ -58,6 +65,22 @@ NO_TARGET: float = 0.0
 # A cyclic unit has to end the horizon where it started, which Sienna states as a target of
 # half the reservoir with a penalty either side.
 CYCLIC_TARGET_SHARE: float = 0.5
+
+_AS_A_FRACTION = ", as a fraction of it"
+
+# A struct column is one value on the row and one field in the report.
+_INPUT_MAX_COLUMN = MappedColumns(
+    (f"{SiennaEnergyReservoirStorageCol.INPUT_ACTIVE_POWER_LIMITS}.max",)
+)
+_OUTPUT_MAX_COLUMN = MappedColumns(
+    (f"{SiennaEnergyReservoirStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.max",)
+)
+_EFFICIENCY_IN_COLUMN = MappedColumns((f"{SiennaEnergyReservoirStorageCol.EFFICIENCY}.in",))
+_STORAGE_COST_COLUMN = MappedColumns(
+    (SiennaEnergyReservoirStorageCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH
+)
+_HYDRO_MIN_COLUMN = MappedColumns((f"{SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS}.min",), UNIT_MW)
+_HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH)
 
 _ID_NOTE = "assigned by 1-based row position in the component's table"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
@@ -103,16 +126,12 @@ class _StorageMapping:
     )
     rating: Decision = maps_to(SiennaEnergyReservoirStorageCol.RATING)
     active_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.ACTIVE_POWER, unit=UNIT_MW)
-    input_active_power_limits: Decision = maps_to(
-        SiennaEnergyReservoirStorageCol.INPUT_ACTIVE_POWER_LIMITS
-    )
-    output_active_power_limits: Decision = maps_to(
-        SiennaEnergyReservoirStorageCol.OUTPUT_ACTIVE_POWER_LIMITS
-    )
-    efficiency: Decision = maps_to(SiennaEnergyReservoirStorageCol.EFFICIENCY)
+    input_active_power_limits: Decision = declares(_INPUT_MAX_COLUMN)
+    output_active_power_limits: Decision = declares(_OUTPUT_MAX_COLUMN)
+    efficiency: Decision = declares(_EFFICIENCY_IN_COLUMN)
     reactive_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.REACTIVE_POWER, unit=UNIT_MW)
     base_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.BASE_POWER, unit=UNIT_MVA)
-    operation_cost: Decision = maps_to(SiennaEnergyReservoirStorageCol.OPERATION_COST)
+    operation_cost: Decision = declares(_STORAGE_COST_COLUMN)
     conversion_factor: Decision = maps_to(SiennaEnergyReservoirStorageCol.CONVERSION_FACTOR)
     storage_target: Decision = maps_to(SiennaEnergyReservoirStorageCol.STORAGE_TARGET)
     cycle_limits: Decision = maps_to(SiennaEnergyReservoirStorageCol.CYCLE_LIMITS)
@@ -129,11 +148,9 @@ class _HydroMapping:
     reactive_power: Decision = maps_to(SiennaHydroGeneratorCol.REACTIVE_POWER, unit=UNIT_MW)
     rating: Decision = maps_to(SiennaHydroGeneratorCol.RATING)
     prime_mover_type: Decision = maps_to(SiennaHydroGeneratorCol.PRIME_MOVER_TYPE)
-    active_power_limits: Decision = maps_to(
-        SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS, unit=UNIT_MW
-    )
+    active_power_limits: Decision = declares(_HYDRO_MIN_COLUMN)
     base_power: Decision = maps_to(SiennaHydroGeneratorCol.BASE_POWER, unit=UNIT_MVA)
-    operation_cost: Decision = maps_to(SiennaHydroGeneratorCol.OPERATION_COST)
+    operation_cost: Decision = declares(_HYDRO_COST_COLUMN)
 
 
 @dataclass
@@ -186,19 +203,45 @@ def _row_for(
     target: CarrierTarget,
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
+    rated_power = float(mapping.p_nom.value)
     if sienna_type == SiennaComponent.HYDRO_DISPATCH:
         hydro = _derive_hydro(mapping, target)
         reporter.record_mapping(mapping.name, hydro)
-        return destination_row(hydro, SiennaHydroGeneratorCol.NAME, mapping.name)
+        row = destination_row(hydro, SiennaHydroGeneratorCol.NAME, mapping.name)
+        row[SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS] = {
+            "min": float(mapping.p_min_pu.value) * rated_power,
+            "max": rated_power,
+        }
+        row[SiennaHydroGeneratorCol.OPERATION_COST] = {
+            "cost_type": str(SiennaCostType.HYDRO_GEN),
+            "variable": variable_cost_curve_value(float(mapping.marginal_cost.value)),
+            "fixed": 0.0,
+        }
+        return row
     storage = _derive_storage(mapping, target)
     reporter.record_mapping(mapping.name, storage)
-    return destination_row(storage, SiennaEnergyReservoirStorageCol.NAME, mapping.name)
+    row = destination_row(storage, SiennaEnergyReservoirStorageCol.NAME, mapping.name)
+    row[SiennaEnergyReservoirStorageCol.EFFICIENCY] = {
+        "in": float(mapping.efficiency.value),
+        "out": float(mapping.efficiency.value),
+    }
+    row[SiennaEnergyReservoirStorageCol.INPUT_ACTIVE_POWER_LIMITS] = {
+        "min": 0.0,
+        "max": max(-float(mapping.p_min_pu.value), 0.0),
+    }
+    row[SiennaEnergyReservoirStorageCol.OUTPUT_ACTIVE_POWER_LIMITS] = {
+        "min": 0.0,
+        "max": float(mapping.p_max_pu.value),
+    }
+    row[SiennaEnergyReservoirStorageCol.OPERATION_COST] = _storage_cost_value(
+        mapping, bool(mapping.cyclic.value)
+    )
+    return row
 
 
 def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _StorageMapping:
     rated_power = float(mapping.p_nom.value)
     hours = float(mapping.max_hours.value)
-    efficiency = float(mapping.efficiency.value)
     is_cyclic = bool(mapping.cyclic.value)
     return _StorageMapping(
         name=mapping.name,
@@ -206,21 +249,21 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
         bus_name=Decision.default(mapping.bus.value, _AVAILABLE_NOTE),
         prime_mover_type=_prime_mover(mapping, target),
         storage_technology_type=Decision.default(SiennaStorageTech.OTHER_MECH, _TECHNOLOGY_NOTE),
-        storage_capacity=_capacity(mapping, hours),
+        storage_capacity=mapping.max_hours,
         storage_level_limits=Decision.default(
             {"min": EMPTY_RESERVOIR, "max": FULL_RESERVOIR}, _LEVEL_LIMITS_NOTE
         ),
         initial_storage_capacity_level=_initial_level(mapping, rated_power, hours),
         rating=Decision.default(FULL_RATING, _RATING_NOTE),
         active_power=Decision.default(NO_ACTIVE_POWER, _ACTIVE_POWER_NOTE),
-        input_active_power_limits=_input_limits(mapping),
-        output_active_power_limits=_output_limits(mapping),
-        efficiency=_efficiency(mapping, efficiency),
+        input_active_power_limits=mapping.p_min_pu,
+        output_active_power_limits=mapping.p_max_pu,
+        efficiency=mapping.efficiency,
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
-        base_power=_base_power(mapping, rated_power),
-        operation_cost=_storage_cost(mapping, is_cyclic),
+        base_power=mapping.p_nom,
+        operation_cost=mapping.marginal_cost,
         conversion_factor=Decision.default(CONVERSION_FACTOR, _CONVERSION_NOTE),
-        storage_target=_storage_target(mapping, hours, is_cyclic),
+        storage_target=replace(mapping.cyclic, value=_target(hours, is_cyclic)),
         cycle_limits=Decision.default(DEFAULT_CYCLE_LIMITS, _CYCLE_LIMITS_NOTE),
     )
 
@@ -235,21 +278,11 @@ def _derive_hydro(mapping: StorageUnitMapping, target: CarrierTarget) -> _HydroM
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
         rating=Decision.default(FULL_RATING, _RATING_NOTE),
         prime_mover_type=_prime_mover(mapping, target),
-        active_power_limits=Decision.derived(
-            {"min": float(mapping.p_min_pu.value) * rated_power, "max": rated_power},
-            [_source(mapping, "Max Capacity", rated_power, UNIT_MW)],
-            _OUTPUT_LIMITS_DERIVATION,
+        active_power_limits=replace(
+            mapping.p_min_pu, value=float(mapping.p_min_pu.value) * rated_power
         ),
-        base_power=_base_power(mapping, rated_power),
-        operation_cost=Decision.derived(
-            {
-                "cost_type": str(SiennaCostType.HYDRO_GEN),
-                "variable": variable_cost_curve_value(float(mapping.marginal_cost.value)),
-                "fixed": 0.0,
-            },
-            [_source(mapping, "VO&M Charge", mapping.marginal_cost.value)],
-            _COST_DERIVATION,
-        ),
+        base_power=mapping.p_nom,
+        operation_cost=mapping.marginal_cost,
     )
 
 
@@ -264,71 +297,36 @@ def _prime_mover(mapping: StorageUnitMapping, target: CarrierTarget) -> Decision
     return Decision.derived(target.prime_mover, [source], _PRIME_MOVER_DERIVATION)
 
 
-def _base_power(mapping: StorageUnitMapping, rated_power: float) -> Decision:
-    return Decision.derived(
-        rated_power, [_source(mapping, "Max Power", rated_power, UNIT_MW)], _BASE_POWER_DERIVATION
-    )
-
-
-def _capacity(mapping: StorageUnitMapping, hours: float) -> Decision:
-    return Decision.derived(
-        hours, [_source(mapping, "Capacity", None, UNIT_MWH)], _CAPACITY_DERIVATION
-    )
-
-
 def _initial_level(mapping: StorageUnitMapping, rated_power: float, hours: float) -> Decision:
+    """The starting volume the chain read, restated as the fraction of the reservoir it is."""
     reservoir = rated_power * hours
     stored = float(mapping.state_of_charge_initial.value or 0.0)
-    level = stored / reservoir if reservoir else 0.0
-    return Decision.derived(
-        level, [_source(mapping, "Initial SoC", stored, UNIT_MWH)], _LEVEL_DERIVATION
+    decision = mapping.state_of_charge_initial
+    return replace(
+        decision,
+        value=stored / reservoir if reservoir else 0.0,
+        explanation=f"{decision.explanation}{_AS_A_FRACTION}" if decision.explanation else "",
     )
 
 
-def _input_limits(mapping: StorageUnitMapping) -> Decision:
-    drawn = -float(mapping.p_min_pu.value)
-    return Decision.derived(
-        {"min": 0.0, "max": max(drawn, 0.0)},
-        [_source(mapping, "Max Power", None, UNIT_MW)],
-        _INPUT_LIMITS_DERIVATION,
-    )
+def _target(hours: float, is_cyclic: bool) -> float:
+    """Where a cyclic unit has to end the horizon, in hours of its rated power."""
+    return hours * CYCLIC_TARGET_SHARE if is_cyclic else NO_TARGET
 
 
-def _output_limits(mapping: StorageUnitMapping) -> Decision:
-    return Decision.derived(
-        {"min": 0.0, "max": float(mapping.p_max_pu.value)},
-        [_source(mapping, "Max Power", None, UNIT_MW)],
-        _OUTPUT_LIMITS_DERIVATION,
-    )
-
-
-def _efficiency(mapping: StorageUnitMapping, efficiency: float) -> Decision:
-    return Decision.derived(
-        {"in": efficiency, "out": efficiency},
-        [_source(mapping, "Charge Efficiency", None)],
-        _EFFICIENCY_DERIVATION,
-    )
-
-
-def _storage_cost(mapping: StorageUnitMapping, is_cyclic: bool) -> Decision:
+def _storage_cost_value(mapping: StorageUnitMapping, is_cyclic: bool) -> dict[str, Any]:
+    """A StorageCost: what discharging costs, and the penalty a cyclic unit ends under."""
     penalty = CYCLIC_ENERGY_PENALTY if is_cyclic else 0.0
-    marginal = float(mapping.marginal_cost.value)
-    cost = {
+    return {
         "cost_type": str(SiennaCostType.STORAGE),
         "charge_variable_cost": variable_cost_curve_value(0.0),
-        "discharge_variable_cost": variable_cost_curve_value(marginal),
+        "discharge_variable_cost": variable_cost_curve_value(float(mapping.marginal_cost.value)),
         "fixed": 0.0,
         "start_up": 0.0,
         "shut_down": 0.0,
         "energy_shortage_cost": penalty,
         "energy_surplus_cost": penalty,
     }
-    return Decision.derived(cost, [_source(mapping, "VO&M Charge", marginal)], _COST_DERIVATION)
-
-
-def _storage_target(mapping: StorageUnitMapping, hours: float, is_cyclic: bool) -> Decision:
-    target = hours * CYCLIC_TARGET_SHARE if is_cyclic else NO_TARGET
-    return Decision.derived(target, [_source(mapping, "Pump Efficiency", None)], _TARGET_DERIVATION)
 
 
 def _extension_for(

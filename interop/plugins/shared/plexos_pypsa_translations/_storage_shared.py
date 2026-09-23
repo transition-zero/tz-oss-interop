@@ -72,7 +72,9 @@ from interop.plugins.shared.pypsa_time_series import (
 
 NO_RESERVOIR_INFLOW_NOTE = "this unit has no reservoir, so nothing flows into it"
 
-MAX_HOURS_NOTE = "PLEXOS states no reservoir capacity; max_hours uses the PyPSA default"
+MAX_HOURS_NOTE = (
+    "PLEXOS states no reservoir capacity; storage_capacity uses the translator's one-hour default"
+)
 
 FULL_DISCHARGE_NOTE = "full rated power available for discharge"
 
@@ -434,7 +436,7 @@ def _skipped_file_backed(rating: RatedPower, name: str) -> SkippedComponent:
 def _skipped_without_capacity(rating: RatedPower, name: str) -> SkippedComponent:
     note = (
         f"PLEXOS states no {rating.capacity_property}, so the object states no rated "
-        "power, which the StorageUnit mapping cannot default"
+        "power, which the storage mapping cannot default"
     )
     return skip_object(rating.plexos_class, name, rating.capacity_property, note)
 
