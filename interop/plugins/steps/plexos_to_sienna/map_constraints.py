@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.plexos_pypsa_translations import map_constraints
+from interop.plugins.shared.plexos_pypsa_translations import SIENNA_CARRIED_NOTE, map_constraints
 
 
 class PlexosToSiennaMapConstraints(TranslationStep):
@@ -24,5 +24,5 @@ class PlexosToSiennaMapConstraints(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        map_constraints(state, self._recorder)
+        map_constraints(state, self._recorder, SIENNA_CARRIED_NOTE)
         return state
