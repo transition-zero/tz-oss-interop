@@ -59,6 +59,10 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     Lookups,
     build_lookups,
 )
+from interop.plugins.shared.plexos_pypsa_translations._generators import (
+    ProfileOwner,
+    report_profile_not_staged,
+)
 from interop.plugins.shared.plexos_pypsa_translations._lifespan import derive_lifespan
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
@@ -302,6 +306,7 @@ def map_generators(
                 sienna_type=target.sienna_type,
                 sienna_id=row[SiennaThermalGeneratorCol.ID],
             )
+    _report_unstaged_profiles(state, recorder, availability)
     _report_left_out(recorder, skipped)
     warn_about_dropped_builds(expansion for expansion in kept_expansions)
     return TranslatedGenerators(
@@ -466,6 +471,26 @@ def _skip(
     return SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
 
 
+def _report_unstaged_profiles(
+    state: State, recorder: ScopedRecorder, availability: dict[str, _Availability]
+) -> None:
+    """An availability profile the source could not read leaves its owners on their static value.
+
+    The generator keeps what it already holds, and the association is not written, so the
+    sink asks the staged frames for nothing they do not hold.
+    """
+    reporter = SiennaComponentReporter(recorder, SiennaComponent.THERMAL_STANDARD)
+    owners_by_property: dict[str, list[ProfileOwner]] = {}
+    for name, one in sorted(availability.items()):
+        if (PlexosClass.GENERATOR, one.plexos_property) in state.source_time_series:
+            continue
+        owners_by_property.setdefault(one.plexos_property, []).append(ProfileOwner(name, one.scale))
+    for plexos_property, owners in owners_by_property.items():
+        report_profile_not_staged(plexos_property, owners, reporter)
+        for owner in owners:
+            del availability[owner.name]
+
+
 def _report_left_out(recorder: ScopedRecorder, skipped: list[SkippedComponent]) -> None:
     """Every generator left out reaches the report, and the console once per reading."""
     reporter = SiennaComponentReporter(recorder, SiennaComponent.THERMAL_STANDARD)
@@ -526,7 +551,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
     mapping, target = translated.mapping, translated.target
     return _ThermalMapping(
         name=mapping.name,
-        base_power=_base_power(mapping),
+        base_power=decide_generator(mapping).p_nom,
         available=Decision.default(True, _AVAILABLE_NOTE),
         status=Decision.default(True, _STATUS_NOTE),
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
@@ -550,7 +575,7 @@ def _derive_renewable(translated: _Translated) -> _RenewableMapping:
     mapping, target = translated.mapping, translated.target
     return _RenewableMapping(
         name=mapping.name,
-        base_power=_base_power(mapping),
+        base_power=decide_generator(mapping).p_nom,
         available=Decision.default(True, _AVAILABLE_NOTE),
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=Decision.default(NO_COST, _ACTIVE_POWER_NOTE),
@@ -561,16 +586,6 @@ def _derive_renewable(translated: _Translated) -> _RenewableMapping:
         operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
     )
-
-
-def _base_power(mapping: GeneratorMapping) -> Decision:
-    sources = [
-        SourceValue(
-            PlexosClass.GENERATOR, mapping.name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW
-        ),
-        SourceValue(PlexosClass.GENERATOR, mapping.name, PlexosProperty.UNITS, mapping.units),
-    ]
-    return Decision.derived(mapping.p_nom, sources, _BASE_POWER_DERIVATION)
 
 
 def _active_power(mapping: GeneratorMapping) -> Decision:
