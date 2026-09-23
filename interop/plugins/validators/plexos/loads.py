@@ -13,11 +13,10 @@ from interop.plugins.validators.plexos._property_bounds import (
     check_property_bounds,
     negative,
 )
-from interop.ports.outbound.validation import ValidationSeverity
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.LOAD, "it is a demand"),
-    negative(ValidationSeverity.WARNING, PlexosProperty.VOLL, "it is a price"),
+    negative(PlexosProperty.LOAD, "it is a demand"),
+    negative(PlexosProperty.VOLL, "it is a price"),
 )
 
 
@@ -25,8 +24,8 @@ class PlexosLoads(Validator):
     """Flag PLEXOS demand values no dispatch can meet.
 
     A negative Load is generation written in the demand's place, which the translation
-    would carry into a load nobody can serve. A negative price for a shortfall is a
-    WARNING, because a model may price one that way on purpose.
+    would carry into a load nobody can serve. A negative price for a shortfall may be one
+    a model prices that way on purpose.
     """
 
     name: ClassVar[str] = "plexos_loads"

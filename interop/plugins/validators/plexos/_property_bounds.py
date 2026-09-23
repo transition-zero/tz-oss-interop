@@ -3,6 +3,11 @@
 A PLEXOS property is a row of the resolved ``properties`` table rather than a column of a
 component table, so a bound reads the rows of one class and one property rather than a
 column of a frame.
+
+Every bound reports a WARNING. A value outside its bound is the model's data, and the
+translation already leaves the component out and records why, so a CRITICAL here would
+stop a run that otherwise gives the user every other component. CRITICAL is for a fault
+the translation cannot proceed past, such as a component on a node that does not exist.
 """
 
 from __future__ import annotations
@@ -31,7 +36,6 @@ class PropertyBoundCheck:
 
     plexos_property: str
     violation: pl.Expr
-    severity: ValidationSeverity
     message: str
 
 
@@ -58,7 +62,7 @@ def check_property_bounds(
         for row in stated.filter(check.violation).iter_rows(named=True):
             validator.emit_validation_error(
                 state,
-                check.severity,
+                ValidationSeverity.WARNING,
                 str(plexos_class),
                 row[PlexosPropertyCol.CHILD_OBJECT],
                 check.message,
@@ -82,14 +86,11 @@ def _states_values(properties: pl.LazyFrame) -> bool:
     } <= held
 
 
-def negative(
-    severity: ValidationSeverity, plexos_property: str, quantity: str
-) -> PropertyBoundCheck:
+def negative(plexos_property: str, quantity: str) -> PropertyBoundCheck:
     """A property that states a quantity no object can have less than none of."""
     return PropertyBoundCheck(
         plexos_property,
         pl.col(PlexosPropertyCol.VALUE) < 0,
-        severity,
         f"{plexos_property} must be non-negative, because {quantity}",
     )
 
@@ -99,6 +100,5 @@ def outside_percent(plexos_property: str, quantity: str) -> PropertyBoundCheck:
     return PropertyBoundCheck(
         plexos_property,
         (pl.col(PlexosPropertyCol.VALUE) < 0) | (pl.col(PlexosPropertyCol.VALUE) > 100),
-        ValidationSeverity.CRITICAL,
         f"{plexos_property} must be within 0 to 100, because {quantity}",
     )

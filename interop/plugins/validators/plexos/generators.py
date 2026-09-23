@@ -14,16 +14,15 @@ from interop.plugins.validators.plexos._property_bounds import (
     negative,
     outside_percent,
 )
-from interop.ports.outbound.validation import ValidationSeverity
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_CAPACITY, "it is a capacity"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.UNITS, "it counts machines"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.HEAT_RATE, "it is a rate of use"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_RAMP_UP, "it is a rate"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_RAMP_DOWN, "it is a rate"),
-    negative(ValidationSeverity.WARNING, PlexosProperty.START_COST, "it is a price"),
-    negative(ValidationSeverity.WARNING, PlexosProperty.VOM_CHARGE, "it is a price"),
+    negative(PlexosProperty.MAX_CAPACITY, "it is a capacity"),
+    negative(PlexosProperty.UNITS, "it counts machines"),
+    negative(PlexosProperty.HEAT_RATE, "it is a rate of use"),
+    negative(PlexosProperty.MAX_RAMP_UP, "it is a rate"),
+    negative(PlexosProperty.MAX_RAMP_DOWN, "it is a rate"),
+    negative(PlexosProperty.START_COST, "it is a price"),
+    negative(PlexosProperty.VOM_CHARGE, "it is a price"),
     outside_percent(PlexosProperty.MIN_STABLE_FACTOR, "it is a share of the capacity"),
 )
 
@@ -34,8 +33,7 @@ class PlexosGenerators(Validator):
     A negative capacity, a negative count of machines, a negative rate of fuel use or a
     negative ramp rate are each unphysical, so the translation would write a generator no
     solve can run. A Min Stable Factor outside 0 to 100 is not the share PLEXOS means it to
-    be. A negative price is reported as a WARNING, because a model may price a subsidy that
-    way on purpose.
+    be. A negative price may be a subsidy a model prices that way on purpose.
     """
 
     name: ClassVar[str] = "plexos_generators"

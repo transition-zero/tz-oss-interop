@@ -18,18 +18,16 @@ from interop.plugins.validators.plexos._property_bounds import (
     check_property_bounds,
     negative,
 )
-from interop.ports.outbound.validation import ValidationSeverity
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.RESISTANCE, "it is an impedance"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.REACTANCE, "it is an impedance"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_RATING, "it is a rating"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.LENGTH, "it is a distance"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.CIRCUITS, "it counts circuits"),
+    negative(PlexosProperty.RESISTANCE, "it is an impedance"),
+    negative(PlexosProperty.REACTANCE, "it is an impedance"),
+    negative(PlexosProperty.MAX_RATING, "it is a rating"),
+    negative(PlexosProperty.LENGTH, "it is a distance"),
+    negative(PlexosProperty.CIRCUITS, "it counts circuits"),
     PropertyBoundCheck(
         PlexosProperty.MAX_FLOW,
         pl.col(PlexosPropertyCol.VALUE) < 0,
-        ValidationSeverity.CRITICAL,
         "Max Flow must be non-negative, because Min Flow states the reverse direction",
     ),
 )

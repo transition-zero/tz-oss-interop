@@ -14,20 +14,19 @@ from interop.plugins.validators.plexos._property_bounds import (
     negative,
     outside_percent,
 )
-from interop.ports.outbound.validation import ValidationSeverity
 
 _BATTERY_CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_POWER, "it is a power"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.CAPACITY, "it is an energy"),
+    negative(PlexosProperty.MAX_POWER, "it is a power"),
+    negative(PlexosProperty.CAPACITY, "it is an energy"),
     outside_percent(PlexosProperty.CHARGE_EFFICIENCY, "it is a share of what goes in"),
     outside_percent(PlexosProperty.DISCHARGE_EFFICIENCY, "it is a share of what comes out"),
     outside_percent(PlexosProperty.INITIAL_SOC, "it is a share of the capacity"),
 )
 
 _STORAGE_CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.MAX_VOLUME, "it is a volume"),
-    negative(ValidationSeverity.CRITICAL, PlexosProperty.INITIAL_VOLUME, "it is a volume"),
-    negative(ValidationSeverity.WARNING, PlexosProperty.NATURAL_INFLOW, "it is a rate"),
+    negative(PlexosProperty.MAX_VOLUME, "it is a volume"),
+    negative(PlexosProperty.INITIAL_VOLUME, "it is a volume"),
+    negative(PlexosProperty.NATURAL_INFLOW, "it is a rate"),
 )
 
 
@@ -36,8 +35,8 @@ class PlexosStorageUnits(Validator):
 
     A negative power, energy or volume is unphysical. An efficiency or a starting level
     outside 0 to 100 is not the share PLEXOS means it to be, and the translation would
-    write a unit that gives out more than it takes in. A negative inflow is a WARNING,
-    because a reservoir that loses water to seepage is a reading a model may mean.
+    write a unit that gives out more than it takes in. A negative inflow may be a
+    reservoir that loses water to seepage, which is a reading a model can mean.
     """
 
     name: ClassVar[str] = "plexos_storage_units"
