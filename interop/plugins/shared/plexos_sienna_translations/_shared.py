@@ -144,6 +144,10 @@ class SiennaComponentReporter(SiennaSourceReporter):
         for mapped, decision in mapped_fields(mapping):
             self.record(name, mapped, decision)
 
+    def record_id(self, name: str, column: str, value: int, note: str) -> None:
+        """The 1-based row position the component takes, which its row order fixes."""
+        self.record(name, MappedColumns((column,)), Decision.default(value, note))
+
     def record(self, name: str, mapped: MappedColumns, decision: Decision) -> None:
         if decision.kind is DecisionKind.UNREPORTED:
             return

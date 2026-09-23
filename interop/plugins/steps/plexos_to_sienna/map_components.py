@@ -16,6 +16,9 @@ from interop.plugins.steps.plexos_to_sienna.map_generators import (
     PlexosToSiennaMapGenerators,
 )
 from interop.plugins.steps.plexos_to_sienna.map_loads import PlexosToSiennaMapLoads
+from interop.plugins.steps.plexos_to_sienna.map_transmission import (
+    PlexosToSiennaMapTransmission,
+)
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +51,7 @@ class PlexosToSiennaMapComponents(TranslationStep):
             PlexosToSiennaMapGenerators(
                 _scoped(recorder, PlexosToSiennaMapGenerators.name), targets
             ),
+            PlexosToSiennaMapTransmission(_scoped(recorder, PlexosToSiennaMapTransmission.name)),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:
