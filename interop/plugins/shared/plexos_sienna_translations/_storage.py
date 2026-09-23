@@ -23,7 +23,7 @@ from interop.plugins.shared.constants import (
     UNIT_MVA,
     UNIT_MW,
 )
-from interop.plugins.shared.plexos_constants import PlexosClass
+from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._expansion import record_expansion_notes
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import StorageUnitMapping
 from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
@@ -69,6 +69,7 @@ NO_TARGET: float = 0.0
 CYCLIC_TARGET_SHARE: float = 0.5
 
 _AS_A_FRACTION = ", as a fraction of it"
+_FROM_PERCENTAGE = "Initial SoC / 100"
 
 # A struct column is one value on the row and one field in the report.
 _INPUT_MAX_COLUMN = MappedColumns(
@@ -77,7 +78,13 @@ _INPUT_MAX_COLUMN = MappedColumns(
 _OUTPUT_MAX_COLUMN = MappedColumns(
     (f"{SiennaEnergyReservoirStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.max",)
 )
-_EFFICIENCY_IN_COLUMN = MappedColumns((f"{SiennaEnergyReservoirStorageCol.EFFICIENCY}.in",))
+_EFFICIENCY_COLUMN = MappedColumns(
+    (
+        f"{SiennaEnergyReservoirStorageCol.EFFICIENCY}.in",
+        f"{SiennaEnergyReservoirStorageCol.EFFICIENCY}.out",
+    )
+)
+_INFLOW_COLUMN = MappedColumns(("extensions.inflow_mw",), UNIT_MW)
 _STORAGE_COST_COLUMN = MappedColumns(
     (SiennaEnergyReservoirStorageCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH
 )
@@ -130,7 +137,7 @@ class _StorageMapping:
     active_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.ACTIVE_POWER, unit=UNIT_MW)
     input_active_power_limits: Decision = declares(_INPUT_MAX_COLUMN)
     output_active_power_limits: Decision = declares(_OUTPUT_MAX_COLUMN)
-    efficiency: Decision = declares(_EFFICIENCY_IN_COLUMN)
+    efficiency: Decision = declares(_EFFICIENCY_COLUMN)
     reactive_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.REACTIVE_POWER, unit=UNIT_MW)
     base_power: Decision = maps_to(SiennaEnergyReservoirStorageCol.BASE_POWER, unit=UNIT_MVA)
     operation_cost: Decision = declares(_STORAGE_COST_COLUMN)
@@ -331,15 +338,31 @@ def _decided(decision: Decision) -> float | None:
 
 
 def _initial_level(mapping: StorageUnitMapping, rated_power: float, hours: float) -> Decision:
-    """The starting volume the chain read, restated as the fraction of the reservoir it is."""
+    """How full the unit starts, as a fraction of its reservoir.
+
+    A Battery states the fraction directly, as a percentage. A reservoir states a volume in
+    megawatt hours, so its own reading is kept and the fraction is taken of it.
+    """
     reservoir = rated_power * hours
     stored = float(mapping.state_of_charge_initial.value or 0.0)
     decision = mapping.state_of_charge_initial
+    level = stored / reservoir if reservoir else 0.0
+    percentage = _stated_percentage(decision)
+    if percentage is not None:
+        return Decision.derived(level, [percentage], _FROM_PERCENTAGE)
     return replace(
         decision,
-        value=stored / reservoir if reservoir else 0.0,
+        value=level,
         explanation=f"{decision.explanation}{_AS_A_FRACTION}" if decision.explanation else "",
     )
+
+
+def _stated_percentage(decision: Decision) -> SourceValue | None:
+    """The Initial SoC a Battery states, where the unit is one."""
+    for source in decision.sources:
+        if source.attribute == PlexosProperty.INITIAL_SOC:
+            return source
+    return None
 
 
 def _target(hours: float, is_cyclic: bool) -> float:
@@ -366,9 +389,7 @@ def _extension_for(
     mapping: StorageUnitMapping, reporter: SiennaComponentReporter
 ) -> StorageExtension:
     """What the unit states that Sienna has no field for."""
-    reporter.record_dropped(
-        _source(mapping, "Natural Inflow", mapping.inflow.value, UNIT_MW), _INFLOW_NOTE
-    )
+    reporter.record(mapping.name, _INFLOW_COLUMN, mapping.inflow)
     expansion = mapping.expansion
     return StorageExtension(
         name=mapping.name,
