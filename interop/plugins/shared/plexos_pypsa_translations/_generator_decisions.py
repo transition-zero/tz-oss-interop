@@ -90,7 +90,7 @@ _START_FUEL_DATED_DERIVATION = (
     "dated price series"
 )
 _DISCARDED_START_FUEL_CHOICE_NOTE = (
-    "the generator names several start fuels and PyPSA holds one start price, so the fuel "
+    "the generator names several start fuels and the start cost holds one price, so the fuel "
     "its heat rate burns stands for the start, or the largest offtake where it burns none; "
     "this one is left out"
 )

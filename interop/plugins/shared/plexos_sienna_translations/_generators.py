@@ -22,11 +22,14 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS,
+    UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MVA,
     UNIT_MW,
     UNIT_MW_PER_MINUTE,
+    UNIT_YEARS,
     Framework,
 )
 from interop.plugins.shared.plexos_constants import (
@@ -703,10 +706,47 @@ def _fuel_type(mapping: GeneratorMapping, target: CarrierTarget) -> Decision:
     return Decision.derived(target.fuel_type, [source], _FUEL_TYPE_DERIVATION)
 
 
+# Every expansion value, and the sidecar field that holds it. Sienna states none of them,
+# so each one reaches PyPSA through extensions.json.
+_EXPANSION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("p_nom_extendable", "extensions.p_nom_extendable"),
+    ("p_nom_max", "extensions.p_nom_max"),
+    ("p_nom_min", "extensions.p_nom_min"),
+    ("overnight_cost", "extensions.overnight_cost_per_mw"),
+    ("discount_rate", "extensions.discount_rate"),
+    ("lifetime", "extensions.lifetime_years"),
+    ("unit_size", "extensions.unit_size_mw"),
+    ("technical_life", "extensions.technical_life_years"),
+    ("fom_charge", "extensions.fom_charge_per_mw_year"),
+)
+
+
 def _record_source_notes(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
     """The notes that name only what the model states, which every hop out of PLEXOS records."""
     record_generator_source_notes(reporter, decide_generator(mapping))
     record_expansion_notes(reporter, mapping.name, mapping.expansion)
+    _record_expansion(reporter, mapping)
+
+
+def _record_expansion(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
+    """What a candidate may build and what building it costs, against the sidecar field."""
+    for field_name, column in _EXPANSION_COLUMNS:
+        reporter.record(
+            mapping.name,
+            MappedColumns((column,), _EXPANSION_UNITS.get(column)),
+            getattr(mapping.expansion, field_name),
+        )
+
+
+_EXPANSION_UNITS: dict[str, str] = {
+    "extensions.p_nom_max": UNIT_MW,
+    "extensions.p_nom_min": UNIT_MW,
+    "extensions.overnight_cost_per_mw": UNIT_DOLLARS_PER_MW,
+    "extensions.lifetime_years": UNIT_YEARS,
+    "extensions.unit_size_mw": UNIT_MW,
+    "extensions.technical_life_years": UNIT_YEARS,
+    "extensions.fom_charge_per_mw_year": UNIT_DOLLARS_PER_MW_YEAR,
+}
 
 
 def _record_category(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
