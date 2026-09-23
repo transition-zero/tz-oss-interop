@@ -32,6 +32,11 @@ from interop.plugins.shared.plexos_constants import (
     PlexosObjectCol,
     PlexosProperty,
 )
+from interop.plugins.shared.plexos_pypsa_translations._expansion import record_expansion_notes
+from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
+    decide_generator,
+    record_generator_source_notes,
+)
 from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import (
     GeneratorMapping,
     StartPricing,
@@ -236,6 +241,7 @@ def map_generators(
         )
         rows.append(row)
         _record_category(reporter, target.mapping)
+        _record_source_notes(reporter, target.mapping)
         extensions.append(_extension_for(target.mapping))
         sienna_type_by_name[target.mapping.name] = target.sienna_type
         profile = target.mapping.availability.profile
@@ -568,6 +574,12 @@ def _prime_mover(mapping: GeneratorMapping, target: CarrierTarget) -> Decision:
 def _fuel_type(mapping: GeneratorMapping, target: CarrierTarget) -> Decision:
     source = SourceValue(PlexosClass.GENERATOR, mapping.name, "carrier", mapping.carrier)
     return Decision.derived(target.fuel_type, [source], _FUEL_TYPE_DERIVATION)
+
+
+def _record_source_notes(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
+    """The notes that name only what the model states, which every hop out of PLEXOS records."""
+    record_generator_source_notes(reporter, decide_generator(mapping))
+    record_expansion_notes(reporter, mapping.name, mapping.expansion)
 
 
 def _record_category(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
+from typing import Any
 
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
@@ -291,6 +292,11 @@ def record_expansion(name: str, expansion: ExpansionDecisions, reporter: Compone
     reporter.record(name, UNIT_SIZE_COLUMN, expansion.unit_size)
     reporter.record(name, TECHNICAL_LIFE_COLUMN, expansion.technical_life)
     reporter.record(name, FOM_CHARGE_COLUMN, expansion.fom_charge)
+    record_expansion_notes(reporter, name, expansion)
+
+
+def record_expansion_notes(reporter: Any, name: str, expansion: ExpansionDecisions) -> None:
+    """Why a build was left out, which is a reading of the model rather than of a destination."""
     if expansion.dropped_build is not None:
         reporter.record_dropped(expansion.dropped_build.source, expansion.dropped_build.note)
 
