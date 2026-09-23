@@ -152,6 +152,9 @@ class GeneratorExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None
     # PLEXOS only: the generator's category, a grouping string the user chooses.
     category: str | None = None
+    # PyPSA Generator.efficiency, which is one megawatt hour out per this much fuel in.
+    # Sienna prices the fuel into the cost curve and states no efficiency of its own.
+    efficiency: float | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -190,6 +193,14 @@ class ControllableLineExtension(ExtensionRecord):
 
 class StorageExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None  # PyPSA only
+    # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,
+    # so a hydro unit loses it without this.
+    max_hours: float | None = None
+    # MWh. PyPSA StorageUnit.state_of_charge_initial, for the same reason.
+    state_of_charge_initial: float | None = None
+    # MW. PyPSA StorageUnit.inflow. Sienna reads a hydro budget as a time series alone, so a
+    # static inflow has no field there.
+    inflow_mw: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):

@@ -89,6 +89,10 @@ def _convert_line_impedance(
     )
 
 
+# What the forward hop writes where a line bounds no voltage angle.
+_UNBOUNDED_ANGLE_RADIANS: float = math.pi / 2
+
+
 @dataclass(frozen=True)
 class _LineAngleLimits:
     """PyPSA voltage-angle bounds in degrees, or None when the Sienna line carries none."""
@@ -100,12 +104,18 @@ class _LineAngleLimits:
 def _convert_line_angle_limits(
     reporter: LineReporter, sienna_type: SiennaComponent, name: str, row: dict[str, Any]
 ) -> _LineAngleLimits:
-    """Convert Sienna radian angle_limits to PyPSA degrees; absent limits keep PyPSA's defaults."""
+    """Convert Sienna radian angle_limits to PyPSA degrees; absent limits keep PyPSA's defaults.
+
+    A quarter turn each way is what the forward hop writes for a line that bounded nothing,
+    so it reads back as no bound rather than as a limit the source never stated.
+    """
     angle_limits = row.get(SiennaLineCol.ANGLE_LIMITS)
     if angle_limits is None:
         return _LineAngleLimits(v_ang_min=None, v_ang_max=None)
     angle_min = float(angle_limits[SiennaStructField.MIN])
     angle_max = float(angle_limits[SiennaStructField.MAX])
+    if (angle_min, angle_max) == (-_UNBOUNDED_ANGLE_RADIANS, _UNBOUNDED_ANGLE_RADIANS):
+        return _LineAngleLimits(v_ang_min=None, v_ang_max=None)
     v_ang_min = math.degrees(angle_min)
     v_ang_max = math.degrees(angle_max)
     reporter.record_angle_limits(sienna_type, name, angle_min, angle_max, v_ang_min, v_ang_max)

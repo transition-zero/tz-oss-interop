@@ -335,7 +335,13 @@ def _extension_for(
     mapping: StorageUnitMapping, reporter: SiennaComponentReporter
 ) -> StorageExtension:
     """What the unit states that Sienna has no field for."""
+    reporter.record_dropped(
+        _source(mapping, "Natural Inflow", mapping.inflow.value, UNIT_MW), _INFLOW_NOTE
+    )
     return StorageExtension(
         name=mapping.name,
         p_nom_extendable=bool(mapping.expansion.p_nom_extendable.value),
+        max_hours=float(mapping.max_hours.value),
+        state_of_charge_initial=float(mapping.state_of_charge_initial.value or 0.0),
+        inflow_mw=float(mapping.inflow.value or 0.0) or None,
     )

@@ -531,4 +531,5 @@ def _extension_for(mapping: GeneratorMapping) -> GeneratorExtension:
         committable=mapping.is_committable or None,
         p_nom_extendable=mapping.candidate.is_candidate,
         category=mapping.category,
+        efficiency=mapping.efficiency,
     )

@@ -187,6 +187,9 @@ class _ThermalMapping:
     marginal_cost: float
     start_up_cost: float
     shut_down_cost: float
+    # Sienna prices the fuel into the cost curve and states no efficiency, so a PyPSA
+    # generator recovers one only from the sidecar.
+    efficiency: float | None
     ramp_up_mw_per_min: float | None
     ramp_down_mw_per_min: float | None
     ramp_limit_up: float | None
@@ -246,6 +249,7 @@ def _derive_thermal(
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
         p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
+        efficiency=ext.efficiency,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -335,6 +339,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.SHUT_DOWN_COST: m.shut_down_cost,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
         PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
+        PyPSAGeneratorCol.EFFICIENCY: m.efficiency,
     }
 
 

@@ -72,7 +72,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) is (
                     SiennaComponent.HYDRO_DISPATCH
                 ):
-                    hydro = _derive_hydro(row, bus_names)
+                    hydro = _derive_hydro(row, bus_names, self._extensions)
                     _record_hydro(reporter, hydro)
                     rows.append(_hydro_row(hydro))
                     hydro_base_power[hydro.name] = hydro.base_power
@@ -136,10 +136,17 @@ class _HydroMapping:
     active_power_min: float
     p_min_pu: float
     marginal_cost: float
+    # Sienna's HydroDispatch states no reservoir, so all three cross the hub in the sidecar.
+    max_hours: float
+    state_of_charge_initial: float
+    inflow_mw: float
 
 
-def _derive_hydro(row: dict[str, Any], bus_names: dict[int, str]) -> _HydroMapping:
+def _derive_hydro(
+    row: dict[str, Any], bus_names: dict[int, str], extensions: ExtensionReader
+) -> _HydroMapping:
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
+    carried = extensions.read(ExtensionKind.STORAGE).get(str(row[SiennaGeneratorCol.NAME]))
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]
@@ -156,7 +163,18 @@ def _derive_hydro(row: dict[str, Any], bus_names: dict[int, str]) -> _HydroMappi
         marginal_cost=variable_proportional_term(
             row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE
         ),
+        max_hours=_carried(carried, "max_hours", DEFAULT_HYDRO_MAX_HOURS),
+        state_of_charge_initial=_carried(carried, "state_of_charge_initial", 0.0),
+        inflow_mw=_carried(carried, "inflow_mw", 0.0),
     )
+
+
+def _carried(record: Any, field_name: str, fallback: float) -> float:
+    """What the sidecar states for a field, or the PyPSA default where it states nothing."""
+    if record is None:
+        return fallback
+    value = getattr(record, field_name, None)
+    return fallback if value is None else float(value)
 
 
 def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
@@ -171,7 +189,7 @@ def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
     reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
     # HydroDispatch is sourced from a PyPSA Generator with no extensions sidecar, so the storage
     # fields below have no Sienna source; each falls back to a PyPSA default. Lossy.
-    reporter.record_max_hours_default(m.name, DEFAULT_HYDRO_MAX_HOURS)
+    reporter.record_max_hours_default(m.name, m.max_hours)
     reporter.record_efficiency_default(m.name, DEFAULT_STORAGE_EFFICIENCY)
     reporter.record_state_of_charge_initial_default(m.name)
     reporter.record_cyclic_default(m.name)
@@ -186,11 +204,12 @@ def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.P_NOM: m.base_power,
         PyPSAStorageUnitCol.P_MIN_PU: m.p_min_pu,
         PyPSAStorageUnitCol.P_MAX_PU: m.rating,
-        PyPSAStorageUnitCol.MAX_HOURS: DEFAULT_HYDRO_MAX_HOURS,
+        PyPSAStorageUnitCol.MAX_HOURS: m.max_hours,
         PyPSAStorageUnitCol.EFFICIENCY_STORE: DEFAULT_STORAGE_EFFICIENCY,
         PyPSAStorageUnitCol.EFFICIENCY_DISPATCH: DEFAULT_STORAGE_EFFICIENCY,
         PyPSAStorageUnitCol.MARGINAL_COST: m.marginal_cost,
-        PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: 0.0,
+        PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: m.state_of_charge_initial,
+        PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: False,
         # HydroDispatch is sourced from a PyPSA Generator and carries no extensions sidecar,
         # so p_nom_extendable is not recoverable; falls back to the PyPSA default. Lossy.

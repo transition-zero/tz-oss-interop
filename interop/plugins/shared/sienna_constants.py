@@ -369,6 +369,7 @@ class PrimeMover(StrEnum):
     WS = "WS"
     HY = "HY"
     PS = "PS"
+    BA = "BA"
 
 
 class ThermalFuel(StrEnum):

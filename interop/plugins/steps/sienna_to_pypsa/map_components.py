@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionReader
+from interop.core.extensions import ExtensionKind, ExtensionReader, append_extensions
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
@@ -16,6 +16,14 @@ from interop.plugins.steps.sienna_to_pypsa.map_storage_units import SiennaToPyps
 from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsaMapTransmission
 
 _DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
+
+# The kinds no sub-step here reads. Each one describes something PyPSA states nowhere, so it
+# travels on to the destination sidecar rather than stopping at this hop.
+_RELAYED_KINDS: tuple[ExtensionKind, ...] = (
+    ExtensionKind.RESERVE,
+    ExtensionKind.CONSTRAINT,
+    ExtensionKind.NETWORK,
+)
 
 _WINDOW_ADVICE = (
     "Every TimeSeriesAssociation in one system has to cover the same snapshots, so check "
@@ -46,7 +54,13 @@ class SiennaToPypsaMapComponents(TranslationStep):
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)
         self._drop_profiles_off_the_window(state)
+        self._relay_unread(state, reader)
         return state
+
+    def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
+        """Carry each kind no sub-step reads on to the destination sidecar."""
+        for kind in _RELAYED_KINDS:
+            append_extensions(state.destination_extensions, kind, reader.relay(kind))
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:
         return (
