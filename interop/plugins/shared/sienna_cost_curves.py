@@ -7,6 +7,8 @@ through these.
 
 from __future__ import annotations
 
+from typing import Any
+
 import polars as pl
 
 from interop.plugins.shared.sienna_constants import (
@@ -57,3 +59,46 @@ def load_cost(price: pl.Expr) -> pl.Expr:
         fixed=pl.lit(0.0),
         variable=variable_cost_curve(price),
     )
+
+
+def linear_value_curve_value(proportional: float, *, input_at_zero: float | None) -> dict[str, Any]:
+    """The same InputOutputCurve as ``linear_value_curve``, as a value rather than an expression."""
+    return {
+        "curve_type": str(SiennaCurveType.INPUT_OUTPUT),
+        "function_data": {
+            "function_type": str(SiennaFunctionType.LINEAR),
+            "proportional_term": proportional,
+            "constant_term": 0.0,
+        },
+        "input_at_zero": input_at_zero,
+    }
+
+
+def variable_cost_curve_value(proportional: float) -> dict[str, Any]:
+    """The same CostCurve as ``variable_cost_curve``, as a value rather than an expression."""
+    return {
+        "variable_cost_type": str(SiennaVariableCostType.COST),
+        "power_units": str(SiennaUnitSystem.NATURAL_UNITS),
+        "value_curve": linear_value_curve_value(proportional, input_at_zero=None),
+        "vom_cost": linear_value_curve_value(0.0, input_at_zero=0.0),
+    }
+
+
+def thermal_cost_value(proportional: float, start_up: float) -> dict[str, Any]:
+    """A ThermalGenerationCost: one linear variable segment, a start price, nothing else."""
+    return {
+        "cost_type": str(SiennaCostType.THERMAL),
+        "fixed": 0.0,
+        "shut_down": 0.0,
+        "start_up": start_up,
+        "variable": variable_cost_curve_value(proportional),
+    }
+
+
+def renewable_cost_value(proportional: float) -> dict[str, Any]:
+    """A RenewableGenerationCost: one linear variable segment and no fixed charge."""
+    return {
+        "cost_type": str(SiennaCostType.RENEWABLE),
+        "variable": variable_cost_curve_value(proportional),
+        "fixed": 0.0,
+    }

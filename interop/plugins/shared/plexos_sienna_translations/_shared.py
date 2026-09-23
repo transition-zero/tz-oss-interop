@@ -10,8 +10,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from interop.core.reporting import EventRecorder
+from interop.core.reporting import EventRecorder, ScopedRecorder
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.framework_reporting import DestinationReporter
+from interop.plugins.shared.plexos_pypsa_translations.decisions import (
+    Decision,
+    DecisionKind,
+    MappedColumns,
+    SourceValue,
+    mapped_fields,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -105,3 +113,60 @@ def record(recorder: EventRecorder, events: Sequence[TranslationEvent]) -> None:
     """Hand every event of one reading to the recorder, in the order it states them."""
     for event in events:
         recorder.append(event)
+
+
+class SiennaSourceReporter(DestinationReporter):
+    """Records what the translation did not carry: an object left out, or a value dropped.
+
+    Both name only their PLEXOS source, so neither needs a destination component.
+    """
+
+    source_framework = Framework.PLEXOS
+    destination_framework = Framework.SIENNA
+
+    def record_skipped(self, source: SourceValue, note: str) -> None:
+        self._skipped(sources=[_source_field(source)], note=note)
+
+    def record_dropped(self, source: SourceValue, note: str) -> None:
+        """A source value Sienna has no home for, so the gap is visible rather than silent."""
+        self._not_mapped(sources=[_source_field(source)], note=note)
+
+
+class SiennaComponentReporter(SiennaSourceReporter):
+    """Turns ``Decision``s into ``TranslationEvent``s for one Sienna destination component."""
+
+    def __init__(self, recorder: ScopedRecorder, component: str) -> None:
+        super().__init__(recorder)
+        self.destination_component = component
+
+    def record_mapping(self, name: str, mapping: Any) -> None:
+        """Record one event per decision the mapping declared with ``maps_to``."""
+        for mapped, decision in mapped_fields(mapping):
+            self.record(name, mapped, decision)
+
+    def record(self, name: str, mapped: MappedColumns, decision: Decision) -> None:
+        if decision.kind is DecisionKind.UNREPORTED:
+            return
+        destinations = [
+            self._destination(name, column, mapped.value_for(column, decision.value), mapped.unit)
+            for column in mapped.columns
+        ]
+        if decision.kind is DecisionKind.TRANSLATOR_DEFAULT:
+            self._default_applied(destinations=destinations, note=decision.explanation)
+        else:
+            self._derived(
+                destinations=destinations,
+                derivation=decision.explanation,
+                sources=[_source_field(source) for source in decision.sources],
+            )
+
+
+def _source_field(source: SourceValue) -> SourceField:
+    return SourceField(
+        framework=source.framework,
+        component=source.component,
+        name=source.name,
+        attribute=source.attribute,
+        value=source.value,
+        unit=source.unit,
+    )

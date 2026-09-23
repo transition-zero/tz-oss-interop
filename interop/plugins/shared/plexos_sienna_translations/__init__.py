@@ -12,6 +12,15 @@ from interop.plugins.shared.plexos_sienna_translations._buses import (
     build_bus_extensions,
     build_buses_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._carriers import (
+    CarrierTarget,
+    CarrierTargets,
+)
+from interop.plugins.shared.plexos_sienna_translations._generators import (
+    generator_schema,
+    generator_types,
+    map_generators,
+)
 from interop.plugins.shared.plexos_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
     LOAD_TRANSLATIONS,
@@ -24,6 +33,11 @@ from interop.plugins.shared.plexos_sienna_translations._loads import (
 
 __all__ = [
     "BUS_TRANSLATIONS",
+    "CarrierTarget",
+    "CarrierTargets",
+    "generator_schema",
+    "generator_types",
+    "map_generators",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
     "NODE_LOAD_SERIES_KEY",
