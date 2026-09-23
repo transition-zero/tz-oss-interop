@@ -82,6 +82,9 @@ class StageSiennaSystemJson(StagesExtensionsSidecar, StagedSource):
             source_topology=topology_frames,
             source_time_series=time_series_frames,
             source_extensions=extensions,
+            source_extension_series=self._stage_extension_companions(
+                params.extensions_json_path, extensions
+            ),
         )
 
 

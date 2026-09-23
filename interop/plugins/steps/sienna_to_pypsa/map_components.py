@@ -58,9 +58,16 @@ class SiennaToPypsaMapComponents(TranslationStep):
         return state
 
     def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
-        """Carry each kind no sub-step reads on to the destination sidecar."""
+        """Carry each kind no sub-step reads on to the destination sidecar.
+
+        A record that names a companion parquet states no value of its own, so the frame
+        travels with it.
+        """
         for kind in _RELAYED_KINDS:
             append_extensions(state.destination_extensions, kind, reader.relay(kind))
+            series = state.source_extension_series.get(kind)
+            if series is not None:
+                state.destination_extension_series[kind] = series
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:
         return (
