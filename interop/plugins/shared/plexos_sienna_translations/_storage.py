@@ -24,7 +24,10 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
 )
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
-from interop.plugins.shared.plexos_pypsa_translations._expansion import record_expansion_notes
+from interop.plugins.shared.plexos_pypsa_translations._expansion import (
+    record_expansion_notes,
+    warn_about_dropped_builds,
+)
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import StorageUnitMapping
 from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -196,6 +199,7 @@ def map_storage(
         translated.extensions.append(_extension_for(mapping, reporter))
         record_expansion_notes(reporter, mapping.name, mapping.expansion)
         _record_expansion(reporter, mapping)
+    warn_about_dropped_builds(mapping.expansion for mapping in derived.mappings)
     return translated
 
 

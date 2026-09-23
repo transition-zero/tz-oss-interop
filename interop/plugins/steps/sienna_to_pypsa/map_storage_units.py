@@ -11,6 +11,7 @@ from interop.core.extensions import (
     ExtensionLookup,
     ExtensionReader,
     StorageExtension,
+    append_extensions,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
@@ -93,7 +94,21 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 rows, schema=STORAGE_UNITS_DESTINATION_SCHEMA
             )
             self._record_hydro_inflow(state, hydro_base_power)
+            self._carry_on(state, [row[PyPSAStorageUnitCol.NAME] for row in rows])
         return state
+
+    def _carry_on(self, state: State, names: list[str]) -> None:
+        """Pass on what a unit states that PyPSA has no column for either.
+
+        The size of one unit, the Technical Life and the yearly charge have no PyPSA column,
+        so they travel to the next hop in the sidecar rather than stopping here.
+        """
+        staged = self._extensions.read(ExtensionKind.STORAGE)
+        append_extensions(
+            state.destination_extensions,
+            ExtensionKind.STORAGE,
+            [_carried_storage(staged.get(name)) for name in names],
+        )
 
     def _record_hydro_inflow(self, state: State, hydro_base_power: dict[str, float]) -> None:
         frame = state.source_time_series.get(
@@ -120,6 +135,27 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 )
             )
         append_metadata(state, metadata_rows)
+
+
+def _carried_storage(record: StorageExtension) -> StorageExtension:
+    """One unit's record, holding only what PyPSA states nowhere."""
+    return StorageExtension(
+        name=record.name,
+        unit_size_mw=record.unit_size_mw,
+        technical_life_years=record.technical_life_years,
+        fom_charge_per_mw_year=record.fom_charge_per_mw_year,
+        retirement_year=record.retirement_year,
+    )
+
+
+def _record_inflow(
+    reporter: StorageUnitReporter, sienna_type: SiennaComponent, name: str, inflow: float
+) -> None:
+    """A reservoir that states an inflow refills at it; one that states none refills at zero."""
+    if inflow:
+        reporter.record_inflow_from_ext(sienna_type, name, inflow)
+    else:
+        reporter.record_inflow_default(name)
 
 
 @dataclass(frozen=True)
@@ -194,6 +230,7 @@ def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
     reporter.record_state_of_charge_initial_default(m.name)
     reporter.record_cyclic_default(m.name)
     reporter.record_p_nom_extendable_default(m.name)
+    _record_inflow(reporter, SiennaComponent.HYDRO_DISPATCH, m.name, m.inflow_mw)
 
 
 def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
