@@ -1,7 +1,7 @@
 @slow @fork_unsafe
 Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
   plexos-to-sienna-investments is a composed pipeline, not a translator of its own: it runs
-  plexos-to-pypsa and then pypsa-to-sienna-investments over the network the first leg wrote.
+  plexos-to-pypsa-direct and then pypsa-to-sienna-investments over the network the first leg wrote.
   The second leg writes two documents, the base system holding the fleet that already runs
   and the portfolio holding what the plan may build beside it.
 

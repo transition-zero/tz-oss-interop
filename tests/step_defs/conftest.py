@@ -480,6 +480,19 @@ def invoke_translate_cancel_at_destination(
     _dispatch(Command.TRANSLATE, make_container())
 
 
+def invoke_translate_cancel_at_pipeline(
+    monkeypatch: pytest.MonkeyPatch, source_framework: str, destination_framework: str
+) -> None:
+    """Dispatch translate, choose both frameworks, then cancel at the pipeline prompt.
+
+    Cancelling records the pipeline select's offered choices without running a pipeline.
+    """
+    stub_questionary_attr(
+        monkeypatch, "select", iter([source_framework, destination_framework, None])
+    )
+    _dispatch(Command.TRANSLATE, make_container())
+
+
 def invoke_compare_cancel_at_first_framework(monkeypatch: pytest.MonkeyPatch) -> None:
     """Dispatch compare and cancel at the first-framework prompt, recording its offered choices."""
     stub_questionary_attr(monkeypatch, "select", iter([None]))

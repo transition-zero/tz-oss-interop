@@ -1,5 +1,5 @@
 @slow @fork_unsafe
-Feature: pypsa_to_sienna_map_components and pypsa_to_sienna_relate_components translate PyPSA Bus rows to Sienna ACBus
+Feature: pypsa_to_sienna_map_components and sienna_relate_components translate PyPSA Bus rows to Sienna ACBus
   The convert step filters source buses to AC-only and emits an intermediate
   destination table; the topology step derives bustype and areas from each bus's
   control and location fields. Non-AC buses are skipped and recorded in the
@@ -22,8 +22,8 @@ Feature: pypsa_to_sienna_map_components and pypsa_to_sienna_relate_components tr
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.carrier` = AC | `sienna.ACBus.bus_AL.type` = ACBus | AC carrier -> ACBus |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.location` = AL | `sienna.ACBus.bus_AL.area` = AL | location -> area name; null if absent |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ACBus.bus_AL.bustype` = PQ |  | n.buses.control absent; defaulted to PQ | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | pypsa_to_sienna_relate_components |"
-    And the file "decisions.md" contains "| `sienna.Area.AL` | `sienna.Area.AL.type` = Area | Area |  | pypsa-to-sienna | pypsa_to_sienna_relate_components |"
+    And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | sienna_relate_components |"
+    And the file "decisions.md" contains "| `sienna.Area.AL` | `sienna.Area.AL.type` = Area | Area |  | pypsa-to-sienna | sienna_relate_components |"
 
   Scenario: a classic NETCDF3 network reads back through the filesystem port
     Given a PyPSA network
@@ -124,8 +124,8 @@ Feature: pypsa_to_sienna_map_components and pypsa_to_sienna_relate_components tr
     And the file "outputs/system.json" parses as JSON with 2 components of type "Area"
     And the file "outputs/system.json" parses as JSON with component "Area" named "AL" having "name" set to "AL"
     And the file "outputs/system.json" parses as JSON with component "Area" named "AT" having "name" set to "AT"
-    And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | pypsa_to_sienna_relate_components |"
-    And the file "decisions.md" contains "| `sienna.ACBus.bus_AT.area` = AT | `sienna.Area.AT` | one Area per distinct location |  | pypsa-to-sienna | pypsa_to_sienna_relate_components |"
+    And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | sienna_relate_components |"
+    And the file "decisions.md" contains "| `sienna.ACBus.bus_AT.area` = AT | `sienna.Area.AT` | one Area per distinct location |  | pypsa-to-sienna | sienna_relate_components |"
 
   Scenario: a field of a bus record this leg reads nothing from is reported as dropped
     The price a shortfall costs is the one thing this leg takes off a bus's sidecar record,

@@ -99,4 +99,4 @@ Feature: Add load shedding for a reliability study
     And the model contains load "North" with peak 1000
     And the model is saved as "inputs/unpriced_voll.xml"
     When I run translate against "inputs/unpriced_voll.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "PyPSA has no home for a region VoLL"
+    Then the file "decisions.md" contains "Sienna has no home for a region VoLL"
