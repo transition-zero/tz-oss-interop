@@ -41,6 +41,7 @@ from interop.plugins.shared.plexos_constants import (
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     find_blocked_candidate,
     record_expansion_notes,
+    warn_about_dropped_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_decisions import (
     decide_generator,
@@ -68,10 +69,12 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
+    SkippedComponent,
     SourceValue,
     declares,
     destination_row,
     maps_to,
+    warn_about_skips,
 )
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
@@ -264,11 +267,13 @@ def map_generators(
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
     sienna_type_by_name: dict[str, str] = {}
+    skipped: list[SkippedComponent] = []
+    kept_expansions: list[Any] = []
     for generator in _generator_rows(state):
         name = generator[PlexosObjectCol.NAME]
         if name in turbines:
             continue
-        target = _target_for(name, generator, lookups, bus_names, targets, recorder)
+        target = _target_for(name, generator, lookups, bus_names, targets, skipped)
         if target is None:
             continue
         reporter = SiennaComponentReporter(recorder, target.sienna_type)
@@ -283,6 +288,7 @@ def map_generators(
         rows.append(row)
         _record_category(reporter, target.mapping)
         _record_source_notes(reporter, target.mapping)
+        kept_expansions.append(target.mapping.expansion)
         extensions.append(_extension_for(target.mapping))
         sienna_type_by_name[target.mapping.name] = target.sienna_type
         profile = target.mapping.availability.profile
@@ -293,6 +299,8 @@ def map_generators(
                 sienna_type=target.sienna_type,
                 sienna_id=row[SiennaThermalGeneratorCol.ID],
             )
+    _report_left_out(recorder, skipped)
+    warn_about_dropped_builds(expansion for expansion in kept_expansions)
     return TranslatedGenerators(
         rows_by_type=rows_by_type,
         extensions=extensions,
@@ -366,33 +374,32 @@ def _target_for(
     lookups: Lookups,
     bus_names: set[str],
     targets: CarrierTargets,
-    recorder: ScopedRecorder,
+    skipped: list[SkippedComponent],
 ) -> _Translated | None:
     """One generator's mapping and its Sienna type, or None where it is left out.
 
     The order the readings run in is the order the PLEXOS to PyPSA hop runs them in, so a
     generator both hops leave out is left out for the same stated reason.
     """
-    reporter = SiennaComponentReporter(recorder, SiennaComponent.THERMAL_STANDARD)
     node = lookups.gen_to_node.get(name)
     if node is None:
-        _left_out(reporter, name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
+        _left_out(skipped, name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
         return None
     if node not in bus_names:
-        _left_out(reporter, name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
+        _left_out(skipped, name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
         return None
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
         _left_out(
-            reporter, name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW
+            skipped, name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW
         )
         return None
     source = read_source(generator, name, lookups)
     if source.units == 0.0 and not source.is_candidate:
-        _left_out(reporter, name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
+        _left_out(skipped, name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
         return None
     if source.p_nom <= 0.0:
         _left_out(
-            reporter,
+            skipped,
             name,
             PlexosProperty.MAX_CAPACITY,
             None,
@@ -402,30 +409,34 @@ def _target_for(
         return None
     blocked = find_blocked_candidate(source.candidate)
     if blocked is not None:
-        reporter.record_skipped(blocked.source, blocked.note)
+        skipped.append(blocked)
         return None
     mapping = derive_generator(source, node, lookups)
     target = targets.find(mapping.carrier)
     if target is None:
-        reporter.record_skipped(
-            SourceValue(PlexosClass.GENERATOR, name, None, None),
-            _carrier_note(mapping.carrier, mapping.fuel is not None),
+        skipped.append(
+            SkippedComponent(
+                SourceValue(PlexosClass.GENERATOR, name, None, None),
+                _carrier_note(mapping.carrier, mapping.fuel is not None),
+            )
         )
         return None
     if target.sienna_type not in _GENERATOR_TYPES:
         return None
     if has_infeasible_dispatch_range(mapping):
-        reporter.record_skipped(
-            SourceValue(
-                PlexosClass.GENERATOR,
-                name,
-                mapping.minimum.source_property,
-                mapping.minimum.source_value,
-            ),
-            _INFEASIBLE_NOTE.format(
-                minimum=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom),
-                ceiling=_megawatts(mapping.availability.static_p_max_pu, mapping.p_nom),
-            ),
+        skipped.append(
+            SkippedComponent(
+                SourceValue(
+                    PlexosClass.GENERATOR,
+                    name,
+                    mapping.minimum.source_property,
+                    mapping.minimum.source_value,
+                ),
+                _INFEASIBLE_NOTE.format(
+                    minimum=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom),
+                    ceiling=_megawatts(mapping.availability.static_p_max_pu, mapping.p_nom),
+                ),
+            )
         )
         return None
     return _Translated(
@@ -437,16 +448,25 @@ def _target_for(
 
 
 def _left_out(
-    reporter: SiennaComponentReporter,
+    skipped: list[SkippedComponent],
     name: str,
     attribute: str,
     value: Any,
     note: str,
     unit: str | None = None,
 ) -> None:
-    """Record why one generator is left out."""
-    reporter.record_skipped(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
-    return None
+    """Remember why one generator is left out, so the report and the warning both say it."""
+    skipped.append(
+        SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
+    )
+
+
+def _report_left_out(recorder: ScopedRecorder, skipped: list[SkippedComponent]) -> None:
+    """Every generator left out reaches the report, and the console once per reading."""
+    reporter = SiennaComponentReporter(recorder, SiennaComponent.THERMAL_STANDARD)
+    for one in skipped:
+        reporter.record_skipped(one.source, one.note)
+    warn_about_skips(skipped)
 
 
 def _carrier_note(carrier: str, burns_fuel: bool) -> str:
