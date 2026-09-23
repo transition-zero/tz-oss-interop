@@ -37,6 +37,9 @@ from interop.plugins.shared.plexos_sienna_translations._storage import (
 from interop.plugins.shared.plexos_sienna_translations._transmission import (
     map_transmission,
 )
+from interop.plugins.shared.plexos_sienna_translations._window import (
+    drop_profiles_off_the_window,
+)
 
 __all__ = [
     "BUS_TRANSLATIONS",
@@ -46,6 +49,7 @@ __all__ = [
     "generator_schema",
     "generator_types",
     "map_generators",
+    "drop_profiles_off_the_window",
     "map_storage",
     "map_transmission",
     "LOAD_BASE_POWER_TRANSLATIONS",

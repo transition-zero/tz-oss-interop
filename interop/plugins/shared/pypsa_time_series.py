@@ -173,7 +173,7 @@ def _warn_off_the_window(off_window: list[OffWindowProfile], snapshots: int, adv
         "number, so they are left off the network: %s. %s",
         snapshots,
         len(off_window),
-        _summarise(off_window),
+        summarise_off_window(off_window),
         advice,
     )
 
@@ -235,7 +235,7 @@ def _rows_by_component(frame: pl.LazyFrame) -> dict[str, int]:
     return dict(counted.iter_rows())
 
 
-def _summarise(off_window: list[OffWindowProfile]) -> str:
+def summarise_off_window(off_window: list[OffWindowProfile]) -> str:
     """Group the profiles by how many values they carry; a real model has hundreds."""
     by_count: dict[int, list[str]] = {}
     for profile in off_window:

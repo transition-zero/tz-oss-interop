@@ -9,7 +9,10 @@ from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.plexos_sienna_translations import CarrierTargets
+from interop.plugins.shared.plexos_sienna_translations import (
+    CarrierTargets,
+    drop_profiles_off_the_window,
+)
 from interop.plugins.shared.plexos_sienna_user_mappings import PlexosSiennaCarrierMappings
 from interop.plugins.steps.plexos_to_sienna.map_buses import PlexosToSiennaMapBuses
 from interop.plugins.steps.plexos_to_sienna.map_constraints import (
@@ -26,6 +29,10 @@ from interop.plugins.steps.plexos_to_sienna.map_transmission import (
 )
 
 log = logging.getLogger(__name__)
+
+# The one whole-network concern that runs after the sub-steps, named so its decisions
+# attribute to it rather than to this composite.
+_DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
 
 
 class PlexosToSiennaMapComponents(TranslationStep):
@@ -50,6 +57,7 @@ class PlexosToSiennaMapComponents(TranslationStep):
         plexos_sienna_mappings: PlexosSiennaCarrierMappings,
     ) -> None:
         targets = CarrierTargets(plexos_sienna_mappings)
+        self._off_window_recorder = _scoped(recorder, _DROP_PROFILES_OFF_THE_WINDOW)
         self._sub_steps: tuple[TranslationStep, ...] = (
             PlexosToSiennaMapBuses(_scoped(recorder, PlexosToSiennaMapBuses.name)),
             PlexosToSiennaMapLoads(_scoped(recorder, PlexosToSiennaMapLoads.name)),
@@ -65,6 +73,7 @@ class PlexosToSiennaMapComponents(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         for sub_step in self._sub_steps:
             state = sub_step.run(state, params)
+        drop_profiles_off_the_window(state, self._off_window_recorder)
         return state
 
 
