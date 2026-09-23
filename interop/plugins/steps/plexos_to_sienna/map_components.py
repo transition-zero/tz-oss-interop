@@ -12,10 +12,14 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.plexos_sienna_translations import CarrierTargets
 from interop.plugins.shared.plexos_sienna_user_mappings import PlexosSiennaCarrierMappings
 from interop.plugins.steps.plexos_to_sienna.map_buses import PlexosToSiennaMapBuses
+from interop.plugins.steps.plexos_to_sienna.map_constraints import (
+    PlexosToSiennaMapConstraints,
+)
 from interop.plugins.steps.plexos_to_sienna.map_generators import (
     PlexosToSiennaMapGenerators,
 )
 from interop.plugins.steps.plexos_to_sienna.map_loads import PlexosToSiennaMapLoads
+from interop.plugins.steps.plexos_to_sienna.map_reserves import PlexosToSiennaMapReserves
 from interop.plugins.steps.plexos_to_sienna.map_storage import PlexosToSiennaMapStorage
 from interop.plugins.steps.plexos_to_sienna.map_transmission import (
     PlexosToSiennaMapTransmission,
@@ -53,7 +57,9 @@ class PlexosToSiennaMapComponents(TranslationStep):
                 _scoped(recorder, PlexosToSiennaMapGenerators.name), targets
             ),
             PlexosToSiennaMapTransmission(_scoped(recorder, PlexosToSiennaMapTransmission.name)),
+            PlexosToSiennaMapReserves(_scoped(recorder, PlexosToSiennaMapReserves.name)),
             PlexosToSiennaMapStorage(_scoped(recorder, PlexosToSiennaMapStorage.name), targets),
+            PlexosToSiennaMapConstraints(_scoped(recorder, PlexosToSiennaMapConstraints.name)),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:
