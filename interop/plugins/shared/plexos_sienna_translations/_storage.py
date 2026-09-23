@@ -24,10 +24,12 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
 )
 from interop.plugins.shared.plexos_constants import PlexosClass
+from interop.plugins.shared.plexos_pypsa_translations._expansion import record_expansion_notes
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import StorageUnitMapping
 from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    DecisionKind,
     MappedColumns,
     SourceValue,
     declares,
@@ -185,6 +187,8 @@ def map_storage(
         )
         rows.append(row)
         translated.extensions.append(_extension_for(mapping, reporter))
+        record_expansion_notes(reporter, mapping.name, mapping.expansion)
+        _record_expansion(reporter, mapping)
     return translated
 
 
@@ -297,6 +301,35 @@ def _prime_mover(mapping: StorageUnitMapping, target: CarrierTarget) -> Decision
     return Decision.derived(target.prime_mover, [source], _PRIME_MOVER_DERIVATION)
 
 
+# Every expansion value, and the sidecar field that holds it. Sienna states none of them.
+_EXPANSION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("p_nom_extendable", "extensions.p_nom_extendable"),
+    ("p_nom_max", "extensions.p_nom_max"),
+    ("p_nom_min", "extensions.p_nom_min"),
+    ("overnight_cost", "extensions.overnight_cost_per_mw"),
+    ("discount_rate", "extensions.discount_rate"),
+    ("lifetime", "extensions.lifetime_years"),
+    ("unit_size", "extensions.unit_size_mw"),
+    ("technical_life", "extensions.technical_life_years"),
+    ("fom_charge", "extensions.fom_charge_per_mw_year"),
+)
+
+
+def _record_expansion(reporter: SiennaComponentReporter, mapping: StorageUnitMapping) -> None:
+    """What a candidate may build and what building it costs, against the sidecar field."""
+    for field_name, column in _EXPANSION_COLUMNS:
+        reporter.record(
+            mapping.name, MappedColumns((column,)), getattr(mapping.expansion, field_name)
+        )
+
+
+def _decided(decision: Decision) -> float | None:
+    """A decision's number, or None where the mapping reported nothing for it."""
+    if decision.kind is DecisionKind.UNREPORTED or decision.value is None:
+        return None
+    return float(decision.value)
+
+
 def _initial_level(mapping: StorageUnitMapping, rated_power: float, hours: float) -> Decision:
     """The starting volume the chain read, restated as the fraction of the reservoir it is."""
     reservoir = rated_power * hours
@@ -336,10 +369,19 @@ def _extension_for(
     reporter.record_dropped(
         _source(mapping, "Natural Inflow", mapping.inflow.value, UNIT_MW), _INFLOW_NOTE
     )
+    expansion = mapping.expansion
     return StorageExtension(
         name=mapping.name,
-        p_nom_extendable=bool(mapping.expansion.p_nom_extendable.value),
+        p_nom_extendable=bool(expansion.p_nom_extendable.value),
         max_hours=float(mapping.max_hours.value),
         state_of_charge_initial=float(mapping.state_of_charge_initial.value or 0.0),
         inflow_mw=float(mapping.inflow.value or 0.0) or None,
+        p_nom_max=_decided(expansion.p_nom_max),
+        p_nom_min=_decided(expansion.p_nom_min),
+        overnight_cost_per_mw=_decided(expansion.overnight_cost),
+        discount_rate=_decided(expansion.discount_rate),
+        lifetime_years=_decided(expansion.lifetime),
+        unit_size_mw=_decided(expansion.unit_size),
+        technical_life_years=_decided(expansion.technical_life),
+        fom_charge_per_mw_year=_decided(expansion.fom_charge),
     )

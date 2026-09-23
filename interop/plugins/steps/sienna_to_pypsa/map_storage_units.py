@@ -240,6 +240,13 @@ class _PhsMapping:
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
     p_nom_min: float | None
+    # Sienna states one rating, no build and no inflow, so all five reach a PyPSA storage
+    # unit only through the sidecar.
+    p_nom_max: float | None
+    overnight_cost: float | None
+    discount_rate: float | None
+    lifetime: float | None
+    inflow_mw: float
 
 
 def _derive_phs(
@@ -275,6 +282,11 @@ def _derive_phs(
             operation_cost, SiennaStructField.DISCHARGE_VARIABLE_COST
         ),
         cyclic=float(operation_cost.get(SiennaStructField.ENERGY_SHORTAGE_COST, 0.0)) > 0.0,
+        p_nom_max=ext.p_nom_max,
+        overnight_cost=ext.overnight_cost_per_mw,
+        discount_rate=ext.discount_rate,
+        lifetime=ext.lifetime_years,
+        inflow_mw=float(ext.inflow_mw or 0.0),
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
         p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
@@ -324,4 +336,9 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: m.cyclic,
         PyPSAStorageUnitCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
         PyPSAStorageUnitCol.P_NOM_MIN: m.p_nom_min,
+        PyPSAStorageUnitCol.P_NOM_MAX: m.p_nom_max,
+        PyPSAStorageUnitCol.OVERNIGHT_COST: m.overnight_cost,
+        PyPSAStorageUnitCol.DISCOUNT_RATE: m.discount_rate,
+        PyPSAStorageUnitCol.LIFETIME: m.lifetime,
+        PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
     }
