@@ -30,6 +30,9 @@ from interop.plugins.shared.plexos_sienna_translations._loads import (
     build_load_ts_associations,
     build_loads_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._storage import (
+    map_storage,
+)
 from interop.plugins.shared.plexos_sienna_translations._transmission import (
     map_transmission,
 )
@@ -41,6 +44,7 @@ __all__ = [
     "generator_schema",
     "generator_types",
     "map_generators",
+    "map_storage",
     "map_transmission",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",

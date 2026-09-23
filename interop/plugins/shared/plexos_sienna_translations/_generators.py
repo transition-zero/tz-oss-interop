@@ -40,6 +40,9 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     Lookups,
     build_lookups,
 )
+from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
+    storage_turbine_names,
+)
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     MappedColumns,
@@ -191,12 +194,16 @@ def map_generators(
     lookups = build_lookups(state)
     # build_lookups reads the bus names off the PyPSA table, which this hop never writes.
     bus_names = _bus_names(state)
+    # A turbine drawing on a Storage becomes a storage unit, never also a generator.
+    turbines = storage_turbine_names(state)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
     availability: dict[str, tuple[str, float]] = {}
     sienna_type_by_name: dict[str, str] = {}
     for generator in _generator_rows(state):
         name = generator[PlexosObjectCol.NAME]
+        if name in turbines:
+            continue
         source = read_source(generator, name, lookups)
         target = _target_for(name, source, lookups, bus_names, targets, recorder)
         if target is None:
