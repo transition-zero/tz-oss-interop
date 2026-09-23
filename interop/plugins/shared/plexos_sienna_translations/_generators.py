@@ -163,6 +163,14 @@ _RENEWABLE_COST_COLUMN = MappedColumns(
 )
 # What the carbon a fuel releases adds, and what a start's fuel costs. Neither is a column
 # of its own; each is the source of the value that cites it.
+_LIMITS_MIN_ATTRIBUTE = f"{SiennaThermalGeneratorCol.ACTIVE_POWER_LIMITS}.min"
+_RAMP_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.RAMP_LIMITS}.up"
+_TIME_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.TIME_LIMITS}.up"
+_START_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST}.start_up"
+_LIMITS_MIN_COLUMN = MappedColumns((_LIMITS_MIN_ATTRIBUTE,), UNIT_MW)
+_RAMP_UP_COLUMN = MappedColumns((_RAMP_UP_ATTRIBUTE,), UNIT_MW_PER_MINUTE)
+_TIME_UP_COLUMN = MappedColumns((_TIME_UP_ATTRIBUTE,), UNIT_HOURS)
+_START_UP_COLUMN = MappedColumns((_START_UP_ATTRIBUTE,), UNIT_DOLLARS)
 _CARBON_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST} carbon term"
 _START_FUEL_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST}.start_up fuel term"
 _CARBON_TERM_COLUMN = MappedColumns((_CARBON_TERM_ATTRIBUTE,), UNIT_DOLLARS_PER_MWH)
@@ -181,12 +189,11 @@ class _ThermalMapping:
     active_power: Decision = maps_to(SiennaThermalGeneratorCol.ACTIVE_POWER, unit=UNIT_MW)
     reactive_power: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER, unit=UNIT_MW)
     rating: Decision = maps_to(SiennaThermalGeneratorCol.RATING)
-    active_power_limits: Decision = maps_to(
-        SiennaThermalGeneratorCol.ACTIVE_POWER_LIMITS, unit=UNIT_MW
-    )
+    active_power_limits: Decision = declares(_LIMITS_MIN_COLUMN)
     reactive_power_limits: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER_LIMITS)
-    ramp_limits: Decision = maps_to(SiennaThermalGeneratorCol.RAMP_LIMITS, unit=UNIT_MW_PER_MINUTE)
-    time_limits: Decision = maps_to(SiennaThermalGeneratorCol.TIME_LIMITS, unit=UNIT_HOURS)
+    ramp_limits: Decision = declares(_RAMP_UP_COLUMN)
+    time_limits: Decision = declares(_TIME_UP_COLUMN)
+    start_up: Decision = declares(_START_UP_COLUMN)
     operation_cost: Decision = declares(_THERMAL_COST_COLUMN)
     prime_mover_type: Decision = maps_to(SiennaThermalGeneratorCol.PRIME_MOVER_TYPE)
     fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL_TYPE)
@@ -459,6 +466,9 @@ def _row_for(translated: _Translated, reporter: SiennaComponentReporter) -> dict
         row[SiennaThermalGeneratorCol.OPERATION_COST] = thermal_cost_value(
             mapping.cost.marginal_cost, _start_up_cost(mapping)
         )
+        row[SiennaThermalGeneratorCol.ACTIVE_POWER_LIMITS] = _limits(mapping)
+        row[SiennaThermalGeneratorCol.RAMP_LIMITS] = _ramp_struct(translated)
+        row[SiennaThermalGeneratorCol.TIME_LIMITS] = _time_struct(translated)
         return row
     renewable = _derive_renewable(translated)
     reporter.record_mapping(name, renewable)
@@ -495,10 +505,11 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         active_power=_active_power(mapping),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
         rating=Decision.default(mapping.availability.static_p_max_pu, _RATING_NOTE),
-        active_power_limits=_active_power_limits(mapping),
+        active_power_limits=_minimum_decision(translated),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
-        ramp_limits=_ramp_limits(translated),
-        time_limits=_time_limits(translated),
+        ramp_limits=_ramp_decision(translated),
+        time_limits=_time_decision(translated),
+        start_up=_start_up_decision(translated),
         operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
         fuel_type=_fuel_type(mapping, target),
@@ -545,34 +556,47 @@ def _active_power(mapping: GeneratorMapping) -> Decision:
     return Decision.derived(megawatts, [source], _ACTIVE_POWER_DERIVATION)
 
 
-def _active_power_limits(mapping: GeneratorMapping) -> Decision:
-    limits = {
+def _limits(mapping: GeneratorMapping) -> dict[str, float]:
+    """What the generator may produce, in megawatts."""
+    return {
         "min": _megawatts(mapping.minimum.p_min_pu, mapping.p_nom),
         "max": _megawatts(mapping.availability.static_p_max_pu, mapping.p_nom),
     }
-    sources = [
-        SourceValue(PlexosClass.GENERATOR, mapping.name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW)
-    ]
-    return Decision.derived(limits, sources, _LIMITS_DERIVATION)
 
 
-def _ramp_limits(translated: _Translated) -> Decision:
+def _minimum_decision(translated: _Translated) -> Decision:
+    """The floor the generator is held to, as the shared reading states it, in megawatts."""
     mapping = translated.mapping
-    commitment = mapping.unit_commitment
+    decision = decide_generator(mapping).p_min_pu
+    return replace(decision, value=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom))
+
+
+def _ramp_struct(translated: _Translated) -> dict[str, float | None] | None:
+    """The rates the unit may change output at, in megawatts per minute."""
+    commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.ramp_limit_up is None:
+        return None
+    return {
+        "up": _rate_per_minute(commitment.ramp_limit_up, translated),
+        "down": _rate_per_minute(commitment.ramp_limit_down, translated),
+    }
+
+
+def _ramp_decision(translated: _Translated) -> Decision:
+    """The rate the unit may ramp up at, capped at one snapshot's worth of its capacity."""
+    struct = _ramp_struct(translated)
+    if struct is None:
         return Decision.unreported(None)
-    up = _rate_per_minute(commitment.ramp_limit_up, translated)
-    down = _rate_per_minute(commitment.ramp_limit_down, translated)
-    sources = [
-        SourceValue(
-            PlexosClass.GENERATOR,
-            mapping.name,
-            PlexosProperty.MAX_RAMP_UP,
-            commitment.max_ramp_up,
-            UNIT_MW_PER_MINUTE,
-        )
-    ]
-    return Decision.derived({"up": up, "down": down}, sources, _RAMP_DERIVATION)
+    commitment = translated.mapping.unit_commitment
+    assert commitment is not None
+    source = SourceValue(
+        PlexosClass.GENERATOR,
+        translated.mapping.name,
+        PlexosProperty.MAX_RAMP_UP,
+        commitment.max_ramp_up,
+        UNIT_MW_PER_MINUTE,
+    )
+    return Decision.derived(struct["up"], [source], _RAMP_DERIVATION)
 
 
 def _rate_per_minute(per_snapshot: float | None, translated: _Translated) -> float | None:
@@ -582,27 +606,34 @@ def _rate_per_minute(per_snapshot: float | None, translated: _Translated) -> flo
     return per_snapshot * translated.mapping.p_nom / translated.minutes_per_snapshot
 
 
-def _time_limits(translated: _Translated) -> Decision:
-    mapping = translated.mapping
-    commitment = mapping.unit_commitment
+def _time_struct(translated: _Translated) -> dict[str, float] | None:
+    """How long the unit must stay on or off once it changes state, in hours."""
+    commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.min_up_time is None:
-        return Decision.unreported(None)
-    limits = {
+        return None
+    return {
         "up": (commitment.min_up_time or 0.0) * translated.minutes_per_snapshot / _MINUTES_PER_HOUR,
         "down": (commitment.min_down_time or 0.0)
         * translated.minutes_per_snapshot
         / _MINUTES_PER_HOUR,
     }
-    sources = [
-        SourceValue(
-            PlexosClass.GENERATOR,
-            mapping.name,
-            PlexosProperty.MIN_UP_TIME,
-            commitment.min_up_hours,
-            UNIT_HOURS,
-        )
-    ]
-    return Decision.derived(limits, sources, _TIME_LIMITS_DERIVATION)
+
+
+def _time_decision(translated: _Translated) -> Decision:
+    """How long the unit must stay on once it starts, in hours."""
+    struct = _time_struct(translated)
+    if struct is None:
+        return Decision.unreported(None)
+    commitment = translated.mapping.unit_commitment
+    assert commitment is not None
+    source = SourceValue(
+        PlexosClass.GENERATOR,
+        translated.mapping.name,
+        PlexosProperty.MIN_UP_TIME,
+        commitment.min_up_hours,
+        UNIT_HOURS,
+    )
+    return Decision.derived(struct["up"], [source], _TIME_LIMITS_DERIVATION)
 
 
 def _cost_decision(translated: _Translated) -> Decision:
