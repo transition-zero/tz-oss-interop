@@ -49,6 +49,7 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_decisions impor
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import (
     GeneratorMapping,
+    SourceGenerator,
     StartPricing,
     derive_generator,
     has_infeasible_dispatch_range,
@@ -129,7 +130,7 @@ _BASE_POWER_DERIVATION = "Max Capacity x Units"
 _ACTIVE_POWER_DERIVATION = "the minimum this generator can be held to"
 _ACTIVE_POWER_NOTE = "the generator states no minimum; active_power defaults to 0.0"
 _LIMITS_DERIVATION = "the minimum and the rated capacity, in MW"
-_RAMP_DERIVATION = "Max Ramp, capped at the rate that covers base_power in one snapshot"
+_RAMP_DERIVATION = "Max Ramp Up, capped at the rate that covers p_nom in one snapshot"
 _TIME_LIMITS_DERIVATION = "Min Up Time and Min Down Time, in hours"
 _COST_DERIVATION = "the marginal cost, as the variable cost curve's proportional term"
 _START_UP_DERIVATION = "what a start costs"
@@ -151,8 +152,8 @@ _RETIRED_NOTE = "Units = 0 and no Max Units Built marks a retired generator"
 _NO_NODE_NOTE = "this object is on no Node, so it has no bus to connect to"
 _BUSLESS_NOTE = "the Node this object sits on was not translated to a bus"
 _INFEASIBLE_NOTE = (
-    "the minimum {minimum} MW sits above the available {ceiling} MW, which no dispatch can "
-    "meet, so the generator is dropped"
+    "p_min_pu {minimum} sits above p_max_pu {ceiling}, which no dispatch can meet, so the "
+    "generator is dropped"
 )
 _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispatch"
 
@@ -383,63 +384,20 @@ def _target_for(
     The order the readings run in is the order the PLEXOS to PyPSA hop runs them in, so a
     generator both hops leave out is left out for the same stated reason.
     """
-    node = lookups.gen_to_node.get(name)
-    if node is None:
-        _left_out(skipped, name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
-        return None
-    if node not in bus_names:
-        _left_out(skipped, name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
-        return None
-    if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
-        _left_out(
-            skipped, name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW
-        )
+    left_out = _unreadable(name, generator, lookups, bus_names)
+    if left_out is not None:
+        skipped.append(left_out)
         return None
     source = read_source(generator, name, lookups)
-    if source.units == 0.0 and not source.is_candidate:
-        _left_out(skipped, name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
-        return None
-    if source.p_nom <= 0.0:
-        _left_out(
-            skipped,
-            name,
-            PlexosProperty.MAX_CAPACITY,
-            None,
-            _NO_CAPACITY_NOTE.format(capacity=source.p_nom),
-            UNIT_MW,
-        )
-        return None
-    blocked = find_blocked_candidate(source.candidate)
-    if blocked is not None:
-        skipped.append(blocked)
-        return None
-    mapping = derive_generator(source, node, lookups)
+    mapping = derive_generator(source, lookups.gen_to_node[name], lookups)
     target = targets.find(mapping.carrier)
     if target is None:
-        skipped.append(
-            SkippedComponent(
-                SourceValue(PlexosClass.GENERATOR, name, None, None),
-                _carrier_note(mapping.carrier, mapping.fuel is not None),
-            )
-        )
+        skipped.append(_no_such_carrier(mapping))
         return None
     if target.sienna_type not in _GENERATOR_TYPES:
         return None
     if has_infeasible_dispatch_range(mapping):
-        skipped.append(
-            SkippedComponent(
-                SourceValue(
-                    PlexosClass.GENERATOR,
-                    name,
-                    mapping.minimum.source_property,
-                    mapping.minimum.source_value,
-                ),
-                _INFEASIBLE_NOTE.format(
-                    minimum=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom),
-                    ceiling=_megawatts(mapping.availability.static_p_max_pu, mapping.p_nom),
-                ),
-            )
-        )
+        skipped.append(_infeasible(mapping))
         return None
     return _Translated(
         mapping=mapping,
@@ -449,18 +407,63 @@ def _target_for(
     )
 
 
-def _left_out(
-    skipped: list[SkippedComponent],
-    name: str,
-    attribute: str,
-    value: Any,
-    note: str,
-    unit: str | None = None,
-) -> None:
-    """Remember why one generator is left out, so the report and the warning both say it."""
-    skipped.append(
-        SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
+def _unreadable(
+    name: str, generator: dict[str, Any], lookups: Lookups, bus_names: set[str]
+) -> SkippedComponent | None:
+    """Why the model leaves this generator with nothing to translate, or None where it does not."""
+    node = lookups.gen_to_node.get(name)
+    if node is None:
+        return _skip(name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
+    if node not in bus_names:
+        return _skip(name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
+    if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
+        return _skip(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW)
+    return _unrated(read_source(generator, name, lookups))
+
+
+def _unrated(source: SourceGenerator) -> SkippedComponent | None:
+    """Why the object has no capacity to dispatch, or None where it has one."""
+    if source.units == 0.0 and not source.is_candidate:
+        return _skip(source.name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
+    if source.p_nom <= 0.0:
+        return _skip(
+            source.name,
+            PlexosProperty.MAX_CAPACITY,
+            None,
+            _NO_CAPACITY_NOTE.format(capacity=source.p_nom),
+            UNIT_MW,
+        )
+    return find_blocked_candidate(source.candidate)
+
+
+def _no_such_carrier(mapping: GeneratorMapping) -> SkippedComponent:
+    return SkippedComponent(
+        SourceValue(PlexosClass.GENERATOR, mapping.name, None, None),
+        _carrier_note(mapping.carrier, mapping.fuel is not None),
     )
+
+
+def _infeasible(mapping: GeneratorMapping) -> SkippedComponent:
+    """The minimum sits above what the generator can reach, so no dispatch meets it."""
+    return SkippedComponent(
+        SourceValue(
+            PlexosClass.GENERATOR,
+            mapping.name,
+            mapping.minimum.source_property,
+            mapping.minimum.source_value,
+        ),
+        _INFEASIBLE_NOTE.format(
+            minimum=mapping.minimum.p_min_pu,
+            ceiling=mapping.availability.static_p_max_pu,
+        ),
+    )
+
+
+def _skip(
+    name: str, attribute: str, value: Any, note: str, unit: str | None = None
+) -> SkippedComponent:
+    """One generator left out, and the reading that left it out."""
+    return SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
 
 
 def _report_left_out(recorder: ScopedRecorder, skipped: list[SkippedComponent]) -> None:

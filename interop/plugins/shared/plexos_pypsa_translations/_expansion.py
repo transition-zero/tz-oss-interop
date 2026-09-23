@@ -61,11 +61,11 @@ _NO_BUILD_COST_NOTE = (
     "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
 )
 _NO_WACC_NOTE = (
-    "a candidate with no WACC gives PyPSA no discount rate to annuitise its Build Cost over, "
+    "a candidate with no WACC gives no discount rate to annuitise its Build Cost over, "
     "so PyPSA refuses the network"
 )
 _NO_ECONOMIC_LIFE_NOTE = (
-    "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over, "
+    "a candidate with no Economic Life gives no period to annuitise its Build Cost over, "
     "so PyPSA prices the build as a perpetuity"
 )
 _OUT_OF_THE_PLAN_NOTE = (

@@ -137,7 +137,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA network "outputs/network.nc" has no generator "InfeasiblePlant"
     And the log contains "dropping Generator 'InfeasiblePlant'"
     And the log contains "p_min_pu 0.5 sits above p_max_pu 0.4"
-    And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | the minimum 50.0 MW sits above the available 40.0 MW, which no dispatch can meet, so the generator is dropped |"
+    And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which no dispatch can meet, so the generator is dropped |"
 
   Scenario: a non-fuel dispatchable generator gets a flat cost from its category
     Given a Plexos model
