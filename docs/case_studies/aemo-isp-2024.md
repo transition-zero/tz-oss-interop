@@ -284,9 +284,9 @@ translation leaves all 31 reservoir units out and names each one in `decisions.m
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
 this model states that SiennaSchemas holds no type and no field for.
 
-The Sienna path also keeps no reserves file at all, because the first leg of the chain writes
-that file inside the run's scratch space. Run `plexos-to-pypsa` on its own if you want the
-reserves.
+The Sienna path writes the reserves into the extensions sidecar beside the system file,
+because SiennaSchemas states no reserve component this translation builds. A solve reads
+none of them.
 
 A solve keeps no reserve headroom. Thus the dispatch is less constrained than the dispatch
 in the source model.
