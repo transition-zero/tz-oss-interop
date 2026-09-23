@@ -226,6 +226,7 @@ class _ThermalMapping:
     overnight_cost: float | None
     discount_rate: float | None
     lifetime: float | None
+    build_year: int | None
     ramp_up_mw_per_min: float | None
     ramp_down_mw_per_min: float | None
     ramp_limit_up: float | None
@@ -290,6 +291,7 @@ def _derive_thermal(
         overnight_cost=ext.overnight_cost_per_mw,
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
+        build_year=ext.build_year,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -384,6 +386,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
         PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
         PyPSAGeneratorCol.LIFETIME: m.lifetime,
+        PyPSAGeneratorCol.BUILD_YEAR: m.build_year,
     }
 
 
@@ -407,6 +410,7 @@ class _RenewableMapping:
     overnight_cost: float | None
     discount_rate: float | None
     lifetime: float | None
+    build_year: int | None
     base_power: float
     rating: float
     active_power: float
@@ -448,6 +452,7 @@ def _derive_renewable(
         overnight_cost=ext.overnight_cost_per_mw,
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
+        build_year=ext.build_year,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,
@@ -496,5 +501,6 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
         PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
         PyPSAGeneratorCol.LIFETIME: m.lifetime,
+        PyPSAGeneratorCol.BUILD_YEAR: m.build_year,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

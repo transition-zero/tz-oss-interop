@@ -150,6 +150,8 @@ class ExpansionExtension(ExtensionRecord):
     discount_rate: float | None = None
     # yr. PyPSA Generator.lifetime, the period the build cost annuitises over.
     lifetime_years: float | None = None
+    # The year the object enters service. PyPSA carries build_year; Sienna carries nothing.
+    build_year: int | None = None
 
 
 class GeneratorExtension(ExpansionExtension):

@@ -50,8 +50,10 @@ def drop_profiles_off_the_window(state: State, recorder: ScopedRecorder) -> None
     associations = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
     if associations is None or associations.height == 0:
         return
+    # The window is the one the first association states, as the chain reads it: every
+    # association in one system is meant to cover the same snapshots.
     lengths = associations[SiennaTimeSeriesAssociationCol.LENGTH].to_list()
-    window = max((int(length) for length in lengths if length is not None), default=0)
+    window = int(lengths[0] or 0)
     off_window = _off_the_window(state, associations, window)
     if not off_window:
         return

@@ -58,6 +58,7 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     Lookups,
     build_lookups,
 )
+from interop.plugins.shared.plexos_pypsa_translations._lifespan import derive_lifespan
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
@@ -288,6 +289,7 @@ def map_generators(
         rows.append(row)
         _record_category(reporter, target.mapping)
         _record_source_notes(reporter, target.mapping)
+        _record_lifespan(reporter, target.mapping)
         kept_expansions.append(target.mapping.expansion)
         extensions.append(_extension_for(target.mapping))
         sienna_type_by_name[target.mapping.name] = target.sienna_type
@@ -748,6 +750,15 @@ def _record_source_notes(reporter: SiennaComponentReporter, mapping: GeneratorMa
     _record_expansion(reporter, mapping)
 
 
+def _record_lifespan(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
+    """When the object enters and leaves service, against the sidecar field each one lands in."""
+    lifespan = derive_lifespan(PlexosClass.GENERATOR, mapping.name, mapping.lifespan)
+    reporter.record(mapping.name, MappedColumns(("extensions.build_year",)), lifespan.build_year)
+    reporter.record(
+        mapping.name, MappedColumns(("extensions.retirement_year",)), lifespan.retirement_year
+    )
+
+
 def _record_expansion(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
     """What a candidate may build and what building it costs, against the sidecar field."""
     for field_name, column in _EXPANSION_COLUMNS:
@@ -811,6 +822,18 @@ def _expansion_fields(mapping: GeneratorMapping) -> dict[str, Any]:
         "unit_size_mw": _decided(expansion.unit_size),
         "technical_life_years": _decided(expansion.technical_life),
         "fom_charge_per_mw_year": _decided(expansion.fom_charge),
+        **_lifespan_fields(mapping),
+    }
+
+
+def _lifespan_fields(mapping: GeneratorMapping) -> dict[str, Any]:
+    """When the object enters and leaves service, neither of which Sienna holds."""
+    lifespan = derive_lifespan(PlexosClass.GENERATOR, mapping.name, mapping.lifespan)
+    build_year = _decided(lifespan.build_year)
+    retirement_year = _decided(lifespan.retirement_year)
+    return {
+        "build_year": None if build_year is None else int(build_year),
+        "retirement_year": None if retirement_year is None else int(retirement_year),
     }
 
 
