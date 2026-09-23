@@ -455,6 +455,23 @@ class GeneratorReporter(_Reporter):
             note=_P_NOM_EXTENDABLE_DEFAULT,
         )
 
+    def record_carried(
+        self,
+        sienna_type: SiennaComponent,
+        name: str,
+        field_name: str,
+        column: str,
+        value: object,
+        unit: str | None = None,
+    ) -> None:
+        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
+        attribute = f"{_EXTENSIONS}.{field_name}"
+        self._derived(
+            sources=[self._source(sienna_type, name, attribute, value, unit)],
+            destinations=[self._destination(name, column, value, unit)],
+            derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
 
 class StorageUnitReporter(_Reporter):
     """Records translation events for Sienna hydro/storage -> PyPSA StorageUnit decisions."""

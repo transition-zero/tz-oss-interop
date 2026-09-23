@@ -15,6 +15,11 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MW,
+    UNIT_MW,
+    UNIT_YEARS,
+)
 from interop.plugins.shared.pypsa_constants import (
     DEFAULT_SNAPSHOT_MINUTES,
     GENERATORS_DESTINATION_SCHEMA,
@@ -316,6 +321,38 @@ def _derive_thermal(
     )
 
 
+# Every value Sienna states nowhere, and the PyPSA column it comes back into.
+_CARRIED_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
+    ("p_nom_max", PyPSAGeneratorCol.P_NOM_MAX, UNIT_MW),
+    ("overnight_cost_per_mw", PyPSAGeneratorCol.OVERNIGHT_COST, UNIT_DOLLARS_PER_MW),
+    ("discount_rate", PyPSAGeneratorCol.DISCOUNT_RATE, None),
+    ("lifetime_years", PyPSAGeneratorCol.LIFETIME, UNIT_YEARS),
+    ("build_year", PyPSAGeneratorCol.BUILD_YEAR, None),
+    ("efficiency", PyPSAGeneratorCol.EFFICIENCY, None),
+)
+
+
+def _record_carried(
+    reporter: GeneratorReporter, sienna_type: SiennaComponent, mapping: Any
+) -> None:
+    """Report each value the sidecar carried, against the PyPSA column it fills."""
+    for field_name, column, unit in _CARRIED_COLUMNS:
+        value = getattr(mapping, _MAPPING_FIELD[field_name], None)
+        if value is not None:
+            reporter.record_carried(sienna_type, mapping.name, field_name, column, value, unit)
+
+
+# The mapping names each carried value in PyPSA words, so the sidecar field maps onto it.
+_MAPPING_FIELD: dict[str, str] = {
+    "p_nom_max": "p_nom_max",
+    "overnight_cost_per_mw": "overnight_cost",
+    "discount_rate": "discount_rate",
+    "lifetime_years": "lifetime",
+    "build_year": "build_year",
+    "efficiency": "efficiency",
+}
+
+
 def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     sienna_type = SiennaComponent.THERMAL_STANDARD
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
@@ -354,6 +391,7 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         reporter.record_up_time_before(
             sienna_type, m.name, m.time_at_status_hours, m.up_time_before
         )
+    _record_carried(reporter, sienna_type, m)
     if m.p_nom_extendable_from_ext:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
@@ -463,6 +501,7 @@ def _derive_renewable(
 
 
 def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None:
+    _record_carried(reporter, m.sienna_type, m)
     reporter.record_bus(m.sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(m.sienna_type, m.name, m.base_power)
     reporter.record_p_max_pu(m.sienna_type, m.name, m.rating)
