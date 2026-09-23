@@ -70,6 +70,10 @@ what you get.
 - **Profiles go into the HDF5 companion.** A `Rating` profile, an outage profile and a demand
   profile all become a `TimeSeriesAssociation` record whose values live in
   `system_time_series_storage.h5`.
+- **A profile Sienna states no field for goes into a parquet beside the sidecar.** A
+  reservoir inflow, a storage unit's units-out derate and the cost a dated `Fuel` makes have
+  no Sienna field, static or varying, so each one rides a column of `storage.parquet` or
+  `generators.parquet`. The record in `extensions.json` names the file it rides in.
 
 ---
 
@@ -505,6 +509,9 @@ energy than your model gives it.
 | PLEXOS | Effect |
 | --- | --- |
 | `Reserve` requirements | The record reaches `extensions.json`, and a varying requirement reaches `reserves.parquet` beside it, but nothing applies them. Every generator can run at full output. |
+| A reservoir `Natural Inflow` | The value reaches `extensions.json`, and one that changes reaches `storage.parquet` beside it, but Sienna's `EnergyReservoirStorage` states no inflow, so nothing refills the reservoir. |
+| A storage unit's `Units Out` | The derate reaches `storage.parquet`, but Sienna states one rating and no series against it, so the unit discharges at full power all year. |
+| A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
 | Region `VoLL`, other than on a reliability run | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
 | `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |

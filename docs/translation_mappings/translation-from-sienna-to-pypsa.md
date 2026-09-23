@@ -58,6 +58,7 @@ The translator reads three inputs.
 | The system JSON | Yes | Each component, in a top-level `components` object that maps a type name to a list. |
 | The HDF5 companion | Yes | The values of each time series, at `time_series/<uuid>/data`. |
 | `extensions.json` | No | The PyPSA fields that SiennaSchemas has no home for. |
+| A companion parquet beside `extensions.json` | No | A PyPSA field that changes from snapshot to snapshot. A record in the sidecar names the file that holds it. |
 
 The system JSON gives each component an integer `id`, and it points at another component by
 that integer. The translator replaces each integer with the name of the component. Thus
@@ -78,10 +79,10 @@ it.
 - **The system base is 100 MVA.** The translator uses this fixed value to convert each
   per-unit rating and impedance. It does not read a base from your system. If your system
   uses a different base, the ratings and the impedances will be wrong.
-- **The snapshot duration comes from the first generator series.** The translator needs it
-  to convert a ramp rate and a run-time limit. It reads the resolution of the first
-  `RenewableDispatch`, `RenewableNonDispatch` or `ThermalStandard` series that your system
-  holds. With no such series, it uses 60 minutes.
+- **The snapshot duration comes from the first series the system holds.** The translator
+  needs it to convert a ramp rate and a run-time limit. Every series in one system covers
+  the same snapshots, so any of them fixes the duration. With no series at all, it uses 60
+  minutes.
 - **A missing table is not an error.** A system with no lines translates, and the network
   gets no lines.
 - **Some source values stop the run.** An `ACBus` whose `bustype` is `ISOLATED` stops it,
