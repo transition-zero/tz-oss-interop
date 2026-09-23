@@ -353,6 +353,7 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
+    _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
     if m.p_nom_min is not None:
         reporter.record_p_nom_min(sienna_type, m.name, m.p_nom_min)
 
