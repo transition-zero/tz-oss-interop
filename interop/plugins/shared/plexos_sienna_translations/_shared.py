@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from interop.core.reporting import EventRecorder
 from interop.plugins.shared.constants import Framework
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -30,6 +31,20 @@ def plexos_field(
     return SourceField(
         framework=Framework.PLEXOS,
         component=plexos_class,
+        name=name,
+        attribute=attribute,
+        value=value,
+        unit=unit,
+    )
+
+
+def sienna_source(
+    sienna_type: str, name: str, attribute: str, value: Any = None, unit: str | None = None
+) -> SourceField:
+    """A Sienna value an earlier translation wrote, read back as the source of a later one."""
+    return SourceField(
+        framework=Framework.SIENNA,
+        component=sienna_type,
         name=name,
         attribute=attribute,
         value=value,
@@ -79,3 +94,14 @@ def defaulted(destinations: Sequence[DestinationField], note: str) -> list[Trans
 def dropped(sources: Sequence[SourceField], note: str) -> list[TranslationEvent]:
     """A PLEXOS value the component survives without, so the gap is visible."""
     return [TranslationEvent(kind=EventKind.NOT_MAPPED, sources=list(sources), note=note)]
+
+
+def skipped(sources: Sequence[SourceField], note: str) -> list[TranslationEvent]:
+    """A whole PLEXOS object the translation leaves out, and the reading that left it out."""
+    return [TranslationEvent(kind=EventKind.COMPONENT_SKIPPED, sources=list(sources), note=note)]
+
+
+def record(recorder: EventRecorder, events: Sequence[TranslationEvent]) -> None:
+    """Hand every event of one reading to the recorder, in the order it states them."""
+    for event in events:
+        recorder.append(event)

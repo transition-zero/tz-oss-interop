@@ -11,6 +11,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.plexos_sienna_user_mappings import PlexosSiennaCarrierMappings
 from interop.plugins.steps.plexos_to_sienna.map_buses import PlexosToSiennaMapBuses
+from interop.plugins.steps.plexos_to_sienna.map_loads import PlexosToSiennaMapLoads
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class PlexosToSiennaMapComponents(TranslationStep):
         self._mappings = plexos_sienna_mappings
         self._sub_steps: tuple[TranslationStep, ...] = (
             PlexosToSiennaMapBuses(_scoped(recorder, PlexosToSiennaMapBuses.name)),
+            PlexosToSiennaMapLoads(_scoped(recorder, PlexosToSiennaMapLoads.name)),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:

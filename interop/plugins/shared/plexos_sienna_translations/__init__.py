@@ -12,9 +12,25 @@ from interop.plugins.shared.plexos_sienna_translations._buses import (
     build_bus_extensions,
     build_buses_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._loads import (
+    LOAD_BASE_POWER_TRANSLATIONS,
+    LOAD_TRANSLATIONS,
+    NODE_LOAD_SERIES_KEY,
+    REGION_LOAD_SERIES_KEY,
+    build_load_extensions,
+    build_load_ts_associations,
+    build_loads_source_table,
+)
 
 __all__ = [
     "BUS_TRANSLATIONS",
+    "LOAD_BASE_POWER_TRANSLATIONS",
+    "LOAD_TRANSLATIONS",
+    "NODE_LOAD_SERIES_KEY",
+    "REGION_LOAD_SERIES_KEY",
     "build_bus_extensions",
     "build_buses_source_table",
+    "build_load_extensions",
+    "build_load_ts_associations",
+    "build_loads_source_table",
 ]
