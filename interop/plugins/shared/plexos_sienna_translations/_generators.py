@@ -285,6 +285,7 @@ def map_generators(
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
     units_by_name: dict[str, float] = {}
+    dated_scale_by_name: dict[str, float] = {}
     sienna_type_by_name: dict[str, str] = {}
     skipped: list[SkippedComponent] = []
     kept_expansions: list[Any] = []
@@ -311,6 +312,7 @@ def map_generators(
         _record_lifespan(reporter, target.mapping)
         kept_expansions.append(target.mapping.expansion)
         units_by_name[target.mapping.name] = target.mapping.units
+        dated_scale_by_name[target.mapping.name] = _dated_capacity_scale(target.mapping)
         extensions.append(_extension_for(target.mapping))
         sienna_type_by_name[target.mapping.name] = target.sienna_type
         profile = target.mapping.availability.profile
@@ -322,7 +324,14 @@ def map_generators(
                 sienna_id=row[SiennaThermalGeneratorCol.ID],
             )
     _report_unstaged_profiles(state, recorder, availability)
-    _stage_availability(state, availability, rows_by_type, sienna_type_by_name, units_by_name)
+    _stage_availability(
+        state,
+        availability,
+        rows_by_type,
+        sienna_type_by_name,
+        units_by_name,
+        dated_scale_by_name,
+    )
     _report_left_out(recorder, skipped)
     warn_about_dropped_builds(expansion for expansion in kept_expansions)
     return TranslatedGenerators(
@@ -385,6 +394,13 @@ def _generator_rows(state: State) -> list[dict[str, Any]]:
         return []
     table = frame.collect().sort(PlexosObjectCol.NAME)
     return table.to_dicts()
+
+
+def _dated_capacity_scale(mapping: GeneratorMapping) -> float:
+    """What a dated Max Capacity is a share of, or zero where the capacity is fixed."""
+    if not mapping.p_nom:
+        return 0.0
+    return mapping.candidate.rated_unit_count / mapping.p_nom
 
 
 def _generators_with_a_series(state: State, lookups: Lookups) -> set[str]:
@@ -512,6 +528,7 @@ def _stage_availability(
     rows_by_type: dict[str, list[dict[str, Any]]],
     sienna_type_by_name: dict[str, str],
     units_by_name: dict[str, float],
+    dated_scale_by_name: dict[str, float],
 ) -> None:
     """Build the series each generator follows, and keep only the ones that got one.
 
@@ -526,6 +543,7 @@ def _stage_availability(
                 plexos_property=None if one is None else one.plexos_property,
                 profile_scale=1.0 if one is None else one.scale,
                 units=units_by_name.get(name, 0.0),
+                dated_capacity_scale=dated_scale_by_name.get(name, 0.0),
             )
             for name in sorted(units_by_name)
             for one in [availability.get(name)]

@@ -35,6 +35,9 @@ class AvailabilityInputs:
     plexos_property: str | None
     profile_scale: float
     units: float
+    # What a dated Max Capacity is a share of, where the model dates one. p_nom is already
+    # the highest capacity the generator reaches in the window.
+    dated_capacity_scale: float
 
 
 def stage_availability(state: State, inputs: list[AvailabilityInputs]) -> set[str]:
@@ -52,14 +55,37 @@ def stage_availability(state: State, inputs: list[AvailabilityInputs]) -> set[st
 
 
 def _one_series(state: State, one: AvailabilityInputs) -> pl.LazyFrame | None:
-    """One generator's availability, per unit of its rated capacity, over every snapshot."""
-    profile = _profile_series(state, one)
-    outage = _outage_series(state, one)
-    if profile is None:
-        return outage
-    if outage is None:
-        return profile
-    return _multiplied(profile, outage)
+    """One generator's availability, per unit of its rated capacity, over every snapshot.
+
+    Each reading the model states compounds with the others, so the series is their product.
+    """
+    parts = [
+        part
+        for part in (
+            _profile_series(state, one),
+            _outage_series(state, one),
+            _dated_capacity_series(state, one),
+        )
+        if part is not None
+    ]
+    if not parts:
+        return None
+    series = parts[0]
+    for part in parts[1:]:
+        series = _multiplied(series, part)
+    return series
+
+
+def _dated_capacity_series(state: State, one: AvailabilityInputs) -> pl.LazyFrame | None:
+    """A capacity the model dates, as the share of the greatest one it reaches."""
+    if not one.dated_capacity_scale:
+        return None
+    frame = state.source_time_series.get((str(PlexosClass.GENERATOR), PlexosProperty.MAX_CAPACITY))
+    if frame is None:
+        return None
+    return _values_for(
+        frame, one.name, pl.col(StagedTimeSeriesCol.VALUE) * one.dated_capacity_scale
+    )
 
 
 def _profile_series(state: State, one: AvailabilityInputs) -> pl.LazyFrame | None:
