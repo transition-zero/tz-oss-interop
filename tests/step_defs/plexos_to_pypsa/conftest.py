@@ -41,7 +41,9 @@ def read_hour(series: pd.DataFrame, name: str, path: str, hour: int) -> float:
 
 # The Sienna target for every PLEXOS fuel and generator category the scenarios in this
 # directory name, including the ones a `Given the model contains generators:` table
-# declares rather than a generator spec string. plexos-to-pypsa runs plexos-to-sienna as its first leg, and that leg needs a
+# declares rather than a generator spec string.
+#
+# plexos-to-pypsa runs plexos-to-sienna as its first leg, and that leg needs a
 # PlexosSiennaCarrierMappings file: UserMappingsLoader._load raises before the pipeline runs
 # when a needed file is absent, so without this every scenario here fails at once.
 #
