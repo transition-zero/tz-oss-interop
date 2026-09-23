@@ -187,6 +187,9 @@ class LineExtension(ExtensionRecord):
 
 class ControllableLineExtension(ExtensionRecord):
     carrier: str | None = None  # PyPSA Link.carrier
+    # $/MWh. PyPSA Link.marginal_cost, which PLEXOS states as a Wheeling Charge. Sienna
+    # prices no flow over a branch, so the charge has no field there.
+    marginal_cost: float | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
     # PyPSA Link.p_max_pu. Sienna's active_power_limits_from folds p_nom * p_max_pu into one
     # number, so the split is unrecoverable without this.

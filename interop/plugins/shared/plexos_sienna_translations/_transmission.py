@@ -18,6 +18,7 @@ from interop.core.extensions import ControllableLineExtension, LineExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MWH,
     UNIT_MVA,
     UNIT_MW,
     UNIT_OHM,
@@ -29,8 +30,10 @@ from interop.plugins.shared.plexos_pypsa_translations._transmission import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    MappedColumns,
     PerColumn,
     SourceValue,
+    declares,
     destination_row,
     maps_to,
 )
@@ -69,6 +72,12 @@ _RATING_NOTE = "Line carries neither Max Rating nor Max Flow; rating defaults to
 _LIMITS_DERIVATION = "Min Flow and Max Flow, in MW"
 _LIMITS_NOTE = "Line carries no Max Flow, so it moves no power"
 
+_MARGINAL_COST_COLUMN = MappedColumns(("extensions.marginal_cost",), UNIT_DOLLARS_PER_MWH)
+_LIMITS_MIN_COLUMN = MappedColumns((f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.min",), UNIT_MW)
+_WHEELING_DERIVATION = "the line Wheeling Charge"
+_WHEELING_NOTE = "a Sienna branch prices no flow, so the wheeling charge is dropped"
+_FREE_TO_MOVE_NOTE = "Line carries no Wheeling Charge, so its flow is free to move"
+
 _ENDPOINTLESS_NOTE = "the export lost a Node From or a Node To, so this Line connects nothing"
 _BUSLESS_NOTE = "an endpoint Node was not translated to a bus"
 
@@ -99,11 +108,8 @@ class _LinkMapping:
     available: Decision = maps_to(SiennaLinkCol.AVAILABLE)
     endpoints: Decision = maps_to(SiennaLinkCol.BUS0, SiennaLinkCol.BUS1)
     active_power_flow: Decision = maps_to(SiennaLinkCol.ACTIVE_POWER_FLOW, unit=UNIT_MW)
-    active_power_limits: Decision = maps_to(
-        SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
-        SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
-        unit=UNIT_MW,
-    )
+    active_power_limits: Decision = declares(_LIMITS_MIN_COLUMN)
+    marginal_cost: Decision = declares(_MARGINAL_COST_COLUMN)
     reactive_power_limits: Decision = maps_to(
         SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.REACTIVE_POWER_LIMITS_TO
     )
@@ -178,6 +184,7 @@ def _add_line(
     row[SiennaLineCol.ID] = len(translated.lines) + 1
     reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID], _ID_NOTE)
     translated.lines.append(row)
+    _record_dropped(reporter, line, _DROPPED_LINE_PROPERTIES)
     translated.line_extensions.append(
         LineExtension(
             name=line.name,
@@ -195,12 +202,47 @@ def _add_link(
     mapping = _derive_link(line)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLinkCol.NAME, line.name)
+    limits = _limits_value(line)
+    row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM] = limits
+    row[SiennaLinkCol.ACTIVE_POWER_LIMITS_TO] = limits
     row[SiennaLinkCol.ID] = len(translated.links) + 1
     reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID], _ID_NOTE)
     translated.links.append(row)
+    _record_dropped(reporter, line, _DROPPED_LINK_PROPERTIES)
     translated.link_extensions.append(
-        ControllableLineExtension(name=line.name, carrier=PyPSACarrier.AC, p_nom_extendable=False)
+        ControllableLineExtension(
+            name=line.name,
+            carrier=PyPSACarrier.AC,
+            p_nom_extendable=False,
+            marginal_cost=line.properties.get(PlexosProperty.WHEELING_CHARGE),
+        )
     )
+
+
+# A Sienna Line prices its flow nowhere, so both wheeling charges are recorded as dropped.
+_DROPPED_LINE_PROPERTIES: tuple[str, ...] = (
+    PlexosProperty.WHEELING_CHARGE,
+    PlexosProperty.WHEELING_CHARGE_BACK,
+)
+
+# A branch with a set point prices its forward flow in the sidecar, so only the reverse
+# charge drops.
+_DROPPED_LINK_PROPERTIES: tuple[str, ...] = (PlexosProperty.WHEELING_CHARGE_BACK,)
+
+
+def _record_dropped(
+    reporter: SiennaComponentReporter, line: StagedLine, dropped_properties: tuple[str, ...]
+) -> None:
+    """Report each value the line carries that this hop has nowhere to put."""
+    for plexos_property in dropped_properties:
+        charge = line.properties.get(plexos_property)
+        if charge is not None:
+            reporter.record_dropped(
+                SourceValue(
+                    PlexosClass.LINE, line.name, plexos_property, charge, UNIT_DOLLARS_PER_MWH
+                ),
+                _WHEELING_NOTE,
+            )
 
 
 def _derive_line(line: StagedLine, voltage: float) -> _LineMapping:
@@ -231,6 +273,7 @@ def _derive_link(line: StagedLine) -> _LinkMapping:
         endpoints=_endpoints(line),
         active_power_flow=Decision.default(NO_FLOW, _FLOW_NOTE),
         active_power_limits=_active_power_limits(line),
+        marginal_cost=_marginal_cost(line),
         reactive_power_limits=Decision.default(
             {"min": NO_REACTIVE_LIMIT, "max": NO_REACTIVE_LIMIT}, _REACTIVE_LIMITS_NOTE
         ),
@@ -273,16 +316,43 @@ def _rating(line: StagedLine) -> Decision:
     return Decision.derived(stated / SYSTEM_BASE_MVA, [source], _RATING_DERIVATION)
 
 
-def _active_power_limits(line: StagedLine) -> Decision:
+def _marginal_cost(line: StagedLine) -> Decision:
+    """What one MWh costs to move over the line, which Sienna prices nowhere."""
+    charge = line.properties.get(PlexosProperty.WHEELING_CHARGE)
+    if charge is None:
+        return Decision.default(0.0, _FREE_TO_MOVE_NOTE)
+    source = SourceValue(
+        PlexosClass.LINE, line.name, PlexosProperty.WHEELING_CHARGE, charge, UNIT_DOLLARS_PER_MWH
+    )
+    return Decision.derived(charge, [source], _WHEELING_DERIVATION)
+
+
+def _limits_value(line: StagedLine) -> dict[str, float]:
+    """What the line may move, in megawatts, in each direction."""
     max_flow = line.properties.get(PlexosProperty.MAX_FLOW)
     if max_flow is None:
-        return Decision.default({"min": 0.0, "max": 0.0}, _LIMITS_NOTE)
+        return {"min": 0.0, "max": 0.0}
+    return {"min": line.properties.get(PlexosProperty.MIN_FLOW, 0.0), "max": max_flow}
+
+
+def _active_power_limits(line: StagedLine) -> Decision:
+    max_flow = line.properties.get(PlexosProperty.MAX_FLOW) or 0.0
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
+    if not max_flow:
+        note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
+        return Decision.default(0.0, note)
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
-    return Decision.derived({"min": min_flow, "max": max_flow}, sources, _LIMITS_DERIVATION)
+    return Decision.derived(min_flow, sources, _LIMITS_DERIVATION)
+
+
+def _unrated_min_flow_note(min_flow: float) -> str:
+    return (
+        f"Line carries a Min Flow of {min_flow} MW but no Max Flow to scale it "
+        "against, so it moves power one way only"
+    )
 
 
 def _property(line: StagedLine, plexos_property: str, default: float) -> float:

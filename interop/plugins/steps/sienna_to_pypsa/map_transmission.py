@@ -292,6 +292,8 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             carrier = ext.carrier
             if carrier is not None:
                 reporter.record_carrier_from_ext(name, carrier)
+            if ext.marginal_cost is not None:
+                reporter.record_marginal_cost_from_ext(name, ext.marginal_cost)
             p_nom_extendable = ext.p_nom_extendable
             if p_nom_extendable is not None:
                 reporter.record_p_nom_extendable_from_ext(name, p_nom_extendable)
@@ -311,6 +313,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
                     PyPSALinkCol.CARRIER: carrier,
                     PyPSALinkCol.P_NOM_EXTENDABLE: p_nom_extendable,
                     PyPSALinkCol.P_NOM_MIN: p_nom_min,
+                    PyPSALinkCol.MARGINAL_COST: ext.marginal_cost,
                 }
             )
         if rows:
