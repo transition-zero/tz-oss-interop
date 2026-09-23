@@ -22,6 +22,7 @@ from interop.plugins.shared.constants import (
     UNIT_HOURS,
     UNIT_MVA,
     UNIT_MW,
+    UNIT_MWH,
 )
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
@@ -88,6 +89,8 @@ _EFFICIENCY_COLUMN = MappedColumns(
     )
 )
 _INFLOW_COLUMN = MappedColumns(("extensions.inflow_mw",), UNIT_MW)
+_CARRIED_HOURS_COLUMN = MappedColumns(("extensions.max_hours",), UNIT_HOURS)
+_CARRIED_LEVEL_COLUMN = MappedColumns(("extensions.state_of_charge_initial",), UNIT_MWH)
 _STORAGE_COST_COLUMN = MappedColumns(
     (SiennaEnergyReservoirStorageCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH
 )
@@ -163,6 +166,9 @@ class _HydroMapping:
     active_power_limits: Decision = declares(_HYDRO_MIN_COLUMN)
     base_power: Decision = maps_to(SiennaHydroGeneratorCol.BASE_POWER, unit=UNIT_MVA)
     operation_cost: Decision = declares(_HYDRO_COST_COLUMN)
+    # A HydroDispatch states no reservoir, so both reach PyPSA through the sidecar.
+    storage_capacity: Decision = declares(_CARRIED_HOURS_COLUMN)
+    initial_level: Decision = declares(_CARRIED_LEVEL_COLUMN)
 
 
 @dataclass
@@ -298,6 +304,8 @@ def _derive_hydro(mapping: StorageUnitMapping, target: CarrierTarget) -> _HydroM
         ),
         base_power=mapping.p_nom,
         operation_cost=mapping.marginal_cost,
+        storage_capacity=mapping.max_hours,
+        initial_level=mapping.state_of_charge_initial,
     )
 
 
