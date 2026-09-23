@@ -275,6 +275,90 @@ alignment, component coverage, per-carrier energy totals, and the largest
 dispatch differences. See [`docs/developer_documentation/comparison.md`](../developer_documentation/comparison.md) for how to read
 each section.
 
+### Translating a PLEXOS model
+
+A PLEXOS model reaches Sienna in one hop, and reaches PyPSA through Sienna. Both
+translations read the same mappings file, written in PLEXOS words.
+
+#### PLEXOS to Sienna
+
+1. Run `interop init <folder>` and change into the folder it writes.
+2. Put the PLEXOS XML file in `inputs/`.
+3. Write `inputs/plexos_user_mappings.yaml`. The next section says what it holds.
+4. Run `interop` and pick **translate**.
+5. Answer the prompts:
+   - **Source framework?** `plexos`
+   - **Destination framework?** `sienna`
+   - **Pipeline?** `plexos-to-sienna`
+   - **source.path?** `inputs/<your model>.xml`
+   - **sink[0].output_system_json_file_path?** `outputs/system.json`
+   - **User mappings file?** `inputs/plexos_user_mappings.yaml`
+6. Read `outputs/`. The run writes `system.json`, `system_time_series_storage.h5`
+   and `extensions.json`, which together make up the Sienna system.
+7. Read `decisions.md`. It states every value the translation derived, every
+   default it applied, and every component or field it left out.
+
+#### PLEXOS to PyPSA
+
+The steps are the same, with two differences: the pipeline, and what the run
+writes. `plexos-to-pypsa` translates through Sienna, so it asks for the same
+mappings file.
+
+1. Run `interop` and pick **translate**.
+2. Answer the prompts:
+   - **Source framework?** `plexos`
+   - **Destination framework?** `pypsa`
+   - **Pipeline?** `plexos-to-pypsa`
+   - **source.path?** `inputs/<your model>.xml`
+   - **sink[0].output_path?** `outputs/network.nc`
+   - **User mappings file?** `inputs/plexos_user_mappings.yaml`
+3. Read `outputs/`. The run writes `network.nc` and `extensions.json` beside it.
+   The sidecar holds what PyPSA has no column for, such as a reserve and a
+   constraint.
+4. Read `decisions.md`. A run of a chain records two legs in one report, so each
+   row names the leg that made the decision.
+
+#### The mappings file both translations read
+
+The file names one Sienna target for each PLEXOS word a component takes its
+carrier from. A generator takes the name of its Fuel where it burns one, and its
+PLEXOS category where it does not.
+
+```yaml
+carriers:
+  - plexos_concept: fuel          # a Fuel the model states
+    plexos_name: Natural Gas
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: CC
+  - plexos_concept: category      # a generator category
+    plexos_name: Solar
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - plexos_concept: storage_kind  # a unit whose carrier the translator writes
+    plexos_name: battery
+    sienna_component_type: EnergyReservoirStorage
+    sienna_prime_mover_type: BA
+```
+
+`plexos_concept` takes one of three values:
+
+- `fuel` names a PLEXOS Fuel.
+- `category` names a generator category.
+- `storage_kind` names a unit whose carrier the translator writes rather than
+  reads. Its `plexos_name` takes one of `reservoir_hydro`, `pumped_storage` or
+  `battery`. Each one has a default, so a row is needed only to override it.
+
+A thermal target states `sienna_fuel_type` and `sienna_prime_mover_type`. Every
+other target states `sienna_prime_mover_type` alone.
+
+**A Fuel and a generator category of one name must state one target.** Both give
+one carrier, so the run stops and names the carrier where two rows disagree.
+
+**A row that is missing costs that carrier's components, and nothing else.** The
+component is left out, a `COMPONENT_SKIPPED` event names it in `decisions.md`,
+and the log warns once per carrier.
+
 ## Extending interop
 
 The built-in pipelines cover the common PyPSA to Sienna case, but real networks

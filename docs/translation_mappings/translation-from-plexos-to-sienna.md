@@ -12,10 +12,10 @@ It gives the source of each field.
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
 > states that SiennaSchemas holds no type and no field for.
 
-The `plexos-to-sienna` pipeline runs through a PyPSA network on the way. This document does
-not describe that network. It states the mapping as one step, because that is what you give
-and what you get. Where the intermediate form loses something, this document says so as a
-property of the PLEXOS to Sienna mapping.
+The `plexos-to-sienna` pipeline is one step. It reads the PLEXOS tables the source stages
+and writes the Sienna tables the sink needs, and no PyPSA file and no PyPSA table sits in
+the middle. So this document states the mapping as one step, which is what you give and
+what you get.
 
 ---
 
