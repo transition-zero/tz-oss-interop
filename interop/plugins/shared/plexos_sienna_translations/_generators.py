@@ -294,6 +294,7 @@ def map_generators(
         rows.append(row)
         _record_category(reporter, target.mapping)
         _record_source_notes(reporter, target.mapping)
+        _record_lost_minimum(reporter, target)
         _record_lifespan(reporter, target.mapping)
         kept_expansions.append(target.mapping.expansion)
         extensions.append(_extension_for(target.mapping))
@@ -766,6 +767,28 @@ def _record_source_notes(reporter: SiennaComponentReporter, mapping: GeneratorMa
     record_generator_source_notes(reporter, decide_generator(mapping))
     record_expansion_notes(reporter, mapping.name, mapping.expansion)
     _record_expansion(reporter, mapping)
+
+
+def _record_lost_minimum(reporter: SiennaComponentReporter, translated: _Translated) -> None:
+    """A RenewableDispatch holds no minimum, so the reading behind one reaches no field.
+
+    A ThermalStandard states the minimum in active_power_limits, and its own event says so.
+    """
+    if translated.sienna_type != SiennaComponent.RENEWABLE_DISPATCH:
+        return
+    minimum = translated.mapping.minimum
+    if minimum.source_property is None:
+        return
+    decision = decide_generator(translated.mapping).p_min_pu
+    reporter.record_dropped(
+        SourceValue(
+            PlexosClass.GENERATOR,
+            translated.mapping.name,
+            minimum.source_property,
+            minimum.source_value,
+        ),
+        decision.explanation,
+    )
 
 
 def _record_lifespan(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
