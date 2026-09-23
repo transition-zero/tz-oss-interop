@@ -17,7 +17,7 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import GeneratorExtension
+from interop.core.extensions import ExtensionKind, GeneratorExtension, companion_filename
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
@@ -90,6 +90,9 @@ from interop.plugins.shared.plexos_sienna_translations._availability import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
+)
+from interop.plugins.shared.plexos_sienna_translations._fuel_prices import (
+    build_fuel_price_series,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_time_series import series_components
@@ -263,12 +266,17 @@ class _Availability:
 
 @dataclass(frozen=True)
 class TranslatedGenerators:
-    """What the generator mapping produced, keyed by the Sienna type each row belongs to."""
+    """What the generator mapping produced, keyed by the Sienna type each row belongs to.
+
+    ``series`` is the companion parquet a cost that changes rides in, or None where every
+    generator states one price.
+    """
 
     rows_by_type: dict[str, list[dict[str, Any]]]
     extensions: list[GeneratorExtension]
     availability_by_name: dict[str, _Availability]
     sienna_type_by_name: dict[str, str]
+    series: pl.LazyFrame | None = None
 
 
 def map_generators(
@@ -289,6 +297,7 @@ def map_generators(
     sienna_type_by_name: dict[str, str] = {}
     skipped: list[SkippedComponent] = []
     kept_expansions: list[Any] = []
+    mapped: list[GeneratorMapping] = []
     for generator in _generator_rows(state):
         name = generator[PlexosObjectCol.NAME]
         if name in turbines:
@@ -311,6 +320,7 @@ def map_generators(
         _record_lost_minimum(reporter, target)
         _record_lifespan(reporter, target.mapping)
         kept_expansions.append(target.mapping.expansion)
+        mapped.append(target.mapping)
         units_by_name[target.mapping.name] = target.mapping.units
         dated_scale_by_name[target.mapping.name] = _dated_capacity_scale(target.mapping)
         extensions.append(_extension_for(target.mapping))
@@ -334,12 +344,24 @@ def map_generators(
     )
     _report_left_out(recorder, skipped)
     warn_about_dropped_builds(expansion for expansion in kept_expansions)
+    fuel_prices = build_fuel_price_series(state, mapped)
     return TranslatedGenerators(
         rows_by_type=rows_by_type,
-        extensions=extensions,
+        extensions=[_priced_by_date(one, fuel_prices.names) for one in extensions],
         availability_by_name=availability,
         sienna_type_by_name=sienna_type_by_name,
+        series=fuel_prices.frame,
     )
+
+
+def _priced_by_date(
+    extension: GeneratorExtension, priced_by_date: frozenset[str]
+) -> GeneratorExtension:
+    """Point a generator whose fuel the model prices by date at the companion holding it."""
+    if extension.name not in priced_by_date:
+        return extension
+    companion = companion_filename(ExtensionKind.GENERATOR)
+    return extension.model_copy(update={"marginal_cost_series": companion})
 
 
 def build_generator_ts_associations(

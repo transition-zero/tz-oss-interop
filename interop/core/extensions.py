@@ -167,6 +167,9 @@ class GeneratorExtension(ExpansionExtension):
     # PyPSA Generator.efficiency, which is one megawatt hour out per this much fuel in.
     # Sienna prices the fuel into the cost curve and states no efficiency of its own.
     efficiency: float | None = None
+    # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
+    # A Sienna cost curve states one price, so a fuel priced by date has no field here.
+    marginal_cost_series: str | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -421,6 +424,12 @@ class CompanionSeriesCol(StrEnum):
     NAME = "name"
 
 
+class GeneratorCompanionCol(StrEnum):
+    """Value columns of the generator companion parquet, named for the field each holds."""
+
+    MARGINAL_COST = "marginal_cost"
+
+
 class StorageCompanionCol(StrEnum):
     """Value columns of the storage companion parquet, each named for the field it holds."""
 
@@ -439,6 +448,7 @@ class Companion(NamedTuple):
 # states every value on the record itself. One parquet holds every series of its kind, one
 # column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
+    ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
     ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
     ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
 }

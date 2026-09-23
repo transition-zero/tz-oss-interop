@@ -7,7 +7,6 @@ import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import (
-    CompanionSeriesCol,
     ExtensionKind,
     ExtensionLookup,
     ExtensionReader,
@@ -17,7 +16,6 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
     PyPSACarrier,
@@ -39,6 +37,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
+    CompanionColumn,
+    stage_companion_columns,
+)
 from interop.plugins.shared.sienna_pypsa_translations.constants import (
     ASSUMED_HYDRO_EFFICIENCY_DISPATCH,
     DEFAULT_HYDRO_MAX_HOURS,
@@ -55,31 +57,19 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUn
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 
-# The owner the companion columns are staged under once read. It is this step's own, because
-# the sidecar holds them and no Sienna component names them.
-_COMPANION_OWNER = "storage_companion"
-
-# A value arriving in the companion parquet is already in the unit PyPSA reads, so each one
-# rides its column with no scaling.
-_COMPANION_SCALING = 1.0
-
-
-@dataclass(frozen=True)
-class _CompanionColumn:
-    """One column of the storage companion parquet, and the PyPSA attribute it fills."""
-
-    column: str
-    attribute: str
-
-    @property
-    def key(self) -> tuple[str, str]:
-        """The key the column takes in ``State.source_time_series`` once staged."""
-        return (_COMPANION_OWNER, self.column)
-
-
-_COMPANION_COLUMNS: tuple[_CompanionColumn, ...] = (
-    _CompanionColumn(StorageCompanionCol.INFLOW_MW, PyPSAStorageUnitCol.INFLOW),
-    _CompanionColumn(StorageCompanionCol.RATING_PU, PyPSAStorageUnitCol.P_MAX_PU),
+# What the storage companion parquet holds. Sienna names no field for an inflow or for a
+# rating that changes, so both arrive beside the sidecar rather than in the system file.
+_COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
+    CompanionColumn(
+        StorageCompanionCol.INFLOW_MW,
+        PyPSADestinationTable.STORAGE_UNITS,
+        PyPSAStorageUnitCol.INFLOW,
+    ),
+    CompanionColumn(
+        StorageCompanionCol.RATING_PU,
+        PyPSADestinationTable.STORAGE_UNITS,
+        PyPSAStorageUnitCol.P_MAX_PU,
+    ),
 )
 
 
@@ -124,7 +114,12 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 rows, schema=STORAGE_UNITS_DESTINATION_SCHEMA
             )
             self._record_hydro_inflow(state, hydro_base_power)
-            _record_companion_series(state, {row[PyPSAStorageUnitCol.NAME] for row in rows})
+            stage_companion_columns(
+                state,
+                ExtensionKind.STORAGE,
+                _COMPANION_COLUMNS,
+                {row[PyPSAStorageUnitCol.NAME] for row in rows},
+            )
             self._carry_on(state, [row[PyPSAStorageUnitCol.NAME] for row in rows])
         return state
 
@@ -166,60 +161,6 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 )
             )
         append_metadata(state, metadata_rows)
-
-
-def _record_companion_series(state: State, written: set[str]) -> None:
-    """Write what the sidecar's companion parquet holds onto the units it names.
-
-    Sienna names no field for an inflow or for a rating that changes, so both arrive in a
-    parquet beside the sidecar. Each column is staged like any source series, so the sink
-    streams it the same way.
-    """
-    frame = state.source_extension_series.get(ExtensionKind.STORAGE)
-    if frame is None:
-        return
-    held = set(frame.collect_schema().names())
-    for one in _COMPANION_COLUMNS:
-        if one.column not in held:
-            continue
-        staged = _staged_column(frame, one.column)
-        state.source_time_series[one.key] = staged
-        append_metadata(state, _companion_metadata(staged, one, written))
-
-
-def _staged_column(frame: pl.LazyFrame, column: str) -> pl.LazyFrame:
-    """One companion column, in the shape every staged source series takes."""
-    return (
-        frame.filter(pl.col(column).is_not_null())
-        .select(
-            pl.col(CompanionSeriesCol.SNAPSHOT).alias(StagedTimeSeriesCol.SNAPSHOT),
-            pl.col(CompanionSeriesCol.NAME).alias(StagedTimeSeriesCol.COMPONENT),
-            pl.col(column).alias(StagedTimeSeriesCol.VALUE),
-        )
-        .sort(StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SNAPSHOT)
-    )
-
-
-def _companion_metadata(
-    staged: pl.LazyFrame, one: _CompanionColumn, written: set[str]
-) -> list[dict[str, Any]]:
-    """One metadata row for each unit the column names, unless no unit was written for it."""
-    named = [name for name in series_components(staged) if name in written]
-    if not named:
-        return []
-    timing = series_timing(staged)
-    return [
-        metadata_row(
-            component_table=PyPSADestinationTable.STORAGE_UNITS,
-            component_name=name,
-            attribute=one.attribute,
-            source_owner_type=_COMPANION_OWNER,
-            source_series_name=one.column,
-            scaling_factor=_COMPANION_SCALING,
-            timing=timing,
-        )
-        for name in named
-    ]
 
 
 def _carried_storage(record: StorageExtension) -> StorageExtension:

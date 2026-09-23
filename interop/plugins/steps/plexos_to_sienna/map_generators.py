@@ -40,6 +40,8 @@ class PlexosToSiennaMapGenerators(TranslationStep):
         append_extensions(
             state.destination_extensions, ExtensionKind.GENERATOR, translated.extensions
         )
+        if translated.series is not None:
+            state.destination_extension_series[ExtensionKind.GENERATOR] = translated.series
         self._append_associations(state, translated)
         return state
 

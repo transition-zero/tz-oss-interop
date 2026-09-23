@@ -10,6 +10,7 @@ from interop.core.extensions import (
     ExtensionKind,
     ExtensionLookup,
     ExtensionReader,
+    GeneratorCompanionCol,
     GeneratorExtension,
     append_extensions,
 )
@@ -44,6 +45,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTable,
     ThermalFuel,
 )
+from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
+    CompanionColumn,
+    stage_companion_columns,
+)
 from interop.plugins.shared.sienna_pypsa_translations.constants import (
     TIME_AT_STATUS_SENTINEL,
     pypsa_carrier,
@@ -63,6 +68,16 @@ _GENERATOR_SERIES_KEYS = (
     (SiennaComponent.RENEWABLE_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
     (SiennaComponent.RENEWABLE_NON_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
     (SiennaComponent.THERMAL_STANDARD, SiennaSeriesName.MAX_ACTIVE_POWER),
+)
+
+# What the generator companion parquet holds. A Sienna cost curve states one price, so a
+# cost that moves with a dated fuel arrives beside the sidecar rather than in the system file.
+_COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
+    CompanionColumn(
+        GeneratorCompanionCol.MARGINAL_COST,
+        PyPSADestinationTable.GENERATORS,
+        PyPSAGeneratorCol.MARGINAL_COST,
+    ),
 )
 
 
@@ -133,6 +148,12 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                 rows, schema=GENERATORS_DESTINATION_SCHEMA
             )
             self._record_generator_time_series(state, p_max_pu_scale_by_name)
+            stage_companion_columns(
+                state,
+                ExtensionKind.GENERATOR,
+                _COMPANION_COLUMNS,
+                {row[PyPSAGeneratorCol.NAME] for row in rows},
+            )
             self._carry_on(state, [row[PyPSAGeneratorCol.NAME] for row in rows])
         return state
 
