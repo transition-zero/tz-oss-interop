@@ -188,8 +188,13 @@ class _ThermalMapping:
     start_up_cost: float
     shut_down_cost: float
     # Sienna prices the fuel into the cost curve and states no efficiency, so a PyPSA
-    # generator recovers one only from the sidecar.
+    # generator recovers one only from the sidecar. The build range and what it costs come
+    # from there for the same reason: Sienna states one rating and no build at all.
     efficiency: float | None
+    p_nom_max: float | None
+    overnight_cost: float | None
+    discount_rate: float | None
+    lifetime: float | None
     ramp_up_mw_per_min: float | None
     ramp_down_mw_per_min: float | None
     ramp_limit_up: float | None
@@ -250,6 +255,10 @@ def _derive_thermal(
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
         p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
         efficiency=ext.efficiency,
+        p_nom_max=ext.p_nom_max,
+        overnight_cost=ext.overnight_cost_per_mw,
+        discount_rate=ext.discount_rate,
+        lifetime=ext.lifetime_years,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power_min=active_power_min,
@@ -340,6 +349,10 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
         PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
         PyPSAGeneratorCol.EFFICIENCY: m.efficiency,
+        PyPSAGeneratorCol.P_NOM_MAX: m.p_nom_max,
+        PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
+        PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
+        PyPSAGeneratorCol.LIFETIME: m.lifetime,
     }
 
 
@@ -357,6 +370,12 @@ class _RenewableMapping:
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
     p_nom_min: float | None
+    # Sienna states one rating and no build at all, so the build range and what it costs
+    # reach a PyPSA generator only through the sidecar.
+    p_nom_max: float | None
+    overnight_cost: float | None
+    discount_rate: float | None
+    lifetime: float | None
     base_power: float
     rating: float
     active_power: float
@@ -394,6 +413,10 @@ def _derive_renewable(
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
         p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
+        p_nom_max=ext.p_nom_max,
+        overnight_cost=ext.overnight_cost_per_mw,
+        discount_rate=ext.discount_rate,
+        lifetime=ext.lifetime_years,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,
@@ -438,5 +461,9 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
         PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
+        PyPSAGeneratorCol.P_NOM_MAX: m.p_nom_max,
+        PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
+        PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
+        PyPSAGeneratorCol.LIFETIME: m.lifetime,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

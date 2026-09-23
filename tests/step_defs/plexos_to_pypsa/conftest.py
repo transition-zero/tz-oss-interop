@@ -40,7 +40,8 @@ def read_hour(series: pd.DataFrame, name: str, path: str, hour: int) -> float:
 
 
 # The Sienna target for every PLEXOS fuel and generator category the scenarios in this
-# directory name. plexos-to-pypsa runs plexos-to-sienna as its first leg, and that leg needs a
+# directory name, including the ones a `Given the model contains generators:` table
+# declares rather than a generator spec string. plexos-to-pypsa runs plexos-to-sienna as its first leg, and that leg needs a
 # PlexosSiennaCarrierMappings file: UserMappingsLoader._load raises before the pipeline runs
 # when a needed file is absent, so without this every scenario here fails at once.
 #
@@ -83,6 +84,53 @@ PLEXOS_CARRIER_ROWS: list[dict[str, str]] = [
         "sienna_component_type": "ThermalStandard",
         "sienna_fuel_type": "OTHER",
         "sienna_prime_mover_type": "HY",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Biogas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHEHR_BIOMASS_GAS",
+        "sienna_prime_mover_type": "IC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Coal Seam Gas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "NG_AZ/Cal_Blythe",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "NG_Cal_SoCalGas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Uranium",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NUCLEAR",
+        "sienna_prime_mover_type": "ST",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "OFFSHORE WIND",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "WT",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "solar",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "PVe",
     },
     {
         "plexos_concept": "category",

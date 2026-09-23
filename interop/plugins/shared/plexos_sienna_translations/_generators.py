@@ -15,6 +15,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+import polars as pl
+
 from interop.core.extensions import GeneratorExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
@@ -32,6 +34,7 @@ from interop.plugins.shared.plexos_constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import (
     GeneratorMapping,
+    StartPricing,
     derive_generator,
     has_infeasible_dispatch_range,
     read_source,
@@ -45,6 +48,7 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    DecisionKind,
     MappedColumns,
     SourceValue,
     destination_row,
@@ -58,14 +62,17 @@ from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComp
 from interop.plugins.shared.sienna_constants import (
     RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
+    TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
     SiennaRenewableGeneratorCol,
+    SiennaSeriesName,
     SiennaThermalGeneratorCol,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     renewable_cost_value,
     thermal_cost_value,
 )
+from interop.plugins.shared.sienna_time_series import TimeSeriesInfo, ts_association_row
 
 log = logging.getLogger(__name__)
 
@@ -178,12 +185,22 @@ class _Translated:
 
 
 @dataclass(frozen=True)
+class _Availability:
+    """One generator's staged availability profile, and what reads it back to per unit."""
+
+    plexos_property: str
+    scale: float
+    sienna_type: str
+    sienna_id: int
+
+
+@dataclass(frozen=True)
 class TranslatedGenerators:
     """What the generator mapping produced, keyed by the Sienna type each row belongs to."""
 
     rows_by_type: dict[str, list[dict[str, Any]]]
     extensions: list[GeneratorExtension]
-    availability_by_name: dict[str, tuple[str, float]]
+    availability_by_name: dict[str, _Availability]
     sienna_type_by_name: dict[str, str]
 
 
@@ -198,7 +215,7 @@ def map_generators(
     turbines = storage_turbine_names(state)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
-    availability: dict[str, tuple[str, float]] = {}
+    availability: dict[str, _Availability] = {}
     sienna_type_by_name: dict[str, str] = {}
     for generator in _generator_rows(state):
         name = generator[PlexosObjectCol.NAME]
@@ -223,13 +240,45 @@ def map_generators(
         sienna_type_by_name[target.mapping.name] = target.sienna_type
         profile = target.mapping.availability.profile
         if profile is not None:
-            availability[target.mapping.name] = (profile.property_name, profile.scale)
+            availability[target.mapping.name] = _Availability(
+                plexos_property=profile.property_name,
+                scale=profile.scale,
+                sienna_type=target.sienna_type,
+                sienna_id=row[SiennaThermalGeneratorCol.ID],
+            )
     return TranslatedGenerators(
         rows_by_type=rows_by_type,
         extensions=extensions,
         availability_by_name=availability,
         sienna_type_by_name=sienna_type_by_name,
     )
+
+
+def build_generator_ts_associations(
+    translated: TranslatedGenerators, ts_info: TimeSeriesInfo
+) -> pl.DataFrame:
+    """One association row per generator whose availability comes from a profile.
+
+    The sink streams straight from the PLEXOS frame, so the row names the PLEXOS class and
+    the PLEXOS property. ``scaling_factor`` is what divides the stated values back into the
+    per-unit shape a Sienna rating multiplies.
+    """
+    rows = [
+        ts_association_row(
+            owner_type=availability.sienna_type,
+            owner_id=availability.sienna_id,
+            component_name=name,
+            series_name=SiennaSeriesName.MAX_ACTIVE_POWER,
+            ts_info=ts_info,
+            source_table=PlexosClass.GENERATOR,
+            source_attribute=availability.plexos_property,
+            scaling_factor=(1.0 / availability.scale) if availability.scale else 1.0,
+        )
+        for name, availability in sorted(translated.availability_by_name.items())
+    ]
+    if not rows:
+        return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
+    return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
 
 
 def _next_id(rows: list[dict[str, Any]]) -> int:
@@ -493,10 +542,22 @@ def _renewable_cost(mapping: GeneratorMapping) -> Decision:
 
 
 def _start_up_cost(mapping: GeneratorMapping) -> float:
+    """What a start costs: the stated Start Cost, or the fuel a start burns.
+
+    Never both. A model stating both has already priced the fuel inside its own Start Cost,
+    so adding them would charge it twice.
+    """
     commitment = mapping.unit_commitment
     if commitment is None:
         return NO_COST
-    return float(commitment.stated_start_cost or NO_COST)
+    match commitment.start_pricing:
+        case StartPricing.START_FUEL:
+            fuel = commitment.start_fuel
+            return NO_COST if fuel is None else fuel.offtake * fuel.price
+        case StartPricing.STATED:
+            return float(commitment.stated_start_cost or NO_COST)
+        case _:
+            return NO_COST
 
 
 def _prime_mover(mapping: GeneratorMapping, target: CarrierTarget) -> Decision:
@@ -532,4 +593,30 @@ def _extension_for(mapping: GeneratorMapping) -> GeneratorExtension:
         p_nom_extendable=mapping.candidate.is_candidate,
         category=mapping.category,
         efficiency=mapping.efficiency,
+        **_expansion_fields(mapping),
     )
+
+
+def _expansion_fields(mapping: GeneratorMapping) -> dict[str, Any]:
+    """What a candidate states that Sienna has no field for, ready for its record.
+
+    A fixed generator states none of it, and every field stays unset rather than defaulted.
+    """
+    expansion = mapping.expansion
+    return {
+        "p_nom_max": _decided(expansion.p_nom_max),
+        "p_nom_min": _decided(expansion.p_nom_min),
+        "overnight_cost_per_mw": _decided(expansion.overnight_cost),
+        "discount_rate": _decided(expansion.discount_rate),
+        "lifetime_years": _decided(expansion.lifetime),
+        "unit_size_mw": _decided(expansion.unit_size),
+        "technical_life_years": _decided(expansion.technical_life),
+        "fom_charge_per_mw_year": _decided(expansion.fom_charge),
+    }
+
+
+def _decided(decision: Decision) -> float | None:
+    """A decision's number, or None where the mapping reported nothing for it."""
+    if decision.kind is DecisionKind.UNREPORTED or decision.value is None:
+        return None
+    return float(decision.value)

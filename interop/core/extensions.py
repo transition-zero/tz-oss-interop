@@ -140,6 +140,16 @@ class ExpansionExtension(ExtensionRecord):
     # The year the object leaves service, which PLEXOS states as a dated Units of zero.
     # PyPSA carries build_year on the component and nothing for the other end of its life.
     retirement_year: int | None = None
+    # MW. PyPSA's p_nom_max and p_nom_min. Sienna states one rating and no build range, so a
+    # candidate loses both without these.
+    p_nom_max: float | None = None
+    p_nom_min: float | None = None
+    # $/MW. PyPSA Generator.overnight_cost. Sienna prices no build on an operations model.
+    overnight_cost_per_mw: float | None = None
+    # PyPSA Generator.discount_rate, which annuitises the build cost. No Sienna field.
+    discount_rate: float | None = None
+    # yr. PyPSA Generator.lifetime, the period the build cost annuitises over.
+    lifetime_years: float | None = None
 
 
 class GeneratorExtension(ExpansionExtension):

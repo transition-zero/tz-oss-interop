@@ -17,6 +17,7 @@ from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTargets,
 )
 from interop.plugins.shared.plexos_sienna_translations._generators import (
+    build_generator_ts_associations,
     generator_schema,
     generator_types,
     map_generators,
@@ -41,6 +42,7 @@ __all__ = [
     "BUS_TRANSLATIONS",
     "CarrierTarget",
     "CarrierTargets",
+    "build_generator_ts_associations",
     "generator_schema",
     "generator_types",
     "map_generators",
