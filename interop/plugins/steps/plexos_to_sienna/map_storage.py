@@ -37,6 +37,8 @@ class PlexosToSiennaMapStorage(TranslationStep):
         append_extensions(
             state.destination_extensions, ExtensionKind.STORAGE, translated.extensions
         )
+        if translated.series is not None:
+            state.destination_extension_series[ExtensionKind.STORAGE] = translated.series
         return state
 
 

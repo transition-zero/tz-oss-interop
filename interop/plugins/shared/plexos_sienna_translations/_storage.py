@@ -14,7 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from interop.core.extensions import StorageExtension
+import polars as pl
+
+from interop.core.extensions import ExtensionKind, StorageExtension, companion_filename
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
@@ -46,6 +48,10 @@ from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTargets,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
+from interop.plugins.shared.plexos_sienna_translations._storage_series import (
+    StorageSeries,
+    build_storage_series,
+)
 from interop.plugins.shared.sienna_constants import (
     CYCLIC_ENERGY_PENALTY,
     DEFAULT_CYCLE_LIMITS,
@@ -173,10 +179,15 @@ class _HydroMapping:
 
 @dataclass
 class TranslatedStorage:
-    """The rows each Sienna storage type takes, and the records the sidecar carries."""
+    """The rows each Sienna storage type takes, and the records the sidecar carries.
+
+    ``series`` is the companion parquet the varying values ride in, or None where every
+    unit states its inflow and its rating as one number.
+    """
 
     rows_by_type: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     extensions: list[StorageExtension] = field(default_factory=list)
+    series: pl.LazyFrame | None = None
 
 
 def map_storage(
@@ -185,7 +196,8 @@ def map_storage(
     """Translate every PLEXOS Battery, pumped-storage plant and reservoir hydro."""
     derived = derive_storage_units(state)
     _record_skips(derived, recorder)
-    translated = TranslatedStorage()
+    series = build_storage_series(state, derived.mappings)
+    translated = TranslatedStorage(series=series.frame)
     for mapping in derived.mappings:
         target = targets.find(str(mapping.carrier.value))
         if target is None:
@@ -202,7 +214,7 @@ def map_storage(
             _ID_NOTE,
         )
         rows.append(row)
-        translated.extensions.append(_extension_for(mapping, reporter))
+        translated.extensions.append(_extension_for(mapping, reporter, series))
         record_expansion_notes(reporter, mapping.name, mapping.expansion)
         _record_expansion(reporter, mapping)
     warn_about_dropped_builds(mapping.expansion for mapping in derived.mappings)
@@ -398,13 +410,15 @@ def _storage_cost_value(mapping: StorageUnitMapping, is_cyclic: bool) -> dict[st
 
 
 def _extension_for(
-    mapping: StorageUnitMapping, reporter: SiennaComponentReporter
+    mapping: StorageUnitMapping, reporter: SiennaComponentReporter, series: StorageSeries
 ) -> StorageExtension:
     """What the unit states that Sienna has no field for."""
     reporter.record(mapping.name, _INFLOW_COLUMN, mapping.inflow)
     expansion = mapping.expansion
     return StorageExtension(
         name=mapping.name,
+        inflow_series=_companion_for(mapping.name, series.inflow_names),
+        rating_series=_companion_for(mapping.name, series.rating_names),
         p_nom_extendable=bool(expansion.p_nom_extendable.value),
         max_hours=float(mapping.max_hours.value),
         state_of_charge_initial=float(mapping.state_of_charge_initial.value or 0.0),
@@ -418,3 +432,8 @@ def _extension_for(
         technical_life_years=_decided(expansion.technical_life),
         fom_charge_per_mw_year=_decided(expansion.fom_charge),
     )
+
+
+def _companion_for(name: str, named: frozenset[str]) -> str | None:
+    """The parquet a unit's varying value rides in, or None where it states one number."""
+    return companion_filename(ExtensionKind.STORAGE) if name in named else None

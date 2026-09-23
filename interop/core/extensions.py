@@ -216,6 +216,12 @@ class StorageExtension(ExpansionExtension):
     # MW. PyPSA StorageUnit.inflow. Sienna reads a hydro budget as a time series alone, so a
     # static inflow has no field there.
     inflow_mw: float | None = None
+    # Ours: the companion parquet holding the inflow at each snapshot, in MW, where the
+    # reservoir refills at a rate that changes.
+    inflow_series: str | None = None
+    # Ours: the companion parquet holding the share of its rating the unit reaches at each
+    # snapshot. Sienna states one rating and names no series against it.
+    rating_series: str | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -415,17 +421,26 @@ class CompanionSeriesCol(StrEnum):
     NAME = "name"
 
 
+class StorageCompanionCol(StrEnum):
+    """Value columns of the storage companion parquet, each named for the field it holds."""
+
+    INFLOW_MW = "inflow_mw"
+    RATING_PU = "rating_pu"
+
+
 class Companion(NamedTuple):
-    """The parquet a kind's series lives in, and the record field that names that file."""
+    """The parquet a kind's series live in, and the record fields that name that file."""
 
     filename: str
-    series_field: str
+    series_fields: tuple[str, ...]
 
 
 # Companions sit beside the sidecar and are named for what they hold. A kind with no entry
-# states every value on the record itself.
+# states every value on the record itself. One parquet holds every series of its kind, one
+# column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
-    ExtensionKind.RESERVE: Companion("reserves.parquet", "requirement_series"),
+    ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
+    ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
 }
 
 
@@ -450,7 +465,9 @@ def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecor
     """
     companion = _COMPANIONS.get(kind)
     return companion is not None and any(
-        getattr(record, companion.series_field, None) is not None for record in records
+        getattr(record, series_field, None) is not None
+        for record in records
+        for series_field in companion.series_fields
     )
 
 
