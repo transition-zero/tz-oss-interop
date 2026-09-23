@@ -355,9 +355,11 @@ class LoadConformity(StrEnum):
 
 
 class PrimeMover(StrEnum):
-    """Sienna PrimeMovers values used by the reverse carrier mapping.
+    """Sienna PrimeMovers values the reverse carrier mapping reads.
 
-    Source: ``SiennaSchemas/Core/common.json`` (subset this pipeline maps).
+    Every value SiennaSchemas states, because any of them can reach this hop. A pair this
+    pipeline names no canonical PyPSA carrier for still reads back, through the carrier the
+    sidecar carries.
     """
 
     ST = "ST"
@@ -370,6 +372,19 @@ class PrimeMover(StrEnum):
     HY = "HY"
     PS = "PS"
     BA = "BA"
+    CA = "CA"
+    CE = "CE"
+    CP = "CP"
+    CS = "CS"
+    CT = "CT"
+    ES = "ES"
+    FC = "FC"
+    FW = "FW"
+    HA = "HA"
+    HB = "HB"
+    HK = "HK"
+    IC = "IC"
+    OT = "OT"
 
 
 class ThermalFuel(StrEnum):

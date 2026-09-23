@@ -208,7 +208,7 @@ class _ThermalMapping:
     bus_name: str
     prime_mover: PrimeMover
     fuel: ThermalFuel
-    carrier: PyPSACarrier
+    carrier: PyPSACarrier | None
     ext_carrier: str | None
     committable: bool
     committable_from_ext: bool
@@ -284,7 +284,7 @@ def _derive_thermal(
         bus_name=bus_names[bus_id],
         prime_mover=prime_mover,
         fuel=fuel,
-        carrier=pypsa_carrier(SiennaComponent.THERMAL_STANDARD, prime_mover, fuel),
+        carrier=_carrier_or_none(SiennaComponent.THERMAL_STANDARD, prime_mover, fuel, ext),
         ext_carrier=ext.carrier,
         committable=ext.committable is True,
         committable_from_ext=ext.committable is not None,
@@ -332,6 +332,22 @@ _CARRIED_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
 )
 
 
+def _carrier_or_none(
+    sienna_type: SiennaComponent,
+    prime_mover: PrimeMover,
+    fuel: ThermalFuel | None,
+    ext: GeneratorExtension,
+) -> PyPSACarrier | None:
+    """The canonical carrier for the pair, or None where the sidecar already names one.
+
+    A pair this pipeline names no carrier for still fails loudly, unless the sidecar carries
+    the name the source wrote.
+    """
+    if ext.carrier is not None:
+        return None
+    return pypsa_carrier(sienna_type, prime_mover, fuel)
+
+
 def _record_carried(
     reporter: GeneratorReporter, sienna_type: SiennaComponent, mapping: Any
 ) -> None:
@@ -362,7 +378,7 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     if m.ext_carrier is not None:
         reporter.record_carrier_from_ext(sienna_type, m.name, m.ext_carrier)
-    else:
+    elif m.carrier is not None:
         reporter.record_carrier_thermal(m.name, m.prime_mover, m.fuel, m.carrier)
     if m.committable_from_ext:
         reporter.record_committable_from_ext(sienna_type, m.name, m.committable)
@@ -437,7 +453,7 @@ class _RenewableMapping:
     bus_name: str
     sienna_type: SiennaComponent
     prime_mover: PrimeMover
-    carrier: PyPSACarrier
+    carrier: PyPSACarrier | None
     ext_carrier: str | None
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
@@ -481,7 +497,7 @@ def _derive_renewable(
         bus_name=bus_names[bus_id],
         sienna_type=sienna_type,
         prime_mover=prime_mover,
-        carrier=pypsa_carrier(sienna_type, prime_mover, None),
+        carrier=_carrier_or_none(sienna_type, prime_mover, None, ext),
         ext_carrier=ext.carrier,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
@@ -512,7 +528,7 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
         reporter.record_no_cost(m.sienna_type, m.name)
     if m.ext_carrier is not None:
         reporter.record_carrier_from_ext(m.sienna_type, m.name, m.ext_carrier)
-    else:
+    elif m.carrier is not None:
         reporter.record_carrier_from_prime_mover(m.sienna_type, m.name, m.prime_mover, m.carrier)
     if m.p_nom_extendable_from_ext:
         reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
