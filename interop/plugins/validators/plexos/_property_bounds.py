@@ -47,7 +47,7 @@ def check_property_bounds(
     source's business rather than this validator's.
     """
     properties = state.source_topology.get(PlexosResolvedTable.PROPERTIES)
-    if properties is None:
+    if properties is None or not _states_values(properties):
         return
     rows = properties.filter(
         (pl.col(PlexosPropertyCol.CHILD_CLASS) == str(plexos_class))
@@ -65,6 +65,21 @@ def check_property_bounds(
                 attribute=check.plexos_property,
                 value=row[PlexosPropertyCol.VALUE],
             )
+
+
+def _states_values(properties: pl.LazyFrame) -> bool:
+    """Whether the resolved table holds the columns a bound reads.
+
+    A model stating no property at all leaves the table without them, and a bound on a
+    value nobody wrote holds by default.
+    """
+    held = set(properties.collect_schema().names())
+    return {
+        PlexosPropertyCol.CHILD_CLASS,
+        PlexosPropertyCol.CHILD_OBJECT,
+        PlexosPropertyCol.PROPERTY,
+        PlexosPropertyCol.VALUE,
+    } <= held
 
 
 def negative(
