@@ -12,7 +12,7 @@ the cost curve, the commitment and the sidecar record.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import polars as pl
@@ -21,11 +21,13 @@ from interop.core.extensions import GeneratorExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    UNIT_DOLLARS,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MVA,
     UNIT_MW,
     UNIT_MW_PER_MINUTE,
+    Framework,
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
@@ -55,11 +57,16 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
+from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    MARGINAL_COST_CARBON_TERM,
+    START_UP_COST_FUEL_TERM,
+)
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
     SourceValue,
+    declares,
     destination_row,
     maps_to,
 )
@@ -146,6 +153,21 @@ _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispat
 # different sub-step writes.
 _GENERATOR_TYPES = (SiennaComponent.THERMAL_STANDARD, SiennaComponent.RENEWABLE_DISPATCH)
 
+# An operation cost is a curve on the row and a price per megawatt hour in the report, so
+# the event names the column and states the number the curve is built from.
+_THERMAL_COST_COLUMN = MappedColumns(
+    (SiennaThermalGeneratorCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH
+)
+_RENEWABLE_COST_COLUMN = MappedColumns(
+    (SiennaRenewableGeneratorCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH
+)
+# What the carbon a fuel releases adds, and what a start's fuel costs. Neither is a column
+# of its own; each is the source of the value that cites it.
+_CARBON_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST} carbon term"
+_START_FUEL_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST}.start_up fuel term"
+_CARBON_TERM_COLUMN = MappedColumns((_CARBON_TERM_ATTRIBUTE,), UNIT_DOLLARS_PER_MWH)
+_START_FUEL_TERM_COLUMN = MappedColumns((_START_FUEL_TERM_ATTRIBUTE,), UNIT_DOLLARS)
+
 
 @dataclass(frozen=True)
 class _ThermalMapping:
@@ -165,7 +187,7 @@ class _ThermalMapping:
     reactive_power_limits: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER_LIMITS)
     ramp_limits: Decision = maps_to(SiennaThermalGeneratorCol.RAMP_LIMITS, unit=UNIT_MW_PER_MINUTE)
     time_limits: Decision = maps_to(SiennaThermalGeneratorCol.TIME_LIMITS, unit=UNIT_HOURS)
-    operation_cost: Decision = maps_to(SiennaThermalGeneratorCol.OPERATION_COST)
+    operation_cost: Decision = declares(_THERMAL_COST_COLUMN)
     prime_mover_type: Decision = maps_to(SiennaThermalGeneratorCol.PRIME_MOVER_TYPE)
     fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL_TYPE)
     must_run: Decision = maps_to(SiennaThermalGeneratorCol.MUST_RUN)
@@ -185,7 +207,7 @@ class _RenewableMapping:
     rating: Decision = maps_to(SiennaRenewableGeneratorCol.RATING)
     reactive_power_limits: Decision = maps_to(SiennaRenewableGeneratorCol.REACTIVE_POWER_LIMITS)
     power_factor: Decision = maps_to(SiennaRenewableGeneratorCol.POWER_FACTOR)
-    operation_cost: Decision = maps_to(SiennaRenewableGeneratorCol.OPERATION_COST)
+    operation_cost: Decision = declares(_RENEWABLE_COST_COLUMN)
     prime_mover_type: Decision = maps_to(SiennaRenewableGeneratorCol.PRIME_MOVER_TYPE)
 
 
@@ -427,14 +449,39 @@ def _megawatts(per_unit: float, base_power: float) -> float:
 
 
 def _row_for(translated: _Translated, reporter: SiennaComponentReporter) -> dict[str, Any]:
-    name = translated.mapping.name
+    mapping = translated.mapping
+    name = mapping.name
+    _record_cost_terms(reporter, mapping)
     if translated.sienna_type == SiennaComponent.THERMAL_STANDARD:
         thermal = _derive_thermal(translated)
         reporter.record_mapping(name, thermal)
-        return destination_row(thermal, SiennaThermalGeneratorCol.NAME, name)
+        row = destination_row(thermal, SiennaThermalGeneratorCol.NAME, name)
+        row[SiennaThermalGeneratorCol.OPERATION_COST] = thermal_cost_value(
+            mapping.cost.marginal_cost, _start_up_cost(mapping)
+        )
+        return row
     renewable = _derive_renewable(translated)
     reporter.record_mapping(name, renewable)
-    return destination_row(renewable, SiennaRenewableGeneratorCol.NAME, name)
+    row = destination_row(renewable, SiennaRenewableGeneratorCol.NAME, name)
+    row[SiennaRenewableGeneratorCol.OPERATION_COST] = renewable_cost_value(
+        mapping.cost.marginal_cost
+    )
+    return row
+
+
+def _record_cost_terms(reporter: SiennaComponentReporter, mapping: GeneratorMapping) -> None:
+    """The carbon and start-fuel terms precede the values that cite them as sources."""
+    decisions = decide_generator(mapping)
+    if decisions.carbon is not None:
+        reporter.record(mapping.name, _CARBON_TERM_COLUMN, decisions.carbon)
+    if decisions.start_fuel is not None:
+        reporter.record(mapping.name, _START_FUEL_TERM_COLUMN, decisions.start_fuel)
+
+
+def _start_up_decision(translated: _Translated) -> Decision:
+    """What a start costs, with the fuel term named as this hop names it."""
+    commitment = decide_generator(translated.mapping).start_up_cost
+    return _in_sienna_words(commitment, translated)
 
 
 def _derive_thermal(translated: _Translated) -> _ThermalMapping:
@@ -452,7 +499,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         ramp_limits=_ramp_limits(translated),
         time_limits=_time_limits(translated),
-        operation_cost=_thermal_cost(mapping),
+        operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
         fuel_type=_fuel_type(mapping, target),
         must_run=Decision.default(False, _MUST_RUN_NOTE),
@@ -472,7 +519,7 @@ def _derive_renewable(translated: _Translated) -> _RenewableMapping:
         rating=Decision.default(mapping.availability.static_p_max_pu, _RATING_NOTE),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         power_factor=Decision.default(UNITY_POWER_FACTOR, _POWER_FACTOR_NOTE),
-        operation_cost=_renewable_cost(mapping),
+        operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
     )
 
@@ -558,32 +605,42 @@ def _time_limits(translated: _Translated) -> Decision:
     return Decision.derived(limits, sources, _TIME_LIMITS_DERIVATION)
 
 
-def _thermal_cost(mapping: GeneratorMapping) -> Decision:
-    cost = thermal_cost_value(mapping.cost.marginal_cost, _start_up_cost(mapping))
-    sources = [
-        SourceValue(
-            PlexosClass.GENERATOR,
-            mapping.name,
-            PlexosProperty.VOM_CHARGE,
-            mapping.cost.vom,
-            UNIT_DOLLARS_PER_MWH,
-        )
-    ]
-    return Decision.derived(cost, sources, _COST_DERIVATION)
+def _cost_decision(translated: _Translated) -> Decision:
+    """The price per megawatt hour, with every PLEXOS value behind it stated."""
+    return _in_sienna_words(decide_generator(translated.mapping).marginal_cost, translated)
 
 
-def _renewable_cost(mapping: GeneratorMapping) -> Decision:
-    cost = renewable_cost_value(mapping.cost.marginal_cost)
-    sources = [
-        SourceValue(
-            PlexosClass.GENERATOR,
-            mapping.name,
-            PlexosProperty.VOM_CHARGE,
-            mapping.cost.vom,
-            UNIT_DOLLARS_PER_MWH,
-        )
-    ]
-    return Decision.derived(cost, sources, _COST_DERIVATION)
+# What the shared reading calls a term it derived earlier, and what Sienna calls it here.
+_TERM_IN_SIENNA_WORDS: dict[str, str] = {
+    MARGINAL_COST_CARBON_TERM: _CARBON_TERM_ATTRIBUTE,
+    START_UP_COST_FUEL_TERM: _START_FUEL_TERM_ATTRIBUTE,
+}
+
+
+def _in_sienna_words(decision: Decision, translated: _Translated) -> Decision:
+    """The same decision, with each term it derived earlier named as this hop names it.
+
+    The shared reading states a back-reference in PyPSA words, because the hop it was
+    written for writes a PyPSA generator. This hop writes a Sienna one.
+    """
+    return replace(
+        decision,
+        sources=tuple(_source_in_sienna_words(source, translated) for source in decision.sources),
+    )
+
+
+def _source_in_sienna_words(source: SourceValue, translated: _Translated) -> SourceValue:
+    renamed = _TERM_IN_SIENNA_WORDS.get(str(source.attribute))
+    if renamed is None:
+        return source
+    return SourceValue(
+        component=translated.sienna_type,
+        name=source.name,
+        attribute=renamed,
+        value=source.value,
+        unit=source.unit,
+        framework=Framework.SIENNA,
+    )
 
 
 def _start_up_cost(mapping: GeneratorMapping) -> float:
@@ -641,7 +698,7 @@ def _extension_for(mapping: GeneratorMapping) -> GeneratorExtension:
         name=mapping.name,
         carrier=mapping.carrier,
         committable=mapping.is_committable or None,
-        p_nom_extendable=mapping.candidate.is_candidate,
+        p_nom_extendable=bool(mapping.expansion.p_nom_extendable.value),
         category=mapping.category,
         efficiency=mapping.efficiency,
         **_expansion_fields(mapping),

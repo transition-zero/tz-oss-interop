@@ -11,6 +11,7 @@ from interop.core.extensions import (
     ExtensionLookup,
     ExtensionReader,
     GeneratorExtension,
+    append_extensions,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
@@ -123,7 +124,21 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                 rows, schema=GENERATORS_DESTINATION_SCHEMA
             )
             self._record_generator_time_series(state, p_max_pu_scale_by_name)
+            self._carry_on(state, [row[PyPSAGeneratorCol.NAME] for row in rows])
         return state
+
+    def _carry_on(self, state: State, names: list[str]) -> None:
+        """Pass on what a generator states that PyPSA has no column for either.
+
+        The size of one unit, the Technical Life and the yearly charge have no PyPSA column,
+        so they travel to the next hop in the sidecar rather than stopping here.
+        """
+        staged = self._extensions.read(ExtensionKind.GENERATOR)
+        append_extensions(
+            state.destination_extensions,
+            ExtensionKind.GENERATOR,
+            [_carried_generator(staged.get(name)) for name in names],
+        )
 
     def _record_generator_time_series(
         self, state: State, p_max_pu_scale_by_name: dict[str, float]
@@ -147,6 +162,18 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                 )
         append_metadata(state, metadata_rows)
+
+
+def _carried_generator(record: GeneratorExtension) -> GeneratorExtension:
+    """One generator's record, holding only what PyPSA states nowhere."""
+    return GeneratorExtension(
+        name=record.name,
+        category=record.category,
+        unit_size_mw=record.unit_size_mw,
+        technical_life_years=record.technical_life_years,
+        fom_charge_per_mw_year=record.fom_charge_per_mw_year,
+        retirement_year=record.retirement_year,
+    )
 
 
 def _ramp_limit(
