@@ -6,7 +6,6 @@ field factories, the linear cost-curve structs and the TimeSeriesAssociation row
 
 from __future__ import annotations
 
-import uuid as _uuid
 from collections.abc import Callable
 from functools import partial
 from typing import Any, NamedTuple
@@ -18,16 +17,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAComponentCol,
     PyPSAComponentNaming,
     PyPSAGeneratorCol,
-)
-from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
-from interop.plugins.shared.sienna_constants import (
-    SiennaCostType,
-    SiennaCurveType,
-    SiennaFunctionType,
-    SiennaTimeSeriesAssociationCol,
-    SiennaUnitSystem,
-    SiennaVariableCostType,
-    time_series_uuid,
 )
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
@@ -278,79 +267,3 @@ def sienna_dest_field(
         value=value,
         unit=unit,
     )
-
-
-def linear_value_curve(proportional: pl.Expr, *, input_at_zero: pl.Expr) -> pl.Expr:
-    """A Sienna InputOutputCurve with a single linear segment and no constant term."""
-    return pl.struct(
-        curve_type=pl.lit(SiennaCurveType.INPUT_OUTPUT),
-        function_data=pl.struct(
-            function_type=pl.lit(SiennaFunctionType.LINEAR),
-            proportional_term=proportional,
-            constant_term=pl.lit(0.0),
-        ),
-        input_at_zero=input_at_zero,
-    )
-
-
-# Zero input/output curve, used for vom_cost and wherever a no-cost curve is required.
-ZERO_IO_CURVE = linear_value_curve(pl.lit(0.0), input_at_zero=pl.lit(0.0))
-
-
-def variable_cost_curve(proportional: pl.Expr) -> pl.Expr:
-    """A natural-units CostCurve whose variable cost is one linear segment, zero vom_cost."""
-    return pl.struct(
-        variable_cost_type=pl.lit(SiennaVariableCostType.COST),
-        power_units=pl.lit(SiennaUnitSystem.NATURAL_UNITS),
-        value_curve=linear_value_curve(proportional, input_at_zero=pl.lit(None, dtype=pl.Float64)),
-        vom_cost=ZERO_IO_CURVE,
-    )
-
-
-def load_cost(price: pl.Expr) -> pl.Expr:
-    """A Sienna LoadCost pricing the load that is served, in dollars per MWh.
-
-    PowerSimulations applies the curve to the power served with a negative multiplier, so a
-    solve that serves everything pays nothing extra and a solve that cuts load gives up the
-    price times the energy it cut.
-    """
-    return pl.struct(
-        cost_type=pl.lit(SiennaCostType.LOAD),
-        fixed=pl.lit(0.0),
-        variable=variable_cost_curve(price),
-    )
-
-
-def ts_association_row(
-    *,
-    owner_type: str,
-    owner_id: int,
-    component_name: str,
-    series_name: str,
-    ts_info: TimeSeriesInfo,
-    source_table: str,
-    source_attribute: str,
-    scaling_factor: float,
-) -> dict[str, Any]:
-    """One SingleTimeSeries TimeSeriesAssociation row keyed for the h5 sink to resolve."""
-    col = SiennaTimeSeriesAssociationCol
-    return {
-        col.TIME_SERIES_UUID: time_series_uuid(owner_type, component_name, series_name),
-        col.TIME_SERIES_TYPE: "SingleTimeSeries",
-        col.INITIAL_TIMESTAMP: (
-            ts_info.initial_timestamp.isoformat() if ts_info.initial_timestamp is not None else None
-        ),
-        col.RESOLUTION: ts_info.resolution,
-        col.LENGTH: ts_info.length,
-        col.NAME: series_name,
-        col.OWNER_ID: owner_id,
-        col.OWNER_TYPE: owner_type,
-        col.OWNER_CATEGORY: "Component",
-        col.FEATURES: "[]",
-        col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-        col.METADATA_UUID: str(_uuid.uuid4()),
-        col.COMPONENT_NAME: component_name,
-        col.SOURCE_TABLE: source_table,
-        col.SOURCE_ATTRIBUTE: source_attribute,
-        col.SCALING_FACTOR: scaling_factor,
-    }

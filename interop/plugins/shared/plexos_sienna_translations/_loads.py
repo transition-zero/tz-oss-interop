@@ -55,6 +55,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTimeSeriesAssociationCol,
     time_series_uuid,
 )
+from interop.plugins.shared.sienna_time_series import TimeSeriesInfo
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
 from interop.plugins.shared.translation_runner import Translation
 
@@ -438,7 +439,7 @@ def _record_busless_node(recorder: ScopedRecorder, node: str, demand: float | No
 
 
 def build_load_ts_associations(
-    source: pl.DataFrame, destination: pl.DataFrame, ts_info: Any
+    source: pl.DataFrame, destination: pl.DataFrame, ts_info: TimeSeriesInfo
 ) -> pl.DataFrame:
     """One association row per load whose Load is file-backed.
 

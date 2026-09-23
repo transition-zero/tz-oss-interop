@@ -38,7 +38,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
     rated_from,
     sienna_dest_field,
-    variable_cost_curve,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -58,6 +57,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaPrimeMovers,
     SiennaStorageTech,
     SiennaStructField,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    variable_cost_curve,
 )
 from interop.plugins.shared.translation_runner import (
     SkipRule,

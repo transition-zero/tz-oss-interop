@@ -41,16 +41,18 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     yearly_fixed_charge,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    linear_value_curve,
     pypsa_source_field,
     sienna_dest_field,
-    variable_cost_curve,
 )
 from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
     SiennaComponent,
     SiennaCostType,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    linear_value_curve,
+    variable_cost_curve,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     CAPITAL_COST_DTYPE,

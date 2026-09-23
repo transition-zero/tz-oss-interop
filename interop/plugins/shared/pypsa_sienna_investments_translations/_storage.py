@@ -43,8 +43,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     yearly_fixed_charge,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    ZERO_IO_CURVE,
-    linear_value_curve,
     pypsa_source_field,
     sienna_dest_field,
 )
@@ -55,6 +53,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaStorageTech,
     SiennaStructField,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    ZERO_IO_CURVE,
+    linear_value_curve,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     STORAGE_CAPITAL_COST_DTYPE,

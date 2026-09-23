@@ -15,9 +15,11 @@ import polars as pl
 from interop.plugins.shared.constants import UNIT_YEARS
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    ZERO_IO_CURVE,
     pypsa_source_field,
     sienna_dest_field,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    ZERO_IO_CURVE,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     NAMED_YEAR_DTYPE,

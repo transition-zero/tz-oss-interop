@@ -19,11 +19,11 @@ from interop.plugins.shared.plexos_sienna_translations import (
     build_load_ts_associations,
     build_loads_source_table,
 )
-from interop.plugins.shared.pypsa_sienna_translations import collect_ts_info
 from interop.plugins.shared.sienna_constants import (
     LOADS_DESTINATION_SCHEMA,
     SiennaComponent,
 )
+from interop.plugins.shared.sienna_time_series import collect_ts_info
 from interop.plugins.shared.translation_runner import apply_translations, finalise
 
 
