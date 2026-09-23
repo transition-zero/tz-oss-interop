@@ -5,6 +5,13 @@ source:
 steps:
   - name: plexos_to_sienna_map_components
   - name: sienna_relate_components
+validators:
+  - name: plexos_node_reference_integrity
+  - name: plexos_generators
+  - name: plexos_storage_units
+  - name: plexos_loads
+  - name: plexos_lines
+  - name: plexos_unique_names
 sinks:
   - name: emit_sienna_files
     params:
