@@ -82,11 +82,17 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     maps_to,
     warn_about_skips,
 )
+from interop.plugins.shared.plexos_sienna_translations._availability import (
+    AVAILABILITY_SERIES,
+    AvailabilityInputs,
+    stage_availability,
+)
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
+from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
     RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
@@ -130,6 +136,10 @@ _TIME_AT_STATUS_NOTE = (
 _POWER_FACTOR_NOTE = "PLEXOS states no power factor; power_factor defaults to 1.0"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _RATING_NOTE = "the generator states no availability cap, so it runs at its whole rating"
+_RATING_FROM_SERIES_NOTE = (
+    "the generator follows an availability series, which carries every derate, so it rates "
+    "at its whole capacity"
+)
 _BASE_POWER_DERIVATION = "Max Capacity x Units"
 _ACTIVE_POWER_DERIVATION = "the minimum this generator can be held to"
 _ACTIVE_POWER_NOTE = "the generator states no minimum; active_power defaults to 0.0"
@@ -238,6 +248,7 @@ class _Translated:
     target: CarrierTarget
     sienna_type: str
     minutes_per_snapshot: float
+    follows_a_series: bool
 
 
 @dataclass(frozen=True)
@@ -267,11 +278,13 @@ def map_generators(
     lookups = build_lookups(state)
     # build_lookups reads the bus names off the PyPSA table, which this hop never writes.
     bus_names = _bus_names(state)
+    with_a_series = _generators_with_a_series(state, lookups)
     # A turbine drawing on a Storage becomes a storage unit, never also a generator.
     turbines = storage_turbine_names(state)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
+    units_by_name: dict[str, float] = {}
     sienna_type_by_name: dict[str, str] = {}
     skipped: list[SkippedComponent] = []
     kept_expansions: list[Any] = []
@@ -279,7 +292,7 @@ def map_generators(
         name = generator[PlexosObjectCol.NAME]
         if name in turbines:
             continue
-        target = _target_for(name, generator, lookups, bus_names, targets, skipped)
+        target = _target_for(name, generator, lookups, bus_names, targets, skipped, with_a_series)
         if target is None:
             continue
         reporter = SiennaComponentReporter(recorder, target.sienna_type)
@@ -297,6 +310,7 @@ def map_generators(
         _record_lost_minimum(reporter, target)
         _record_lifespan(reporter, target.mapping)
         kept_expansions.append(target.mapping.expansion)
+        units_by_name[target.mapping.name] = target.mapping.units
         extensions.append(_extension_for(target.mapping))
         sienna_type_by_name[target.mapping.name] = target.sienna_type
         profile = target.mapping.availability.profile
@@ -308,6 +322,7 @@ def map_generators(
                 sienna_id=row[SiennaThermalGeneratorCol.ID],
             )
     _report_unstaged_profiles(state, recorder, availability)
+    _stage_availability(state, availability, rows_by_type, sienna_type_by_name, units_by_name)
     _report_left_out(recorder, skipped)
     warn_about_dropped_builds(expansion for expansion in kept_expansions)
     return TranslatedGenerators(
@@ -372,6 +387,22 @@ def _generator_rows(state: State) -> list[dict[str, Any]]:
     return table.to_dicts()
 
 
+def _generators_with_a_series(state: State, lookups: Lookups) -> set[str]:
+    """Every generator whose availability comes from a series rather than one number.
+
+    Its rating is then the whole of it, because the series carries every derate.
+    """
+    staged = {
+        name
+        for name, plexos_property in lookups.availability_profiles.items()
+        if (str(PlexosClass.GENERATOR), plexos_property) in state.source_time_series
+    }
+    outages = state.source_time_series.get((str(PlexosClass.GENERATOR), PlexosProperty.UNITS_OUT))
+    if outages is None:
+        return staged
+    return staged | set(series_components(outages))
+
+
 def _bus_names(state: State) -> set[str]:
     table = state.destination_tables.get(SiennaComponent.AC_BUS)
     return set() if table is None else set(table[SiennaThermalGeneratorCol.NAME].to_list())
@@ -384,6 +415,7 @@ def _target_for(
     bus_names: set[str],
     targets: CarrierTargets,
     skipped: list[SkippedComponent],
+    with_a_series: set[str],
 ) -> _Translated | None:
     """One generator's mapping and its Sienna type, or None where it is left out.
 
@@ -405,11 +437,13 @@ def _target_for(
     if has_infeasible_dispatch_range(mapping):
         skipped.append(_infeasible(mapping))
         return None
+    follows_a_series = name in with_a_series
     return _Translated(
         mapping=mapping,
         target=target,
         sienna_type=str(target.sienna_type),
         minutes_per_snapshot=lookups.minutes_per_snapshot,
+        follows_a_series=follows_a_series,
     )
 
 
@@ -470,6 +504,54 @@ def _skip(
 ) -> SkippedComponent:
     """One generator left out, and the reading that left it out."""
     return SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
+
+
+def _stage_availability(
+    state: State,
+    availability: dict[str, _Availability],
+    rows_by_type: dict[str, list[dict[str, Any]]],
+    sienna_type_by_name: dict[str, str],
+    units_by_name: dict[str, float],
+) -> None:
+    """Build the series each generator follows, and keep only the ones that got one.
+
+    A Sienna association names a staged frame and one scaling factor, so a profile and an
+    outage that compound are multiplied here rather than stated as two rows.
+    """
+    staged = stage_availability(
+        state,
+        [
+            AvailabilityInputs(
+                name=name,
+                plexos_property=None if one is None else one.plexos_property,
+                profile_scale=1.0 if one is None else one.scale,
+                units=units_by_name.get(name, 0.0),
+            )
+            for name in sorted(units_by_name)
+            for one in [availability.get(name)]
+        ],
+    )
+    for name in list(availability):
+        if name not in staged:
+            del availability[name]
+    for name in staged - set(availability):
+        availability[name] = _Availability(
+            plexos_property=AVAILABILITY_SERIES,
+            scale=1.0,
+            sienna_type=sienna_type_by_name[name],
+            sienna_id=_id_of(rows_by_type, sienna_type_by_name, name),
+        )
+
+
+def _id_of(
+    rows_by_type: dict[str, list[dict[str, Any]]],
+    sienna_type_by_name: dict[str, str],
+    name: str,
+) -> int:
+    for row in rows_by_type[sienna_type_by_name[name]]:
+        if row[SiennaThermalGeneratorCol.NAME] == name:
+            return int(row[SiennaThermalGeneratorCol.ID])
+    raise KeyError(name)
 
 
 def _report_unstaged_profiles(
@@ -558,7 +640,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=_active_power(mapping),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
-        rating=Decision.default(mapping.availability.static_p_max_pu, _RATING_NOTE),
+        rating=_rating(translated),
         active_power_limits=_minimum_decision(translated),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         ramp_limits=_ramp_decision(translated),
@@ -581,7 +663,7 @@ def _derive_renewable(translated: _Translated) -> _RenewableMapping:
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=Decision.default(NO_COST, _ACTIVE_POWER_NOTE),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
-        rating=Decision.default(mapping.availability.static_p_max_pu, _RATING_NOTE),
+        rating=_rating(translated),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         power_factor=Decision.default(UNITY_POWER_FACTOR, _POWER_FACTOR_NOTE),
         operation_cost=_cost_decision(translated),
@@ -598,6 +680,17 @@ def _active_power(mapping: GeneratorMapping) -> Decision:
         PlexosClass.GENERATOR, mapping.name, minimum.source_property, minimum.source_value
     )
     return Decision.derived(megawatts, [source], _ACTIVE_POWER_DERIVATION)
+
+
+def _rating(translated: _Translated) -> Decision:
+    """What the generator may reach, per unit of its base power.
+
+    A generator following a series rates at its whole capacity, because the series already
+    carries every derate. One with no series rates at the static ceiling it states.
+    """
+    if translated.follows_a_series:
+        return Decision.default(FULL_RATING, _RATING_FROM_SERIES_NOTE)
+    return Decision.default(translated.mapping.availability.static_p_max_pu, _RATING_NOTE)
 
 
 def _limits(mapping: GeneratorMapping) -> dict[str, float]:
