@@ -24,6 +24,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_COMPONENT_NAMING,
     PYPSA_NAME_COLUMN,
     PyPSAComponent,
     PyPSAComponentCol,
@@ -123,6 +124,15 @@ _GENERATOR_FLEET_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.RENEWABLE_NON_DISPATCH,
 )
 
+# The loads a portfolio's demand is read from, as the report names them.
+_LOADS = InvestmentsSource(
+    framework=Framework.PYPSA,
+    pipeline=PYPSA_TO_SIENNA_INVESTMENTS,
+    component=PyPSAComponent.LOAD,
+    display=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].display,
+    plural=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].plural,
+)
+
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.POWER_LOAD,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD,
@@ -203,13 +213,13 @@ class _Attribute(NamedTuple):
 _ATTRIBUTES: dict[SiennaSupplementalAttribute, _Attribute] = {
     SiennaSupplementalAttribute.EXISTING_DEVICES: _Attribute(
         schema=EXISTING_DEVICES_DESTINATION_SCHEMA,
-        build=build_existing_devices_translations,
+        build=partial(build_existing_devices_translations, GENERATOR_SOURCE),
         name_col=TECHNOLOGY_NAME,
         describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
     ),
     SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: _Attribute(
         schema=RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
-        build=build_retirement_potential_translations,
+        build=partial(build_retirement_potential_translations, GENERATOR_SOURCE),
         name_col=TECHNOLOGY_NAME,
         describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
     ),
@@ -431,7 +441,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._write_table(
             state,
             table,
-            build_demand_translations,
+            partial(build_demand_translations, _LOADS),
             DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
             numbering,

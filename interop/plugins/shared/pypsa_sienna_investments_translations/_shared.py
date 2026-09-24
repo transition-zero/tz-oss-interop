@@ -78,6 +78,24 @@ class InvestmentsSource:
             unit=unit,
         )
 
+    def field_of(
+        self,
+        component: str,
+        name: str,
+        attribute: str | None = None,
+        value: object = None,
+        unit: str | None = None,
+    ) -> SourceField:
+        """One source field of a class this source names per row, such as a device's own."""
+        return SourceField(
+            framework=self.framework,
+            component=component,
+            name=name,
+            attribute=self.attribute(attribute),
+            value=value,
+            unit=unit,
+        )
+
     def skip(
         self,
         *,

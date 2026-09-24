@@ -14,10 +14,10 @@ import polars as pl
 
 from interop.plugins.shared.constants import UNIT_YEARS
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
-from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    pypsa_source_field,
-    sienna_dest_field,
+from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    InvestmentsSource,
 )
+from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_cost_curves import (
     ZERO_IO_CURVE,
 )
@@ -114,22 +114,29 @@ E = SiennaExistingDevicesCol
 R = SiennaRetirementPotentialCol
 
 
-EXISTING_DEVICES_LIST = Translation(
-    exprs=[pl.col(DEVICES).alias(E.EXISTING_DEVICES)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[pypsa_source_field(old[DEVICE_CLASS], device) for device in old[DEVICES]],
-            destinations=[
-                _existing_dest(old[TECHNOLOGY_NAME], E.EXISTING_DEVICES, new[E.EXISTING_DEVICES])
-            ],
-            derivation="the base system components whose carrier this technology builds more of",
-        )
-    ],
-)
+def _existing_translations(source: InvestmentsSource) -> Translation:
+    """The devices a technology adds to, as the source names each one."""
+    devices_list = Translation(
+        exprs=[pl.col(DEVICES).alias(E.EXISTING_DEVICES)],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[source.field_of(old[DEVICE_CLASS], device) for device in old[DEVICES]],
+                destinations=[
+                    _existing_dest(
+                        old[TECHNOLOGY_NAME], E.EXISTING_DEVICES, new[E.EXISTING_DEVICES]
+                    )
+                ],
+                derivation=(
+                    "the base system components whose carrier this technology builds more of"
+                ),
+            )
+        ],
+    )
+    return devices_list
 
 
-def build_existing_devices_translations(start: int) -> list[Translation]:
+def build_existing_devices_translations(source: InvestmentsSource, start: int) -> list[Translation]:
     """The ExistingDevices attributes, taking ids from a counter the flat array shares."""
     return [
         row_position_id_translation(
@@ -139,92 +146,101 @@ def build_existing_devices_translations(start: int) -> list[Translation]:
             note="assigned by position in the portfolio's flat supplemental attribute array",
             start=start,
         ),
-        EXISTING_DEVICES_LIST,
+        _existing_translations(source),
     ]
 
 
-RETIREMENT_ELIGIBLE = Translation(
-    exprs=[pl.col(DEVICES).alias(R.ELIGIBLE_GENERATORS)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[pypsa_source_field(old[DEVICE_CLASS], device) for device in old[DEVICES]],
-            destinations=[
-                _retirement_dest(
-                    old[TECHNOLOGY_NAME], R.ELIGIBLE_GENERATORS, new[R.ELIGIBLE_GENERATORS]
-                )
-            ],
-            derivation="every base system component this technology stands for may retire",
-        )
-    ],
-)
+def _retirement_translations(source: InvestmentsSource) -> list[Translation]:
+    """The retirement attributes, as the source names each device."""
+    retirement_eligible = Translation(
+        exprs=[pl.col(DEVICES).alias(R.ELIGIBLE_GENERATORS)],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[source.field_of(old[DEVICE_CLASS], device) for device in old[DEVICES]],
+                destinations=[
+                    _retirement_dest(
+                        old[TECHNOLOGY_NAME], R.ELIGIBLE_GENERATORS, new[R.ELIGIBLE_GENERATORS]
+                    )
+                ],
+                derivation="every base system component this technology stands for may retire",
+            )
+        ],
+    )
 
-RETIREMENT_BUILD_YEAR = Translation(
-    exprs=[pl.col(BUILD_YEARS).alias(R.BUILD_YEAR)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                pypsa_source_field(
-                    old[DEVICE_CLASS],
-                    entry[NamedYearField.NAME],
-                    PyPSAGeneratorCol.BUILD_YEAR,
-                    entry[NamedYearField.YEAR],
-                    UNIT_YEARS,
-                )
-                for entry in old[BUILD_YEARS]
-            ],
-            destinations=[_retirement_dest(old[TECHNOLOGY_NAME], R.BUILD_YEAR, new[R.BUILD_YEAR])],
-            derivation="build_year, for each device that states one",
-        )
-    ],
-)
+    retirement_build_year = Translation(
+        exprs=[pl.col(BUILD_YEARS).alias(R.BUILD_YEAR)],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    source.field_of(
+                        old[DEVICE_CLASS],
+                        entry[NamedYearField.NAME],
+                        PyPSAGeneratorCol.BUILD_YEAR,
+                        entry[NamedYearField.YEAR],
+                        UNIT_YEARS,
+                    )
+                    for entry in old[BUILD_YEARS]
+                ],
+                destinations=[
+                    _retirement_dest(old[TECHNOLOGY_NAME], R.BUILD_YEAR, new[R.BUILD_YEAR])
+                ],
+                derivation="build_year, for each device that states one",
+            )
+        ],
+    )
 
-RETIREMENT_PLANNED_YEAR = Translation(
-    exprs=[pl.col(RETIREMENT_YEARS).alias(R.PLANNED_RETIREMENT_YEAR)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                pypsa_source_field(
-                    old[DEVICE_CLASS],
-                    entry[NamedYearField.NAME],
-                    _RETIREMENT_YEAR_FIELD,
-                    entry[NamedYearField.YEAR],
-                    UNIT_YEARS,
-                )
-                for entry in old[RETIREMENT_YEARS]
-            ],
-            destinations=[
-                _retirement_dest(
-                    old[TECHNOLOGY_NAME],
-                    R.PLANNED_RETIREMENT_YEAR,
-                    new[R.PLANNED_RETIREMENT_YEAR],
-                )
-            ],
-            derivation="the retirement year the extensions sidecar carries, per device",
-        )
-    ],
-)
+    retirement_planned_year = Translation(
+        exprs=[pl.col(RETIREMENT_YEARS).alias(R.PLANNED_RETIREMENT_YEAR)],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    source.field_of(
+                        old[DEVICE_CLASS],
+                        entry[NamedYearField.NAME],
+                        _RETIREMENT_YEAR_FIELD,
+                        entry[NamedYearField.YEAR],
+                        UNIT_YEARS,
+                    )
+                    for entry in old[RETIREMENT_YEARS]
+                ],
+                destinations=[
+                    _retirement_dest(
+                        old[TECHNOLOGY_NAME],
+                        R.PLANNED_RETIREMENT_YEAR,
+                        new[R.PLANNED_RETIREMENT_YEAR],
+                    )
+                ],
+                derivation="the retirement year the extensions sidecar carries, per device",
+            )
+        ],
+    )
 
-RETIREMENT_COST = Translation(
-    exprs=[ZERO_IO_CURVE.alias(R.RETIREMENT_COST)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[
-                _retirement_dest(old[TECHNOLOGY_NAME], R.RETIREMENT_COST, new[R.RETIREMENT_COST])
-            ],
-            note=(
-                "RetirementPotential requires a retirement cost and PyPSA prices no "
-                "retirement, so retiring a device costs nothing"
-            ),
-        )
-    ],
-)
+    retirement_cost = Translation(
+        exprs=[ZERO_IO_CURVE.alias(R.RETIREMENT_COST)],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+                destinations=[
+                    _retirement_dest(
+                        old[TECHNOLOGY_NAME], R.RETIREMENT_COST, new[R.RETIREMENT_COST]
+                    )
+                ],
+                note=(
+                    "RetirementPotential requires a retirement cost and PyPSA prices no "
+                    "retirement, so retiring a device costs nothing"
+                ),
+            )
+        ],
+    )
+    return [retirement_eligible, retirement_build_year, retirement_planned_year, retirement_cost]
 
 
-def build_retirement_potential_translations(start: int) -> list[Translation]:
+def build_retirement_potential_translations(
+    source: InvestmentsSource, start: int
+) -> list[Translation]:
     """The RetirementPotential attributes, taking ids from the same counter."""
     return [
         row_position_id_translation(
@@ -234,8 +250,5 @@ def build_retirement_potential_translations(start: int) -> list[Translation]:
             note="assigned by position in the portfolio's flat supplemental attribute array",
             start=start,
         ),
-        RETIREMENT_ELIGIBLE,
-        RETIREMENT_BUILD_YEAR,
-        RETIREMENT_PLANNED_YEAR,
-        RETIREMENT_COST,
+        *_retirement_translations(source),
     ]
