@@ -259,7 +259,8 @@ def _reconcile_to_horizon(series: pl.LazyFrame, index: pl.DataFrame) -> pl.LazyF
     the join and restored to null afterwards.
     """
     keys = [StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SAMPLE]
-    filled = series.with_columns(pl.col(StagedTimeSeriesCol.SAMPLE).fill_null(UNSAMPLED_SENTINEL))
+    labelled = series.with_columns(pl.col(StagedTimeSeriesCol.SAMPLE).fill_null(UNSAMPLED_SENTINEL))
+    filled = _narrow_to_window(labelled, index, keys)
     pairs = filled.select(keys).unique()
     grid = index.lazy().join(pairs, how="cross")
     return (
@@ -279,6 +280,25 @@ def _reconcile_to_horizon(series: pl.LazyFrame, index: pl.DataFrame) -> pl.LazyF
             StagedTimeSeriesCol.VALUE,
         )
     )
+
+
+def _narrow_to_window(series: pl.LazyFrame, index: pl.DataFrame, keys: list[str]) -> pl.LazyFrame:
+    """The rows inside the window, and the last row before it for each key.
+
+    A trace file can carry decades beyond the window, and the sort that follows reads every
+    row it is given, so the rows the as-of join can never match are dropped before it.
+    """
+    snapshot = pl.col(StagedTimeSeriesCol.SNAPSHOT)
+    start = index[StagedTimeSeriesCol.SNAPSHOT].min()
+    end = index[StagedTimeSeriesCol.SNAPSHOT].max()
+    inside = series.filter(snapshot.is_between(start, end))
+    last_before = (
+        series.filter(snapshot < start)
+        .group_by(keys)
+        .agg(snapshot.max().alias(StagedTimeSeriesCol.SNAPSHOT))
+    )
+    before = series.join(last_before, on=[*keys, StagedTimeSeriesCol.SNAPSHOT], how="semi")
+    return pl.concat([before, inside])
 
 
 def reindex_onto(

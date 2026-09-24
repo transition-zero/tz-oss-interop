@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import IO, Any, ClassVar, NamedTuple
 
@@ -28,6 +29,10 @@ from interop.ports.outbound.netcdf import netcdf_engine
 
 # The identifier, which the file states as its own record name rather than an attribute.
 _NAME_FIELD = "name"
+
+
+# Rows one staging block holds before it goes to disk; bounds the peak memory of staging.
+_ROWS_PER_BLOCK = 2_000_000
 
 
 class StagedNetwork(NamedTuple):
@@ -199,16 +204,32 @@ def _stage_time_series(
     for var in ts_vars:
         attr = var[len(prefix) :]
         components = ds[f"{cls}_t_{attr}_i"].values
-        values = ds[var].values
-        df = pl.DataFrame(
-            {
-                "snapshot": np.repeat(snapshots, len(components)),
-                "component": np.tile(components, len(snapshots)),
-                "value": values.flatten(),
-            }
-        )
         out = staging_dir / "time_series" / cls / f"{attr}.parquet"
         out.parent.mkdir(parents=True, exist_ok=True)
-        df.write_parquet(out)
+        _write_long_table(out, snapshots, components, ds[var])
         written.append((attr, pl.scan_parquet(out)))
     return written
+
+
+def _write_long_table(
+    out: Path, snapshots: np.ndarray, components: np.ndarray, values: xr.DataArray
+) -> None:
+    """One row for each (snapshot, component), written a block of snapshots at a time.
+
+    The whole table never sits in memory: each block goes to a scratch file, and the
+    scratch files stream into ``out`` in one pass.
+    """
+    scratch = out.with_suffix(".blocks")
+    scratch.mkdir(parents=True, exist_ok=True)
+    step = max(_ROWS_PER_BLOCK // max(len(components), 1), 1)
+    for block_index, start in enumerate(range(0, len(snapshots), step) or [0]):
+        block = values[start : start + step].values
+        pl.DataFrame(
+            {
+                "snapshot": np.repeat(snapshots[start : start + step], len(components)),
+                "component": np.tile(components, len(block)),
+                "value": block.flatten(),
+            }
+        ).write_parquet(scratch / f"{block_index:06d}.parquet")
+    pl.scan_parquet(scratch / "*.parquet").sink_parquet(out)
+    shutil.rmtree(scratch)

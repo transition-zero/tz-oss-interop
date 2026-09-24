@@ -56,16 +56,15 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
             resolution_minutes=DEFAULT_RESOLUTION_MINUTES,
         )
 
-    length = int(frame.select(pl.col(StagedTimeSeriesCol.SNAPSHOT).n_unique()).collect().item())
-    first_two = (
+    snapshots = (
         frame.select(pl.col(StagedTimeSeriesCol.SNAPSHOT))
         .unique()
         .sort(StagedTimeSeriesCol.SNAPSHOT)
-        .limit(2)
-        .collect()[StagedTimeSeriesCol.SNAPSHOT]
+        .collect(engine="streaming")[StagedTimeSeriesCol.SNAPSHOT]
     )
-    if len(first_two) >= 2:
-        delta_seconds = int(first_two.diff().drop_nulls().dt.total_seconds()[0])
+    length = snapshots.len()
+    if length >= 2:
+        delta_seconds = int(snapshots.head(2).diff().drop_nulls().dt.total_seconds()[0])
         resolution = _RESOLUTION_MAP.get(delta_seconds, f"PT{delta_seconds}S")
         resolution_minutes = delta_seconds / 60.0
     else:
@@ -75,7 +74,7 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
     return TimeSeriesInfo(
         length=length,
         resolution=resolution,
-        initial_timestamp=frame.select(pl.col(StagedTimeSeriesCol.SNAPSHOT).min()).collect().item(),
+        initial_timestamp=snapshots[0] if length else None,
         resolution_minutes=resolution_minutes,
     )
 

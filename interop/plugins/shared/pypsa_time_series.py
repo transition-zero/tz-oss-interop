@@ -38,7 +38,7 @@ def series_timing(frame: pl.LazyFrame) -> tuple[int, str, int]:
         frame.select(StagedTimeSeriesCol.SNAPSHOT)
         .unique()
         .sort(StagedTimeSeriesCol.SNAPSHOT)
-        .collect()[StagedTimeSeriesCol.SNAPSHOT]
+        .collect(engine="streaming")[StagedTimeSeriesCol.SNAPSHOT]
     )
     length = snapshots.len()
     initial = snapshots[0]
@@ -66,7 +66,7 @@ def series_components(frame: pl.LazyFrame) -> list[str]:
     return (
         frame.select(StagedTimeSeriesCol.COMPONENT)
         .unique()
-        .collect()[StagedTimeSeriesCol.COMPONENT]
+        .collect(engine="streaming")[StagedTimeSeriesCol.COMPONENT]
         .to_list()
     )
 
@@ -231,7 +231,7 @@ def _mapped_series_keys(metadata: pl.DataFrame) -> set[tuple[str, str]]:
 def _rows_by_component(frame: pl.LazyFrame) -> dict[str, int]:
     """How many values the reference sample holds for each component of one staged series."""
     sampled = filter_to_sample(frame, choose_reference_sample(frame))
-    counted = sampled.group_by(StagedTimeSeriesCol.COMPONENT).len().collect()
+    counted = sampled.group_by(StagedTimeSeriesCol.COMPONENT).len().collect(engine="streaming")
     return dict(counted.iter_rows())
 
 

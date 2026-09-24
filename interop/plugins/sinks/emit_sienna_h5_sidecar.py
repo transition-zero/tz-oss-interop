@@ -31,6 +31,9 @@ _H5_COMPRESSION_SHUFFLE = np.uint8(1)
 # What a component with no staged values is written as.
 _NO_VALUES = np.empty(0, dtype=np.float64)
 
+# Rows one batch of components holds in memory between its read and its write.
+_ROWS_PER_BATCH = 4_000_000
+
 
 class EmitSiennaH5SidecarParams(BaseModel):
     output_path: Location = Field(
@@ -65,8 +68,47 @@ class EmitSiennaH5Sidecar(Sink):
         with h5py.File(f, "w") as hf:
             ts_root = _create_time_series_root(hf)
             for source_key, rows in _rows_by_source_key(state).items():
-                by_component = _collect_by_component(_staged_series(state, source_key), sample)
-                _write_series_groups(ts_root, rows, by_component)
+                _write_source_key(ts_root, rows, _staged_series(state, source_key), sample)
+
+
+def _write_source_key(
+    ts_root: h5py.Group, rows: list[dict[str, Any]], frame: pl.LazyFrame, sample: str | None
+) -> None:
+    """Write one staged series a batch of components at a time, so no batch outlives its write."""
+    _reject_unsampled_ensemble(frame, sample)
+    sampled = filter_to_sample(frame, sample)
+    pending = _rows_by_component_name(rows)
+    for batch in _component_batches(sampled):
+        by_component = _collect_by_component(sampled, batch)
+        batch_rows = [row for name in batch for row in pending.pop(name, [])]
+        _write_series_groups(ts_root, batch_rows, by_component)
+    unmatched = [row for remaining in pending.values() for row in remaining]
+    _write_series_groups(ts_root, unmatched, {})
+
+
+def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_name.setdefault(row[SiennaTimeSeriesAssociationCol.COMPONENT_NAME], []).append(row)
+    return by_name
+
+
+def _component_batches(frame: pl.LazyFrame) -> list[list[str]]:
+    """The components of a series, in groups sized so one group holds about
+    ``_ROWS_PER_BATCH`` rows."""
+    components = (
+        frame.select(StagedTimeSeriesCol.COMPONENT)
+        .unique()
+        .sort(StagedTimeSeriesCol.COMPONENT)
+        .collect(engine="streaming")[StagedTimeSeriesCol.COMPONENT]
+        .to_list()
+    )
+    if not components:
+        return []
+    rows = frame.select(pl.len()).collect(engine="streaming").item()
+    rows_per_component = max(rows // len(components), 1)
+    size = max(_ROWS_PER_BATCH // rows_per_component, 1)
+    return [components[start : start + size] for start in range(0, len(components), size)]
 
 
 def _create_time_series_root(hf: h5py.File) -> h5py.Group:
@@ -128,18 +170,13 @@ def _staged_series(state: State, source_key: tuple[str, str]) -> pl.LazyFrame:
     return ts_lf
 
 
-def _collect_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, np.ndarray]:
-    """One replication's rows of a staged series, grouped by component, in snapshot order.
-
-    Filtering to the sample before collecting reads only the rows one system needs off disk,
-    never every replication the frame holds.
-    """
-    _reject_unsampled_ensemble(frame, sample)
+def _collect_by_component(frame: pl.LazyFrame, batch: list[str]) -> dict[str, np.ndarray]:
+    """The rows of one batch of components, grouped by component, in snapshot order."""
     collected = (
-        filter_to_sample(frame, sample)
+        frame.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(batch))
         .sort(StagedTimeSeriesCol.SNAPSHOT)
         .select(StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.VALUE)
-        .collect()
+        .collect(engine="streaming")
     )
     return {
         str(component): part[StagedTimeSeriesCol.VALUE].to_numpy().astype(np.float64)
