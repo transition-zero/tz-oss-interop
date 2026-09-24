@@ -163,7 +163,7 @@ def _peak_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
     return (
         ts_p.group_by(PyPSATimeSeriesCol.COMPONENT)
         .agg(pl.col(PyPSATimeSeriesCol.VALUE).max().alias(_TS_PEAK))
-        .collect()
+        .collect(engine="streaming")
     )
 
 
@@ -182,7 +182,7 @@ def _first_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
             .first()
             .alias(_TS_FIRST)
         )
-        .collect()
+        .collect(engine="streaming")
     )
 
 

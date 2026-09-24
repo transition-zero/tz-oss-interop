@@ -141,7 +141,7 @@ def link_time_varying_owners(
         frame = series_frames.get((PyPSATable.LINKS, attr))
         if frame is None:
             continue
-        names = frame.select(PyPSATimeSeriesCol.COMPONENT).unique().collect()
+        names = frame.select(PyPSATimeSeriesCol.COMPONENT).unique().collect(engine="streaming")
         owners[f"{_HAS_TIME_VARYING_PREFIX}{attr}"] = set(
             names[PyPSATimeSeriesCol.COMPONENT].to_list()
         )

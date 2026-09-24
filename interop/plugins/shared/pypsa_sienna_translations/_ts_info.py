@@ -45,24 +45,22 @@ def collect_ts_info(ts_p: pl.LazyFrame | None) -> TimeSeriesInfo:
             resolution_minutes=DEFAULT_SNAPSHOT_MINUTES,
         )
 
-    ts_length = int(ts_p.select(pl.col(PyPSATimeSeriesCol.SNAPSHOT).n_unique()).collect().item())
-
-    first_two = (
+    snapshots = (
         ts_p.select(pl.col(PyPSATimeSeriesCol.SNAPSHOT))
         .unique()
         .sort(PyPSATimeSeriesCol.SNAPSHOT)
-        .limit(2)
-        .collect()[PyPSATimeSeriesCol.SNAPSHOT]
+        .collect(engine="streaming")[PyPSATimeSeriesCol.SNAPSHOT]
     )
-    if len(first_two) >= 2:
-        delta_s = int(first_two.diff().drop_nulls().dt.total_seconds()[0])
+    ts_length = snapshots.len()
+    if ts_length >= 2:
+        delta_s = int(snapshots.head(2).diff().drop_nulls().dt.total_seconds()[0])
         resolution = _RESOLUTION_MAP.get(delta_s, f"PT{delta_s}S")
         resolution_minutes = delta_s / 60.0
     else:
         resolution = DEFAULT_SNAPSHOT_RESOLUTION
         resolution_minutes = DEFAULT_SNAPSHOT_MINUTES
 
-    initial_timestamp = ts_p.select(pl.col(PyPSATimeSeriesCol.SNAPSHOT).min()).collect().item()
+    initial_timestamp = snapshots[0] if ts_length else None
 
     return TimeSeriesInfo(
         length=ts_length,
