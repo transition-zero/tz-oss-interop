@@ -133,7 +133,7 @@ def enrich_generator_ts_stats(
         stats = (
             ts_p_max_pu.group_by(PyPSATimeSeriesCol.COMPONENT)
             .agg(pl.col(PyPSATimeSeriesCol.VALUE).max().alias(_TS_PEAK_PMAX))
-            .collect()
+            .collect(engine="streaming")
         )
         return table.join(
             stats,

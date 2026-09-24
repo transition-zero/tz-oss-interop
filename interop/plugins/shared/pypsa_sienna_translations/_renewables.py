@@ -137,7 +137,7 @@ def enrich_renewable_ts_stats(
                     pl.col(PyPSATimeSeriesCol.VALUE).max() - pl.col(PyPSATimeSeriesCol.VALUE).min()
                 ).alias(_TS_PTP)
             )
-            .collect()
+            .collect(engine="streaming")
         )
         return table.join(
             stats,
