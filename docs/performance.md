@@ -110,8 +110,8 @@ AEMO model is:
 - 2.56 MiB for the AEMO Sienna run
 
 The PyPSA row of each model costs more than its Sienna row, because it runs the Sienna
-leg and then the leg back to PyPSA. That second leg adds about 4 seconds to the SEM and
-CAISO models, and about 4 seconds to the AEMO model.
+leg and then the leg back to PyPSA. That second leg adds about 4 seconds to each of the
+three models.
 
 ## What sets the cost
 
