@@ -205,15 +205,14 @@ Select `translate`. Then give these answers:
 | the SiennaSchemas portfolio document to write | `outputs/portfolio.json` |
 | User mappings file | `inputs/plexos_expansion_mappings.yaml` |
 
-Keep the default at every other prompt. The mappings prompt comes last, after the file
-prompts of both sinks.
+Keep the default at every other prompt.
 
 That run writes four files: the three the Sienna path writes, and `outputs/portfolio.json`
 beside them. The portfolio names `system.json` in its `base_system_file`, so the two are read
 together.
 
-Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. This run
-takes the default base year of 2020. To state another one, refer to
+Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. Keeping
+the default at the `base_year` prompt takes 2020. To state another one, refer to
 [The base year](../translation_mappings/translation-from-plexos-to-sienna-investments.md#the-base-year).
 
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
