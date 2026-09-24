@@ -8,7 +8,10 @@ import polars as pl
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.series_batches import (
+    list_component_batches,
+    read_batch_by_component,
+)
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaTimeSeriesAssociationCol,
@@ -65,8 +68,29 @@ class EmitSiennaH5Sidecar(Sink):
         with h5py.File(f, "w") as hf:
             ts_root = _create_time_series_root(hf)
             for source_key, rows in _rows_by_source_key(state).items():
-                by_component = _collect_by_component(_staged_series(state, source_key), sample)
-                _write_series_groups(ts_root, rows, by_component)
+                _write_source_key(ts_root, rows, _staged_series(state, source_key), sample)
+
+
+def _write_source_key(
+    ts_root: h5py.Group, rows: list[dict[str, Any]], frame: pl.LazyFrame, sample: str | None
+) -> None:
+    """Write one staged series a batch of components at a time, so no batch outlives its write."""
+    _reject_unsampled_ensemble(frame, sample)
+    sampled = filter_to_sample(frame, sample)
+    pending = _rows_by_component_name(rows)
+    for batch in list_component_batches(sampled):
+        by_component = read_batch_by_component(sampled, batch)
+        batch_rows = [row for name in batch for row in pending.pop(name, [])]
+        _write_series_groups(ts_root, batch_rows, by_component)
+    unmatched = [row for remaining in pending.values() for row in remaining]
+    _write_series_groups(ts_root, unmatched, {})
+
+
+def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_name.setdefault(row[SiennaTimeSeriesAssociationCol.COMPONENT_NAME], []).append(row)
+    return by_name
 
 
 def _create_time_series_root(hf: h5py.File) -> h5py.Group:
@@ -126,27 +150,6 @@ def _staged_series(state: State, source_key: tuple[str, str]) -> pl.LazyFrame:
             "pipeline step that registers this time series may be missing"
         )
     return ts_lf
-
-
-def _collect_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, np.ndarray]:
-    """One replication's rows of a staged series, grouped by component, in snapshot order.
-
-    Filtering to the sample before collecting reads only the rows one system needs off disk,
-    never every replication the frame holds.
-    """
-    _reject_unsampled_ensemble(frame, sample)
-    collected = (
-        filter_to_sample(frame, sample)
-        .sort(StagedTimeSeriesCol.SNAPSHOT)
-        .select(StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.VALUE)
-        .collect()
-    )
-    return {
-        str(component): part[StagedTimeSeriesCol.VALUE].to_numpy().astype(np.float64)
-        for (component,), part in collected.partition_by(
-            StagedTimeSeriesCol.COMPONENT, as_dict=True, include_key=False
-        ).items()
-    }
 
 
 def _reject_unsampled_ensemble(frame: pl.LazyFrame, sample: str | None) -> None:

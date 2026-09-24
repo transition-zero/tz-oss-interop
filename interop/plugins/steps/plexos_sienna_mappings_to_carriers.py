@@ -19,6 +19,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
 from interop.plugins.shared.plexos_sienna_user_mappings import (
     CARRIER_BY_STORAGE_KIND,
+    DEFAULT_TARGET_BY_STORAGE_KIND,
     PLEXOS_MAPPINGS_TABLE,
     PlexosConcept,
     PlexosMappingCol,
@@ -28,7 +29,6 @@ from interop.plugins.shared.pypsa_sienna_user_mappings import (
     CARRIER_MAPPINGS_TABLE,
     CarrierMappingCol,
 )
-from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaPrimeMovers
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -42,17 +42,6 @@ CARRIER_MAPPINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     CarrierMappingCol.SIENNA_COMPONENT_TYPE: pl.Utf8,
     CarrierMappingCol.SIENNA_FUEL_TYPE: pl.Utf8,
     CarrierMappingCol.SIENNA_PRIME_MOVER_TYPE: pl.Utf8,
-}
-
-# What each PLEXOS unit with a translator-written carrier becomes in Sienna, unless the
-# user's file states a storage_kind row of its own.
-_DEFAULT_BY_STORAGE_KIND: dict[PlexosStorageKind, tuple[SiennaComponent, SiennaPrimeMovers]] = {
-    PlexosStorageKind.RESERVOIR_HYDRO: (SiennaComponent.HYDRO_DISPATCH, SiennaPrimeMovers.HY),
-    PlexosStorageKind.PUMPED_STORAGE: (
-        SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-        SiennaPrimeMovers.PS,
-    ),
-    PlexosStorageKind.BATTERY: (SiennaComponent.ENERGY_RESERVOIR_STORAGE, SiennaPrimeMovers.BA),
 }
 
 _DEFAULT_NOTE = "no storage_kind row states this unit, so the translator's default applies"
@@ -135,7 +124,7 @@ def _carrier_for(concept: PlexosConcept, plexos_name: str) -> str:
 
 
 def _default_for(kind: PlexosStorageKind) -> _DerivedMapping:
-    component, prime_mover = _DEFAULT_BY_STORAGE_KIND[kind]
+    component, prime_mover = DEFAULT_TARGET_BY_STORAGE_KIND[kind]
     return _DerivedMapping(
         concept=str(PlexosConcept.STORAGE_KIND),
         plexos_name=str(kind),

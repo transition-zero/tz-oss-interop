@@ -76,7 +76,7 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     Then the log contains "Regions carrying Load contain more than one Node"
     And the PyPSA network "outputs/network.nc" has no loads
     And the PyPSA network "outputs/network.nc" has 2 buses
-    And the file "decisions.md" contains "a PyPSA load sits on one bus, so demand over several Nodes has no home"
+    And the file "decisions.md" contains "a Sienna load sits on one bus, so demand over several Nodes has no home"
 
   Scenario: Region Loads given as participation shares are left out rather than read as MW
     Given a Plexos model
@@ -237,7 +237,7 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     And the log contains "Rating on Solar2 carries 2"
     And the PyPSA network "outputs/network.nc" generator "Solar1" has a p_max_pu time series 0.1 0.2 0.3 0.4
     And the PyPSA network "outputs/network.nc" generator "Solar2" has no p_max_pu time series
-    And the file "decisions.md" contains "| `plexos.Generator.Solar2.Rating` = profile |  |  | the profile carries 2 values but the snapshot window holds 4, so the component keeps its static value instead | plexos-to-pypsa | drop_profiles_off_the_window |"
+    And the decisions report contains "| `plexos.Generator.Solar2.Rating` = profile |  |  | the profile carries 2 values but the snapshot window holds 4, so the component keeps its static value instead | $source_leg$ | $source_window_step$ |"
 
   Scenario: a transport Line carrying no rating becomes a Link that can move nothing
     Given a Plexos model
@@ -280,8 +280,8 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     And the model contains property "Wheeling Charge Back" of 3 on line "North_South"
     And the model is saved as "inputs/model.xml"
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "PyPSA has no home for a region VoLL"
-    And the file "decisions.md" contains "PyPSA has no home for a region Price of Dump Energy"
+    Then the file "decisions.md" contains "Sienna has no home for a region VoLL"
+    And the file "decisions.md" contains "Sienna has no home for a region Price of Dump Energy"
     And the file "decisions.md" contains "the wheeling charge is dropped"
 
   Scenario: a near-zero reactance survives the rounding the sink applies

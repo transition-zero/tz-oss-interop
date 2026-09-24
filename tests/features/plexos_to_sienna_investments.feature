@@ -1,14 +1,16 @@
 @slow @fork_unsafe
 Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
-  plexos-to-sienna-investments is a composed pipeline, not a translator of its own: it runs
-  plexos-to-pypsa and then pypsa-to-sienna-investments over the network the first leg wrote.
-  The second leg writes two documents, the base system holding the fleet that already runs
-  and the portfolio holding what the plan may build beside it.
+  plexos-to-sienna-investments reads a PLEXOS model and writes Sienna, in one pipeline. It
+  runs the same two steps plexos-to-sienna runs, then one more that reads the Sienna system
+  those steps wrote. It writes two documents, the base system holding the fleet that already
+  runs and the portfolio holding what the plan may build beside it.
 
   An object stating Max Units Built may be built, and each one becomes a technology named
-  after it. What building it costs travels as PyPSA's own expansion fields; the size of one
-  unit and the Technical Life have no PyPSA column, so both cross the hub in the extensions
-  sidecar and are read back here.
+  after it. What building it costs, the size of one unit and the Technical Life all reach
+  the technology from the record the operations step put in the extensions sidecar.
+
+  A plant nobody has built yet belongs in the portfolio and not in the base system, so the
+  last step takes its row out of the base system and says so.
 
   Scenario: a candidate generator becomes a SupplyTechnology
     Given a Plexos model
@@ -22,7 +24,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And a PLEXOS mappings file:
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
-    When I run the plexos-to-sienna-investments chain against "inputs/model.xml" writing "outputs/portfolio.json"
+    When I run plexos-to-sienna-investments against "inputs/model.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as valid JSON
     And the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
@@ -39,6 +41,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "financial_data.return_on_equity" set to 0.07
     And the file "outputs/system.json" parses as JSON with 0 components of type "RenewableDispatch"
     And the file "outputs/system.json" parses as JSON with 1 component of type "Area"
+    And the file "decisions.md" contains "this is capacity the plan may build rather than capacity an operations model may dispatch, so the portfolio holds it and the base system does not"
 
   Scenario: a candidate Battery becomes a StorageTechnology
     Given a Plexos model
@@ -55,7 +58,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And a PLEXOS mappings file:
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
-    When I run the plexos-to-sienna-investments chain against "inputs/battery.xml" writing "outputs/portfolio.json"
+    When I run plexos-to-sienna-investments against "inputs/battery.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as JSON with 1 component of type "StorageTechnology"
     And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "power_systems_type" set to "EnergyReservoirStorage"
     And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "NewBattery" having "prime_mover_type" set to "BA"
@@ -78,7 +81,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And a PLEXOS mappings file:
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
-    When I run the plexos-to-sienna-investments chain against "inputs/fleet.xml" writing "outputs/portfolio.json"
+    When I run plexos-to-sienna-investments against "inputs/fleet.xml" writing "outputs/portfolio.json"
     Then the file "outputs/system.json" parses as JSON with 1 component of type "RenewableDispatch"
     And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "REZ_Solar" has "existing_devices" set to ["OldSolar"]
     And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "REZ_Solar" has "eligible_generators" set to ["OldSolar"]
@@ -101,7 +104,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
-    When I run the plexos-to-sienna-investments chain against "inputs/cap.xml" writing "outputs/portfolio.json"
+    When I run plexos-to-sienna-investments against "inputs/cap.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as JSON with 1 component of type "CarbonCaps"
     And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CarbonBudget" having "max_mtons" set to 20.0
     And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CarbonBudget" having "available" set to true
@@ -127,9 +130,9 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
       | category       | Solar       | RenewableDispatch     |                  | PVe                     |
-    When I run the plexos-to-sienna-investments chain against "inputs/scoped.xml" writing "outputs/portfolio.json"
+    When I run plexos-to-sienna-investments against "inputs/scoped.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as JSON with 0 components of type "CarbonCaps"
     And the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
-    And the file "decisions.md" contains "`pypsa.constraint.GasCap`"
+    And the file "decisions.md" contains "`sienna.constraint.GasCap`"
     And the file "decisions.md" contains "CarbonCaps names no members and no region"
     And the log contains "1 constraint(s) weight a named subset of the model rather than all of it, so each is left out"

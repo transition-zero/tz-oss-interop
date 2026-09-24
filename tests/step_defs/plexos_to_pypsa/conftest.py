@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
 import pytest
+import yaml
 from interop_testing import write_pipeline, write_project_plugin
 from pytest_bdd import given, parsers, then, when
 
-from tests.step_defs.conftest import invoke_translate
+from tests.step_defs.conftest import PLEXOS_MAPPINGS_PATH, invoke_translate
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -35,6 +37,211 @@ def read_hour(series: pd.DataFrame, name: str, path: str, hour: int) -> float:
         f"hour {hour} is outside the {len(series)} snapshot(s) of {name!r} in {path}"
     )
     return float(series[name].iloc[hour - 1])
+
+
+# The Sienna target for every PLEXOS fuel and generator category the scenarios in this
+# directory name, including the ones a `Given the model contains generators:` table
+# declares rather than a generator spec string.
+#
+# plexos-to-pypsa runs plexos-to-sienna as its first leg, and that leg needs a
+# PlexosSiennaCarrierMappings file: UserMappingsLoader._load raises before the pipeline runs
+# when a needed file is absent, so without this every scenario here fails at once.
+#
+# Each row states the Sienna type that keeps the scenario's intent. A generator that states a
+# minimum, a ramp limit or a start cost needs ThermalStandard, because RenewableDispatch holds
+# no active_power_limits and the minimum would be lost. A fuel row and a category row of one
+# name give one carrier, so the two "Gas" rows state one target.
+PLEXOS_CARRIER_ROWS: list[dict[str, str]] = [
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "DR_Fuel",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHER",
+        "sienna_prime_mover_type": "IC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Distillate",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+        "sienna_prime_mover_type": "GT",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Gas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Natural Gas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Water",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHER",
+        "sienna_prime_mover_type": "HY",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Biogas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHEHR_BIOMASS_GAS",
+        "sienna_prime_mover_type": "IC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Coal Seam Gas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "NG_AZ/Cal_Blythe",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "NG_Cal_SoCalGas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "fuel",
+        "plexos_name": "Uranium",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NUCLEAR",
+        "sienna_prime_mover_type": "ST",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "OFFSHORE WIND",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "WT",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "solar",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "PVe",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Coal",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "COAL",
+        "sienna_prime_mover_type": "ST",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Gas",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "NATURAL_GAS",
+        "sienna_prime_mover_type": "CC",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Geothermal",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "GEOTHERMAL",
+        "sienna_prime_mover_type": "ST",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Hydro",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHER",
+        "sienna_prime_mover_type": "HY",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "ISORPS WindSolar",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "PVe",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Solar",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "PVe",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Thermal",
+        "sienna_component_type": "ThermalStandard",
+        "sienna_fuel_type": "OTHER",
+        "sienna_prime_mover_type": "ST",
+    },
+    {
+        "plexos_concept": "category",
+        "plexos_name": "Wind",
+        "sienna_component_type": "RenewableDispatch",
+        "sienna_prime_mover_type": "WT",
+    },
+]
+
+
+@pytest.fixture(autouse=True)
+def plexos_carrier_mappings(isolated_cwd: Path) -> Path:
+    """Write the mappings file, so no .feature file in this directory states one.
+
+    A Background block in each of the 11 feature files would put the user input in front of
+    the reader, and would repeat one table 11 times. Keeping those files byte-identical is
+    what makes a passing suite evidence that the new journey lost nothing.
+    """
+    path = Path(PLEXOS_MAPPINGS_PATH)
+    path.write_text(yaml.dump({"carriers": PLEXOS_CARRIER_ROWS}, sort_keys=False), "utf-8")
+    return path
+
+
+# The pipeline and the step a decisions.md row ends with, per role. A composed run records two
+# legs in one report, so a role names the leg that reads the PLEXOS source or the leg that
+# writes the PyPSA network, and the step within it. Each value is what the run is expected to
+# write, and never what it wrote.
+DECISIONS_NAMES: dict[str, str] = {
+    "source_leg": "plexos-to-sienna",
+    "destination_leg": "sienna-to-pypsa",
+    "source_generator_step": "plexos_to_sienna_map_generators",
+    "source_storage_step": "plexos_to_sienna_map_storage_units",
+    "source_window_step": "drop_profiles_off_the_window",
+    "destination_generator_step": "sienna_to_pypsa_map_generators",
+    "destination_storage_step": "sienna_to_pypsa_map_storage_units",
+}
+
+_DECISIONS_REPORT = "decisions.md"
+
+# $ delimits a token: parsers.parse captures with {}, and a Scenario Outline substitutes <>.
+_TOKEN = re.compile(r"\$([a-z_]+)\$")
+
+
+def resolve_decisions_tokens(text: str) -> str:
+    """Each $token$ replaced by the name the fixture holds for it."""
+
+    def named(match: re.Match[str]) -> str:
+        role = match.group(1)
+        assert role in DECISIONS_NAMES, (
+            f"no decisions name for {role!r} in {sorted(DECISIONS_NAMES)}"
+        )
+        return DECISIONS_NAMES[role]
+
+    return _TOKEN.sub(named, text)
+
+
+@then(parsers.parse('the decisions report contains "{expected}"'))
+def assert_decisions_report_contains(expected: str) -> None:
+    """Like the file-contains step, with each $token$ resolved before the match."""
+    wanted = resolve_decisions_tokens(expected)
+    actual = Path(_DECISIONS_REPORT).read_text(encoding="utf-8")
+    assert wanted in actual, f"expected {_DECISIONS_REPORT} to contain {wanted!r}, got {actual!r}"
 
 
 @when(
@@ -54,6 +261,7 @@ def run_translate_plexos_to_pypsa(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         sink_0_output_path=sink_output,
     )
@@ -75,6 +283,7 @@ def run_translate_plexos_ensemble(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         sink_0_output_dir=output_dir,
     )
@@ -98,6 +307,7 @@ def run_translate_plexos_to_pypsa_for_model(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         source_model=model,
         sink_0_output_path=sink_output,
@@ -124,6 +334,7 @@ def run_translate_plexos_to_pypsa_for_year(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         source_model=model,
         source_horizon_year=year,
@@ -286,6 +497,7 @@ def run_stage_and_dump_series(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         step_0_owner_type=owner_type,
         step_0_series=series,
@@ -313,6 +525,7 @@ def run_stage_and_dump(
         "plexos",
         "pypsa",
         pipeline,
+        user_mappings_path=PLEXOS_MAPPINGS_PATH,
         source_path=str(Path(xml_path)),
         step_0_table=table,
         step_0_out=out,

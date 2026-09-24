@@ -12,10 +12,17 @@ replications that table names, so the decision is made and reported once.
 
 from __future__ import annotations
 
+import logging
+
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
+from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 # The ``State.destination_tables`` entry naming the replications an ensemble sink writes.
 ENSEMBLE_SAMPLES_TABLE = "ensemble_samples"
@@ -103,3 +110,51 @@ def samples_to_write(state: State) -> list[str]:
     if table is None:
         return []
     return table[EnsembleSampleCol.SAMPLE].to_list()
+
+
+# What a left-out replication is named as. It is no component of any framework, but one
+# whole model of the ensemble, so the report names it for what it is.
+_REPLICATION = "replication"
+
+_PARTIAL_REASON = (
+    "is missing from at least one sampled profile, so a system built from it would mix real "
+    "data with a gap"
+)
+
+
+def choose_ensemble_samples(state: State, recorder: ScopedRecorder, framework: Framework) -> None:
+    """Record the replications every sampled profile carries, reporting any that is partial.
+
+    An ensemble writes one system per replication every sampled profile carries, so a
+    replication only some of them carry is left out. Nothing is recorded where no replication
+    survives, and the sink says the ensemble holds no system.
+
+    A model whose profiles carry no replication at all is no ensemble, so it has none to
+    choose between and nothing to say.
+    """
+    per_profile = staged_sample_sets(state)
+    if not per_profile:
+        return
+    shared = ensemble_samples(per_profile)
+    _report_partial(sorted(set.union(*per_profile) - set(shared), key=int), recorder, framework)
+    record_ensemble_samples(state, shared)
+
+
+def _report_partial(partial: list[str], recorder: ScopedRecorder, framework: Framework) -> None:
+    """Say which replications no system is written for, and why."""
+    if not partial:
+        return
+    for sample in partial:
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.COMPONENT_SKIPPED,
+                sources=[SourceField(framework=framework, component=_REPLICATION, name=sample)],
+                note=f"replication {sample} {_PARTIAL_REASON}",
+            )
+        )
+    log.warning(
+        "%s replication(s) of the ensemble %s, so no system is written for them: %s",
+        len(partial),
+        _PARTIAL_REASON,
+        name_a_few(partial),
+    )

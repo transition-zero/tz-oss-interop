@@ -198,7 +198,7 @@ class _LinkMapping:
 
 def map_transmission(state: State, recorder: ScopedRecorder) -> None:
     """Write the PyPSA lines and links tables from the staged PLEXOS Lines."""
-    source = _read_transmission(state)
+    source = read_transmission(state)
     reporters = _Reporters(
         line=ComponentReporter(recorder, PyPSAComponent.LINE),
         link=ComponentReporter(recorder, PyPSAComponent.LINK),
@@ -235,7 +235,7 @@ def _write_links(state: State, reporter: ComponentReporter, lines: list[StagedLi
     )
 
 
-def _read_transmission(state: State) -> TransmissionSource:
+def read_transmission(state: State) -> TransmissionSource:
     """Classify every staged PLEXOS Line."""
     source = state.source_topology.get(PlexosClass.LINE)
     if source is None:

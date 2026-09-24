@@ -10,6 +10,7 @@ thin ``_source`` (which fills in the Sienna component, fixed or passed per call)
 from __future__ import annotations
 
 from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MWH,
     UNIT_KM,
     UNIT_KV,
     UNIT_MVA,
@@ -100,6 +101,11 @@ _OPERATION_COST_SHUT_DOWN = f"{SiennaGeneratorCol.OPERATION_COST}.{SiennaStructF
 _START_UP_COST_DERIVATION = "operation_cost.start_up -> start_up_cost"
 _SHUT_DOWN_COST_DERIVATION = "operation_cost.shut_down -> shut_down_cost"
 _P_NOM_EXTENDABLE_DEFAULT = "no ext.p_nom_extendable; p_nom_extendable defaults to False"
+_EXT_MARGINAL_COST_ATTR = f"{_EXTENSIONS}.marginal_cost"
+_MARGINAL_COST_FROM_EXT = f"{_EXT_MARGINAL_COST_ATTR} (PyPSA round-trip)"
+_EXT_INFLOW_ATTR = f"{_EXTENSIONS}.inflow_mw"
+_INFLOW_FROM_EXT = f"{_EXT_INFLOW_ATTR} (PyPSA round-trip)"
+_INFLOW_DEFAULT = "the unit states no inflow, so it refills at nothing"
 # A Line states its capacity as s_nom, so each floor derivation names its own component's
 # capacity field.
 _EXTENDABLE_FLOOR_TEMPLATE = (
@@ -449,6 +455,23 @@ class GeneratorReporter(_Reporter):
             note=_P_NOM_EXTENDABLE_DEFAULT,
         )
 
+    def record_carried(
+        self,
+        sienna_type: SiennaComponent,
+        name: str,
+        field_name: str,
+        column: str,
+        value: object,
+        unit: str | None = None,
+    ) -> None:
+        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
+        attribute = f"{_EXTENSIONS}.{field_name}"
+        self._derived(
+            sources=[self._source(sienna_type, name, attribute, value, unit)],
+            destinations=[self._destination(name, column, value, unit)],
+            derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
 
 class StorageUnitReporter(_Reporter):
     """Records translation events for Sienna hydro/storage -> PyPSA StorageUnit decisions."""
@@ -643,6 +666,22 @@ class StorageUnitReporter(_Reporter):
                 self._destination(name, PyPSAStorageUnitCol.P_NOM_MIN, base_power, UNIT_MW)
             ],
             derivation=_P_NOM_FLOOR_DERIVATION,
+        )
+
+    def record_inflow_from_ext(
+        self, sienna_type: SiennaComponent, name: str, inflow: float
+    ) -> None:
+        """A reservoir refills at a rate Sienna states nowhere, so the sidecar carries it."""
+        self._derived(
+            sources=[self._source(sienna_type, name, _EXT_INFLOW_ATTR, inflow, UNIT_MW)],
+            destinations=[self._destination(name, PyPSAStorageUnitCol.INFLOW, inflow, UNIT_MW)],
+            derivation=_INFLOW_FROM_EXT,
+        )
+
+    def record_inflow_default(self, name: str) -> None:
+        self._default_applied(
+            destinations=[self._destination(name, PyPSAStorageUnitCol.INFLOW, 0.0, UNIT_MW)],
+            note=_INFLOW_DEFAULT,
         )
 
     def record_p_nom_extendable_default(self, name: str) -> None:
@@ -967,6 +1006,20 @@ class LinkReporter(_Reporter):
             sources=[self._source(name, _EXT_P_NOM_EXTENDABLE_ATTR, extendable)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_EXTENDABLE, extendable)],
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
+        )
+
+    def record_marginal_cost_from_ext(self, name: str, marginal_cost: float) -> None:
+        """Sienna prices no flow over a branch, so the price comes back from the sidecar."""
+        self._derived(
+            sources=[
+                self._source(name, _EXT_MARGINAL_COST_ATTR, marginal_cost, UNIT_DOLLARS_PER_MWH)
+            ],
+            destinations=[
+                self._destination(
+                    name, PyPSALinkCol.MARGINAL_COST, marginal_cost, UNIT_DOLLARS_PER_MWH
+                )
+            ],
+            derivation=_MARGINAL_COST_FROM_EXT,
         )
 
     def record_p_nom_min(self, name: str, limit_max: float, p_nom: float) -> None:

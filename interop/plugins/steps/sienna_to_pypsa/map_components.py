@@ -4,11 +4,13 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionReader
+from interop.core.extensions import ExtensionKind, ExtensionReader, append_extensions
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ProfileReporter
+from interop.plugins.shared.staged_samples import choose_ensemble_samples
 from interop.plugins.steps.sienna_to_pypsa.map_buses import map_buses
 from interop.plugins.steps.sienna_to_pypsa.map_generators import SiennaToPypsaMapGenerators
 from interop.plugins.steps.sienna_to_pypsa.map_loads import SiennaToPypsaMapLoads
@@ -16,6 +18,15 @@ from interop.plugins.steps.sienna_to_pypsa.map_storage_units import SiennaToPyps
 from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsaMapTransmission
 
 _DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
+_CHOOSE_ENSEMBLE_SAMPLES = "choose_ensemble_samples"
+
+# The kinds no sub-step here reads. Each one describes something PyPSA states nowhere, so it
+# travels on to the destination sidecar rather than stopping at this hop.
+_RELAYED_KINDS: tuple[ExtensionKind, ...] = (
+    ExtensionKind.RESERVE,
+    ExtensionKind.CONSTRAINT,
+    ExtensionKind.NETWORK,
+)
 
 _WINDOW_ADVICE = (
     "Every TimeSeriesAssociation in one system has to cover the same snapshots, so check "
@@ -39,6 +50,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
     def __init__(self, recorder: ScopedRecorder) -> None:
         self._recorder = recorder
         self._off_window_recorder = ScopedRecorder(recorder, step=_DROP_PROFILES_OFF_THE_WINDOW)
+        self._ensemble_recorder = ScopedRecorder(recorder, step=_CHOOSE_ENSEMBLE_SAMPLES)
 
     def run(self, state: State, params: BaseModel | None) -> State:
         reader = state.extension_reader(self._recorder)
@@ -46,7 +58,21 @@ class SiennaToPypsaMapComponents(TranslationStep):
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)
         self._drop_profiles_off_the_window(state)
+        choose_ensemble_samples(state, self._ensemble_recorder, Framework.SIENNA)
+        self._relay_unread(state, reader)
         return state
+
+    def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
+        """Carry each kind no sub-step reads on to the destination sidecar.
+
+        A record that names a companion parquet states no value of its own, so the frame
+        travels with it.
+        """
+        for kind in _RELAYED_KINDS:
+            append_extensions(state.destination_extensions, kind, reader.relay(kind))
+            series = state.source_extension_series.get(kind)
+            if series is not None:
+                state.destination_extension_series[kind] = series
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:
         return (

@@ -24,8 +24,9 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "GasPlant" in "outputs/network.nc" has "start_up_cost" equal to 1000
     And the PyPSA generator "GasPlant" in "outputs/network.nc" is committable
     # The carbon term is derived on its own, then feeds the total as a source of it.
-    And the file "decisions.md" contains "`pypsa.Generator.GasPlant.marginal_cost carbon term` = 40.0 $/MWh | carbon price x production rate x heat rate / 1000 |"
-    And the file "decisions.md" contains "`pypsa.Generator.GasPlant.marginal_cost carbon term` = 40.0 $/MWh | `pypsa.Generator.GasPlant.marginal_cost` = 66.0 $/MWh | fuel price x heat rate + VO&M charge + the carbon term |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 $/MWh | carbon price x production rate x heat rate / 1000 |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 $/MWh | `sienna.ThermalStandard.GasPlant.operation_cost` = 66.0 $/MWh | fuel price x heat rate + VO&M charge + the carbon term |"
+    And the decisions report contains "| `sienna.ThermalStandard.GasPlant.operation_cost` = 66.0 | `pypsa.Generator.GasPlant.marginal_cost` = 66.0 | variable cost proportional term |  | $destination_leg$ | $destination_generator_step$ |"
     # Each value is attributed to the PLEXOS object holding it, not to the generator reading it.
     And the file "decisions.md" contains "`plexos.Fuel.Natural Gas.Price` = 3.0 $/GJ"
     And the file "decisions.md" contains "`plexos.Emission.CO2.Price` = 50.0 $/tonne"
@@ -136,7 +137,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA network "outputs/network.nc" has no generator "InfeasiblePlant"
     And the log contains "dropping Generator 'InfeasiblePlant'"
     And the log contains "p_min_pu 0.5 sits above p_max_pu 0.4"
-    And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which PyPSA cannot dispatch, so the generator is dropped |"
+    And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which no dispatch can meet, so the generator is dropped |"
 
   Scenario: a non-fuel dispatchable generator gets a flat cost from its category
     Given a Plexos model
@@ -165,7 +166,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/minstable.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "FactorPlant" in "outputs/network.nc" has "p_min_pu" equal to 0.4
     # The decision carries the value that produced p_min_pu, not just the property name.
-    And the file "decisions.md" contains "| `plexos.Generator.FactorPlant.Min Stable Factor` = 40.0 | `pypsa.Generator.FactorPlant.p_min_pu` = 0.4 |"
+    And the file "decisions.md" contains "| `plexos.Generator.FactorPlant.Min Stable Factor` = 40.0 | `sienna.ThermalStandard.FactorPlant.active_power_limits.min` = 40.0 MW |"
+    And the decisions report contains "| `sienna.ThermalStandard.FactorPlant.active_power_limits.min` = 40.0 MW | `pypsa.Generator.FactorPlant.p_min_pu` = 0.4 | active_power_limits.min / base_power |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a two-part heat rate gives efficiency and an incremental fuel cost
     Given a Plexos model
@@ -225,7 +227,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the log contains "no staged series for Generator property 'Rating'"
     And the PyPSA generator "Solar1" in "outputs/network.nc" has "p_nom" equal to 100
     And the PyPSA network "outputs/network.nc" generator "Solar1" has no p_max_pu time series
-    And the file "decisions.md" contains "| `plexos.Generator.Solar1.Rating` = profile |  |  | the source staged no series for this profile, so p_max_pu keeps the static availability instead |"
+    And the file "decisions.md" contains "| `plexos.Generator.Solar1.Rating` = profile |  |  | the source staged no series for this profile, so the rating keeps the static availability instead |"
 
   Scenario: a units-out trace derates availability by the units unavailable
     Given a Plexos model
@@ -265,9 +267,11 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "min_up_time" equal to 4
     And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has no "ramp_limit_down"
     And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "min_down_time" equal to 0
-    # Each limit is recorded on its own, so the one that is set is still traceable.
-    And the file "decisions.md" contains "| `plexos.Generator.OneWayPlant.Max Ramp Up` = 2.0 MW/min | `pypsa.Generator.OneWayPlant.ramp_limit_up` = 1.0 pu/h | Max Ramp x snapshot minutes / p_nom, capped at 1 |  | plexos-to-pypsa | plexos_to_pypsa_map_generators |"
-    And the file "decisions.md" does not contain "ramp_limit_down"
+    # The rate PLEXOS states survives into Sienna, and leg two turns it into a fraction.
+    And the decisions report contains "| `plexos.Generator.OneWayPlant.Max Ramp Up` = 2.0 MW/min | `sienna.ThermalStandard.OneWayPlant.ramp_limits.up` = 2.0 MW/min | Max Ramp Up, capped at the rate that covers p_nom in one snapshot |  | $source_leg$ | $source_generator_step$ |"
+    And the decisions report contains "| `sienna.ThermalStandard.OneWayPlant.ramp_limits.up` = 2.0<br>`sienna.ThermalStandard.OneWayPlant.ramp_limits.down` | `pypsa.Generator.OneWayPlant.ramp_limit_up` = 1.0 | ramp_limits (MW/min) * resolution / base_power -> ramp_limit (pu/snapshot) |  | $destination_leg$ | $destination_generator_step$ |"
+    # The limit the model never states carries no value, so nothing invents one.
+    And the file "decisions.md" contains "`pypsa.Generator.OneWayPlant.ramp_limit_down` |"
     # A generator with a flat Heat Rate is attributed to that property, not Heat Rate Incr.
     And the file "decisions.md" contains "`plexos.Generator.OneWayPlant.Heat Rate` = 9.0 GJ/MWh"
 
@@ -339,7 +343,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/fast.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "FastPeaker" in "outputs/network.nc" has "ramp_limit_up" equal to 1
     And the PyPSA generator "FastPeaker" in "outputs/network.nc" has "ramp_limit_down" equal to 1
-    And the file "decisions.md" contains "| `plexos.Generator.FastPeaker.Max Ramp Up` = 45.0 MW/min | `pypsa.Generator.FastPeaker.ramp_limit_up` = 1.0 pu/h | Max Ramp x snapshot minutes / p_nom, capped at 1 |  | plexos-to-pypsa | plexos_to_pypsa_map_generators |"
+    And the decisions report contains "| `plexos.Generator.FastPeaker.Max Ramp Up` = 45.0 MW/min | `sienna.ThermalStandard.FastPeaker.ramp_limits.up` = 1.0 MW/min | Max Ramp Up, capped at the rate that covers p_nom in one snapshot |  | $source_leg$ | $source_generator_step$ |"
+    And the decisions report contains "| `sienna.ThermalStandard.FastPeaker.ramp_limits.up` = 1.0<br>`sienna.ThermalStandard.FastPeaker.ramp_limits.down` = 1.0 | `pypsa.Generator.FastPeaker.ramp_limit_up` = 1.0 | ramp_limits (MW/min) * resolution / base_power -> ramp_limit (pu/snapshot) |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a half-hourly model reads a ramp rate over half an hour, not over an hour
     A PLEXOS Max Ramp is a rate per minute, so the fraction of p_nom it covers depends on
@@ -407,8 +412,9 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/start_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
     And the file "decisions.md" contains "`plexos.Generator.CCGT.Offtake at Start` = 1800.0 GJ"
-    And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | Offtake at Start x the fuel's price |"
-    And the file "decisions.md" contains "`pypsa.Generator.CCGT.start_up_cost fuel term` = 14400.0 $ | `pypsa.Generator.CCGT.start_up_cost` = 14400.0 $ | the start fuel prices the start, since the generator states no Start Cost |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 $ | Offtake at Start x the fuel's price |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 $ | `sienna.ThermalStandard.CCGT.operation_cost.start_up` = 14400.0 $ | the start fuel prices the start, since the generator states no Start Cost |"
+    And the decisions report contains "| `sienna.ThermalStandard.CCGT.operation_cost.start_up` = 14400.0 | `pypsa.Generator.CCGT.start_up_cost` = 14400.0 | operation_cost.start_up -> start_up_cost |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a stated start cost wins over the start fuel rather than being added to it
     Given a Plexos model
@@ -488,7 +494,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains generator "FreeStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8, Start Cost=0"
     And the model is saved as "inputs/free_start.xml"
     When I run translate against "inputs/free_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 $"
+    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `sienna.ThermalStandard.FreeStart.operation_cost.start_up` = 0.0 $"
+    And the decisions report contains "| `sienna.ThermalStandard.FreeStart.operation_cost.start_up` = 0.0 | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 | operation_cost.start_up -> start_up_cost |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a generator naming several start fuels starts on the one its heat rate uses
     Given a Plexos model
@@ -505,7 +512,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA generator "DualStart" in "outputs/network.nc" has "start_up_cost" equal to 800
     # A generator burning no fuel has no heat rate to prefer one by, so the largest start wins.
     And the PyPSA generator "NeitherStart" in "outputs/network.nc" has "start_up_cost" equal to 45000
-    And the file "decisions.md" contains "the generator names several start fuels and PyPSA holds one start price, so the fuel its heat rate burns stands for the start, or the largest offtake where it burns none; this one is left out"
+    And the file "decisions.md" contains "the generator names several start fuels and the start cost holds one price, so the fuel its heat rate burns stands for the start, or the largest offtake where it burns none; this one is left out"
 
   Scenario: a candidate generator becomes extendable and carries what building it costs
     Given a Plexos model
@@ -524,9 +531,12 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "REZ_Solar" in "outputs/network.nc" has "p_nom" equal to 500
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "unit_size_mw" set to 100.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 $/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 $/MW | direct |"
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 % | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `sienna.RenewableDispatch.REZ_Solar.extensions.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"
+    And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.p_nom_extendable` = True | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | extensions.p_nom_extendable (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 $/MW | `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 $/MW | direct |"
+    And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 $/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 $/MW | extensions.overnight_cost_per_mw (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 % | `sienna.RenewableDispatch.REZ_Solar.extensions.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
+    And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.discount_rate` = 0.07 | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | extensions.discount_rate (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a plant that may also expand keeps the capacity it has as its floor
     Given a Plexos model
@@ -575,8 +585,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA network "outputs/network.nc" has no generator "Everlasting_REZ"
     And the PyPSA network "outputs/network.nc" generator "Priced_REZ" is extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free"
-    And the file "decisions.md" contains "a candidate with no WACC gives PyPSA no discount rate to annuitise its Build Cost over"
-    And the file "decisions.md" contains "a candidate with no Economic Life gives PyPSA no period to annuitise its Build Cost over"
+    And the file "decisions.md" contains "a candidate with no WACC gives no discount rate to annuitise its Build Cost over"
+    And the file "decisions.md" contains "a candidate with no Economic Life gives no period to annuitise its Build Cost over"
     And the log contains "1 candidate Generator(s) state no Build Cost, so each is left out"
     And the log contains "1 candidate Generator(s) state no WACC, so each is left out"
     And the log contains "1 candidate Generator(s) state no Economic Life, so each is left out"
@@ -646,3 +656,17 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/included_candidate.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Included_REZ" is extendable
     And the PyPSA generator "Included_REZ" in "outputs/network.nc" has "p_nom_max" equal to 200
+
+  Scenario: a fuel the mappings file does not name leaves its generator out, and the run completes
+    The mappings file is the user's own, so it can be short of a fuel the model states. A row
+    that is missing costs that fuel's generators, and nothing else.
+    Given a Plexos model
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains fuel "Peat" with price 8
+    And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model contains generator "PeatPlant" with "node=Grid_Node, fuel=Peat, Max Capacity=200, Heat Rate=12"
+    And the model is saved as "inputs/unmapped_fuel.xml"
+    When I run translate against "inputs/unmapped_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "GasPlant" in "outputs/network.nc" has carrier "Natural Gas"
+    And the PyPSA network "outputs/network.nc" has no generator "PeatPlant"
+    And the file "decisions.md" contains "fuel='Peat': the user mappings file names no such carrier"

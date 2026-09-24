@@ -31,7 +31,6 @@ from interop.plugins.shared.pypsa_constants import (
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     NOT_AN_ELECTRICITY_BUS_NOTE,
     NOT_AN_ELECTRICITY_BUS_REASON,
-    load_cost,
     pypsa_skip_report,
     pypsa_source_field,
     sienna_dest_field,
@@ -46,6 +45,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
     time_series_uuid,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    load_cost,
 )
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
 from interop.plugins.shared.translation_runner import (
@@ -163,7 +165,7 @@ def _peak_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
     return (
         ts_p.group_by(PyPSATimeSeriesCol.COMPONENT)
         .agg(pl.col(PyPSATimeSeriesCol.VALUE).max().alias(_TS_PEAK))
-        .collect()
+        .collect(engine="streaming")
     )
 
 
@@ -182,7 +184,7 @@ def _first_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
             .first()
             .alias(_TS_FIRST)
         )
-        .collect()
+        .collect(engine="streaming")
     )
 
 

@@ -3,16 +3,11 @@ from __future__ import annotations
 import logging
 from typing import ClassVar
 
-import polars as pl
 from pydantic import BaseModel
 
 from interop.core.pipeline import PipelineSteps, State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.plexos_constants import (
-    PlexosClass,
-    PlexosMembershipCol,
-    PlexosResolvedTable,
-)
+from interop.plugins.shared.plexos_horizon import horizon_advice
 from interop.plugins.shared.plexos_pypsa_translations import choose_ensemble_samples
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceReporter,
@@ -97,42 +92,10 @@ def _drop_profiles_off_the_window(state: State, recorder: ScopedRecorder) -> Non
     Reconciling the profiles needs the selected Model's Horizon, so the advice the shared
     drop closes its warning with lists the Models that declare one.
     """
-    dropped = drop_profiles_off_the_window(state, _horizon_advice(state))
+    dropped = drop_profiles_off_the_window(state, horizon_advice(state))
     reporter = SourceReporter(recorder)
     for profile in dropped.profiles:
         reporter.record_dropped(
             SourceValue(profile.owner_type, profile.component, profile.series, _PROFILE),
             dropped.note(profile),
         )
-
-
-def _horizon_advice(state: State) -> str:
-    return (
-        "Set the source's 'model' parameter so its Horizon settles one window for every "
-        f"profile: {_describe_models(state)}"
-    )
-
-
-def _describe_models(state: State) -> str:
-    """The Models whose Horizon could settle the window, or why none can.
-
-    A Model without a Horizon states no window, so naming it would not help; listing it
-    would send the caller round the loop again.
-    """
-    names = _models_with_a_horizon(state)
-    if not names:
-        return "no Model in the file declares a Horizon, so the profiles have to agree on their own"
-    shown = ", ".join(repr(name) for name in names[:_MODELS_NAMED])
-    remaining = len(names) - _MODELS_NAMED
-    return shown if remaining <= 0 else f"{shown}, and {remaining} more"
-
-
-def _models_with_a_horizon(state: State) -> list[str]:
-    memberships = state.source_topology.get(PlexosResolvedTable.MEMBERSHIPS)
-    if memberships is None:
-        return []
-    related = memberships.filter(
-        (pl.col(PlexosMembershipCol.PARENT_CLASS) == PlexosClass.MODEL)
-        & (pl.col(PlexosMembershipCol.CHILD_CLASS) == _HORIZON_CLASS)
-    ).select(PlexosMembershipCol.PARENT_OBJECT)
-    return sorted(set(related.collect()[PlexosMembershipCol.PARENT_OBJECT].to_list()))

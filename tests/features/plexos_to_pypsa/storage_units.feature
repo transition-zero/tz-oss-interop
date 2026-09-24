@@ -25,8 +25,10 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "state_of_charge_initial" is 100.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" attribute "marginal_cost" is 0.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_1" is not cyclic
-    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW<br>`plexos.Battery.bat_1.Units` = 1.0 | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "| `plexos.Battery.bat_1.Charge Efficiency` = 81.0 % | `pypsa.StorageUnit.bat_1.efficiency_store` = 0.9 | sqrt(round-trip / 100), split symmetrically |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Battery.bat_1.Max Power` = 100.0 MW<br>`plexos.Battery.bat_1.Units` = 1.0 | `sienna.EnergyReservoirStorage.bat_1.base_power` = 100.0 MVA | Max Power * Units |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.bat_1.base_power` = 100.0 MVA | `pypsa.StorageUnit.bat_1.p_nom` = 100.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the decisions report contains "| `plexos.Battery.bat_1.Charge Efficiency` = 81.0 % | `sienna.EnergyReservoirStorage.bat_1.efficiency.in` = 0.9 | sqrt(round-trip / 100), split symmetrically |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.bat_1.efficiency.in` = 0.9<br>`sienna.EnergyReservoirStorage.bat_1.efficiency.out` = 0.9 | `pypsa.StorageUnit.bat_1.efficiency_store` = 0.9 | efficiency.in -> efficiency_store; efficiency.out -> efficiency_dispatch |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a Battery of several units is rated at the power of all of them
     Given a Plexos model
@@ -40,7 +42,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     # Max Power and Capacity both describe one unit, so the hours are one unit's 200 / 50.
     And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "max_hours" is 4.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_pair" attribute "state_of_charge_initial" is 200.0
-    And the file "decisions.md" contains "| `plexos.Battery.bat_pair.Max Power` = 50.0 MW<br>`plexos.Battery.bat_pair.Units` = 2.0 | `pypsa.StorageUnit.bat_pair.p_nom` = 100.0 MW | Max Power * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Battery.bat_pair.Max Power` = 50.0 MW<br>`plexos.Battery.bat_pair.Units` = 2.0 | `sienna.EnergyReservoirStorage.bat_pair.base_power` = 100.0 MVA | Max Power * Units |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.bat_pair.base_power` = 100.0 MVA | `pypsa.StorageUnit.bat_pair.p_nom` = 100.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a Battery with no units in service cannot dispatch and is left out
     Given a Plexos model
@@ -71,7 +74,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "phs_1" attribute "efficiency_dispatch" is 0.8
     And the PyPSA network "outputs/network.nc" storage unit "phs_1" attribute "state_of_charge_initial" is 1500.0
     And the PyPSA network "outputs/network.nc" storage unit "phs_1" is cyclic
-    And the file "decisions.md" contains "| `plexos.Storage.phs_head.Max Volume` = 3000.0 MWh | `pypsa.StorageUnit.phs_1.max_hours` = 6.0 h | head Storage.Max Volume / p_nom |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.phs_head.Max Volume` = 3000.0 MWh | `sienna.EnergyReservoirStorage.phs_1.storage_capacity` = 6.0 h | head Storage.Max Volume / p_nom |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_1.storage_capacity` = 6.0 | `pypsa.StorageUnit.phs_1.max_hours` = 6.0 | direct |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a reservoir whose volume names no unit is read as the model wrote it
     A published export can leave the unit of a volume blank. The values are still the ones
@@ -141,7 +145,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/inflow.xml"
     When I run translate against "inputs/inflow.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_inflow" attribute "inflow" is 120.0
-    And the file "decisions.md" contains "| `plexos.Storage.inflow_head.Natural Inflow` = 120.0 MW | `pypsa.StorageUnit.phs_inflow.inflow` = 120.0 MW | head Storage.Natural Inflow |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.inflow_head.Natural Inflow` = 120.0 MW | `sienna.EnergyReservoirStorage.phs_inflow.extensions.inflow_mw` = 120.0 MW | head Storage.Natural Inflow |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_inflow.extensions.inflow_mw` = 120.0 MW | `pypsa.StorageUnit.phs_inflow.inflow` = 120.0 MW | extensions.inflow_mw (PyPSA round-trip) |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a Natural Inflow stated in GW converts into MW
     Given a Plexos model
@@ -204,7 +209,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_full.xml"
     When I run translate against "inputs/phs_full.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_full" attribute "state_of_charge_initial" is 3000.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 MWh | head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours |"
+    And the decisions report contains "| `plexos.Storage.phs_full_head.Initial Volume` = 4000.0 MWh | `sienna.EnergyReservoirStorage.phs_full.initial_storage_capacity_level` = 1.0 | head Storage.Initial Volume, clamped to 0..the power the object already runs * max_hours, as a fraction of it |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_full.initial_storage_capacity_level` = 1.0 | `pypsa.StorageUnit.phs_full.state_of_charge_initial` = 3000.0 | initial_storage_capacity_level * base_power * storage_capacity |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a reservoir-hydro Generator becomes a PyPSA hydro StorageUnit that only generates
     Given a Plexos model
@@ -222,8 +228,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "efficiency_store" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "state_of_charge_initial" is 400.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" is not cyclic
-    And the file "decisions.md" contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | Max Capacity * Units |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "|  | `pypsa.StorageUnit.hydro_1.p_min_pu` = 0.0 |  | conventional hydro generates but does not pump | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | Max Capacity * Units |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the decisions report contains "|  | `sienna.HydroDispatch.hydro_1.active_power_limits.min` = 0.0 MW |  | conventional hydro generates but does not pump | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Storage with no turbine is skipped, not mapped
     Given a Plexos model
@@ -234,7 +241,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/orphan.xml"
     When I run translate against "inputs/orphan.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
-    And the file "decisions.md" contains "| `plexos.Storage.orphan` |  |  | no Generator names this Storage as a head or tail, so it cannot dispatch | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.orphan` |  |  | no Generator names this Storage as a head or tail, so it cannot dispatch | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a turbine becomes a storage unit only, never also a generator
     Given a Plexos model
@@ -275,7 +282,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_duration.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "max_hours" is 2.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_duration" attribute "state_of_charge_initial" is 100.0
-    And the file "decisions.md" contains "`pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 MWh | Initial SoC / 100 * the power the object already runs * max_hours |"
+    And the decisions report contains "| `plexos.Battery.bat_duration.Initial SoC` = 50.0 % | `sienna.EnergyReservoirStorage.bat_duration.initial_storage_capacity_level` = 0.5 | Initial SoC / 100 |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.bat_duration.initial_storage_capacity_level` = 0.5 | `pypsa.StorageUnit.bat_duration.state_of_charge_initial` = 100.0 | initial_storage_capacity_level * base_power * storage_capacity |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a mothballed turbine has no rated power and is skipped
     Given a Plexos model
@@ -286,7 +294,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_off.xml"
     When I run translate against "inputs/phs_off.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "| `plexos.Generator.phs_off` |  |  | rated power works out to 0.0 MW, so this unit cannot dispatch | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.phs_off` |  |  | rated power works out to 0.0 MW, so this unit cannot dispatch | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Battery stating no Max Power is skipped rather than stopping the translation
     Given a Plexos model
@@ -298,7 +306,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/powerless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
     And the log contains "dropping Battery 'powerless'"
-    And the file "decisions.md" contains "the object states no rated power, which the StorageUnit mapping cannot default"
+    And the file "decisions.md" contains "the object states no rated power, which the storage mapping cannot default"
 
   Scenario: a turbine with a tail but no head is skipped, naming what it lacks
     Given a Plexos model
@@ -331,7 +339,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_vom.xml"
     When I run translate against "inputs/phs_vom.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_vom" attribute "marginal_cost" is 3.5
-    And the file "decisions.md" contains "| `plexos.Generator.phs_vom.VO&M Charge` = 3.5 $/MWh | `pypsa.StorageUnit.phs_vom.marginal_cost` = 3.5 $/MWh | VO&M Charge (no fuel, so VO&M only) |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.phs_vom.VO&M Charge` = 3.5 $/MWh | `sienna.EnergyReservoirStorage.phs_vom.operation_cost` = 3.5 $/MWh | VO&M Charge (no fuel, so VO&M only) |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_vom.operation_cost` = 3.5 | `pypsa.StorageUnit.phs_vom.marginal_cost` = 3.5 | variable cost proportional term |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a battery's units-out trace derates how much it can discharge
     Given a Plexos model
@@ -368,7 +377,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/bat_busless.xml"
     When I run translate against "inputs/bat_busless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "| `plexos.Battery.bat_busless.Nodes` |  |  | this object is on no Node, so it has no bus to connect to | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Battery.bat_busless.Nodes` |  |  | this object is on no Node, so it has no bus to connect to | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a pumping Generator on no node is skipped, not translated without a bus
     Given a Plexos model
@@ -379,7 +388,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/ghost.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
     And the PyPSA network "outputs/network.nc" has no generator "ghost"
-    And the file "decisions.md" contains "| `plexos.Generator.ghost.Nodes` |  |  | this object is on no Node, so it has no bus to connect to | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.ghost.Nodes` |  |  | this object is on no Node, so it has no bus to connect to | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a turbine whose head reservoir states no volumes falls back to the PyPSA defaults
     Given a Plexos model
@@ -391,7 +400,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
     And the PyPSA network "outputs/network.nc" storage unit "bare" attribute "max_hours" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "bare" attribute "state_of_charge_initial" is 0.0
-    And the file "decisions.md" contains "PLEXOS states no reservoir capacity; max_hours uses the PyPSA default"
+    And the file "decisions.md" contains "PLEXOS states no reservoir capacity; storage_capacity uses the translator's one-hour default"
 
   Scenario: a Storage stating no volumes and feeding no turbine is still skipped
     Given a Plexos model
@@ -402,7 +411,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/silent.xml"
     When I run translate against "inputs/silent.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
-    And the file "decisions.md" contains "| `plexos.Storage.silent` |  |  | no Generator names this Storage as a head or tail, so it cannot dispatch | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.silent` |  |  | no Generator names this Storage as a head or tail, so it cannot dispatch | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a turbine stating no properties at all is skipped, not silently dropped
     Given a Plexos model
@@ -413,7 +422,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/mute.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
     And the PyPSA network "outputs/network.nc" has no generator "mute"
-    And the file "decisions.md" contains "| `plexos.Generator.mute.Max Capacity` |  |  | PLEXOS states no Max Capacity, so the object states no rated power, which the StorageUnit mapping cannot default | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.mute.Max Capacity` |  |  | PLEXOS states no Max Capacity, so the object states no rated power, which the storage mapping cannot default | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Battery stating a Capacity but no Max Power is skipped, naming what it lacks
     Given a Plexos model
@@ -424,7 +433,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/bat_nopower.xml"
     When I run translate against "inputs/bat_nopower.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "| `plexos.Battery.bat_nopower.Max Power` |  |  | PLEXOS states no Max Power, so the object states no rated power, which the StorageUnit mapping cannot default | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Battery.bat_nopower.Max Power` |  |  | PLEXOS states no Max Power, so the object states no rated power, which the storage mapping cannot default | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a turbine whose Max Capacity comes from a data file is skipped, naming the data file
     Given a Plexos model
@@ -435,7 +444,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/filecap.xml"
     When I run translate against "inputs/filecap.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "| `plexos.Generator.filecap.Max Capacity` = data file MW |  |  | Max Capacity comes from a data file rather than a value, so this unit has no rated power to size it | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.filecap.Max Capacity` = data file MW |  |  | Max Capacity comes from a data file rather than a value, so this unit has no rated power to size it | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a turbine with negative Units is skipped, not given a negative rated power
     Given a Plexos model
@@ -446,7 +455,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_neg.xml"
     When I run translate against "inputs/phs_neg.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "| `plexos.Generator.phs_neg` |  |  | rated power works out to -500.0 MW, so this unit cannot dispatch | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Generator.phs_neg` |  |  | rated power works out to -500.0 MW, so this unit cannot dispatch | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Battery with no Charge Efficiency is modelled lossless
     Given a Plexos model
@@ -459,8 +468,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_lossless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_lossless" attribute "efficiency_store" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_lossless" attribute "efficiency_dispatch" is 1.0
-    And the file "decisions.md" contains "|  | `pypsa.StorageUnit.bat_lossless.efficiency_store` = 1.0 |  | PLEXOS states no round-trip efficiency; storage is modelled lossless | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "|  | `pypsa.StorageUnit.bat_lossless.efficiency_dispatch` = 1.0 |  | PLEXOS states no round-trip efficiency; storage is modelled lossless | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "|  | `sienna.EnergyReservoirStorage.bat_lossless.efficiency.in` = 1.0 |  | PLEXOS states no round-trip efficiency; storage is modelled lossless | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "|  | `sienna.EnergyReservoirStorage.bat_lossless.efficiency.out` = 1.0 |  | PLEXOS states no round-trip efficiency; storage is modelled lossless | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Battery stating neither Capacity nor Duration takes the PyPSA max_hours default
     Given a Plexos model
@@ -472,7 +481,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/bat_sizeless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "bat_sizeless" attribute "max_hours" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "bat_sizeless" attribute "state_of_charge_initial" is 0.0
-    And the file "decisions.md" contains "PLEXOS states no reservoir capacity; max_hours uses the PyPSA default"
+    And the file "decisions.md" contains "PLEXOS states no reservoir capacity; storage_capacity uses the translator's one-hour default"
 
   Scenario: a turbine with both reservoirs and no Pump Efficiency is still pumped storage
     Given a Plexos model
@@ -498,8 +507,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     When I run translate against "inputs/phs_sized.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_sized" attribute "max_hours" is 6.0
     And the PyPSA network "outputs/network.nc" storage unit "phs_sized" attribute "state_of_charge_initial" is 1500.0
-    And the file "decisions.md" contains "| `plexos.Storage.phs_sized_head.Max Volume` = 3000.0 MWh | `pypsa.StorageUnit.phs_sized.max_hours` = 6.0 h | head Storage.Max Volume / p_nom |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "| `plexos.Storage.phs_sized_tail.Max Volume` = 500.0 MWh |  |  | the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.phs_sized_head.Max Volume` = 3000.0 MWh | `sienna.EnergyReservoirStorage.phs_sized.storage_capacity` = 6.0 h | head Storage.Max Volume / p_nom |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_sized.storage_capacity` = 6.0 | `pypsa.StorageUnit.phs_sized.max_hours` = 6.0 | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the decisions report contains "| `plexos.Storage.phs_sized_tail.Max Volume` = 500.0 MWh |  |  | the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped | $source_leg$ | $source_storage_step$ |"
 
   Scenario: the storage properties PyPSA has no home for are recorded as not mapped
     Given a Plexos model
@@ -514,11 +524,12 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/dropped.xml"
     When I run translate against "inputs/dropped.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 2 storage units
-    And the file "decisions.md" contains "| `plexos.Battery.bat_dropped.Min SoC` = 10.0 % |  |  | PyPSA treats the full energy capacity as usable, so Min SoC is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "| `plexos.Battery.bat_dropped.Discharge Efficiency` = 95.0 % |  |  | PyPSA takes one round-trip efficiency, split evenly across charge and discharge, so Discharge Efficiency is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
-    And the file "decisions.md" contains "| `plexos.Storage.phs_dropped_tail.Max Volume` = 2500.0 MWh |  |  | the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Battery.bat_dropped.Min SoC` = 10.0 % |  |  | the storage level limits are left at the full range, so Min SoC is dropped | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Battery.bat_dropped.Discharge Efficiency` = 95.0 % |  |  | the round-trip efficiency is split evenly across charge and discharge, so Discharge Efficiency is dropped | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Storage.phs_dropped_tail.Max Volume` = 2500.0 MWh |  |  | the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped | $source_leg$ | $source_storage_step$ |"
     # A head reservoir's inflow reaches the storage unit, so it is not among the dropped.
-    And the file "decisions.md" contains "| `plexos.Storage.phs_dropped_head.Natural Inflow` = 40.0 MW | `pypsa.StorageUnit.phs_dropped.inflow` = 40.0 MW | head Storage.Natural Inflow |  | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    And the decisions report contains "| `plexos.Storage.phs_dropped_head.Natural Inflow` = 40.0 MW | `sienna.EnergyReservoirStorage.phs_dropped.extensions.inflow_mw` = 40.0 MW | head Storage.Natural Inflow |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_dropped.extensions.inflow_mw` = 40.0 MW | `pypsa.StorageUnit.phs_dropped.inflow` = 40.0 MW | extensions.inflow_mw (PyPSA round-trip) |  | $destination_leg$ | $destination_storage_step$ |"
     And the file "decisions.md" does not contain "no turbine draws from this reservoir"
 
   Scenario: a reservoir no turbine draws from has its Natural Inflow recorded as dropped
@@ -529,7 +540,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And storage "orphan_head" has property "Natural Inflow" 40
     And the model is saved as "inputs/orphan_inflow.xml"
     When I run translate against "inputs/orphan_inflow.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "| `plexos.Storage.orphan_head.Natural Inflow` = 40.0 MW |  |  | no turbine draws from this reservoir, so its Natural Inflow is dropped | plexos-to-pypsa | plexos_to_pypsa_map_storage_units |"
+    Then the decisions report contains "| `plexos.Storage.orphan_head.Natural Inflow` = 40.0 MW |  |  | no turbine draws from this reservoir, so its Natural Inflow is dropped | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a candidate battery becomes an extendable storage unit priced by its build cost
     Given a Plexos model

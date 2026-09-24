@@ -1,23 +1,23 @@
 # Composing pipelines
 
 A composed pipeline runs existing pipelines back to back as one named pipeline with one
-audit trail. `plexos-to-sienna` is `plexos-to-pypsa` and `pypsa-to-sienna` chained through
-the PyPSA hub rather than a translator of its own.
+audit trail. `plexos-to-pypsa` is `plexos-to-sienna` and `sienna-to-pypsa` chained through
+the Sienna hub rather than a translator of its own.
 
 A composed manifest lives in `pipelines/` beside every other manifest, is found by the same
 catalog scan, and is picked and run from the same translate menu.
 
 ```yaml
-# pipelines/plexos-to-sienna.yaml
+# pipelines/plexos-to-pypsa.yaml
 source_framework: plexos
-destination_framework: sienna
+destination_framework: pypsa
 compose:
-  - pipeline: plexos-to-pypsa
+  - pipeline: plexos-to-sienna
     params:
-      emit_pypsa_network.output_path: network.nc
-  - pipeline: pypsa-to-sienna
+      emit_sienna_files.output_system_json_file_path: system.json
+  - pipeline: sienna-to-pypsa
     params:
-      stage_pypsa_network_file.path: $plexos-to-pypsa.emit_pypsa_network.output_path
+      stage_sienna_system_json.system_json_path: $plexos-to-sienna.emit_sienna_files.output_system_json_file_path
 ```
 
 A chain names the file it hands over, on the leg that produces it, and the leg after it
@@ -61,19 +61,20 @@ hand-off.
 
 ## Mapping pipelines route by schema
 
-A leg may need a user mappings file whose vocabulary the user never chose: the
-PyPSA → Sienna leg wants carriers, but a PLEXOS user thinks in objects, categories and
-fuels. A composed manifest can name mapping pipelines, which run before the legs and derive
-the files the legs consume from the one file the user wrote.
+A leg may need a user mappings file whose vocabulary the user never chose. A composed
+manifest can name mapping pipelines, which run before the legs and derive the files the
+legs consume from the one file the user wrote. `plexos-to-sienna-monte-carlo` names one,
+because its second leg wants carriers where a PLEXOS user thinks in objects, categories
+and fuels.
 
 ```yaml
 mappings:
   - pipeline: derive-plexos-sienna-mappings
 compose:
-  - pipeline: plexos-to-pypsa
-  - pipeline: pypsa-to-sienna
+  - pipeline: plexos-to-pypsa-monte-carlo
+  - pipeline: pypsa-to-sienna-ensemble
     params:
-      stage_pypsa_network_file.path: $plexos-to-pypsa.emit_pypsa_network.output_path
+      stage_pypsa_network_ensemble.network_dir: $plexos-to-pypsa-monte-carlo.emit_pypsa_network_ensemble.output_dir
 ```
 
 A mapping pipeline is an ordinary pipeline, living in `pipelines/mappings/` so that it never

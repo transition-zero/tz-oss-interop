@@ -16,9 +16,8 @@ power system: the fleet that already runs. `portfolio.json` is the expansion pro
 technologies a plan may build, the demand they have to meet, and the caps they run under. The
 portfolio names the system in its `base_system_file`, so the two are read together.
 
-The pipeline runs through a PyPSA network on the way. This document does not describe that
-network. It states the mapping as one step, because that is what you give and what you get.
-Where the intermediate form loses something, this document says so.
+The pipeline reads your model once and writes both documents. It runs the two steps
+`plexos-to-sienna` runs, then one more that reads the base system those steps wrote.
 
 ---
 
@@ -69,9 +68,12 @@ Where the intermediate form loses something, this document says so.
   A generator becomes a `SupplyTechnology` and a battery or a pumped-storage turbine becomes a
   `StorageTechnology`, so a carrier sent to a base system type the other kind holds names a
   type the technology never becomes. The run completes and `decisions.md` names each one.
-- **A candidate that prices no build is already gone.** The PLEXOS to PyPSA leg leaves out a
-  candidate with no `Build Cost`, no `WACC` or no `Economic Life`, because PyPSA cannot
-  annuitise a cost without all three. `decisions.md` names each one.
+- **A candidate that prices no build is left out.** A candidate with no `Build Cost`, no
+  `WACC` or no `Economic Life` states no price to build at and no period to annuitise it
+  across, so the portfolio holds no technology for it. `decisions.md` names each one.
+- **A plant nobody has built yet is in the portfolio alone.** The base system holds the fleet
+  that already runs, so a candidate running no units leaves `system.json` as the portfolio
+  takes it. `decisions.md` names each one.
 
 ## `Generator` that may be built → `SupplyTechnology`
 
@@ -219,34 +221,32 @@ answer.
 ### The base year
 
 `PortfolioFinancialData.base_year` and each technology's `financial_data.technology_base_year`
-are the economic year a cost is quoted in. No PLEXOS field and no PyPSA field states one, so
-both come from the `base_year` parameter of the `pypsa_to_sienna_investments_map_technologies`
-step. It defaults to **2020**, which is the year SiennaSchemas itself defaults a construction
-year to. Set it to the dollar year your `Build Cost` and `FO&M Charge` are quoted in.
+are the economic year a cost is quoted in. No PLEXOS field and no Sienna field states one, so
+both come from the `base_year` parameter of the `sienna_investments_map_technologies` step. It
+defaults to **2020**, which is the year SiennaSchemas itself defaults a construction year to.
+Set it to the dollar year your `Build Cost` and `FO&M Charge` are quoted in. The pipeline
+prompts for each step, so the base year is the `base_year` of `step[2]`.
 
-A chained pipeline prompts for the source of its first leg and the sinks of its last, and for
-no step in between, so a `plexos-to-sienna-investments` run always takes the default. To state
-another year, run the two legs yourself: `plexos-to-pypsa`, then `pypsa-to-sienna-investments`
-over the network and the sidecar it wrote. The second leg prompts for its steps, so the base
-year is the `base_year` of `step[2]`. That leg also asks for a mappings file in PyPSA words,
-which the chain derives from your PLEXOS file and a lone run cannot, so write a `carriers`
-file with one `pypsa_carrier` row for each carrier the first leg wrote, the storage carriers
-included.
+### What a Sienna component has no field for
 
-### What the PyPSA hub cannot carry
+A Sienna component holds the fleet's own values and nothing about a build, so everything a
+technology states about building comes from the extensions sidecar the operations step wrote
+beside it:
 
-The route runs through a PyPSA network, and three values have no PyPSA column:
-
-| PLEXOS | How it crosses the hub |
+| PLEXOS | The sidecar field it reaches the technology through |
 | --- | --- |
-| `Max Capacity` or `Max Power` as the size of one unit | The extensions sidecar, as `unit_size_mw`. PyPSA sizes a candidate by `p_nom_max` alone. |
-| `Technical Life` | The extensions sidecar, as `technical_life_years`. PyPSA has one lifetime field, and the capital recovery period claims it. |
-| The year a dated `Units` falls to zero | The extensions sidecar, as `retirement_year`. PyPSA carries a build year and nothing for the other end of a life. |
+| `Max Units Built` | `p_nom_extendable`, and `p_nom_max` as the capacity a build may reach |
+| `Build Cost` | `overnight_cost_per_mw` |
+| `WACC` | `discount_rate` |
+| `Economic Life` | `lifetime_years` |
+| `FO&M Charge` | `fom_charge_per_mw_year` |
+| `Max Capacity` or `Max Power` as the size of one unit | `unit_size_mw` |
+| `Technical Life` | `technical_life_years` |
+| The year a dated `Units` falls to zero | `retirement_year` |
 
-The build year rides the hub as PyPSA's own `build_year`, so it survives the netCDF round trip
-as a real field. A run that loses the sidecar loses the three values above, and the portfolio
-then states no unit size, takes the schema's own default lifetime of 100 years, and names no
-planned retirement.
+The sidecar and the base system are written by one run, so neither can be missing. A
+`plexos-to-sienna` run writes the same sidecar, which is why one pipeline can write the
+portfolio from what the other already states.
 
 ### Units and rounding
 

@@ -140,6 +140,18 @@ class ExpansionExtension(ExtensionRecord):
     # The year the object leaves service, which PLEXOS states as a dated Units of zero.
     # PyPSA carries build_year on the component and nothing for the other end of its life.
     retirement_year: int | None = None
+    # MW. PyPSA's p_nom_max and p_nom_min. Sienna states one rating and no build range, so a
+    # candidate loses both without these.
+    p_nom_max: float | None = None
+    p_nom_min: float | None = None
+    # $/MW. PyPSA Generator.overnight_cost. Sienna prices no build on an operations model.
+    overnight_cost_per_mw: float | None = None
+    # PyPSA Generator.discount_rate, which annuitises the build cost. No Sienna field.
+    discount_rate: float | None = None
+    # yr. PyPSA Generator.lifetime, the period the build cost annuitises over.
+    lifetime_years: float | None = None
+    # The year the object enters service. PyPSA carries build_year; Sienna carries nothing.
+    build_year: int | None = None
 
 
 class GeneratorExtension(ExpansionExtension):
@@ -152,6 +164,12 @@ class GeneratorExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None
     # PLEXOS only: the generator's category, a grouping string the user chooses.
     category: str | None = None
+    # PyPSA Generator.efficiency, which is one megawatt hour out per this much fuel in.
+    # Sienna prices the fuel into the cost curve and states no efficiency of its own.
+    efficiency: float | None = None
+    # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
+    # A Sienna cost curve states one price, so a fuel priced by date has no field here.
+    marginal_cost_series: str | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -174,6 +192,9 @@ class LineExtension(ExtensionRecord):
 
 class ControllableLineExtension(ExtensionRecord):
     carrier: str | None = None  # PyPSA Link.carrier
+    # $/MWh. PyPSA Link.marginal_cost, which PLEXOS states as a Wheeling Charge. Sienna
+    # prices no flow over a branch, so the charge has no field there.
+    marginal_cost: float | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
     # PyPSA Link.p_max_pu. Sienna's active_power_limits_from folds p_nom * p_max_pu into one
     # number, so the split is unrecoverable without this.
@@ -190,6 +211,20 @@ class ControllableLineExtension(ExtensionRecord):
 
 class StorageExtension(ExpansionExtension):
     p_nom_extendable: bool | None = None  # PyPSA only
+    # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,
+    # so a hydro unit loses it without this.
+    max_hours: float | None = None
+    # MWh. PyPSA StorageUnit.state_of_charge_initial, for the same reason.
+    state_of_charge_initial: float | None = None
+    # MW. PyPSA StorageUnit.inflow. Sienna reads a hydro budget as a time series alone, so a
+    # static inflow has no field there.
+    inflow_mw: float | None = None
+    # Ours: the companion parquet holding the inflow at each snapshot, in MW, where the
+    # reservoir refills at a rate that changes.
+    inflow_series: str | None = None
+    # Ours: the companion parquet holding the share of its rating the unit reaches at each
+    # snapshot. Sienna states one rating and names no series against it.
+    rating_series: str | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -389,17 +424,33 @@ class CompanionSeriesCol(StrEnum):
     NAME = "name"
 
 
+class GeneratorCompanionCol(StrEnum):
+    """Value columns of the generator companion parquet, named for the field each holds."""
+
+    MARGINAL_COST = "marginal_cost"
+
+
+class StorageCompanionCol(StrEnum):
+    """Value columns of the storage companion parquet, each named for the field it holds."""
+
+    INFLOW_MW = "inflow_mw"
+    RATING_PU = "rating_pu"
+
+
 class Companion(NamedTuple):
-    """The parquet a kind's series lives in, and the record field that names that file."""
+    """The parquet a kind's series live in, and the record fields that name that file."""
 
     filename: str
-    series_field: str
+    series_fields: tuple[str, ...]
 
 
 # Companions sit beside the sidecar and are named for what they hold. A kind with no entry
-# states every value on the record itself.
+# states every value on the record itself. One parquet holds every series of its kind, one
+# column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
-    ExtensionKind.RESERVE: Companion("reserves.parquet", "requirement_series"),
+    ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
+    ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
+    ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
 }
 
 
@@ -424,7 +475,9 @@ def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecor
     """
     companion = _COMPANIONS.get(kind)
     return companion is not None and any(
-        getattr(record, companion.series_field, None) is not None for record in records
+        getattr(record, series_field, None) is not None
+        for record in records
+        for series_field in companion.series_fields
     )
 
 

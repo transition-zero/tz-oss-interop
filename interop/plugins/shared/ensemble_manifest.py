@@ -4,6 +4,9 @@
 where no listing exists. So the sink that writes an ensemble states which replications it
 wrote and what it called each one, and the source that reads the ensemble back asks the
 manifest rather than guessing a filename template or probing for the next label.
+
+Nothing here names a framework. A PyPSA replication is one file and a Sienna replication is
+one file beside two companions, and both say the same thing about themselves.
 """
 
 from __future__ import annotations
@@ -16,7 +19,11 @@ ENSEMBLE_MANIFEST_FILENAME = "ensemble.json"
 
 
 class EnsembleReplication(BaseModel):
-    """One replication of an ensemble, and the file holding it."""
+    """One replication of an ensemble, and the file holding it.
+
+    A Sienna replication holds three files in a directory of its own, and ``filename`` names
+    the system among them, so one field serves both frameworks.
+    """
 
     sample: str
     # Relative to the directory holding the manifest, so moving the ensemble keeps it valid.

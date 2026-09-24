@@ -2,7 +2,6 @@ from ._arcs import ARC_TRANSLATIONS, build_arcs_source_table
 from ._areas import AREA_TRANSLATIONS, build_areas_source_table
 from ._buses import BUS_SKIP, BUS_TRANSLATIONS, build_bus_extensions, fill_bus_defaults
 from ._component_mapping import ComponentMapping
-from ._ensemble import choose_ensemble_samples
 from ._generators import (
     GENERATOR_LOAD_SHEDDING_SKIP,
     GENERATOR_TRANSLATIONS,
@@ -75,7 +74,6 @@ from ._ts_info import TimeSeriesInfo, collect_ts_info
 
 __all__ = [
     "ComponentMapping",
-    "choose_ensemble_samples",
     "ScopeSkips",
     "carrier_scope_skips",
     "fill_capacity_defaults",
