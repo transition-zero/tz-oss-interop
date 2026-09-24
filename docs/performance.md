@@ -4,7 +4,7 @@ This page gives the time and the memory that a translation needs, against the si
 model. It answers one question: what machine do you need to translate your own model?
 
 Every figure on this page comes from a run that we did on 2026-09-24, at interop version
-0.1.0, commit `dbaa205`. We did not measure a solve. A solve costs far more than a
+0.1.0, commit `f5fa4f2`. We did not measure a solve. A solve costs far more than a
 translation, and the case study pages cover it.
 
 ## The machine
@@ -38,11 +38,11 @@ Each row below is a model that we ran, and not a rule that we derived.
 
 | The model we ran | Time | Peak memory |
 | --- | ---: | ---: |
-| A PLEXOS model with 86.6 MiB of traces (SEM) | 9 s | 0.87 GiB |
-| A PLEXOS model with a 4.08 GiB trace directory (CAISO) | 76 s | 1.59 GiB |
-| A PLEXOS model whose traces hold 199 million values (AEMO) | 111 s | 2.32 GiB |
-| A PyPSA network of 26 million time series values | 15 s | 0.92 GiB |
-| A PyPSA network of 110 million time series values | 96 s | 3.13 GiB |
+| A PLEXOS model with 86.6 MiB of traces (SEM) | 12 s | 0.85 GiB |
+| A PLEXOS model with a 4.08 GiB trace directory (CAISO) | 74 s | 1.62 GiB |
+| A PLEXOS model whose traces hold 199 million values (AEMO) | 109 s | 2.31 GiB |
+| A PyPSA network of 26 million time series values | 19 s | 0.88 GiB |
+| A PyPSA network of 110 million time series values | 99 s | 3.14 GiB |
 
 A laptop with 8 GiB of memory translates each of these models.
 
@@ -54,12 +54,12 @@ snapshots at 8,760 and grows the topology.
 
 | Run | Components | Snapshots | Translated values | netCDF size | Time | Peak memory |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| A1 | 300 | 1,000 | 250,000 | 1.98 MiB | 1.81 s | 0.30 GiB |
-| A2 | 300 | 8,760 | 2,190,000 | 16.40 MiB | 2.70 s | 0.58 GiB |
-| A3 | 300 | 35,040 | 8,760,000 | 65.26 MiB | 5.61 s | 0.81 GiB |
-| A4 | 300 | 105,120 | 26,280,000 | 195.66 MiB | 15.12 s | 0.92 GiB |
-| B2 | 3,000 | 8,760 | 21,900,000 | 162.17 MiB | 15.28 s | 0.95 GiB |
-| B3 | 15,000 | 8,760 | 109,500,000 | 804.69 MiB | 95.92 s | 3.13 GiB |
+| A1 | 300 | 1,000 | 250,000 | 1.98 MiB | 2.06 s | 0.30 GiB |
+| A2 | 300 | 8,760 | 2,190,000 | 16.40 MiB | 2.93 s | 0.59 GiB |
+| A3 | 300 | 35,040 | 8,760,000 | 65.26 MiB | 6.95 s | 0.75 GiB |
+| A4 | 300 | 105,120 | 26,280,000 | 195.66 MiB | 18.79 s | 0.88 GiB |
+| B2 | 3,000 | 8,760 | 21,900,000 | 162.17 MiB | 17.28 s | 0.90 GiB |
+| B3 | 15,000 | 8,760 | 109,500,000 | 804.69 MiB | 98.99 s | 3.14 GiB |
 
 "Translated values" is the snapshot count multiplied by the count of time series that the
 run wrote. B1 and A2 are the same network, so the table gives that row one time.
@@ -68,51 +68,50 @@ Three facts come out of this table.
 
 - **The topology costs almost nothing.** A4 and B2 hold about the same count of values,
   26.3 million against 21.9 million. B2 holds ten times the components of A4, 3,000
-  against 300. Their time is 15.12 s against 15.28 s, and their peak memory is 0.92 GiB
-  against 0.95 GiB. Ten times the topology changes neither figure.
+  against 300. Their time is 18.79 s against 17.28 s, and their peak memory is 0.88 GiB
+  against 0.90 GiB. Ten times the topology changes neither figure.
 - **The peak memory grows slowly.** A1 to A4 multiplies the values by 105 and the peak
-  memory by 3. Between A2 and A4 the peak memory grows by about 15 bytes for each new
+  memory by 3. Between A2 and A4 the peak memory grows by about 13 bytes for each new
   value. The translator reads and writes the values in blocks, and holds one block at a
   time.
 - **The time grows more slowly than the data.** A1 to A4 multiplies the values by 105 and
-  the time by 8.4.
+  the time by 9.1.
 
 ## The three PLEXOS models
 
 These are published models. The case study pages say where to download each one.
+`plexos-to-sienna` is one direct pipeline. `plexos-to-pypsa` runs `plexos-to-sienna` and
+then `sienna-to-pypsa`, so each of its rows holds both legs.
 
 | Model | Pipeline | XML size | Traces on disk | Snapshots | Time | Peak memory |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| [SEM 2024-2032](case_studies/sem-2024-2032.md), year 2026 | `plexos-to-pypsa` | 28.5 MiB | 86.6 MiB | 8,760 | 8.57 s | 0.84 GiB |
-| SEM 2024-2032, year 2026 | `plexos-to-sienna` | 28.5 MiB | 86.6 MiB | 8,760 | 8.95 s | 0.87 GiB |
-| [CAISO SA26](case_studies/caiso-sa26.md), Model `M09Y2026 SA26` | `plexos-to-pypsa` | 13.2 MiB | 4.08 GiB | 720 | 74.28 s | 1.57 GiB |
-| CAISO SA26, Model `M09Y2026 SA26` | `plexos-to-sienna` | 13.2 MiB | 4.08 GiB | 720 | 76.44 s | 1.59 GiB |
-| [AEMO 2024 ISP](case_studies/aemo-isp-2024.md), Step Change, whole Horizon | `plexos-to-pypsa` | 29.1 MiB | 1.75 GiB | 17,520 | 110.73 s | 2.30 GiB |
-| AEMO 2024 ISP, Step Change, year 2025 | `plexos-to-sienna` | 29.1 MiB | 1.75 GiB | 8,688 | 109.20 s | 2.32 GiB |
+| [SEM 2024-2032](case_studies/sem-2024-2032.md), year 2026 | `plexos-to-pypsa` | 28.5 MiB | 86.6 MiB | 8,760 | 11.53 s | 0.85 GiB |
+| SEM 2024-2032, year 2026 | `plexos-to-sienna` | 28.5 MiB | 86.6 MiB | 8,760 | 7.16 s | 0.63 GiB |
+| [CAISO SA26](case_studies/caiso-sa26.md), Model `M09Y2026 SA26` | `plexos-to-pypsa` | 13.2 MiB | 4.08 GiB | 720 | 73.75 s | 1.62 GiB |
+| CAISO SA26, Model `M09Y2026 SA26` | `plexos-to-sienna` | 13.2 MiB | 4.08 GiB | 720 | 69.79 s | 1.38 GiB |
+| [AEMO 2024 ISP](case_studies/aemo-isp-2024.md), Step Change, whole Horizon | `plexos-to-pypsa` | 29.1 MiB | 1.75 GiB | 17,520 | 109.32 s | 2.31 GiB |
+| AEMO 2024 ISP, Step Change, year 2025 | `plexos-to-sienna` | 29.1 MiB | 1.75 GiB | 8,688 | 105.59 s | 2.10 GiB |
 
 What each run wrote:
 
 | Model | Pipeline | Components | Time series | Output size |
 | --- | --- | ---: | ---: | ---: |
-| SEM 2024-2032 | `plexos-to-pypsa` | 125 | 162 | 11.5 MiB |
+| SEM 2024-2032 | `plexos-to-pypsa` | 110 | 102 | 7.9 MiB |
 | SEM 2024-2032 | `plexos-to-sienna` | 115 | 42 | 3.9 MiB |
-| CAISO SA26 | `plexos-to-pypsa` | 676 | 850 | 4.89 MiB |
-| CAISO SA26 | `plexos-to-sienna` | 691 | 394 | 4.19 MiB |
-| AEMO 2024 ISP | `plexos-to-pypsa` | not counted | not counted | 49.0 MiB |
-| AEMO 2024 ISP | `plexos-to-sienna` | 667 | 202 | 14.8 MiB |
+| CAISO SA26 | `plexos-to-pypsa` | 676 | 654 | 3.81 MiB |
+| CAISO SA26 | `plexos-to-sienna` | 691 | 412 | 4.43 MiB |
+| AEMO 2024 ISP | `plexos-to-pypsa` | not counted | not counted | 26.8 MiB |
+| AEMO 2024 ISP | `plexos-to-sienna` | 689 | 202 | 16.0 MiB |
 
-"Output size" counts the product files. It does not count `decisions.md`. That file is:
+"Output size" counts the product files. It does not count `decisions.md`, which for the
+AEMO model is:
 
-- 428 KB for the SEM PyPSA run
-- 906 KB for the SEM Sienna run
-- 2.13 MiB for the CAISO PyPSA run
-- 4.98 MiB for the CAISO Sienna run
-- 2.09 MiB for the AEMO PyPSA run
-- 4.70 MiB for the AEMO Sienna run
+- 4.05 MiB for the AEMO PyPSA run
+- 2.56 MiB for the AEMO Sienna run
 
-The two Sienna rows of each model cost about the same as the two PyPSA rows.
-`plexos-to-sienna` composes `plexos-to-pypsa` as its first leg. That second leg adds
-under 1 second to the SEM model, and about 2 seconds to the CAISO model.
+The PyPSA row of each model costs more than its Sienna row, because it runs the Sienna
+leg and then the leg back to PyPSA. That second leg adds about 4 seconds to the SEM and
+CAISO models, and about 4 seconds to the AEMO model.
 
 ## What sets the cost
 
@@ -143,7 +142,7 @@ The rows it drops still cost the time to read them.
   give the directory size because you can compare it against your own model. A run does
   not read all of it.
 - **We did not trace where the CAISO peak memory sits.** It is not in the time series,
-  because the window narrowing changed it by 0.03 GiB.
+  because the window narrowing changed it by less than 0.1 GiB.
 - **The three PLEXOS models differ in more than one way**, so the comparison between them
   shows a trend and not a controlled result. The synthetic runs above are the controlled
   result.
