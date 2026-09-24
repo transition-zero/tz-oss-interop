@@ -51,7 +51,6 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     build_load_extensions,
     build_load_ts_association,
     carrier_scope_skips,
-    choose_ensemble_samples,
     collect_ts_info,
     enrich_line_voltage,
     enrich_load_ts_stats,
@@ -81,6 +80,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaACBusCol,
     SiennaComponent,
 )
+from interop.plugins.shared.staged_samples import choose_ensemble_samples
 from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
@@ -215,7 +215,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         state = self._map_links(state)
         _relay_reserves(state, reader)
         _relay_constraints(state, reader)
-        choose_ensemble_samples(state, self._recorder)
+        choose_ensemble_samples(state, self._recorder, Framework.PYPSA)
         return state
 
     def _map_generators(self, state: State, voll_by_bus: dict[str, float]) -> State:

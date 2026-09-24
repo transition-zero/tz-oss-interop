@@ -60,6 +60,19 @@ The translator reads three inputs.
 | `extensions.json` | No | The PyPSA fields that SiennaSchemas has no home for. |
 | A companion parquet beside `extensions.json` | No | A PyPSA field that changes from snapshot to snapshot. A record in the sidecar names the file that holds it. |
 
+`sienna-to-pypsa` reads one system and writes one network. `sienna-to-pypsa-ensemble` reads a
+directory holding one subdirectory of Sienna files per Monte Carlo replication, and writes one
+PyPSA network per replication.
+
+A reader cannot list a directory, so an ensemble says what it holds. Every ensemble this
+translator writes carries an `ensemble.json` naming each replication and the file it holds,
+and the ensemble source reads that rather than guessing a directory name. An ensemble
+directory without one does not read back.
+
+Every replication of a Sienna ensemble states the same components and the same time-series
+association rows, and differs only in the values its HDF5 companion holds. So the components
+come from the first replication the manifest names, and its sidecar comes with them.
+
 The system JSON gives each component an integer `id`, and it points at another component by
 that integer. The translator replaces each integer with the name of the component. Thus
 every name in the PyPSA network is the name your Sienna system gives.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import IO, Any, ClassVar
+from typing import IO, Any, ClassVar, NamedTuple
 
 import pandas as pd
 import polars as pl
@@ -73,19 +73,38 @@ class StageSiennaSystemJson(StagesExtensionsSidecar, StagedSource):
             raise MissingInputError(self.name, "HDF5 companion", f"{params.time_series_h5_path}")
         with self._fs.open_read(params.system_json_path) as system_file:
             system = json.load(system_file)
-        topology_frames = stage_topology(system, staging_dir)
         with self._fs.open_read(params.time_series_h5_path) as h5_file:
-            time_series_frames = _stage_time_series(system, h5_file, staging_dir)
+            staged = stage_system(system, h5_file, staging_dir)
         extensions = self._stage_extensions_sidecar(params.extensions_json_path)
         return State(
             staging_dir=staging_dir,
-            source_topology=topology_frames,
-            source_time_series=time_series_frames,
+            source_topology=staged.topology,
+            source_time_series=staged.time_series,
             source_extensions=extensions,
             source_extension_series=self._stage_extension_companions(
                 params.extensions_json_path, extensions
             ),
         )
+
+
+class StagedSystem(NamedTuple):
+    """One Sienna system staged onto disk: its tables, and its series by owner and name."""
+
+    topology: dict[str, pl.LazyFrame]
+    time_series: dict[tuple[str, str], pl.LazyFrame]
+
+
+def stage_system(system: dict[str, Any], h5_file: IO[bytes], staging_dir: Path) -> StagedSystem:
+    """Stage one system JSON and its HDF5 companion into lazy scans under ``staging_dir``.
+
+    Every frame it returns scans a path under ``staging_dir``, so two systems staged into
+    one directory would each read whichever wrote last. An ensemble gives each replication
+    a directory of its own.
+    """
+    return StagedSystem(
+        topology=stage_topology(system, staging_dir),
+        time_series=_stage_time_series(system, h5_file, staging_dir),
+    )
 
 
 def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.LazyFrame]:

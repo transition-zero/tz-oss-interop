@@ -7,7 +7,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
-from interop.plugins.shared.pypsa_ensemble_manifest import (
+from interop.plugins.shared.ensemble_manifest import (
     ENSEMBLE_MANIFEST_FILENAME,
     EnsembleManifest,
     EnsembleReplication,
