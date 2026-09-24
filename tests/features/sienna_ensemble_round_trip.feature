@@ -32,8 +32,8 @@ Feature: a Sienna ensemble reads back
     And the file "outputs/networks/ensemble.json" parses as valid JSON
     And the file "outputs/networks/network_1.nc" exists
     And the file "outputs/networks/network_2.nc" exists
-    And the PyPSA network "outputs/networks/network_1.nc" load "North" has a p_set time series 100 150 200
-    And the PyPSA network "outputs/networks/network_2.nc" load "North" has a p_set time series 50 60 70
+    And the PyPSA network "outputs/networks/network_1.nc" load "North_load" has a p_set time series 100 150 200
+    And the PyPSA network "outputs/networks/network_2.nc" load "North_load" has a p_set time series 50 60 70
 
   Scenario: every replication comes back with the same static data
     Given a Plexos model
@@ -49,6 +49,6 @@ Feature: a Sienna ensemble reads back
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
     When I run the plexos-to-sienna-monte-carlo chain against "inputs/statics.xml" writing "outputs/sienna"
     And I run sienna-to-pypsa-ensemble against "outputs/sienna" writing "outputs/networks"
-    Then the PyPSA generator "GasPlant" in "outputs/networks/network_1.nc" has "p_nom" equal to 500
-    And the PyPSA generator "GasPlant" in "outputs/networks/network_2.nc" has "p_nom" equal to 500
+    Then the PyPSA network "outputs/networks/network_1.nc" generator "GasPlant" attribute "p_nom" is 500
+    And the PyPSA network "outputs/networks/network_2.nc" generator "GasPlant" attribute "p_nom" is 500
     And the PyPSA network "outputs/networks/network_1.nc" generator "GasPlant" has bus "North_Node"
