@@ -42,9 +42,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     PRIME_MOVER_COL,
     PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
-    STORAGE_SKIPS,
     STORAGE_UNIT_SOURCE,
-    SUPPLY_SKIPS,
     TECHNICAL_LIFE_COL,
     TECHNOLOGY_NAME,
     TECHNOLOGY_TYPE,
@@ -62,7 +60,9 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     build_portfolio_financial_data,
     build_retirement_potential_translations,
     build_scope_skips,
+    build_storage_skips,
     build_storage_technology_translations,
+    build_supply_skips,
     build_supply_translations,
     build_topology_mapping_translations,
     build_topology_source_table,
@@ -134,7 +134,7 @@ _UNSTATED_BUILD_YEAR = 0
 _Schema = dict[str, pl.DataType | type[pl.DataType]]
 _FillDefaults = Callable[[pl.DataFrame], pl.DataFrame]
 _BuildTranslations = Callable[[int], list[Translation]]
-_CandidateTranslations = Callable[[int, int], list[Translation]]
+_CandidateTranslations = Callable[[InvestmentsSource, int, int], list[Translation]]
 
 
 class _CandidateKind(NamedTuple):
@@ -143,7 +143,7 @@ class _CandidateKind(NamedTuple):
     source_table: str
     extendable_col: str
     fill: _FillDefaults
-    skips: tuple[SkipRule, ...]
+    skips: Callable[[InvestmentsSource], tuple[SkipRule, ...]]
     extension: Literal[ExtensionKind.GENERATOR, ExtensionKind.STORAGE]
     build: _CandidateTranslations
     schema: _Schema
@@ -159,7 +159,7 @@ _SUPPLY = _CandidateKind(
     source_table=PyPSATable.GENERATORS,
     extendable_col=PyPSAGeneratorCol.P_NOM_EXTENDABLE,
     fill=fill_supply_defaults,
-    skips=SUPPLY_SKIPS,
+    skips=build_supply_skips,
     extension=ExtensionKind.GENERATOR,
     build=build_supply_translations,
     schema=SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA,
@@ -175,7 +175,7 @@ _STORAGE = _CandidateKind(
     source_table=PyPSATable.STORAGE_UNITS,
     extendable_col=PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
     fill=fill_storage_technology_defaults,
-    skips=STORAGE_SKIPS,
+    skips=build_storage_skips,
     extension=ExtensionKind.STORAGE,
     build=build_storage_technology_translations,
     schema=STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
@@ -318,7 +318,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._write_table(
             state,
             table,
-            partial(kind.build, scope.base_year),
+            partial(kind.build, kind.source, scope.base_year),
             kind.schema,
             kind.component,
             numbering,
@@ -347,7 +347,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
                 translated_carriers=sorted(self._translated_carriers(kind)),
                 bus_names=bus_names,
             ),
-            *kind.skips,
+            *kind.skips(kind.source),
         ]
         for rule in rules:
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)

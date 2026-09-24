@@ -8,8 +8,8 @@ names the class it belongs to.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
 
@@ -53,6 +53,13 @@ class InvestmentsSource:
     component: str
     display: str
     plural: str
+    # The name this source gives a column the rules read under another name. A rule names a
+    # column once; two sources can call the value behind it two different things.
+    attribute_names: Mapping[str, str] = field(default_factory=dict)
+
+    def attribute(self, column: str | None) -> str | None:
+        """What this source calls one column, which is the column itself unless stated."""
+        return None if column is None else self.attribute_names.get(column, column)
 
     def field(
         self,
@@ -66,7 +73,7 @@ class InvestmentsSource:
             framework=self.framework,
             component=self.component,
             name=name,
-            attribute=attribute,
+            attribute=self.attribute(attribute),
             value=value,
             unit=unit,
         )
@@ -91,6 +98,7 @@ class InvestmentsSource:
             note=note,
             listed=listed,
             attribute_col=attribute_col,
+            attribute_name=self.attribute(attribute_col),
         )
 
 

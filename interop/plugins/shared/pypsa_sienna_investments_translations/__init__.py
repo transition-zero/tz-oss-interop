@@ -32,14 +32,14 @@ from ._shared import (
     yearly_fixed_charge,
 )
 from ._storage import (
-    STORAGE_SKIPS,
     STORAGE_UNIT_SOURCE,
+    build_storage_skips,
     build_storage_technology_translations,
     fill_storage_technology_defaults,
 )
 from ._supply import (
     GENERATOR_SOURCE,
-    SUPPLY_SKIPS,
+    build_supply_skips,
     build_supply_translations,
     fill_supply_defaults,
 )
@@ -60,8 +60,8 @@ __all__ = [
     "POWER_SYSTEMS_TYPE_COL",
     "PRIME_MOVER_COL",
     "REGION_COL",
-    "STORAGE_SKIPS",
-    "SUPPLY_SKIPS",
+    "build_storage_skips",
+    "build_supply_skips",
     "FOM_CHARGE_COL",
     "FOM_CHARGE_DERIVATION",
     "yearly_fixed_charge",

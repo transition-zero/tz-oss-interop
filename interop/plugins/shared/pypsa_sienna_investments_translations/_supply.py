@@ -90,15 +90,18 @@ S = SiennaSupplyTechnologyCol
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
-SUPPLY_SKIPS: tuple[SkipRule, ...] = build_expansion_skips(
-    GENERATOR_SOURCE,
-    name_col=PyPSAGeneratorCol.NAME,
-    build_limit_col=PyPSAGeneratorCol.P_NOM_MAX,
-    capacity_floor_col=PyPSAGeneratorCol.P_NOM_MIN,
-    lifetime_col=PyPSAGeneratorCol.LIFETIME,
-    overnight_cost_col=PyPSAGeneratorCol.OVERNIGHT_COST,
-    discount_rate_col=PyPSAGeneratorCol.DISCOUNT_RATE,
-)
+
+def build_supply_skips(source: InvestmentsSource) -> tuple[SkipRule, ...]:
+    """Every reason an extendable generator states no technology."""
+    return build_expansion_skips(
+        source,
+        name_col=PyPSAGeneratorCol.NAME,
+        build_limit_col=PyPSAGeneratorCol.P_NOM_MAX,
+        capacity_floor_col=PyPSAGeneratorCol.P_NOM_MIN,
+        lifetime_col=PyPSAGeneratorCol.LIFETIME,
+        overnight_cost_col=PyPSAGeneratorCol.OVERNIGHT_COST,
+        discount_rate_col=PyPSAGeneratorCol.DISCOUNT_RATE,
+    )
 
 
 def fill_supply_defaults(table: pl.DataFrame) -> pl.DataFrame:
@@ -153,167 +156,177 @@ def operation_cost_struct(fixed: pl.Expr, cost_type: pl.Expr) -> pl.Expr:
     ).cast(GENERIC_OPERATION_COST_DTYPE)
 
 
-SUPPLY_NAME = _direct(source_col=PyPSAGeneratorCol.NAME, dest_col=S.NAME)
+def _translations(source: InvestmentsSource) -> list[Translation]:
+    """Every SupplyTechnology rule, read from the source the caller names."""
+    _source = source.field
+    _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
 
-SUPPLY_AVAILABLE = _default(
-    dest_col=S.AVAILABLE,
-    value=True,
-    note="PyPSA states no availability for a candidate; the technology may be built",
-)
+    supply_name = _direct(source_col=PyPSAGeneratorCol.NAME, dest_col=S.NAME)
 
-SUPPLY_SIENNA_TYPE = Translation(
-    exprs=[],
-    make_events=lambda old, _: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAGeneratorCol.NAME],
-                    PyPSAGeneratorCol.P_NOM_EXTENDABLE,
-                    old[PyPSAGeneratorCol.P_NOM_EXTENDABLE],
-                )
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSAGeneratorCol.NAME],
-                    SIENNA_TYPE_ATTRIBUTE,
-                    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-                )
-            ],
-            derivation="an extendable Generator is a candidate, and each becomes one technology",
-        )
-    ],
-)
+    supply_available = _default(
+        dest_col=S.AVAILABLE,
+        value=True,
+        note="PyPSA states no availability for a candidate; the technology may be built",
+    )
 
-SUPPLY_POWER_SYSTEMS_TYPE = _direct(
-    source_col=PyPSAGeneratorCol.CARRIER,
-    dest_col=S.POWER_SYSTEMS_TYPE,
-    expr=pl.col(POWER_SYSTEMS_TYPE_COL),
-    derivation="carrier -> the base system type a build becomes, via the user mappings file",
-)
-
-SUPPLY_REGION = _direct(
-    source_col=PyPSAGeneratorCol.BUS,
-    dest_col=S.REGION_NAME,
-    expr=pl.col(REGION_COL),
-    derivation="the area of the bus the generator sits on",
-)
-
-SUPPLY_PRIME_MOVER = _direct(
-    source_col=PyPSAGeneratorCol.CARRIER,
-    dest_col=S.PRIME_MOVER_TYPE,
-    expr=pl.col(PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
-    derivation="carrier -> PrimeMovers via the user mappings file",
-)
-
-SUPPLY_FUEL = _direct(
-    source_col=PyPSAGeneratorCol.CARRIER,
-    dest_col=S.FUEL,
-    expr=pl.when(pl.col(FUEL_COL).is_not_null())
-    .then(pl.concat_list(pl.col(FUEL_COL)))
-    .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8))),
-    derivation="carrier -> the one ThermalFuels entry the user mappings file names, or none",
-)
-
-SUPPLY_CAPITAL_COSTS = _direct(
-    source_col=PyPSAGeneratorCol.OVERNIGHT_COST,
-    dest_col=S.CAPITAL_COSTS,
-    expr=capital_cost_struct(pl.col(PyPSAGeneratorCol.OVERNIGHT_COST)),
-    unit=UNIT_DOLLARS_PER_MW,
-    derivation="overnight_cost as the proportional term of a linear capital cost curve",
-)
-
-_cost_type = (
-    pl.when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.THERMAL_STANDARD)
-    .then(pl.lit(SiennaCostType.THERMAL))
-    .when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.HYDRO_DISPATCH)
-    .then(pl.lit(SiennaCostType.HYDRO_GEN))
-    .otherwise(pl.lit(SiennaCostType.RENEWABLE))
-)
-
-SUPPLY_OPERATION_COSTS = _direct(
-    source_col=FOM_CHARGE_COL,
-    dest_col=S.OPERATION_COSTS,
-    expr=operation_cost_struct(yearly_fixed_charge(PyPSAGeneratorCol.FOM_COST), _cost_type),
-    unit=UNIT_DOLLARS_PER_MW_YEAR,
-    derivation=FOM_CHARGE_DERIVATION,
-    note=(
-        "the cost representation follows the base system type a build becomes: thermal for a "
-        "ThermalStandard, hydro for a HydroDispatch and renewable for the rest, and each "
-        "carries the fixed term"
-    ),
-)
-
-SUPPLY_UNIT_SIZE = _direct(
-    source_col=UNIT_SIZE_COL,
-    dest_col=S.UNIT_SIZE,
-    expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
-    unit=UNIT_MW,
-    derivation="the size of one unit, from the extensions sidecar",
-)
-
-SUPPLY_CAPACITY_LIMITS = Translation(
-    exprs=[
-        capacity_limits_struct(
-            pl.col(PyPSAGeneratorCol.P_NOM_MIN), pl.col(PyPSAGeneratorCol.P_NOM_MAX)
-        ).alias(S.CAPACITY_LIMITS)
-    ],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAGeneratorCol.NAME],
-                    PyPSAGeneratorCol.P_NOM_MIN,
-                    old[PyPSAGeneratorCol.P_NOM_MIN],
-                    UNIT_MW,
+    supply_sienna_type = Translation(
+        exprs=[],
+        make_events=lambda old, _: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAGeneratorCol.NAME],
+                        PyPSAGeneratorCol.P_NOM_EXTENDABLE,
+                        old[PyPSAGeneratorCol.P_NOM_EXTENDABLE],
+                    )
+                ],
+                destinations=[
+                    _dest(
+                        old[PyPSAGeneratorCol.NAME],
+                        SIENNA_TYPE_ATTRIBUTE,
+                        SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
+                    )
+                ],
+                derivation=(
+                    "an extendable Generator is a candidate, and each becomes one technology"
                 ),
-                _source(
-                    old[PyPSAGeneratorCol.NAME],
-                    PyPSAGeneratorCol.P_NOM_MAX,
-                    old[PyPSAGeneratorCol.P_NOM_MAX],
-                    UNIT_MW,
-                ),
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSAGeneratorCol.NAME],
-                    S.CAPACITY_LIMITS,
-                    new[S.CAPACITY_LIMITS],
-                    UNIT_MW,
-                )
-            ],
-            derivation="p_nom_min, p_nom_max -> capacity_limits.{min, max}",
-        )
-    ],
-)
+            )
+        ],
+    )
 
-SUPPLY_LIFETIME = _direct(
-    source_col=TECHNICAL_LIFE_COL,
-    dest_col=S.LIFETIME,
-    expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
-    unit=UNIT_YEARS,
-    derivation="the technical life, from the extensions sidecar",
-    note="how long a built unit runs, which is not the period its cost is recovered over",
-)
+    supply_power_systems_type = _direct(
+        source_col=PyPSAGeneratorCol.CARRIER,
+        dest_col=S.POWER_SYSTEMS_TYPE,
+        expr=pl.col(POWER_SYSTEMS_TYPE_COL),
+        derivation="carrier -> the base system type a build becomes, via the user mappings file",
+    )
 
-SUPPLY_TRANSLATIONS: list[Translation] = [
-    SUPPLY_NAME,
-    SUPPLY_AVAILABLE,
-    SUPPLY_SIENNA_TYPE,
-    SUPPLY_POWER_SYSTEMS_TYPE,
-    SUPPLY_REGION,
-    SUPPLY_PRIME_MOVER,
-    SUPPLY_FUEL,
-    SUPPLY_CAPITAL_COSTS,
-    SUPPLY_OPERATION_COSTS,
-    SUPPLY_UNIT_SIZE,
-    SUPPLY_CAPACITY_LIMITS,
-    SUPPLY_LIFETIME,
-]
+    supply_region = _direct(
+        source_col=PyPSAGeneratorCol.BUS,
+        dest_col=S.REGION_NAME,
+        expr=pl.col(REGION_COL),
+        derivation="the area of the bus the generator sits on",
+    )
+
+    supply_prime_mover = _direct(
+        source_col=PyPSAGeneratorCol.CARRIER,
+        dest_col=S.PRIME_MOVER_TYPE,
+        expr=pl.col(PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
+        derivation="carrier -> PrimeMovers via the user mappings file",
+    )
+
+    supply_fuel = _direct(
+        source_col=PyPSAGeneratorCol.CARRIER,
+        dest_col=S.FUEL,
+        expr=pl.when(pl.col(FUEL_COL).is_not_null())
+        .then(pl.concat_list(pl.col(FUEL_COL)))
+        .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8))),
+        derivation="carrier -> the one ThermalFuels entry the user mappings file names, or none",
+    )
+
+    supply_capital_costs = _direct(
+        source_col=PyPSAGeneratorCol.OVERNIGHT_COST,
+        dest_col=S.CAPITAL_COSTS,
+        expr=capital_cost_struct(pl.col(PyPSAGeneratorCol.OVERNIGHT_COST)),
+        unit=UNIT_DOLLARS_PER_MW,
+        derivation="overnight_cost as the proportional term of a linear capital cost curve",
+    )
+
+    _cost_type = (
+        pl.when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.THERMAL_STANDARD)
+        .then(pl.lit(SiennaCostType.THERMAL))
+        .when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.HYDRO_DISPATCH)
+        .then(pl.lit(SiennaCostType.HYDRO_GEN))
+        .otherwise(pl.lit(SiennaCostType.RENEWABLE))
+    )
+
+    supply_operation_costs = _direct(
+        source_col=FOM_CHARGE_COL,
+        dest_col=S.OPERATION_COSTS,
+        expr=operation_cost_struct(yearly_fixed_charge(PyPSAGeneratorCol.FOM_COST), _cost_type),
+        unit=UNIT_DOLLARS_PER_MW_YEAR,
+        derivation=FOM_CHARGE_DERIVATION,
+        note=(
+            "the cost representation follows the base system type a build becomes: thermal for a "
+            "ThermalStandard, hydro for a HydroDispatch and renewable for the rest, and each "
+            "carries the fixed term"
+        ),
+    )
+
+    supply_unit_size = _direct(
+        source_col=UNIT_SIZE_COL,
+        dest_col=S.UNIT_SIZE,
+        expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
+        unit=UNIT_MW,
+        derivation="the size of one unit, from the extensions sidecar",
+    )
+
+    supply_capacity_limits = Translation(
+        exprs=[
+            capacity_limits_struct(
+                pl.col(PyPSAGeneratorCol.P_NOM_MIN), pl.col(PyPSAGeneratorCol.P_NOM_MAX)
+            ).alias(S.CAPACITY_LIMITS)
+        ],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAGeneratorCol.NAME],
+                        PyPSAGeneratorCol.P_NOM_MIN,
+                        old[PyPSAGeneratorCol.P_NOM_MIN],
+                        UNIT_MW,
+                    ),
+                    _source(
+                        old[PyPSAGeneratorCol.NAME],
+                        PyPSAGeneratorCol.P_NOM_MAX,
+                        old[PyPSAGeneratorCol.P_NOM_MAX],
+                        UNIT_MW,
+                    ),
+                ],
+                destinations=[
+                    _dest(
+                        old[PyPSAGeneratorCol.NAME],
+                        S.CAPACITY_LIMITS,
+                        new[S.CAPACITY_LIMITS],
+                        UNIT_MW,
+                    )
+                ],
+                derivation="p_nom_min, p_nom_max -> capacity_limits.{min, max}",
+            )
+        ],
+    )
+
+    supply_lifetime = _direct(
+        source_col=TECHNICAL_LIFE_COL,
+        dest_col=S.LIFETIME,
+        expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
+        unit=UNIT_YEARS,
+        derivation="the technical life, from the extensions sidecar",
+        note="how long a built unit runs, which is not the period its cost is recovered over",
+    )
+
+    translations: list[Translation] = [
+        supply_name,
+        supply_available,
+        supply_sienna_type,
+        supply_power_systems_type,
+        supply_region,
+        supply_prime_mover,
+        supply_fuel,
+        supply_capital_costs,
+        supply_operation_costs,
+        supply_unit_size,
+        supply_capacity_limits,
+        supply_lifetime,
+    ]
+    return translations
 
 
-def build_supply_translations(base_year: int, start: int) -> list[Translation]:
+def build_supply_translations(
+    source: InvestmentsSource, base_year: int, start: int
+) -> list[Translation]:
     """Every SupplyTechnology translation, including the two the caller's numbers decide."""
     return [
         row_position_id_translation(
@@ -323,7 +336,7 @@ def build_supply_translations(base_year: int, start: int) -> list[Translation]:
             note=PORTFOLIO_ID_NOTE,
             start=start,
         ),
-        *SUPPLY_TRANSLATIONS,
+        *_translations(source),
         build_financial_data_translation(
             _source,
             _dest,
