@@ -10,8 +10,7 @@ scenarios("../features/plexos_to_sienna_investments.feature")
 
 @when(
     parsers.parse(
-        'I run the plexos-to-sienna-investments chain against "{xml_path}" '
-        'writing "{portfolio_path}"'
+        'I run plexos-to-sienna-investments against "{xml_path}" writing "{portfolio_path}"'
     )
 )
 def run_plexos_to_sienna_investments(
