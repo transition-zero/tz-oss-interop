@@ -281,12 +281,16 @@ def _series_stats(state: State, key: tuple[str, str]) -> dict[str, tuple[float, 
     frame = state.source_time_series.get(key)
     if frame is None:
         return {}
-    peaks = frame.group_by("component").agg(pl.col("value").max().alias("peak")).collect()
+    peaks = (
+        frame.group_by("component")
+        .agg(pl.col("value").max().alias("peak"))
+        .collect(engine="streaming")
+    )
     firsts = (
         filter_to_sample(frame, choose_reference_sample(frame))
         .group_by("component")
         .agg(pl.col("value").sort_by("snapshot").first().alias("first"))
-        .collect()
+        .collect(engine="streaming")
     )
     first_by_name = dict(zip(firsts["component"], firsts["first"], strict=True))
     return {

@@ -13,6 +13,7 @@ from interop.plugins.shared.ensemble_manifest import (
     EnsembleReplication,
     dump_ensemble_manifest,
 )
+from interop.plugins.shared.series_batches import FloatArray
 from interop.plugins.shared.staged_samples import samples_to_write
 from interop.plugins.sinks.emit_pypsa_network import build_network
 from interop.ports.outbound.filesystem import FilesystemPort, OutputDirectory
@@ -42,7 +43,7 @@ class EmitPypsaNetworkEnsemble(Sink):
                 f"{type(self).__name__} requires {EmitPypsaNetworkEnsembleParams.__name__}, "
                 f"got {type(params).__name__}"
             )
-        series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]] = {}
+        series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]] = {}
         manifest = EnsembleManifest()
         for sample in samples_to_write(state):
             manifest.replications.append(self._write_one(state, params, sample, series_cache))
@@ -54,7 +55,7 @@ class EmitPypsaNetworkEnsemble(Sink):
         state: State,
         params: EmitPypsaNetworkEnsembleParams,
         sample: str,
-        series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]],
+        series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]],
     ) -> EnsembleReplication:
         network = build_network(state, sample, series_cache)
         dataset = network.export_to_netcdf(None)
@@ -76,7 +77,7 @@ class EmitPypsaNetworkEnsemble(Sink):
 
 
 def _evict_sample(
-    series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]], sample: str
+    series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]], sample: str
 ) -> None:
     """Drop every entry a just-written sample's network read, once nothing needs it again.
 
