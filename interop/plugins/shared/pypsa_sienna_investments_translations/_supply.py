@@ -17,6 +17,7 @@ from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_MW,
     UNIT_YEARS,
+    Framework,
 )
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
@@ -31,9 +32,11 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
+    PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
+    InvestmentsSource,
     build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
@@ -73,6 +76,13 @@ from interop.plugins.shared.translation_runner import (
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
+GENERATOR_SOURCE = InvestmentsSource(
+    framework=Framework.PYPSA,
+    pipeline=PYPSA_TO_SIENNA_INVESTMENTS,
+    component=PyPSAComponent.GENERATOR,
+    display=PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS].display,
+    plural=PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS].plural,
+)
 _dest = partial(sienna_dest_field, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY)
 
 S = SiennaSupplyTechnologyCol
@@ -81,7 +91,7 @@ _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
 SUPPLY_SKIPS: tuple[SkipRule, ...] = build_expansion_skips(
-    PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS],
+    GENERATOR_SOURCE,
     name_col=PyPSAGeneratorCol.NAME,
     build_limit_col=PyPSAGeneratorCol.P_NOM_MAX,
     capacity_floor_col=PyPSAGeneratorCol.P_NOM_MIN,

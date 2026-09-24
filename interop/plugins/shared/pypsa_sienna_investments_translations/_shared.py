@@ -1,15 +1,21 @@
-"""Primitives every PyPSA -> Sienna investments translation module shares."""
+"""Primitives every translation into a Sienna investments portfolio shares.
+
+A portfolio holds the same components whichever framework the values came from, so the
+destination half of each rule lives here once. ``InvestmentsSource`` holds the half that
+differs: the framework a value came from, the pipeline that read it, and how a warning
+names the class it belongs to.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
 import polars as pl
 
 from interop.plugins.shared.constants import UNIT_YEARS, Framework
-from interop.plugins.shared.pypsa_constants import PyPSAComponentNaming
 from interop.plugins.shared.sienna_constants import MinMaxField
 from interop.plugins.shared.sienna_investments_constants import (
     ALL_EQUITY_DEBT_FRACTION,
@@ -27,9 +33,66 @@ from interop.plugins.shared.translation_runner import (
     SourceFieldFactory,
     Translation,
 )
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 PYPSA_TO_SIENNA_INVESTMENTS = "pypsa-to-sienna-investments"
+PLEXOS_TO_SIENNA_INVESTMENTS = "plexos-to-sienna-investments"
+
+
+@dataclass(frozen=True)
+class InvestmentsSource:
+    """Where one class of a portfolio's values came from, as the report names it.
+
+    ``component`` is what a source field states beside the framework: a PyPSA class where
+    the values come off a network, and an extension kind where they come off the sidecar a
+    Sienna hop wrote. ``display`` and ``plural`` are how a warning reads that class.
+    """
+
+    framework: Framework
+    pipeline: str
+    component: str
+    display: str
+    plural: str
+
+    def field(
+        self,
+        name: str,
+        attribute: str | None = None,
+        value: object = None,
+        unit: str | None = None,
+    ) -> SourceField:
+        """One source field of this class, for an event."""
+        return SourceField(
+            framework=self.framework,
+            component=self.component,
+            name=name,
+            attribute=attribute,
+            value=value,
+            unit=unit,
+        )
+
+    def skip(
+        self,
+        *,
+        name_col: str,
+        reason: str,
+        note: str | Any,
+        listed: SkippedNames | None = None,
+        attribute_col: str | None = None,
+    ) -> SkipReport:
+        """One reason a filter drops rows of this class."""
+        return SkipReport(
+            pipeline=self.pipeline,
+            framework=self.framework,
+            component=self.display,
+            name_col=name_col,
+            reason=reason,
+            counted_noun=self.plural,
+            note=note,
+            listed=listed,
+            attribute_col=attribute_col,
+        )
+
 
 # Enrichment columns the step adds to a source table, which finalise() drops.
 REGION_COL = "_region_name"
@@ -58,10 +121,6 @@ def yearly_fixed_charge(fom_cost_col: str) -> pl.Expr:
 
 PORTFOLIO_ID_NOTE = "assigned by position in the portfolio's components, which share one counter"
 
-investments_skip_report = partial(
-    SkipReport, pipeline=PYPSA_TO_SIENNA_INVESTMENTS, framework=Framework.PYPSA
-)
-
 UNNAMED_CARRIER_REASON = "may be built and have a carrier the user mappings file does not name"
 UNNAMED_CARRIER_NOTE = (
     "the portfolio reads a technology's Sienna type, prime mover and fuel off the carrier, "
@@ -80,7 +139,7 @@ NOT_AN_ELECTRICITY_BUS_NOTE = "bus is not an electricity (AC) bus, so it is in n
 
 
 def build_scope_skips(
-    naming: PyPSAComponentNaming,
+    source: InvestmentsSource,
     *,
     name_col: str,
     carrier_col: str,
@@ -94,12 +153,7 @@ def build_scope_skips(
     Order matters: a row the mappings file never names must not also report an unusable
     target type or an unusable bus.
     """
-    skip = partial(
-        investments_skip_report,
-        component=naming.display,
-        name_col=name_col,
-        counted_noun=naming.plural,
-    )
+    skip = partial(source.skip, name_col=name_col)
     listed = SkippedNames(column=carrier_col, label="The carriers")
     return [
         SkipRule(
@@ -161,7 +215,7 @@ NO_DISCOUNT_RATE_NOTE = (
 
 
 def build_expansion_skips(
-    naming: PyPSAComponentNaming,
+    source: InvestmentsSource,
     *,
     name_col: str,
     build_limit_col: str,
@@ -170,12 +224,7 @@ def build_expansion_skips(
     overnight_cost_col: str,
     discount_rate_col: str,
 ) -> tuple[SkipRule, ...]:
-    skip = partial(
-        investments_skip_report,
-        component=naming.display,
-        name_col=name_col,
-        counted_noun=naming.plural,
-    )
+    skip = partial(source.skip, name_col=name_col)
     return (
         SkipRule(
             keep=pl.col(build_limit_col).is_finite(),

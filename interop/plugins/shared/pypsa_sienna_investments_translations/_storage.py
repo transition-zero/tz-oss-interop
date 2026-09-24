@@ -19,6 +19,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
     UNIT_MWH,
     UNIT_YEARS,
+    Framework,
 )
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
@@ -32,14 +33,15 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
+    PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
+    InvestmentsSource,
     build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
     finite_or_null,
-    investments_skip_report,
     yearly_fixed_charge,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
@@ -84,10 +86,17 @@ S = SiennaStorageTechnologyCol
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
-NO_ENERGY_SKIP = investments_skip_report(
+STORAGE_UNIT_SOURCE = InvestmentsSource(
+    framework=Framework.PYPSA,
+    pipeline=PYPSA_TO_SIENNA_INVESTMENTS,
     component=PyPSAComponent.STORAGE_UNIT,
-    name_col=PyPSAStorageUnitCol.NAME,
-    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+    display=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].display,
+    plural=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+)
+
+_storage_skip = partial(STORAGE_UNIT_SOURCE.skip, name_col=PyPSAStorageUnitCol.NAME)
+
+NO_ENERGY_SKIP = _storage_skip(
     reason="are extendable and hold no energy",
     note=lambda row: (
         f"max_hours is {row[PyPSAStorageUnitCol.MAX_HOURS]}, so the energy capacity limits a "
@@ -96,10 +105,7 @@ NO_ENERGY_SKIP = investments_skip_report(
     attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
 )
 
-UNBOUNDED_ENERGY_SKIP = investments_skip_report(
-    component=PyPSAComponent.STORAGE_UNIT,
-    name_col=PyPSAStorageUnitCol.NAME,
-    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+UNBOUNDED_ENERGY_SKIP = _storage_skip(
     reason="are extendable and put no upper bound on the energy a build may add",
     note=(
         "max_hours is not a finite number of hours, so the technology has no energy "
@@ -110,7 +116,7 @@ UNBOUNDED_ENERGY_SKIP = investments_skip_report(
 
 STORAGE_SKIPS: tuple[SkipRule, ...] = (
     *build_expansion_skips(
-        PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
+        STORAGE_UNIT_SOURCE,
         name_col=PyPSAStorageUnitCol.NAME,
         build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
         capacity_floor_col=PyPSAStorageUnitCol.P_NOM_MIN,

@@ -22,8 +22,8 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_constants import (
-    PYPSA_COMPONENT_NAMING,
     PYPSA_NAME_COLUMN,
     PyPSAComponent,
     PyPSAComponentCol,
@@ -34,21 +34,25 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     AREA_NAME,
-    CARBON_CAP_SKIPS,
     FOM_CHARGE_COL,
     FUEL_COL,
+    GENERATOR_SOURCE,
     LOAD_TYPE_COL,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
+    PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
     STORAGE_SKIPS,
+    STORAGE_UNIT_SOURCE,
     SUPPLY_SKIPS,
     TECHNICAL_LIFE_COL,
     TECHNOLOGY_NAME,
     TECHNOLOGY_TYPE,
     UNIT_SIZE_COL,
     CandidateTechnology,
+    InvestmentsSource,
     build_association_rows,
+    build_carbon_cap_skips,
     build_carbon_cap_translations,
     build_carbon_caps_source_table,
     build_demand_translations,
@@ -62,6 +66,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     build_supply_translations,
     build_topology_mapping_translations,
     build_topology_source_table,
+    constraint_source,
     fill_storage_technology_defaults,
     fill_supply_defaults,
 )
@@ -147,6 +152,7 @@ class _CandidateKind(NamedTuple):
     fleet_types: tuple[SiennaComponent, ...]
     device_class: str
     build_year_col: str
+    source: InvestmentsSource
 
 
 _SUPPLY = _CandidateKind(
@@ -162,6 +168,7 @@ _SUPPLY = _CandidateKind(
     fleet_types=_GENERATOR_FLEET_TYPES,
     device_class=PyPSAComponent.GENERATOR,
     build_year_col=PyPSAGeneratorCol.BUILD_YEAR,
+    source=GENERATOR_SOURCE,
 )
 
 _STORAGE = _CandidateKind(
@@ -177,6 +184,7 @@ _STORAGE = _CandidateKind(
     fleet_types=_STORAGE_BASE_TYPES,
     device_class=PyPSAComponent.STORAGE_UNIT,
     build_year_col=PyPSAStorageUnitCol.BUILD_YEAR,
+    source=STORAGE_UNIT_SOURCE,
 )
 
 # In the order they take their ids, which one counter hands out in turn.
@@ -331,7 +339,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         table = kind.fill(src.collect()).filter(pl.col(kind.extendable_col))
         rules = [
             *build_scope_skips(
-                PYPSA_COMPONENT_NAMING[kind.source_table],
+                kind.source,
                 name_col=PyPSAComponentCol.NAME,
                 carrier_col=PyPSAComponentCol.CARRIER,
                 bus_col=PyPSAComponentCol.BUS,
@@ -440,14 +448,15 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         if not records:
             return
         table = build_carbon_caps_source_table(records, _model_components(state, candidates))
-        for rule in CARBON_CAP_SKIPS:
+        source = constraint_source(Framework.PYPSA, PYPSA_TO_SIENNA_INVESTMENTS)
+        for rule in build_carbon_cap_skips(source):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
         if table.is_empty():
             return
         self._write_table(
             state,
             table,
-            build_carbon_cap_translations,
+            partial(build_carbon_cap_translations, source),
             CARBON_CAPS_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.CARBON_CAPS,
             numbering,
