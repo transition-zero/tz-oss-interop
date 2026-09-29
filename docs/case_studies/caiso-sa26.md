@@ -89,7 +89,7 @@ and the `Net Import Limit*` row.
 
 interop reads May to September and ignores the other seven months. It rolls the finer
 fuels up to the categories that the stack model uses, and drops any row whose fuel is not
-in the table below — the `Total` check figure among them.
+in the table below, the `Total` check figure among them.
 
 | Appendix fuel | Category |
 | --- | --- |
@@ -384,9 +384,20 @@ Select `translate`. Then give these answers:
 | names each replication's directory | Keep the default, `{sample}` |
 | User mappings file | `inputs/plexos_user_mappings.yaml` |
 
-That run writes one directory per replication, `1`, `2` and `3`, each holding four files:
-`system.json`, its HDF5 companion `system_time_series_storage.h5`, `extensions.json`, and the
-`reserves.parquet` that the reserve records point at. Those files are the product.
+That run writes an `ensemble.json` naming each replication, and one directory per
+replication, `1`, `2` and `3`. Each directory holds six files:
+
+| File | Holds |
+| --- | --- |
+| `system.json` | The components. |
+| `system_time_series_storage.h5` | The values of each time series the system names. |
+| `extensions.json` | Each value this model states that Sienna has no field for. |
+| `reserves.parquet` | The megawatts each reserve requires at each snapshot. |
+| `generators.parquet` | What each generator costs per MWh at each snapshot, where its fuel is priced by a data file. |
+| `storage.parquet` | The share of its rating each storage unit reaches at each snapshot, where a units-out trace derates it. |
+
+Those files are the product. The last two carry values that a Sienna component states no
+field for, static or varying, so the sidecar names the file each one rides in.
 
 Each system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
 `RenewableDispatch`, 246 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
