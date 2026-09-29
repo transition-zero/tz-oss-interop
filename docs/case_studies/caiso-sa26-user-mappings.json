@@ -1,0 +1,229 @@
+{
+  "carriers": [
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_AZ/Cal_Blythe",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_AZ_North",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_AZ_North-South",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_Kern",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_PG&E BB",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_PG&E LT",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_Rosarito_CA",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_SDG&E",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Cal_SoCalGas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Nevada_South",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_Oregon_Malin",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NG_UT_Opal",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "Oil_DistillateFuel_2_CA",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "Uranium",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NUCLEAR",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "DR - High",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "DR - Mid",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "DefaultFuel",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "Dummy",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CIPB",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CIPV",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CISC",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CISD",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "OOS",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "DR",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "LFD",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CA Hydro",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "HY"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CA NonRPS PV",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "PVe"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "HYBD_Solar",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "PVe"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CoLocatedSolarWind",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "ISORPS WindSolar",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "CA RPS",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "GeoBio",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "Pumped Storage",
+      "sienna_component_type": "EnergyReservoirStorage",
+      "sienna_prime_mover_type": "PS"
+    }
+  ]
+}

@@ -153,18 +153,217 @@ running PowerSimulations.jl needs. PowerSimulations solves no Monte Carlo foreca
 ensemble is one whole system per replication rather than one system holding every
 replication. That translation is a run of its own, with its own mappings file.
 
-Write `inputs/plexos_user_mappings.yaml` in PLEXOS words. This model has 18 Fuel objects and
-15 generator categories, and every one of them needs a row.
+#### The carrier mappings file
+
+A Sienna generator states a `prime_mover_type`, and a thermal one also states a `fuel_type`.
+PLEXOS states neither, so you give the translator a file that says what each of your own
+words becomes.
 [The mapping document](../translation_mappings/translation-from-plexos-to-sienna.md#the-carrier-mappings-file)
 states the shape of a row.
 
-Two of the categories need a decision. `CIPB`, `CIPV`, `CISC`, `CISD` and `OOS` carry imports
-into the system; Sienna has no import component, so give each one `ThermalStandard` with the
-fuel `OTHER`, and the solve can then draw on the energy they bring. A generator in the
-`CA Hydro` category is a hydro plant rather than a Storage, so give it `RenewableDispatch`
-with the prime mover `HY`, not `HydroDispatch`, which this translation reaches only from a
-Storage. Leaving either group out costs the system 17 generators and about 5 GW, and the
-September solve then has no solution at all.
+This model has 18 Fuel objects and 15 generator categories, and every one of them takes a
+row. The block below gives all 33. Copy it into `inputs/plexos_user_mappings.yaml`.
+
+```yaml
+carriers:
+  # --- Fuel objects ---------------------------------------------------------------
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ/Cal_Blythe"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ_North"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ_North-South"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_Kern"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_PG&E BB"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_PG&E LT"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_Rosarito_CA"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_SDG&E"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_SoCalGas"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Nevada_South"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Oregon_Malin"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_UT_Opal"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Oil_DistillateFuel_2_CA"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: DISTILLATE_FUEL_OIL
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Uranium"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NUCLEAR
+    sienna_prime_mover_type: ST
+  - plexos_concept: fuel
+    plexos_name: "DR - High"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "DR - Mid"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "DefaultFuel"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Dummy"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  # --- Generator categories -------------------------------------------------------
+  - plexos_concept: category
+    plexos_name: "CIPB"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CIPV"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CISC"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CISD"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "OOS"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "DR"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "LFD"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CA Hydro"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: HY
+  - plexos_concept: category
+    plexos_name: "CA NonRPS PV"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - plexos_concept: category
+    plexos_name: "HYBD_Solar"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - plexos_concept: category
+    plexos_name: "CoLocatedSolarWind"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "ISORPS WindSolar"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CA RPS"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "GeoBio"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "Pumped Storage"
+    sienna_component_type: EnergyReservoirStorage
+    sienna_prime_mover_type: PS
+```
+
+The same 33 rows sit beside this page as
+[`caiso-sa26-user-mappings.json`](caiso-sa26-user-mappings.json). A mappings file is read as
+YAML, and YAML reads JSON, so you can give that file to the `User mappings file?` prompt as
+it stands.
+
+#### The rows that need a decision
+
+Most rows follow their own name. Six groups do not.
+
+- **The import categories.** `CIPB`, `CIPV`, `CISC`, `CISD` and `OOS` carry imports into the
+  system. Sienna has no import component, so each one takes `ThermalStandard` with the fuel
+  `OTHER`, and the solve can then draw on the energy they bring.
+- **`CA Hydro`.** A generator in this category is a hydro plant rather than a Storage, so it
+  takes `RenewableDispatch` with the prime mover `HY`. It does not take `HydroDispatch`,
+  which this translation reaches only from a Storage.
+- **The gas hubs.** A Fuel name such as `NG_Cal_SoCalGas` names the hub the gas comes from,
+  and not the technology of the unit that burns it. The model states no prime mover, so each
+  of the 12 gas rows takes `OT`.
+- **The mixed categories.** `CoLocatedSolarWind` and `ISORPS WindSolar` each hold both solar
+  and wind. `GeoBio` and `CA RPS` each hold both geothermal and biomass. One row states one
+  prime mover, so each of the four takes `OT`. `GeoBio` and `CA RPS` take `ThermalStandard`,
+  because a geothermal plant and a biomass plant both run to a cost rather than to a weather
+  profile.
+- **`LFD`.** The three generators of this category sit on a node of their own, which holds a
+  load of its own and no line to the rest of the system. They take `ThermalStandard` with the
+  fuel `OTHER`, and they supply that one load.
+- **The rows that reach no generator.** `DefaultFuel` and `Dummy` name no generator that the
+  translation keeps. The `DR` category and the `DR - High` and `DR - Mid` fuels name the 18
+  demand response generators, and the PLEXOS to PyPSA leg drops every one of them, because
+  each states its Max Capacity in a data file rather than as a value. The five rows are here
+  so that the file covers every word the model states.
+
+Leaving the import group out costs the system 13 generators and 4,485 MW. Leaving `CA Hydro`
+out costs another 4 generators and 7,570 MW. Both figures are the `p_nom` the PyPSA leg of
+the same `M09Y2026 SA26` run writes.
 
 **Cut the ensemble down first.** Every sampled CSV under `case_study_inputs/caiso-sa26/CSVFiles`
 holds 500 numbered value columns, one per replication. Keep the first three of them in each
