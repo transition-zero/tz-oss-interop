@@ -3,8 +3,8 @@
 This page gives the time and the memory that a translation needs, against the size of the
 model. It answers one question: what machine do you need to translate your own model?
 
-Every figure on this page comes from a run that we did on 2026-09-24, at interop version
-0.1.0, commit `f5fa4f2`. We did not measure a solve. A solve costs far more than a
+Every figure on this page comes from a run that we did on 2026-09-24 or 2026-09-29, at
+interop version 0.1.0, commit `f5fa4f2` or later on the same branch. We did not measure a solve. A solve costs far more than a
 translation, and the case study pages cover it.
 
 ## The machine
@@ -42,7 +42,9 @@ Each row below is a model that we ran, and not a rule that we derived.
 | A PLEXOS model with a 4.08 GiB trace directory (CAISO) | 74 s | 1.62 GiB |
 | A PLEXOS model whose traces hold 199 million values (AEMO) | 109 s | 2.31 GiB |
 | A PyPSA network of 26 million time series values | 19 s | 0.88 GiB |
-| A PyPSA network of 110 million time series values | 99 s | 3.14 GiB |
+| A PyPSA network of 125 million values, 500,000 snapshots | 80 s | 2.48 GiB |
+| A PyPSA network of 110 million values, 10,000 generators | 99 s | 3.14 GiB |
+| A PyPSA network of 219 million values, 20,000 generators | 283 s | 6.79 GiB |
 
 A laptop with 8 GiB of memory translates each of these models.
 
@@ -58,11 +60,17 @@ snapshots at 8,760 and grows the topology.
 | A2 | 300 | 8,760 | 2,190,000 | 16.40 MiB | 2.93 s | 0.59 GiB |
 | A3 | 300 | 35,040 | 8,760,000 | 65.26 MiB | 6.95 s | 0.75 GiB |
 | A4 | 300 | 105,120 | 26,280,000 | 195.66 MiB | 18.79 s | 0.88 GiB |
+| A5 | 300 | 200,000 | 50,000,000 | 294.77 MiB | 28.86 s | 1.28 GiB |
+| A6 | 300 | 500,000 | 125,000,000 | 741.13 MiB | 79.92 s | 2.48 GiB |
 | B2 | 3,000 | 8,760 | 21,900,000 | 162.17 MiB | 17.28 s | 0.90 GiB |
+| B2.5 | 7,500 | 8,760 | 54,750,000 | 316.92 MiB | 54.80 s | 1.26 GiB |
 | B3 | 15,000 | 8,760 | 109,500,000 | 804.69 MiB | 98.99 s | 3.14 GiB |
+| B4 | 30,000 | 8,760 | 219,000,000 | 1,259.4 MiB | 283.14 s | 6.79 GiB |
 
 "Translated values" is the snapshot count multiplied by the count of time series that the
-run wrote. B1 and A2 are the same network, so the table gives that row one time.
+run wrote. B1 and A2 are the same network, so the table gives that row one time. A5, A6,
+B2.5 and B4 were measured on 2026-09-29; their components column counts buses, generators
+and loads, and their translated values are computed from the same rule as the others.
 
 Three facts come out of this table.
 
@@ -70,10 +78,14 @@ Three facts come out of this table.
   26.3 million against 21.9 million. B2 holds ten times the components of A4, 3,000
   against 300. Their time is 18.79 s against 17.28 s, and their peak memory is 0.88 GiB
   against 0.90 GiB. Ten times the topology changes neither figure.
-- **The peak memory grows slowly.** A1 to A4 multiplies the values by 105 and the peak
-  memory by 3. Between A2 and A4 the peak memory grows by about 13 bytes for each new
-  value. The translator reads and writes the values in blocks, and holds one block at a
-  time.
+- **The peak memory grows slowly along the snapshots.** A1 to A6 multiplies the values by
+  500 and the peak memory by 8. Between A2 and A6 the peak memory grows by about 16 bytes
+  for each new value. The translator reads and writes the values in blocks, and holds one
+  block at a time.
+- **Many components cost more than many snapshots.** B4 holds 219 million values and
+  needs 6.79 GiB, where A6 holds 125 million and needs 2.48 GiB. From B3 to B4 the values
+  double and the peak memory grows by 2.2 times, so past 10,000 generators the component
+  count sets the memory as much as the values do.
 - **The time grows more slowly than the data.** A1 to A4 multiplies the values by 105 and
   the time by 9.1.
 
