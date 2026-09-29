@@ -46,6 +46,7 @@ from interop.plugins.shared.plexos_sienna_translations._shared import (
 )
 from interop.plugins.shared.pypsa_constants import PYPSA_LOAD_SIGN
 from interop.plugins.shared.pypsa_time_series import series_components
+from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
     TIME_SERIES_ASSOCIATION_SCHEMA,
@@ -286,13 +287,13 @@ def _series_stats(state: State, key: tuple[str, str]) -> dict[str, tuple[float, 
         .agg(pl.col("value").max().alias("peak"))
         .collect(engine="streaming")
     )
-    firsts = (
-        filter_to_sample(frame, choose_reference_sample(frame))
-        .group_by("component")
-        .agg(pl.col("value").sort_by("snapshot").first().alias("first"))
-        .collect(engine="streaming")
+    firsts = build_earliest_values(
+        filter_to_sample(frame, choose_reference_sample(frame)),
+        component="component",
+        snapshot="snapshot",
+        value="value",
     )
-    first_by_name = dict(zip(firsts["component"], firsts["first"], strict=True))
+    first_by_name = dict(zip(firsts["component"], firsts["value"], strict=True))
     return {
         name: (float(peak), float(first_by_name[name]))
         for name, peak in zip(peaks["component"], peaks["peak"], strict=True)

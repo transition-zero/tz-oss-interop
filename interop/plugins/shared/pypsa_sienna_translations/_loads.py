@@ -36,6 +36,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
@@ -175,17 +176,12 @@ def _first_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
     Every replication states a value at that snapshot, so without narrowing to one the
     answer is whichever row the frame happens to hold first.
     """
-    return (
-        filter_to_sample(ts_p, choose_reference_sample(ts_p))
-        .group_by(PyPSATimeSeriesCol.COMPONENT)
-        .agg(
-            pl.col(PyPSATimeSeriesCol.VALUE)
-            .sort_by(PyPSATimeSeriesCol.SNAPSHOT)
-            .first()
-            .alias(_TS_FIRST)
-        )
-        .collect(engine="streaming")
-    )
+    return build_earliest_values(
+        filter_to_sample(ts_p, choose_reference_sample(ts_p)),
+        component=PyPSATimeSeriesCol.COMPONENT,
+        snapshot=PyPSATimeSeriesCol.SNAPSHOT,
+        value=PyPSATimeSeriesCol.VALUE,
+    ).rename({PyPSATimeSeriesCol.VALUE: _TS_FIRST})
 
 
 def build_load_ts_association(
