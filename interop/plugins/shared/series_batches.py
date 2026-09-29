@@ -16,7 +16,7 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 FloatArray = NDArray[np.float64]
 
 # Rows one batch of components holds in memory between its read and its write.
-ROWS_PER_BATCH = 4_000_000
+ROWS_PER_BATCH = 1_000_000
 
 
 def list_component_batches(frame: pl.LazyFrame) -> list[list[str]]:
