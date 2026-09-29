@@ -18,6 +18,7 @@ from interop.adapters.inbound.interactive_cli.app import Command, _dispatch, run
 from interop.di.container import make_container
 from interop.lints import plugin_filesystem, plugin_inheritance
 from interop.main import app as run_main
+from interop.plugins.shared.plexos_sienna_user_mappings import PlexosSiennaCarrierMappings
 from interop.ports.inbound.init_project import InitProjectUseCase
 from interop.ports.inbound.translate import HANDOFF_WRITES_LABEL, PROJECT_WRITES_LABEL
 
@@ -959,3 +960,13 @@ def run_sienna_to_power_simulations(
             Path(ps_json_path).parent / "power_simulations_system_time_series.h5"
         ),
     )
+
+
+def parse_plexos_carrier_mappings(document: dict[str, Any]) -> list[dict[str, Any]]:
+    """The carrier rows of a PLEXOS mappings document, read through the model interop uses.
+
+    The model rejects a Sienna component type, fuel type or prime mover that no enum holds,
+    so a document that comes back is one a plexos-to-sienna run accepts.
+    """
+    mappings = PlexosSiennaCarrierMappings.model_validate(document)
+    return [row.model_dump(mode="json") for row in mappings.carriers]
