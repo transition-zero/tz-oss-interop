@@ -78,6 +78,11 @@ Select `translate`. Then give these answers to the prompts:
 | a four-digit year such as 2026 | Leave empty. Then the snapshots are the chronology of the Model. |
 | Output | `outputs/isp-step-change.nc` |
 | the extensions sidecar | `outputs/extensions.json` |
+| User mappings file | `inputs/plexos_user_mappings.yaml` |
+
+`plexos-to-pypsa` translates through Sienna, so it reads the same carrier mappings file
+that the Sienna path reads. [The Sienna path](#the-sienna-path) below says what that file
+holds and how to write it.
 
 The XML file of each scenario contains one PLEXOS Model. The name of that Model is the name
 of the scenario. Thus you must give `Step Change`, `Progressive Change` or
@@ -100,8 +105,9 @@ window and the default look-ahead. For more data about these prompts, refer to
 ### The Sienna path
 
 The same model also translates to a Sienna system, which is what a partner running
-PowerSimulations.jl needs. That translation is a run of its own, with its own mappings file.
-This section covers the Step Change scenario. The other two follow the same steps.
+PowerSimulations.jl needs. That translation is a run of its own, and it reads the same
+mappings file. This section covers the Step Change scenario. The other two follow the same
+steps.
 
 Write `inputs/plexos_user_mappings.yaml` in PLEXOS words. This model has 63 Fuel objects,
 each named for a power station, and 54 generator categories, so the file is long.

@@ -1,0 +1,266 @@
+{
+  "carriers": [
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "Aughinish Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "Biomass",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER_BIOMASS_SOLIDS",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "DB1 Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "France Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "GB Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "HVO",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER_BIOMASS_LIQUIDS",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Coal",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "COAL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Distillate",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Gas 50-50 St Cap",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Gas w STC",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Oil",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "RESIDUAL_FUEL_OIL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "NI Waste",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "MUNICIPAL_WASTE",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Coal",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "COAL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Distillate",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Gas",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Gas 50-50 St Cap",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Gas w STC",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Oil",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "RESIDUAL_FUEL_OIL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Peat",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "fuel",
+      "plexos_name": "ROI Waste",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "MUNICIPAL_WASTE",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "BIOMASS ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER_BIOMASS_SOLIDS",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "COAL NI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "COAL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "COAL ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "COAL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "DISTILLATE NI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "DISTILLATE ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "DISTILLATE_FUEL_OIL",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "France IC Bid",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "GAS NI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "GAS ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "CC"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "GB IC Bid",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "NATURAL_GAS",
+      "sienna_prime_mover_type": "OT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "HVO",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "OTHER_BIOMASS_LIQUIDS",
+      "sienna_prime_mover_type": "GT"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "HYDRO ROI",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "HY"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "OIL ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "RESIDUAL_FUEL_OIL",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "PUMPED STORAGE ROI",
+      "sienna_component_type": "EnergyReservoirStorage",
+      "sienna_prime_mover_type": "PS"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "Solar",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "PVe"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "WASTE NI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "MUNICIPAL_WASTE",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "WASTE ROI",
+      "sienna_component_type": "ThermalStandard",
+      "sienna_fuel_type": "MUNICIPAL_WASTE",
+      "sienna_prime_mover_type": "ST"
+    },
+    {
+      "plexos_concept": "category",
+      "plexos_name": "WIND",
+      "sienna_component_type": "RenewableDispatch",
+      "sienna_prime_mover_type": "WT"
+    }
+  ]
+}

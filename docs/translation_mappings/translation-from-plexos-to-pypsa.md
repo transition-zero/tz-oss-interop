@@ -10,6 +10,13 @@ It gives the source of each field.
 > an extendable component for it; refer to [What a candidate is](#what-a-candidate-is). The
 > `plexos-to-pypsa-monte-carlo-reliability` pipeline also adds a load shedding generator at
 > each bus. Refer to [Load shedding](#load-shedding).
+>
+> **`plexos-to-pypsa` translates through Sienna**, so it reads a carrier mappings file.
+> Refer to
+> [The carrier mappings file](translation-from-plexos-to-sienna.md#the-carrier-mappings-file).
+> A generator whose `Fuel` or category has no row in that file does not reach the network,
+> and `decisions.md` names it. The two Monte Carlo pipelines translate straight into PyPSA
+> and read no mappings file.
 
 ---
 
