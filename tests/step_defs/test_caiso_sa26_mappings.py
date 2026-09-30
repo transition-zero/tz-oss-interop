@@ -50,7 +50,9 @@ def given_page_carriers() -> list[dict[str, Any]]:
 
 @given("the carriers the CAISO case study file holds", target_fixture="file_carriers")
 def given_file_carriers() -> list[dict[str, Any]]:
-    return json.loads(MAPPINGS_PATH.read_text(encoding="utf-8"))[CARRIERS_KEY]
+    carriers = json.loads(MAPPINGS_PATH.read_text(encoding="utf-8"))[CARRIERS_KEY]
+    assert isinstance(carriers, list) and carriers, f"no carriers in {MAPPINGS_PATH}"
+    return carriers
 
 
 @then("the page and the file name the same carriers")
