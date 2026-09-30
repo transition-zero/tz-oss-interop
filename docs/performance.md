@@ -78,16 +78,45 @@ Three facts come out of this table.
   hold about the same count of values, 26.3 million against 21.9 million. B2 holds ten
   times the components of A4, 3,000 against 300. Their time is 18.79 s against 16.79 s,
   and their peak memory is 0.67 GiB against 0.66 GiB.
-- **The peak memory is nearly flat along the snapshots.** A1 to A6 multiplies the values
-  by 500 and the peak memory by 3.5, from 0.31 GiB to 1.10 GiB. Between A2 and A6 the peak
-  memory grows by about 5 bytes for each new value. The translator reads and writes the
-  values in blocks, and holds one block at a time. What remains is the buffer the Polars
-  streaming engine keeps for a scan.
+- **The memory the process owns is flat along the snapshots.** A1 to A6 multiplies the
+  values by 500. The resident set grows from 0.31 GiB to 1.10 GiB, and the section below
+  shows that the growth is the memory-mapped Parquet, not memory the process holds. The
+  translator reads and writes the values in blocks, and holds one block at a time.
 - **Many components cost more than many snapshots.** B4 holds 219 million values and
   needs 6.77 GiB, where A6 holds 125 million and needs 1.10 GiB. The component tables sit
   in memory, and past a few thousand components they set the peak.
 - **The time grows more slowly than the data.** A1 to A6 multiplies the values by 500 and
   the time by 60.
+
+## What the peak counts
+
+`Maximum resident set size` counts two kinds of memory. Anonymous memory is what the
+process allocates, and what runs out. File-backed memory is the pages of a memory-mapped
+file that the process touched, and the kernel takes them back whenever it needs them.
+Polars memory-maps each Parquet file it scans, so every staged time series it reads adds
+its size to the resident set, without holding it.
+
+We sampled both, every 50 ms, over one run of each synthetic network, on 2026-09-30 at
+commit `b5bb613`. The networks were built again on that machine, so their netCDF sizes
+differ a little from the table above.
+
+| Run | netCDF size | Time | Anonymous | File-backed | Resident |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| A1 | 1.6 MB | 0.8 s | 0.21 GiB | 0.13 GiB | 0.33 GiB |
+| A2 | 13.5 MB | 2.2 s | 0.35 GiB | 0.13 GiB | 0.48 GiB |
+| A3 | 53.8 MB | 4.4 s | 0.44 GiB | 0.17 GiB | 0.55 GiB |
+| A4 | 161.8 MB | 12.8 s | 0.54 GiB | 0.26 GiB | 0.66 GiB |
+| A5 | 309.1 MB | 35.5 s | 0.56 GiB | 0.38 GiB | 0.72 GiB |
+| A6 | 777.1 MB | 134.3 s | 0.56 GiB | 0.76 GiB | 1.08 GiB |
+| B2 | 133.3 MB | 13.0 s | 0.53 GiB | 0.24 GiB | 0.69 GiB |
+| B2.5 | 332.3 MB | 38.0 s | 0.84 GiB | 0.40 GiB | 1.18 GiB |
+| B3 | 662.8 MB | 95.6 s | 2.24 GiB | 0.68 GiB | 2.86 GiB |
+| B4 | 1,320.5 MB | 310.7 s | 5.58 GiB | 1.27 GiB | 6.84 GiB |
+
+Along the snapshots, the anonymous memory stops at 0.56 GiB from A4 on. Five times the
+values, from A4 to A6, adds nothing to it. The resident set keeps growing, and all of that
+growth is file-backed. Along the components, the anonymous memory grows with the component
+count, because the component tables sit in memory.
 
 ## The three PLEXOS models
 
