@@ -268,28 +268,6 @@ def run_translate_plexos_to_pypsa(
 
 
 @when(
-    parsers.parse(
-        'I run translate against "{xml_path}" pipeline "{pipeline}" sink output dir "{output_dir}"'
-    )
-)
-def run_translate_plexos_ensemble(
-    monkeypatch: pytest.MonkeyPatch,
-    xml_path: str,
-    pipeline: str,
-    output_dir: str,
-) -> None:
-    invoke_translate(
-        monkeypatch,
-        "plexos",
-        "pypsa",
-        pipeline,
-        user_mappings_path=PLEXOS_MAPPINGS_PATH,
-        source_path=str(Path(xml_path)),
-        sink_0_output_dir=output_dir,
-    )
-
-
-@when(
     parsers.re(
         r'I run translate against "(?P<xml_path>[^"]+)" pipeline "(?P<pipeline>[^"]+)" '
         r'for model "(?P<model>[^"]+)" sink output "(?P<sink_output>[^"]+)"$'

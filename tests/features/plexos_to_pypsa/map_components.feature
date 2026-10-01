@@ -309,3 +309,12 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     When I run translate against "inputs/undated.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "outputs/network.nc" exists
     And the log contains "profiles/load.csv holds 1 row(s) whose date cannot be read as a point in time, so each is left out"
+
+  Scenario: a Region VoLL is reported as dropped, because Sienna has no home for one
+    Given a Plexos model
+    And the model contains region "Grid" with VoLL 2000
+    And the model contains node "North" in region "Grid" with voltage 500
+    And the model contains load "North" with peak 1000
+    And the model is saved as "inputs/unpriced_voll.xml"
+    When I run translate against "inputs/unpriced_voll.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "decisions.md" contains "Sienna has no home for a region VoLL"

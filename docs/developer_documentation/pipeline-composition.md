@@ -63,18 +63,18 @@ hand-off.
 
 A leg may need a user mappings file whose vocabulary the user never chose. A composed
 manifest can name mapping pipelines, which run before the legs and derive the files the
-legs consume from the one file the user wrote. `plexos-to-sienna-monte-carlo` names one,
-because its second leg wants carriers where a PLEXOS user thinks in objects, categories
-and fuels.
+legs consume from the one file the user wrote. No pipeline on the translate menu names one.
+The archived `plexos-to-sienna-via-pypsa` in `pipelines/archive/` does, because its second
+leg wants carriers where a PLEXOS user thinks in objects, categories and fuels.
 
 ```yaml
 mappings:
   - pipeline: derive-plexos-sienna-mappings
 compose:
-  - pipeline: plexos-to-pypsa-monte-carlo
-  - pipeline: pypsa-to-sienna-ensemble
+  - pipeline: plexos-to-pypsa-direct
+  - pipeline: pypsa-to-sienna
     params:
-      stage_pypsa_network_ensemble.network_dir: $plexos-to-pypsa-monte-carlo.emit_pypsa_network_ensemble.output_dir
+      stage_pypsa_network_file.path: $plexos-to-pypsa-direct.emit_pypsa_network.output_path
 ```
 
 A mapping pipeline is an ordinary pipeline, living in `pipelines/mappings/` so that it never

@@ -115,43 +115,41 @@ Select `translate`. Then give these answers to the prompts:
 | --- | --- |
 | Source framework | `plexos` |
 | Destination framework | `pypsa` |
-| Pipeline | `plexos-to-pypsa-monte-carlo` |
+| Pipeline | `plexos-to-pypsa` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml` |
 | which PLEXOS Model to translate | `M09Y2026 SA26` |
 | a four-digit year such as 2026 | Leave empty. Then the Horizon of the Model gives the snapshots, and each dated value is the value in force when that Horizon starts. |
-| directory to hold the ensemble | `outputs/caiso-m09` |
-| names each network in the ensemble | Keep the default, `network_{sample}.nc` |
+| Output | `outputs/caiso-m09.nc` |
 | the extensions sidecar | `outputs/extensions.json` |
+| User mappings file | `docs/case_studies/caiso-sa26-user-mappings.json` |
 
-The translator writes 500 networks, from `network_1.nc` to `network_500.nc`. This operation
-takes approximately 1.8 GiB of disk space.
+`plexos-to-pypsa` translates through Sienna, so it reads the same carrier mappings file as the
+Sienna path below. Refer to [The carrier mappings file](#the-carrier-mappings-file).
+
+The translator writes one network, `outputs/caiso-m09.nc`. Every sampled trace of this model
+holds 500 replications, and the translator reads replication 1, the lowest, and no other. Use
+the trace files as the publisher gives them: do not cut the replication columns.
 
 You can translate the other summer months in the same way. Give the Model name
 `M05Y2026 SA26`, `M06Y2026 SA26`, `M07Y2026 SA26` or `M08Y2026 SA26`.
 
-Then select `solve`. Give the model type `pypsa` and the network
-`outputs/caiso-m09/network_1.nc`. Select an output directory. Leave the start date and the
-end date empty, because the solve must cover the full month. Give the unit commitment
-`exact`. Keep the default window and the default look-ahead. For more data about these two
-prompts, refer to [the solve tutorial](../tutorials/solve.md#pypsa-path).
+Then select `solve`. Give the model type `pypsa` and the network `outputs/caiso-m09.nc`.
+Select an output directory. Leave the start date and the end date empty, because the solve
+must cover the full month. Give the unit commitment `exact`. Keep the default window and the
+default look-ahead. For more data about these two prompts, refer to
+[the solve tutorial](../tutorials/solve.md#pypsa-path).
 
-Each objective in the table below is the objective of replication 1. If you solve the full
-directory, you get 500 objectives.
+Each objective in the table below is the objective of replication 1.
 
-If you want a measurement of the unserved energy, do the translation again with the
-`plexos-to-pypsa-monte-carlo-reliability` pipeline. That pipeline adds a load shedding
-generator at each bus. The price of each load shedding generator is the value of lost load
-of its region. Give the same answers to the prompts, but write to
-`outputs/caiso-m09-reliability`. Then solve `outputs/caiso-m09-reliability/network_1.nc`
-with the start date `2026-09-01`, the end date `2026-09-30` and the unit commitment
-`linearised`.
+No pipeline adds a load shedding resource, so this network cannot report unserved energy. An
+hour without enough capacity makes the solve infeasible instead. Refer to
+[What the number does not cover](#what-the-number-does-not-cover).
 
 ### The Sienna path
 
-The same model also translates to an ensemble of Sienna systems, which is what a partner
-running PowerSimulations.jl needs. PowerSimulations solves no Monte Carlo forecast, so the
-ensemble is one whole system per replication rather than one system holding every
-replication. That translation is a run of its own, with its own mappings file.
+The same model also translates to a Sienna system, which is what a partner running
+PowerSimulations.jl needs. It reads the same carrier mappings file as the PyPSA path above,
+and replication 1 of each sampled trace, as that path does.
 
 #### The carrier mappings file
 
@@ -365,27 +363,26 @@ Leaving the import group out costs the system 13 generators and 4,485 MW. Leavin
 out costs another 4 generators and 7,570 MW. Both figures are the `p_nom` the PyPSA leg of
 the same `M09Y2026 SA26` run writes.
 
-**Cut the ensemble down first.** Every sampled CSV under `case_study_inputs/caiso-sa26/CSVFiles`
-holds 500 numbered value columns, one per replication. Keep the first three of them in each
-file and delete the rest. Then a run gives a three-replication ensemble, which is what the
-numbers below cover. The full 500-replication claim in this page covers the PyPSA path only.
-
 Select `translate`. Then give these answers:
 
 | Prompt | Answer |
 | --- | --- |
 | Source framework | `plexos` |
 | Destination framework | `sienna` |
-| Pipeline | `plexos-to-sienna-monte-carlo` |
+| Pipeline | `plexos-to-sienna` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml` |
 | which PLEXOS Model to translate | `M09Y2026 SA26` |
 | a four-digit year such as 2026 | Leave empty, as for the PyPSA run above. |
-| directory to hold the ensemble | `outputs/caiso-m09-sienna` |
-| names each replication's directory | Keep the default, `{sample}` |
-| User mappings file | `inputs/plexos_user_mappings.yaml` |
+| the SiennaSchemas system.json | Keep the default |
+| the HDF5 companion | Keep the default |
+| the sidecar JSON | Keep the default |
+| User mappings file | `docs/case_studies/caiso-sa26-user-mappings.json` |
 
-That run writes an `ensemble.json` naming each replication, and one directory per
-replication, `1`, `2` and `3`. Each directory holds six files:
+Keep all three output paths at their defaults, or give all three the same directory. Each
+default puts its file in `outputs/`, and the parquet files below follow the sidecar, so a
+change to one path alone splits the product across two directories.
+
+That run writes six files into `outputs/`:
 
 | File | Holds |
 | --- | --- |
@@ -399,30 +396,23 @@ replication, `1`, `2` and `3`. Each directory holds six files:
 Those files are the product. The last two carry values that a Sienna component states no
 field for, static or varying, so the sidecar names the file each one rides in.
 
-Each system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
-`RenewableDispatch`, 246 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
-components, over 720 hourly snapshots, with 392 time-series associations. Every replication
-states the same components and the same associations, and the three differ only in the values
-their HDF5 companions hold.
+The system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
+`RenewableDispatch`, 245 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
+components, over 720 hourly snapshots, with 412 time-series associations.
 
 All seven CAISO reserves reach `extensions.json`, and the six whose requirement changes each
 snapshot reach `reserves.parquet` beside it. Nothing applies them.
 
-The run warns that 4 generators carry an outage profile in some of the three replications but
-not in all of them, and leaves those four profiles out. Every replication of an ensemble must
-hold the same components, so a profile that reaches only some of them is left out of all of
-them. Those four generators stay available at full output in every replication.
-
-To prove that a system dispatches, run `translate` a second time over one replication:
+To prove that the system dispatches, run `translate` a second time over it:
 
 | Prompt | Answer |
 | --- | --- |
 | Source framework | `sienna` |
 | Destination framework | `power-simulations` |
 | Pipeline | `sienna-to-power-simulations` |
-| the SiennaSchemas system.json | `outputs/caiso-m09-sienna/1/system.json` |
-| the HDF5 time-series sidecar | `outputs/caiso-m09-sienna/1/system_time_series_storage.h5` |
-| the extensions sidecar | `outputs/caiso-m09-sienna/1/extensions.json` |
+| the SiennaSchemas system.json | `outputs/system.json` |
+| the HDF5 time-series sidecar | `outputs/system_time_series_storage.h5` |
+| the extensions sidecar | `outputs/extensions.json` |
 | the PowerSystems.jl system.json | `outputs/ps/power_simulations_system.json` |
 | the HDF5 time-series sidecar | `outputs/ps/power_simulations_system_time_series.h5` |
 
@@ -436,22 +426,9 @@ whole of September 2026.
 
 ### Unserved energy on the Sienna path
 
-`plexos-to-sienna-monte-carlo` writes a `PowerLoad` for each region, which a solve must serve
-in full. Run `plexos-to-sienna-monte-carlo-reliability` instead to get a load a solve may cut.
-Give the same answers, writing to `outputs/caiso-m09-reliability`.
-
-Each region's load then becomes an `InterruptiblePowerLoad` whose `operation_cost` holds the
-value of lost load of its region. Four of the five regions state $2,000/MWh. `LFD` states
-none, so it takes PLEXOS's own default of $10,000/MWh, which is the price the PyPSA side of
-the same run sheds at.
-
-Read the unserved energy from the solve output. The power each load was asked for is in
-`results/parameters/ActivePowerTimeSeriesParameter__InterruptiblePowerLoad.csv`, in per-unit
-of the 100 MVA system base; the power the solve served is in
-`results_wide/variables/ActivePowerVariable__InterruptiblePowerLoad.csv`, in MW. Multiply the
-first by 100, subtract the second, and sum over the month. No report collects it for you,
-because the results pipeline reads the parameter file alone and the shortfall needs both
-files.
+`plexos-to-sienna` writes a `PowerLoad` for each region, which a solve must serve in full. No
+pipeline writes a load that a solve may cut, so the Sienna path cannot measure unserved energy.
+An hour without enough capacity makes the solve infeasible instead.
 
 ## Compare against the published stack model
 
@@ -481,12 +458,19 @@ your solved network and the peak days have in common.
 
 ## The headline number
 
+> [!NOTE]
+> We measured the figures in this section with the Monte Carlo pipelines, which interop no
+> longer offers. The month table came from `plexos-to-pypsa-monte-carlo`, and the Sienna
+> table from `plexos-to-sienna-monte-carlo` and its reliability variant. A row that names a
+> removed pipeline cannot be reproduced. `plexos-to-pypsa` reads the same replication 1, but
+> it now translates through Sienna, and we have not measured whether it gives the same
+> objectives.
+
 **What you can check by yourself.** All five summer months solve. Four months solve with
 exact unit commitment. May needs the linearised relaxation.
 
-The reliability pipeline for September gives zero unserved energy. That is, the load
-shedding generators supply no energy. To get this result, solve from 2026-09-01 to
-2026-09-30 with linearised unit commitment.
+The reliability pipeline for September gave zero unserved energy. That is, the load
+shedding generators supplied no energy.
 
 The translator writes a `decisions.md` file adjacent to the network. That file gives each
 source field, the destination field for it, and each component that the translator did not
@@ -520,9 +504,9 @@ The reliability solve cuts 7,467 MWh, all of it at `SDGE_load`, in 2 of the mont
 hours, and the deepest hour is 4,089 MW short. That shortfall is why the plain chain does not
 solve: a `PowerLoad` must be served in full, so a system that cannot serve it has no solution
 at all. Two replications behave the same way, so the shortfall belongs to the month rather
-than to one draw. Run the reliability chain for September. Only that chain adds a load
-shedding resource. A plain run drops the `VoLL` of each region, and `decisions.md` records
-each drop, so the system it writes holds no resource the solve can cut.
+than to one draw. Only the reliability chain added a load shedding resource, and no
+pipeline adds one now. A run drops the `VoLL` of each region, and `decisions.md` records each
+drop, so the system it writes holds no resource the solve can cut.
 
 The Sienna objective is negative because a `LoadCost` prices the load that is served rather
 than the load that is cut, and PowerSimulations applies it with a negative multiplier. PyPSA
@@ -570,12 +554,10 @@ path the reserves reach `extensions.json` beside each replication's system, and 
 whose requirement changes each snapshot reach `reserves.parquet` beside that; they are still
 unapplied.
 
-Neither `plexos-to-pypsa-monte-carlo` nor `plexos-to-sienna-monte-carlo` adds a load shedding
-resource. Thus if the capacity is less than the load in one hour, that window does not solve.
-Only the two reliability pipelines measure the unserved energy.
+No pipeline adds a load shedding resource. Thus if the capacity is less than the load in one
+hour, that window does not solve, and no run measures the unserved energy.
 
-The numbers on the Sienna path cover three replications, not 500. The 500-replication figures
-above are the PyPSA path alone.
+Both paths read replication 1 of each sampled trace, and no other.
 
 ## What it costs
 
@@ -585,10 +567,10 @@ writes approximately 1.8 GiB of networks.
 The solve takes the most time. One replication of one month is quick, but all 500
 replications take much longer. Start with one replication of one month.
 
-The Sienna path costs less on disk and more in the solve. A three-replication ensemble of
-September writes 13 MB: 1.42 MB of `system.json`, 2.82 MB of HDF5 companion, 92 KB of
-`extensions.json` and 40 KB of `reserves.parquet` for each replication. The validation run
-over one replication is quick.
+The Sienna path costs less on disk and more in the solve. A run of September writes 4.64 MB:
+1.43 MB of `system.json`, 2.96 MB of HDF5 companion, 195 KB of `extensions.json`, and 15 KB,
+15 KB and 18 KB of `reserves.parquet`, `generators.parquet` and `storage.parquet`. The
+validation run is quick.
 
 The solve is the expensive step. HiGHS dominates the run on the reliability replication, and
 loading the system, building the model and exporting the results add to it. An infeasible

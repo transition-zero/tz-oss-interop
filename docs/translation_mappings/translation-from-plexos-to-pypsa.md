@@ -7,9 +7,7 @@ It gives the source of each field.
 > constraints or hydro cascades. It carries the reserves to a sidecar file, but it does not
 > apply them. Refer to [Reserves](#reserve--extensions-sidecar) and
 > [Not translated](#not-translated). It reads what your model allows to be built and writes
-> an extendable component for it; refer to [What a candidate is](#what-a-candidate-is). The
-> `plexos-to-pypsa-monte-carlo-reliability` pipeline also adds a load shedding generator at
-> each bus. Refer to [Load shedding](#load-shedding).
+> an extendable component for it; refer to [What a candidate is](#what-a-candidate-is).
 >
 > **`plexos-to-pypsa` translates through Sienna**, so it reads a carrier mappings file.
 > Refer to
@@ -37,7 +35,7 @@ It gives the source of each field.
 | [`Emission`](#emission) | No component. It adds a carbon term to the `marginal_cost`. |
 | [`Market`](#market--generator) | An import `Generator` |
 | [`Reserve`](#reserve--extensions-sidecar) | No component. The translator carries it to the reserves sidecar, but nothing applies it. |
-| [Region `VoLL`](#load-shedding) | No component in the two faithful pipelines. In `plexos-to-pypsa-monte-carlo-reliability`, a load shedding `Generator` at each bus. |
+| Region `VoLL` | No component. `decisions.md` names it as dropped. |
 | [`Constraint`](#constraint--extensions-sidecar) | No component. The translator carries it to the sidecar, but nothing applies it. |
 | `Zone`, `Interface`, `Transformer`, `Waterway`, `Decision Variable` | [Not translated](#not-translated) |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
@@ -61,12 +59,9 @@ It gives the source of each field.
 - **Profiles go into the network.** A property that reads from a Data File CSV becomes a
   PyPSA time series. This applies to the demand, the generator availability and the hydro
   inflow. The translator extracts the modelled horizon only.
-- **Each replication becomes a network.** A Data File CSV can have numbered columns. Each
+- **One replication becomes the network.** A Data File CSV can have numbered columns. Each
   column is one replication of a Monte Carlo study. The `plexos-to-pypsa` pipeline reads
-  the lowest column. The `plexos-to-pypsa-monte-carlo` pipeline writes one network for each
-  replication into a directory. The quantity of replications comes from the data, not from
-  a setting. If one profile does not have a replication, the translator does not write that
-  replication and it gives a warning.
+  the lowest column and no other.
 - **PyPSA keeps one value where PLEXOS keeps several.** For a piecewise heat rate curve,
   the translator uses the lowest band. For a start cost that has hot, warm and cold values,
   it uses the cold start value. PLEXOS writes no band number on the first band of a
@@ -111,10 +106,8 @@ node, because one end of the line would not be a bus.
 A Region does not become a PyPSA component. It gives its name to the `location` of each of
 its buses. Its `Load` property becomes a [`Load`](#region-load--load).
 
-`Price of Dump Energy` is `dropped`. The two faithful pipelines, `plexos-to-pypsa` and
-`plexos-to-pypsa-monte-carlo`, also drop `VoLL`. The
-`plexos-to-pypsa-monte-carlo-reliability` pipeline reads `VoLL`. Refer to
-[Load shedding](#load-shedding).
+`Price of Dump Energy` is `dropped`. So is `VoLL`, because the network holds no load
+shedding resource to price.
 
 ## Region `Load` → `Load`
 
@@ -603,42 +596,6 @@ model file carries on the property itself.
 `Raise` and `Lower` name a direction only, so the product stays `unknown`. A code that is
 not in this table gives `unknown` for both. Thus a later hop can tell "we do not know which
 kind of reserve this is" from "there is no reserve here".
-
----
-
-## Load shedding
-
-A PyPSA `Load` has a fixed `p_set`. Thus a PyPSA network sheds nothing. If the capacity is
-less than the load in one hour, the solve does not complete. It does not report the
-unserved energy.
-
-The `plexos-to-pypsa-monte-carlo-reliability` pipeline adds a load shedding generator. Thus
-a reliability study can measure a shortfall. If it did not, the study would lose that
-replication to a solve that does not complete. The two faithful pipelines,
-`plexos-to-pypsa` and `plexos-to-pypsa-monte-carlo`, do not do this step. Their networks
-have no load shedding generator.
-
-The pipeline adds one `Generator` at each `Bus`, with the name `<bus>_load_shedding`:
-
-| PyPSA field | Unit | From | Mapping |
-| --- | --- | --- | --- |
-| `name` | | `<bus>_load_shedding` | `derived` |
-| `bus` | | The bus itself | `derived` |
-| `p_nom` | MW | The total peak load of the network, which is the total of the peak of each load | `derived` |
-| `carrier` | | `load_shedding` | `default` |
-| `marginal_cost` | $/MWh | The `VoLL` of the Region that contains the bus. If there is none, `10000`. | `derived` / `default` |
-| `p_min_pu` / `p_max_pu` | | `0.0` / `1.0` | `default` |
-| `committable` | | `False` | `default` |
-| `p_nom_extendable` | | `False` | `default` |
-
-The `p_nom` value is large, and this is intentional. It is the total of the peak megawatts
-of each load. Thus the shedding generator at one bus can supply the full demand of the
-network. This gives more capacity than necessary. But a shedding generator that is too
-small cannot absorb a shortfall.
-
-If a Region gives no `VoLL`, the translator uses `10000` $/MWh. That value is the declared
-default of PLEXOS for that property. It is not a value that this translation invents. The
-decisions output records the price of each shedding generator.
 
 ---
 

@@ -87,11 +87,9 @@ Two limits apply to every figure above.
   generator that fails. The translator writes those reserve requirements to a sidecar file
   beside the network, and nothing applies them. Thus our dispatch is freer than the dispatch
   of the source model.
-- **Most of these networks cannot report a shortage.** They hold no generator that supplies an
-  hour the other generators cannot cover. Thus such an hour makes the solve fail, and it gives
-  no quantity for the energy that the network did not serve. The CAISO reliability pipeline is
-  the one exception. It adds such a generator at each bus, priced at the value of lost load of
-  that bus, so a shortage becomes a number.
+- **No network can report a shortage.** None holds a generator that supplies an hour the
+  other generators cannot cover. Thus such an hour makes the solve fail, and it gives no
+  quantity for the energy that the network did not serve.
 
 ## Extending
 

@@ -175,9 +175,8 @@ The rows it drops still cost the time to read them.
 
 - **We did not measure a solve.** A solve costs far more than a translation. The case
   study pages say what each solve costs.
-- **We did not measure the Monte Carlo pipelines.** The CAISO runs used the plain
-  `plexos-to-pypsa` and `plexos-to-sienna` pipelines, and read one replication.
-  `plexos-to-pypsa-monte-carlo` reads many, so it costs more.
+- **Each CAISO run read one replication.** The runs used `plexos-to-pypsa` and
+  `plexos-to-sienna`, which read the lowest replication of a sampled trace and no other.
 - **We did not measure how many of the 4.08 GiB of CAISO traces a run reads.** A plain run
   reads the September month and one replication, so it reads a part of that directory. We
   give the directory size because you can compare it against your own model. A run does
