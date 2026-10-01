@@ -50,3 +50,9 @@ def given_echo_mapping_step_plugin() -> None:
 def assert_stderr_contains(capsys: pytest.CaptureFixture[str], expected: str) -> None:
     captured = capsys.readouterr()
     assert expected in captured.err, f"expected {expected!r} in stderr, got {captured.err!r}"
+
+
+@then(parsers.parse('the stderr output does not contain "{unexpected}"'))
+def assert_stderr_lacks(capsys: pytest.CaptureFixture[str], unexpected: str) -> None:
+    captured = capsys.readouterr()
+    assert unexpected not in captured.err, f"expected no {unexpected!r} in stderr: {captured.err!r}"

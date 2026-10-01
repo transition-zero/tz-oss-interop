@@ -53,7 +53,7 @@ my-interop-project/
   README.md
 ```
 
-`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
+`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The console shows only errors. To see the summary line and each warning, start interop with `INTEROP_LOG_LEVEL=INFO uv run interop`. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
 
 The interactive shell needs a real terminal (keypresses, cursor control).
 Beyond `translate`, the shell also offers `solve` (run a translated Sienna
