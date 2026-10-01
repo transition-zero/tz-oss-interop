@@ -339,7 +339,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/phs_vom.xml"
     When I run translate against "inputs/phs_vom.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_vom" attribute "marginal_cost" is 3.5
-    And the decisions report contains "| `plexos.Generator.phs_vom.VO&M Charge` = 3.5 $/MWh | `sienna.EnergyReservoirStorage.phs_vom.operation_cost` = 3.5 $/MWh | VO&M Charge (no fuel, so VO&M only) |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Generator.phs_vom.VO&M Charge` = 3.5 \$/MWh | `sienna.EnergyReservoirStorage.phs_vom.operation_cost` = 3.5 \$/MWh | VO&M Charge (no fuel, so VO&M only) |  | $source_leg$ | $source_storage_step$ |"
     And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_vom.operation_cost` = 3.5 | `pypsa.StorageUnit.phs_vom.marginal_cost` = 3.5 | variable cost proportional term |  | $destination_leg$ | $destination_storage_step$ |"
 
   Scenario: a battery's units-out trace derates how much it can discharge

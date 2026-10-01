@@ -24,12 +24,12 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "GasPlant" in "outputs/network.nc" has "start_up_cost" equal to 1000
     And the PyPSA generator "GasPlant" in "outputs/network.nc" is committable
     # The carbon term is derived on its own, then feeds the total as a source of it.
-    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 $/MWh | carbon price x production rate x heat rate / 1000 |"
-    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 $/MWh | `sienna.ThermalStandard.GasPlant.operation_cost` = 66.0 $/MWh | fuel price x heat rate + VO&M charge + the carbon term |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 \$/MWh | carbon price x production rate x heat rate / 1000 |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.GasPlant.operation_cost carbon term` = 40.0 \$/MWh | `sienna.ThermalStandard.GasPlant.operation_cost` = 66.0 \$/MWh | fuel price x heat rate + VO&M charge + the carbon term |"
     And the decisions report contains "| `sienna.ThermalStandard.GasPlant.operation_cost` = 66.0 | `pypsa.Generator.GasPlant.marginal_cost` = 66.0 | variable cost proportional term |  | $destination_leg$ | $destination_generator_step$ |"
     # Each value is attributed to the PLEXOS object holding it, not to the generator reading it.
-    And the file "decisions.md" contains "`plexos.Fuel.Natural Gas.Price` = 3.0 $/GJ"
-    And the file "decisions.md" contains "`plexos.Emission.CO2.Price` = 50.0 $/tonne"
+    And the file "decisions.md" contains "`plexos.Fuel.Natural Gas.Price` = 3.0 \$/GJ"
+    And the file "decisions.md" contains "`plexos.Emission.CO2.Price` = 50.0 \$/tonne"
     And the file "decisions.md" contains "`plexos.Emission.CO2.Production Rate` = 100.0 kg/GJ"
 
   Scenario: a generator's category travels in the sidecar whichever word became its carrier
@@ -412,8 +412,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/start_fuel.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "CCGT" in "outputs/network.nc" has "start_up_cost" equal to 14400
     And the file "decisions.md" contains "`plexos.Generator.CCGT.Offtake at Start` = 1800.0 GJ"
-    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 $ | Offtake at Start x the fuel's price |"
-    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 $ | `sienna.ThermalStandard.CCGT.operation_cost.start_up` = 14400.0 $ | the start fuel prices the start, since the generator states no Start Cost |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 \$ | Offtake at Start x the fuel's price |"
+    And the file "decisions.md" contains "`sienna.ThermalStandard.CCGT.operation_cost.start_up fuel term` = 14400.0 \$ | `sienna.ThermalStandard.CCGT.operation_cost.start_up` = 14400.0 \$ | the start fuel prices the start, since the generator states no Start Cost |"
     And the decisions report contains "| `sienna.ThermalStandard.CCGT.operation_cost.start_up` = 14400.0 | `pypsa.Generator.CCGT.start_up_cost` = 14400.0 | operation_cost.start_up -> start_up_cost |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a stated start cost wins over the start fuel rather than being added to it
@@ -468,7 +468,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/dual_fuel_start.xml"
     When I run translate against "inputs/dual_fuel_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "DualFuel" in "outputs/network.nc" has "start_up_cost" equal to 45000
-    And the file "decisions.md" contains "`plexos.Fuel.Distillate.Price` = 25.0 $/GJ"
+    And the file "decisions.md" contains "`plexos.Fuel.Distillate.Price` = 25.0 \$/GJ"
 
   Scenario: a minimum the availability ceiling itself makes negligible is written as zero
     Given a Plexos model
@@ -494,7 +494,7 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model contains generator "FreeStart" with "node=Grid_Node, fuel=Gas, Max Capacity=100, Heat Rate=8, Start Cost=0"
     And the model is saved as "inputs/free_start.xml"
     When I run translate against "inputs/free_start.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 $ | `sienna.ThermalStandard.FreeStart.operation_cost.start_up` = 0.0 $"
+    Then the file "decisions.md" contains "`plexos.Generator.FreeStart.Start Cost` = 0.0 \$ | `sienna.ThermalStandard.FreeStart.operation_cost.start_up` = 0.0 \$"
     And the decisions report contains "| `sienna.ThermalStandard.FreeStart.operation_cost.start_up` = 0.0 | `pypsa.Generator.FreeStart.start_up_cost` = 0.0 | operation_cost.start_up -> start_up_cost |  | $destination_leg$ | $destination_generator_step$ |"
 
   Scenario: a generator naming several start fuels starts on the one its heat rate uses
@@ -533,8 +533,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the file "outputs/extensions.json" parses as JSON generator extension record for "REZ_Solar" having "technical_life_years" set to 30.0
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Max Units Built` = 5.0 | `sienna.RenewableDispatch.REZ_Solar.extensions.p_nom_extendable` = True | Max Units Built above zero is what makes an object a candidate |"
     And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.p_nom_extendable` = True | `pypsa.Generator.REZ_Solar.p_nom_extendable` = True | extensions.p_nom_extendable (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
-    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 $/MW | `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 $/MW | direct |"
-    And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 $/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 $/MW | extensions.overnight_cost_per_mw (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
+    And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.Build Cost` = 1200000.0 \$/MW | `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 \$/MW | direct |"
+    And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.overnight_cost_per_mw` = 1200000.0 \$/MW | `pypsa.Generator.REZ_Solar.overnight_cost` = 1200000.0 \$/MW | extensions.overnight_cost_per_mw (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
     And the file "decisions.md" contains "`plexos.Generator.REZ_Solar.WACC` = 7.0 % | `sienna.RenewableDispatch.REZ_Solar.extensions.discount_rate` = 0.07 | WACC, read as a fraction where the model states a percentage |"
     And the decisions report contains "| `sienna.RenewableDispatch.REZ_Solar.extensions.discount_rate` = 0.07 | `pypsa.Generator.REZ_Solar.discount_rate` = 0.07 | extensions.discount_rate (PyPSA round-trip) |  | $destination_leg$ | $destination_generator_step$ |"
 

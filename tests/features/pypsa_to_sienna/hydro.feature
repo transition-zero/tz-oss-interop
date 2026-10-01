@@ -48,7 +48,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     # Decisions
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.carrier` = hydro | `sienna.HydroDispatch.hydro_1.type` = HydroDispatch | hydro carrier -> HydroDispatch |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.p_nom` = 100.0 MW | `sienna.HydroDispatch.hydro_1.active_power_limits` = {'min': 0.0, 'max': 100.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.marginal_cost` = 5.0 | `sienna.HydroDispatch.hydro_1.operation_cost.variable.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost ($/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.marginal_cost` = 5.0 | `sienna.HydroDispatch.hydro_1.operation_cost.variable.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
   Scenario: static p_max_pu below 1.0 derates rating, active_power_limits, and the flat cap series
     Given a PyPSA network

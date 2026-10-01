@@ -102,4 +102,13 @@ def _render_field(field_value: SourceField | DestinationField) -> str:
 
 
 def _escape_cell(text: str) -> str:
-    return text.replace("|", "\\|")
+    """Escape a table pipe, and a dollar sign a Markdown viewer would read as LaTeX math."""
+    return _escape_dollars_outside_code(text).replace("|", "\\|")
+
+
+def _escape_dollars_outside_code(text: str) -> str:
+    """A backslash inside a code span shows as itself, so only the text between spans is escaped."""
+    parts = text.split("`")
+    for index in range(0, len(parts), 2):
+        parts[index] = parts[index].replace("$", "\\$")
+    return "`".join(parts)

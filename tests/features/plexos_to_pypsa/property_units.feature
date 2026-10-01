@@ -20,7 +20,7 @@ Feature: Read a PLEXOS property in the unit the model states it in
     And the PyPSA generator "GasPlant" in "outputs/network.nc" has "efficiency" equal to 0.4265177
     # The value reads in interop's own unit, and the trail names the model's.
     And the file "decisions.md" contains "`plexos.Generator.GasPlant.Heat Rate` = 8.4404472 GJ/MWh"
-    And the file "decisions.md" contains "`plexos.Fuel.Natural Gas.Price` = 2.8434512332474515 $/GJ"
+    And the file "decisions.md" contains "`plexos.Fuel.Natural Gas.Price` = 2.8434512332474515 \$/GJ"
 
   Scenario: a carbon price stated per pound prices the same carbon as one stated per tonne
     Given a Plexos model
@@ -34,7 +34,7 @@ Feature: Read a PLEXOS property in the unit the model states it in
     And the model is saved as "inputs/carbon.xml"
     When I run translate against "inputs/carbon.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "GasPlant" in "outputs/network.nc" has "marginal_cost" equal to 40
-    And the file "decisions.md" contains "`plexos.Emission.CO2.Price` = 110.2311310924388 $/tonne"
+    And the file "decisions.md" contains "`plexos.Emission.CO2.Price` = 110.2311310924388 \$/tonne"
     And the file "decisions.md" contains "`plexos.Emission.CO2.Production Rate` = 42.99225946227115 kg/GJ"
 
   Scenario: a model stating interop's own units is left alone
