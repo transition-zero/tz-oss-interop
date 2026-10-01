@@ -36,6 +36,56 @@ To make sure that you have the correct XML file, do this command:
 shasum -a 256 "case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml"
 ```
 
+### Correct the dates in the gas price file
+
+> [!IMPORTANT]
+> You must correct the dates in `CSVFiles/FuelIndex/NG Prices.csv` before you translate.
+> If you do not, the gas prices are incorrect for most months, and you get no error.
+
+The file writes each date as month/day/year, for example `9/1/2026`. The translator cannot
+tell this layout from day/month/year, so it reads `9/1/2026` as 9 January. Thus 233 of the
+252 monthly prices go to an incorrect month. The translator cannot read the dates from
+`5/31/2044`, so it leaves out the last 19 rows. The console shows only errors, so you
+do not see this. Start interop with `INTEROP_LOG_LEVEL=WARNING uv run interop` to see the
+warning:
+
+```text
+plexos: CSVFiles\FuelIndex\NG Prices.csv holds 190 row(s) whose date cannot be read as a point in time, so each is left out
+```
+
+The count is 190 because each of the 19 rows has prices for 10 fuels.
+
+Do these commands to write each date as year-month-day. The command stops and does not
+change the file if a date is not month/day/year.
+
+```bash
+cd "case_study_inputs/caiso-sa26/CSVFiles/FuelIndex"
+cp "NG Prices.csv" "NG Prices.csv.orig"
+awk '
+BEGIN { FS = OFS = "," }
+NR == 1 { print; next }
+/^\r?$/ { print; next }
+{
+  n = split($1, d, "/")
+  if (n != 3 || length(d[3]) != 4 || d[1] < 1 || d[1] > 12 || d[2] < 1 || d[2] > 31) {
+    printf "line %d: \"%s\" is not month/day/year\n", NR, $1 > "/dev/stderr"
+    exit 1
+  }
+  $1 = sprintf("%04d-%02d-%02d", d[3], d[1], d[2])
+  print
+}' "NG Prices.csv" > "NG Prices.csv.tmp" && mv "NG Prices.csv.tmp" "NG Prices.csv"
+```
+
+To make sure that the dates are correct, do this command. It must show `2025-01-01` and
+then `2025-02-01`:
+
+```bash
+sed -n '2,3p' "NG Prices.csv" | cut -d, -f1
+```
+
+The command splits each line at each comma. This is safe for this file only, because the
+file has no quoted values.
+
 ## Get the reference data
 
 interop can compare a translated network against the numbers CAISO publishes. Those
