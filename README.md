@@ -53,7 +53,7 @@ my-interop-project/
   README.md
 ```
 
-`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
+`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The console shows only errors. To see the summary line and each warning, start interop with `INTEROP_LOG_LEVEL=INFO uv run interop`. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
 
 The interactive shell needs a real terminal (keypresses, cursor control).
 Beyond `translate`, the shell also offers `solve` (run a translated Sienna
@@ -87,11 +87,9 @@ Two limits apply to every figure above.
   generator that fails. The translator writes those reserve requirements to a sidecar file
   beside the network, and nothing applies them. Thus our dispatch is freer than the dispatch
   of the source model.
-- **Most of these networks cannot report a shortage.** They hold no generator that supplies an
-  hour the other generators cannot cover. Thus such an hour makes the solve fail, and it gives
-  no quantity for the energy that the network did not serve. The CAISO reliability pipeline is
-  the one exception. It adds such a generator at each bus, priced at the value of lost load of
-  that bus, so a shortage becomes a number.
+- **No network can report a shortage.** None holds a generator that supplies an hour the
+  other generators cannot cover. Thus such an hour makes the solve fail, and it gives no
+  quantity for the energy that the network did not serve.
 
 ## Extending
 
@@ -299,6 +297,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/tutorials/developer-tutorial.md` extends that example with a custom pipeline step (writing your own translation logic).
 - `docs/tutorials/solve.md` covers the `solve` command (Julia and PowerSimulations.jl install automatically on first run).
 - `docs/case_studies/` holds one page per published model interop has been run against: where to download it, what to answer at the prompts, and what the run measured.
+- `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three case study models and over synthetic PyPSA networks.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
 - `docs/translation_mappings/translation-from-pypsa-to-sienna.md` is the authoritative mapping reference for PyPSA / Sienna field translation.

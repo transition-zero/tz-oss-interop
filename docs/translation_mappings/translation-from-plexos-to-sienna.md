@@ -12,10 +12,10 @@ It gives the source of each field.
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
 > states that SiennaSchemas holds no type and no field for.
 
-The `plexos-to-sienna` pipeline runs through a PyPSA network on the way. This document does
-not describe that network. It states the mapping as one step, because that is what you give
-and what you get. Where the intermediate form loses something, this document says so as a
-property of the PLEXOS to Sienna mapping.
+The `plexos-to-sienna` pipeline is one step. It reads the PLEXOS tables the source stages
+and writes the Sienna tables the sink needs, and no PyPSA file and no PyPSA table sits in
+the middle. So this document states the mapping as one step, which is what you give and
+what you get.
 
 ---
 
@@ -25,7 +25,7 @@ property of the PLEXOS to Sienna mapping.
 | --- | --- |
 | [`Node`](#node--acbus) | `ACBus`, and an `Arc` for each pair of nodes a branch joins |
 | [`Region`](#region--area) | `Area`. It also gives a `PowerLoad`. |
-| [Region `Load` property](#region-load--powerload) | `PowerLoad`, or `InterruptiblePowerLoad` on a reliability run |
+| [Region `Load` property](#region-load--powerload) | `PowerLoad` |
 | [`Line`](#line--line-or-twoterminalgenerichvdcline) | `Line` if it has impedance, or `TwoTerminalGenericHVDCLine` if it has none |
 | [`Generator`](#generator--thermalstandard), thermal | `ThermalStandard` |
 | [`Generator`](#generator--renewabledispatch), renewable | `RenewableDispatch`, or `RenewableNonDispatch` where your mappings file says so |
@@ -36,7 +36,7 @@ property of the PLEXOS to Sienna mapping.
 | [`Emission`](#emission) | No component. It adds a carbon term to `operation_cost`. |
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
 | `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
-| [Region `VoLL`](#region-load--interruptiblepowerload) | The `operation_cost` of an `InterruptiblePowerLoad`, on a reliability run only. |
+| Region `VoLL` | Nothing. `decisions.md` names it as dropped, because Sienna has no home for a region `VoLL`. |
 | `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
@@ -70,6 +70,10 @@ property of the PLEXOS to Sienna mapping.
 - **Profiles go into the HDF5 companion.** A `Rating` profile, an outage profile and a demand
   profile all become a `TimeSeriesAssociation` record whose values live in
   `system_time_series_storage.h5`.
+- **A profile Sienna states no field for goes into a parquet beside the sidecar.** A
+  reservoir inflow, a storage unit's units-out derate and the cost a dated `Fuel` makes have
+  no Sienna field, static or varying, so each one rides a column of `storage.parquet` or
+  `generators.parquet`. The record in `extensions.json` names the file it rides in.
 
 ---
 
@@ -137,9 +141,8 @@ property becomes a [`PowerLoad`](#region-load--powerload). The `Area` carries a 
 its `peak_active_power`, `peak_reactive_power` and `load_response` all take zero, because
 PLEXOS states none of them on a Region.
 
-`Price of Dump Energy` is `dropped`. So is `VoLL`, except on a reliability run, which prices
-the region's load with it: refer to
-[Region `Load` -> `InterruptiblePowerLoad`](#region-load--interruptiblepowerload).
+`Price of Dump Energy` is `dropped`. So is `VoLL`, because a `PowerLoad` prices no
+shortfall.
 
 ## Region `Load` → `PowerLoad`
 
@@ -166,37 +169,6 @@ rather than reading a share as a quantity of power.
 
 A region that contains more than one node is not translated, because a Sienna `PowerLoad`
 sits on one bus.
-
-## Region `Load` → `InterruptiblePowerLoad`
-
-`plexos-to-sienna-monte-carlo-reliability` writes an `InterruptiblePowerLoad` in place of
-every `PowerLoad`. It is the Sienna type a solve may cut, so a window short of capacity
-returns a shortfall in MWh instead of failing to solve.
-
-Which chain you run decides which type you get:
-
-| The chain you run | The type each region's load becomes | What it prices |
-| --- | --- | --- |
-| `plexos-to-sienna` | `PowerLoad` | Nothing. The solve must serve every MW or fail. |
-| `plexos-to-sienna-monte-carlo` | `PowerLoad` | Nothing, as above, once per replication. |
-| `plexos-to-sienna-monte-carlo-reliability` | `InterruptiblePowerLoad` | The region's `VoLL`, per MWh cut. |
-
-The type carries every field a `PowerLoad` carries, and one more:
-
-| Sienna field | Unit | From | Mapping |
-| --- | --- | --- | --- |
-| `operation_cost` | $/MWh | The containing Region's `VoLL` | `derived` |
-
-A region that states no `VoLL` of its own takes PLEXOS's own declared default, $10,000/MWh,
-which is the price the PyPSA side of the same run sheds at.
-
-The cost is a `LoadCost` whose `variable` is a linear `CostCurve` in natural units, holding
-the price as its proportional term. PowerSimulations applies that curve to the power the
-solve serves rather than to the power it cuts, with a negative multiplier, so the objective
-number it reports is not the same quantity as a PyPSA objective. The two solves shed the same
-energy at the same price, and PyPSA adds the cost of the energy it cuts while Sienna subtracts
-the cost of the energy it serves. So the dispatches agree and the two objective numbers do not.
-Do not compare them.
 
 ## `Line` → `Line` or `TwoTerminalGenericHVDCLine`
 
@@ -505,7 +477,10 @@ energy than your model gives it.
 | PLEXOS | Effect |
 | --- | --- |
 | `Reserve` requirements | The record reaches `extensions.json`, and a varying requirement reaches `reserves.parquet` beside it, but nothing applies them. Every generator can run at full output. |
-| Region `VoLL`, other than on a reliability run | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
+| A reservoir `Natural Inflow` | The value reaches `extensions.json`, and one that changes reaches `storage.parquet` beside it, but Sienna's `EnergyReservoirStorage` states no inflow, so nothing refills the reservoir. |
+| A storage unit's `Units Out` | The derate reaches `storage.parquet`, but Sienna states one rating and no series against it, so the unit discharges at full power all year. |
+| A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
+| Region `VoLL` | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
 | `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
 | `Transformer` | The translator does not carry it. |

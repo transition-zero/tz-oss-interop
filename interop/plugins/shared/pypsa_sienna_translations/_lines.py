@@ -82,7 +82,7 @@ def lines_rated_by_a_series(series_frames: dict[tuple[str, str], pl.LazyFrame]) 
     frame = series_frames.get((PyPSATable.LINES, PyPSALineCol.S_MAX_PU))
     if frame is None:
         return set()
-    names = frame.select(PyPSATimeSeriesCol.COMPONENT).unique().collect()
+    names = frame.select(PyPSATimeSeriesCol.COMPONENT).unique().collect(engine="streaming")
     return set(names[PyPSATimeSeriesCol.COMPONENT].to_list())
 
 

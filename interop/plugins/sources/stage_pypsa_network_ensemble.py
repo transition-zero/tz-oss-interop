@@ -20,13 +20,13 @@ from pydantic import BaseModel, Field
 from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
-from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
-from interop.plugins.shared.pypsa_constants import PYPSA_NAME_COLUMN
-from interop.plugins.shared.pypsa_ensemble_manifest import (
+from interop.plugins.shared.ensemble_manifest import (
     ENSEMBLE_MANIFEST_FILENAME,
     EnsembleReplication,
     parse_ensemble_manifest,
 )
+from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
+from interop.plugins.shared.pypsa_constants import PYPSA_NAME_COLUMN
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.sources.stage_pypsa_network_file import StagedNetwork, stage_network
 from interop.ports.errors import MissingInputError

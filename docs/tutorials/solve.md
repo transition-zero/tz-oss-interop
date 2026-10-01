@@ -118,18 +118,10 @@ and dispatch is looser than in the source model, which tightens it by carrying r
 State this wherever a number from this pipeline is published.
 
 An hour where capacity cannot cover load makes that window's solve **infeasible** rather
-than producing a measured shortfall, for a network translated by `plexos-to-pypsa` or
-`plexos-to-pypsa-monte-carlo`: those pipelines add no load-shedding resource, so loads keep
-a fixed `p_set`. A replication that would have been a loss-of-load event therefore fails to
-solve instead of reporting one. State this wherever a number from either of those two
-pipelines is published.
-
-A network translated by `plexos-to-pypsa-monte-carlo-reliability` carries a load-shedding
-generator at every bus (see
-[Load shedding](../translation_mappings/translation-from-plexos-to-pypsa.md#load-shedding)),
-priced at the bus's Region `VoLL`. There the solve stays **optimal**, the shedding
-generators' dispatch is the unserved energy, and the hours they run are the loss-of-load
-hours.
+than producing a measured shortfall, for a network translated by `plexos-to-pypsa`. The
+pipeline adds no load-shedding resource, so loads keep a fixed `p_set`, and an hour short of
+capacity fails to solve instead of reporting the energy it could not serve. No pipeline adds
+a load-shedding resource. State this wherever a number from this pipeline is published.
 
 #### Unit commitment
 

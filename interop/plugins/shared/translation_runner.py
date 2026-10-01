@@ -253,7 +253,8 @@ class SkipReport:
     ``note`` is what the report carries against each component; the callable form reads the
     row it names. ``listed`` overrides the column the warning lists and the word that says
     what those values are. ``attribute_col`` names the one source attribute a drop turns
-    on, so the event carries that attribute and its value.
+    on, so the event carries that attribute and its value. ``attribute_name`` is what the
+    source calls that column, where the rule reads it under another name.
     """
 
     pipeline: str
@@ -265,6 +266,7 @@ class SkipReport:
     note: str | Callable[[dict[str, Any]], str]
     listed: SkippedNames | None = None
     attribute_col: str | None = None
+    attribute_name: str | None = None
 
     @property
     def listing(self) -> SkippedNames:
@@ -287,7 +289,7 @@ class SkipReport:
             framework=self.framework,
             component=self.component,
             name=row[self.name_col],
-            attribute=self.attribute_col,
+            attribute=self.attribute_name or self.attribute_col,
             value=row[self.attribute_col],
         )
 

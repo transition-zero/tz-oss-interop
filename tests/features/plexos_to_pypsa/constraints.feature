@@ -35,7 +35,7 @@ Feature: PLEXOS Constraint objects travel in the extensions sidecar
     When I run translate against "inputs/constraint.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the file "outputs/network.nc" exists
     And the file "decisions.md" contains "`plexos.Constraint.RiverSystem.RHS Day` = 1.708"
-    And the file "decisions.md" contains "constraint carried to the extensions sidecar; PyPSA's GlobalConstraint cannot hold a weighted sum over the objects a Constraint names, so the network file itself does not limit them"
+    And the file "decisions.md" contains "constraint carried to the extensions sidecar; Sienna holds no weighted sum over the objects a Constraint names, so the system file itself does not limit them"
     And the file "decisions.md" contains "Sense <= over 2 term(s): 1.0 x Generator AA1 (Generation Coefficient), 2.5 x Generator AA2 (Generation Coefficient)"
     And the log contains "plexos: 1 Constraint(s) limit what the model may dispatch and the network file enforces none of them; each one the translator can read travels in the extensions sidecar: RiverSystem"
     And the file "outputs/extensions.json" parses as JSON with "constraint.0.name" set to "RiverSystem"

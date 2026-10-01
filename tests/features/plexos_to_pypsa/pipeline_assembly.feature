@@ -47,3 +47,36 @@ Feature: the assembled plexos_to_pypsa pipeline translates a whole model end to 
     And the PyPSA network "outputs/network.nc" storage unit "Hydro1" has carrier "hydro"
     And the PyPSA network "outputs/network.nc" generator "DR1" has bus "North_Node"
     And the extensions sidecar "outputs/extensions.json" carries reserve "SpinningReserve"
+
+  Scenario: the run leaves its Sienna hand-off in scratch and writes only the network and the sidecar
+    plexos-to-pypsa translates through Sienna, so a system JSON, an HDF5 companion and a
+    Sienna sidecar pass from the first leg to the second. None of the three belongs to the
+    user: the output folder holds the network and the sidecar beside it, and nothing else.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "GasPlant"
+    And the model is saved as "inputs/handoff.xml"
+    When I run translate against "inputs/handoff.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "outputs/network.nc" exists
+    And the file "outputs/extensions.json" exists
+    And the file "outputs/system.json" does not exist
+    And the file "outputs/time_series.h5" does not exist
+    And the extensions sidecar "outputs/extensions.json" carries reserve "SpinningReserve"
+
+  Scenario: the user's own mappings file names the Sienna type a PLEXOS fuel becomes
+    Every other scenario in this directory takes its mappings file from the harness, so this
+    one states the table, to show a reader what a PLEXOS user has to write.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model is saved as "inputs/own_mappings.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run translate against "inputs/own_mappings.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "GasPlant" in "outputs/network.nc" has carrier "Natural Gas"

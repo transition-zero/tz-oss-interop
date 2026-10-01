@@ -69,6 +69,27 @@ def warn_no_series(relative: str, owners: Rows) -> None:
     log.warning("plexos: %s yields no series for: %s", relative, names)
 
 
+def warn_undated_rows(frame: pl.LazyFrame, relative: str) -> None:
+    """Say where a Data File holds rows whose date cannot be read as a point in time."""
+    undated = (
+        frame.select(pl.col(StagedTimeSeriesCol.SNAPSHOT).is_null().sum())
+        .collect(engine="streaming")
+        .item()
+    )
+    if undated:
+        log.warning(
+            "plexos: %s holds %s row(s) whose date cannot be read as a point in time, so "
+            "each is left out",
+            relative,
+            undated,
+        )
+
+
+def drop_undated_rows(frame: pl.LazyFrame) -> pl.LazyFrame:
+    """The rows of a reshaped Data File that carry a snapshot."""
+    return frame.filter(pl.col(StagedTimeSeriesCol.SNAPSHOT).is_not_null())
+
+
 def strip_bom(scan: pl.LazyFrame) -> pl.LazyFrame:
     """Drop the UTF-8 BOM some PLEXOS CSVs prepend to their first header name."""
     renames = {name: name.lstrip(_BOM) for name in scan.collect_schema().names()}

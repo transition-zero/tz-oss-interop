@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
+import numpy as np
 import pandas as pd
 import polars as pl
 import pypsa
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_OUTPUT_DECIMAL_PLACES,
     UNROUNDED_OUTPUT_COLUMNS,
@@ -23,11 +23,20 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
     ReverseTimeSeriesMetadataCol,
 )
+from interop.plugins.shared.series_batches import (
+    FloatArray,
+    list_component_batches,
+    read_batch_by_component,
+)
 from interop.plugins.shared.staged_samples import filter_to_sample
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 log = logging.getLogger(__name__)
+
+
+# What a component with no staged values scales and compounds as.
+_NO_VALUES: FloatArray = np.empty(0, dtype=np.float64)
 
 
 class EmitPypsaNetworkParams(BaseModel):
@@ -59,7 +68,7 @@ class EmitPypsaNetwork(Sink):
 def build_network(
     state: State,
     sample: str | None,
-    series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]] | None = None,
+    series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]] | None = None,
 ) -> pypsa.Network:
     """Assemble one PyPSA network from the destination tables, reading one sample's series.
 
@@ -348,7 +357,7 @@ def _attach_time_series(
     metadata: pl.DataFrame,
     state: State,
     sample: str | None,
-    series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]],
+    series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]],
 ) -> None:
     accessor = {
         PyPSADestinationTable.GENERATORS: network.generators_t,
@@ -366,14 +375,14 @@ def _columns_by_attribute(
     metadata: pl.DataFrame,
     state: State,
     sample: str | None,
-    series_cache: dict[tuple[str, str, str | None], dict[str, list[float]]],
-) -> dict[tuple[str, str], dict[str, list[float]]]:
+    series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]],
+) -> dict[tuple[str, str], dict[str, FloatArray]]:
     """Every component's column, gathered per (table, attribute) before any frame is touched.
 
     Derates compound: a second series for the same attribute narrows the first rather than
     replacing it (an outage on top of a rating).
     """
-    columns: dict[tuple[str, str], dict[str, list[float]]] = {}
+    columns: dict[tuple[str, str], dict[str, FloatArray]] = {}
     for row in metadata.iter_rows(named=True):
         owner_type = row[ReverseTimeSeriesMetadataCol.SOURCE_OWNER_TYPE]
         series_name = row[ReverseTimeSeriesMetadataCol.SOURCE_SERIES_NAME]
@@ -386,8 +395,8 @@ def _columns_by_attribute(
             )
         scaling = row[ReverseTimeSeriesMetadataCol.SCALING_FACTOR]
         offset = row[ReverseTimeSeriesMetadataCol.OFFSET]
-        staged = series_cache[cache_key].get(source_component, [])
-        scaled = [value * scaling + offset for value in staged]
+        staged = series_cache[cache_key].get(source_component, _NO_VALUES)
+        scaled = staged * scaling + offset
         key = (
             row[ReverseTimeSeriesMetadataCol.COMPONENT_TABLE],
             row[ReverseTimeSeriesMetadataCol.ATTRIBUTE],
@@ -399,7 +408,7 @@ def _columns_by_attribute(
 
 def _joined(
     frame: pd.DataFrame,
-    by_component: dict[str, list[float]],
+    by_component: dict[str, FloatArray],
     snapshots: pd.Index,
     attribute: str,
 ) -> pd.DataFrame:
@@ -412,7 +421,7 @@ def _joined(
     decides whether the numbers round.
     """
     compounded = {
-        name: _compound(frame[name].tolist(), values) if name in frame.columns else values
+        name: _compound(frame[name].to_numpy(), values) if name in frame.columns else values
         for name, values in by_component.items()
     }
     added = pd.DataFrame(compounded, index=snapshots)
@@ -422,27 +431,21 @@ def _joined(
     return added if kept.columns.empty else pd.concat([kept, added], axis=1)
 
 
-def _compound(held: list[float], scaled: list[float]) -> list[float]:
-    return [first * second for first, second in zip(held, scaled, strict=True)]
+def _compound(held: FloatArray, scaled: FloatArray) -> FloatArray:
+    if held.shape != scaled.shape:
+        raise ValueError(f"cannot compound series of lengths {held.size} and {scaled.size}")
+    return held * scaled
 
 
-def _collect_series_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, list[float]]:
-    """One sample's rows of a staged series, grouped by component, in snapshot order.
+def _collect_series_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, FloatArray]:
+    """One sample's values of a staged series, one array per component, in snapshot order.
 
-    Filtering to the sample before collecting reads only the rows one network needs off
-    disk, never the whole staged series (an ensemble's may hold every replication);
-    partitioning by component once turns each metadata row's lookup into a dict access
-    rather than a fresh scan-and-filter.
+    Filtering to the sample first reads only the rows one network needs off disk, never the
+    whole staged series (an ensemble's may hold every replication). Reading a batch of
+    components at a time keeps one batch in memory, not the series.
     """
-    collected = (
-        filter_to_sample(frame, sample)
-        .sort(StagedTimeSeriesCol.SNAPSHOT)
-        .select(StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.VALUE)
-        .collect()
-    )
-    return {
-        str(component): part[StagedTimeSeriesCol.VALUE].to_list()
-        for (component,), part in collected.partition_by(
-            StagedTimeSeriesCol.COMPONENT, as_dict=True, include_key=False
-        ).items()
-    }
+    sampled = filter_to_sample(frame, sample)
+    by_component: dict[str, FloatArray] = {}
+    for batch in list_component_batches(sampled):
+        by_component.update(read_batch_by_component(sampled, batch))
+    return by_component

@@ -6,7 +6,7 @@ source:
     path: inputs/pypsa_network.nc
 steps:
   - name: pypsa_to_sienna_map_components
-  - name: pypsa_to_sienna_relate_components
+  - name: sienna_relate_components
 sinks:
   - name: emit_sienna_files
     params:

@@ -19,6 +19,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
     UNIT_MWH,
     UNIT_YEARS,
+    Framework,
 )
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_COMPONENT_NAMING,
@@ -32,19 +33,18 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
+    PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
+    InvestmentsSource,
     build_expansion_skips,
     build_financial_data_translation,
     capacity_limits_struct,
     finite_or_null,
-    investments_skip_report,
     yearly_fixed_charge,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
-    ZERO_IO_CURVE,
-    linear_value_curve,
     pypsa_source_field,
     sienna_dest_field,
 )
@@ -55,6 +55,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaStorageTech,
     SiennaStructField,
+)
+from interop.plugins.shared.sienna_cost_curves import (
+    ZERO_IO_CURVE,
+    linear_value_curve,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     STORAGE_CAPITAL_COST_DTYPE,
@@ -82,46 +86,53 @@ S = SiennaStorageTechnologyCol
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
-NO_ENERGY_SKIP = investments_skip_report(
+STORAGE_UNIT_SOURCE = InvestmentsSource(
+    framework=Framework.PYPSA,
+    pipeline=PYPSA_TO_SIENNA_INVESTMENTS,
     component=PyPSAComponent.STORAGE_UNIT,
-    name_col=PyPSAStorageUnitCol.NAME,
-    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
-    reason="are extendable and hold no energy",
-    note=lambda row: (
-        f"max_hours is {row[PyPSAStorageUnitCol.MAX_HOURS]}, so the energy capacity limits a "
-        "build could add are zero MWh"
-    ),
-    attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
+    display=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].display,
+    plural=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
 )
 
-UNBOUNDED_ENERGY_SKIP = investments_skip_report(
-    component=PyPSAComponent.STORAGE_UNIT,
-    name_col=PyPSAStorageUnitCol.NAME,
-    counted_noun=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
-    reason="are extendable and put no upper bound on the energy a build may add",
-    note=(
-        "max_hours is not a finite number of hours, so the technology has no energy "
-        "capacity limits to state"
-    ),
-    attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
-)
 
-STORAGE_SKIPS: tuple[SkipRule, ...] = (
-    *build_expansion_skips(
-        PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS],
-        name_col=PyPSAStorageUnitCol.NAME,
-        build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
-        capacity_floor_col=PyPSAStorageUnitCol.P_NOM_MIN,
-        lifetime_col=PyPSAStorageUnitCol.LIFETIME,
-        overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
-        discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
-    ),
-    SkipRule(
-        keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS).is_finite(),
-        report=UNBOUNDED_ENERGY_SKIP,
-    ),
-    SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=NO_ENERGY_SKIP),
-)
+def build_storage_skips(source: InvestmentsSource) -> tuple[SkipRule, ...]:
+    """Every reason an extendable storage unit states no technology."""
+    storage_skip = partial(source.skip, name_col=PyPSAStorageUnitCol.NAME)
+
+    no_energy = storage_skip(
+        reason="are extendable and hold no energy",
+        note=lambda row: (
+            f"max_hours is {row[PyPSAStorageUnitCol.MAX_HOURS]}, so the energy capacity limits a "
+            "build could add are zero MWh"
+        ),
+        attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
+    )
+
+    unbounded_energy = storage_skip(
+        reason="are extendable and put no upper bound on the energy a build may add",
+        note=(
+            "max_hours is not a finite number of hours, so the technology has no energy "
+            "capacity limits to state"
+        ),
+        attribute_col=PyPSAStorageUnitCol.MAX_HOURS,
+    )
+
+    return (
+        *build_expansion_skips(
+            source,
+            name_col=PyPSAStorageUnitCol.NAME,
+            build_limit_col=PyPSAStorageUnitCol.P_NOM_MAX,
+            capacity_floor_col=PyPSAStorageUnitCol.P_NOM_MIN,
+            lifetime_col=PyPSAStorageUnitCol.LIFETIME,
+            overnight_cost_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
+            discount_rate_col=PyPSAStorageUnitCol.DISCOUNT_RATE,
+        ),
+        SkipRule(
+            keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS).is_finite(),
+            report=unbounded_energy,
+        ),
+        SkipRule(keep=pl.col(PyPSAStorageUnitCol.MAX_HOURS) > 0, report=no_energy),
+    )
 
 
 def fill_storage_technology_defaults(table: pl.DataFrame) -> pl.DataFrame:
@@ -160,237 +171,249 @@ def storage_capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
     ).cast(STORAGE_CAPITAL_COST_DTYPE)
 
 
-STORAGE_NAME = _direct(source_col=PyPSAStorageUnitCol.NAME, dest_col=S.NAME)
+def _translations(source: InvestmentsSource) -> list[Translation]:
+    """Every StorageTechnology rule, read from the source the caller names."""
+    _source = source.field
+    _direct = partial(direct_translation, _source, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
-STORAGE_AVAILABLE = _default(
-    dest_col=S.AVAILABLE,
-    value=True,
-    note="PyPSA states no availability for a candidate; the technology may be built",
-)
+    storage_name = _direct(source_col=PyPSAStorageUnitCol.NAME, dest_col=S.NAME)
 
-STORAGE_SIENNA_TYPE = Translation(
-    exprs=[],
-    make_events=lambda old, _: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
-                    old[PyPSAStorageUnitCol.P_NOM_EXTENDABLE],
-                )
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSAStorageUnitCol.NAME],
-                    SIENNA_TYPE_ATTRIBUTE,
-                    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-                )
-            ],
-            derivation="an extendable StorageUnit is a candidate, and each becomes one technology",
-        )
-    ],
-)
+    storage_available = _default(
+        dest_col=S.AVAILABLE,
+        value=True,
+        note="PyPSA states no availability for a candidate; the technology may be built",
+    )
 
-STORAGE_POWER_SYSTEMS_TYPE = _direct(
-    source_col=PyPSAStorageUnitCol.CARRIER,
-    dest_col=S.POWER_SYSTEMS_TYPE,
-    expr=pl.col(POWER_SYSTEMS_TYPE_COL),
-    derivation="carrier -> the base system type a build becomes, via the user mappings file",
-)
-
-STORAGE_REGION = _direct(
-    source_col=PyPSAStorageUnitCol.BUS,
-    dest_col=S.REGION_NAME,
-    expr=pl.col(REGION_COL),
-    derivation="the area of the bus the storage unit sits on",
-)
-
-STORAGE_PRIME_MOVER = _direct(
-    source_col=PyPSAStorageUnitCol.CARRIER,
-    dest_col=S.PRIME_MOVER_TYPE,
-    expr=pl.col(PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
-    derivation="carrier -> PrimeMovers via the user mappings file",
-)
-
-STORAGE_TECH = _default(
-    dest_col=S.STORAGE_TECH,
-    value=SiennaStorageTech.OTHER_MECH,
-    note="PyPSA names no storage chemistry, and StorageTech has no value for an unstated one",
-)
-
-STORAGE_CAPITAL_COSTS = _direct(
-    source_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
-    dest_col=S.CAPITAL_COSTS,
-    expr=storage_capital_cost_struct(pl.col(PyPSAStorageUnitCol.OVERNIGHT_COST)),
-    unit=UNIT_DOLLARS_PER_MW,
-    derivation="overnight_cost as the discharge capital cost; charge and energy cost nothing",
-)
-
-STORAGE_OPERATION_COSTS = _direct(
-    source_col=FOM_CHARGE_COL,
-    dest_col=S.OPERATION_COSTS,
-    expr=pl.struct(
-        pl.lit(SiennaCostType.STORAGE).alias(SiennaOperationCostField.COST_TYPE),
-        yearly_fixed_charge(PyPSAStorageUnitCol.FOM_COST).alias(SiennaOperationCostField.FIXED),
-        pl.lit(0.0).alias(SiennaOperationCostField.START_UP),
-        pl.lit(0.0).alias(SiennaOperationCostField.SHUT_DOWN),
-    ).cast(STORAGE_OPERATION_COST_DTYPE),
-    unit=UNIT_DOLLARS_PER_MW_YEAR,
-    derivation=FOM_CHARGE_DERIVATION,
-)
-
-STORAGE_UNIT_SIZE_DISCHARGE = _direct(
-    source_col=UNIT_SIZE_COL,
-    dest_col=S.UNIT_SIZE_DISCHARGE,
-    expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
-    unit=UNIT_MW,
-    derivation="the size of one unit, from the extensions sidecar",
-)
-
-STORAGE_CAPACITY_LIMITS_DISCHARGE = Translation(
-    exprs=[
-        capacity_limits_struct(
-            pl.col(PyPSAStorageUnitCol.P_NOM_MIN), pl.col(PyPSAStorageUnitCol.P_NOM_MAX)
-        ).alias(S.CAPACITY_LIMITS_DISCHARGE)
-    ],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.P_NOM_MIN,
-                    old[PyPSAStorageUnitCol.P_NOM_MIN],
-                    UNIT_MW,
+    storage_sienna_type = Translation(
+        exprs=[],
+        make_events=lambda old, _: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
+                        old[PyPSAStorageUnitCol.P_NOM_EXTENDABLE],
+                    )
+                ],
+                destinations=[
+                    _dest(
+                        old[PyPSAStorageUnitCol.NAME],
+                        SIENNA_TYPE_ATTRIBUTE,
+                        SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+                    )
+                ],
+                derivation=(
+                    "an extendable StorageUnit is a candidate, and each becomes one technology"
                 ),
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.P_NOM_MAX,
-                    old[PyPSAStorageUnitCol.P_NOM_MAX],
-                    UNIT_MW,
-                ),
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSAStorageUnitCol.NAME],
-                    S.CAPACITY_LIMITS_DISCHARGE,
-                    new[S.CAPACITY_LIMITS_DISCHARGE],
-                    UNIT_MW,
-                )
-            ],
-            derivation="p_nom_min, p_nom_max -> capacity_limits_discharge.{min, max}",
-        )
-    ],
-)
+            )
+        ],
+    )
 
-STORAGE_CAPACITY_LIMITS_ENERGY = Translation(
-    exprs=[
-        capacity_limits_struct(
-            pl.col(PyPSAStorageUnitCol.P_NOM_MIN) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
-            pl.col(PyPSAStorageUnitCol.P_NOM_MAX) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
-        ).alias(S.CAPACITY_LIMITS_ENERGY)
-    ],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.MAX_HOURS,
-                    old[PyPSAStorageUnitCol.MAX_HOURS],
-                    UNIT_HOURS,
-                ),
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.P_NOM_MIN,
-                    old[PyPSAStorageUnitCol.P_NOM_MIN],
-                    UNIT_MW,
-                ),
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.P_NOM_MAX,
-                    old[PyPSAStorageUnitCol.P_NOM_MAX],
-                    UNIT_MW,
-                ),
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSAStorageUnitCol.NAME],
-                    S.CAPACITY_LIMITS_ENERGY,
-                    new[S.CAPACITY_LIMITS_ENERGY],
-                    UNIT_MWH,
-                )
-            ],
-            derivation="max_hours x the power capacity limits -> capacity_limits_energy",
-        )
-    ],
-)
+    storage_power_systems_type = _direct(
+        source_col=PyPSAStorageUnitCol.CARRIER,
+        dest_col=S.POWER_SYSTEMS_TYPE,
+        expr=pl.col(POWER_SYSTEMS_TYPE_COL),
+        derivation="carrier -> the base system type a build becomes, via the user mappings file",
+    )
 
-STORAGE_EFFICIENCY = Translation(
-    exprs=[
-        pl.struct(
-            pl.col(PyPSAStorageUnitCol.EFFICIENCY_STORE).alias(SiennaStructField.IN),
-            pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH).alias(SiennaStructField.OUT),
-        )
-        .cast(EFFICIENCY_DTYPE)
-        .alias(S.EFFICIENCY)
-    ],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.EFFICIENCY_STORE,
-                    old[PyPSAStorageUnitCol.EFFICIENCY_STORE],
-                ),
-                _source(
-                    old[PyPSAStorageUnitCol.NAME],
-                    PyPSAStorageUnitCol.EFFICIENCY_DISPATCH,
-                    old[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH],
-                ),
-            ],
-            destinations=[_dest(old[PyPSAStorageUnitCol.NAME], S.EFFICIENCY, new[S.EFFICIENCY])],
-            derivation="(in=efficiency_store, out=efficiency_dispatch)",
-        )
-    ],
-)
+    storage_region = _direct(
+        source_col=PyPSAStorageUnitCol.BUS,
+        dest_col=S.REGION_NAME,
+        expr=pl.col(REGION_COL),
+        derivation="the area of the bus the storage unit sits on",
+    )
 
-STORAGE_LIFETIME = _direct(
-    source_col=TECHNICAL_LIFE_COL,
-    dest_col=S.LIFETIME,
-    expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
-    unit=UNIT_YEARS,
-    derivation="the technical life, from the extensions sidecar",
-    note="how long a built unit runs, which is not the period its cost is recovered over",
-)
+    storage_prime_mover = _direct(
+        source_col=PyPSAStorageUnitCol.CARRIER,
+        dest_col=S.PRIME_MOVER_TYPE,
+        expr=pl.col(PRIME_MOVER_COL).cast(PRIME_MOVERS_DTYPE),
+        derivation="carrier -> PrimeMovers via the user mappings file",
+    )
 
-STORAGE_TECHNOLOGY_TRANSLATIONS: list[Translation] = [
-    STORAGE_NAME,
-    STORAGE_AVAILABLE,
-    STORAGE_SIENNA_TYPE,
-    STORAGE_POWER_SYSTEMS_TYPE,
-    STORAGE_REGION,
-    STORAGE_PRIME_MOVER,
-    STORAGE_TECH,
-    STORAGE_CAPITAL_COSTS,
-    STORAGE_OPERATION_COSTS,
-    STORAGE_UNIT_SIZE_DISCHARGE,
-    STORAGE_CAPACITY_LIMITS_DISCHARGE,
-    STORAGE_CAPACITY_LIMITS_ENERGY,
-    STORAGE_EFFICIENCY,
-    STORAGE_LIFETIME,
-]
+    storage_tech = _default(
+        dest_col=S.STORAGE_TECH,
+        value=SiennaStorageTech.OTHER_MECH,
+        note="PyPSA names no storage chemistry, and StorageTech has no value for an unstated one",
+    )
+
+    storage_capital_costs = _direct(
+        source_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
+        dest_col=S.CAPITAL_COSTS,
+        expr=storage_capital_cost_struct(pl.col(PyPSAStorageUnitCol.OVERNIGHT_COST)),
+        unit=UNIT_DOLLARS_PER_MW,
+        derivation="overnight_cost as the discharge capital cost; charge and energy cost nothing",
+    )
+
+    storage_operation_costs = _direct(
+        source_col=FOM_CHARGE_COL,
+        dest_col=S.OPERATION_COSTS,
+        expr=pl.struct(
+            pl.lit(SiennaCostType.STORAGE).alias(SiennaOperationCostField.COST_TYPE),
+            yearly_fixed_charge(PyPSAStorageUnitCol.FOM_COST).alias(SiennaOperationCostField.FIXED),
+            pl.lit(0.0).alias(SiennaOperationCostField.START_UP),
+            pl.lit(0.0).alias(SiennaOperationCostField.SHUT_DOWN),
+        ).cast(STORAGE_OPERATION_COST_DTYPE),
+        unit=UNIT_DOLLARS_PER_MW_YEAR,
+        derivation=FOM_CHARGE_DERIVATION,
+    )
+
+    storage_unit_size_discharge = _direct(
+        source_col=UNIT_SIZE_COL,
+        dest_col=S.UNIT_SIZE_DISCHARGE,
+        expr=finite_or_null(pl.col(UNIT_SIZE_COL)),
+        unit=UNIT_MW,
+        derivation="the size of one unit, from the extensions sidecar",
+    )
+
+    storage_capacity_limits_discharge = Translation(
+        exprs=[
+            capacity_limits_struct(
+                pl.col(PyPSAStorageUnitCol.P_NOM_MIN), pl.col(PyPSAStorageUnitCol.P_NOM_MAX)
+            ).alias(S.CAPACITY_LIMITS_DISCHARGE)
+        ],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.P_NOM_MIN,
+                        old[PyPSAStorageUnitCol.P_NOM_MIN],
+                        UNIT_MW,
+                    ),
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.P_NOM_MAX,
+                        old[PyPSAStorageUnitCol.P_NOM_MAX],
+                        UNIT_MW,
+                    ),
+                ],
+                destinations=[
+                    _dest(
+                        old[PyPSAStorageUnitCol.NAME],
+                        S.CAPACITY_LIMITS_DISCHARGE,
+                        new[S.CAPACITY_LIMITS_DISCHARGE],
+                        UNIT_MW,
+                    )
+                ],
+                derivation="p_nom_min, p_nom_max -> capacity_limits_discharge.{min, max}",
+            )
+        ],
+    )
+
+    storage_capacity_limits_energy = Translation(
+        exprs=[
+            capacity_limits_struct(
+                pl.col(PyPSAStorageUnitCol.P_NOM_MIN) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
+                pl.col(PyPSAStorageUnitCol.P_NOM_MAX) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
+            ).alias(S.CAPACITY_LIMITS_ENERGY)
+        ],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.MAX_HOURS,
+                        old[PyPSAStorageUnitCol.MAX_HOURS],
+                        UNIT_HOURS,
+                    ),
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.P_NOM_MIN,
+                        old[PyPSAStorageUnitCol.P_NOM_MIN],
+                        UNIT_MW,
+                    ),
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.P_NOM_MAX,
+                        old[PyPSAStorageUnitCol.P_NOM_MAX],
+                        UNIT_MW,
+                    ),
+                ],
+                destinations=[
+                    _dest(
+                        old[PyPSAStorageUnitCol.NAME],
+                        S.CAPACITY_LIMITS_ENERGY,
+                        new[S.CAPACITY_LIMITS_ENERGY],
+                        UNIT_MWH,
+                    )
+                ],
+                derivation="max_hours x the power capacity limits -> capacity_limits_energy",
+            )
+        ],
+    )
+
+    storage_efficiency = Translation(
+        exprs=[
+            pl.struct(
+                pl.col(PyPSAStorageUnitCol.EFFICIENCY_STORE).alias(SiennaStructField.IN),
+                pl.col(PyPSAStorageUnitCol.EFFICIENCY_DISPATCH).alias(SiennaStructField.OUT),
+            )
+            .cast(EFFICIENCY_DTYPE)
+            .alias(S.EFFICIENCY)
+        ],
+        make_events=lambda old, new: [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.EFFICIENCY_STORE,
+                        old[PyPSAStorageUnitCol.EFFICIENCY_STORE],
+                    ),
+                    _source(
+                        old[PyPSAStorageUnitCol.NAME],
+                        PyPSAStorageUnitCol.EFFICIENCY_DISPATCH,
+                        old[PyPSAStorageUnitCol.EFFICIENCY_DISPATCH],
+                    ),
+                ],
+                destinations=[
+                    _dest(old[PyPSAStorageUnitCol.NAME], S.EFFICIENCY, new[S.EFFICIENCY])
+                ],
+                derivation="(in=efficiency_store, out=efficiency_dispatch)",
+            )
+        ],
+    )
+
+    storage_lifetime = _direct(
+        source_col=TECHNICAL_LIFE_COL,
+        dest_col=S.LIFETIME,
+        expr=finite_or_null(pl.col(TECHNICAL_LIFE_COL)).cast(pl.Int64),
+        unit=UNIT_YEARS,
+        derivation="the technical life, from the extensions sidecar",
+        note="how long a built unit runs, which is not the period its cost is recovered over",
+    )
+
+    translations: list[Translation] = [
+        storage_name,
+        storage_available,
+        storage_sienna_type,
+        storage_power_systems_type,
+        storage_region,
+        storage_prime_mover,
+        storage_tech,
+        storage_capital_costs,
+        storage_operation_costs,
+        storage_unit_size_discharge,
+        storage_capacity_limits_discharge,
+        storage_capacity_limits_energy,
+        storage_efficiency,
+        storage_lifetime,
+    ]
+    return translations
 
 
-def build_storage_technology_translations(base_year: int, start: int) -> list[Translation]:
+def build_storage_technology_translations(
+    source: InvestmentsSource, base_year: int, start: int
+) -> list[Translation]:
     """Every StorageTechnology translation, including the two the caller's numbers decide."""
     return [
         row_position_id_translation(
             _dest, dest_name_col=S.NAME, id_col=S.ID, note=PORTFOLIO_ID_NOTE, start=start
         ),
-        *STORAGE_TECHNOLOGY_TRANSLATIONS,
+        *_translations(source),
         build_financial_data_translation(
             _source,
             _dest,

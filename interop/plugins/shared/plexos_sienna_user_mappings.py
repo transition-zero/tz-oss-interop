@@ -27,6 +27,7 @@ from interop.plugins.shared.sienna_carrier_targets import (
     ThermalTarget,
     carrier_target_discriminator,
 )
+from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaPrimeMovers
 
 # The State table holding the user's own rows, before they become carrier mappings rows.
 PLEXOS_MAPPINGS_TABLE = "plexos_carrier_mappings"
@@ -61,6 +62,20 @@ CARRIER_BY_STORAGE_KIND: dict[PlexosStorageKind, str] = {
     PlexosStorageKind.RESERVOIR_HYDRO: PyPSACarrier.HYDRO,
     PlexosStorageKind.PUMPED_STORAGE: PyPSACarrier.PHS,
     PlexosStorageKind.BATTERY: PyPSACarrier.BATTERY,
+}
+
+
+# What each PLEXOS unit with a translator-written carrier becomes in Sienna, unless the
+# user's file states a storage_kind row of its own.
+DEFAULT_TARGET_BY_STORAGE_KIND: dict[
+    PlexosStorageKind, tuple[SiennaComponent, SiennaPrimeMovers]
+] = {
+    PlexosStorageKind.RESERVOIR_HYDRO: (SiennaComponent.HYDRO_DISPATCH, SiennaPrimeMovers.HY),
+    PlexosStorageKind.PUMPED_STORAGE: (
+        SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+        SiennaPrimeMovers.PS,
+    ),
+    PlexosStorageKind.BATTERY: (SiennaComponent.ENERGY_RESERVOIR_STORAGE, SiennaPrimeMovers.BA),
 }
 
 

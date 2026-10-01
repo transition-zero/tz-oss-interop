@@ -78,6 +78,11 @@ Select `translate`. Then give these answers to the prompts:
 | a four-digit year such as 2026 | Leave empty. Then the snapshots are the chronology of the Model. |
 | Output | `outputs/isp-step-change.nc` |
 | the extensions sidecar | `outputs/extensions.json` |
+| User mappings file | `inputs/plexos_user_mappings.yaml` |
+
+`plexos-to-pypsa` translates through Sienna, so it reads the same carrier mappings file
+that the Sienna path reads. [The Sienna path](#the-sienna-path) below says what that file
+holds and how to write it.
 
 The XML file of each scenario contains one PLEXOS Model. The name of that Model is the name
 of the scenario. Thus you must give `Step Change`, `Progressive Change` or
@@ -100,8 +105,9 @@ window and the default look-ahead. For more data about these prompts, refer to
 ### The Sienna path
 
 The same model also translates to a Sienna system, which is what a partner running
-PowerSimulations.jl needs. That translation is a run of its own, with its own mappings file.
-This section covers the Step Change scenario. The other two follow the same steps.
+PowerSimulations.jl needs. That translation is a run of its own, and it reads the same
+mappings file. This section covers the Step Change scenario. The other two follow the same
+steps.
 
 Write `inputs/plexos_user_mappings.yaml` in PLEXOS words. This model has 63 Fuel objects,
 each named for a power station, and 54 generator categories, so the file is long.
@@ -205,15 +211,14 @@ Select `translate`. Then give these answers:
 | the SiennaSchemas portfolio document to write | `outputs/portfolio.json` |
 | User mappings file | `inputs/plexos_expansion_mappings.yaml` |
 
-Keep the default at every other prompt. The mappings prompt comes last, after the file
-prompts of both sinks.
+Keep the default at every other prompt.
 
 That run writes four files: the three the Sienna path writes, and `outputs/portfolio.json`
 beside them. The portfolio names `system.json` in its `base_system_file`, so the two are read
 together.
 
-Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. This run
-takes the default base year of 2020. To state another one, refer to
+Every cost in a portfolio is quoted in a base year, and no PLEXOS field states one. Keeping
+the default at the `base_year` prompt takes 2020. To state another one, refer to
 [The base year](../translation_mappings/translation-from-plexos-to-sienna-investments.md#the-base-year).
 
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
@@ -284,9 +289,9 @@ translation leaves all 31 reservoir units out and names each one in `decisions.m
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
 this model states that SiennaSchemas holds no type and no field for.
 
-The Sienna path also keeps no reserves file at all, because the first leg of the chain writes
-that file inside the run's scratch space. Run `plexos-to-pypsa` on its own if you want the
-reserves.
+The Sienna path writes the reserves into the extensions sidecar beside the system file,
+because SiennaSchemas states no reserve component this translation builds. A solve reads
+none of them.
 
 A solve keeps no reserve headroom. Thus the dispatch is less constrained than the dispatch
 in the source model.

@@ -62,6 +62,13 @@ _RENEWABLE_NON_DISPATCH_CARRIER: dict[PrimeMover, PyPSACarrier] = {
     PrimeMover.PVE: PyPSACarrier.SOLAR_ROOFTOP,
 }
 
+# An EnergyReservoirStorage is a Battery or a pumped-storage plant, and only its prime
+# mover says which. Anything else stored in one reads as pumped storage.
+_STORAGE_CARRIER: dict[PrimeMover, PyPSACarrier] = {
+    PrimeMover.BA: PyPSACarrier.BATTERY,
+    PrimeMover.PS: PyPSACarrier.PHS,
+}
+
 _BUSTYPE_TO_CONTROL: dict[ACBusType, PyPSABusControl] = {
     ACBusType.PQ: PyPSABusControl.PQ,
     ACBusType.PV: PyPSABusControl.PV,
@@ -100,7 +107,7 @@ def pypsa_carrier(
         case SiennaComponent.HYDRO_DISPATCH:
             return PyPSACarrier.HYDRO
         case SiennaComponent.ENERGY_RESERVOIR_STORAGE:
-            return PyPSACarrier.PHS
+            return _STORAGE_CARRIER.get(prime_mover, PyPSACarrier.PHS)
         case (
             SiennaComponent.AC_BUS
             | SiennaComponent.AREA

@@ -7,3 +7,6 @@ steps:
   - name: sienna_to_pypsa_relate_components
 sinks:
   - name: emit_pypsa_network
+  - name: emit_extensions_json
+    params:
+      output_path: outputs/extensions.json

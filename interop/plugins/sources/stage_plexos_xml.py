@@ -58,10 +58,12 @@ from interop.plugins.shared.plexos_units import (
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.sources.plexos_csv_layouts import (
     SampleScope,
+    drop_undated_rows,
     is_supported_layout,
     reshape_for_file,
     strip_bom,
     warn_no_series,
+    warn_undated_rows,
     warn_unstageable_layout,
 )
 from interop.plugins.sources.plexos_dated_properties import (
@@ -320,7 +322,8 @@ class StagePlexosXml(StagedSource):
                 if frame is None:
                     warn_no_series(relative, owners)
                     continue
-                parts.setdefault(key, []).append(frame)
+                warn_undated_rows(frame, relative)
+                parts.setdefault(key, []).append(drop_undated_rows(frame))
         _warn_missing_data_files(missing)
         return {
             key: self._sink_series(key, frames, staging_dir, index) for key, frames in parts.items()

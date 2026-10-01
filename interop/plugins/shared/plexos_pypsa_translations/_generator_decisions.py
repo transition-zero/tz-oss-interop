@@ -9,6 +9,7 @@ arrives as a profile, which is a second event on a column already written.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS,
@@ -89,7 +90,7 @@ _START_FUEL_DATED_DERIVATION = (
     "dated price series"
 )
 _DISCARDED_START_FUEL_CHOICE_NOTE = (
-    "the generator names several start fuels and PyPSA holds one start price, so the fuel "
+    "the generator names several start fuels and the start cost holds one price, so the fuel "
     "its heat rate burns stands for the start, or the largest offtake where it burns none; "
     "this one is left out"
 )
@@ -200,6 +201,16 @@ def record_generator(reporter: ComponentReporter, decisions: GeneratorDecisions)
     reporter.record_mapping(name, decisions)
     if decisions.profile is not None:
         reporter.record(name, _P_MAX_PU_COLUMN, decisions.profile)
+    record_generator_source_notes(reporter, decisions)
+
+
+def record_generator_source_notes(reporter: Any, decisions: GeneratorDecisions) -> None:
+    """Every note that names only what the model states, so any hop out of PLEXOS records it.
+
+    A start nobody priced, a start fuel one price has no room for, and a fuel the carrier
+    could not be read from are readings of the model rather than of a destination.
+    """
+    name = decisions.name
     if decisions.unpriced_start:
         reporter.record_dropped(
             _source(name, PlexosProperty.START_COST, None, UNIT_DOLLARS), _START_UP_UNPRICED_NOTE

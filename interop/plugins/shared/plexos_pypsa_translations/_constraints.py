@@ -4,12 +4,12 @@ A PLEXOS Constraint holds a weighted sum over the objects it names to a right-ha
 It weights each object by a coefficient stated on the membership, and it may state the
 right-hand side over an hour, a day, a week, a month, a year, or the whole horizon.
 
-PyPSA's GlobalConstraint limits one carrier over the whole horizon and has no way to name
-a set of components, so no shape of Constraint has a home in the network file. Each one is
-carried into the extensions sidecar instead, in framework-neutral terms (see
-``interop/core/extensions.py``), so a later hop into a framework that can express it still
-has the limit. A Constraint stating no sense, or no right-hand side at all, says too little
-to carry, so it is left out and reported.
+Neither destination framework holds that shape. PyPSA's GlobalConstraint limits one
+carrier over the whole horizon and cannot name a set of components, and Sienna holds no
+weighted sum at all, so each Constraint is carried into the extensions sidecar instead,
+in framework-neutral terms (see ``interop/core/extensions.py``). A later hop into a
+framework that can express the limit still has it. A Constraint stating no sense, or no
+right-hand side at all, says too little to carry, so it is left out and reported.
 """
 
 from __future__ import annotations
@@ -53,10 +53,14 @@ from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
 
-_CARRIED_NOTE = (
+PYPSA_CARRIED_NOTE = (
     "constraint carried to the extensions sidecar; PyPSA's GlobalConstraint cannot hold a "
     "weighted sum over the objects a Constraint names, so the network file itself does not "
     "limit them"
+)
+SIENNA_CARRIED_NOTE = (
+    "constraint carried to the extensions sidecar; Sienna holds no weighted sum over the "
+    "objects a Constraint names, so the system file itself does not limit them"
 )
 _NOT_CARRIED_NOTE = (
     "this Constraint states no sense, or no right-hand side, so it holds no inequality to "
@@ -118,14 +122,19 @@ class _Outcome:
     record: ConstraintExtension | None
 
 
-def map_constraints(state: State, recorder: ScopedRecorder) -> None:
+def map_constraints(state: State, recorder: ScopedRecorder, carried_note: str) -> None:
+    """Carry each readable Constraint to the sidecar, and report every one of them.
+
+    ``carried_note`` says why the destination file itself holds no such limit, so each
+    destination framework states its own reason.
+    """
     constraints = _read_constraints(state)
     if not constraints:
         return
     outcomes = [_Outcome(constraint, _carry(constraint)) for constraint in constraints]
     reporter = SourceReporter(recorder)
     for outcome in outcomes:
-        _record(reporter, outcome)
+        _record(reporter, outcome, carried_note)
     append_extensions(
         state.destination_extensions,
         ExtensionKind.CONSTRAINT,
@@ -242,9 +251,9 @@ def _member(term: _Term) -> ConstraintMember:
     )
 
 
-def _record(reporter: SourceReporter, outcome: _Outcome) -> None:
+def _record(reporter: SourceReporter, outcome: _Outcome, carried_note: str) -> None:
     constraint = outcome.constraint
-    carried = _CARRIED_NOTE if outcome.record is not None else _not_carried_note(constraint)
+    carried = carried_note if outcome.record is not None else _not_carried_note(constraint)
     note = f"{carried}. {_describe(constraint)}"
     if not constraint.right_hand_sides:
         reporter.record_dropped(_source(constraint.name, None, None), note)

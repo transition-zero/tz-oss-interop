@@ -1,13 +1,22 @@
 source_framework: plexos
 destination_framework: sienna
-mappings:
-  - pipeline: derive-plexos-sienna-mappings
-compose:
-  - pipeline: plexos-to-pypsa
+source:
+  name: stage_plexos_xml
+steps:
+  - name: plexos_to_sienna_map_components
+  - name: sienna_relate_components
+  - name: sienna_investments_map_technologies
+validators:
+  - name: plexos_node_reference_integrity
+  - name: plexos_generators
+  - name: plexos_storage_units
+  - name: plexos_loads
+  - name: plexos_lines
+  - name: plexos_unique_names
+sinks:
+  - name: emit_sienna_files
     params:
-      emit_pypsa_network.output_path: network.nc
-      emit_extensions_json.output_path: extensions.json
-  - pipeline: pypsa-to-sienna-investments
+      output_system_json_file_path: outputs/system.json
+  - name: emit_sienna_portfolio
     params:
-      stage_pypsa_network_file.path: $plexos-to-pypsa.emit_pypsa_network.output_path
-      stage_pypsa_network_file.extensions_json_path: $plexos-to-pypsa.emit_extensions_json.output_path
+      output_path: outputs/portfolio.json

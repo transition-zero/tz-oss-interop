@@ -4,7 +4,9 @@ import logging
 import os
 import sys
 
-DEFAULT_LEVEL = "INFO"
+DEFAULT_LEVEL = "ERROR"
+# Below the console level, so a handler other than the console still receives each summary.
+_RECORDED_LEVEL = logging.INFO
 ENV_VAR = "INTEROP_LOG_LEVEL"
 _FORMAT = "%(levelname)s %(name)s %(message)s"
 
@@ -28,19 +30,28 @@ class _InteropStreamHandler(logging.StreamHandler):  # type: ignore[type-arg]
 
 
 def configure_logging(level: str | None = None) -> None:
-    effective_level = (level or os.environ.get(ENV_VAR) or DEFAULT_LEVEL).upper()
-
+    """Show the console only lines at ``level`` or above, which is ERROR unless stated."""
+    console_level = (level or os.environ.get(ENV_VAR) or DEFAULT_LEVEL).upper()
     root_logger = logging.getLogger()
-    root_logger.setLevel(effective_level)
+    handler = _find_console_handler(root_logger) or _add_console_handler(root_logger)
+    handler.setLevel(console_level)
+    root_logger.setLevel(min(handler.level, _RECORDED_LEVEL))
+    _quieten_narrating_libraries(console_level)
 
-    is_already_configured = any(isinstance(h, _InteropStreamHandler) for h in root_logger.handlers)
-    if is_already_configured:
-        return
 
+def _find_console_handler(root_logger: logging.Logger) -> _InteropStreamHandler | None:
+    """A second call finds the first call's handler, so no line prints twice."""
+    for handler in root_logger.handlers:
+        if isinstance(handler, _InteropStreamHandler):
+            return handler
+    return None
+
+
+def _add_console_handler(root_logger: logging.Logger) -> _InteropStreamHandler:
     handler = _InteropStreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter(_FORMAT))
     root_logger.addHandler(handler)
-    _quieten_narrating_libraries(effective_level)
+    return handler
 
 
 def _quieten_narrating_libraries(effective_level: str) -> None:

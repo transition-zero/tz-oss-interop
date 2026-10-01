@@ -36,6 +36,56 @@ To make sure that you have the correct XML file, do this command:
 shasum -a 256 "case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml"
 ```
 
+### Correct the dates in the gas price file
+
+> [!IMPORTANT]
+> You must correct the dates in `CSVFiles/FuelIndex/NG Prices.csv` before you translate.
+> If you do not, the gas prices are incorrect for most months, and you get no error.
+
+The file writes each date as month/day/year, for example `9/1/2026`. The translator cannot
+tell this layout from day/month/year, so it reads `9/1/2026` as 9 January. Thus 233 of the
+252 monthly prices go to an incorrect month. The translator cannot read the dates from
+`5/31/2044`, so it leaves out the last 19 rows. The console shows only errors, so you
+do not see this. Start interop with `INTEROP_LOG_LEVEL=WARNING uv run interop` to see the
+warning:
+
+```text
+plexos: CSVFiles\FuelIndex\NG Prices.csv holds 190 row(s) whose date cannot be read as a point in time, so each is left out
+```
+
+The count is 190 because each of the 19 rows has prices for 10 fuels.
+
+Do these commands to write each date as year-month-day. The command stops and does not
+change the file if a date is not month/day/year.
+
+```bash
+cd "case_study_inputs/caiso-sa26/CSVFiles/FuelIndex"
+cp "NG Prices.csv" "NG Prices.csv.orig"
+awk '
+BEGIN { FS = OFS = "," }
+NR == 1 { print; next }
+/^\r?$/ { print; next }
+{
+  n = split($1, d, "/")
+  if (n != 3 || length(d[3]) != 4 || d[1] < 1 || d[1] > 12 || d[2] < 1 || d[2] > 31) {
+    printf "line %d: \"%s\" is not month/day/year\n", NR, $1 > "/dev/stderr"
+    exit 1
+  }
+  $1 = sprintf("%04d-%02d-%02d", d[3], d[1], d[2])
+  print
+}' "NG Prices.csv" > "NG Prices.csv.tmp" && mv "NG Prices.csv.tmp" "NG Prices.csv"
+```
+
+To make sure that the dates are correct, do this command. It must show `2025-01-01` and
+then `2025-02-01`:
+
+```bash
+sed -n '2,3p' "NG Prices.csv" | cut -d, -f1
+```
+
+The command splits each line at each comma. This is safe for this file only, because the
+file has no quoted values.
+
 ## Get the reference data
 
 interop can compare a translated network against the numbers CAISO publishes. Those
@@ -89,7 +139,7 @@ and the `Net Import Limit*` row.
 
 interop reads May to September and ignores the other seven months. It rolls the finer
 fuels up to the categories that the stack model uses, and drops any row whose fuel is not
-in the table below — the `Total` check figure among them.
+in the table below, the `Total` check figure among them.
 
 | Appendix fuel | Category |
 | --- | --- |
@@ -115,61 +165,253 @@ Select `translate`. Then give these answers to the prompts:
 | --- | --- |
 | Source framework | `plexos` |
 | Destination framework | `pypsa` |
-| Pipeline | `plexos-to-pypsa-monte-carlo` |
+| Pipeline | `plexos-to-pypsa` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml` |
 | which PLEXOS Model to translate | `M09Y2026 SA26` |
 | a four-digit year such as 2026 | Leave empty. Then the Horizon of the Model gives the snapshots, and each dated value is the value in force when that Horizon starts. |
-| directory to hold the ensemble | `outputs/caiso-m09` |
-| names each network in the ensemble | Keep the default, `network_{sample}.nc` |
+| Output | `outputs/caiso-m09.nc` |
 | the extensions sidecar | `outputs/extensions.json` |
+| User mappings file | `docs/case_studies/caiso-sa26-user-mappings.json` |
 
-The translator writes 500 networks, from `network_1.nc` to `network_500.nc`. This operation
-takes approximately 1.8 GiB of disk space.
+`plexos-to-pypsa` translates through Sienna, so it reads the same carrier mappings file as the
+Sienna path below. Refer to [The carrier mappings file](#the-carrier-mappings-file).
+
+The translator writes one network, `outputs/caiso-m09.nc`. Every sampled trace of this model
+holds 500 replications, and the translator reads replication 1, the lowest, and no other. Use
+the trace files as the publisher gives them: do not cut the replication columns.
 
 You can translate the other summer months in the same way. Give the Model name
 `M05Y2026 SA26`, `M06Y2026 SA26`, `M07Y2026 SA26` or `M08Y2026 SA26`.
 
-Then select `solve`. Give the model type `pypsa` and the network
-`outputs/caiso-m09/network_1.nc`. Select an output directory. Leave the start date and the
-end date empty, because the solve must cover the full month. Give the unit commitment
-`exact`. Keep the default window and the default look-ahead. For more data about these two
-prompts, refer to [the solve tutorial](../tutorials/solve.md#pypsa-path).
+Then select `solve`. Give the model type `pypsa` and the network `outputs/caiso-m09.nc`.
+Select an output directory. Leave the start date and the end date empty, because the solve
+must cover the full month. Give the unit commitment `exact`. Keep the default window and the
+default look-ahead. For more data about these two prompts, refer to
+[the solve tutorial](../tutorials/solve.md#pypsa-path).
 
-Each objective in the table below is the objective of replication 1. If you solve the full
-directory, you get 500 objectives.
+Each objective in the table below is the objective of replication 1.
 
-If you want a measurement of the unserved energy, do the translation again with the
-`plexos-to-pypsa-monte-carlo-reliability` pipeline. That pipeline adds a load shedding
-generator at each bus. The price of each load shedding generator is the value of lost load
-of its region. Give the same answers to the prompts, but write to
-`outputs/caiso-m09-reliability`. Then solve `outputs/caiso-m09-reliability/network_1.nc`
-with the start date `2026-09-01`, the end date `2026-09-30` and the unit commitment
-`linearised`.
+No pipeline adds a load shedding resource, so this network cannot report unserved energy. An
+hour without enough capacity makes the solve infeasible instead. Refer to
+[What the number does not cover](#what-the-number-does-not-cover).
 
 ### The Sienna path
 
-The same model also translates to an ensemble of Sienna systems, which is what a partner
-running PowerSimulations.jl needs. PowerSimulations solves no Monte Carlo forecast, so the
-ensemble is one whole system per replication rather than one system holding every
-replication. That translation is a run of its own, with its own mappings file.
+The same model also translates to a Sienna system, which is what a partner running
+PowerSimulations.jl needs. It reads the same carrier mappings file as the PyPSA path above,
+and replication 1 of each sampled trace, as that path does.
 
-Write `inputs/plexos_user_mappings.yaml` in PLEXOS words. This model has 18 Fuel objects and
-15 generator categories, and every one of them needs a row.
+#### The carrier mappings file
+
+A Sienna generator states a `prime_mover_type`, and a thermal one also states a `fuel_type`.
+PLEXOS states neither, so you give the translator a file that says what each of your own
+words becomes.
 [The mapping document](../translation_mappings/translation-from-plexos-to-sienna.md#the-carrier-mappings-file)
 states the shape of a row.
 
-Two of the categories need a decision. `CIPB`, `CIPV`, `CISC`, `CISD` and `OOS` carry imports
-into the system; Sienna has no import component, so give each one `ThermalStandard` with the
-fuel `OTHER`, and the solve can then draw on the energy they bring. A generator in the
-`CA Hydro` category is a hydro plant rather than a Storage, so give it `RenewableDispatch`
-with the prime mover `HY`, not `HydroDispatch`, which this translation reaches only from a
-Storage. Leaving either group out costs the system 17 generators and about 5 GW, and the
-September solve then has no solution at all.
+This model has 18 Fuel objects and 15 generator categories, and every one of them takes a
+row. The block below gives all 33. Copy it into `inputs/plexos_user_mappings.yaml`.
 
-**Cut the ensemble down first.** Every sampled CSV under `case_study_inputs/caiso-sa26/CSVFiles`
-holds 500 numbered value columns, one per replication. Keep the first three of them in each
-file and delete the rest. Then a run gives a three-replication ensemble, which is what the
-numbers below cover. The full 500-replication claim in this page covers the PyPSA path only.
+```yaml
+carriers:
+  # --- Fuel objects ---------------------------------------------------------------
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ/Cal_Blythe"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ_North"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_AZ_North-South"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_Kern"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_PG&E BB"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_PG&E LT"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_Rosarito_CA"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_SDG&E"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Cal_SoCalGas"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Nevada_South"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_Oregon_Malin"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "NG_UT_Opal"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NATURAL_GAS
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Oil_DistillateFuel_2_CA"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: DISTILLATE_FUEL_OIL
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Uranium"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: NUCLEAR
+    sienna_prime_mover_type: ST
+  - plexos_concept: fuel
+    plexos_name: "DR - High"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "DR - Mid"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "DefaultFuel"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: fuel
+    plexos_name: "Dummy"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  # --- Generator categories -------------------------------------------------------
+  - plexos_concept: category
+    plexos_name: "CIPB"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CIPV"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CISC"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CISD"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "OOS"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "DR"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "LFD"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CA Hydro"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: HY
+  - plexos_concept: category
+    plexos_name: "CA NonRPS PV"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - plexos_concept: category
+    plexos_name: "HYBD_Solar"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: PVe
+  - plexos_concept: category
+    plexos_name: "CoLocatedSolarWind"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "ISORPS WindSolar"
+    sienna_component_type: RenewableDispatch
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "CA RPS"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "GeoBio"
+    sienna_component_type: ThermalStandard
+    sienna_fuel_type: OTHER
+    sienna_prime_mover_type: OT
+  - plexos_concept: category
+    plexos_name: "Pumped Storage"
+    sienna_component_type: EnergyReservoirStorage
+    sienna_prime_mover_type: PS
+```
+
+The same 33 rows sit beside this page as
+[`caiso-sa26-user-mappings.json`](caiso-sa26-user-mappings.json). A mappings file is read as
+YAML, and YAML reads JSON, so you can give that file to the `User mappings file?` prompt as
+it stands.
+
+#### The rows that need a decision
+
+Most rows follow their own name. Six groups do not.
+
+- **The import categories.** `CIPB`, `CIPV`, `CISC`, `CISD` and `OOS` carry imports into the
+  system. Sienna has no import component, so each one takes `ThermalStandard` with the fuel
+  `OTHER`, and the solve can then draw on the energy they bring.
+- **`CA Hydro`.** A generator in this category is a hydro plant rather than a Storage, so it
+  takes `RenewableDispatch` with the prime mover `HY`. It does not take `HydroDispatch`,
+  which this translation reaches only from a Storage.
+- **The gas hubs.** A Fuel name such as `NG_Cal_SoCalGas` names the hub the gas comes from,
+  and not the technology of the unit that burns it. The model states no prime mover, so each
+  of the 12 gas rows takes `OT`.
+- **The mixed categories.** `CoLocatedSolarWind` and `ISORPS WindSolar` each hold both solar
+  and wind. `GeoBio` and `CA RPS` each hold both geothermal and biomass. One row states one
+  prime mover, so each of the four takes `OT`. `GeoBio` and `CA RPS` take `ThermalStandard`,
+  because a geothermal plant and a biomass plant both run to a cost rather than to a weather
+  profile.
+- **`LFD`.** The three generators of this category sit on a node of their own, which holds a
+  load of its own and no line to the rest of the system. They take `ThermalStandard` with the
+  fuel `OTHER`, and they supply that one load.
+- **The rows that reach no generator.** `DefaultFuel` and `Dummy` name no generator that the
+  translation keeps. The `DR` category and the `DR - High` and `DR - Mid` fuels name the 18
+  demand response generators, and the PLEXOS to PyPSA leg drops every one of them, because
+  each states its Max Capacity in a data file rather than as a value. The five rows are here
+  so that the file covers every word the model states.
+
+Leaving the import group out costs the system 13 generators and 4,485 MW. Leaving `CA Hydro`
+out costs another 4 generators and 7,570 MW. Both figures are the `p_nom` the PyPSA leg of
+the same `M09Y2026 SA26` run writes.
 
 Select `translate`. Then give these answers:
 
@@ -177,42 +419,50 @@ Select `translate`. Then give these answers:
 | --- | --- |
 | Source framework | `plexos` |
 | Destination framework | `sienna` |
-| Pipeline | `plexos-to-sienna-monte-carlo` |
+| Pipeline | `plexos-to-sienna` |
 | the PLEXOS `<MasterDataSet>` input XML | `case_study_inputs/caiso-sa26/CAISOSA26 20260429.xml` |
 | which PLEXOS Model to translate | `M09Y2026 SA26` |
 | a four-digit year such as 2026 | Leave empty, as for the PyPSA run above. |
-| directory to hold the ensemble | `outputs/caiso-m09-sienna` |
-| names each replication's directory | Keep the default, `{sample}` |
-| User mappings file | `inputs/plexos_user_mappings.yaml` |
+| the SiennaSchemas system.json | Keep the default |
+| the HDF5 companion | Keep the default |
+| the sidecar JSON | Keep the default |
+| User mappings file | `docs/case_studies/caiso-sa26-user-mappings.json` |
 
-That run writes one directory per replication, `1`, `2` and `3`, each holding four files:
-`system.json`, its HDF5 companion `system_time_series_storage.h5`, `extensions.json`, and the
-`reserves.parquet` that the reserve records point at. Those files are the product.
+Keep all three output paths at their defaults, or give all three the same directory. Each
+default puts its file in `outputs/`, and the parquet files below follow the sidecar, so a
+change to one path alone splits the product across two directories.
 
-Each system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
-`RenewableDispatch`, 246 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
-components, over 720 hourly snapshots, with 392 time-series associations. Every replication
-states the same components and the same associations, and the three differ only in the values
-their HDF5 companions hold.
+That run writes six files into `outputs/`:
+
+| File | Holds |
+| --- | --- |
+| `system.json` | The components. |
+| `system_time_series_storage.h5` | The values of each time series the system names. |
+| `extensions.json` | Each value this model states that Sienna has no field for. |
+| `reserves.parquet` | The megawatts each reserve requires at each snapshot. |
+| `generators.parquet` | What each generator costs per MWh at each snapshot, where its fuel is priced by a data file. |
+| `storage.parquet` | The share of its rating each storage unit reaches at each snapshot, where a units-out trace derates it. |
+
+Those files are the product. The last two carry values that a Sienna component states no
+field for, static or varying, so the sidecar names the file each one rides in.
+
+The system holds 6 `ACBus`, 6 `Area`, 9 `Arc`, 5 `PowerLoad`, 267 `ThermalStandard`, 144
+`RenewableDispatch`, 245 `EnergyReservoirStorage` and 9 `TwoTerminalGenericHVDCLine`
+components, over 720 hourly snapshots, with 412 time-series associations.
 
 All seven CAISO reserves reach `extensions.json`, and the six whose requirement changes each
 snapshot reach `reserves.parquet` beside it. Nothing applies them.
 
-The run warns that 4 generators carry an outage profile in some of the three replications but
-not in all of them, and leaves those four profiles out. Every replication of an ensemble must
-hold the same components, so a profile that reaches only some of them is left out of all of
-them. Those four generators stay available at full output in every replication.
-
-To prove that a system dispatches, run `translate` a second time over one replication:
+To prove that the system dispatches, run `translate` a second time over it:
 
 | Prompt | Answer |
 | --- | --- |
 | Source framework | `sienna` |
 | Destination framework | `power-simulations` |
 | Pipeline | `sienna-to-power-simulations` |
-| the SiennaSchemas system.json | `outputs/caiso-m09-sienna/1/system.json` |
-| the HDF5 time-series sidecar | `outputs/caiso-m09-sienna/1/system_time_series_storage.h5` |
-| the extensions sidecar | `outputs/caiso-m09-sienna/1/extensions.json` |
+| the SiennaSchemas system.json | `outputs/system.json` |
+| the HDF5 time-series sidecar | `outputs/system_time_series_storage.h5` |
+| the extensions sidecar | `outputs/extensions.json` |
 | the PowerSystems.jl system.json | `outputs/ps/power_simulations_system.json` |
 | the HDF5 time-series sidecar | `outputs/ps/power_simulations_system_time_series.h5` |
 
@@ -226,22 +476,9 @@ whole of September 2026.
 
 ### Unserved energy on the Sienna path
 
-`plexos-to-sienna-monte-carlo` writes a `PowerLoad` for each region, which a solve must serve
-in full. Run `plexos-to-sienna-monte-carlo-reliability` instead to get a load a solve may cut.
-Give the same answers, writing to `outputs/caiso-m09-reliability`.
-
-Each region's load then becomes an `InterruptiblePowerLoad` whose `operation_cost` holds the
-value of lost load of its region. Four of the five regions state $2,000/MWh. `LFD` states
-none, so it takes PLEXOS's own default of $10,000/MWh, which is the price the PyPSA side of
-the same run sheds at.
-
-Read the unserved energy from the solve output. The power each load was asked for is in
-`results/parameters/ActivePowerTimeSeriesParameter__InterruptiblePowerLoad.csv`, in per-unit
-of the 100 MVA system base; the power the solve served is in
-`results_wide/variables/ActivePowerVariable__InterruptiblePowerLoad.csv`, in MW. Multiply the
-first by 100, subtract the second, and sum over the month. No report collects it for you,
-because the results pipeline reads the parameter file alone and the shortfall needs both
-files.
+`plexos-to-sienna` writes a `PowerLoad` for each region, which a solve must serve in full. No
+pipeline writes a load that a solve may cut, so the Sienna path cannot measure unserved energy.
+An hour without enough capacity makes the solve infeasible instead.
 
 ## Compare against the published stack model
 
@@ -271,12 +508,19 @@ your solved network and the peak days have in common.
 
 ## The headline number
 
+> [!NOTE]
+> We measured the figures in this section with the Monte Carlo pipelines, which interop no
+> longer offers. The month table came from `plexos-to-pypsa-monte-carlo`, and the Sienna
+> table from `plexos-to-sienna-monte-carlo` and its reliability variant. A row that names a
+> removed pipeline cannot be reproduced. `plexos-to-pypsa` reads the same replication 1, but
+> it now translates through Sienna, and we have not measured whether it gives the same
+> objectives.
+
 **What you can check by yourself.** All five summer months solve. Four months solve with
 exact unit commitment. May needs the linearised relaxation.
 
-The reliability pipeline for September gives zero unserved energy. That is, the load
-shedding generators supply no energy. To get this result, solve from 2026-09-01 to
-2026-09-30 with linearised unit commitment.
+The reliability pipeline for September gave zero unserved energy. That is, the load
+shedding generators supplied no energy.
 
 The translator writes a `decisions.md` file adjacent to the network. That file gives each
 source field, the destination field for it, and each component that the translator did not
@@ -310,9 +554,9 @@ The reliability solve cuts 7,467 MWh, all of it at `SDGE_load`, in 2 of the mont
 hours, and the deepest hour is 4,089 MW short. That shortfall is why the plain chain does not
 solve: a `PowerLoad` must be served in full, so a system that cannot serve it has no solution
 at all. Two replications behave the same way, so the shortfall belongs to the month rather
-than to one draw. Run the reliability chain for September. Only that chain adds a load
-shedding resource. A plain run drops the `VoLL` of each region, and `decisions.md` records
-each drop, so the system it writes holds no resource the solve can cut.
+than to one draw. Only the reliability chain added a load shedding resource, and no
+pipeline adds one now. A run drops the `VoLL` of each region, and `decisions.md` records each
+drop, so the system it writes holds no resource the solve can cut.
 
 The Sienna objective is negative because a `LoadCost` prices the load that is served rather
 than the load that is cut, and PowerSimulations applies it with a negative multiplier. PyPSA
@@ -360,12 +604,10 @@ path the reserves reach `extensions.json` beside each replication's system, and 
 whose requirement changes each snapshot reach `reserves.parquet` beside that; they are still
 unapplied.
 
-Neither `plexos-to-pypsa-monte-carlo` nor `plexos-to-sienna-monte-carlo` adds a load shedding
-resource. Thus if the capacity is less than the load in one hour, that window does not solve.
-Only the two reliability pipelines measure the unserved energy.
+No pipeline adds a load shedding resource. Thus if the capacity is less than the load in one
+hour, that window does not solve, and no run measures the unserved energy.
 
-The numbers on the Sienna path cover three replications, not 500. The 500-replication figures
-above are the PyPSA path alone.
+Both paths read replication 1 of each sampled trace, and no other.
 
 ## What it costs
 
@@ -375,10 +617,10 @@ writes approximately 1.8 GiB of networks.
 The solve takes the most time. One replication of one month is quick, but all 500
 replications take much longer. Start with one replication of one month.
 
-The Sienna path costs less on disk and more in the solve. A three-replication ensemble of
-September writes 13 MB: 1.42 MB of `system.json`, 2.82 MB of HDF5 companion, 92 KB of
-`extensions.json` and 40 KB of `reserves.parquet` for each replication. The validation run
-over one replication is quick.
+The Sienna path costs less on disk and more in the solve. A run of September writes 4.64 MB:
+1.43 MB of `system.json`, 2.96 MB of HDF5 companion, 195 KB of `extensions.json`, and 15 KB,
+15 KB and 18 KB of `reserves.parquet`, `generators.parquet` and `storage.parquet`. The
+validation run is quick.
 
 The solve is the expensive step. HiGHS dominates the run on the reliability replication, and
 loading the system, building the model and exporting the results add to it. An infeasible

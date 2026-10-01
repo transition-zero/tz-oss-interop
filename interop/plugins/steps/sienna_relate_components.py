@@ -28,8 +28,13 @@ _BRANCH_COMPONENTS: tuple[str, ...] = (
 )
 
 
-class PypsaToSiennaRelateComponents(TranslationStep):
-    name: ClassVar[str] = "pypsa_to_sienna_relate_components"
+class SiennaRelateComponents(TranslationStep):
+    """Derive the Area and the Arc tables from the Sienna tables an earlier step wrote.
+
+    Every source framework reaches this step, so its name states Sienna alone.
+    """
+
+    name: ClassVar[str] = "sienna_relate_components"
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def __init__(self, recorder: ScopedRecorder) -> None:

@@ -1,11 +1,13 @@
 source_framework: plexos
 destination_framework: pypsa
-source:
-  name: stage_plexos_xml
-steps:
-  - name: plexos_to_pypsa_map_components
-sinks:
-  - name: emit_pypsa_network
-  - name: emit_extensions_json
+compose:
+  - pipeline: plexos-to-sienna
     params:
-      output_path: outputs/extensions.json
+      emit_sienna_files.output_system_json_file_path: system.json
+      emit_sienna_files.output_h5_file_path: system_time_series_storage.h5
+      emit_sienna_files.output_extensions_file_path: extensions.json
+  - pipeline: sienna-to-pypsa
+    params:
+      stage_sienna_system_json.system_json_path: $plexos-to-sienna.emit_sienna_files.output_system_json_file_path
+      stage_sienna_system_json.time_series_h5_path: $plexos-to-sienna.emit_sienna_files.output_h5_file_path
+      stage_sienna_system_json.extensions_json_path: $plexos-to-sienna.emit_sienna_files.output_extensions_file_path

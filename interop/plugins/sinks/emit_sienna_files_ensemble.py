@@ -15,6 +15,12 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
+from interop.plugins.shared.ensemble_manifest import (
+    ENSEMBLE_MANIFEST_FILENAME,
+    EnsembleManifest,
+    EnsembleReplication,
+    dump_ensemble_manifest,
+)
 from interop.plugins.shared.sienna_constants import SiennaCompanionFilename
 from interop.plugins.shared.staged_samples import samples_to_write
 from interop.plugins.sinks._sienna_files import (
@@ -56,6 +62,10 @@ class EmitSiennaFilesEnsembleParams(BaseModel):
             extensions=directory / SiennaCompanionFilename.EXTENSIONS_JSON,
         )
 
+    def system_filename(self, sample: str) -> str:
+        """The system one replication holds, relative to the directory holding the manifest."""
+        return f"{self.subdirectory_template.format(sample=sample)}/{SYSTEM_JSON_FILENAME}"
+
 
 class EmitSiennaFilesEnsemble(WritesSiennaFiles, Sink):
     name: ClassVar[str] = "emit_sienna_files_ensemble"
@@ -77,7 +87,21 @@ class EmitSiennaFilesEnsemble(WritesSiennaFiles, Sink):
         # Every field of the system JSON is the same in each replication, the time-series
         # UUIDs among them, so the whole document is built once and written many times.
         payload = EmitSiennaSystemJson.build_payload(state)
+        manifest = EnsembleManifest()
         for sample in samples:
             self._write_sienna_files(
                 params.replication_paths(sample), state, payload, params.indent, sample
             )
+            manifest.replications.append(
+                EnsembleReplication(sample=sample, filename=params.system_filename(sample))
+            )
+        self._write_manifest(params, manifest)
+
+    def _write_manifest(
+        self, params: EmitSiennaFilesEnsembleParams, manifest: EnsembleManifest
+    ) -> None:
+        """Say which replications the ensemble holds, for a reader that cannot list a directory."""
+        self._fs.write_bytes(
+            params.output_dir / ENSEMBLE_MANIFEST_FILENAME,
+            dump_ensemble_manifest(manifest, params.indent),
+        )

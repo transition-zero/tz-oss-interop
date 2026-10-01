@@ -83,6 +83,18 @@ Feature: headless_cli runs a single translate pipeline non-interactively
     Then the headless exit code is 1
     And the log contains "invalid override"
 
+  Scenario: the console shows only errors, and the log keeps every line
+    When I run interop with argv "headless_cli --pipeline noop"
+    Then the headless exit code is 0
+    And the log contains "translated noop in"
+    And the stderr output does not contain "translated noop in"
+
+  Scenario: INTEROP_LOG_LEVEL lets the console show more than errors
+    Given the environment variable "INTEROP_LOG_LEVEL" is set to "INFO"
+    When I run interop with argv "headless_cli --pipeline noop"
+    Then the headless exit code is 0
+    And the stderr output contains "translated noop in"
+
   Scenario: an unrecognized adapter name does not fall back to the REPL
     When I run interop with argv "not_a_real_adapter"
     Then the headless exit code is 1

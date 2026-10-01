@@ -67,7 +67,7 @@ not recognise untouched so the mapping still drops and reports genuinely unknown
 steps:
   - name: normalise_carrier
   - name: pypsa_to_sienna_map_components
-  - name: pypsa_to_sienna_relate_components
+  - name: sienna_relate_components
 ```
 
 Pick `translate` and the `pypsa-to-sienna-normalised` pipeline, and the same messy
@@ -168,7 +168,7 @@ source:
     path: inputs/pypsa_network_csv
 steps:
   - name: pypsa_to_sienna_map_components
-  - name: pypsa_to_sienna_relate_components
+  - name: sienna_relate_components
 sinks:
   - name: emit_sienna_files
     params:
@@ -250,7 +250,7 @@ source:
     path: inputs/pypsa_network.nc
 steps:
   - name: pypsa_to_sienna_map_components
-  - name: pypsa_to_sienna_relate_components
+  - name: sienna_relate_components
 sinks:
   - name: emit_sienna_csv
     params:

@@ -355,9 +355,11 @@ class LoadConformity(StrEnum):
 
 
 class PrimeMover(StrEnum):
-    """Sienna PrimeMovers values used by the reverse carrier mapping.
+    """Sienna PrimeMovers values the reverse carrier mapping reads.
 
-    Source: ``SiennaSchemas/Core/common.json`` (subset this pipeline maps).
+    Every value SiennaSchemas states, because any of them can reach this hop. A pair this
+    pipeline names no canonical PyPSA carrier for still reads back, through the carrier the
+    sidecar carries.
     """
 
     ST = "ST"
@@ -369,17 +371,64 @@ class PrimeMover(StrEnum):
     WS = "WS"
     HY = "HY"
     PS = "PS"
+    BA = "BA"
+    CA = "CA"
+    CE = "CE"
+    CP = "CP"
+    CS = "CS"
+    CT = "CT"
+    ES = "ES"
+    FC = "FC"
+    FW = "FW"
+    HA = "HA"
+    HB = "HB"
+    HK = "HK"
+    IC = "IC"
+    OT = "OT"
 
 
 class ThermalFuel(StrEnum):
-    """Sienna ThermalFuels values used by the reverse carrier mapping."""
+    """Sienna ThermalFuels values the reverse carrier mapping reads.
 
-    COAL = "COAL"
-    NATURAL_GAS = "NATURAL_GAS"
-    NUCLEAR = "NUCLEAR"
+    Every value SiennaSchemas states, because any of them can reach this hop. A pair this
+    pipeline names no canonical PyPSA carrier for still reads back, through the carrier the
+    sidecar carries.
+    """
+
+    ANTHRACITE_COAL = "ANTHRACITE_COAL"
+    BITUMINOUS_COAL = "BITUMINOUS_COAL"
+    LIGNITE_COAL = "LIGNITE_COAL"
+    SUBBITUMINOUS_COAL = "SUBBITUMINOUS_COAL"
+    WASTE_COAL = "WASTE_COAL"
+    REFINED_COAL = "REFINED_COAL"
+    SYNTHESIS_GAS_COAL = "SYNTHESIS_GAS_COAL"
     DISTILLATE_FUEL_OIL = "DISTILLATE_FUEL_OIL"
-    GEOTHERMAL = "GEOTHERMAL"
+    JET_FUEL = "JET_FUEL"
+    KEROSENE = "KEROSENE"
+    PETROLEUM_COKE = "PETROLEUM_COKE"
+    RESIDUAL_FUEL_OIL = "RESIDUAL_FUEL_OIL"
+    PROPANE = "PROPANE"
+    SYNTHESIS_GAS_PETROLEUM_COKE = "SYNTHESIS_GAS_PETROLEUM_COKE"
+    WASTE_OIL = "WASTE_OIL"
+    BLASTE_FURNACE_GAS = "BLASTE_FURNACE_GAS"
+    NATURAL_GAS = "NATURAL_GAS"
+    OTHER_GAS = "OTHER_GAS"
+    AG_BYPRODUCT = "AG_BYPRODUCT"
+    MUNICIPAL_WASTE = "MUNICIPAL_WASTE"
     OTHER_BIOMASS_SOLIDS = "OTHER_BIOMASS_SOLIDS"
+    WOOD_WASTE_SOLIDS = "WOOD_WASTE_SOLIDS"
+    OTHER_BIOMASS_LIQUIDS = "OTHER_BIOMASS_LIQUIDS"
+    SLUDGE_WASTE = "SLUDGE_WASTE"
+    BLACK_LIQUOR = "BLACK_LIQUOR"
+    WOOD_WASTE_LIQUIDS = "WOOD_WASTE_LIQUIDS"
+    LANDFILL_GAS = "LANDFILL_GAS"
+    OTHEHR_BIOMASS_GAS = "OTHEHR_BIOMASS_GAS"
+    NUCLEAR = "NUCLEAR"
+    WASTE_HEAT = "WASTE_HEAT"
+    TIREDERIVED_FUEL = "TIREDERIVED_FUEL"
+    COAL = "COAL"
+    GEOTHERMAL = "GEOTHERMAL"
+    OTHER = "OTHER"
 
 
 class SiennaThermalGeneratorCol:

@@ -36,11 +36,16 @@ RESULTS_SUBDIR = "results"
 
 _MAPPINGS_SUBDIR = "mappings"
 
-# Neither subtree holds a manifest a user picks: results pipelines belong to compare, and
-# mapping pipelines are run by a composed pipeline that names them. Nothing in a manifest says
-# so, since a mapping pipeline is an ordinary PipelineSpec and only the plugin registry knows
-# that one of its sinks writes a user mappings file, so the directory says it instead.
-_UNLISTED_SUBDIRS = (RESULTS_SUBDIR, _MAPPINGS_SUBDIR)
+# Manifests a newer pipeline supersedes. Each one still loads by name and still runs, because
+# it is the baseline a run compares the newer pipeline's output against.
+_ARCHIVE_SUBDIR = "archive"
+
+# No subtree here holds a manifest a user picks: results pipelines belong to compare, mapping
+# pipelines are run by a composed pipeline that names them, and an archived pipeline is a
+# baseline rather than a product. Nothing in a manifest says so, since a mapping pipeline is an
+# ordinary PipelineSpec and only the plugin registry knows that one of its sinks writes a user
+# mappings file, so the directory says it instead.
+_UNLISTED_SUBDIRS = (RESULTS_SUBDIR, _MAPPINGS_SUBDIR, _ARCHIVE_SUBDIR)
 
 
 class NodeSpec(BaseModel):

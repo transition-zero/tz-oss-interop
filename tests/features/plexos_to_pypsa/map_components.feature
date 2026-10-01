@@ -76,7 +76,7 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     Then the log contains "Regions carrying Load contain more than one Node"
     And the PyPSA network "outputs/network.nc" has no loads
     And the PyPSA network "outputs/network.nc" has 2 buses
-    And the file "decisions.md" contains "a PyPSA load sits on one bus, so demand over several Nodes has no home"
+    And the file "decisions.md" contains "a Sienna load sits on one bus, so demand over several Nodes has no home"
 
   Scenario: Region Loads given as participation shares are left out rather than read as MW
     Given a Plexos model
@@ -237,7 +237,7 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     And the log contains "Rating on Solar2 carries 2"
     And the PyPSA network "outputs/network.nc" generator "Solar1" has a p_max_pu time series 0.1 0.2 0.3 0.4
     And the PyPSA network "outputs/network.nc" generator "Solar2" has no p_max_pu time series
-    And the file "decisions.md" contains "| `plexos.Generator.Solar2.Rating` = profile |  |  | the profile carries 2 values but the snapshot window holds 4, so the component keeps its static value instead | plexos-to-pypsa | drop_profiles_off_the_window |"
+    And the decisions report contains "| `plexos.Generator.Solar2.Rating` = profile |  |  | the profile carries 2 values but the snapshot window holds 4, so the component keeps its static value instead | $source_leg$ | $source_window_step$ |"
 
   Scenario: a transport Line carrying no rating becomes a Link that can move nothing
     Given a Plexos model
@@ -280,8 +280,8 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     And the model contains property "Wheeling Charge Back" of 3 on line "North_South"
     And the model is saved as "inputs/model.xml"
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the file "decisions.md" contains "PyPSA has no home for a region VoLL"
-    And the file "decisions.md" contains "PyPSA has no home for a region Price of Dump Energy"
+    Then the file "decisions.md" contains "Sienna has no home for a region VoLL"
+    And the file "decisions.md" contains "Sienna has no home for a region Price of Dump Energy"
     And the file "decisions.md" contains "the wheeling charge is dropped"
 
   Scenario: a near-zero reactance survives the rounding the sink applies
@@ -294,3 +294,27 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     When I run translate against "inputs/coupler.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" line "Coupler" attribute "x" is 0.0000003
     And the PyPSA network "outputs/network.nc" line "Coupler" attribute "r" is 0.0000002
+
+  Scenario: a trace row whose date states no period is left out and named, not a crash
+    A trace file edited by hand can keep a row that states a day but no period. That row is
+    at no point in time, so the run leaves it out and says which file held it, where it
+    used to stop with a datetime subtracted from nothing.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "Load" at "profiles/load.csv" with hourly values "100, 200, 300"
+    And the model contains load "North_Node" with peak 300 from data file "Load"
+    And the model is saved as "inputs/undated.xml"
+    And the trace file "inputs/profiles/load.csv" also holds the row "2026,1,1,,999"
+    When I run translate against "inputs/undated.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "outputs/network.nc" exists
+    And the log contains "profiles/load.csv holds 1 row(s) whose date cannot be read as a point in time, so each is left out"
+
+  Scenario: a Region VoLL is reported as dropped, because Sienna has no home for one
+    Given a Plexos model
+    And the model contains region "Grid" with VoLL 2000
+    And the model contains node "North" in region "Grid" with voltage 500
+    And the model contains load "North" with peak 1000
+    And the model is saved as "inputs/unpriced_voll.xml"
+    When I run translate against "inputs/unpriced_voll.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "decisions.md" contains "Sienna has no home for a region VoLL"

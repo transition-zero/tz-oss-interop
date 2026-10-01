@@ -1,21 +1,18 @@
 @slow @fork_unsafe
-Feature: PLEXOS to Sienna through the PyPSA hub
-  plexos-to-sienna is a composed pipeline, not a translator of its own: it runs
-  plexos-to-pypsa and then pypsa-to-sienna, handing the intermediate network from
-  the first leg's sink to the second leg's source. It is picked and run from the
-  same translate menu as either leg, and produces one decisions report covering
-  both.
+Feature: PLEXOS to Sienna, in one hop
+  plexos-to-sienna is a simple pipeline. One step, plexos_to_sienna_map_components,
+  reads the PLEXOS tables the source stages and writes the Sienna tables the sink
+  needs. No PyPSA file and no PyPSA table sits in the middle, so the decisions
+  report names no PyPSA pipeline and no PyPSA step.
 
-  The user answers one mappings file, written in PLEXOS words. A mapping pipeline
-  runs before both legs and derives the carrier mappings file the second leg reads,
-  so nothing asks a PLEXOS user for a PyPSA carrier.
+  The user answers one mappings file, written in PLEXOS words. The step reads that
+  file itself, so nothing derives a PyPSA carrier on the way.
 
-  What the scenarios pin down is the chain itself: both legs run, in order, over a
-  hand-off neither manifest names twice, and both record their decisions into one
-  report. The second scenario pins down the extensions hand-off: what PyPSA cannot
-  hold reaches the Sienna leg rather than being lost at the middle hop.
+  What the scenarios pin down is the translation: every Sienna component comes from
+  one hop, and the report says so. A PLEXOS value Sienna has no field for reaches
+  the extensions sidecar beside the system file, rather than being lost.
 
-  Scenario: the chain runs from a PLEXOS XML through to a Sienna system JSON
+  Scenario: the pipeline runs from a PLEXOS XML through to a Sienna system JSON
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
@@ -33,13 +30,14 @@ Feature: PLEXOS to Sienna through the PyPSA hub
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "North_Node" having "base_voltage" set to 1.0
     And the file "outputs/network.nc" does not exist
     And the run wrote "outputs/extensions.json" into the project exactly once
-    And the file "decisions.md" contains "plexos-to-pypsa"
-    And the file "decisions.md" contains "pypsa-to-sienna"
+    And the file "decisions.md" contains "| plexos-to-sienna | plexos_to_sienna_map_generators |"
+    And the file "decisions.md" does not contain "plexos-to-pypsa"
+    And the file "decisions.md" does not contain "pypsa-to-sienna"
 
-  Scenario: a reserve PyPSA cannot hold reaches the Sienna leg
-    PLEXOS has reserves, PyPSA has none, and Sienna has them again. The first leg sets the
-    reserve aside in its sidecar, the second leg stages that sidecar alongside the network and
-    carries the record into its own sidecar, so the reserve reaches a file the user keeps.
+  Scenario: a reserve Sienna has no component for reaches the extensions sidecar
+    PLEXOS has reserves and sienna_constants.py names no Sienna reserve component, so the step
+    writes the record into the extensions sidecar beside the system file rather than building
+    a component. The reserve reaches a file the user keeps.
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
@@ -55,10 +53,10 @@ Feature: PLEXOS to Sienna through the PyPSA hub
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "contributing_generators" set to ["GasPlant"]
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "direction" set to "up"
 
-  Scenario: a reserve whose requirement varies carries its companion across the hub
+  Scenario: a reserve whose requirement varies writes its companion beside the sidecar
     A requirement that changes each snapshot is too big for the record, so it travels in a
-    parquet beside the sidecar. The record points at that file by name, so the Sienna leg has
-    to carry the file over as well or the record would name a companion that is not there.
+    parquet beside the sidecar. The record points at that file by name, so the run has to
+    write the file as well or the record would name a companion that is not there.
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
@@ -76,7 +74,7 @@ Feature: PLEXOS to Sienna through the PyPSA hub
     Then the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "requirement_series" set to "reserves.parquet"
     And the file "outputs/reserves.parquet" exists
 
-  Scenario: the derive pipeline records the fuel name it turned into a carrier
+  Scenario: the report names the fuel behind a generator's Sienna type
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
@@ -87,10 +85,11 @@ Feature: PLEXOS to Sienna through the PyPSA hub
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
-    Then the file "decisions.md" contains "derive-plexos-sienna-mappings"
+    Then the file "decisions.md" contains "| plexos-to-sienna | plexos_to_sienna_map_generators |"
     And the file "decisions.md" contains "Natural Gas"
+    And the file "decisions.md" does not contain "derive-plexos-sienna-mappings"
 
-  Scenario: a Battery gets its Sienna type from the derive pipeline, which the user's file never names
+  Scenario: a Battery gets its Sienna type from the translator's default, which the user's file never names
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
@@ -117,8 +116,8 @@ Feature: PLEXOS to Sienna through the PyPSA hub
       | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
-    And the file "decisions.md" contains "`pypsa.Generator.PeatPlant`"
-    And the file "decisions.md" contains "carrier='Peat': the user mappings file names no such carrier"
+    And the file "decisions.md" contains "`plexos.Generator.PeatPlant`"
+    And the file "decisions.md" contains "fuel='Peat': the user mappings file names no such carrier"
 
   Scenario: a Fuel and a generator category of one name give one carrier
     Given a Plexos model
@@ -150,8 +149,8 @@ Feature: PLEXOS to Sienna through the PyPSA hub
     Then the printed output contains "gives the carrier 'HVO' two different Sienna targets"
     And the file "outputs/system.json" does not exist
 
-  Scenario: the validation run reads the three files the chain wrote
-    The product of the chain is the Sienna system. A person proves that system dispatches by
+  Scenario: the validation run reads the three files the pipeline wrote
+    The product of the pipeline is the Sienna system. A person proves that system dispatches by
     running sienna-to-power-simulations over it and solving the result, which is a separate
     run rather than a third leg of the chain.
     Given a Plexos model

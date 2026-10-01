@@ -90,7 +90,7 @@ _FILE_BACKED_NOTE = (
 _RETIRED_NOTE = "Units = 0 and no Max Units Built marks a retired generator"
 _CATEGORY_DERIVATION = "a PyPSA generator carries one carrier, so the category travels beside it"
 _PROFILE_NOT_STAGED_NOTE = (
-    "the source staged no series for this profile, so p_max_pu keeps the static "
+    "the source staged no series for this profile, so the rating keeps the static "
     "availability instead"
 )
 
@@ -221,7 +221,7 @@ def _source(
 
 
 @dataclass(frozen=True)
-class _ProfileOwner:
+class ProfileOwner:
     """A generator whose p_max_pu comes from a file-backed profile, and its scaling."""
 
     name: str
@@ -232,18 +232,18 @@ def _record_availability_time_series(
     state: State, mappings: list[GeneratorMapping], reporter: ComponentReporter
 ) -> None:
     """Emit p_max_pu metadata for each generator carrying a Rating / Rating Factor profile."""
-    owners_by_property: dict[str, list[_ProfileOwner]] = {}
+    owners_by_property: dict[str, list[ProfileOwner]] = {}
     for mapping in mappings:
         profile = mapping.availability.profile
         if profile is not None:
-            owner = _ProfileOwner(mapping.name, profile.scale)
+            owner = ProfileOwner(mapping.name, profile.scale)
             owners_by_property.setdefault(profile.property_name, []).append(owner)
     rows: list[dict[str, Any]] = []
     for property_name, owners in owners_by_property.items():
         if (PlexosClass.GENERATOR, property_name) in state.source_time_series:
             rows.extend(_metadata_rows(state, property_name, owners))
         else:
-            _report_profile_not_staged(property_name, owners, reporter)
+            report_profile_not_staged(property_name, owners, reporter)
     availability = rows + _units_out_rows(state, mappings) + _dated_capacity_rows(state, mappings)
     append_metadata(
         state,
@@ -287,8 +287,8 @@ def _as_minimum(row: dict[str, Any], minimum: float) -> dict[str, Any]:
     }
 
 
-def _report_profile_not_staged(
-    property_name: str, owners: list[_ProfileOwner], reporter: ComponentReporter
+def report_profile_not_staged(
+    property_name: str, owners: list[ProfileOwner], reporter: Any
 ) -> None:
     """A property the source could not read leaves its owners on their static availability."""
     for owner in owners:
@@ -377,7 +377,7 @@ def _fuel_price_row(
 
 
 def _metadata_rows(
-    state: State, property_name: str, owners: list[_ProfileOwner]
+    state: State, property_name: str, owners: list[ProfileOwner]
 ) -> list[dict[str, Any]]:
     """The source stages one series per file-backed property, stamped with the generator
     that reads it, so every owner here has rows in that series."""
