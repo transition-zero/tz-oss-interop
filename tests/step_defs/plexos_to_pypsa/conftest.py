@@ -1022,3 +1022,10 @@ def assert_demand_response_window(name: str, path: str, fractions: str) -> None:
         assert math.isclose(got, want, rel_tol=1e-9, abs_tol=1e-9), (
             f"p_max_pu[{step}] for {name!r} = {got}, expected {want}"
         )
+
+
+@given(parsers.parse('the trace file "{path}" also holds the row "{row}"'))
+def given_trace_file_holds_row(path: str, row: str) -> None:
+    """Append one raw line to a trace the model already wrote, as a hand edit can leave."""
+    trace = Path(path)
+    trace.write_text(trace.read_text(encoding="utf-8") + row + "\n", encoding="utf-8")

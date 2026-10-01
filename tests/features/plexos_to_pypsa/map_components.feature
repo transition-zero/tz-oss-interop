@@ -294,3 +294,18 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     When I run translate against "inputs/coupler.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" line "Coupler" attribute "x" is 0.0000003
     And the PyPSA network "outputs/network.nc" line "Coupler" attribute "r" is 0.0000002
+
+  Scenario: a trace row whose date states no period is left out and named, not a crash
+    A trace file edited by hand can keep a row that states a day but no period. That row is
+    at no point in time, so the run leaves it out and says which file held it, where it
+    used to stop with a datetime subtracted from nothing.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "Load" at "profiles/load.csv" with hourly values "100, 200, 300"
+    And the model contains load "North_Node" with peak 300 from data file "Load"
+    And the model is saved as "inputs/undated.xml"
+    And the trace file "inputs/profiles/load.csv" also holds the row "2026,1,1,,999"
+    When I run translate against "inputs/undated.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "outputs/network.nc" exists
+    And the log contains "profiles/load.csv holds 1 row(s) whose date cannot be read as a point in time, so each is left out"

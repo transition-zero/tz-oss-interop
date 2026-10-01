@@ -32,10 +32,15 @@ _PROFILES_NAMED = 3
 
 
 def series_timing(frame: pl.LazyFrame) -> tuple[int, str, int]:
-    """Return (resolution_seconds, initial_timestamp_iso, length) for a staged series."""
+    """Return (resolution_seconds, initial_timestamp_iso, length) for a staged series.
+
+    A row with no snapshot is at no point in time and sorts first, so it is left out before
+    the first two snapshots set the step.
+    """
     frame = filter_to_sample(frame, choose_reference_sample(frame))
     snapshots = (
         frame.select(StagedTimeSeriesCol.SNAPSHOT)
+        .drop_nulls()
         .unique()
         .sort(StagedTimeSeriesCol.SNAPSHOT)
         .collect(engine="streaming")[StagedTimeSeriesCol.SNAPSHOT]

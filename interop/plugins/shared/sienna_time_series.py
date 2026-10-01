@@ -56,8 +56,10 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
             resolution_minutes=DEFAULT_RESOLUTION_MINUTES,
         )
 
+    # A row with no snapshot is at no point in time and sorts first, so it would set the start.
     snapshots = (
         frame.select(pl.col(StagedTimeSeriesCol.SNAPSHOT))
+        .drop_nulls()
         .unique()
         .sort(StagedTimeSeriesCol.SNAPSHOT)
         .collect(engine="streaming")[StagedTimeSeriesCol.SNAPSHOT]
