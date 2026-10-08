@@ -1,6 +1,6 @@
 """Wrapper around the mutmut CLI that also disables string-literal mutations.
 
-Three patches applied before mutmut starts:
+Four patches applied before mutmut starts:
 
 1. The string-literal and string-method-swap mutation operators are stripped
    from `mutmut.mutation.mutators.mutation_operators`. They generate many low-
@@ -40,7 +40,12 @@ Three patches applied before mutmut starts:
    They stay mutable under `MUTATION_INCLUDE_FORK_UNSAFE` (`make mutation-full`),
    where the fresh-interpreter re-exec of patch 2 lets the `@slow` suite actually
    kill them. The generic `noop`/`emit_json` plugins are not excluded: non-slow
-   tests cover them for real.
+   tests cover them for real. `scripts/mutation_scope.py` holds the list.
+
+4. When `MUTATION_TARGETS_FILE` names a file, `only_mutate` takes the paths it lists,
+   so mutmut mutates only those files. The CI job on a pull request writes that file
+   with `scripts/mutation_scope.py`, and it does not start this wrapper when the list
+   is empty, because an empty `only_mutate` mutates every file.
 
 Which tests carry which tag, and why, is enforced by `scripts/lint_feature_tags.py`.
 Setting `MUTATION_INCLUDE_FORK_UNSAFE` (the `make mutation-full` target does this)
@@ -57,6 +62,13 @@ import os
 import subprocess
 import sys
 
+from mutation_scope import (
+    TARGETS_FILE_ENVIRONMENT_VARIABLE,
+    find_targets,
+    is_fork_unsafe_included,
+    list_slow_only_patterns,
+)
+
 
 def main() -> None:
     from mutmut import configuration
@@ -71,29 +83,9 @@ def main() -> None:
         op for op in mutators.mutation_operators if op[1] not in skipped_string_ops
     ]
 
-    include_fork_unsafe = bool(os.environ.get("MUTATION_INCLUDE_FORK_UNSAFE"))
-
-    # The translation plugin layer (every step/source/sink plus the shared recipe code, and
-    # the Julia solver adapter) is exercised only by the @slow @fork_unsafe pipeline tests,
-    # which the default `not slow` filter excludes. Under that filter these modules have no
-    # covering test, so every one of their mutants is a "no tests" non-result: zero signal,
-    # but mutmut still generates and iterates them. They are ~83% of the mutant set, and the
-    # slow tail of them is what pushes the CI job past its timeout. Exclude them from the
-    # default run; the fork-unsafe run (`make mutation-full`) keeps them mutable, where the
-    # patch-2 fresh-interpreter re-exec lets the @slow suite actually kill them. The generic
-    # noop/emit_json plugins are *not* excluded: non-slow tests cover them for real.
-    translation_layer_only_covered_by_slow = [
-        "interop/plugins/steps/*",
-        "interop/plugins/shared/*",
-        "interop/plugins/sources/stage_*",
-        "interop/plugins/sinks/_extensions_json.py",
-        "interop/plugins/sinks/emit_pypsa_*",
-        "interop/plugins/sinks/emit_sienna_*",
-        "interop/plugins/sinks/emit_power_simulations_*",
-        "interop/plugins/sinks/emit_results_parquet.py",
-        "interop/adapters/outbound/julia_solver.py",
-        "interop/templates/*",
-    ]
+    targets = find_targets()
+    if targets == []:
+        sys.exit(f"{TARGETS_FILE_ENVIRONMENT_VARIABLE} names an empty list: nothing to mutate.")
 
     # mutmut loads its config lazily the first time Config.get() needs it; wrap the loader so
     # the adjustments reach both stats collection and the per-mutant runs (the filter is read
@@ -104,10 +96,11 @@ def main() -> None:
 
     def load_config_for_run():  # type: ignore[no-untyped-def]
         config = original_load_config()
-        if include_fork_unsafe:
+        if is_fork_unsafe_included():
             config.pytest_add_cli_args = ["-m", "not slow or fork_unsafe"]
-        else:
-            config.do_not_mutate = [*config.do_not_mutate, *translation_layer_only_covered_by_slow]
+        config.do_not_mutate = [*config.do_not_mutate, *list_slow_only_patterns()]
+        if targets is not None:
+            config.only_mutate = targets
         return config
 
     configuration._load_config = load_config_for_run

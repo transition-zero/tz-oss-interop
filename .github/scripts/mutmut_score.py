@@ -2,8 +2,13 @@
 
 Reads the saved mutmut state via `mutmut results`, tallies mutants by status,
 computes a kill score (killed / (killed + survived)), writes a Markdown table
-to `mutation_score.md` for the sticky PR comment, and exits non-zero if no mutant
-was tested or if the score falls below `MUTATION_THRESHOLD` (default `0.0` = advisory).
+to `mutation_score.md` for the sticky PR comment, and exits non-zero if mutmut
+checked no mutant or if the score falls below `MUTATION_THRESHOLD` (default `0.0` =
+advisory).
+
+On a pull request, `MUTATION_TARGETS_FILE` names the files that the run mutates. When that
+list is empty, or when the listed files hold no mutant, no mutation test runs. The report
+then says that the job skipped the run by choice, and the script exits zero.
 
 Mutants with `no_tests`, `skipped`, `timeout`, or `suspicious` status do not
 count toward the denominator: they represent code paths the test suite does
@@ -47,14 +52,25 @@ _STATUS_RE = re.compile(r":\s*(" + "|".join(re.escape(s.value) for s in Status) 
 # owning function (method names keep the `ǁClassǁmethod` segment).
 _MUTANT_SUFFIX_RE = re.compile(r"__mutmut_\d+$")
 
+_REPORT_HEADING = "## Mutation testing report"
+_NO_TARGETS_REASON = (
+    "This pull request changes no file that mutmut mutates: a Python file under `interop/` "
+    "that `do_not_mutate` in `pyproject.toml` and `scripts/mutation_scope.py` do not exclude."
+)
+_NO_MUTANTS_REASON = "mutmut found no mutant in the files that this pull request changes:"
 
-def _run_results() -> str:
-    """The saved mutmut state, or an empty report if there is none to read.
 
-    This runs even when the mutmut step failed or was cut short, so a missing or
-    unreadable state is a report saying nothing ran, not a second CI failure on top
-    of the first.
-    """
+def _find_targets() -> list[str] | None:
+    """The files a targeted run mutates, or None when the run mutates every file."""
+    targets_file = os.environ.get("MUTATION_TARGETS_FILE")
+    if not targets_file:
+        return None
+    lines = Path(targets_file).read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip()]
+
+
+def _run_results() -> str | None:
+    """The saved mutmut state, or None if there is none to read."""
     # `--all true` is required: bare `mutmut results` only lists non-killed mutants,
     # which would understate the kill count.
     proc = subprocess.run(
@@ -65,11 +81,10 @@ def _run_results() -> str:
     )
     if proc.returncode != 0:
         print(
-            f"`mutmut results` exited {proc.returncode}; reporting an empty run.\n"
-            f"{proc.stderr.strip()}",
+            f"`mutmut results` exited {proc.returncode}.\n{proc.stderr.strip()}",
             file=sys.stderr,
         )
-        return ""
+        return None
     return proc.stdout
 
 
@@ -98,6 +113,10 @@ def _count_tested(counts: dict[Status, int]) -> int:
     return counts[Status.KILLED] + counts[Status.SURVIVED]
 
 
+def _has_checked_nothing(counts: dict[Status, int]) -> bool:
+    return sum(counts.values()) == counts[Status.NOT_CHECKED]
+
+
 def _score(counts: dict[Status, int]) -> float:
     denominator = _count_tested(counts)
     if denominator == 0:
@@ -105,16 +124,21 @@ def _score(counts: dict[Status, int]) -> float:
     return counts[Status.KILLED] / denominator
 
 
-def _render_markdown(counts: dict[Status, int], score: float, timeouts: Counter[str]) -> str:
+def _render_markdown(
+    counts: dict[Status, int], score: float, timeouts: Counter[str], targets: list[str] | None
+) -> str:
     tested = _count_tested(counts)
     lines = [
-        "## Mutation testing report",
+        _REPORT_HEADING,
         "",
         f"**Score: {score:.1%}** ({counts[Status.KILLED]} killed / {tested} tested)",
         "",
     ]
-    if tested == 0:
-        lines.extend(["> ❌ No mutant was tested. See the Run mutmut step in the job log.", ""])
+    if targets:
+        lines.extend(["This run mutates only the files that this pull request changes:", ""])
+        lines.extend([*_render_paths(targets), ""])
+    if _has_checked_nothing(counts):
+        lines.extend(["> ❌ mutmut checked no mutant. See the Run mutmut step in the job log.", ""])
     if counts[Status.NOT_CHECKED]:
         lines.extend(
             [
@@ -159,22 +183,46 @@ def _render_markdown(counts: dict[Status, int], score: float, timeouts: Counter[
     return "\n".join(lines)
 
 
-def main() -> int:
-    text = _run_results()
-    counts = _parse_counts(text)
-    score = _score(counts)
-    timeouts = _timeout_owners(text)
+def _render_paths(paths: list[str]) -> list[str]:
+    return [f"- `{path}`" for path in paths]
 
+
+def _render_skip(reason: list[str]) -> str:
+    lines = [_REPORT_HEADING, "", "⏭️ **No mutation test ran, by choice.**", "", *reason, ""]
+    lines.extend(["A push to `main` runs every mutant.", ""])
+    return "\n".join(lines)
+
+
+def _write_report(markdown: str) -> None:
     output_path = Path(os.environ.get("MUTMUT_SCORE_FILE", "mutation_score.md"))
-    output_path.write_text(_render_markdown(counts, score, timeouts), encoding="utf-8")
+    output_path.write_text(markdown, encoding="utf-8")
+
+
+def _report_skip(reason: list[str]) -> int:
+    _write_report(_render_skip(reason))
+    print("\n".join(line for line in reason if line))
+    return 0
+
+
+def main() -> int:
+    targets = _find_targets()
+    if targets == []:
+        return _report_skip([_NO_TARGETS_REASON])
+    text = _run_results()
+    counts = _parse_counts(text or "")
+    if targets and text is not None and sum(counts.values()) == 0:
+        return _report_skip([_NO_MUTANTS_REASON, "", *_render_paths(targets)])
+    score = _score(counts)
+    timeouts = _timeout_owners(text or "")
+    _write_report(_render_markdown(counts, score, timeouts, targets))
 
     if timeouts:
         print("Timeout-prone functions:")
         for owner, count in timeouts.most_common():
             print(f"  {count:>4}  {owner}")
 
-    if _count_tested(counts) == 0:
-        print("No mutant was tested. See the Run mutmut step.", file=sys.stderr)
+    if _has_checked_nothing(counts):
+        print("mutmut checked no mutant. See the Run mutmut step.", file=sys.stderr)
         return 1
 
     threshold = float(os.environ.get("MUTATION_THRESHOLD", "0.0"))

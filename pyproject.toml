@@ -127,7 +127,7 @@ markers = [
 [tool.mutmut]
 source_paths = ["interop/"]
 # Tests read these by path from the repository root, so mutmut's mutants/ sandbox needs a copy.
-also_copy = [".github/", "docs/"]
+also_copy = [".github/", "docs/", "scripts/"]
 do_not_mutate = [
     "interop/di/*",
     "interop/main.py",
