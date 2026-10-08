@@ -1,0 +1,15 @@
+name	color	description
+type:bug	d73a4a	Something that works, or should, behaves wrongly
+type:feature	a2eeef	New behaviour with acceptance criteria
+type:prototype	c5def5	A spike or exploration; the output is an answer, not kept code
+type:design	d4c5f9	Needs a design decision or spec before any code
+type:docs	0e8a16	Documentation only: README, CLAUDE.md or a spec; no behaviour change
+size:S	c2e0c6	Under half a day, one package, no contract change
+size:M	fef2c0	One to two days, or one PR across two packages
+size:L	f9d0c4	Several days, or a stack of PRs
+size:XL	e99695	Too big to start; split it first
+agent:build	1d76db	Opt in: the nightly run builds this issue, whatever its size
+hold	bfbfbf	Paused by a person: the nightly run neither builds nor pushes it
+nightly:generated	bfd4f2	Opened by the nightly run
+nightly:paused	000000	On the Nightly triage issue: the next run does nothing
+epic:approved	0e8a16	The epic's owner approved it: /epic approve may create its sub-issues
