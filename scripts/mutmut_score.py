@@ -57,6 +57,7 @@ _MUTANT_SUFFIX_RE = re.compile(r"__mutmut_\d+$")
 # mutmut writes one `<source path>.meta` file for each file that it mutates, before it
 # runs a test, so the file shows that mutmut got as far as generating the mutants.
 _MUTANTS_DIR = Path("mutants")
+_RUN_MUTMUT = Path(__file__).with_name("run_mutmut.py")
 
 _REPORT_HEADING = "## Mutation testing report"
 _NO_TARGETS_REASON = (
@@ -70,9 +71,10 @@ _FAILURE_MESSAGE = "mutmut checked no mutant. See the Run mutmut step"
 def _run_results() -> str | None:
     """The saved mutmut state, or None if there is none to read."""
     # `--all true` is required: bare `mutmut results` only lists non-killed mutants,
-    # which would understate the kill count.
+    # which would understate the kill count. The wrapper applies the same target list as
+    # the run, so results that an earlier run left in mutants/ for other files stay out.
     proc = subprocess.run(
-        ["uv", "run", "mutmut", "results", "--all", "true"],
+        [sys.executable, str(_RUN_MUTMUT), "results", "--all", "true"],
         capture_output=True,
         text=True,
         check=False,
