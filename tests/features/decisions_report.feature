@@ -67,3 +67,8 @@ Feature: translation decisions report
     And I run translate with source "noop" destination "noop" pipeline "decisions-test"
     Then the file "decisions.md" exists
     And the file "decisions-2.md" does not exist
+
+  Scenario: an event that a source records reaches decisions.md
+    Given a project-local source plugin that records the note "staged by the source"
+    When I translate with that source
+    Then the file "decisions.md" contains "staged by the source"

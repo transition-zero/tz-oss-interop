@@ -21,7 +21,9 @@ ValidatorFactory: TypeAlias = Callable[[str], Validator]
 SinkFactoryBuilder: TypeAlias = Callable[[FilesystemPort], SinkFactory]
 # Do not collapse this into a plain factory. A composed run binds each leg's source to the
 # filesystem that end of the chain uses, so there is no one process-wide port to bake in.
-SourceFactoryBuilder: TypeAlias = Callable[[FilesystemPort, UserMappingsLookup], SourceFactory]
+SourceFactoryBuilder: TypeAlias = Callable[
+    [FilesystemPort, EventRecorder, UserMappingsLookup], SourceFactory
+]
 StepFactoryBuilder: TypeAlias = Callable[[EventRecorder, UserMappingsLookup], StepFactory]
 ValidatorFactoryBuilder: TypeAlias = Callable[[UserMappingsLookup], ValidatorFactory]
 ReporterBuilder: TypeAlias = Callable[[FilesystemPort], ReportingPort]

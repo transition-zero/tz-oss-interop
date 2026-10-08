@@ -224,7 +224,9 @@ class TranslateUsingPipeline(TranslateUseCase):
         recorder = run.recorder_for(leg)
         return run_pipeline(
             leg.spec,
-            self._factories.source(run.track(leg.reads_handoff_from), user_mappings_lookup),
+            self._factories.source(
+                run.track(leg.reads_handoff_from), recorder, user_mappings_lookup
+            ),
             self._factories.step(recorder, user_mappings_lookup),
             self._factories.sink(run.track(leg.writes_handoff_to)),
             self._factories.validator(user_mappings_lookup),

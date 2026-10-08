@@ -76,12 +76,14 @@ class UnknownAdapterBindingError(UserInputError, KeyError):
 def make_source_factory(
     registry: Registry,
     fs: FilesystemPort,
+    recorder: EventRecorder,
     user_mappings_lookup: UserMappingsLookup,
 ) -> SourceFactory:
     def factory(name: str) -> Source:
         cls = _resolve(registry, Category.SOURCES, name)
+        scoped = ScopedRecorder(recorder, step=name)
         user_mapping_kwargs = _get_user_mapping_kwargs(cls, user_mappings_lookup)
-        instance: Source = _instantiate(cls, fs=fs, **user_mapping_kwargs)
+        instance: Source = _instantiate(cls, fs=fs, recorder=scoped, **user_mapping_kwargs)
         return instance
 
     return factory
