@@ -1,13 +1,16 @@
-"""pytest-bdd vocabulary for an OSeMOSYS model and the canonical stage files that it stages into."""
+"""pytest-bdd vocabulary for an OSeMOSYS model, in the otoole or the TZ format, and the canonical
+stage files that it stages into."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import polars as pl
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.otoole_models import VALUE_COLUMN, OtooleModelBuilder
+from interop_testing.builders.tz_osemosys_models import TzOsemosysModelBuilder
 
 _DEFAULTS_TABLE = Path("metadata") / "defaults.parquet"
 _KIND_COLUMN = "kind"
@@ -82,6 +85,83 @@ def given_otoole_model_written(
     otoole_model_builder: OtooleModelBuilder, config_path: str, csv_dir: str
 ) -> None:
     otoole_model_builder.write(Path(config_path), Path(csv_dir))
+
+
+@given("a TZ-format model", target_fixture="tz_model_builder")
+def given_tz_model() -> TzOsemosysModelBuilder:
+    return TzOsemosysModelBuilder()
+
+
+@given(parsers.parse('the TZ-format model has the regions "{region_ids}"'))
+def given_tz_regions(tz_model_builder: TzOsemosysModelBuilder, region_ids: str) -> None:
+    for region_id in region_ids.split():
+        tz_model_builder.add_region(region_id)
+
+
+@given(parsers.parse('the TZ-format model has the years "{years}"'))
+def given_tz_years(tz_model_builder: TzOsemosysModelBuilder, years: str) -> None:
+    tz_model_builder.add_years([int(year) for year in years.split()])
+
+
+@given(parsers.parse('the TZ-format model has the timeslices "{timeslices}"'))
+def given_tz_timeslices(tz_model_builder: TzOsemosysModelBuilder, timeslices: str) -> None:
+    tz_model_builder.add_timeslices(timeslices.split())
+
+
+@given(parsers.parse('the TZ-format model has the commodities "{commodity_ids}"'))
+def given_tz_commodities(tz_model_builder: TzOsemosysModelBuilder, commodity_ids: str) -> None:
+    for commodity_id in commodity_ids.split():
+        tz_model_builder.add_commodity(commodity_id)
+
+
+@given(parsers.parse('the TZ-format model has the field "{name}" set to {value}'))
+def given_tz_model_field(tz_model_builder: TzOsemosysModelBuilder, name: str, value: str) -> None:
+    tz_model_builder.set_model_field(name, json.loads(value))
+
+
+@given(parsers.parse('the TZ-format time definition has the field "{name}" set to {value}'))
+def given_tz_time_field(tz_model_builder: TzOsemosysModelBuilder, name: str, value: str) -> None:
+    tz_model_builder.set_time_field(name, json.loads(value))
+
+
+@given(parsers.parse('the TZ-format commodity "{object_id}" has the field "{name}" set to {value}'))
+def given_tz_commodity_field(
+    tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
+) -> None:
+    tz_model_builder.add_commodity(object_id, **{name: json.loads(value)})
+
+
+@given(
+    parsers.parse('the TZ-format technology "{object_id}" has the field "{name}" set to {value}')
+)
+def given_tz_technology_field(
+    tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
+) -> None:
+    tz_model_builder.add_technology(object_id, **{name: json.loads(value)})
+
+
+@given(parsers.parse('the TZ-format storage "{object_id}" has the field "{name}" set to {value}'))
+def given_tz_storage_field(
+    tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
+) -> None:
+    tz_model_builder.add_storage(object_id, **{name: json.loads(value)})
+
+
+@given(
+    parsers.parse(
+        'the TZ-format trade "{object_id}" of the commodity "{commodity}" '
+        'has the field "{name}" set to {value}'
+    )
+)
+def given_tz_trade_field(
+    tz_model_builder: TzOsemosysModelBuilder, object_id: str, commodity: str, name: str, value: str
+) -> None:
+    tz_model_builder.add_trade(object_id, commodity, **{name: json.loads(value)})
+
+
+@given(parsers.parse('the TZ-format model is written to "{path}"'))
+def given_tz_model_written(tz_model_builder: TzOsemosysModelBuilder, path: str) -> None:
+    tz_model_builder.write(Path(path))
 
 
 @then(parsers.parse('the canonical table "{path}" has the rows:'))
