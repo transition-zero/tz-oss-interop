@@ -17,7 +17,6 @@ import os
 import sys
 import tomllib
 from collections.abc import Iterable
-from dataclasses import dataclass
 from pathlib import Path
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -47,35 +46,23 @@ TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW = [
 ]
 
 
-@dataclass(frozen=True)
-class MutationScope:
-    """The files mutmut can mutate: under a source path, and matched by no exclusion."""
-
-    source_paths: list[str]
-    excluded_patterns: list[str]
-
-    def list_targets(self, changed_paths: Iterable[str]) -> list[str]:
-        return sorted({path for path in changed_paths if self.is_mutable(path)})
-
-    def is_mutable(self, path: str) -> bool:
-        return (
-            path.endswith(".py")
-            and path.startswith(tuple(self.source_paths))
-            and not any(fnmatch.fnmatch(path, pattern) for pattern in self.excluded_patterns)
-        )
-
-
 def main() -> None:
     changed_paths = [line.strip() for line in sys.stdin if line.strip()]
-    targets = build_mutation_scope().list_targets(changed_paths)
-    sys.stdout.write("".join(f"{target}\n" for target in targets))
+    sys.stdout.write("".join(f"{target}\n" for target in list_targets(changed_paths)))
 
 
-def build_mutation_scope() -> MutationScope:
+def list_targets(changed_paths: Iterable[str]) -> list[str]:
+    """The changed paths under a source path that no exclusion matches."""
     config = read_mutmut_config()
-    return MutationScope(
-        source_paths=config["source_paths"],
-        excluded_patterns=[*config["do_not_mutate"], *list_slow_only_patterns()],
+    excluded = [*config["do_not_mutate"], *list_slow_only_patterns()]
+    return sorted(
+        {
+            path
+            for path in changed_paths
+            if path.endswith(".py")
+            and path.startswith(tuple(config["source_paths"]))
+            and not any(fnmatch.fnmatch(path, pattern) for pattern in excluded)
+        }
     )
 
 

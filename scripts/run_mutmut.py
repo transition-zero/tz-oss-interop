@@ -64,9 +64,9 @@ import sys
 
 from mutation_scope import (
     TARGETS_FILE_ENVIRONMENT_VARIABLE,
+    TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW,
     find_targets,
     is_fork_unsafe_included,
-    list_slow_only_patterns,
 )
 
 
@@ -98,7 +98,8 @@ def main() -> None:
         config = original_load_config()
         if is_fork_unsafe_included():
             config.pytest_add_cli_args = ["-m", "not slow or fork_unsafe"]
-        config.do_not_mutate = [*config.do_not_mutate, *list_slow_only_patterns()]
+        else:
+            config.do_not_mutate = [*config.do_not_mutate, *TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW]
         if targets is not None:
             config.only_mutate = targets
         return config

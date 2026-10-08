@@ -1,11 +1,10 @@
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 from typing import NamedTuple, cast
 
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from tests.step_defs.conftest import load_script
 
 FEATURE = Path(__file__).resolve().parents[1] / "features" / "mutation_scope.feature"
 scenarios(str(FEATURE))
@@ -13,18 +12,9 @@ scenarios(str(FEATURE))
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _load_script(name: str, path: Path) -> ModuleType:
-    """A CI script, loaded by path because neither scripts/ nor .github/scripts is importable."""
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-mutation_scope = _load_script("mutation_scope", REPO_ROOT / "scripts" / "mutation_scope.py")
-mutmut_score = _load_script("mutmut_score", REPO_ROOT / ".github" / "scripts" / "mutmut_score.py")
+# mutmut_score imports mutation_scope by name, so mutation_scope must load first.
+mutation_scope = load_script("mutation_scope", REPO_ROOT / "scripts" / "mutation_scope.py")
+mutmut_score = load_script("mutmut_score", REPO_ROOT / "scripts" / "mutmut_score.py")
 
 
 class Report(NamedTuple):
@@ -44,7 +34,7 @@ def given_changed_files(changed: str) -> list[str]:
 @when("CI lists the mutation targets", target_fixture="targets")
 def when_list_targets(monkeypatch: pytest.MonkeyPatch, changed: list[str]) -> list[str]:
     monkeypatch.delenv("MUTATION_INCLUDE_FORK_UNSAFE", raising=False)
-    return cast(list[str], mutation_scope.build_mutation_scope().list_targets(changed))
+    return cast(list[str], mutation_scope.list_targets(changed))
 
 
 @then(parsers.re(r'the mutation targets are "(?P<expected>[^"]*)"'))
@@ -112,6 +102,11 @@ def when_build_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Report
 @then(parsers.parse('the report says "{text}"'))
 def then_report_says(report: Report, text: str) -> None:
     assert text in report.markdown, f"expected {text!r} in the report:\n{report.markdown}"
+
+
+@then(parsers.parse('the report does not say "{text}"'))
+def then_report_does_not_say(report: Report, text: str) -> None:
+    assert text not in report.markdown, f"expected no {text!r} in the report:\n{report.markdown}"
 
 
 @then("the report step passes")

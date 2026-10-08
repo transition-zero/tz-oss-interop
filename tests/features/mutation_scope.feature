@@ -51,6 +51,7 @@ Feature: A pull request mutates only the files that it changes
     And mutmut results with the statuses "not checked, not checked"
     When CI builds the mutation report
     Then the report says "mutmut checked no mutant"
+    And the report does not say "Score"
     And the report step fails
 
   Scenario: a targeted run that stops before mutmut writes its mutation data fails
@@ -58,6 +59,7 @@ Feature: A pull request mutates only the files that it changes
     And mutmut results that list no mutant
     When CI builds the mutation report
     Then the report says "mutmut checked no mutant"
+    And the report does not say "Score"
     And the report step fails
 
   Scenario: a run with no mutmut state fails
@@ -65,4 +67,5 @@ Feature: A pull request mutates only the files that it changes
     And no mutmut results
     When CI builds the mutation report
     Then the report says "mutmut checked no mutant"
+    And the report does not say "Score"
     And the report step fails

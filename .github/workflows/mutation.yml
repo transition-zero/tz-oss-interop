@@ -53,26 +53,12 @@ jobs:
           cat "$MUTATION_TARGETS_FILE"
           echo "count=$(grep -c . "$MUTATION_TARGETS_FILE" || true)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore mutmut cache
-        if: steps.targets.outputs.count != '0'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: mutants
-          # No restore-keys fallback: mutmut's own copy_src_dir() only copies a file into
-          # mutants/ if it doesn't already exist there, so restoring a cache saved under a
-          # different (non-matching) key would silently leave stale non-Python files (e.g.
-          # pipeline YAML) in place indefinitely. A miss on this exact key should mean a
-          # fully fresh mutants/, not a mismatched one. mutmut copies tests/, pyproject.toml
-          # and the also_copy directories over the old ones, so a file deleted from them
-          # stays in a restored mutants/; they are in the key for that reason.
-          key: mutmut-${{ runner.os }}-${{ hashFiles('interop/**', 'tests/**', '.github/**', 'docs/**', 'scripts/**', 'pyproject.toml', 'uv.lock', 'mutation_targets.txt') }}
-
       # Bounded well inside the job's own limit so the score report and PR comment
       # always get to run. mutmut writes each mutant's result to disk as it finishes,
       # so a run cut short here still reports everything it got through; the report
       # names the remainder as unchecked rather than scoring them.
       - name: Run mutmut
-        if: steps.targets.outputs.count != '0'
+        if: github.event_name != 'pull_request' || steps.targets.outputs.count != '0'
         timeout-minutes: 20
         continue-on-error: true
         run: make mutation || true
@@ -82,7 +68,7 @@ jobs:
         if: always()
         env:
           MUTATION_THRESHOLD: "0.0"
-        run: uv run python .github/scripts/mutmut_score.py
+        run: uv run python scripts/mutmut_score.py
 
       - name: Post sticky PR comment
         if: always() && github.event_name == 'pull_request'

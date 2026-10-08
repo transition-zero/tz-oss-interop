@@ -34,6 +34,8 @@ from collections import Counter
 from enum import StrEnum
 from pathlib import Path
 
+from mutation_scope import find_targets
+
 
 class Status(StrEnum):
     KILLED = "killed"
@@ -62,15 +64,7 @@ _NO_TARGETS_REASON = (
     "that `do_not_mutate` in `pyproject.toml` and `scripts/mutation_scope.py` do not exclude."
 )
 _NO_MUTANTS_REASON = "mutmut found no mutant in the files that this pull request changes:"
-
-
-def _find_targets() -> list[str] | None:
-    """The files a targeted run mutates, or None when the run mutates every file."""
-    targets_file = os.environ.get("MUTATION_TARGETS_FILE")
-    if not targets_file:
-        return None
-    lines = Path(targets_file).read_text(encoding="utf-8").splitlines()
-    return [line.strip() for line in lines if line.strip()]
+_FAILURE_MESSAGE = "mutmut checked no mutant. See the Run mutmut step"
 
 
 def _run_results() -> str | None:
@@ -113,10 +107,6 @@ def _timeout_owners(text: str) -> Counter[str]:
     return owners
 
 
-def _count_tested(counts: dict[Status, int]) -> int:
-    return counts[Status.KILLED] + counts[Status.SURVIVED]
-
-
 def _has_mutation_data(targets: list[str]) -> bool:
     return all((_MUTANTS_DIR / f"{target}.meta").is_file() for target in targets)
 
@@ -126,7 +116,7 @@ def _has_checked_nothing(counts: dict[Status, int]) -> bool:
 
 
 def _score(counts: dict[Status, int]) -> float:
-    denominator = _count_tested(counts)
+    denominator = counts[Status.KILLED] + counts[Status.SURVIVED]
     if denominator == 0:
         return 0.0
     return counts[Status.KILLED] / denominator
@@ -135,7 +125,7 @@ def _score(counts: dict[Status, int]) -> float:
 def _render_markdown(
     counts: dict[Status, int], score: float, timeouts: Counter[str], targets: list[str] | None
 ) -> str:
-    tested = _count_tested(counts)
+    tested = counts[Status.KILLED] + counts[Status.SURVIVED]
     lines = [
         _REPORT_HEADING,
         "",
@@ -144,9 +134,7 @@ def _render_markdown(
     ]
     if targets:
         lines.extend(["This run mutates only the files that this pull request changes:", ""])
-        lines.extend([*_render_paths(targets), ""])
-    if _has_checked_nothing(counts):
-        lines.extend(["> ❌ mutmut checked no mutant. See the Run mutmut step in the job log.", ""])
+        lines.extend([*_build_path_lines(targets), ""])
     if counts[Status.NOT_CHECKED]:
         lines.extend(
             [
@@ -191,14 +179,18 @@ def _render_markdown(
     return "\n".join(lines)
 
 
-def _render_paths(paths: list[str]) -> list[str]:
+def _build_path_lines(paths: list[str]) -> list[str]:
     return [f"- `{path}`" for path in paths]
 
 
-def _render_skip(reason: list[str]) -> str:
+def _build_skip_markdown(reason: list[str]) -> str:
     lines = [_REPORT_HEADING, "", "⏭️ **No mutation test ran, by choice.**", "", *reason, ""]
     lines.extend(["A push to `main` runs every mutant.", ""])
     return "\n".join(lines)
+
+
+def _build_failure_markdown() -> str:
+    return "\n".join([_REPORT_HEADING, "", f"> ❌ {_FAILURE_MESSAGE} in the job log.", ""])
 
 
 def _write_report(markdown: str) -> None:
@@ -206,32 +198,38 @@ def _write_report(markdown: str) -> None:
     output_path.write_text(markdown, encoding="utf-8")
 
 
-def _report_skip(reason: list[str]) -> int:
-    _write_report(_render_skip(reason))
+def _write_skip_report(reason: list[str]) -> int:
+    _write_report(_build_skip_markdown(reason))
     print("\n".join(line for line in reason if line))
     return 0
 
 
+def _write_failure_report() -> int:
+    _write_report(_build_failure_markdown())
+    print(f"{_FAILURE_MESSAGE}.", file=sys.stderr)
+    return 1
+
+
 def main() -> int:
-    targets = _find_targets()
+    targets = find_targets()
     if targets == []:
-        return _report_skip([_NO_TARGETS_REASON])
+        return _write_skip_report([_NO_TARGETS_REASON])
     text = _run_results()
-    counts = _parse_counts(text or "")
-    if targets and text is not None and sum(counts.values()) == 0 and _has_mutation_data(targets):
-        return _report_skip([_NO_MUTANTS_REASON, "", *_render_paths(targets)])
+    if text is None:
+        return _write_failure_report()
+    counts = _parse_counts(text)
+    if targets and not any(counts.values()) and _has_mutation_data(targets):
+        return _write_skip_report([_NO_MUTANTS_REASON, "", *_build_path_lines(targets)])
+    if _has_checked_nothing(counts):
+        return _write_failure_report()
     score = _score(counts)
-    timeouts = _timeout_owners(text or "")
+    timeouts = _timeout_owners(text)
     _write_report(_render_markdown(counts, score, timeouts, targets))
 
     if timeouts:
         print("Timeout-prone functions:")
         for owner, count in timeouts.most_common():
             print(f"  {count:>4}  {owner}")
-
-    if _has_checked_nothing(counts):
-        print("mutmut checked no mutant. See the Run mutmut step.", file=sys.stderr)
-        return 1
 
     threshold = float(os.environ.get("MUTATION_THRESHOLD", "0.0"))
     if score < threshold:

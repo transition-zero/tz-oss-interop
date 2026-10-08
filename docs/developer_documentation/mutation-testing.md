@@ -18,7 +18,7 @@ To target a single function or file, append the dotted name (or path) as a posit
 uv run python scripts/run_mutmut.py run interop.adapters.inbound.interactive_cli.app
 ```
 
-mutmut writes everything under `mutants/`: the copied working tree, its stats (`mutmut-stats.json`), and per-file results (`<file>.py.meta`) that let a rerun skip mutants it has already evaluated. The directory is gitignored. The CI mutation job caches `mutants/` so each run resumes from the previous result set instead of re-evaluating every mutant from scratch.
+mutmut writes everything under `mutants/`: the copied working tree, its stats (`mutmut-stats.json`), and per-file results (`<file>.py.meta`) that let a rerun skip mutants it has already evaluated. The directory is gitignored. CI starts each run from an empty `mutants/`.
 
 ## What CI mutates
 
