@@ -159,14 +159,22 @@ loader asks the user for the file. A file that holds only `osemosys: {}` is vali
 
 #### `stage_osemosys_csv` reads the otoole CSV format
 
-Its parameter is one directory. It reads the config YAML in that directory first. It
-reads the entries of `type: set` and `type: param`, and it does not read `type: result`.
-It finds each CSV file by its full name, then by its `short_name`.
+It has two parameters: `config_path`, the otoole config YAML, and `csv_dir`, the
+directory of CSV files. Two parameters are necessary for two reasons:
+
+- A model can keep its config YAML outside the CSV directory. The otoole case-study model
+  does.
+- The `FilesystemPort` cannot list a directory, so the source cannot search for the
+  config YAML.
+
+The source reads the config YAML first. It reads the entries of `type: set` and
+`type: param`, and it does not read `type: result`. It finds each CSV file by its full
+name, then by its `short_name`.
 
 | Input | What the source does |
 | --- | --- |
-| No config YAML in the directory, or more than one | It stops with an error |
-| An `.xlsx` workbook or a MathProg datafile | It stops with an error |
+| `config_path` does not end in `.yaml` or `.yml` | It stops with an error |
+| `csv_dir` names a file, for example an `.xlsx` workbook or a MathProg datafile | It stops with an error |
 | A declared parameter with no CSV file | It keeps the declaration with no rows, so the default value applies |
 | A CSV header that is not the declared key and `VALUE` | It leaves out that table, records `COMPONENT_SKIPPED`, and writes a warning |
 
