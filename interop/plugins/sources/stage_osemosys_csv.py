@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import ClassVar, NamedTuple
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
@@ -102,16 +103,20 @@ class StageOsemosysCsv(StagedSource):
             )
         if self._fs.can_read(params.csv_dir):
             raise UserInputError(
-                f"The otoole CSV directory must be a directory, but {params.csv_dir} is a file. "
+                f"The otoole CSV directory {params.csv_dir} does not name a directory. "
                 "Give the directory that holds one CSV file for each set and parameter."
             )
 
     def _is_yaml_path(self, config_path: Location) -> bool:
-        return location_name(config_path).lower().endswith(YAML_SUFFIXES)
+        """A URL may carry a query or a fragment after the file name, so only its path counts."""
+        name = location_name(
+            urlsplit(config_path).path if isinstance(config_path, str) else config_path
+        )
+        return name.lower().endswith(YAML_SUFFIXES)
 
     def _stage_raw(self, params: StageOsemosysCsvParams, staging_dir: Path) -> RawStage:
         config = self._read_config(params.config_path)
-        found_sets = self._find_csv_files(params.csv_dir, config.sets)
+        found_sets = self._find_csv_files(params.csv_dir, config.sets, {})
         found_parameters = self._find_csv_files(
             params.csv_dir, list(config.declarations), config.short_names
         )
@@ -131,10 +136,9 @@ class StageOsemosysCsv(StagedSource):
             raise UserInputError(f"Invalid {_CONFIG_DESCRIPTION} at {config_path}:\n{exc}") from exc
 
     def _find_csv_files(
-        self, csv_dir: Path, names: list[str], short_names: dict[str, str] | None = None
+        self, csv_dir: Path, names: list[str], short_names: dict[str, str]
     ) -> dict[str, bytes | None]:
         """The full name is tried first, then the short name; a missing file is `None`."""
-        short_names = short_names or {}
         return {
             name: self._find_csv_file(csv_dir, [name, short_names.get(name, name)])
             for name in names

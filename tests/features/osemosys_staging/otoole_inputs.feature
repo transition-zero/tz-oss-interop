@@ -87,6 +87,26 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
     And the log contains "CapitalCost"
     And the file "decisions.md" contains "the file cannot be read as CSV"
 
+  Scenario: A set file whose rows have different numbers of fields stages an empty set
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "model/csv/TECHNOLOGY.csv" containing the lines:
+      | line       |
+      | VALUE      |
+      | GAS        |
+      | GAS,1,2    |
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/TECHNOLOGY.parquet" has 0 rows
+    And the canonical table "canonical/sets/REGION.parquet" has 1 rows
+    And the log contains "TECHNOLOGY"
+    And the file "decisions.md" contains "the file cannot be read as CSV"
+
   Scenario: A result entry is not read
     Given an otoole model
     And the otoole set "REGION" holds "R1"
@@ -125,3 +145,14 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
     Then the pipeline exit code is 1
     And the log contains "model/data.txt"
     And the log contains "directory"
+
+  Scenario: A config URL with a query string is not refused as a non-YAML path
+    Given an otoole model
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=http://127.0.0.1:1/model/config.yaml?X-Amz-Signature=abc source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log does not contain "must be a YAML file"
+    And the log contains "config.yaml?X-Amz-Signature=abc"

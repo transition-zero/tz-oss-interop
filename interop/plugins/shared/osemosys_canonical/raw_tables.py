@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import NamedTuple
 
 import polars as pl
 
@@ -28,22 +27,14 @@ _UNREADABLE_FILE_REASON = "cannot be read as CSV"
 _WRONG_HEADER_REASON = "have a header that is not the declared key and VALUE"
 
 
-class ParsedFiles(NamedTuple):
-    """The table of each file that parses, with the names of the files that do not."""
-
-    tables: dict[str, pl.DataFrame | None]
-    unreadable: list[str]
-
-
 def map_set_tables(
     found: dict[str, bytes | None], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    """Each set with its members as strings; a set with no file has no members."""
+    """Each set with its members as strings; a set with no usable file has no members."""
     parsed = _parse_files(found, TableKind.SET, recorder)
     tables = {
         name: table if table is not None else pl.DataFrame(schema={VALUE_COL: pl.Utf8})
-        for name, table in parsed.tables.items()
-        if name not in parsed.unreadable
+        for name, table in parsed.items()
     }
     missing = _list_tables_without_value(tables)
     notes = dict.fromkeys(missing, _NO_VALUE_COLUMN_NOTE)
@@ -61,7 +52,7 @@ def map_parameter_tables(
     parsed = _parse_files(found, TableKind.PARAMETER, recorder)
     tables = {
         name: table if table is not None else _build_empty_table(declarations[name])
-        for name, table in parsed.tables.items()
+        for name, table in parsed.items()
     }
     wrong_headers = _build_wrong_header_notes(tables, declarations)
     _report_skipped_files(TableKind.PARAMETER, wrong_headers, _WRONG_HEADER_REASON, recorder)
@@ -78,7 +69,7 @@ def map_parameter_tables(
 
 def _parse_files(
     found: dict[str, bytes | None], kind: TableKind, recorder: EventRecorder
-) -> ParsedFiles:
+) -> dict[str, pl.DataFrame | None]:
     tables: dict[str, pl.DataFrame | None] = {}
     notes: dict[str, str] = {}
     for name, content in found.items():
@@ -86,12 +77,12 @@ def _parse_files(
             tables[name] = _parse_csv_table(content) if content and content.strip() else None
         except pl.exceptions.PolarsError as exc:
             tables[name] = None
-            notes[name] = _UNREADABLE_FILE_NOTE.format(reason=_summarise_error(exc))
+            notes[name] = _UNREADABLE_FILE_NOTE.format(reason=_build_error_summary(exc))
     _report_skipped_files(kind, notes, _UNREADABLE_FILE_REASON, recorder)
-    return ParsedFiles(tables, list(notes))
+    return tables
 
 
-def _summarise_error(error: Exception) -> str:
+def _build_error_summary(error: Exception) -> str:
     return (str(error).splitlines() or [type(error).__name__])[0]
 
 
