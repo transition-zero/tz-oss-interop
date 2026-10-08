@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 import polars as pl
 
@@ -17,27 +18,33 @@ from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
 
-_UNMAPPED_SET_NOTE = "no canonical set has this name, so the canonical stage leaves it out"
+_UNMAPPED_SET_NOTE = "no canonical set has this name, so it stays an extension table"
+
+
+class MappedSets(NamedTuple):
+    """The canonical sets, and the raw sets that stay extension tables, each by name."""
+
+    sets: dict[str, pl.LazyFrame]
+    extensions: dict[str, pl.LazyFrame]
 
 
 def map_sets(
     raw_sets: dict[str, pl.LazyFrame], schema: CanonicalSchema, recorder: EventRecorder
-) -> dict[str, pl.LazyFrame]:
-    """Each raw set whose name is a canonical set, by that name."""
+) -> MappedSets:
     mapped = {name: table for name, table in raw_sets.items() if name in schema.sets}
+    unmapped = {name: table for name, table in raw_sets.items() if name not in mapped}
     for name in mapped:
         record_automatic_match(recorder, TableKind.SET, name)
-    _report_unmapped_sets([name for name in raw_sets if name not in mapped], recorder)
-    return mapped
+    _report_unmapped_sets(list(unmapped), recorder)
+    return MappedSets(sets=mapped, extensions=unmapped)
 
 
 def _report_unmapped_sets(names: list[str], recorder: EventRecorder) -> None:
-    if not names:
-        return
     for name in names:
         record_not_mapped(recorder, TableKind.SET, name, _UNMAPPED_SET_NOTE)
-    log.warning(
-        "%d raw set(s) have no canonical set name, so the canonical stage leaves each out: %s",
-        len(names),
-        name_a_few(names),
-    )
+    if names:
+        log.warning(
+            "%d raw set(s) have no canonical set name, so each stays an extension table: %s",
+            len(names),
+            name_a_few(names),
+        )

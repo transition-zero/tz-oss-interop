@@ -48,10 +48,12 @@ def _map_raw_stage(
     raw: RawStage, mappings: OsemosysMappings, recorder: EventRecorder
 ) -> list[CanonicalTable]:
     schema = load_canonical_schema()
+    sets = map_sets(raw.sets, schema, recorder)
     parameters = map_parameters(raw, schema, recorder)
-    metadata = build_metadata_tables(schema, parameters.declared_defaults, mappings.units)
+    metadata = build_metadata_tables(schema, parameters, mappings.units)
     return [
-        *_build_canonical_tables(TableKind.SET, map_sets(raw.sets, schema, recorder)),
+        *_build_canonical_tables(TableKind.SET, sets.sets),
+        *_build_canonical_tables(TableKind.EXTENSION, sets.extensions),
         *_build_canonical_tables(TableKind.PARAMETER, parameters.parameters),
         *_build_canonical_tables(TableKind.EXTENSION, parameters.extensions),
         *_build_canonical_tables(TableKind.METADATA, metadata),

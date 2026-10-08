@@ -41,4 +41,4 @@ class EmitOsemosysCanonicalParquet(Sink):
     def _write_table(self, output_dir: Path, canonical: CanonicalTable) -> None:
         directory = output_dir / TABLE_DIRECTORIES[canonical.kind]
         with self._fs.open_write(directory / f"{canonical.name}{PARQUET_SUFFIX}") as stream:
-            canonical.table.collect().write_parquet(stream)
+            canonical.table.sink_parquet(stream)

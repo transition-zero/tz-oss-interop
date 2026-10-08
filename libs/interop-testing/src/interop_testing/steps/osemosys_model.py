@@ -10,7 +10,10 @@ from pytest_bdd import given, parsers, then
 from interop_testing.builders.otoole_models import VALUE_COLUMN, OtooleModelBuilder
 
 _DEFAULTS_TABLE = Path("metadata") / "defaults.parquet"
+_KIND_COLUMN = "kind"
 _PARAMETER_COLUMN = "parameter"
+_PARAMETER_KIND = "parameter"
+_EXTENSION_KIND = "extension"
 _DEFAULT_COLUMN = "default"
 
 
@@ -94,11 +97,25 @@ def assert_canonical_column_type(column: str, path: str, dtype: str) -> None:
 
 @then(parsers.parse('the canonical default of "{parameter}" in "{directory}" is {expected:g}'))
 def assert_canonical_default(parameter: str, directory: str, expected: float) -> None:
-    defaults = pl.read_parquet(Path(directory) / _DEFAULTS_TABLE)
-    matching = defaults.filter(pl.col(_PARAMETER_COLUMN) == parameter)
-    assert matching.height == 1, f"expected one default for {parameter}, got {matching.height}"
-    actual = matching.item(0, _DEFAULT_COLUMN)
+    actual = _read_default(Path(directory), _PARAMETER_KIND, parameter)
     assert actual == expected, f"expected the default of {parameter} to be {expected}, got {actual}"
+
+
+@then(
+    parsers.parse(
+        'the canonical default of extension "{extension}" in "{directory}" is {expected:g}'
+    )
+)
+def assert_extension_default(extension: str, directory: str, expected: float) -> None:
+    actual = _read_default(Path(directory), _EXTENSION_KIND, extension)
+    assert actual == expected, f"expected the default of {extension} to be {expected}, got {actual}"
+
+
+def _read_default(directory: Path, kind: str, name: str) -> object:
+    defaults = pl.read_parquet(directory / _DEFAULTS_TABLE)
+    matching = defaults.filter((pl.col(_KIND_COLUMN) == kind) & (pl.col(_PARAMETER_COLUMN) == name))
+    assert matching.height == 1, f"expected one {kind} default for {name}, got {matching.height}"
+    return matching.item(0, _DEFAULT_COLUMN)
 
 
 def _format_cell(cell: object) -> str:

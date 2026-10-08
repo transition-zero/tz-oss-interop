@@ -45,7 +45,7 @@ TIMESLICE = "TIMESLICE"
 REGION = "REGION"
 
 
-class DeclarationCol(StrEnum):
+class DeclarationColumn(StrEnum):
     """The columns of the raw declarations table."""
 
     NAME = "name"
@@ -61,9 +61,10 @@ class MetadataTable(StrEnum):
     SCHEMA = "schema"
 
 
-class MetadataCol(StrEnum):
+class MetadataColumn(StrEnum):
     """The columns of the canonical metadata tables."""
 
+    KIND = "kind"
     PARAMETER = "parameter"
     DEFAULT = "default"
     QUANTITY = "quantity"

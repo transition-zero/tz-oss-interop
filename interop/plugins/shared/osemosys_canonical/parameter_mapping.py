@@ -23,11 +23,13 @@ _EXTENSION_NOTE = "no canonical parameter has this name and key, so it stays an 
 
 
 class MappedParameters(NamedTuple):
-    """The canonical and extension tables by name, and the default each canonical one declares."""
+    """The canonical and extension tables by name, with the default that the model declares for
+    each."""
 
     parameters: dict[str, pl.LazyFrame]
     extensions: dict[str, pl.LazyFrame]
-    declared_defaults: dict[str, float | None]
+    parameter_defaults: dict[str, float | None]
+    extension_defaults: dict[str, float | None]
 
 
 def map_parameters(
@@ -41,8 +43,13 @@ def map_parameters(
     return MappedParameters(
         parameters={name: _reshape_to_key(raw, name, schema) for name in matched},
         extensions={name: raw.parameters[name] for name in unmatched},
-        declared_defaults={name: raw.declarations[name].default for name in matched},
+        parameter_defaults=_build_declared_defaults(raw, matched),
+        extension_defaults=_build_declared_defaults(raw, unmatched),
     )
+
+
+def _build_declared_defaults(raw: RawStage, names: list[str]) -> dict[str, float | None]:
+    return {name: raw.declarations[name].default for name in names}
 
 
 def _is_automatic_match(raw: RawStage, name: str, schema: CanonicalSchema) -> bool:

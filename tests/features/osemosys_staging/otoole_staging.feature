@@ -150,3 +150,97 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
     Then the pipeline exit code is 0
     And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
     And the canonical table "canonical/parameters/CapitalCost.parquet" has the columns "REGION TECHNOLOGY YEAR VALUE"
+
+  Scenario: The metadata keeps the declared default of an extension table
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "YearlyPeakXX" keyed by "REGION YEAR" with default 5 has the rows:
+      | REGION | YEAR | VALUE |
+      | R1     | 2030 | 10.19 |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical default of extension "YearlyPeakXX" in "canonical" is 5
+
+  Scenario: A row whose VALUE is not a number is left out and the other rows stay
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS COAL"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE  |
+      | R1     | GAS        | 2030 | 689.84 |
+      | R1     | COAL       | 2030 | n/a    |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE  |
+      | R1     | GAS        | 2030 | 689.84 |
+    And the log contains "CapitalCost"
+    And the file "decisions.md" contains "## Components skipped (1)"
+    And the file "decisions.md" contains "1 row(s) state a VALUE that is not a number, so each is left out"
+
+  Scenario: A set file with no VALUE column is left out
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "model/csv/TECHNOLOGY.csv" containing the lines:
+      | line |
+      | NAME |
+      | GAS  |
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the file "canonical/sets/TECHNOLOGY.parquet" does not exist
+    And the file "canonical/sets/REGION.parquet" exists
+    And the log contains "TECHNOLOGY"
+    And the file "decisions.md" contains "## Components skipped (1)"
+    And the file "decisions.md" contains "the file has no VALUE column, so the raw stage leaves it out"
+
+  Scenario: An empty CSV file stages a canonical table with no rows
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "model/csv/CapitalCost.csv" containing the lines:
+      | line |
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the file "model/csv/CapitalCost.csv" does not contain "VALUE"
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has the columns "REGION TECHNOLOGY YEAR VALUE"
+
+  Scenario: A raw set with no canonical name stays an extension table
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "COUNTRY" holds "AT DE"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/extensions/COUNTRY.parquet" has the rows:
+      | VALUE |
+      | AT    |
+      | DE    |
+    And the log contains "COUNTRY"
+    And the file "decisions.md" contains "`osemosys.set.COUNTRY`"
+    And the file "decisions.md" contains "## Fields not mapped (1)"

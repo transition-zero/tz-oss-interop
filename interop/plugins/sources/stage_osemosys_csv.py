@@ -12,16 +12,16 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from interop.core.pipeline import StagedSource, State
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.canonical_stage import build_canonical_stage
-from interop.plugins.shared.osemosys_canonical.constants import (
-    CSV_SUFFIX,
-    VALUE_COL,
-    OtooleEntryType,
-)
+from interop.plugins.shared.osemosys_canonical.constants import CSV_SUFFIX, OtooleEntryType
 from interop.plugins.shared.osemosys_canonical.mappings import OsemosysCanonicalMappings
 from interop.plugins.shared.osemosys_canonical.raw_stage import (
     RawDeclaration,
     RawStage,
     write_raw_stage,
+)
+from interop.plugins.shared.osemosys_canonical.raw_tables import (
+    map_parameter_tables,
+    map_set_tables,
 )
 from interop.ports.errors import MissingInputError, UserInputError
 from interop.ports.outbound.filesystem import FilesystemPort, InputDirectory, InputFile, Location
@@ -82,12 +82,11 @@ class StageOsemosysCsv(StagedSource):
 
     def _stage_raw(self, params: StageOsemosysCsvParams, staging_dir: Path) -> RawStage:
         config = self._read_config(params.config_path)
+        found_sets = self._find_csv_tables(params.csv_dir, config.sets)
+        found_parameters = self._find_csv_tables(params.csv_dir, list(config.declarations))
         return write_raw_stage(
-            sets={name: self._read_set(params.csv_dir, name) for name in config.sets},
-            parameters={
-                name: self._read_parameter(params.csv_dir, declaration)
-                for name, declaration in config.declarations.items()
-            },
+            sets=map_set_tables(found_sets, self._recorder),
+            parameters=map_parameter_tables(found_parameters, config.declarations, self._recorder),
             declarations=config.declarations,
             staging_dir=staging_dir,
         )
@@ -100,25 +99,18 @@ class StageOsemosysCsv(StagedSource):
         except (yaml.YAMLError, ValidationError) as exc:
             raise UserInputError(f"Invalid {_CONFIG_DESCRIPTION} at {config_path}:\n{exc}") from exc
 
-    def _read_set(self, csv_dir: Path, name: str) -> pl.DataFrame:
-        table = self._find_csv_table(csv_dir / f"{name}{CSV_SUFFIX}")
-        if table is None:
-            return pl.DataFrame(schema={VALUE_COL: pl.Utf8})
-        return table.select(VALUE_COL)
-
-    def _read_parameter(self, csv_dir: Path, declaration: RawDeclaration) -> pl.DataFrame:
-        """A declared parameter with no CSV file stages with its key columns and no rows."""
-        table = self._find_csv_table(csv_dir / f"{declaration.name}{CSV_SUFFIX}")
-        if table is None:
-            table = pl.DataFrame(schema=dict.fromkeys([*declaration.key, VALUE_COL], pl.Utf8))
-        return table.with_columns(pl.col(VALUE_COL).cast(pl.Float64))
+    def _find_csv_tables(self, csv_dir: Path, names: list[str]) -> dict[str, pl.DataFrame | None]:
+        return {name: self._find_csv_table(csv_dir / f"{name}{CSV_SUFFIX}") for name in names}
 
     def _find_csv_table(self, csv_path: Path) -> pl.DataFrame | None:
-        """Every column as a string, so a set member such as `1` keeps the form it has."""
+        """Every column as a string, so a set member such as `1` keeps the form it has; a file
+        with no bytes holds no table, as an absent file does."""
         if not self._fs.can_read(csv_path):
             return None
-        with self._fs.open_read(csv_path) as stream:
-            return pl.read_csv(stream, infer_schema=False)
+        text = self._fs.read_bytes(csv_path)
+        if not text.strip():
+            return None
+        return pl.read_csv(text, infer_schema=False)
 
 
 def parse_otoole_config(text: bytes) -> OtooleConfig:

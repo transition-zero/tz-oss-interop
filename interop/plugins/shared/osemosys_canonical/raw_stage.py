@@ -13,14 +13,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     PARQUET_SUFFIX,
     RAW_DIRECTORY,
     TABLE_DIRECTORIES,
-    DeclarationCol,
+    DeclarationColumn,
     TableKind,
 )
 
 _DECLARATIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    DeclarationCol.NAME: pl.Utf8,
-    DeclarationCol.KEY: pl.List(pl.Utf8),
-    DeclarationCol.DEFAULT: pl.Float64,
+    DeclarationColumn.NAME: pl.Utf8,
+    DeclarationColumn.KEY: pl.List(pl.Utf8),
+    DeclarationColumn.DEFAULT: pl.Float64,
 }
 
 

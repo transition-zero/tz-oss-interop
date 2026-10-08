@@ -30,6 +30,16 @@ def record_automatic_match(recorder: EventRecorder, kind: TableKind, name: str) 
     )
 
 
+def record_skipped(recorder: EventRecorder, kind: TableKind, name: str, note: str) -> None:
+    recorder.append(
+        TranslationEvent(
+            kind=EventKind.COMPONENT_SKIPPED,
+            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=name)],
+            note=note,
+        )
+    )
+
+
 def record_not_mapped(recorder: EventRecorder, kind: TableKind, name: str, note: str) -> None:
     recorder.append(
         TranslationEvent(
