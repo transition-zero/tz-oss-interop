@@ -13,6 +13,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AnnotationColumn,
     TableKind,
 )
+from interop.plugins.shared.tz_osemosys_fields import TzOwner
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -49,7 +50,9 @@ def record_value_derived(
     )
 
 
-def record_skipped(recorder: EventRecorder, kind: str, name: str, note: str) -> None:
+def record_skipped(
+    recorder: EventRecorder, kind: TableKind | TzOwner, name: str, note: str
+) -> None:
     """`kind` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(
@@ -60,7 +63,9 @@ def record_skipped(recorder: EventRecorder, kind: str, name: str, note: str) -> 
     )
 
 
-def record_not_mapped(recorder: EventRecorder, kind: str, name: str, note: str) -> None:
+def record_not_mapped(
+    recorder: EventRecorder, kind: TableKind | TzOwner, name: str, note: str
+) -> None:
     """`kind` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(

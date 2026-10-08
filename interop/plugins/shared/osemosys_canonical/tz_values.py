@@ -77,7 +77,7 @@ def build_region_pairs(value: object) -> object:
     pairs = build_bare_value(value)
     if not isinstance(pairs, dict):
         return pairs
-    mirrored = _copy_pairs(pairs)
+    mirrored = _build_pair_copy(pairs)
     for region, other, rest in _list_region_pairs(pairs):
         reverse = mirrored.setdefault(other, {})
         if isinstance(reverse, dict):
@@ -85,7 +85,7 @@ def build_region_pairs(value: object) -> object:
     return mirrored
 
 
-def _copy_pairs(pairs: dict[object, object]) -> dict[object, object]:
+def _build_pair_copy(pairs: dict[object, object]) -> dict[object, object]:
     return {
         region: dict(others) if isinstance(others, dict) else others
         for region, others in pairs.items()

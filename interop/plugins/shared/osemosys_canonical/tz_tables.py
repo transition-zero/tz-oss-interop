@@ -17,7 +17,7 @@ from interop.plugins.shared.osemosys_canonical.tz_document import TzObject
 from interop.plugins.shared.osemosys_canonical.tz_reports import (
     TzPath,
     TzPathReport,
-    join_tz_names,
+    build_tz_name,
     report_tz_paths,
 )
 from interop.plugins.shared.osemosys_canonical.tz_values import (
@@ -115,7 +115,7 @@ def _report_empty_set_fields(
 
 def _build_field_path(stated: StatedField) -> TzPath:
     owner = stated.tz_object.owner
-    return TzPath(owner, join_tz_names(stated.tz_object.name, stated.field.field))
+    return TzPath(owner, build_tz_name(stated.tz_object.name, stated.field.field))
 
 
 def _build_bare_value(stated: StatedField) -> object:

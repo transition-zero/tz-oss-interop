@@ -20,6 +20,7 @@ from interop.plugins.shared.osemosys_canonical.tz_document import (
     build_tz_sets,
     report_skipped_objects,
     report_unknown_fields,
+    report_unread_fields,
 )
 from interop.plugins.shared.osemosys_canonical.tz_tables import (
     build_tz_declarations,
@@ -76,6 +77,7 @@ class StageTzOsemosysJson(StagedSource):
         tz_objects = build_tz_objects(document)
         report_skipped_objects(tz_objects.skipped, self._recorder)
         report_unknown_fields(tz_objects.objects, self._recorder)
+        report_unread_fields(tz_objects.unread_fields, self._recorder)
         sets = build_tz_sets(document, tz_objects.objects)
         return write_raw_stage(
             sets={name: _build_set_table(members) for name, members in sets.items()},

@@ -18,7 +18,7 @@ from interop.plugins.shared.osemosys_canonical.events import record_not_mapped, 
 from interop.plugins.shared.osemosys_canonical.tz_reports import (
     TzPath,
     TzPathReport,
-    join_tz_names,
+    build_tz_name,
     report_tz_paths,
 )
 from interop.plugins.shared.osemosys_canonical.tz_values import build_region_pairs
@@ -33,6 +33,11 @@ from interop.plugins.shared.tz_osemosys_fields import (
 _UNKNOWN_FIELD_NOTE = "the TZ-format field has no raw table, so the raw stage leaves it out"
 _SKIPPED_OBJECT_NOTE = "the object cannot be used ({reason}), so the raw stage leaves it out"
 _ITEM_NAME = "item {position}"
+_REGION_PAIRS_FIELD = "construct_region_pairs"
+_UNREAD_REGION_PAIRS_NOTE = (
+    "the field states {value!r}, not true or false, so the source copies no region pair"
+)
+_UNREAD_FIELDS = TzPathReport(record_not_mapped, "field(s) state a value that cannot be read")
 _UNKNOWN_FIELDS = TzPathReport(record_not_mapped, "field(s) have no raw table")
 _SKIPPED_OBJECTS = TzPathReport(record_skipped, "object(s) cannot be used")
 _KNOWN_FIELDS = frozenset((field.owner, field.field) for field in TZ_FIELDS)
@@ -100,6 +105,10 @@ class TzKeyedPart(TzPart):
     def label(self) -> str:
         return self.key_member
 
+    def list_unread_fields(self) -> dict[str, str]:
+        """Each declared field whose value the source cannot read, with a note."""
+        return {}
+
 
 class TzNamedPart(TzKeyedPart):
     id: Member
@@ -118,7 +127,7 @@ class TzTradePart(TzKeyedPart):
 
     id: Member | None = None
     commodity: Member
-    construct_region_pairs: bool | None = None
+    construct_region_pairs: object = None
 
     @property
     def key_member(self) -> str:
@@ -132,12 +141,18 @@ class TzTradePart(TzKeyedPart):
     def field_values(self) -> dict[str, object]:
         """With `construct_region_pairs`, a pair stated in one direction holds in both."""
         values = super().field_values
-        if not self.construct_region_pairs:
+        if self.construct_region_pairs is not True:
             return values
         return {
             name: build_region_pairs(value) if name in REGION_PAIR_FIELDS else value
             for name, value in values.items()
         }
+
+    def list_unread_fields(self) -> dict[str, str]:
+        flag = self.construct_region_pairs
+        if flag is None or isinstance(flag, bool):
+            return {}
+        return {_REGION_PAIRS_FIELD: _UNREAD_REGION_PAIRS_NOTE.format(value=flag)}
 
 
 class TzTimeDefinitionPart(TzPart):
@@ -194,7 +209,7 @@ Part = TypeVar("Part", bound=TzKeyedPart, covariant=True)
 
 
 @dataclass(frozen=True)
-class CheckedItems(Generic[Part]):
+class PartList(Generic[Part]):
     """The objects of one list that the source can use, and a note for each that it cannot."""
 
     place: ItemPlace
@@ -205,40 +220,57 @@ class CheckedItems(Generic[Part]):
     def objects(self) -> list[TzObject]:
         return [
             TzObject(
-                self.place.owner,
-                join_tz_names(*self.place.keys, part.label),
-                (*self.place.keys, part.key_member),
-                part.field_values,
+                self.place.owner, self._build_name(part), self._build_keys(part), part.field_values
             )
             for part in self.parts
         ]
 
+    @property
+    def unread_fields(self) -> dict[TzPath, str]:
+        return {
+            TzPath(self.place.owner, build_tz_name(self._build_name(part), field)): note
+            for part in self.parts
+            for field, note in part.list_unread_fields().items()
+        }
+
+    def _build_name(self, part: TzKeyedPart) -> str:
+        return build_tz_name(*self.place.keys, part.label)
+
+    def _build_keys(self, part: TzKeyedPart) -> tuple[str, ...]:
+        return (*self.place.keys, part.key_member)
+
 
 @dataclass(frozen=True)
 class TzObjects:
+    """The objects that the source can use, and the objects and fields that it leaves out."""
+
     objects: list[TzObject]
     skipped: list[SkippedObject]
+    unread_fields: dict[TzPath, str]
 
 
 def build_tz_objects(document: TzModelDocument) -> TzObjects:
-    technologies = _check_items(_build_list_place(TzOwner.TECHNOLOGIES), document, TzTechnologyPart)
-    groups: list[CheckedItems[TzKeyedPart]] = [
+    technologies = _build_owner_parts(TzOwner.TECHNOLOGIES, document, TzTechnologyPart)
+    part_lists: list[PartList[TzKeyedPart]] = [
         technologies,
-        _check_items(_build_list_place(TzOwner.TRADE), document, TzTradePart),
-        *[_check_items(_build_list_place(owner), document, TzNamedPart) for owner in _NAMED_OWNERS],
-        *[_check_operating_modes(technology) for technology in technologies.parts],
+        _build_owner_parts(TzOwner.TRADE, document, TzTradePart),
+        *[_build_owner_parts(owner, document, TzNamedPart) for owner in _NAMED_OWNERS],
+        *[_build_operating_modes(technology) for technology in technologies.parts],
     ]
+    return _build_object_summary(document, part_lists)
+
+
+def _build_object_summary(
+    document: TzModelDocument, part_lists: list[PartList[TzKeyedPart]]
+) -> TzObjects:
+    listed = [tz_object for part_list in part_lists for tz_object in part_list.objects]
     return TzObjects(
-        objects=[
-            *_build_single_objects(document),
-            *[tz_object for group in groups for tz_object in group.objects],
-        ],
-        skipped=[skipped for group in groups for skipped in group.skipped],
+        objects=[*_build_single_objects(document), *listed],
+        skipped=[skipped for part_list in part_lists for skipped in part_list.skipped],
+        unread_fields={
+            path: note for part_list in part_lists for path, note in part_list.unread_fields.items()
+        },
     )
-
-
-def _build_list_place(owner: TzOwner) -> ItemPlace:
-    return ItemPlace(owner, ())
 
 
 def _build_single_objects(document: TzModelDocument) -> list[TzObject]:
@@ -248,39 +280,37 @@ def _build_single_objects(document: TzModelDocument) -> list[TzObject]:
     ]
 
 
-def _check_operating_modes(technology: TzTechnologyPart) -> CheckedItems[TzNamedPart]:
+def _build_operating_modes(technology: TzTechnologyPart) -> PartList[TzNamedPart]:
     place = ItemPlace(TzOwner.OPERATING_MODES, (technology.id,))
-    return _check_list(place, technology.operating_modes, TzNamedPart)
+    return _build_part_list(place, technology.operating_modes, TzNamedPart)
 
 
-def _check_items(
-    place: ItemPlace, document: TzModelDocument, part_type: type[Part]
-) -> CheckedItems[Part]:
-    return _check_list(place, document.list_items(place.owner), part_type)
+def _build_owner_parts(
+    owner: TzOwner, document: TzModelDocument, part_type: type[Part]
+) -> PartList[Part]:
+    return _build_part_list(ItemPlace(owner, ()), document.list_items(owner), part_type)
 
 
-def _check_list(place: ItemPlace, items: list[object], part_type: type[Part]) -> CheckedItems[Part]:
-    results = [
-        (position, item, _check_item(item, part_type)) for position, item in enumerate(items, 1)
+def _build_part_list(
+    place: ItemPlace, items: list[object], part_type: type[Part]
+) -> PartList[Part]:
+    results = [_build_part(item, part_type) for item in items]
+    skipped = [
+        _build_skipped_object(place, _build_item_label(position, item), result)
+        for position, (item, result) in enumerate(zip(items, results, strict=True), 1)
+        if isinstance(result, str)
     ]
-    return CheckedItems(
-        place=place,
-        parts=[result for _, _, result in results if not isinstance(result, str)],
-        skipped=[
-            _build_skipped_object(place, _build_item_label(position, item), result)
-            for position, item, result in results
-            if isinstance(result, str)
-        ],
-    )
+    parts = [result for result in results if not isinstance(result, str)]
+    return PartList(place, parts, skipped)
 
 
-def _check_item(item: object, part_type: type[Part]) -> Part | str:
-    """The checked object, or the first reason that the source cannot use it."""
+def _build_part(item: object, part_type: type[Part]) -> Part | str:
+    """The object, or the first reason that the source cannot use it."""
     try:
         return part_type.model_validate(item)
     except ValidationError as exc:
         error = exc.errors()[0]
-        return f"{join_tz_names(*map(str, error['loc']))}: {error['msg']}"
+        return f"{build_tz_name(*map(str, error['loc']))}: {error['msg']}"
 
 
 def _build_item_label(position: int, item: object) -> str:
@@ -290,7 +320,7 @@ def _build_item_label(position: int, item: object) -> str:
 
 
 def _build_skipped_object(place: ItemPlace, label: str, reason: str) -> SkippedObject:
-    path = TzPath(place.owner, join_tz_names(*place.keys, label))
+    path = TzPath(place.owner, build_tz_name(*place.keys, label))
     return SkippedObject(path, _SKIPPED_OBJECT_NOTE.format(reason=reason))
 
 
@@ -309,6 +339,10 @@ def report_skipped_objects(skipped: list[SkippedObject], recorder: EventRecorder
     report_tz_paths(_SKIPPED_OBJECTS, notes, recorder)
 
 
+def report_unread_fields(unread_fields: dict[TzPath, str], recorder: EventRecorder) -> None:
+    report_tz_paths(_UNREAD_FIELDS, unread_fields, recorder)
+
+
 def report_unknown_fields(objects: list[TzObject], recorder: EventRecorder) -> None:
     notes = dict.fromkeys(_list_unknown_fields(objects), _UNKNOWN_FIELD_NOTE)
     report_tz_paths(_UNKNOWN_FIELDS, notes, recorder)
@@ -317,7 +351,7 @@ def report_unknown_fields(objects: list[TzObject], recorder: EventRecorder) -> N
 def _list_unknown_fields(objects: list[TzObject]) -> list[TzPath]:
     """A field that states null holds no model data, so it is not unknown."""
     return [
-        TzPath(tz_object.owner, join_tz_names(tz_object.name, name))
+        TzPath(tz_object.owner, build_tz_name(tz_object.name, name))
         for tz_object in objects
         for name, value in tz_object.field_values.items()
         if value is not None and (tz_object.owner, name) not in _KNOWN_FIELDS
