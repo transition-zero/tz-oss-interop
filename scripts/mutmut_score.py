@@ -2,8 +2,13 @@
 
 Reads the saved mutmut state via `mutmut results`, tallies mutants by status,
 computes a kill score (killed / (killed + survived)), writes a Markdown table
-to `mutation_score.md` for the sticky PR comment, and exits non-zero if the
-score falls below `MUTATION_THRESHOLD` (default `0.0` = advisory).
+to `mutation_score.md` for the sticky PR comment, and exits non-zero if mutmut
+checked no mutant or if the score falls below `MUTATION_THRESHOLD` (default `0.0` =
+advisory).
+
+On a pull request, `MUTATION_TARGETS_FILE` names the files that the run mutates. When that
+list is empty, or when the listed files hold no mutant, no mutation test runs. The report
+then says that the job skipped the run by choice, and the script exits zero.
 
 Mutants with `no_tests`, `skipped`, `timeout`, or `suspicious` status do not
 count toward the denominator: they represent code paths the test suite does
@@ -29,6 +34,8 @@ from collections import Counter
 from enum import StrEnum
 from pathlib import Path
 
+from mutation_scope import find_targets
+
 
 class Status(StrEnum):
     KILLED = "killed"
@@ -47,29 +54,37 @@ _STATUS_RE = re.compile(r":\s*(" + "|".join(re.escape(s.value) for s in Status) 
 # owning function (method names keep the `ǁClassǁmethod` segment).
 _MUTANT_SUFFIX_RE = re.compile(r"__mutmut_\d+$")
 
+# mutmut writes one `<source path>.meta` file for each file that it mutates, before it
+# runs a test, so the file shows that mutmut got as far as generating the mutants.
+_MUTANTS_DIR = Path("mutants")
+_RUN_MUTMUT = Path(__file__).with_name("run_mutmut.py")
 
-def _run_results() -> str:
-    """The saved mutmut state, or an empty report if there is none to read.
+_REPORT_HEADING = "## Mutation testing report"
+_NO_TARGETS_REASON = (
+    "This pull request changes no file that mutmut mutates: a Python file under `interop/` "
+    "that `do_not_mutate` in `pyproject.toml` and `scripts/mutation_scope.py` do not exclude."
+)
+_NO_MUTANTS_REASON = "mutmut found no mutant in the files that this pull request changes:"
+_FAILURE_MESSAGE = "mutmut checked no mutant. See the Run mutmut step"
 
-    This runs even when the mutmut step failed or was cut short, so a missing or
-    unreadable state is a report saying nothing ran, not a second CI failure on top
-    of the first.
-    """
+
+def _run_results() -> str | None:
+    """The saved mutmut state, or None if there is none to read."""
     # `--all true` is required: bare `mutmut results` only lists non-killed mutants,
-    # which would understate the kill count.
+    # which would understate the kill count. The wrapper applies the same target list as
+    # the run, so results that an earlier run left in mutants/ for other files stay out.
     proc = subprocess.run(
-        ["uv", "run", "mutmut", "results", "--all", "true"],
+        [sys.executable, str(_RUN_MUTMUT), "results", "--all", "true"],
         capture_output=True,
         text=True,
         check=False,
     )
     if proc.returncode != 0:
         print(
-            f"`mutmut results` exited {proc.returncode}; reporting an empty run.\n"
-            f"{proc.stderr.strip()}",
+            f"`mutmut results` exited {proc.returncode}.\n{proc.stderr.strip()}",
             file=sys.stderr,
         )
-        return ""
+        return None
     return proc.stdout
 
 
@@ -94,6 +109,14 @@ def _timeout_owners(text: str) -> Counter[str]:
     return owners
 
 
+def _has_mutation_data(targets: list[str]) -> bool:
+    return all((_MUTANTS_DIR / f"{target}.meta").is_file() for target in targets)
+
+
+def _has_checked_nothing(counts: dict[Status, int]) -> bool:
+    return sum(counts.values()) == counts[Status.NOT_CHECKED]
+
+
 def _score(counts: dict[Status, int]) -> float:
     denominator = counts[Status.KILLED] + counts[Status.SURVIVED]
     if denominator == 0:
@@ -101,14 +124,19 @@ def _score(counts: dict[Status, int]) -> float:
     return counts[Status.KILLED] / denominator
 
 
-def _render_markdown(counts: dict[Status, int], score: float, timeouts: Counter[str]) -> str:
+def _render_markdown(
+    counts: dict[Status, int], score: float, timeouts: Counter[str], targets: list[str] | None
+) -> str:
     tested = counts[Status.KILLED] + counts[Status.SURVIVED]
     lines = [
-        "## Mutation testing report",
+        _REPORT_HEADING,
         "",
         f"**Score: {score:.1%}** ({counts[Status.KILLED]} killed / {tested} tested)",
         "",
     ]
+    if targets:
+        lines.extend(["This run mutates only the files that this pull request changes:", ""])
+        lines.extend([*_build_path_lines(targets), ""])
     if counts[Status.NOT_CHECKED]:
         lines.extend(
             [
@@ -153,14 +181,52 @@ def _render_markdown(counts: dict[Status, int], score: float, timeouts: Counter[
     return "\n".join(lines)
 
 
+def _build_path_lines(paths: list[str]) -> list[str]:
+    return [f"- `{path}`" for path in paths]
+
+
+def _build_skip_markdown(reason: list[str]) -> str:
+    lines = [_REPORT_HEADING, "", "⏭️ **No mutation test ran, by choice.**", "", *reason, ""]
+    lines.extend(["A push to `main` runs every mutant.", ""])
+    return "\n".join(lines)
+
+
+def _build_failure_markdown() -> str:
+    return "\n".join([_REPORT_HEADING, "", f"> ❌ {_FAILURE_MESSAGE} in the job log.", ""])
+
+
+def _write_report(markdown: str) -> None:
+    output_path = Path(os.environ.get("MUTMUT_SCORE_FILE", "mutation_score.md"))
+    output_path.write_text(markdown, encoding="utf-8")
+
+
+def _write_skip_report(reason: list[str]) -> int:
+    _write_report(_build_skip_markdown(reason))
+    print("\n".join(line for line in reason if line))
+    return 0
+
+
+def _write_failure_report() -> int:
+    _write_report(_build_failure_markdown())
+    print(f"{_FAILURE_MESSAGE}.", file=sys.stderr)
+    return 1
+
+
 def main() -> int:
+    targets = find_targets()
+    if targets == []:
+        return _write_skip_report([_NO_TARGETS_REASON])
     text = _run_results()
+    if text is None:
+        return _write_failure_report()
     counts = _parse_counts(text)
+    if targets and not any(counts.values()) and _has_mutation_data(targets):
+        return _write_skip_report([_NO_MUTANTS_REASON, "", *_build_path_lines(targets)])
+    if _has_checked_nothing(counts):
+        return _write_failure_report()
     score = _score(counts)
     timeouts = _timeout_owners(text)
-
-    output_path = Path(os.environ.get("MUTMUT_SCORE_FILE", "mutation_score.md"))
-    output_path.write_text(_render_markdown(counts, score, timeouts), encoding="utf-8")
+    _write_report(_render_markdown(counts, score, timeouts, targets))
 
     if timeouts:
         print("Timeout-prone functions:")

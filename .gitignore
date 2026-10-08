@@ -308,6 +308,7 @@ mutants/
 .mutmut-cache/
 mutmut-stats.json
 mutation_score.md
+mutation_targets.txt
 
 # Maintainability index report generated in CI
 maintainability_report.md

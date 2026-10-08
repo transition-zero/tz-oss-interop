@@ -1,8 +1,10 @@
+import importlib.util
 import io
 import shlex
 import sys
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
+from types import ModuleType
 from typing import Any, NamedTuple
 
 import pytest
@@ -970,3 +972,13 @@ def parse_plexos_carrier_mappings(document: dict[str, Any]) -> list[dict[str, An
     """
     mappings = PlexosSiennaCarrierMappings.model_validate(document)
     return [row.model_dump(mode="json") for row in mappings.carriers]
+
+
+def load_script(name: str, path: Path) -> ModuleType:
+    """A script loaded by path, because scripts/ and .github/scripts are not packages."""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
