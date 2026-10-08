@@ -7,9 +7,7 @@ argument-hint: "design <issue|idea> | approve <n> | build <n> [--continue] | syn
 # Epic
 
 A feature larger than one PR is an epic. The rules are in the root `CLAUDE.md`, under "A
-feature larger than one PR is an epic" and "Decisions". This skill runs them. The design
-behind it is `docs/specs/2026-09-30-epic-and-stack-skills-design.md` in
-`transition-zero/tz-ps-composer`.
+feature larger than one PR is an epic" and "Decisions". This skill runs them.
 
 - **The owner** is the login on the epic's first line, `Owner: @<login>`. It is not
   whoever runs the command.

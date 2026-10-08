@@ -8,10 +8,8 @@ argument-hint: "[preflight]"
 
 One run a night, unattended, on `transition-zero/tz-oss-interop`. **The owner** is the
 GitHub account the routine runs as, `ME` (Phase 0 step 1). The team agrees on one person
-to schedule it, and the pinned issue records who (Phase 0 step 3). The design is
-`docs/specs/2026-09-27-nightly-agent-design.md` in `transition-zero/tz-ps-composer`; this
-skill is the contract the run follows. When they disagree, this file wins and the design
-is out of date.
+to schedule it, and the pinned issue records who (Phase 0 step 3). This skill is the
+contract the run follows.
 
 This run never touches an open PR it did not open tonight.
 
@@ -251,7 +249,6 @@ list of what waits on a person; tick a line when it is done.
 Scheduled by @<ME>: one person runs this routine for the repo.
 
 - Add the `nightly:paused` label to this issue to stop the next run.
-- Design: `docs/specs/2026-09-27-nightly-agent-design.md` in `transition-zero/tz-ps-composer`.
 ```
 
 ## Hard limits
