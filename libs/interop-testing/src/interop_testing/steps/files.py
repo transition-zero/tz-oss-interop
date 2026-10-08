@@ -62,6 +62,12 @@ def assert_file_contains(path: str, expected: str) -> None:
     assert expected in actual, f"expected {path} to contain {expected!r}, got {actual!r}"
 
 
+@then(parsers.parse('the file "{path}" contains "{expected}" {count:d} times'))
+def assert_file_contains_count(path: str, expected: str, count: int) -> None:
+    actual = Path(path).read_text(encoding="utf-8").count(expected)
+    assert actual == count, f"expected {path} to contain {expected!r} {count} times, got {actual}"
+
+
 @then(parsers.parse('the file "{path}" does not contain "{unexpected}"'))
 def assert_file_does_not_contain(path: str, unexpected: str) -> None:
     actual = Path(path).read_text(encoding="utf-8")

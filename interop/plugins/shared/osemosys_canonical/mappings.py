@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import re
+from string import Formatter
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from interop.core.user_mappings import UserMappings
 from interop.plugins.shared.osemosys_canonical.constants import (
+    OBJECT_PART_COLUMNS,
+    OBJECT_PART_LABEL,
     PARAMETERS_PART,
+    REGION,
     SECOND_REGION,
     SETS_PART,
+    AnnotationColumn,
+    ObjectPart,
     RemoveRule,
+    TechnologyKind,
 )
 from interop.plugins.shared.osemosys_canonical.schema import (
     CanonicalSchema,
@@ -86,13 +93,92 @@ def _list_pattern_groups(pattern: str | None) -> list[str]:
     try:
         return list(re.compile(pattern).groupindex)
     except re.error as exc:
-        raise ValueError(f"source_pattern {pattern!r} is not a regular expression: {exc}") from exc
+        raise ValueError(f"the pattern {pattern!r} is not a regular expression: {exc}") from exc
+
+
+class ObjectRow(BaseModel):
+    """The annotations of each member whose name the pattern `match` finds."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    match: str
+    kind: TechnologyKind | None = None
+    category: str | None = None
+    carrier: str | None = None
+    location: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_location_groups(self) -> ObjectRow:
+        known = {*_list_pattern_groups(self.match), REGION}
+        unknown = [name for name in list_template_fields(self.location) if name not in known]
+        if unknown:
+            raise ValueError(
+                f"the location {self.location} names {', '.join(unknown)}, "
+                "which match does not capture"
+            )
+        return self
+
+    @property
+    def annotations(self) -> dict[AnnotationColumn, str]:
+        """The annotations that this row states, by column; the location is still a template."""
+        stated = {
+            AnnotationColumn.KIND: self.kind,
+            AnnotationColumn.CATEGORY: self.category,
+            AnnotationColumn.CARRIER: self.carrier,
+            AnnotationColumn.LOCATION: self.location,
+        }
+        return {column: value for column, value in stated.items() if value is not None}
+
+    def find_groups(self, member: str) -> dict[str, str | None] | None:
+        """The named groups of `match` for a member that this row matches, else `None`."""
+        match = re.search(self.match, member)
+        return None if match is None else match.groupdict()
+
+
+def list_template_fields(template: str | None) -> list[str]:
+    """The names that a `str.format` template fills in."""
+    if template is None:
+        return []
+    try:
+        return [name for _, name, _, _ in Formatter().parse(template) if name is not None]
+    except ValueError as exc:
+        raise ValueError(f"the location {template!r} is not a template: {exc}") from exc
 
 
 class ObjectRows(BaseModel):
     """What each technology, fuel, storage and region of the model is."""
 
     model_config = ConfigDict(extra="forbid")
+
+    technologies: list[ObjectRow] = Field(default_factory=list)
+    fuels: list[ObjectRow] = Field(default_factory=list)
+    storages: list[ObjectRow] = Field(default_factory=list)
+    regions: list[ObjectRow] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_part_columns(self) -> ObjectRows:
+        for part in ObjectPart:
+            for index, row in enumerate(self.list_rows(part)):
+                _reject_foreign_annotations(part, index, row)
+        return self
+
+    def list_rows(self, part: ObjectPart) -> list[ObjectRow]:
+        rows = {
+            ObjectPart.TECHNOLOGIES: self.technologies,
+            ObjectPart.FUELS: self.fuels,
+            ObjectPart.STORAGES: self.storages,
+            ObjectPart.REGIONS: self.regions,
+        }
+        return rows[part]
+
+
+def _reject_foreign_annotations(part: ObjectPart, index: int, row: ObjectRow) -> None:
+    foreign = [column for column in row.annotations if column not in OBJECT_PART_COLUMNS[part]]
+    if foreign:
+        raise ValueError(
+            f"row {index} of {OBJECT_PART_LABEL.format(part=part)} gives {', '.join(foreign)}, "
+            f"which a {part} row does not hold"
+        )
 
 
 class Units(BaseModel):

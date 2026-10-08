@@ -116,3 +116,66 @@ PARAMETERS_PART = "`parameters:`"
 SETS_PART = "`sets:`"
 # The hidden column that counts the rows a summary describes.
 ROW_COUNT_COL = "__row_count"
+
+TECHNOLOGY = "TECHNOLOGY"
+FUEL = "FUEL"
+STORAGE = "STORAGE"
+MODE_OF_OPERATION = "MODE_OF_OPERATION"
+
+# How a message names one list of the `objects:` part of a user mappings file.
+OBJECT_PART_LABEL = "`objects: {part}`"
+
+
+class ObjectPart(StrEnum):
+    """The lists of the `objects:` part, one for each annotated set."""
+
+    TECHNOLOGIES = "technologies"
+    FUELS = "fuels"
+    STORAGES = "storages"
+    REGIONS = "regions"
+
+
+class AnnotationColumn(StrEnum):
+    """The annotation columns that follow the key of an annotation table."""
+
+    KIND = "kind"
+    CATEGORY = "category"
+    CARRIER = "carrier"
+    LOCATION = "location"
+
+
+# The set that each list of `objects:` annotates, in the order the engine annotates them.
+OBJECT_PART_SETS: dict[ObjectPart, str] = {
+    ObjectPart.REGIONS: REGION,
+    ObjectPart.FUELS: FUEL,
+    ObjectPart.STORAGES: STORAGE,
+    ObjectPart.TECHNOLOGIES: TECHNOLOGY,
+}
+
+# The annotation columns of each list of `objects:`, which are also its annotation table's.
+OBJECT_PART_COLUMNS: dict[ObjectPart, tuple[AnnotationColumn, ...]] = {
+    ObjectPart.REGIONS: (AnnotationColumn.LOCATION,),
+    ObjectPart.FUELS: (AnnotationColumn.CARRIER, AnnotationColumn.LOCATION),
+    ObjectPart.STORAGES: (AnnotationColumn.LOCATION,),
+    ObjectPart.TECHNOLOGIES: (
+        AnnotationColumn.KIND,
+        AnnotationColumn.CATEGORY,
+        AnnotationColumn.LOCATION,
+    ),
+}
+
+# The carrier whose fuels the kind inference counts as electricity.
+ELECTRICITY_CARRIER = "electricity"
+# The character between the two locations of a technology that touches two locations.
+LOCATION_SEPARATOR = "~"
+# The character between the region and the member in the name of an annotation event.
+ANNOTATION_NAME_SEPARATOR = "/"
+
+
+class FlowParameter(StrEnum):
+    """The canonical parameters whose rows show what a technology takes in and puts out."""
+
+    INPUT_ACTIVITY_RATIO = "InputActivityRatio"
+    OUTPUT_ACTIVITY_RATIO = "OutputActivityRatio"
+    TECHNOLOGY_TO_STORAGE = "TechnologyToStorage"
+    TECHNOLOGY_FROM_STORAGE = "TechnologyFromStorage"

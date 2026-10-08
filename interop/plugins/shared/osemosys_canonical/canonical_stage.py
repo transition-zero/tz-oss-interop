@@ -9,6 +9,7 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import EventRecorder
+from interop.plugins.shared.osemosys_canonical.annotations import map_annotations
 from interop.plugins.shared.osemosys_canonical.constants import (
     CANONICAL_DIRECTORY,
     PARQUET_SUFFIX,
@@ -52,12 +53,17 @@ def _map_raw_stage(
     sets = map_sets(inputs, recorder)
     parameters = map_parameters(inputs, sets.sets, recorder)
     metadata = build_metadata_tables(inputs.schema, parameters, mappings.units)
+    canonical = {**sets.sets, **parameters.parameters}
+    annotations = map_annotations(canonical, mappings.objects, recorder)
     return [
         *_build_canonical_tables(TableKind.SET, sets.sets),
         *_build_canonical_tables(TableKind.EXTENSION, sets.extensions),
         *_build_canonical_tables(TableKind.PARAMETER, parameters.parameters),
         *_build_canonical_tables(TableKind.EXTENSION, parameters.extensions),
         *_build_canonical_tables(TableKind.METADATA, metadata),
+        *_build_canonical_tables(
+            TableKind.ANNOTATION, {name: table.lazy() for name, table in annotations.items()}
+        ),
     ]
 
 

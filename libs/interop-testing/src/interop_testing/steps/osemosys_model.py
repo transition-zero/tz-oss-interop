@@ -138,4 +138,7 @@ def _read_default(directory: Path, kind: str, name: str) -> object:
 
 
 def _format_cell(cell: object) -> str:
+    """An empty cell of the table matches a null."""
+    if cell is None:
+        return ""
     return f"{cell:g}" if isinstance(cell, float) else str(cell)

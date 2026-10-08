@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import NamedTuple
 
 from interop.core.reporting import EventRecorder
@@ -9,6 +10,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AUTOMATIC_MATCH_NOTE,
     CANONICAL_FRAMEWORK,
     OSEMOSYS_FRAMEWORK,
+    AnnotationColumn,
     TableKind,
 )
 from interop.ports.outbound.reporting import (
@@ -62,6 +64,40 @@ def record_not_mapped(recorder: EventRecorder, kind: TableKind, name: str, note:
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,
             sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=name)],
+            note=note,
+        )
+    )
+
+
+class AnnotatedMember(NamedTuple):
+    """One member of an annotated set, named `REGION/member`, and the annotations an event names."""
+
+    set_name: str
+    name: str
+    values: Mapping[AnnotationColumn, str | None]
+
+
+def record_annotation(
+    recorder: EventRecorder, kind: EventKind, member: AnnotatedMember, note: str
+) -> None:
+    recorder.append(
+        TranslationEvent(
+            kind=kind,
+            sources=[
+                SourceField(
+                    framework=OSEMOSYS_FRAMEWORK, component=member.set_name, name=member.name
+                )
+            ],
+            destinations=[
+                DestinationField(
+                    framework=CANONICAL_FRAMEWORK,
+                    component=member.set_name,
+                    name=member.name,
+                    attribute=column,
+                    value=value,
+                )
+                for column, value in member.values.items()
+            ],
             note=note,
         )
     )
