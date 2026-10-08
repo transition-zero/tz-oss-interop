@@ -16,8 +16,9 @@ from interop.plugins.shared.osemosys_canonical.mappings import OsemosysCanonical
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage, write_raw_stage
 from interop.plugins.shared.osemosys_canonical.tz_document import (
     TzModelDocument,
-    list_tz_objects,
-    list_tz_sets,
+    build_tz_objects,
+    build_tz_sets,
+    report_skipped_objects,
     report_unknown_fields,
 )
 from interop.plugins.shared.osemosys_canonical.tz_tables import (
@@ -72,12 +73,13 @@ class StageTzOsemosysJson(StagedSource):
             ) from exc
 
     def _stage_raw(self, document: TzModelDocument, staging_dir: Path) -> RawStage:
-        objects = list_tz_objects(document)
-        report_unknown_fields(objects, self._recorder)
-        sets = list_tz_sets(document, objects)
+        tz_objects = build_tz_objects(document)
+        report_skipped_objects(tz_objects.skipped, self._recorder)
+        report_unknown_fields(tz_objects.objects, self._recorder)
+        sets = build_tz_sets(document, tz_objects.objects)
         return write_raw_stage(
             sets={name: _build_set_table(members) for name, members in sets.items()},
-            parameters=map_tz_parameter_tables(objects, sets, self._recorder),
+            parameters=map_tz_parameter_tables(tz_objects.objects, sets, self._recorder),
             declarations=build_tz_declarations(),
             staging_dir=staging_dir,
         )

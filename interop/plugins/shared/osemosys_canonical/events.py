@@ -49,7 +49,8 @@ def record_value_derived(
     )
 
 
-def record_skipped(recorder: EventRecorder, kind: TableKind, name: str, note: str) -> None:
+def record_skipped(recorder: EventRecorder, kind: str, name: str, note: str) -> None:
+    """`kind` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(
             kind=EventKind.COMPONENT_SKIPPED,
@@ -59,7 +60,8 @@ def record_skipped(recorder: EventRecorder, kind: TableKind, name: str, note: st
     )
 
 
-def record_not_mapped(recorder: EventRecorder, kind: TableKind, name: str, note: str) -> None:
+def record_not_mapped(recorder: EventRecorder, kind: str, name: str, note: str) -> None:
+    """`kind` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,

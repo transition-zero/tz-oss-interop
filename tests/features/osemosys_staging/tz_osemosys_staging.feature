@@ -85,8 +85,8 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | osemosys: {} |
     When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the log contains "not_a_field"
-    And the file "decisions.md" contains "technologies.not_a_field"
+    And the log contains "technologies.gas-combined-cycle.not_a_field"
+    And the file "decisions.md" contains "technologies.gas-combined-cycle.not_a_field"
 
   Scenario: A field whose nesting leaves out a set repeats each value for that set
     Given a TZ-format model
@@ -182,3 +182,129 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
     When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "model/model.json"
+
+  Scenario: An object that cannot be used is left out and the rest of the model stays
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the years "2030"
+    And the TZ-format model has the field "technologies" set to [{"operating_modes": [], "capex": {"R1": {"2030": 1.0}}}, {"id": "solar-pv", "operating_modes": [], "capex": {"R1": {"2030": 700.0}}}]
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | solar-pv   | 2030 | 700   |
+    And the log contains "technologies.item 1"
+    And the file "decisions.md" contains "id: Field required"
+
+  Scenario: A year written as a whole decimal number keeps its digits
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format time definition has the field "years" set to [2030.0]
+    And the TZ-format technology "gas-combined-cycle" has the field "capex" set to {"R1": {"2030": 1040.0}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/YEAR.parquet" has the rows:
+      | VALUE |
+      | 2030  |
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has 1 rows
+
+  Scenario: A trade that constructs region pairs holds each route in both directions
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1 R2"
+    And the TZ-format model has the years "2030"
+    And the TZ-format model has the commodities "electricity"
+    And the TZ-format trade "transmission" of the commodity "electricity" has the field "trade_routes" set to {"R1": {"R2": {"2030": true}}}
+    And the TZ-format trade "transmission" of the commodity "electricity" has the field "capex" set to {"R1": {"R2": {"2030": 500.0}}, "R2": {"R1": {"2030": 650.0}}}
+    And the TZ-format trade "transmission" of the commodity "electricity" has the field "construct_region_pairs" set to true
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/TradeRoute.parquet" has the rows:
+      | REGION | _REGION | FUEL        | YEAR | VALUE |
+      | R1     | R2      | electricity | 2030 | 1     |
+      | R2     | R1      | electricity | 2030 | 1     |
+    And the canonical table "canonical/parameters/CapitalCostTrade.parquet" has the rows:
+      | REGION | _REGION | FUEL        | YEAR | VALUE |
+      | R1     | R2      | electricity | 2030 | 500   |
+      | R2     | R1      | electricity | 2030 | 650   |
+
+  Scenario: The fields of an operating mode carry the technology and the mode
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the years "2030"
+    And the TZ-format model has the commodities "natural-gas electricity"
+    And the TZ-format technology "gas-combined-cycle" has the field "operating_modes" set to [{"id": "generation", "input_activity_ratio": {"R1": {"natural-gas": {"2030": 1.8}}}, "output_activity_ratio": {"R1": {"electricity": {"2030": 1.0}}}, "opex_variable": {"R1": {"2030": 3.5}}}]
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/InputActivityRatio.parquet" has the rows:
+      | REGION | TECHNOLOGY         | FUEL        | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | gas-combined-cycle | natural-gas | generation        | 2030 | 1.8   |
+    And the canonical table "canonical/parameters/OutputActivityRatio.parquet" has the rows:
+      | REGION | TECHNOLOGY         | FUEL        | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | gas-combined-cycle | electricity | generation        | 2030 | 1     |
+    And the canonical table "canonical/parameters/VariableCost.parquet" has the rows:
+      | REGION | TECHNOLOGY         | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | gas-combined-cycle | generation        | 2030 | 3.5   |
+    And the canonical table "canonical/sets/MODE_OF_OPERATION.parquet" has the rows:
+      | VALUE      |
+      | generation |
+
+  Scenario: A field that names a set member as its value becomes a flag row
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the timeslices "S1 S2"
+    And the TZ-format time definition has the field "seasons" set to ["winter", "summer"]
+    And the TZ-format time definition has the field "timeslice_in_season" set to {"S1": "winter", "S2": "summer"}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/Conversionls.parquet" has the rows:
+      | TIMESLICE | SEASON | VALUE |
+      | S1        | winter | 1     |
+      | S2        | summer | 1     |
+
+  Scenario: A wildcard over a set with no members is reported
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format technology "gas-combined-cycle" has the field "capex" set to {"R1": {"*": 1040.0}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
+    And the log contains "technologies.gas-combined-cycle.capex"
+    And the file "decisions.md" contains "stands for a set with no members"
+
+  Scenario: The adjacency of the time definition is reported as not mapped
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the timeslices "S1 S2"
+    And the TZ-format time definition has the field "adj" set to {"timeslices": {"S2": "S1"}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the log contains "time_definition.adj"
+    And the file "decisions.md" contains "time_definition.adj"

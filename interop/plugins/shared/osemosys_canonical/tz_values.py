@@ -37,7 +37,7 @@ def list_tz_entries(
     ]
 
 
-def drop_composed_wrapper(value: object) -> object:
+def build_bare_value(value: object) -> object:
     """A composed value holds its nested value under a data key, beside a flag."""
     if isinstance(value, dict) and COMPOSED_FLAG in value and COMPOSED_DATA in value:
         return value[COMPOSED_DATA]
@@ -48,9 +48,57 @@ def build_float_value(value: object) -> float | None:
     """A boolean is 1 or 0, and a value that is not a number or a known word is `None`."""
     if isinstance(value, bool | int | float):
         return float(value)
-    if isinstance(value, str) and value in VALUE_WORDS:
+    if not isinstance(value, str):
+        return None
+    if value in VALUE_WORDS:
         return VALUE_WORDS[value]
-    return _build_float_text(value) if isinstance(value, str) else None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def has_empty_expansion(
+    value: object, levels: tuple[str, ...], sets: Mapping[str, list[str]]
+) -> bool:
+    """A wildcard, or a value that stops above the last level, that stands for an empty set."""
+    if not levels:
+        return False
+    if not isinstance(value, dict):
+        return any(not _get_set_members(level, sets) for level in levels)
+    if WILDCARD in value and not _get_set_members(levels[0], sets):
+        return True
+    return any(has_empty_expansion(child, levels[1:], sets) for child in value.values())
+
+
+def build_region_pairs(value: object) -> object:
+    """Each pair of regions that the value states in one direction gets the same value in the
+    other direction, unless the value states that direction too."""
+    pairs = build_bare_value(value)
+    if not isinstance(pairs, dict):
+        return pairs
+    mirrored = _copy_pairs(pairs)
+    for region, other, rest in _list_region_pairs(pairs):
+        reverse = mirrored.setdefault(other, {})
+        if isinstance(reverse, dict):
+            reverse.setdefault(region, rest)
+    return mirrored
+
+
+def _copy_pairs(pairs: dict[object, object]) -> dict[object, object]:
+    return {
+        region: dict(others) if isinstance(others, dict) else others
+        for region, others in pairs.items()
+    }
+
+
+def _list_region_pairs(pairs: dict[object, object]) -> list[tuple[object, object, object]]:
+    return [
+        (region, other, rest)
+        for region, others in pairs.items()
+        if isinstance(others, dict)
+        for other, rest in others.items()
+    ]
 
 
 def _list_repeated_entries(
@@ -75,10 +123,3 @@ def _list_level_members(
 def _get_set_members(level: str, sets: Mapping[str, list[str]]) -> list[str]:
     """The second region of a key takes its members from the region set."""
     return sets[REGION if level == SECOND_REGION else level]
-
-
-def _build_float_text(text: str) -> float | None:
-    try:
-        return float(text)
-    except ValueError:
-        return None

@@ -10,14 +10,21 @@ import polars as pl
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import VALUE_COL, TableKind
-from interop.plugins.shared.osemosys_canonical.events import record_skipped
+from interop.plugins.shared.osemosys_canonical.events import record_not_mapped, record_skipped
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 from interop.plugins.shared.osemosys_canonical.tz_document import TzObject
+from interop.plugins.shared.osemosys_canonical.tz_reports import (
+    TzPath,
+    TzPathReport,
+    join_tz_names,
+    report_tz_paths,
+)
 from interop.plugins.shared.osemosys_canonical.tz_values import (
     TzEntry,
+    build_bare_value,
     build_float_value,
-    drop_composed_wrapper,
+    has_empty_expansion,
     list_tz_entries,
 )
 from interop.plugins.shared.tz_osemosys_fields import (
@@ -37,6 +44,13 @@ _FIELDS_BY_OWNER: dict[tuple[TzOwner, str], TzField] = {
 # The value of a row whose field names a member in its value, in place of a number.
 _MEMBER_FLAG = True
 _NOT_A_NUMBER_NOTE = "{count} value(s) are not a number, so the raw stage leaves each out"
+_EMPTY_SET_NOTE = (
+    "a wildcard or a value above the last level stands for a set with no members, "
+    "so that value adds no rows"
+)
+_EMPTY_SET_FIELDS = TzPathReport(
+    record_not_mapped, "field(s) state a value for every member of a set with no members"
+)
 
 
 class StatedField(NamedTuple):
@@ -59,7 +73,9 @@ def map_tz_parameter_tables(
 ) -> dict[str, pl.DataFrame]:
     """Each raw table that the field table names, with its key and a float VALUE; a table that
     no field states has no rows."""
-    rows = _build_rows_by_table(objects, sets)
+    stated_fields = _list_stated_fields(objects)
+    _report_empty_set_fields(stated_fields, sets, recorder)
+    rows = _build_rows_by_table(stated_fields, sets)
     tables = {field.table: _build_table(field, rows.get(field.table, [])) for field in TZ_FIELDS}
     _report_unreadable_values(_build_unreadable_value_counts(tables), recorder)
     readable = {name: table.drop_nulls(VALUE_COL) for name, table in tables.items()}
@@ -78,12 +94,32 @@ def build_tz_declarations() -> dict[str, RawDeclaration]:
 
 
 def _build_rows_by_table(
-    objects: list[TzObject], sets: Mapping[str, list[str]]
+    stated_fields: list[StatedField], sets: Mapping[str, list[str]]
 ) -> dict[str, list[TzRow]]:
     rows: dict[str, list[TzRow]] = {}
-    for stated in _list_stated_fields(objects):
+    for stated in stated_fields:
         rows.setdefault(stated.field.table, []).extend(_build_field_rows(stated, sets))
     return rows
+
+
+def _report_empty_set_fields(
+    stated_fields: list[StatedField], sets: Mapping[str, list[str]], recorder: EventRecorder
+) -> None:
+    notes = {
+        _build_field_path(stated): _EMPTY_SET_NOTE
+        for stated in stated_fields
+        if has_empty_expansion(_build_bare_value(stated), stated.field.nesting, sets)
+    }
+    report_tz_paths(_EMPTY_SET_FIELDS, notes, recorder)
+
+
+def _build_field_path(stated: StatedField) -> TzPath:
+    owner = stated.tz_object.owner
+    return TzPath(owner, join_tz_names(stated.tz_object.name, stated.field.field))
+
+
+def _build_bare_value(stated: StatedField) -> object:
+    return build_bare_value(stated.value)
 
 
 def _list_stated_fields(objects: list[TzObject]) -> list[StatedField]:
@@ -98,7 +134,7 @@ def _list_stated_fields(objects: list[TzObject]) -> list[StatedField]:
 
 def _build_field_rows(stated: StatedField, sets: Mapping[str, list[str]]) -> list[TzRow]:
     field = stated.field
-    entries = list_tz_entries(drop_composed_wrapper(stated.value), field.nesting, sets)
+    entries = list_tz_entries(_build_bare_value(stated), field.nesting, sets)
     if field.value_set is not None:
         entries = [TzEntry((*entry.members, str(entry.value)), _MEMBER_FLAG) for entry in entries]
     return [

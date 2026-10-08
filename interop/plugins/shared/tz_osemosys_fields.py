@@ -346,6 +346,20 @@ TIME_SETS: dict[str, str] = {
     "daily_time_brackets": DAILYTIMEBRACKET,
 }
 
+# The trade fields that `construct_region_pairs` copies to the opposite direction of each pair.
+REGION_PAIR_FIELDS = frozenset(
+    {
+        "trade_routes",
+        "trade_loss",
+        "residual_capacity",
+        "capex",
+        "capacity_additional_max",
+        "operating_life",
+        "cost_of_capital",
+        "capacity_activity_unit_ratio",
+    }
+)
+
 # The key and the value of the wrapper that holds a composed value.
 COMPOSED_FLAG = "is_composed"
 COMPOSED_DATA = "data"
