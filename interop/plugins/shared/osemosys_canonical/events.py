@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     AUTOMATIC_MATCH_NOTE,
@@ -17,15 +19,30 @@ from interop.ports.outbound.reporting import (
 )
 
 
+class TableNames(NamedTuple):
+    """The name of a raw table or raw set, and the canonical name that it maps to."""
+
+    source: str
+    destination: str
+
+
 def record_automatic_match(recorder: EventRecorder, kind: TableKind, name: str) -> None:
+    record_value_derived(recorder, kind, TableNames(name, name), AUTOMATIC_MATCH_NOTE)
+
+
+def record_value_derived(
+    recorder: EventRecorder, kind: TableKind, names: TableNames, note: str
+) -> None:
     recorder.append(
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=name)],
+            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=names.source)],
             destinations=[
-                DestinationField(framework=CANONICAL_FRAMEWORK, component=kind, name=name)
+                DestinationField(
+                    framework=CANONICAL_FRAMEWORK, component=kind, name=names.destination
+                )
             ],
-            note=AUTOMATIC_MATCH_NOTE,
+            note=note,
         )
     )
 

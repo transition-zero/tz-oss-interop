@@ -97,3 +97,22 @@ class OtooleEntryType(StrEnum):
 
 CSV_SUFFIX = ".csv"
 YAML_SUFFIXES = (".yaml", ".yml")
+
+
+class RemoveRule(StrEnum):
+    """How a `remove_column` operation turns the values of an extra set into one value."""
+
+    CHOOSE = "choose"
+    MEAN = "mean"
+    SUM = "sum"
+    MIN = "min"
+    MAX = "max"
+
+
+# The hidden column that names the raw table of each row while the engine merges raw tables.
+RAW_TABLE_COL = "__raw_table"
+# How a message names the `parameters:` part and the `sets:` part of a user mappings file.
+PARAMETERS_PART = "`parameters:`"
+SETS_PART = "`sets:`"
+# The hidden column that counts the rows a summary describes.
+ROW_COUNT_COL = "__row_count"

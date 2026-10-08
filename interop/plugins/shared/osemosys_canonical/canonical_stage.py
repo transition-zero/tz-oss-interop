@@ -17,6 +17,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TIMESLICE,
     TableKind,
 )
+from interop.plugins.shared.osemosys_canonical.mapping_inputs import MappingInputs
 from interop.plugins.shared.osemosys_canonical.mappings import OsemosysMappings
 from interop.plugins.shared.osemosys_canonical.metadata import build_metadata_tables
 from interop.plugins.shared.osemosys_canonical.parameter_mapping import map_parameters
@@ -47,10 +48,10 @@ def build_canonical_stage(
 def _map_raw_stage(
     raw: RawStage, mappings: OsemosysMappings, recorder: EventRecorder
 ) -> list[CanonicalTable]:
-    schema = load_canonical_schema()
-    sets = map_sets(raw.sets, schema, recorder)
-    parameters = map_parameters(raw, schema, recorder)
-    metadata = build_metadata_tables(schema, parameters, mappings.units)
+    inputs = MappingInputs(raw, mappings, load_canonical_schema())
+    sets = map_sets(inputs, recorder)
+    parameters = map_parameters(inputs, sets.sets, recorder)
+    metadata = build_metadata_tables(inputs.schema, parameters, mappings.units)
     return [
         *_build_canonical_tables(TableKind.SET, sets.sets),
         *_build_canonical_tables(TableKind.EXTENSION, sets.extensions),

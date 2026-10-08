@@ -1,0 +1,101 @@
+"""The rule that leaves out a canonical value whose set member is not in its canonical set."""
+
+from __future__ import annotations
+
+import logging
+from itertools import chain
+from typing import NamedTuple
+
+import polars as pl
+
+from interop.core.reporting import EventRecorder
+from interop.plugins.shared.osemosys_canonical.constants import (
+    ROW_COUNT_COL,
+    VALUE_COL,
+    TableKind,
+)
+from interop.plugins.shared.osemosys_canonical.events import record_skipped
+from interop.plugins.shared.osemosys_canonical.schema import CanonicalSchema
+from interop.plugins.shared.osemosys_canonical.set_mapping import normalise_set_name
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
+
+_EMPTY_MEMBERS = pl.Series(VALUE_COL, [], dtype=pl.Utf8)
+_ABSENT_MEMBERS_NOTE = (
+    "{count} row(s) name a set member that its canonical set does not hold ({members}), "
+    "so each is left out"
+)
+
+
+class AbsentMembers(NamedTuple):
+    """How many rows of one table name an absent member, and which members they name."""
+
+    row_count: int
+    members: list[str]
+
+
+def build_set_members(sets: dict[str, pl.LazyFrame]) -> dict[str, pl.Series]:
+    """A set is component scale, so its members are safe to collect in full."""
+    return {name: table.select(VALUE_COL).collect().to_series() for name, table in sets.items()}
+
+
+def find_absent_members(
+    tables: dict[str, pl.LazyFrame], schema: CanonicalSchema, members: dict[str, pl.Series]
+) -> dict[str, AbsentMembers]:
+    """Each table that names an absent member; an absent set holds no members."""
+    found = {
+        name: _find_absent_members(table, schema.parameters[name].key, members)
+        for name, table in tables.items()
+    }
+    return {name: absent for name, absent in found.items() if absent.row_count}
+
+
+def _find_absent_members(
+    table: pl.LazyFrame, key: list[str], members: dict[str, pl.Series]
+) -> AbsentMembers:
+    """Collects one aggregated row: the count and the absent members of each key column."""
+    summary = (
+        table.filter(~_express_is_known(key, members))
+        .select(pl.len().alias(ROW_COUNT_COL), *(_express_absent(c, members) for c in key))
+        .collect()
+    )
+    absent = chain.from_iterable(summary.item(0, column) for column in key)
+    return AbsentMembers(summary.item(0, ROW_COUNT_COL), sorted(set(absent)))
+
+
+def drop_absent_members(
+    tables: dict[str, pl.LazyFrame], schema: CanonicalSchema, members: dict[str, pl.Series]
+) -> dict[str, pl.LazyFrame]:
+    return {
+        name: table.filter(_express_is_known(schema.parameters[name].key, members))
+        for name, table in tables.items()
+    }
+
+
+def _express_is_known(key: list[str], members: dict[str, pl.Series]) -> pl.Expr:
+    return pl.all_horizontal(_express_is_member(column, members) for column in key)
+
+
+def _express_is_member(column: str, members: dict[str, pl.Series]) -> pl.Expr:
+    known = members.get(normalise_set_name(column), _EMPTY_MEMBERS)
+    return pl.col(column).is_in(known.implode())
+
+
+def _express_absent(column: str, members: dict[str, pl.Series]) -> pl.Expr:
+    return (
+        pl.col(column).filter(~_express_is_member(column, members)).unique().implode().alias(column)
+    )
+
+
+def report_absent_members(absent: dict[str, AbsentMembers], recorder: EventRecorder) -> None:
+    for name, found in absent.items():
+        note = _ABSENT_MEMBERS_NOTE.format(count=found.row_count, members=name_a_few(found.members))
+        record_skipped(recorder, TableKind.PARAMETER, name, note)
+    if absent:
+        log.warning(
+            "%d canonical parameter table(s) hold values whose set member is not in its canonical "
+            "set, so those values are left out: %s",
+            len(absent),
+            name_a_few(f"{name} ({name_a_few(found.members)})" for name, found in absent.items()),
+        )
