@@ -335,7 +335,8 @@ The location rules:
 - A technology takes the locations that `objects:` rows give to the fuels that it takes in
   and puts out. A fuel location that the engine infers does not count.
 - The technology takes each such location once. A `~` joins two or more locations, in this
-  order: the lowest mode of operation first, then the input fuel before the output fuel.
+  order: the lowest mode of operation first, then the input fuel before the output fuel,
+  then the location text in alphabetical order.
 - If no fuel location counts, the technology takes the location of its region.
 
 The kind rules use the rows of the canonical tables `InputActivityRatio`,
@@ -402,8 +403,8 @@ The config YAML can be outside `csv_dir`. The source reads the entries of `type:
 `type: param`. It does not read an entry of `type: result`. The `indices` of a parameter
 give its key, and its `default` gives its declared default.
 
-The source finds each CSV file by its full name, then by its `short_name`. A raw table takes
-the full name. The source does not check that `csv_dir` exists. When it finds no file, each
+The source finds each parameter file by its full name, then by its `short_name`. It finds
+each set file by its full name only. A raw table takes the full name. The source does not check that `csv_dir` exists. When it finds no file, each
 set has no members and each parameter has no rows.
 
 | Input | What the source does | Event and warning |
@@ -461,7 +462,10 @@ The source reads each value as follows:
 - An annual demand with a profile for its region, fuel and year goes to
   `SpecifiedAnnualDemand`. An annual demand with no profile goes to `AccumulatedAnnualDemand`.
 - When a trade states `construct_region_pairs: true`, a pair of regions in one direction also
-  holds in the other direction. A direction that the trade states itself wins.
+  holds in the other direction. A direction that the trade states itself wins. This applies
+  only to the eight region-pair fields: `trade_routes`, `trade_loss`, `residual_capacity`,
+  `capex`, `capacity_additional_max`, `operating_life`, `cost_of_capital` and
+  `capacity_activity_unit_ratio`.
 
 The source stages a raw table for each table that the field table names. A table that no
 field states has no rows. The declared defaults are the defaults of the field table.
@@ -491,6 +495,7 @@ problem in the data of the model never stops the run.
 | The user mappings file is not given, or it does not parse | The run stops |
 | `osemosys:`, or a part in it, holds a key that the schema does not declare | The run stops |
 | `sets:` or a `parameters:` row names a canonical set or parameter that the schema does not hold | The run stops |
+| `repeat_for_all` names a column that is not a canonical set or `_REGION` | The run stops |
 | `remove_column` gives a `member` with a rule other than `choose`, or no `member` with `choose` | The run stops |
 | A `parameters:` row states both or neither of `source` and `source_pattern` | The run stops |
 | A `parameters:` row states both or neither of `canonical` and `ignore: true` | The run stops |
@@ -506,12 +511,18 @@ problem in the data of the model never stops the run.
 | `csv_dir` names a file | The run stops |
 | The config YAML cannot be read, or it is not an otoole config | The run stops |
 | The `model.json` cannot be read, or it is not a JSON object with a `time_definition` | The run stops |
-| A value names a set member that its canonical set does not hold | The engine leaves out those rows |
 
-The last rule applies to each canonical parameter table. The engine checks each key column
-against its canonical set, and `_REGION` against `REGION`. An empty key cell counts as an
-absent member. The engine records `COMPONENT_SKIPPED` for each table and writes one warning.
-It does not apply this rule to an extension table.
+These problems in the data of the model do not stop the run:
+
+- A raw stage problem that the sections on the two sources list. The source leaves out the
+  part that it cannot use.
+- A value that names a set member that its canonical set does not hold. The engine leaves
+  out those rows.
+
+The rule for an absent set member applies to each canonical parameter table. The engine
+checks each key column against its canonical set, and `_REGION` against `REGION`. An empty
+key cell counts as an absent member. The engine records `COMPONENT_SKIPPED` for each table
+and writes one warning. It does not apply this rule to an extension table.
 
 ## The reporting
 
@@ -531,9 +542,15 @@ event for a single value row, because a table can hold millions of rows.
 | The engine infers annotations | `VALUE_DERIVED`, with a note that names each rule |
 | No kind fits a technology | `NOT_MAPPED` |
 
-The source field of each event has the framework `osemosys`. The destination field has the
-framework `osemosys-canonical`. An annotation event names its member as `REGION/member`, for
-example `R1/ATGASCC1`.
+The source field of each event has the framework `osemosys`. Two groups of events also have
+a destination field, with the framework `osemosys-canonical`:
+
+- Each `VALUE_DERIVED` event.
+- Each annotation event, including the `NOT_MAPPED` event when no kind fits a technology.
+
+Every other event has a source field only. This includes each `COMPONENT_SKIPPED` event, and
+each `NOT_MAPPED` event for an extension table. An annotation event names its member as
+`REGION/member`, for example `R1/ATGASCC1`.
 
 The engine writes one warning for each reason, not one for each table. A warning gives the
 count, and it names at most three tables or members. For example:
