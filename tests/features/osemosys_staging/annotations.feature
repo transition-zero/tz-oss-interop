@@ -70,7 +70,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
       | REGION | TECHNOLOGY | kind | category | location |
       | R1     | ATDELINK   | link |          | AT~DE    |
-    And the file "decisions.md" contains "kind link: it takes in electricity at one location and puts it out at another"
+    And the section "Values derived" of "decisions.md" contains "kind link: it takes in electricity at one location and puts it out at another" 2 times
     And the file "decisions.md" contains "location AT~DE: the locations of the fuels that it takes in and puts out"
 
   Scenario: A link that runs both ways takes the order of its lowest mode
@@ -184,7 +184,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
       | REGION | TECHNOLOGY | kind       | category       | location |
       | R1     | ATDELINK   | conversion | interconnector | AT~DE    |
-    And the file "decisions.md" contains "row 0 of `objects: technologies` gives kind, category"
+    And the section "User config defaults applied" of "decisions.md" contains "row 0 of `objects: technologies` gives kind, category" 2 times
     And the file "decisions.md" does not contain "kind link"
 
   Scenario: Location defaults to the region, once for each region
@@ -216,7 +216,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | R1     | IDLE       |      |          | R1       |
     And the log contains "no kind fits"
     And the log contains "IDLE"
-    And the file "decisions.md" contains "no kind fits its rows in InputActivityRatio"
+    And the section "Fields not mapped" of "decisions.md" contains "no kind fits its rows in InputActivityRatio" 1 times
 
   Scenario: A location that names a group the pattern does not hold stops the run
     Given the otoole set "REGION" holds "R1"
@@ -228,6 +228,17 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 1
     And the log contains "objects.fuels.0"
     And the log contains "the location {country} names country, which match does not capture"
+
+  Scenario: A location with an empty field stops the run
+    Given the otoole set "REGION" holds "R1"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                          |
+      | osemosys: {objects: {fuels: [{match: "^ATE1$", location: "{}"}]}} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "objects.fuels.0"
+    And the log contains "the location '{}' holds an empty {}; name a group of match or REGION in it"
 
   Scenario: A location whose group captures nothing for a member stops the run
     Given the otoole set "REGION" holds "R1"

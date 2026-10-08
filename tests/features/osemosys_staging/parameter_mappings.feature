@@ -152,7 +152,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | GAS        | 2030 | 1     |
     And the log contains "CapitalCost"
-    And the file "decisions.md" contains "a `parameters:` row maps another raw table to this canonical parameter" 1 times
+    And the section "Fields not mapped" of "decisions.md" contains "a `parameters:` row maps another raw table to this canonical parameter" 1 times
 
   Scenario: A family whose defaults differ stays as extension tables
     Given an otoole model
@@ -175,7 +175,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     And the file "canonical/extensions/BETag.parquet" exists
     And the file "canonical/parameters/ReserveMarginTagTechnology.parquet" does not exist
     And the log contains "ATTag"
-    And the file "decisions.md" contains "declare different defaults" 2 times
+    And the section "Fields not mapped" of "decisions.md" contains "declare different defaults" 2 times
 
   Scenario: A value whose set member is not in its canonical set is left out
     Given an otoole model

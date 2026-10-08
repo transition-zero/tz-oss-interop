@@ -140,9 +140,14 @@ def list_template_fields(template: str | None) -> list[str]:
     if template is None:
         return []
     try:
-        return [name for _, name, _, _ in Formatter().parse(template) if name is not None]
+        names = [name for _, name, _, _ in Formatter().parse(template) if name is not None]
     except ValueError as exc:
         raise ValueError(f"the location {template!r} is not a template: {exc}") from exc
+    if "" in names:
+        raise ValueError(
+            f"the location {template!r} holds an empty {{}}; name a group of match or REGION in it"
+        )
+    return names
 
 
 class ObjectRows(BaseModel):

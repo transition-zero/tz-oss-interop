@@ -33,10 +33,10 @@ from interop.plugins.shared.osemosys_canonical.technology_kinds import (
     Inference,
     LocatedFlow,
     TechnologyStructure,
+    build_storage_technologies,
+    build_technology_flows,
     build_technology_location,
     choose_kind,
-    read_storage_technologies,
-    read_technology_flows,
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind
@@ -79,11 +79,11 @@ def map_annotations(
     """One table for each annotated set, keyed by the set name."""
     keys = _list_member_keys(canonical)
     annotated = {
-        part: [_annotate_by_region(part, key, rows) for key in keys[part]]
+        part: [_build_region_annotation(part, key, rows) for key in keys[part]]
         for part in _REGION_LOCATION_RULES
     }
     fuels = _build_fuel_annotations(annotated[ObjectPart.FUELS])
-    annotated[ObjectPart.TECHNOLOGIES] = _annotate_technologies(canonical, keys, rows, fuels)
+    annotated[ObjectPart.TECHNOLOGIES] = _build_technology_annotations(canonical, keys, rows, fuels)
     _report_annotations(annotated, recorder)
     return {OBJECT_PART_SETS[part]: _build_table(part, found) for part, found in annotated.items()}
 
@@ -105,12 +105,14 @@ def _build_member_keys(part: ObjectPart, regions: list[str], members: list[str])
     return [MemberKey(region, member) for region in regions for member in members]
 
 
-def _annotate_by_region(part: ObjectPart, key: MemberKey, rows: ObjectRows) -> MemberAnnotation:
+def _build_region_annotation(
+    part: ObjectPart, key: MemberKey, rows: ObjectRows
+) -> MemberAnnotation:
     inference = Inference(key.region, _REGION_LOCATION_RULES[part])
-    return _annotate_member(part, key, rows, {AnnotationColumn.LOCATION: inference})
+    return _build_member_annotation(part, key, rows, {AnnotationColumn.LOCATION: inference})
 
 
-def _annotate_member(
+def _build_member_annotation(
     part: ObjectPart,
     key: MemberKey,
     rows: ObjectRows,
@@ -134,32 +136,36 @@ def _build_fuel_annotations(fuels: list[MemberAnnotation]) -> dict[MemberKey, Fu
     }
 
 
-def _annotate_technologies(
+def _build_technology_annotations(
     canonical: dict[str, pl.LazyFrame],
     keys: dict[ObjectPart, list[MemberKey]],
     rows: ObjectRows,
     fuels: dict[MemberKey, FuelAnnotation],
 ) -> list[MemberAnnotation]:
-    flows = read_technology_flows(canonical)
-    storages = read_storage_technologies(canonical)
+    flows = build_technology_flows(canonical)
+    storages = build_storage_technologies(canonical)
     structures = {
-        key: TechnologyStructure(_locate_flows(key, flows.get(key, []), fuels), key in storages)
+        key: TechnologyStructure(
+            _build_located_flows(key, flows.get(key, []), fuels), key in storages
+        )
         for key in keys[ObjectPart.TECHNOLOGIES]
     }
     return [
-        _annotate_member(ObjectPart.TECHNOLOGIES, key, rows, _infer_technology(key, structure))
+        _build_member_annotation(
+            ObjectPart.TECHNOLOGIES, key, rows, _build_technology_inferences(key, structure)
+        )
         for key, structure in structures.items()
     ]
 
 
-def _locate_flows(
+def _build_located_flows(
     key: MemberKey, flows: list[FuelFlow], fuels: dict[MemberKey, FuelAnnotation]
 ) -> list[LocatedFlow]:
     """The absent-member rule leaves out every flow whose fuel is not in the FUEL set."""
     return [LocatedFlow(flow, fuels[MemberKey(key.region, flow.fuel)]) for flow in flows]
 
 
-def _infer_technology(
+def _build_technology_inferences(
     key: MemberKey, structure: TechnologyStructure
 ) -> dict[AnnotationColumn, Inference]:
     inferences = {AnnotationColumn.LOCATION: build_technology_location(structure, key.region)}

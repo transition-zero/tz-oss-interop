@@ -78,33 +78,33 @@ class Inference(NamedTuple):
 
 
 class KindRule(NamedTuple):
-    """One kind of the closed list, the test that it fits, and the rule a note names."""
+    """One kind of the closed list, the test of a technology for it, and the rule a note names."""
 
     kind: TechnologyKind
-    fits: Callable[[TechnologyStructure], bool]
+    is_match: Callable[[TechnologyStructure], bool]
     rule: str
 
 
-def read_technology_flows(canonical: dict[str, pl.LazyFrame]) -> dict[MemberKey, list[FuelFlow]]:
+def build_technology_flows(canonical: dict[str, pl.LazyFrame]) -> dict[MemberKey, list[FuelFlow]]:
     """Counts each row whose VALUE is above zero, in any year and any mode."""
     flows: dict[MemberKey, list[FuelFlow]] = {}
     for parameter, is_input in _FLOW_DIRECTIONS.items():
-        for region, technology, fuel, mode in _read_positive_keys(canonical, parameter).rows():
+        for region, technology, fuel, mode in _build_positive_keys(canonical, parameter).rows():
             flows.setdefault(MemberKey(region, technology), []).append(
                 FuelFlow(mode, is_input, fuel)
             )
     return flows
 
 
-def read_storage_technologies(canonical: dict[str, pl.LazyFrame]) -> set[MemberKey]:
+def build_storage_technologies(canonical: dict[str, pl.LazyFrame]) -> set[MemberKey]:
     return {
         MemberKey(*row)
         for parameter in _STORAGE_PARAMETERS
-        for row in _read_positive_keys(canonical, parameter).rows()
+        for row in _build_positive_keys(canonical, parameter).rows()
     }
 
 
-def _read_positive_keys(canonical: dict[str, pl.LazyFrame], parameter: str) -> pl.DataFrame:
+def _build_positive_keys(canonical: dict[str, pl.LazyFrame], parameter: str) -> pl.DataFrame:
     """Collects only the distinct key columns, which are component scale."""
     columns = _STORAGE_COLUMNS if parameter in _STORAGE_PARAMETERS else _FLOW_COLUMNS
     table = canonical.get(parameter)
@@ -116,7 +116,7 @@ def _read_positive_keys(canonical: dict[str, pl.LazyFrame], parameter: str) -> p
 def choose_kind(structure: TechnologyStructure) -> Inference | None:
     """The kinds are tried in the order of the closed list, and the first that fits wins."""
     for rule in _KIND_RULES:
-        if rule.fits(structure):
+        if rule.is_match(structure):
             return Inference(rule.kind.value, rule.rule)
     return None
 
