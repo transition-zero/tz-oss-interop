@@ -22,6 +22,8 @@ from interop.plugins.shared.warning_text import name_a_few
 log = logging.getLogger(__name__)
 
 _EMPTY_MEMBERS = pl.Series(VALUE_COL, [], dtype=pl.Utf8)
+# How a note and a warning name an empty key cell among the absent members.
+_EMPTY_CELL = "an empty cell"
 _ABSENT_MEMBERS_NOTE = (
     "{count} row(s) name a set member that its canonical set does not hold ({members}), "
     "so each is left out"
@@ -40,18 +42,18 @@ def build_set_members(sets: dict[str, pl.LazyFrame]) -> dict[str, pl.Series]:
     return {name: table.select(VALUE_COL).collect().to_series() for name, table in sets.items()}
 
 
-def find_absent_members(
+def build_absent_members(
     tables: dict[str, pl.LazyFrame], schema: CanonicalSchema, members: dict[str, pl.Series]
 ) -> dict[str, AbsentMembers]:
     """Each table that names an absent member; an absent set holds no members."""
     found = {
-        name: _find_absent_members(table, schema.parameters[name].key, members)
+        name: _build_table_absent_members(table, schema.parameters[name].key, members)
         for name, table in tables.items()
     }
     return {name: absent for name, absent in found.items() if absent.row_count}
 
 
-def _find_absent_members(
+def _build_table_absent_members(
     table: pl.LazyFrame, key: list[str], members: dict[str, pl.Series]
 ) -> AbsentMembers:
     """Collects one aggregated row: the count and the absent members of each key column."""
@@ -61,7 +63,8 @@ def _find_absent_members(
         .collect()
     )
     absent = chain.from_iterable(summary.item(0, column) for column in key)
-    return AbsentMembers(summary.item(0, ROW_COUNT_COL), sorted(set(absent)))
+    labels = {_EMPTY_CELL if member is None else member for member in absent}
+    return AbsentMembers(summary.item(0, ROW_COUNT_COL), sorted(labels))
 
 
 def drop_absent_members(
@@ -78,8 +81,9 @@ def _express_is_known(key: list[str], members: dict[str, pl.Series]) -> pl.Expr:
 
 
 def _express_is_member(column: str, members: dict[str, pl.Series]) -> pl.Expr:
+    """An empty key cell names no member, so it counts as absent."""
     known = members.get(normalise_set_name(column), _EMPTY_MEMBERS)
-    return pl.col(column).is_in(known.implode())
+    return pl.col(column).is_in(known.implode()).fill_null(False)
 
 
 def _express_absent(column: str, members: dict[str, pl.Series]) -> pl.Expr:
@@ -93,9 +97,11 @@ def report_absent_members(absent: dict[str, AbsentMembers], recorder: EventRecor
         note = _ABSENT_MEMBERS_NOTE.format(count=found.row_count, members=name_a_few(found.members))
         record_skipped(recorder, TableKind.PARAMETER, name, note)
     if absent:
+        members = sorted({member for found in absent.values() for member in found.members})
         log.warning(
             "%d canonical parameter table(s) hold values whose set member is not in its canonical "
-            "set, so those values are left out: %s",
+            "set, so those values are left out: %s (absent members: %s)",
             len(absent),
-            name_a_few(f"{name} ({name_a_few(found.members)})" for name, found in absent.items()),
+            name_a_few(absent),
+            name_a_few(members),
         )

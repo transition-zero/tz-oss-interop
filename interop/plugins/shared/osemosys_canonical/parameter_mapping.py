@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
 from typing import NamedTuple
 
 import polars as pl
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.absent_members import (
+    build_absent_members,
     build_set_members,
     drop_absent_members,
-    find_absent_members,
     report_absent_members,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -69,69 +68,51 @@ class MappedParameters(NamedTuple):
     extension_defaults: dict[str, float | None]
 
 
-class ParameterPlan(NamedTuple):
-    """Where each raw parameter table goes; each extension list holds the note of each table."""
+class TablePlan(NamedTuple):
+    """The raw tables that no row matches; each maps automatically or stays an extension table,
+    with its note."""
 
     automatic: list[str]
-    row_groups: list[RowGroup]
-    ignored: list[RowMatch]
     unmatched: dict[str, str]
     overridden: dict[str, str]
+
+
+class ParameterPlan(NamedTuple):
+    """Where each raw parameter table goes; each extension dict holds the note of each table."""
+
+    tables: TablePlan
+    row_groups: list[RowGroup]
+    ignored: list[RowMatch]
     different_defaults: dict[str, str]
 
     @property
     def extensions(self) -> list[str]:
-        return [*self.unmatched, *self.overridden, *self.different_defaults]
+        return [*self.tables.unmatched, *self.tables.overridden, *self.different_defaults]
 
 
 def map_parameters(
     inputs: MappingInputs, sets: dict[str, pl.LazyFrame], recorder: EventRecorder
 ) -> MappedParameters:
-    plan = _build_plan(inputs)
-    _reject_wrong_keys(inputs, plan.row_groups)
-    tables = {
-        **{name: _reshape_to_key(inputs, name) for name in plan.automatic},
-        **{group.canonical: _build_group_table(inputs, group, sets) for group in plan.row_groups},
-    }
+    matches = _build_row_matches(inputs)
+    _warn_unmatched_rows(inputs.mappings.parameters, matches)
+    groups = _build_row_groups(inputs, matches)
+    _reject_wrong_keys(inputs, groups)
+    plan = _build_plan(inputs, matches, groups)
+    tables = _build_canonical_tables(inputs, plan, sets)
     _report_plan(plan, recorder)
-    return MappedParameters(
-        parameters=_drop_absent_members(inputs, tables, sets, recorder),
-        extensions={name: inputs.raw.parameters[name] for name in plan.extensions},
-        parameter_defaults=_build_parameter_defaults(inputs, plan),
-        extension_defaults=_build_declared_defaults(inputs, plan.extensions),
+    return _build_mapped_parameters(
+        inputs, plan, _drop_absent_members(inputs, tables, sets, recorder)
     )
 
 
-def _build_plan(inputs: MappingInputs) -> ParameterPlan:
-    """A raw table that a row matches leaves the automatic match, as does every other raw table
-    whose canonical parameter a row maps."""
-    matches = _find_row_matches(inputs)
-    groups = _group_by_canonical(matches)
-    row_groups = [group for group in groups if not _has_different_defaults(inputs, group)]
-    others = [name for name in inputs.raw.parameters if name not in matches]
-    automatic = [name for name in others if _is_automatic_match(inputs, name)]
-    claimed = {group.canonical for group in groups}
-    return ParameterPlan(
-        automatic=[name for name in automatic if name not in claimed],
-        row_groups=row_groups,
-        ignored=[match for match in matches.values() if match.row.ignore],
-        unmatched=dict.fromkeys(
-            [name for name in others if name not in automatic], _UNMATCHED_NOTE
-        ),
-        overridden=dict.fromkeys([name for name in automatic if name in claimed], _OVERRIDDEN_NOTE),
-        different_defaults=_build_different_defaults_notes(inputs, groups),
-    )
-
-
-def _find_row_matches(inputs: MappingInputs) -> dict[str, RowMatch]:
+def _build_row_matches(inputs: MappingInputs) -> dict[str, RowMatch]:
     rows = inputs.mappings.parameters
     found = {name: find_row_match(rows, name) for name in inputs.raw.parameters}
-    _warn_unused_rows(rows, found.values())
     return {name: match for name, match in found.items() if match is not None}
 
 
-def _warn_unused_rows(rows: list[ParameterRow], matches: Iterable[RowMatch | None]) -> None:
-    used = {match.row_index for match in matches if match is not None}
+def _warn_unmatched_rows(rows: list[ParameterRow], matches: dict[str, RowMatch]) -> None:
+    used = {match.row_index for match in matches.values()}
     unused = [
         f"row {index} ({row.source or row.source_pattern})"
         for index, row in enumerate(rows)
@@ -146,51 +127,93 @@ def _warn_unused_rows(rows: list[ParameterRow], matches: Iterable[RowMatch | Non
         )
 
 
-def _group_by_canonical(matches: dict[str, RowMatch]) -> list[RowGroup]:
-    groups: dict[str, list[RowMatch]] = {}
+def _build_row_groups(inputs: MappingInputs, matches: dict[str, RowMatch]) -> list[RowGroup]:
+    grouped: dict[str, list[RowMatch]] = {}
     for match in matches.values():
         if match.row.canonical is not None:
-            groups.setdefault(match.row.canonical, []).append(match)
-    return [RowGroup(canonical, grouped) for canonical, grouped in groups.items()]
+            grouped.setdefault(match.row.canonical, []).append(match)
+    return [
+        RowGroup(canonical, members, _list_group_defaults(inputs, members))
+        for canonical, members in grouped.items()
+    ]
 
 
-def _has_different_defaults(inputs: MappingInputs, group: RowGroup) -> bool:
-    return len(_list_group_defaults(inputs, group)) > 1
-
-
-def _list_group_defaults(inputs: MappingInputs, group: RowGroup) -> list[float | None]:
+def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list[float | None]:
     """The distinct defaults of the raw tables of a group, each after its row's `multiply_by`."""
     defaults = [
         convert_default(match.row, inputs.raw.declarations[match.table].default)
-        for match in group.matches
+        for match in matches
     ]
     return list(dict.fromkeys(defaults))
 
 
-def _build_different_defaults_notes(
-    inputs: MappingInputs, groups: list[RowGroup]
-) -> dict[str, str]:
-    notes: dict[str, str] = {}
+def _reject_wrong_keys(inputs: MappingInputs, groups: list[RowGroup]) -> None:
+    """Every group is checked, including a group whose defaults differ."""
     for group in groups:
-        defaults = _list_group_defaults(inputs, group)
-        if len(defaults) > 1:
-            text = ", ".join(str(default) for default in defaults)
-            note = _DIFFERENT_DEFAULTS_NOTE.format(canonical=group.canonical, defaults=text)
-            notes.update(dict.fromkeys([match.table for match in group.matches], note))
+        canonical_key = inputs.schema.parameters[group.canonical].key
+        for match in group.matches:
+            reject_wrong_key(match, inputs.raw.declarations[match.table].key, canonical_key)
+
+
+def _build_plan(
+    inputs: MappingInputs, matches: dict[str, RowMatch], groups: list[RowGroup]
+) -> ParameterPlan:
+    return ParameterPlan(
+        tables=_build_table_plan(inputs, matches, {group.canonical for group in groups}),
+        row_groups=[group for group in groups if not group.has_different_defaults],
+        ignored=[match for match in matches.values() if match.row.ignore],
+        different_defaults=_build_different_defaults_notes(groups),
+    )
+
+
+def _build_table_plan(
+    inputs: MappingInputs, matches: dict[str, RowMatch], claimed: set[str]
+) -> TablePlan:
+    """A raw table whose canonical parameter a row maps does not match automatically."""
+    others = [name for name in inputs.raw.parameters if name not in matches]
+    automatic = [name for name in others if _is_automatic_match(inputs, name)]
+    return TablePlan(
+        automatic=[name for name in automatic if name not in claimed],
+        unmatched=dict.fromkeys(
+            [name for name in others if name not in automatic], _UNMATCHED_NOTE
+        ),
+        overridden=dict.fromkeys([name for name in automatic if name in claimed], _OVERRIDDEN_NOTE),
+    )
+
+
+def _build_different_defaults_notes(groups: list[RowGroup]) -> dict[str, str]:
+    notes: dict[str, str] = {}
+    for group in [group for group in groups if group.has_different_defaults]:
+        text = ", ".join(str(default) for default in group.defaults)
+        note = _DIFFERENT_DEFAULTS_NOTE.format(canonical=group.canonical, defaults=text)
+        notes.update(dict.fromkeys([match.table for match in group.matches], note))
     return notes
+
+
+def _build_canonical_tables(
+    inputs: MappingInputs, plan: ParameterPlan, sets: dict[str, pl.LazyFrame]
+) -> dict[str, pl.LazyFrame]:
+    return {
+        **{name: _reshape_to_key(inputs, name) for name in plan.tables.automatic},
+        **{group.canonical: _build_group_table(inputs, group, sets) for group in plan.row_groups},
+    }
+
+
+def _build_mapped_parameters(
+    inputs: MappingInputs, plan: ParameterPlan, parameters: dict[str, pl.LazyFrame]
+) -> MappedParameters:
+    return MappedParameters(
+        parameters=parameters,
+        extensions={name: inputs.raw.parameters[name] for name in plan.extensions},
+        parameter_defaults=_build_parameter_defaults(inputs, plan),
+        extension_defaults=_build_declared_defaults(inputs, plan.extensions),
+    )
 
 
 def _is_automatic_match(inputs: MappingInputs, name: str) -> bool:
     """The key is a set of named columns, so its order does not change what a row means."""
     entry = inputs.schema.parameters.get(name)
     return entry is not None and sorted(entry.key) == sorted(inputs.raw.declarations[name].key)
-
-
-def _reject_wrong_keys(inputs: MappingInputs, groups: list[RowGroup]) -> None:
-    for group in groups:
-        canonical_key = inputs.schema.parameters[group.canonical].key
-        for match in group.matches:
-            reject_wrong_key(match, inputs.raw.declarations[match.table].key, canonical_key)
 
 
 def _reshape_to_key(inputs: MappingInputs, name: str) -> pl.LazyFrame:
@@ -217,18 +240,18 @@ def _drop_absent_members(
     recorder: EventRecorder,
 ) -> dict[str, pl.LazyFrame]:
     members = build_set_members(sets)
-    report_absent_members(find_absent_members(tables, inputs.schema, members), recorder)
+    report_absent_members(build_absent_members(tables, inputs.schema, members), recorder)
     return drop_absent_members(tables, inputs.schema, members)
 
 
 def _report_plan(plan: ParameterPlan, recorder: EventRecorder) -> None:
-    for name in plan.automatic:
+    for name in plan.tables.automatic:
         record_automatic_match(recorder, TableKind.PARAMETER, name)
     for group in plan.row_groups:
         _record_row_group(group, recorder)
     _report_ignored(plan.ignored, recorder)
-    _report_extensions(plan.unmatched, _UNMATCHED_REASON, recorder)
-    _report_extensions(plan.overridden, _OVERRIDDEN_REASON, recorder)
+    _report_extensions(plan.tables.unmatched, _UNMATCHED_REASON, recorder)
+    _report_extensions(plan.tables.overridden, _OVERRIDDEN_REASON, recorder)
     _report_extensions(plan.different_defaults, _DIFFERENT_DEFAULTS_REASON, recorder)
 
 
@@ -268,8 +291,8 @@ def _build_parameter_defaults(
 ) -> dict[str, float | None]:
     """A group has one default, because a group whose defaults differ stays as extensions."""
     return {
-        **_build_declared_defaults(inputs, plan.automatic),
-        **{group.canonical: _list_group_defaults(inputs, group)[0] for group in plan.row_groups},
+        **_build_declared_defaults(inputs, plan.tables.automatic),
+        **{group.canonical: group.defaults[0] for group in plan.row_groups},
     }
 
 

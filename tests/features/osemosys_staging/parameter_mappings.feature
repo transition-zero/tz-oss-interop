@@ -245,8 +245,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | osemosys: {parameters: [{source: InvestmentCost, canonical: CapitalCost}, {source: OvernightCost, canonical: CapitalCost}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
-    And the log contains "InvestmentCost"
-    And the log contains "OvernightCost"
+    And the log contains "Rows 0, 1 of `parameters:` map the raw tables InvestmentCost, OvernightCost to the same CapitalCost row (R1, GAS, 2030)"
 
   Scenario: A row that names a canonical parameter and says ignore stops the run
     Given an otoole model
@@ -257,4 +256,82 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | osemosys: {parameters: [{source: X, canonical: CapitalCost, ignore: true}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
-    And the log contains "ignore"
+    And the log contains "a row states exactly one of canonical and ignore: true"
+
+  Scenario: A value with an empty key cell is left out
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     |            | 2030 | 1     |
+      | R1     | GAS        | 2030 | 2     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | GAS        | 2030 | 2     |
+    And the log contains "left out: CapitalCost (absent members: an empty cell)"
+    And the file "decisions.md" contains "1 row(s) name a set member that its canonical set does not hold (an empty cell)"
+
+  Scenario: A warning about absent members names three members and counts the rest
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | OIL        | 2030 | 1     |
+      | R1     | COAL       | 2030 | 1     |
+      | R1     | HYDRO      | 2030 | 1     |
+      | R1     | WIND       | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the log contains "(absent members: COAL, HYDRO, OIL and 1 more)"
+
+  Scenario: A wrong key stops the run even when the defaults of the family differ
+    Given an otoole model
+    And the otoole set "REGION" holds "AT BE R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "ATTag" keyed by "TECHNOLOGY YEAR" with default 0 has the rows:
+      | TECHNOLOGY | YEAR | VALUE |
+      | GAS        | 2030 | 1     |
+    And the otoole parameter "BETag" keyed by "TECHNOLOGY YEAR" with default 1 has the rows:
+      | TECHNOLOGY | YEAR | VALUE |
+      | GAS        | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                        |
+      | osemosys: {parameters: [{source_pattern: "^(?P<region>[A-Z]{2})Tag$", canonical: ReserveMarginTagTechnology, columns_from_name: {region: COUNTRY}}]} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "Row 0 of `parameters:` cannot map the raw table ATTag to ReserveMarginTagTechnology"
+
+  Scenario: One pattern row whose two tables write the same canonical row stops the run
+    Given an otoole model
+    And the otoole set "REGION" holds "AT BE R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "ATTag" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | GAS        | 2030 | 1     |
+    And the otoole parameter "BETag" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | GAS        | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                               |
+      | osemosys: {parameters: [{source_pattern: "^[A-Z]{2}Tag$", canonical: ReserveMarginTagTechnology}]} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "Row 0 of `parameters:` maps the raw tables ATTag, BETag to the same ReserveMarginTagTechnology row (R1, GAS, 2030)"

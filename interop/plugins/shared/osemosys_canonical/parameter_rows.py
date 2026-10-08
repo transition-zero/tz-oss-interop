@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -38,10 +39,16 @@ class RowMatch(NamedTuple):
 
 
 class RowGroup(NamedTuple):
-    """The raw tables that rows map to one canonical parameter."""
+    """The raw tables that rows map to one canonical parameter, and their distinct defaults, each
+    after its row's `multiply_by`."""
 
     canonical: str
     matches: list[RowMatch]
+    defaults: list[float | None]
+
+    @property
+    def has_different_defaults(self) -> bool:
+        return len(self.defaults) > 1
 
 
 class RowTable(NamedTuple):
@@ -64,18 +71,34 @@ def reject_wrong_key(match: RowMatch, raw_key: list[str], canonical_key: list[st
     missing = _list_missing_columns(match.row, raw_key)
     key = build_row_key(match.row, raw_key)
     if missing or sorted(key) != sorted(canonical_key):
-        message = (
-            f"Row {match.row_index} of {PARAMETERS_PART} cannot map the raw table {match.table} to "
-            f"{match.row.canonical}. Its operations turn the key {_join(raw_key)} into "
-            f"{_join(key)}, but {match.row.canonical} is keyed {_join(canonical_key)}."
+        raise UserInputError(
+            _build_wrong_key_message(match, KeyChange(raw_key, key, canonical_key))
+            + _build_missing_columns_note(missing)
         )
-        raise UserInputError(message + _build_missing_columns_note(missing))
+
+
+class KeyChange(NamedTuple):
+    """The key of a raw table, the key that a row's operations give, and the canonical key."""
+
+    raw: list[str]
+    derived: list[str]
+    canonical: list[str]
+
+
+def _build_wrong_key_message(match: RowMatch, keys: KeyChange) -> str:
+    canonical = match.row.canonical
+    return (
+        f"Row {match.row_index} of {PARAMETERS_PART} cannot map the raw table {match.table} to "
+        f"{canonical}. Its operations turn the key {_build_name_list(keys.raw)} into "
+        f"{_build_name_list(keys.derived)}, but {canonical} is keyed "
+        f"{_build_name_list(keys.canonical)}."
+    )
 
 
 def _build_missing_columns_note(missing: list[str]) -> str:
     if not missing:
         return ""
-    return f" The row names the columns {_join(missing)}, which are not in the key."
+    return f" The row names the columns {_build_name_list(missing)}, which are not in the key."
 
 
 def build_row_key(row: ParameterRow, raw_key: list[str]) -> list[str]:
@@ -104,12 +127,12 @@ def build_row_table(
         pl.lit(match.groups[group], dtype=pl.Utf8).alias(column)
         for group, column in row.columns_from_name.items()
     )
-    table = _remove_column(table, row.remove_column)
-    table = _repeat_for_all(table, row.repeat_for_all, sets)
-    return _multiply(table, row.multiply_by)
+    table = _reshape_without_column(table, row.remove_column)
+    table = _reshape_for_all_members(table, row.repeat_for_all, sets)
+    return _convert_values(table, row.multiply_by)
 
 
-def _remove_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyFrame:
+def _reshape_without_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyFrame:
     if remove is None:
         return table
     if remove.rule == RemoveRule.CHOOSE:
@@ -122,7 +145,7 @@ def _remove_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyF
     return table.group_by(kept, maintain_order=True).agg(_AGGREGATIONS[remove.rule])
 
 
-def _repeat_for_all(
+def _reshape_for_all_members(
     table: pl.LazyFrame, columns: list[str], sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame:
     for column in columns:
@@ -131,7 +154,7 @@ def _repeat_for_all(
     return table
 
 
-def _multiply(table: pl.LazyFrame, factor: float | None) -> pl.LazyFrame:
+def _convert_values(table: pl.LazyFrame, factor: float | None) -> pl.LazyFrame:
     return table if factor is None else table.with_columns(pl.col(VALUE_COL) * factor)
 
 
@@ -167,14 +190,19 @@ def _find_overlap(tables: list[RowTable], key: list[str]) -> dict[str, Any] | No
 
 
 def _build_overlap_message(canonical: str, tables: list[RowTable], overlap: dict[str, Any]) -> str:
+    """One pattern row can match both raw tables, so the message names the tables first."""
     raw_tables = overlap.pop(RAW_TABLE_COL)
     indexes = {row_table.match.table: row_table.match.row_index for row_table in tables}
-    sources = [f"{name} (row {indexes[name]})" for name in raw_tables]
+    rows = sorted({indexes[name] for name in raw_tables})
+    rows_text = (
+        f"Row {rows[0]} of {PARAMETERS_PART} maps"
+        if len(rows) == 1
+        else f"Rows {_build_name_list(map(str, rows))} of {PARAMETERS_PART} map"
+    )
     return (
-        f"Two rows of {PARAMETERS_PART} write the same {canonical} row "
-        f"({_join([str(value) for value in overlap.values()])}): the raw tables "
-        f"{name_a_few(sources)} each give it a value. Change the rows so that one raw table "
-        "gives each canonical row."
+        f"{rows_text} the raw tables {name_a_few(raw_tables)} to the "
+        f"same {canonical} row ({_build_name_list(map(str, overlap.values()))}). Change the rows "
+        "so that one raw table gives each canonical row."
     )
 
 
@@ -192,7 +220,7 @@ def _list_operations(row: ParameterRow) -> list[str]:
         *(f"rename_columns {old} as {new}" for old, new in row.rename_columns.items()),
         *(f"columns_from_name {group} into {col}" for group, col in row.columns_from_name.items()),
         *_build_remove_note(row.remove_column),
-        *([f"repeat_for_all {_join(row.repeat_for_all)}"] if row.repeat_for_all else []),
+        *([f"repeat_for_all {_build_name_list(row.repeat_for_all)}"] if row.repeat_for_all else []),
         *([f"multiply_by {row.multiply_by:g}"] if row.multiply_by is not None else []),
     ]
 
@@ -204,5 +232,5 @@ def _build_remove_note(remove: RemoveColumn | None) -> list[str]:
     return [f"remove_column {remove.column} by {remove.rule}{member}"]
 
 
-def _join(names: list[str]) -> str:
+def _build_name_list(names: Iterable[str]) -> str:
     return ", ".join(names)
