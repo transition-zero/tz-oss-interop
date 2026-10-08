@@ -72,6 +72,12 @@ A Source's `__init__` may take a `fs: FilesystemPort` to read through the
 configured outbound adapter rather than touching the disk directly (it hands paths
 only to `self._fs`). Sources that need no I/O omit the parameter.
 
+A Source's `__init__` may also take a `recorder: EventRecorder`
+(`interop.core.reporting`) to record `TranslationEvent`s in the decisions report, the
+same way a step does (see [Emitting translation decisions](#emitting-translation-decisions)).
+The factory tags each event with the source's `name`. `interop validate` writes no
+decisions report, so the events that a source records there are not shown.
+
 In a pipeline YAML:
 
 ```yaml
@@ -171,7 +177,7 @@ class DefaultBusVoltage(TranslationStep):
         return state
 ```
 
-`recorder` is the only auto-injected dependency available to steps. The factory tags every recorded event with the step's `name` before it reaches the reporter, so the report's `Step` column populates without further effort. See `interop/ports/outbound/reporting.py` for the full `TranslationEvent` field set.
+Steps and sources can both declare `recorder`; validators and sinks cannot. The factory tags every recorded event with the step's or the source's `name` before it reaches the reporter, so the report's `Step` column populates without further effort. See `interop/ports/outbound/reporting.py` for the full `TranslationEvent` field set.
 
 ### Validator
 
