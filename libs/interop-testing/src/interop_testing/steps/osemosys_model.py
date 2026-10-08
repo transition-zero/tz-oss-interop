@@ -56,6 +56,25 @@ def given_otoole_parameter_without_file(
     otoole_model_builder.add_parameter(name, key.split(), default, [], has_file=False)
 
 
+@given(parsers.parse('the otoole parameter "{name}" has the short name "{short_name}"'))
+def given_otoole_short_name(
+    otoole_model_builder: OtooleModelBuilder, name: str, short_name: str
+) -> None:
+    otoole_model_builder.set_short_name(name, short_name)
+
+
+@given(parsers.parse('the otoole parameter "{name}" file has the header "{columns}"'))
+def given_otoole_file_header(
+    otoole_model_builder: OtooleModelBuilder, name: str, columns: str
+) -> None:
+    otoole_model_builder.set_header(name, columns.split())
+
+
+@given(parsers.parse('the otoole result "{name}" keyed by "{key}"'))
+def given_otoole_result(otoole_model_builder: OtooleModelBuilder, name: str, key: str) -> None:
+    otoole_model_builder.add_result(name, key.split())
+
+
 @given(
     parsers.parse('the otoole model is written to config "{config_path}" and directory "{csv_dir}"')
 )

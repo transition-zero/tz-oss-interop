@@ -96,3 +96,4 @@ class OtooleEntryType(StrEnum):
 
 
 CSV_SUFFIX = ".csv"
+YAML_SUFFIXES = (".yaml", ".yml")

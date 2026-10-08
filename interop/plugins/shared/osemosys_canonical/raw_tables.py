@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 import polars as pl
 
@@ -15,39 +16,88 @@ from interop.plugins.shared.warning_text import name_a_few
 log = logging.getLogger(__name__)
 
 _NO_VALUE_COLUMN_NOTE = "the file has no VALUE column, so the raw stage leaves it out"
+_UNREADABLE_FILE_NOTE = "the file cannot be read as CSV ({reason}), so the raw stage leaves it out"
+_WRONG_HEADER_NOTE = (
+    "the file header is {found}, not the declared key {key} and VALUE, "
+    "so the raw stage leaves it out"
+)
 _UNREADABLE_VALUES_NOTE = "{count} row(s) state a VALUE that is not a number, so each is left out"
+
+_NO_VALUE_COLUMN_REASON = "have no VALUE column"
+_UNREADABLE_FILE_REASON = "cannot be read as CSV"
+_WRONG_HEADER_REASON = "have a header that is not the declared key and VALUE"
+
+
+class ParsedFiles(NamedTuple):
+    """The table of each file that parses, with the names of the files that do not."""
+
+    tables: dict[str, pl.DataFrame | None]
+    unreadable: list[str]
 
 
 def map_set_tables(
-    found: dict[str, pl.DataFrame | None], recorder: EventRecorder
+    found: dict[str, bytes | None], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
     """Each set with its members as strings; a set with no file has no members."""
+    parsed = _parse_files(found, TableKind.SET, recorder)
     tables = {
         name: table if table is not None else pl.DataFrame(schema={VALUE_COL: pl.Utf8})
-        for name, table in found.items()
+        for name, table in parsed.tables.items()
+        if name not in parsed.unreadable
     }
     missing = _list_tables_without_value(tables)
-    _report_tables_without_value(TableKind.SET, missing, recorder)
+    notes = dict.fromkeys(missing, _NO_VALUE_COLUMN_NOTE)
+    _report_skipped_files(TableKind.SET, notes, _NO_VALUE_COLUMN_REASON, recorder)
     return {name: table.select(VALUE_COL) for name, table in tables.items() if name not in missing}
 
 
 def map_parameter_tables(
-    found: dict[str, pl.DataFrame | None],
+    found: dict[str, bytes | None],
     declarations: dict[str, RawDeclaration],
     recorder: EventRecorder,
 ) -> dict[str, pl.DataFrame]:
-    """Each parameter table with a float VALUE; a parameter with no file has no rows."""
+    """Each parameter table with its declared key and a float VALUE; a parameter with no usable
+    file has no rows."""
+    parsed = _parse_files(found, TableKind.PARAMETER, recorder)
     tables = {
         name: table if table is not None else _build_empty_table(declarations[name])
-        for name, table in found.items()
+        for name, table in parsed.tables.items()
     }
-    missing = _list_tables_without_value(tables)
-    _report_tables_without_value(TableKind.PARAMETER, missing, recorder)
-    converted = {
-        name: _convert_values(table) for name, table in tables.items() if name not in missing
+    wrong_headers = _build_wrong_header_notes(tables, declarations)
+    _report_skipped_files(TableKind.PARAMETER, wrong_headers, _WRONG_HEADER_REASON, recorder)
+    keyed = {
+        name: _build_empty_table(declarations[name])
+        if name in wrong_headers
+        else table.select([*declarations[name].key, VALUE_COL])
+        for name, table in tables.items()
     }
-    _report_unreadable_values(_build_unreadable_value_counts(converted), recorder)
-    return {name: table.drop_nulls(VALUE_COL) for name, table in converted.items()}
+    floated = {name: _build_float_values(table) for name, table in keyed.items()}
+    _report_unreadable_values(_build_unreadable_value_counts(floated), recorder)
+    return {name: table.drop_nulls(VALUE_COL) for name, table in floated.items()}
+
+
+def _parse_files(
+    found: dict[str, bytes | None], kind: TableKind, recorder: EventRecorder
+) -> ParsedFiles:
+    tables: dict[str, pl.DataFrame | None] = {}
+    notes: dict[str, str] = {}
+    for name, content in found.items():
+        try:
+            tables[name] = _parse_csv_table(content) if content and content.strip() else None
+        except pl.exceptions.PolarsError as exc:
+            tables[name] = None
+            notes[name] = _UNREADABLE_FILE_NOTE.format(reason=_summarise_error(exc))
+    _report_skipped_files(kind, notes, _UNREADABLE_FILE_REASON, recorder)
+    return ParsedFiles(tables, list(notes))
+
+
+def _summarise_error(error: Exception) -> str:
+    return (str(error).splitlines() or [type(error).__name__])[0]
+
+
+def _parse_csv_table(content: bytes) -> pl.DataFrame:
+    """Every column as a string, so a set member such as `1` keeps the form it has."""
+    return pl.read_csv(content, infer_schema=False)
 
 
 def _build_empty_table(declaration: RawDeclaration) -> pl.DataFrame:
@@ -58,21 +108,35 @@ def _list_tables_without_value(tables: dict[str, pl.DataFrame]) -> list[str]:
     return [name for name, table in tables.items() if VALUE_COL not in table.columns]
 
 
-def _report_tables_without_value(
-    kind: TableKind, names: list[str], recorder: EventRecorder
+def _build_wrong_header_notes(
+    tables: dict[str, pl.DataFrame], declarations: dict[str, RawDeclaration]
+) -> dict[str, str]:
+    """The key is a set of named columns, so the order of the header does not matter."""
+    return {
+        name: _WRONG_HEADER_NOTE.format(
+            found=", ".join(table.columns), key=", ".join(declarations[name].key)
+        )
+        for name, table in tables.items()
+        if sorted(table.columns) != sorted([*declarations[name].key, VALUE_COL])
+    }
+
+
+def _report_skipped_files(
+    kind: TableKind, notes: dict[str, str], reason: str, recorder: EventRecorder
 ) -> None:
-    for name in names:
-        record_skipped(recorder, kind, name, _NO_VALUE_COLUMN_NOTE)
-    if names:
+    for name, note in notes.items():
+        record_skipped(recorder, kind, name, note)
+    if notes:
         log.warning(
-            "%d %s file(s) have no VALUE column, so the raw stage leaves each out: %s",
-            len(names),
+            "%d %s file(s) %s, so the raw stage leaves each out: %s",
+            len(notes),
             kind,
-            name_a_few(names),
+            reason,
+            name_a_few(notes),
         )
 
 
-def _convert_values(table: pl.DataFrame) -> pl.DataFrame:
+def _build_float_values(table: pl.DataFrame) -> pl.DataFrame:
     """A VALUE that is not a number becomes null."""
     return table.with_columns(pl.col(VALUE_COL).cast(pl.Float64, strict=False))
 

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
 
 VALUE_COLUMN = "VALUE"
 _CSV_SUFFIX = ".csv"
+_RESULT_CELL = "1"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,12 @@ class OtooleModelBuilder:
     def add_result(self, name: str, key: list[str]) -> None:
         self.results[name] = key
 
+    def set_short_name(self, name: str, short_name: str) -> None:
+        self.parameters[name] = replace(self.parameters[name], short_name=short_name)
+
+    def set_header(self, name: str, header: list[str]) -> None:
+        self.parameters[name] = replace(self.parameters[name], header=header)
+
     def write(self, config_path: Path, csv_dir: Path) -> None:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         csv_dir.mkdir(parents=True, exist_ok=True)
@@ -71,6 +78,12 @@ class OtooleModelBuilder:
             if parameter.has_file:
                 csv_path = csv_dir / f"{parameter.file_stem}{_CSV_SUFFIX}"
                 _write_csv(csv_path, parameter.columns, parameter.rows)
+        for name, key in self.results.items():
+            _write_csv(
+                csv_dir / f"{name}{_CSV_SUFFIX}",
+                [*key, VALUE_COLUMN],
+                [[_RESULT_CELL] * (len(key) + 1)],
+            )
 
     def _build_config(self) -> dict[str, dict[str, object]]:
         config: dict[str, dict[str, object]] = {
