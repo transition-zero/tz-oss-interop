@@ -120,6 +120,7 @@ class StageOsemosysCsv(StagedSource):
         found_parameters = self._find_csv_files(
             params.csv_dir, list(config.declarations), config.short_names
         )
+        _reject_empty_csv_dir(params.csv_dir, [*found_sets.values(), *found_parameters.values()])
         return write_raw_stage(
             sets=map_set_tables(found_sets, self._recorder),
             parameters=map_parameter_tables(found_parameters, config.declarations, self._recorder),
@@ -150,6 +151,15 @@ class StageOsemosysCsv(StagedSource):
             if self._fs.can_read(csv_path):
                 return self._fs.read_bytes(csv_path)
         return None
+
+
+def _reject_empty_csv_dir(csv_dir: Path, contents: list[bytes | None]) -> None:
+    """A directory that holds none of the declared files is a wrong path, not a model."""
+    if contents and all(content is None for content in contents):
+        raise UserInputError(
+            f"The otoole CSV directory {csv_dir} holds none of the CSV files that the config "
+            "declares. Give the directory that holds one CSV file for each set and parameter."
+        )
 
 
 def parse_otoole_config(text: bytes) -> OtooleConfig:

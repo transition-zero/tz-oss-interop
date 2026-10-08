@@ -123,13 +123,41 @@ def build_row_table(
 ) -> pl.LazyFrame:
     """The operations run in a fixed order: rename, name groups, remove, repeat, multiply."""
     row = match.row
-    table = raw_table.rename(row.rename_columns).with_columns(
-        pl.lit(match.groups[group], dtype=pl.Utf8).alias(column)
-        for group, column in row.columns_from_name.items()
-    )
+    table = _reshape_named_columns(match, raw_table)
     table = _reshape_without_column(table, row.remove_column)
     table = _reshape_for_all_members(table, row.repeat_for_all, sets)
     return _convert_values(table, row.multiply_by)
+
+
+def has_absent_choice(match: RowMatch, raw_table: pl.LazyFrame) -> bool:
+    """The raw table has rows, and no row holds the member that `remove_column` chooses."""
+    remove = match.row.remove_column
+    if remove is None or remove.rule != RemoveRule.CHOOSE:
+        return False
+    table = _reshape_named_columns(match, raw_table)
+    return _has_rows(table) and not _has_rows(table.filter(pl.col(remove.column) == remove.member))
+
+
+def has_empty_repeat(
+    match: RowMatch, raw_table: pl.LazyFrame, sets: dict[str, pl.LazyFrame]
+) -> bool:
+    """The raw table has rows, and a set that `repeat_for_all` names has no members."""
+    members = [sets.get(normalise_set_name(column)) for column in match.row.repeat_for_all]
+    has_empty_set = any(table is None or not _has_rows(table) for table in members)
+    return has_empty_set and _has_rows(raw_table)
+
+
+def _has_rows(table: pl.LazyFrame) -> bool:
+    """Collects one row at most."""
+    return table.limit(1).collect().height > 0
+
+
+def _reshape_named_columns(match: RowMatch, raw_table: pl.LazyFrame) -> pl.LazyFrame:
+    row = match.row
+    return raw_table.rename(row.rename_columns).with_columns(
+        pl.lit(match.groups[group], dtype=pl.Utf8).alias(column)
+        for group, column in row.columns_from_name.items()
+    )
 
 
 def _reshape_without_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyFrame:

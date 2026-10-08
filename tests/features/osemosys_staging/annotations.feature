@@ -271,3 +271,26 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "row 0 of `objects: fuels` gives kind, which a fuels row does not hold"
+
+  Scenario: A fuel location that no row gives does not count for the kind
+    Given the otoole set "REGION" holds "R1"
+    And the otoole set "FUEL" holds "ATNG ATE1 HYD ELC"
+    And the otoole set "TECHNOLOGY" holds "ATELY ATCONV"
+    And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATELY      | ATNG | 1                 | 2030 | 1     |
+      | R1     | ATCONV     | ATE1 | 1                 | 2030 | 1     |
+    And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATELY      | HYD  | 1                 | 2030 | 0.7   |
+      | R1     | ATCONV     | ELC  | 1                 | 2030 | 0.9   |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                                                                                                         |
+      | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})NG$", carrier: natural-gas, location: "{country}"}, {match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}, {match: "^ELC$", carrier: electricity}]}} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
+      | REGION | TECHNOLOGY | kind       | category | location |
+      | R1     | ATELY      | conversion |          | AT       |
+      | R1     | ATCONV     | conversion |          | AT       |

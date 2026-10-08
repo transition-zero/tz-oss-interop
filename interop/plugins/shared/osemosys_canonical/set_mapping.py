@@ -40,6 +40,7 @@ class MappedSets(NamedTuple):
 def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
     """A canonical set that two raw sets map to holds the members of both."""
     raw_sets = inputs.raw.sets
+    _warn_unmatched_renames(inputs)
     targets = _build_set_targets(inputs)
     unmapped = [name for name in raw_sets if name not in targets]
     _record_set_matches(targets, recorder)
@@ -53,6 +54,17 @@ def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
 def normalise_set_name(column: str) -> str:
     """The set whose members a key column holds; a second region column holds regions."""
     return REGION if column == SECOND_REGION else column
+
+
+def _warn_unmatched_renames(inputs: MappingInputs) -> None:
+    unmatched = [name for name in inputs.mappings.sets if name not in inputs.raw.sets]
+    if unmatched:
+        log.warning(
+            "%d entry(ies) of %s name no raw set: %s",
+            len(unmatched),
+            SETS_PART,
+            name_a_few(unmatched),
+        )
 
 
 def _build_set_targets(inputs: MappingInputs) -> dict[str, str]:

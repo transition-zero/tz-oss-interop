@@ -30,6 +30,16 @@ def given_otoole_set(otoole_model_builder: OtooleModelBuilder, name: str, member
     otoole_model_builder.add_set(name, members.split())
 
 
+@given(parsers.parse('the otoole set "{name}" is declared with no file'))
+def given_otoole_set_without_file(otoole_model_builder: OtooleModelBuilder, name: str) -> None:
+    otoole_model_builder.add_set(name, [], has_file=False)
+
+
+@given(parsers.parse('the otoole set "{name}" file pads each member with spaces'))
+def given_otoole_set_padding(otoole_model_builder: OtooleModelBuilder, name: str) -> None:
+    otoole_model_builder.set_member_padding(name)
+
+
 @given(
     parsers.parse(
         'the otoole parameter "{name}" keyed by "{key}" with default {default:g} has the rows:'

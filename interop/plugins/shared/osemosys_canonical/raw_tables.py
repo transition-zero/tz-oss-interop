@@ -20,6 +20,7 @@ _WRONG_HEADER_NOTE = (
     "the file header is {found}, not the declared key {key} and VALUE, "
     "so the raw stage leaves it out"
 )
+_NO_SET_FILE_NOTE = "the set has no CSV file, so the raw stage stages it with no members"
 _UNREADABLE_VALUES_NOTE = "{count} row(s) state a VALUE that is not a number, so each is left out"
 
 _NO_VALUE_COLUMN_REASON = "have no VALUE column"
@@ -31,6 +32,9 @@ def map_set_tables(
     found: dict[str, bytes | None], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
     """Each set with its members as strings; a set with no usable file has no members."""
+    _report_missing_set_files(
+        [name for name, content in found.items() if content is None], recorder
+    )
     parsed = _parse_files(found, TableKind.SET, recorder)
     tables = {
         name: table if table is not None else pl.DataFrame(schema={VALUE_COL: pl.Utf8})
@@ -82,13 +86,31 @@ def _parse_files(
     return tables
 
 
+def _report_missing_set_files(names: list[str], recorder: EventRecorder) -> None:
+    for name in names:
+        record_skipped(recorder, TableKind.SET, name, _NO_SET_FILE_NOTE)
+    if names:
+        log.warning(
+            "%d set(s) have no CSV file, so the raw stage stages each with no members: %s",
+            len(names),
+            name_a_few(names),
+        )
+
+
 def _build_error_summary(error: Exception) -> str:
     return (str(error).splitlines() or [type(error).__name__])[0]
 
 
 def _parse_csv_table(content: bytes) -> pl.DataFrame:
     """Every column as a string, so a set member such as `1` keeps the form it has."""
-    return pl.read_csv(content, infer_schema=False)
+    return _normalise_cells(pl.read_csv(content, infer_schema=False))
+
+
+def _normalise_cells(table: pl.DataFrame) -> pl.DataFrame:
+    """A MathProg datafile splits on whitespace, so a space around a name or a cell is not part
+    of it."""
+    stripped = table.rename(str.strip)
+    return stripped.with_columns(pl.all().str.strip_chars())
 
 
 def _build_empty_table(declaration: RawDeclaration) -> pl.DataFrame:

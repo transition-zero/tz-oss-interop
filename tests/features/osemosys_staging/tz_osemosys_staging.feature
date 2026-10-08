@@ -327,3 +327,22 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | R1     | R2      | electricity | 2030 | 1     |
     And the log contains "trade.transmission.construct_region_pairs"
     And the file "decisions.md" contains "not true or false"
+
+  Scenario: Two objects that write one row of a raw table keep the first and report the second
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1 R2"
+    And the TZ-format model has the years "2030"
+    And the TZ-format model has the commodities "electricity"
+    And the TZ-format trade "north-line" of the commodity "electricity" has the field "capex" set to {"R1": {"R2": {"2030": 500.0}}}
+    And the TZ-format trade "south-line" of the commodity "electricity" has the field "capex" set to {"R1": {"R2": {"2030": 650.0}}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCostTrade.parquet" has the rows:
+      | REGION | _REGION | FUEL        | YEAR | VALUE |
+      | R1     | R2      | electricity | 2030 | 500   |
+    And the log contains "trade.south-line.capex"
+    And the file "decisions.md" contains "1 row(s) of CapitalCostTrade have a key that an earlier field already gives"

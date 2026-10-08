@@ -13,7 +13,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AnnotationColumn,
     TableKind,
 )
-from interop.plugins.shared.tz_osemosys_fields import TzOwner
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -50,27 +49,23 @@ def record_value_derived(
     )
 
 
-def record_skipped(
-    recorder: EventRecorder, kind: TableKind | TzOwner, name: str, note: str
-) -> None:
-    """`kind` is a table kind, or the TZ-format owner of an object or a field."""
+def record_skipped(recorder: EventRecorder, component: str, name: str, note: str) -> None:
+    """`component` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(
             kind=EventKind.COMPONENT_SKIPPED,
-            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=name)],
+            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=component, name=name)],
             note=note,
         )
     )
 
 
-def record_not_mapped(
-    recorder: EventRecorder, kind: TableKind | TzOwner, name: str, note: str
-) -> None:
-    """`kind` is a table kind, or the TZ-format owner of an object or a field."""
+def record_not_mapped(recorder: EventRecorder, component: str, name: str, note: str) -> None:
+    """`component` is a table kind, or the TZ-format owner of an object or a field."""
     recorder.append(
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,
-            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=kind, name=name)],
+            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=component, name=name)],
             note=note,
         )
     )

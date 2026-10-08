@@ -156,3 +156,64 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
     Then the pipeline exit code is 1
     And the log does not contain "must be a YAML file"
     And the log contains "config.yaml?X-Amz-Signature=abc"
+
+  Scenario: Spaces around a set member, a key cell, a VALUE or a header name do not count
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "REGION" file pads each member with spaces
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+    And the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "model/csv/CapitalCost.csv" containing the lines:
+      | line                           |
+      | REGION ,TECHNOLOGY, YEAR,VALUE |
+      | R1,GAS,2030,689.84             |
+    And a file "model/csv/FixedCost.csv" containing the lines:
+      | line                         |
+      | REGION,TECHNOLOGY,YEAR,VALUE |
+      | R1 ,GAS,2030, 12             |
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/REGION.parquet" has the rows:
+      | VALUE |
+      | R1    |
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE  |
+      | R1     | GAS        | 2030 | 689.84 |
+    And the canonical table "canonical/parameters/FixedCost.parquet" has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | GAS        | 2030 | 12    |
+
+  Scenario: A set with no CSV file stages with no members and is reported
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" is declared with no file
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/TECHNOLOGY.parquet" has 0 rows
+    And the canonical table "canonical/sets/REGION.parquet" has 1 rows
+    And the log contains "1 set(s) have no CSV file, so the raw stage stages each with no members: TECHNOLOGY"
+    And the file "decisions.md" contains "the set has no CSV file"
+
+  Scenario: A CSV directory that does not exist stops the run
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/missing sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "model/missing"
+    And the log contains "holds none of the CSV files"

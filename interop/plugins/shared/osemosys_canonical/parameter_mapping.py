@@ -36,6 +36,8 @@ from interop.plugins.shared.osemosys_canonical.parameter_rows import (
     build_row_table,
     convert_default,
     find_row_match,
+    has_absent_choice,
+    has_empty_repeat,
     reject_overlapping_rows,
     reject_wrong_key,
 )
@@ -55,6 +57,8 @@ _DIFFERENT_DEFAULTS_NOTE = (
     "so each stays an extension table"
 )
 _DIFFERENT_DEFAULTS_REASON = "map to one canonical parameter but declare different defaults"
+_ABSENT_CHOICE_REASON = "choose a member that no row of the raw table holds"
+_EMPTY_REPEAT_REASON = "repeat each value for a set with no members"
 _IGNORED_NOTE = "row {index} of " + PARAMETERS_PART + " says ignore: true, so the table is left out"
 
 
@@ -98,6 +102,7 @@ def map_parameters(
     groups = _build_row_groups(inputs, matches)
     _reject_wrong_keys(inputs, groups)
     plan = _build_plan(inputs, matches, groups)
+    _warn_empty_row_tables(inputs, plan.row_groups, sets)
     tables = _build_canonical_tables(inputs, plan, sets)
     _report_plan(plan, recorder)
     return _build_mapped_parameters(
@@ -124,6 +129,28 @@ def _warn_unmatched_rows(rows: list[ParameterRow], matches: dict[str, RowMatch])
             len(unused),
             PARAMETERS_PART,
             name_a_few(unused),
+        )
+
+
+def _warn_empty_row_tables(
+    inputs: MappingInputs, groups: list[RowGroup], sets: dict[str, pl.LazyFrame]
+) -> None:
+    matches = [match for group in groups for match in group.matches]
+    raw = inputs.raw.parameters
+    absent = [match for match in matches if has_absent_choice(match, raw[match.table])]
+    empty = [match for match in matches if has_empty_repeat(match, raw[match.table], sets)]
+    _warn_rows(absent, _ABSENT_CHOICE_REASON)
+    _warn_rows(empty, _EMPTY_REPEAT_REASON)
+
+
+def _warn_rows(matches: list[RowMatch], reason: str) -> None:
+    if matches:
+        log.warning(
+            "%d row(s) of %s %s, so the raw table gives no rows: %s",
+            len(matches),
+            PARAMETERS_PART,
+            reason,
+            name_a_few(f"row {match.row_index} ({match.table})" for match in matches),
         )
 
 

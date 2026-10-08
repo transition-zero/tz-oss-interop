@@ -52,6 +52,14 @@ _EMPTY_SET_FIELDS = TzPathReport(
     record_not_mapped, "field(s) state a value for every member of a set with no members"
 )
 
+_REPEATED_KEY_NOTE = (
+    "{count} row(s) of {table} have a key that an earlier field already gives, so the raw stage "
+    "leaves each out; the first is {key}"
+)
+_REPEATED_KEY_FIELDS = TzPathReport(
+    record_skipped, "field(s) write a row whose key an earlier field already writes"
+)
+
 
 class StatedField(NamedTuple):
     """One field that an object states, with the entry of the field table that reads it."""
@@ -68,6 +76,20 @@ class TzRow(NamedTuple):
     value: float | None
 
 
+class RowSplit(NamedTuple):
+    """The rows of one field whose key is new to their raw table, and the rows that repeat one."""
+
+    new: list[TzRow]
+    repeated: list[TzRow]
+
+
+class TzTableRows(NamedTuple):
+    """The rows of each raw table, and a note for each field that repeats the key of a row."""
+
+    rows: dict[str, list[TzRow]]
+    repeated: dict[TzPath, str]
+
+
 def map_tz_parameter_tables(
     objects: list[TzObject], sets: Mapping[str, list[str]], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
@@ -75,8 +97,12 @@ def map_tz_parameter_tables(
     no field states has no rows."""
     stated_fields = _list_stated_fields(objects)
     _report_empty_set_fields(stated_fields, sets, recorder)
-    rows = _build_rows_by_table(stated_fields, sets)
-    tables = {field.table: _build_table(field, rows.get(field.table, [])) for field in TZ_FIELDS}
+    table_rows = _build_rows_by_table(stated_fields, sets)
+    report_tz_paths(_REPEATED_KEY_FIELDS, table_rows.repeated, recorder)
+    tables = {
+        field.table: _build_table(field, table_rows.rows.get(field.table, []))
+        for field in TZ_FIELDS
+    }
     _report_unreadable_values(_build_unreadable_value_counts(tables), recorder)
     readable = {name: table.drop_nulls(VALUE_COL) for name, table in tables.items()}
     return _reshape_annual_demand(readable)
@@ -95,11 +121,34 @@ def build_tz_declarations() -> dict[str, RawDeclaration]:
 
 def _build_rows_by_table(
     stated_fields: list[StatedField], sets: Mapping[str, list[str]]
-) -> dict[str, list[TzRow]]:
-    rows: dict[str, list[TzRow]] = {}
+) -> TzTableRows:
+    """The first row of a key wins, so a later row with that key adds nothing."""
+    keyed: dict[str, dict[tuple[str, ...], TzRow]] = {}
+    repeated: dict[TzPath, str] = {}
     for stated in stated_fields:
-        rows.setdefault(stated.field.table, []).extend(_build_field_rows(stated, sets))
-    return rows
+        kept = keyed.setdefault(stated.field.table, {})
+        split = _split_repeated_rows(kept, _build_field_rows(stated, sets))
+        kept.update((row.members, row) for row in split.new)
+        if split.repeated:
+            repeated[_build_field_path(stated)] = _build_repeated_note(stated, split.repeated)
+    return TzTableRows({table: list(kept.values()) for table, kept in keyed.items()}, repeated)
+
+
+def _split_repeated_rows(kept: Mapping[tuple[str, ...], TzRow], rows: list[TzRow]) -> RowSplit:
+    new: dict[tuple[str, ...], TzRow] = {}
+    repeated: list[TzRow] = []
+    for row in rows:
+        if row.members in kept or row.members in new:
+            repeated.append(row)
+        else:
+            new[row.members] = row
+    return RowSplit(list(new.values()), repeated)
+
+
+def _build_repeated_note(stated: StatedField, repeated: list[TzRow]) -> str:
+    return _REPEATED_KEY_NOTE.format(
+        count=len(repeated), table=stated.field.table, key=", ".join(repeated[0].members)
+    )
 
 
 def _report_empty_set_fields(

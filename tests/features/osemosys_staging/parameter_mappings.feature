@@ -333,3 +333,48 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "Row 0 of `parameters:` maps the raw tables ATTag, BETag to the same ReserveMarginTagTechnology row (R1, GAS, 2030)"
+
+  Scenario: A sets entry that names no raw set writes a warning
+    Given an otoole model
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                 |
+      | osemosys: {sets: {TECH: TECHNOLOGY}} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the log contains "1 entry(ies) of `sets:` name no raw set: TECH"
+
+  Scenario: A row that chooses a member that no row of its raw table holds writes a warning
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "MODE_OF_OPERATION" holds "1 2"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GAS        | 1                 | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                   |
+      | osemosys: {parameters: [{source: CapitalCost, canonical: CapitalCost, remove_column: {column: MODE_OF_OPERATION, rule: choose, member: "3"}}]} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
+    And the log contains "1 row(s) of `parameters:` choose a member that no row of the raw table holds, so the raw table gives no rows: row 0 (CapitalCost)"
+
+  Scenario: A row that repeats each value for a set with no members writes a warning
+    Given an otoole model
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "InvestmentCost" keyed by "TECHNOLOGY" with default 0 has the rows:
+      | TECHNOLOGY | VALUE |
+      | GAS        | 690   |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                 |
+      | osemosys: {parameters: [{source: InvestmentCost, canonical: CapitalCost, repeat_for_all: [REGION, YEAR]}]} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
+    And the log contains "1 row(s) of `parameters:` repeat each value for a set with no members, so the raw table gives no rows: row 0 (InvestmentCost)"

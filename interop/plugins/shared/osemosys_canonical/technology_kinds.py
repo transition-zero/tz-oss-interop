@@ -145,11 +145,11 @@ def _is_storage(structure: TechnologyStructure) -> bool:
 
 
 def _is_link(structure: TechnologyStructure) -> bool:
-    """Two electricity locations among its inputs and outputs mean one input and one output
-    differ."""
-    inputs = [fuel.location for fuel in structure.inputs if fuel.is_electricity]
-    outputs = [fuel.location for fuel in structure.outputs if fuel.is_electricity]
-    return bool(inputs) and bool(outputs) and len({*inputs, *outputs}) > 1
+    """Two row-given electricity locations among its inputs and outputs mean one input and one
+    output differ."""
+    inputs = [fuel for fuel in structure.inputs if fuel.is_electricity]
+    outputs = [fuel for fuel in structure.outputs if fuel.is_electricity]
+    return bool(inputs) and bool(outputs) and len(_list_row_locations([*inputs, *outputs])) > 1
 
 
 def _is_generator(structure: TechnologyStructure) -> bool:
@@ -167,8 +167,14 @@ def _is_export(structure: TechnologyStructure) -> bool:
 
 
 def _is_conversion(structure: TechnologyStructure) -> bool:
-    locations = {located.fuel.location for located in structure.flows}
-    return bool(structure.inputs) and bool(structure.outputs) and len(locations) == 1
+    locations = _list_row_locations([located.fuel for located in structure.flows])
+    return bool(structure.inputs) and bool(structure.outputs) and len(locations) <= 1
+
+
+def _list_row_locations(fuels: list[FuelAnnotation]) -> list[str]:
+    """A location that the engine infers for a fuel does not count, as in the technology
+    location."""
+    return list(dict.fromkeys(fuel.location for fuel in fuels if fuel.has_row_location))
 
 
 _KIND_RULES = (
@@ -196,6 +202,7 @@ _KIND_RULES = (
     KindRule(
         TechnologyKind.CONVERSION,
         _is_conversion,
-        "it takes in and puts out at one location, and no kind before it fits",
+        "it takes in and puts out, rows give its fuels one location at most, "
+        "and no kind before it fits",
     ),
 )
