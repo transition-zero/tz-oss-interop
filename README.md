@@ -32,7 +32,7 @@ flowchart LR
 | --- | --- | --- |
 | `plexos-to-sienna` | PLEXOS XML model | Sienna system |
 | `plexos-to-sienna-investments` | PLEXOS XML model | Sienna system and Sienna investments portfolio |
-| `plexos-to-pypsa` (composed) | PLEXOS XML model | PyPSA network, through Sienna: `plexos-to-sienna`, then `sienna-to-pypsa` |
+| `plexos-to-pypsa` (composed via Sienna) | PLEXOS XML model | PyPSA network, from `plexos-to-sienna`, then `sienna-to-pypsa` |
 | `pypsa-to-sienna` | PyPSA network | Sienna system |
 | `pypsa-to-sienna-ensemble` | PyPSA network ensemble | Sienna system ensemble |
 | `pypsa-to-sienna-investments` | PyPSA network | Sienna system and Sienna investments portfolio |
