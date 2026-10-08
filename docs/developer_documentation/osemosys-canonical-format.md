@@ -229,6 +229,8 @@ When two raw sets map to one canonical set, the canonical set holds the members 
 example, a raw set `TECHNOLOGY` and a raw set `TECH` that `sets:` renames merge into one
 `TECHNOLOGY` set.
 
+An entry of `sets:` that names no raw set writes a warning. The entry changes nothing.
+
 ### `parameters:`
 
 A row names one raw table with `source`, or a family of raw tables with `source_pattern`. A
@@ -256,6 +258,12 @@ A row can give operations. The engine applies them in this order:
 
 `repeat_for_all` takes its members from the canonical set. `_REGION` takes the members of
 `REGION`. If the canonical set has no members, the row gives no rows.
+
+Two operations can give an empty table from a raw table that has rows. Each writes a warning
+that names the row and the raw table:
+
+- `remove_column` with `choose` gives a `member` that no row of the raw table holds.
+- `repeat_for_all` names a set that has no members.
 
 After the operations, the columns of the key must be the canonical key. An invented example:
 
@@ -334,24 +342,25 @@ The location rules:
 - A fuel and a storage take the location of their region.
 - A technology takes the locations that `objects:` rows give to the fuels that it takes in
   and puts out. A fuel location that the engine infers does not count.
-- The technology takes each such location once. A `~` joins two or more locations, in this
-  order: the lowest mode of operation first, then the input fuel before the output fuel,
-  then the location text in alphabetical order.
+- The technology takes each such location once. A `~` joins two or more locations.
+- The order of the locations starts with the lowest mode of operation. In one mode, an input
+  fuel comes before an output fuel. Then the location text sorts in code-point order.
 - If no fuel location counts, the technology takes the location of its region.
 
 The kind rules use the rows of the canonical tables `InputActivityRatio`,
 `OutputActivityRatio`, `TechnologyToStorage` and `TechnologyFromStorage`. Only a row with a
 `VALUE` above zero counts, in any year and any mode. A fuel is electricity when its `carrier`
-is `electricity`. The engine tries the kinds in this order, and the first that fits wins:
+is `electricity`. As in the location rules, only a fuel location that an `objects:` row gives
+counts. The engine tries the kinds in this order, and the first that fits wins:
 
 | `kind` | The technology |
 | --- | --- |
 | `storage` | Has a row in `TechnologyToStorage` or `TechnologyFromStorage` |
-| `link` | Takes in electricity and puts out electricity, at two or more locations |
+| `link` | Takes in electricity and puts out electricity, at two or more locations that rows give |
 | `generator` | Puts out electricity, and takes in no electricity |
 | `supply` | Puts out a fuel that is not electricity, and takes in nothing |
 | `export` | Takes in a fuel, and puts out nothing |
-| `conversion` | Takes in and puts out, and all of its fuels have one location |
+| `conversion` | Takes in and puts out, and rows give its fuels one location or none |
 
 If no kind fits, `kind` stays empty. The engine records `NOT_MAPPED` and writes a warning.
 
@@ -404,12 +413,16 @@ The config YAML can be outside `csv_dir`. The source reads the entries of `type:
 give its key, and its `default` gives its declared default.
 
 The source finds each parameter file by its full name, then by its `short_name`. It finds
-each set file by its full name only. A raw table takes the full name. The source does not check that `csv_dir` exists. When it finds no file, each
-set has no members and each parameter has no rows.
+each set file by its full name only. A raw table takes the full name. If `csv_dir` holds none
+of the declared files, the run stops. The error names `csv_dir`.
+
+The source removes the spaces and tabs before and after each header name and each cell. A
+MathProg data file splits on spaces, so a space is not part of a member or a value.
 
 | Input | What the source does | Event and warning |
 | --- | --- | --- |
-| A set with no CSV file, or an empty file | It stages the set with no members | No |
+| A set with no CSV file | It stages the set with no members | Yes |
+| A set with an empty file | It stages the set with no members | No |
 | A set file that is not CSV | It stages the set with no members | Yes |
 | A set file with no `VALUE` column | It leaves out the set | Yes |
 | A parameter with no CSV file, or an empty file | It stages the table with no rows, so the default applies | No |
@@ -477,10 +490,16 @@ field states has no rows. The declared defaults are the defaults of the field ta
 | A `construct_region_pairs` that is not `true` or `false` | It copies no pair and keeps the trade |
 | A wildcard over a set with no members | The value adds no rows |
 | A value that is not a number | It leaves out the value |
+| Two rows of one raw table with the same key, for example from two trades | It keeps the row that it reads first, and leaves out the later rows |
 
-For each problem in the table above, the source records an event and writes a warning. An
-object that cannot be used records `COMPONENT_SKIPPED`, and so does a value that is not a
-number. The others record `NOT_MAPPED`.
+For each problem in the table above, the source records an event and writes a warning. These
+problems record `COMPONENT_SKIPPED`:
+
+- An object that cannot be used.
+- A value that is not a number.
+- A row with the same key as an earlier row of the raw table.
+
+The others record `NOT_MAPPED`.
 
 The source does not read the fields `long_name`, `description`, `otoole_cfg` and
 `defaults_otoole`.
@@ -509,6 +528,7 @@ problem in the data of the model never stops the run.
 | A `location` group captures nothing for a member | The run stops, and the error names the row |
 | `config_path` does not end in `.yaml` or `.yml` | The run stops |
 | `csv_dir` names a file | The run stops |
+| `csv_dir` holds none of the declared set and parameter files | The run stops, and the error names `csv_dir` |
 | The config YAML cannot be read, or it is not an otoole config | The run stops |
 | The `model.json` cannot be read, or it is not a JSON object with a `time_definition` | The run stops |
 
