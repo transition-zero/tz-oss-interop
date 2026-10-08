@@ -87,6 +87,13 @@ def given_statuses(monkeypatch: pytest.MonkeyPatch, statuses: str) -> None:
     monkeypatch.setattr(mutmut_score, "_run_results", lambda: "\n".join(lines))
 
 
+@given(parsers.parse('mutmut wrote its mutation data for "{target}"'))
+def given_mutation_data(tmp_path: Path, target: str) -> None:
+    meta_file = tmp_path / "mutants" / f"{target}.meta"
+    meta_file.parent.mkdir(parents=True)
+    meta_file.write_text('{"exit_code_by_key": {}}', encoding="utf-8")
+
+
 @given("no mutmut results")
 def given_no_results(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(mutmut_score, "_run_results", lambda: None)
@@ -94,6 +101,7 @@ def given_no_results(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @when("CI builds the mutation report", target_fixture="report")
 def when_build_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Report:
+    monkeypatch.chdir(tmp_path)
     report_file = tmp_path / "mutation_score.md"
     monkeypatch.setenv("MUTMUT_SCORE_FILE", str(report_file))
     monkeypatch.delenv("MUTATION_THRESHOLD", raising=False)

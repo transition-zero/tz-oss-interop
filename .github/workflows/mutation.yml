@@ -62,8 +62,10 @@ jobs:
           # mutants/ if it doesn't already exist there, so restoring a cache saved under a
           # different (non-matching) key would silently leave stale non-Python files (e.g.
           # pipeline YAML) in place indefinitely. A miss on this exact key should mean a
-          # fully fresh mutants/, not a mismatched one.
-          key: mutmut-${{ runner.os }}-${{ hashFiles('interop/**', 'uv.lock', 'mutation_targets.txt') }}
+          # fully fresh mutants/, not a mismatched one. mutmut copies tests/, pyproject.toml
+          # and the also_copy directories over the old ones, so a file deleted from them
+          # stays in a restored mutants/; they are in the key for that reason.
+          key: mutmut-${{ runner.os }}-${{ hashFiles('interop/**', 'tests/**', '.github/**', 'docs/**', 'scripts/**', 'pyproject.toml', 'uv.lock', 'mutation_targets.txt') }}
 
       # Bounded well inside the job's own limit so the score report and PR comment
       # always get to run. mutmut writes each mutant's result to disk as it finishes,

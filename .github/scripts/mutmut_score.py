@@ -52,6 +52,10 @@ _STATUS_RE = re.compile(r":\s*(" + "|".join(re.escape(s.value) for s in Status) 
 # owning function (method names keep the `ǁClassǁmethod` segment).
 _MUTANT_SUFFIX_RE = re.compile(r"__mutmut_\d+$")
 
+# mutmut writes one `<source path>.meta` file for each file that it mutates, before it
+# runs a test, so the file shows that mutmut got as far as generating the mutants.
+_MUTANTS_DIR = Path("mutants")
+
 _REPORT_HEADING = "## Mutation testing report"
 _NO_TARGETS_REASON = (
     "This pull request changes no file that mutmut mutates: a Python file under `interop/` "
@@ -111,6 +115,10 @@ def _timeout_owners(text: str) -> Counter[str]:
 
 def _count_tested(counts: dict[Status, int]) -> int:
     return counts[Status.KILLED] + counts[Status.SURVIVED]
+
+
+def _has_mutation_data(targets: list[str]) -> bool:
+    return all((_MUTANTS_DIR / f"{target}.meta").is_file() for target in targets)
 
 
 def _has_checked_nothing(counts: dict[Status, int]) -> bool:
@@ -210,7 +218,7 @@ def main() -> int:
         return _report_skip([_NO_TARGETS_REASON])
     text = _run_results()
     counts = _parse_counts(text or "")
-    if targets and text is not None and sum(counts.values()) == 0:
+    if targets and text is not None and sum(counts.values()) == 0 and _has_mutation_data(targets):
         return _report_skip([_NO_MUTANTS_REASON, "", *_render_paths(targets)])
     score = _score(counts)
     timeouts = _timeout_owners(text or "")

@@ -31,6 +31,7 @@ Feature: A pull request mutates only the files that it changes
   Scenario: targets that hold no mutant make a report that skips the run by choice
     Given a pull request run that targets "interop/core/runner.py"
     And mutmut results that list no mutant
+    And mutmut wrote its mutation data for "interop/core/runner.py"
     When CI builds the mutation report
     Then the report says "No mutation test ran, by choice."
     And the report says "mutmut found no mutant in the files that this pull request changes"
@@ -48,6 +49,13 @@ Feature: A pull request mutates only the files that it changes
   Scenario: a run in which mutmut checked no mutant fails
     Given a pull request run that targets "interop/core/runner.py"
     And mutmut results with the statuses "not checked, not checked"
+    When CI builds the mutation report
+    Then the report says "mutmut checked no mutant"
+    And the report step fails
+
+  Scenario: a targeted run that stops before mutmut writes its mutation data fails
+    Given a pull request run that targets "interop/core/runner.py"
+    And mutmut results that list no mutant
     When CI builds the mutation report
     Then the report says "mutmut checked no mutant"
     And the report step fails
