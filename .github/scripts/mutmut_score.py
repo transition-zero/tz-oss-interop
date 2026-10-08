@@ -2,8 +2,8 @@
 
 Reads the saved mutmut state via `mutmut results`, tallies mutants by status,
 computes a kill score (killed / (killed + survived)), writes a Markdown table
-to `mutation_score.md` for the sticky PR comment, and exits non-zero if the
-score falls below `MUTATION_THRESHOLD` (default `0.0` = advisory).
+to `mutation_score.md` for the sticky PR comment, and exits non-zero if no mutant
+was tested or if the score falls below `MUTATION_THRESHOLD` (default `0.0` = advisory).
 
 Mutants with `no_tests`, `skipped`, `timeout`, or `suspicious` status do not
 count toward the denominator: they represent code paths the test suite does
@@ -94,21 +94,27 @@ def _timeout_owners(text: str) -> Counter[str]:
     return owners
 
 
+def _count_tested(counts: dict[Status, int]) -> int:
+    return counts[Status.KILLED] + counts[Status.SURVIVED]
+
+
 def _score(counts: dict[Status, int]) -> float:
-    denominator = counts[Status.KILLED] + counts[Status.SURVIVED]
+    denominator = _count_tested(counts)
     if denominator == 0:
         return 0.0
     return counts[Status.KILLED] / denominator
 
 
 def _render_markdown(counts: dict[Status, int], score: float, timeouts: Counter[str]) -> str:
-    tested = counts[Status.KILLED] + counts[Status.SURVIVED]
+    tested = _count_tested(counts)
     lines = [
         "## Mutation testing report",
         "",
         f"**Score: {score:.1%}** ({counts[Status.KILLED]} killed / {tested} tested)",
         "",
     ]
+    if tested == 0:
+        lines.extend(["> ❌ No mutant was tested. See the Run mutmut step in the job log.", ""])
     if counts[Status.NOT_CHECKED]:
         lines.extend(
             [
@@ -166,6 +172,10 @@ def main() -> int:
         print("Timeout-prone functions:")
         for owner, count in timeouts.most_common():
             print(f"  {count:>4}  {owner}")
+
+    if _count_tested(counts) == 0:
+        print("No mutant was tested. See the Run mutmut step.", file=sys.stderr)
+        return 1
 
     threshold = float(os.environ.get("MUTATION_THRESHOLD", "0.0"))
     if score < threshold:
