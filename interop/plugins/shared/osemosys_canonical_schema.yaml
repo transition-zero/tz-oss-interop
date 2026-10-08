@@ -1,0 +1,506 @@
+# A core parameter takes its key from the OSeMOSYS v1.0.1 model file and its default from the otoole reference config (MIT licence).
+# An extension with no default applies no constraint where the model states no value.
+schema_version: 1
+
+sets:
+  YEAR: Years of the model period.
+  TECHNOLOGY: Technologies, each of which takes in fuels, puts out fuels, or both.
+  TIMESLICE: Parts of a year, each with its own demand and availability values.
+  FUEL: Energy carriers and other commodities that technologies put out or take in.
+  EMISSION: Emissions and other impacts that the activity of a technology causes.
+  MODE_OF_OPERATION: Modes in which a technology can operate, each with its own ratios.
+  REGION: Regions, each with its own balance of every fuel.
+  SEASON: Seasons that group the timeslices of a year for storage.
+  DAYTYPE: Day types that group the timeslices of a season for storage.
+  DAILYTIMEBRACKET: Parts of a day that group the timeslices of a day type for storage.
+  STORAGE: Storages that technologies charge and discharge.
+  REGIONGROUP: Groups of regions that share an emission limit or a renewable target.
+
+parameters:
+  # OSeMOSYS v1.0.1, in the order of the model file.
+  YearSplit:
+    key: [TIMESLICE, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Share of the year that one timeslice covers.
+    origin: OSeMOSYS v1.0.1
+  DiscountRate:
+    key: [REGION]
+    default: 0.05
+    unit: rate
+    meaning: Discount rate that a region applies to future costs.
+    origin: OSeMOSYS v1.0.1
+  DiscountRateIdv:
+    key: [REGION, TECHNOLOGY]
+    default_from: DiscountRate
+    unit: rate
+    meaning: Discount rate for the investments in one technology.
+    origin: OSeMOSYS v1.0.1
+  OperationalLife:
+    key: [REGION, TECHNOLOGY]
+    default: 1
+    unit: years
+    meaning: Number of years that new capacity of a technology operates.
+    origin: OSeMOSYS v1.0.1
+  DiscountRateStorage:
+    key: [REGION, STORAGE]
+    default: 0.05
+    unit: rate
+    meaning: Discount rate for the investments in one storage.
+    origin: OSeMOSYS v1.0.1
+  DaySplit:
+    key: [DAILYTIMEBRACKET, YEAR]
+    default: 0.00137
+    unit: fraction
+    meaning: Length of one daily time bracket, as a share of the year.
+    origin: OSeMOSYS v1.0.1
+  Conversionls:
+    key: [TIMESLICE, SEASON]
+    default: 0
+    unit: flag
+    meaning: 1 when a timeslice falls in a season, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  Conversionld:
+    key: [TIMESLICE, DAYTYPE]
+    default: 0
+    unit: flag
+    meaning: 1 when a timeslice falls in a day type, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  Conversionlh:
+    key: [TIMESLICE, DAILYTIMEBRACKET]
+    default: 0
+    unit: flag
+    meaning: 1 when a timeslice falls in a daily time bracket, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  DaysInDayType:
+    key: [SEASON, DAYTYPE, YEAR]
+    default: 7
+    unit: count
+    meaning: Number of days of one day type in one week of a season.
+    origin: OSeMOSYS v1.0.1
+  TradeRoute:
+    key: [REGION, _REGION, FUEL, YEAR]
+    default: 0
+    unit: flag
+    meaning: 1 when a fuel can move from REGION to _REGION, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  DepreciationMethod:
+    key: [REGION]
+    default: 1
+    unit: flag
+    meaning: Method of the salvage value, 1 for a sinking fund and 2 for a straight line.
+    origin: OSeMOSYS v1.0.1
+  SpecifiedAnnualDemand:
+    key: [REGION, FUEL, YEAR]
+    default: 0
+    unit: activity
+    meaning: Annual demand for a fuel that the demand profile spreads over the timeslices.
+    origin: OSeMOSYS v1.0.1
+  SpecifiedDemandProfile:
+    key: [REGION, FUEL, TIMESLICE, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Share of the specified annual demand for a fuel that falls in one timeslice.
+    origin: OSeMOSYS v1.0.1
+  AccumulatedAnnualDemand:
+    key: [REGION, FUEL, YEAR]
+    default: 0
+    unit: activity
+    meaning: Annual demand for a fuel that the model can meet at any time of the year.
+    origin: OSeMOSYS v1.0.1
+  CapacityToActivityUnit:
+    key: [REGION, TECHNOLOGY]
+    default: 1
+    unit: activity per capacity
+    meaning: Activity of one unit of capacity that operates for a whole year.
+    origin: OSeMOSYS v1.0.1
+  CapacityFactor:
+    key: [REGION, TECHNOLOGY, TIMESLICE, YEAR]
+    default: 1
+    unit: fraction
+    meaning: Share of the capacity of a technology that it can use in one timeslice.
+    origin: OSeMOSYS v1.0.1
+  AvailabilityFactor:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 1
+    unit: fraction
+    meaning: Share of the year in which a technology can operate.
+    origin: OSeMOSYS v1.0.1
+  ResidualCapacity:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: capacity
+    meaning: Capacity that exists before the model period and remains in a year.
+    origin: OSeMOSYS v1.0.1
+  InputActivityRatio:
+    key: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: rate
+    meaning: Quantity of a fuel that a technology takes in for each unit of its activity in a mode.
+    origin: OSeMOSYS v1.0.1
+  OutputActivityRatio:
+    key: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: rate
+    meaning: Quantity of a fuel that a technology puts out for each unit of its activity in a mode.
+    origin: OSeMOSYS v1.0.1
+  CapitalCost:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: currency per capacity
+    meaning: Overnight investment cost of one unit of new capacity.
+    origin: OSeMOSYS v1.0.1
+  VariableCost:
+    key: [REGION, TECHNOLOGY, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: currency per activity
+    meaning: Cost of one unit of activity of a technology in a mode.
+    origin: OSeMOSYS v1.0.1
+  FixedCost:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: currency per capacity per year
+    meaning: Annual cost of one unit of installed capacity.
+    origin: OSeMOSYS v1.0.1
+  TechnologyToStorage:
+    key: [REGION, TECHNOLOGY, STORAGE, MODE_OF_OPERATION]
+    default: 0
+    unit: flag
+    meaning: 1 when a technology charges a storage in a mode, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  TechnologyFromStorage:
+    key: [REGION, TECHNOLOGY, STORAGE, MODE_OF_OPERATION]
+    default: 0
+    unit: flag
+    meaning: 1 when a technology discharges a storage in a mode, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  StorageLevelStart:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: activity
+    meaning: Energy in a storage at the start of the model period.
+    origin: OSeMOSYS v1.0.1
+  StorageMaxChargeRate:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: rate
+    meaning: Highest rate at which a storage can charge.
+    origin: OSeMOSYS v1.0.1
+  StorageMaxDischargeRate:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: rate
+    meaning: Highest rate at which a storage can discharge.
+    origin: OSeMOSYS v1.0.1
+  MinStorageCharge:
+    key: [REGION, STORAGE, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Lowest level of a storage, as a share of its capacity.
+    origin: OSeMOSYS v1.0.1
+  OperationalLifeStorage:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: years
+    meaning: Number of years that new storage capacity operates.
+    origin: OSeMOSYS v1.0.1
+  CapitalCostStorage:
+    key: [REGION, STORAGE, YEAR]
+    default: 0
+    unit: currency per activity
+    meaning: Investment cost of one unit of new storage capacity, which holds energy.
+    origin: OSeMOSYS v1.0.1
+  ResidualStorageCapacity:
+    key: [REGION, STORAGE, YEAR]
+    default: 999
+    unit: activity
+    meaning: Storage capacity that exists before the model period and remains in a year.
+    origin: OSeMOSYS v1.0.1
+  CapacityOfOneTechnologyUnit:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: capacity
+    meaning: Size of one unit of new capacity, where 0 lets new capacity take any size.
+    origin: OSeMOSYS v1.0.1
+  TotalAnnualMaxCapacity:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: -1
+    unit: capacity
+    meaning: Highest total capacity of a technology in a year, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+  TotalAnnualMinCapacity:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: capacity
+    meaning: Lowest total capacity of a technology in a year.
+    origin: OSeMOSYS v1.0.1
+  TotalAnnualMaxCapacityInvestment:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: -1
+    unit: capacity
+    meaning: Highest new capacity of a technology in a year, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+  TotalAnnualMinCapacityInvestment:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: capacity
+    meaning: Lowest new capacity of a technology in a year.
+    origin: OSeMOSYS v1.0.1
+  TotalTechnologyAnnualActivityUpperLimit:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: -1
+    unit: activity
+    meaning: Highest activity of a technology in a year, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+  TotalTechnologyAnnualActivityLowerLimit:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: activity
+    meaning: Lowest activity of a technology in a year.
+    origin: OSeMOSYS v1.0.1
+  TotalTechnologyModelPeriodActivityUpperLimit:
+    key: [REGION, TECHNOLOGY]
+    default: -1
+    unit: activity
+    meaning: Highest activity of a technology over the model period, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+  TotalTechnologyModelPeriodActivityLowerLimit:
+    key: [REGION, TECHNOLOGY]
+    default: 0
+    unit: activity
+    meaning: Lowest activity of a technology over the model period.
+    origin: OSeMOSYS v1.0.1
+  ReserveMarginTagTechnology:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Share of the capacity of a technology that counts toward the reserve margin.
+    origin: OSeMOSYS v1.0.1
+  ReserveMarginTagFuel:
+    key: [REGION, FUEL, YEAR]
+    default: 0
+    unit: flag
+    meaning: 1 when the demand for a fuel needs the reserve margin, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  ReserveMargin:
+    key: [REGION, YEAR]
+    default: 1
+    unit: rate
+    meaning: Ratio of the tagged capacity to the tagged peak demand that a region must hold.
+    origin: OSeMOSYS v1.0.1
+  RETagTechnology:
+    key: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: flag
+    meaning: 1 when the production of a technology counts as renewable, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  RETagFuel:
+    key: [REGION, FUEL, YEAR]
+    default: 0
+    unit: flag
+    meaning: 1 when the production of a fuel counts toward the renewable target, otherwise 0.
+    origin: OSeMOSYS v1.0.1
+  REMinProductionTarget:
+    key: [REGION, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Lowest share of the tagged fuel production that renewable technologies must give.
+    origin: OSeMOSYS v1.0.1
+  EmissionActivityRatio:
+    key: [REGION, TECHNOLOGY, EMISSION, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: emission per activity
+    meaning: Emission that each unit of the activity of a technology in a mode causes.
+    origin: OSeMOSYS v1.0.1
+  EmissionsPenalty:
+    key: [REGION, EMISSION, YEAR]
+    default: 0
+    unit: currency per emission
+    meaning: Cost of one unit of an emission.
+    origin: OSeMOSYS v1.0.1
+  AnnualExogenousEmission:
+    key: [REGION, EMISSION, YEAR]
+    default: 0
+    unit: emission
+    meaning: Emission in a year from sources outside the technologies of the model.
+    origin: OSeMOSYS v1.0.1
+  AnnualEmissionLimit:
+    key: [REGION, EMISSION, YEAR]
+    default: -1
+    unit: emission
+    meaning: Highest emission in a year, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+  ModelPeriodExogenousEmission:
+    key: [REGION, EMISSION]
+    default: 0
+    unit: emission
+    meaning: Emission over the model period from sources outside the technologies of the model.
+    origin: OSeMOSYS v1.0.1
+  ModelPeriodEmissionLimit:
+    key: [REGION, EMISSION]
+    default: -1
+    unit: emission
+    meaning: Highest emission over the model period, where -1 means no limit.
+    origin: OSeMOSYS v1.0.1
+
+  # tz-osemosys v0.4.1: trade.
+  TradeLossBetweenRegions:
+    key: [REGION, _REGION, FUEL, YEAR]
+    default: 0
+    unit: fraction
+    meaning: Share of a traded fuel lost on the route from REGION to _REGION.
+    origin: tz-osemosys v0.4.1
+  TotalAnnualMaxTradeInvestment:
+    key: [REGION, _REGION, FUEL, YEAR]
+    unit: capacity
+    meaning: Highest new trade capacity on the route from REGION to _REGION in a year.
+    origin: tz-osemosys v0.4.1
+  ResidualTradeCapacity:
+    key: [REGION, _REGION, FUEL, YEAR]
+    default: 0
+    unit: capacity
+    meaning: Trade capacity from REGION to _REGION that exists before the model period.
+    origin: tz-osemosys v0.4.1
+  OperationalLifeTrade:
+    key: [REGION, _REGION, FUEL, YEAR]
+    default: 1
+    unit: years
+    meaning: Number of years that new trade capacity on a route operates.
+    origin: tz-osemosys v0.4.1
+  CapitalCostTrade:
+    key: [REGION, _REGION, FUEL, YEAR]
+    default: 0.00001
+    unit: currency per capacity
+    meaning: Overnight investment cost of one unit of new trade capacity on a route.
+    origin: tz-osemosys v0.4.1
+  DiscountRateTrade:
+    key: [REGION, _REGION, FUEL]
+    default: 0.1
+    unit: rate
+    meaning: Discount rate for the investments in the trade capacity of a route.
+    origin: tz-osemosys v0.4.1
+  TradeCapacityToActivityUnit:
+    key: [REGION, _REGION, FUEL]
+    default: 1
+    unit: activity per capacity
+    meaning: Quantity of a fuel that one unit of trade capacity moves in a whole year.
+    origin: tz-osemosys v0.4.1
+  TotalTradeAnnualActivityUpperLimit:
+    key: [REGION, _REGION, FUEL, YEAR]
+    unit: activity
+    meaning: Highest quantity of a fuel that leaves REGION for _REGION in a year.
+    origin: tz-osemosys v0.4.1
+  TotalTradeAnnualActivityLowerLimit:
+    key: [REGION, _REGION, FUEL, YEAR]
+    unit: activity
+    meaning: Lowest quantity of a fuel that leaves REGION for _REGION in a year.
+    origin: tz-osemosys v0.4.1
+  AvailabilityFactorTrade:
+    key: [REGION, _REGION, FUEL, YEAR]
+    unit: fraction
+    meaning: Share of the year in which the route from REGION to _REGION can operate.
+    origin: tz-osemosys v0.4.1
+  TotalAnnualMinCapacityFactorTrade:
+    key: [REGION, _REGION, FUEL, YEAR]
+    unit: fraction
+    meaning: Lowest share of the year in which the route from REGION to _REGION must operate.
+    origin: tz-osemosys v0.4.1
+
+  # tz-osemosys v0.4.1: technologies.
+  CapacityAdditionalMaxGrowthRate:
+    key: [REGION, TECHNOLOGY, YEAR]
+    unit: rate
+    meaning: Highest growth of the capacity of a technology from one year to the next.
+    origin: tz-osemosys v0.4.1
+  CapacityAdditionalMinGrowthRate:
+    key: [REGION, TECHNOLOGY, YEAR]
+    unit: rate
+    meaning: Lowest growth of the capacity of a technology from one year to the next.
+    origin: tz-osemosys v0.4.1
+  CapacityAdditionalMaxFloor:
+    key: [REGION, TECHNOLOGY, YEAR]
+    unit: capacity
+    meaning: New capacity that a technology can add in a year above its highest growth rate.
+    origin: tz-osemosys v0.4.1
+  TotalAnnualMinCapacityFactor:
+    key: [REGION, TECHNOLOGY, YEAR]
+    unit: fraction
+    meaning: Lowest annual activity of a technology, as a share of its full use of its capacity.
+    origin: tz-osemosys v0.4.1
+  TechnologyMinProductionTarget:
+    key: [REGION, TECHNOLOGY, FUEL, YEAR]
+    unit: fraction
+    meaning: Lowest share of the production of a fuel in a year that one technology must give.
+    origin: tz-osemosys v0.4.1
+  TechnologyMaxProductionTarget:
+    key: [REGION, TECHNOLOGY, FUEL, YEAR]
+    unit: fraction
+    meaning: Highest share of the production of a fuel in a year that one technology can give.
+    origin: tz-osemosys v0.4.1
+
+  # tz-osemosys v0.4.1: storages.
+  StorageMaxHours:
+    key: [REGION, STORAGE]
+    unit: hours
+    meaning: Highest number of hours for which a storage can charge or discharge in one timeslice.
+    origin: tz-osemosys v0.4.1
+  StorageBalanceDay:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: flag
+    meaning: 1 when the charge of a storage must equal its discharge over each day, otherwise 0.
+    origin: tz-osemosys v0.4.1
+  StorageBalanceSeason:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: flag
+    meaning: 1 when the charge of a storage must equal its discharge over each season, otherwise 0.
+    origin: tz-osemosys v0.4.1
+  StorageBalanceYear:
+    key: [REGION, STORAGE]
+    default: 0
+    unit: flag
+    meaning: 1 when the charge of a storage must equal its discharge over each year, otherwise 0.
+    origin: tz-osemosys v0.4.1
+
+  # tz-osemosys v0.4.1: region groups.
+  RegionGroupTagRegion:
+    key: [REGIONGROUP, REGION, YEAR]
+    unit: flag
+    meaning: 1 when a region is a member of a region group in a year, otherwise 0.
+    origin: tz-osemosys v0.4.1
+  RegionGroupREMinProductionTarget:
+    key: [REGIONGROUP, YEAR]
+    unit: fraction
+    meaning: Lowest share of the tagged fuel production that renewable technologies must give in a region group.
+    origin: tz-osemosys v0.4.1
+  AnnualEmissionLimitRegionGroup:
+    key: [REGIONGROUP, EMISSION, YEAR]
+    unit: emission
+    meaning: Highest emission of a region group in a year.
+    origin: tz-osemosys v0.4.1
+  AnnualExogenousEmissionRegionGroup:
+    key: [REGIONGROUP, EMISSION, YEAR]
+    unit: emission
+    meaning: Emission of a region group in a year from sources outside the technologies of the model.
+    origin: tz-osemosys v0.4.1
+
+  # OSeMOSYS MUIO model v5.7: activity limits by mode, where 0 applies no limit.
+  TechnologyActivityByModeUpperLimit:
+    key: [REGION, TECHNOLOGY, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: activity
+    meaning: Highest activity of a technology in one mode in a year.
+    origin: OSeMOSYS MUIO model v5.7
+  TechnologyActivityByModeLowerLimit:
+    key: [REGION, TECHNOLOGY, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: activity
+    meaning: Lowest activity of a technology in one mode in a year.
+    origin: OSeMOSYS MUIO model v5.7
+  TechnologyActivityDecreaseByModeLimit:
+    key: [REGION, TECHNOLOGY, MODE_OF_OPERATION, YEAR]
+    default: 0
+    unit: rate
+    meaning: Highest decrease of the activity of a technology in one mode from one year to the next.
+    origin: OSeMOSYS MUIO model v5.7
