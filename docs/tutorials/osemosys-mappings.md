@@ -87,6 +87,9 @@ Two pipelines write the canonical stage of a model to a directory:
 
 You must run interop inside a project directory. The section "Setting up a project" of the
 [user tutorial](user-tutorial.md) tells you how to make one.
+A run in a directory with no `adapters.yaml` stops with this message:
+``adapters.yaml not found at ... Run `interop init <dir>` to scaffold a project.``
+Make a project with `interop init` first.
 
 1. Put the otoole configuration file at `inputs/model/config.yaml`.
 2. Put the CSV files in `inputs/model/csv/`.
@@ -219,6 +222,18 @@ remove an extra column.
 - The warnings name each extension table. A warning names three tables at most, and counts
   the others.
 
+### Find out why a table did not match
+
+1. Add `--keep-staging` to the run command. The run then keeps its staging directory.
+2. Find the directory `interop-osemosys-staging-<random>` in the temporary directory of the
+   system. For a TZ-format model, the name starts `interop-tz-osemosys-staging-`.
+3. Open `raw/declarations.parquet`. It has one row for each raw table that the reader saw.
+4. Read the columns `name`, `key` and `default` of the row for the table that did not match.
+5. Compare `name` and `key` with `osemosys_name` and `osemosys_columns` in the schema entry.
+
+For example, a row with `name` `MaxRampRate` and `key` `["REGION", "TECHNOLOGY", "YEAR"]` matches
+only a schema entry with the same `osemosys_name` and the same `osemosys_columns`.
+
 ## Find the canonical names and columns
 
 The canonical schema is in the file
@@ -335,7 +350,7 @@ WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension 
 ## `parameters:`
 
 A `parameters:` row tells the engine what to do with one raw table, or with a family of raw
-tables.
+tables (the raw tables that rows send to one canonical parameter).
 
 ### The fields of a `parameters:` row
 
@@ -882,9 +897,11 @@ The run writes `annotations/fuel.parquet`:
 | `export` | Takes in a fuel and puts out nothing |
 | `conversion` | Changes one fuel into another at one location |
 
-The first three are type names in Sienna, the tool that a later translation writes to. Another value, for example `generator`, stops the run.
-The engine infers `kind` from the activity ratios and the storage tables, so a row needs `kind` only to
-change the inference. The section "What the engine infers" gives the rules.
+The first three are type names in Sienna, the tool that a later translation writes to.
+Another value, for example `generator`, stops the run.
+The engine infers `kind` from the activity ratios and the storage tables.
+A row needs `kind` only to change the inference.
+The section "What the engine infers" gives the rules.
 
 ### `category` and `carrier`
 

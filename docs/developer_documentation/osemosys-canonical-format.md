@@ -678,14 +678,14 @@ field states has no rows. The declared defaults are the defaults of the field ta
 | A `construct_region_pairs` that is not `true` or `false` | It copies no pair and keeps the trade |
 | A wildcard over a set with no members | The value adds no rows |
 | A value that is not a number | It leaves out the value |
-| Two rows of one raw table with the same key, for example from two trades | It keeps the row that it reads first, and leaves out the later rows |
+| Two rows of one raw table with the same index columns, for example from two trades | It keeps the row that it reads first, and leaves out the later rows |
 
 For each problem in the table above, the source records an event and writes a warning. These
 problems record `COMPONENT_SKIPPED`:
 
 - An object that cannot be used.
 - A value that is not a number.
-- A row with the same key as an earlier row of the raw table.
+- A row with the same index columns as an earlier row of the raw table.
 
 The others record `NOT_MAPPED`.
 

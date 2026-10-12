@@ -58,7 +58,7 @@ OSEMOSYS_REGIONGROUP = "REGIONGROUP"
 # The column name of a second region in a key, as otoole and the TZ format write it.
 OSEMOSYS_SECOND_REGION = "_REGION"
 
-# The canonical names of the sets and key columns that the engine reads.
+# The canonical names of the sets and columns that the engine reads.
 REGION = "region"
 TECHNOLOGY = "technology"
 FUEL = "fuel"

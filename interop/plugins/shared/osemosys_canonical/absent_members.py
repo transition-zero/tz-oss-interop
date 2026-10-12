@@ -55,7 +55,7 @@ def build_absent_members(
 def _build_table_absent_members(
     table: pl.LazyFrame, parameter: CanonicalParameter, members: dict[str, pl.Series]
 ) -> AbsentMembers:
-    """Collects one aggregated row: the count and the absent members of each key column."""
+    """Collects one aggregated row: the count and the absent members of each column."""
     absent_columns = (
         _express_absent(parameter, column, members) for column in parameter.column_names
     )
