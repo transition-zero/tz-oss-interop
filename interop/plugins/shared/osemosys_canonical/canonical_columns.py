@@ -21,10 +21,10 @@ def build_canonical_columns(schema: CanonicalSchema, raw_columns: list[str]) -> 
 def build_parameter_columns(
     schema: CanonicalSchema, parameter: CanonicalParameter, raw_columns: list[str]
 ) -> dict[str, str]:
-    """The `region` column of a table whose canonical key holds `start_region` becomes
+    """The `region` column of a table whose canonical columns hold `start_region` becomes
     `start_region`."""
     columns = build_canonical_columns(schema, raw_columns)
-    return _build_start_region_columns(columns) if START_REGION in parameter.key else columns
+    return _build_start_region_columns(columns) if START_REGION in parameter.columns else columns
 
 
 def build_extension_columns(schema: CanonicalSchema, raw_columns: list[str]) -> dict[str, str]:

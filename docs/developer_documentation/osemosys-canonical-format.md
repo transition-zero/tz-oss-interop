@@ -15,8 +15,8 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
 
 ## The words
 
-- **The schema level** is the parameters of a model: the name, the key and the default value
-  of each parameter. The key of a parameter is the list of sets that its value depends on.
+- **The schema level** is the parameters of a model: the name, the columns and the default
+  value of each parameter. The columns of a parameter name the sets that its value depends on.
 - **The object level** is the members of the sets, such as a technology called `ATGASCC1`,
   and the values with their units.
 - **An OSeMOSYS name** is the name that a published OSeMOSYS variant gives a set or a
@@ -24,7 +24,7 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
 - **A canonical name** is the name of a set, a parameter or a column in the canonical schema,
   for example `capital_cost` or `region`. The section "Names" gives the rules.
 - **The raw stage** is the model after the source removes the file format. It keeps the
-  names, the keys and the set members of the model, so it uses the OSeMOSYS names.
+  names, the index columns and the set members of the model, so it uses the OSeMOSYS names.
 - **A raw table** is the table of one parameter in the raw stage. **A raw set** is the table
   of one set in the raw stage.
 - **The canonical schema** is the schema that interop defines for an OSeMOSYS model, in
@@ -108,17 +108,20 @@ The raw stage keeps the OSeMOSYS names, because the source only removes the file
 | `DAILYTIMEBRACKET` | `daily_time_bracket` | Rule 3 |
 | `REGIONGROUP` | `region_group` | Rule 3 |
 
-A key that holds two regions names them `start_region` and `end_region`, as Sienna's
-`AggregateTransportTechnology` does. They are not sets. Each one is a role: a column that holds
-the members of the `region` set. OSeMOSYS names the second region `_REGION`. The schema entry
-states the roles:
+A table that holds two regions names them `start_region` and `end_region`, as Sienna's
+`AggregateTransportTechnology` does. They are not sets. Each one is a column that holds the
+members of the `region` set. OSeMOSYS names the second region `_REGION`. The `columns` field of
+the schema entry names each column and its set:
 
 ```yaml
 transport_capital_cost:
-  key: [start_region, end_region, fuel, year]
-  roles: {start_region: region, end_region: region}
+  columns:
+    start_region: region
+    end_region: region
+    fuel: fuel
+    year: year
   osemosys_name: CapitalCostTrade
-  osemosys_key: [REGION, _REGION, FUEL, YEAR]
+  osemosys_columns: [REGION, _REGION, FUEL, YEAR]
 ```
 
 The value column of each canonical table and each extension table is `value`. The OSeMOSYS
@@ -127,7 +130,7 @@ name of that column is `VALUE`.
 ### The parameters
 
 The schema file `interop/plugins/shared/osemosys_canonical_schema.yaml` holds the full table of
-the parameters. Each entry gives the canonical name, the OSeMOSYS name and the OSeMOSYS key of
+the parameters. Each entry gives the canonical name, the OSeMOSYS name and the OSeMOSYS columns of
 one parameter.
 
 These parameters take a SiennaSchemas name, by rule 2:
@@ -172,10 +175,10 @@ The three `Conversionl*` parameters take the field names of tz-osemosys, because
 
 ### Where each vocabulary applies
 
-- The raw stage uses the OSeMOSYS names: the raw sets, the raw tables, their key columns and
+- The raw stage uses the OSeMOSYS names: the raw sets, the raw tables, their index columns and
   `VALUE`.
-- The automatic match compares the name and the key of a raw table with the `osemosys_name`
-  and the `osemosys_key` of each canonical parameter. It compares the name of a raw set with
+- The automatic match compares the name and the index columns of a raw table with the
+  `osemosys_name` and the `osemosys_columns` of each canonical parameter. It compares the name of a raw set with
   the `osemosys_name` of each canonical set.
 - The canonical stage uses the canonical names: the sets, the parameters, the columns, the
   paths and the `State` keys.
@@ -191,10 +194,10 @@ unless you give `--keep-staging`.
 
 ```
 raw/sets/<SET>.parquet                    one column, VALUE
-raw/parameters/<Name>.parquet             the key columns of the model, then VALUE
-raw/declarations.parquet                  name, key and default of each parameter
+raw/parameters/<Name>.parquet             the index columns of the model, then VALUE
+raw/declarations.parquet                  name, index columns and default of each parameter
 canonical/sets/<set>.parquet              one column, value
-canonical/parameters/<name>.parquet       the canonical key, then value
+canonical/parameters/<name>.parquet       the canonical columns, then value
 canonical/extensions/<Name>.parquet       each raw table and raw set with no canonical name
 canonical/annotations/<set>.parquet       one table each for technology, fuel, storage, region
 canonical/metadata/defaults.parquet       the default of each parameter for this model
@@ -211,17 +214,17 @@ with the same five directories. It does not write the raw stage.
 ### The raw stage
 
 The raw stage keeps every set member as a string, so a mode called `1` stays `1`. Each
-`VALUE` of a raw table is a float. A raw table keeps the name and the key that the model
-declares.
+`VALUE` of a raw table is a float. A raw table keeps the name and the index columns that the
+model declares.
 
 ### The canonical stage
 
-A canonical parameter table has exactly the key columns of its schema entry, in the order of
-the entry, then `value`. A key that holds two regions names them `start_region` and
+A canonical parameter table has exactly the columns of its schema entry, in the order of
+the entry, then `value`. A table that holds two regions names them `start_region` and
 `end_region`.
 
 Each canonical table is sparse. It holds only the rows that the model holds. A canonical
-parameter whose raw table has no rows gives a table with its key columns and no rows. A
+parameter whose raw table has no rows gives a table with its columns and no rows. A
 canonical parameter that no raw table maps to gives no table.
 
 An extension table keeps the name and the values of its raw table. Its columns take canonical
@@ -233,7 +236,7 @@ names by these rules:
 - `VALUE` becomes `value`.
 - A column with another name keeps its name.
 
-For example, a raw table keyed by `REGION` and `_REGION` gives an extension table with the
+For example, a raw table with the index columns `REGION` and `_REGION` gives an extension table with the
 columns `start_region`, `end_region` and `value`. A raw set with no canonical name becomes an
 extension table with one column, `value`.
 
@@ -284,7 +287,7 @@ The canonical schema is a data file:
 | Parameters from tz-osemosys v0.4.1 | 25 | Trade, technology, storage and region group parameters |
 | Parameters from OSeMOSYS MUIO model v5.7 | 3 | Activity limits by mode |
 
-A core parameter takes its key from the OSeMOSYS v1.0.1 model file. It takes its default
+A core parameter takes its columns from the OSeMOSYS v1.0.1 model file. It takes its default
 from the otoole reference config, which has the MIT licence.
 
 The name of a set entry is its canonical name. Each set entry has two fields, and both are
@@ -295,10 +298,9 @@ The name of a parameter entry is its canonical name. Each parameter entry has th
 
 | Field | Required | What it states |
 | --- | --- | --- |
-| `key` | Yes | The canonical columns of the key. Each one is a set of the schema, or a column that `roles` names. |
-| `roles` | No | The set that each key column holds when the column is not a set: `start_region` and `end_region` hold `region`. |
+| `columns` | Yes | An ordered mapping from each canonical column to the set whose members it holds. A column of a set has the name of the set. `start_region` and `end_region` hold `region`. |
 | `osemosys_name` | Yes | The OSeMOSYS name of the parameter. |
-| `osemosys_key` | Yes | The OSeMOSYS key: the OSeMOSYS name of the set at each position of `key`, or `_REGION`. |
+| `osemosys_columns` | Yes | The OSeMOSYS columns: the OSeMOSYS name of the set at each position of `columns`, or `_REGION`. |
 | `default` | No | The default value. |
 | `default_from` | No | The parameter whose default this parameter takes. |
 | `unit` | Yes | The kind of unit, for example `currency per capacity`. |
@@ -314,10 +316,11 @@ constraint where the model states no value.
 The loader stops with an error for each of these faults in the schema file:
 
 - An entry states both `default` and `default_from`.
-- The set of a key column is not a set of the schema. The set of a column is its role, or else
-  the column name.
-- `osemosys_key` and `key` have different lengths.
-- A column of `osemosys_key` does not name the set of the `key` column at the same position.
+- A set in `columns` is not a set of the schema.
+- `osemosys_columns` and `columns` have different lengths.
+- A column of `osemosys_columns` does not name the set of the column at the same position in
+  `columns`.
+- `REGION` stands at `end_region`, or `_REGION` stands at any column other than `end_region`.
   `REGION` at the position of `start_region` is correct.
 - Two set entries, or two parameter entries, have the same `osemosys_name`.
 - `default_from` names a parameter that the schema does not hold.
@@ -337,12 +340,12 @@ Describe the parameter by its meaning. Never name a model that uses it.
 2. Find the comment line of the variant that publishes the parameter.
 3. If no comment line names the variant, add one at the end of `parameters:`.
 4. Give the entry the canonical name that the rules in "Names" give.
-5. Add `key`, `osemosys_name`, `osemosys_key`, `unit`, `meaning` and `origin` to the entry.
-6. If the key holds two regions, add `roles: {start_region: region, end_region: region}`.
+5. Add `columns`, `osemosys_name`, `osemosys_columns`, `unit`, `meaning` and `origin` to the entry.
+6. If the table holds two regions, name them `start_region: region` and `end_region: region` in `columns`.
 7. Add `default` only if the variant documents a default.
 8. Run `uv run pytest -q tests/step_defs/osemosys_staging`.
 
-After the change, a raw table with the OSeMOSYS name and the OSeMOSYS key of the entry maps to
+After the change, a raw table with the OSeMOSYS name and the OSeMOSYS columns of the entry maps to
 the new parameter automatically. Before the change, it stayed an extension table.
 
 ## The user mappings file
@@ -369,12 +372,13 @@ column of an operation and each `kind`. A raw set or a raw table keeps its own n
 
 The engine maps a raw set automatically when its name is the `osemosys_name` of a canonical
 set. It maps a raw table automatically when its name is the `osemosys_name` of a canonical
-parameter, and its key holds the sets of the `osemosys_key`. The order of the key columns does
-not matter.
+parameter, and its index columns are the `osemosys_columns`. The order of the index columns
+does not matter.
 
-The engine then gives each key column the canonical name at the same position in `key`. For
-example, the raw table `CapitalCostTrade`, keyed `REGION, _REGION, FUEL, YEAR`, becomes
-`transport_capital_cost`, keyed `start_region, end_region, fuel, year`.
+The engine then gives each OSeMOSYS column the canonical column at the same position in
+`columns`. For example, the raw table `CapitalCostTrade`, with the index columns `REGION,
+_REGION, FUEL, YEAR`, becomes `transport_capital_cost`, with the columns `start_region,
+end_region, fuel, year`.
 
 Each automatic match records a `VALUE_DERIVED` event with the note "matched by name and
 key".
@@ -411,7 +415,7 @@ table:
 
 - A column with the OSeMOSYS name of a set takes the canonical name of that set.
 - `_REGION` becomes `end_region`.
-- Then, if the canonical key holds `start_region`, `region` becomes `start_region`.
+- Then, if the canonical columns hold `start_region`, `region` becomes `start_region`.
 - `VALUE` becomes `value`.
 - A column with another name keeps its name, for example `TECH`.
 
@@ -423,7 +427,7 @@ A row can give operations. The engine applies them in this order:
 | --- | --- | --- |
 | 1 | `rename_columns` | It gives a column a new name, for example `{TECH: technology}`. |
 | 2 | `columns_from_name` | It writes a named group of `source_pattern` into a new column. |
-| 3 | `remove_column` | It removes one key column with a `rule`. |
+| 3 | `remove_column` | It removes one index column with a `rule`. |
 | 4 | `repeat_for_all` | It repeats each value for each member of the sets that it names. |
 | 5 | `multiply_by` | It multiplies each value, and the declared default, by a number. |
 
@@ -442,7 +446,7 @@ that names the row and the raw table:
 - `remove_column` with `choose` gives a `member` that no row of the raw table holds.
 - `repeat_for_all` names a set that has no members.
 
-After the operations, the columns of the key must be the canonical key. An invented example:
+After the operations, the index columns must be the canonical columns. An invented example:
 
 ```yaml
 osemosys:
@@ -592,7 +596,7 @@ This source reads a model in the otoole CSV format. It has two parameters:
 
 The config YAML can be outside `csv_dir`. The source reads the entries of `type: set` and
 `type: param`. It does not read an entry of `type: result`. The `indices` of a parameter
-give its key, and its `default` gives its declared default.
+give its index columns, and its `default` gives its declared default.
 
 The source finds each parameter file by its full name, then by its `short_name`. It finds
 each set file by its full name only. A raw table takes the full name. If `csv_dir` holds none
@@ -609,7 +613,7 @@ MathProg data file splits on spaces, so a space is not part of a member or a val
 | A set file with no `VALUE` column | It leaves out the set | Yes |
 | A parameter with no CSV file, or an empty file | It stages the table with no rows, so the default applies | No |
 | A parameter file that is not CSV | It stages the table with no rows | Yes |
-| A header that is not the declared key and `VALUE` | It stages the table with no rows | Yes |
+| A header that is not the declared index columns and `VALUE` | It stages the table with no rows | Yes |
 | A `VALUE` that is not a number | It leaves out that row and keeps the others | Yes |
 
 The order of the columns in a header does not matter. Each event in the table above is
@@ -722,9 +726,8 @@ These problems in the data of the model do not stop the run:
   out those rows.
 
 The rule for an absent set member applies to each canonical parameter table. The engine
-checks each key column against the set that it holds. It checks `start_region` and `end_region`
-against `region`, and each other column against the set with its name. An empty
-key cell counts as an absent member. The engine records `COMPONENT_SKIPPED` for each table
+checks each column against the set that it holds, as `columns` states. An empty
+cell counts as an absent member. The engine records `COMPONENT_SKIPPED` for each table
 and writes one warning. It does not apply this rule to an extension table.
 
 ## The reporting

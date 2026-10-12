@@ -229,7 +229,7 @@ def _reject_unknown_canonical_names(index: int, row: ParameterRow, schema: Canon
             f"row {index} of {PARAMETERS_PART} names the canonical parameter {row.canonical}, "
             "which the canonical schema does not hold"
         )
-    unknown = [column for column in row.repeat_for_all if column not in schema.key_columns]
+    unknown = [column for column in row.repeat_for_all if column not in schema.column_names]
     if unknown:
         raise ValueError(
             f"row {index} of {PARAMETERS_PART} repeats for {unknown}, which are not canonical sets"

@@ -80,7 +80,7 @@ def find_row_match(rows: list[ParameterRow], table: str) -> RowMatch | None:
 def reject_wrong_key(source: RowSource) -> None:
     row = source.match.row
     missing = _list_missing_columns(row, source.key)
-    keys = KeyChange(source.key, build_row_key(row, source.key), source.parameter.key)
+    keys = KeyChange(source.key, build_row_key(row, source.key), source.parameter.column_names)
     if missing or sorted(keys.derived) != sorted(keys.canonical):
         raise UserInputError(
             _build_wrong_key_message(source.match, keys) + _build_missing_columns_note(missing)
@@ -158,8 +158,9 @@ def has_empty_repeat(source: RowSource, sets: dict[str, pl.LazyFrame]) -> bool:
 def _find_members(
     source: RowSource, column: str, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame | None:
-    """The canonical set of a key column, through its role; an absent set is `None`."""
-    return sets.get(source.parameter.get_column_set(column))
+    """The members of the canonical set that a column holds; an absent set is `None`."""
+    column_set = source.parameter.find_column_set(column) or column
+    return sets.get(column_set)
 
 
 def _has_rows(table: pl.LazyFrame) -> bool:

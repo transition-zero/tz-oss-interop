@@ -6,13 +6,12 @@ import functools
 from importlib.resources import files
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
+    OSEMOSYS_REGION,
     OSEMOSYS_SECOND_REGION,
-    REGION,
-    START_REGION,
 )
 
 _SCHEMA_PACKAGE = "interop.plugins.shared"
@@ -29,16 +28,15 @@ class CanonicalSet(BaseModel):
 
 
 class CanonicalParameter(BaseModel):
-    """One parameter of the canonical schema; `roles` names the set of a key column whose name is
-    not a set, and `default_from` names the parameter whose default this one takes when it states
-    none."""
+    """One parameter of the canonical schema. `columns` maps each canonical column, in order, to
+    the set whose members it holds; `osemosys_columns` lists the same columns as OSeMOSYS names
+    them. `default_from` names the parameter whose default this one takes when it states none."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    key: list[str]
-    roles: dict[str, str] = Field(default_factory=dict)
+    columns: dict[str, str]
     osemosys_name: str
-    osemosys_key: list[str]
+    osemosys_columns: list[str]
     default: float | None = None
     default_from: str | None = None
     unit: str
@@ -52,19 +50,30 @@ class CanonicalParameter(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_osemosys_key(self) -> CanonicalParameter:
-        if len(self.osemosys_key) != len(self.key):
-            raise ValueError(f"the osemosys_key of {self.osemosys_name} differs in length from key")
+    def _validate_osemosys_columns(self) -> CanonicalParameter:
+        if len(self.osemosys_columns) != len(self.columns):
+            raise ValueError(
+                f"the osemosys_columns of {self.osemosys_name} differ in length from columns"
+            )
         return self
 
     @property
-    def osemosys_columns(self) -> dict[str, str]:
-        """The canonical name of each OSeMOSYS key column, by its position in the two keys."""
-        return dict(zip(self.osemosys_key, self.key, strict=True))
+    def column_names(self) -> list[str]:
+        """The canonical columns, in the order of the canonical table."""
+        return list(self.columns)
+
+    @property
+    def column_by_osemosys_column(self) -> dict[str, str]:
+        """The canonical column at each position of the OSeMOSYS columns."""
+        return dict(zip(self.osemosys_columns, self.columns, strict=True))
 
     def get_column_set(self, column: str) -> str:
-        """The set whose members a key column holds: its role, else the column itself."""
-        return self.roles.get(column, column)
+        """The set whose members a column holds."""
+        return self.columns[column]
+
+    def find_column_set(self, column: str) -> str | None:
+        """The set whose members a column holds; a column that the parameter lacks gives `None`."""
+        return self.columns.get(column)
 
 
 class CanonicalSchema(BaseModel):
@@ -87,8 +96,8 @@ class CanonicalSchema(BaseModel):
     @model_validator(mode="after")
     def _validate_references(self) -> CanonicalSchema:
         for name, parameter in self.parameters.items():
-            _reject_unknown_key_sets(name, parameter, self.sets)
-            _reject_misaligned_osemosys_key(name, parameter, self.osemosys_set_columns)
+            _reject_unknown_column_sets(name, parameter, self.sets)
+            _reject_misaligned_osemosys_columns(name, parameter, self.sets)
             if parameter.default_from is not None and parameter.default_from not in self.parameters:
                 raise ValueError(f"{name} takes its default from unknown {parameter.default_from}")
         return self
@@ -100,10 +109,10 @@ class CanonicalSchema(BaseModel):
         return {**names, OSEMOSYS_SECOND_REGION: END_REGION}
 
     @property
-    def key_columns(self) -> set[str]:
-        """Every column that a canonical key can hold: a set, or a column with a role."""
-        roles = {column for entry in self.parameters.values() for column in entry.roles}
-        return {*self.sets, *roles}
+    def column_names(self) -> set[str]:
+        """Every column that a canonical table can hold: a set, or a column that an entry names."""
+        named = {column for entry in self.parameters.values() for column in entry.columns}
+        return {*self.sets, *named}
 
     def find_parameter_name(self, osemosys_name: str) -> str | None:
         """The canonical name of the parameter that OSeMOSYS calls `osemosys_name`."""
@@ -118,12 +127,12 @@ class CanonicalSchema(BaseModel):
         return next(found, None)
 
 
-def _reject_unknown_key_sets(
+def _reject_unknown_column_sets(
     name: str, parameter: CanonicalParameter, sets: dict[str, CanonicalSet]
 ) -> None:
-    unknown = [column for column in parameter.key if parameter.get_column_set(column) not in sets]
+    unknown = [column for column, held in parameter.columns.items() if held not in sets]
     if unknown:
-        raise ValueError(f"the key of {name} names unknown sets {unknown}")
+        raise ValueError(f"the columns of {name} name unknown sets for {unknown}")
 
 
 def _reject_duplicate_names(label: str, osemosys_names: list[str]) -> None:
@@ -132,22 +141,24 @@ def _reject_duplicate_names(label: str, osemosys_names: list[str]) -> None:
         raise ValueError(f"two {label} entries share the osemosys_name {duplicated}")
 
 
-def _reject_misaligned_osemosys_key(
-    name: str, parameter: CanonicalParameter, set_columns: dict[str, str]
+def _reject_misaligned_osemosys_columns(
+    name: str, parameter: CanonicalParameter, sets: dict[str, CanonicalSet]
 ) -> None:
-    """Each OSeMOSYS key column names the canonical column at its position, or the first region of
-    a pair, which `region` stands for."""
+    """Each OSeMOSYS column names the set of the canonical column at its position; `REGION` stands
+    at the first region of a pair, and `_REGION` at the second."""
     misaligned = [
         osemosys
-        for osemosys, column in parameter.osemosys_columns.items()
-        if not _is_aligned(set_columns.get(osemosys, osemosys), column)
+        for osemosys, column in parameter.column_by_osemosys_column.items()
+        if not _is_aligned(osemosys, column, sets[parameter.columns[column]])
     ]
     if misaligned:
-        raise ValueError(f"the osemosys_key of {name} does not match its key at {misaligned}")
+        raise ValueError(f"the osemosys_columns of {name} do not match its columns at {misaligned}")
 
 
-def _is_aligned(expected: str, column: str) -> bool:
-    return column == expected or (expected, column) == (REGION, START_REGION)
+def _is_aligned(osemosys: str, column: str, held: CanonicalSet) -> bool:
+    if osemosys == OSEMOSYS_SECOND_REGION:
+        return column == END_REGION and held.osemosys_name == OSEMOSYS_REGION
+    return held.osemosys_name == osemosys and column != END_REGION
 
 
 @functools.cache

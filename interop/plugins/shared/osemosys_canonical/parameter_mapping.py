@@ -263,21 +263,25 @@ def _build_mapped_parameters(
 
 
 def _find_automatic_match(inputs: MappingInputs, name: str) -> str | None:
-    """The canonical parameter whose OSeMOSYS name and key the raw table has; the key is a set of
-    named columns, so its order does not change what a row means."""
+    """The canonical parameter whose OSeMOSYS name and OSeMOSYS columns the raw table has; the
+    index columns are a set of named columns, so their order does not change what a row means."""
     canonical = inputs.schema.find_parameter_name(name)
     if canonical is None:
         return None
-    osemosys_key = inputs.schema.parameters[canonical].osemosys_key
-    is_match = sorted(osemosys_key) == sorted(inputs.raw.declarations[name].key)
+    osemosys_columns = inputs.schema.parameters[canonical].osemosys_columns
+    is_match = sorted(osemosys_columns) == sorted(inputs.raw.declarations[name].key)
     return canonical if is_match else None
 
 
 def _reshape_to_key(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
-    """Each key column takes the canonical name at its position in the OSeMOSYS key."""
+    """Each OSeMOSYS column takes the canonical name at its position in the columns."""
     parameter = inputs.schema.parameters[names.destination]
-    columns = {**parameter.osemosys_columns, RAW_VALUE_COL: VALUE_COL}
-    return inputs.raw.parameters[names.source].rename(columns).select([*parameter.key, VALUE_COL])
+    columns = {**parameter.column_by_osemosys_column, RAW_VALUE_COL: VALUE_COL}
+    return (
+        inputs.raw.parameters[names.source]
+        .rename(columns)
+        .select([*parameter.column_names, VALUE_COL])
+    )
 
 
 def _reshape_extension(inputs: MappingInputs, name: str) -> pl.LazyFrame:
@@ -289,7 +293,7 @@ def _reshape_extension(inputs: MappingInputs, name: str) -> pl.LazyFrame:
 def _build_group_table(
     inputs: MappingInputs, group: RowGroup, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame:
-    columns = [*inputs.schema.parameters[group.canonical].key, VALUE_COL]
+    columns = [*inputs.schema.parameters[group.canonical].column_names, VALUE_COL]
     tables = [
         RowTable(source.match, build_row_table(source, sets))
         for source in _list_row_sources(inputs, group)

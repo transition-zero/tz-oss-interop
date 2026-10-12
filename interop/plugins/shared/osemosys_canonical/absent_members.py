@@ -56,13 +56,15 @@ def _build_table_absent_members(
     table: pl.LazyFrame, parameter: CanonicalParameter, members: dict[str, pl.Series]
 ) -> AbsentMembers:
     """Collects one aggregated row: the count and the absent members of each key column."""
-    absent_columns = (_express_absent(parameter, column, members) for column in parameter.key)
+    absent_columns = (
+        _express_absent(parameter, column, members) for column in parameter.column_names
+    )
     summary = (
         table.filter(~_express_is_known(parameter, members))
         .select(pl.len().alias(ROW_COUNT_COL), *absent_columns)
         .collect()
     )
-    absent = chain.from_iterable(summary.item(0, column) for column in parameter.key)
+    absent = chain.from_iterable(summary.item(0, column) for column in parameter.column_names)
     labels = {_EMPTY_CELL if member is None else member for member in absent}
     return AbsentMembers(summary.item(0, ROW_COUNT_COL), sorted(labels))
 
@@ -78,15 +80,14 @@ def drop_absent_members(
 
 def _express_is_known(parameter: CanonicalParameter, members: dict[str, pl.Series]) -> pl.Expr:
     return pl.all_horizontal(
-        _express_is_member(parameter, column, members) for column in parameter.key
+        _express_is_member(parameter, column, members) for column in parameter.column_names
     )
 
 
 def _express_is_member(
     parameter: CanonicalParameter, column: str, members: dict[str, pl.Series]
 ) -> pl.Expr:
-    """A key column holds members of the set that its role names; an empty key cell names no
-    member, so it counts as absent."""
+    """A column holds members of its set; an empty cell names no member, so it counts as absent."""
     known = members.get(parameter.get_column_set(column), _EMPTY_MEMBERS)
     return pl.col(column).is_in(known.implode()).fill_null(False)
 

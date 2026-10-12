@@ -207,13 +207,13 @@ def _list_field_columns(field: TzField) -> list[str]:
 
 
 def _build_table_key(field: TzField) -> list[str]:
-    """The OSeMOSYS key of the canonical schema entry, in its order, when the schema holds the
+    """The OSeMOSYS columns of the canonical schema entry, in its order, when the schema holds the
     table."""
     schema = load_canonical_schema()
     name = schema.find_parameter_name(field.table)
     if name is None:
         return _list_field_columns(field)
-    return list(schema.parameters[name].osemosys_key)
+    return list(schema.parameters[name].osemosys_columns)
 
 
 def _build_unreadable_value_counts(tables: dict[str, pl.DataFrame]) -> dict[str, int]:
