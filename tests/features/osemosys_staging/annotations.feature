@@ -281,6 +281,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "objects.technologies.0.kind"
+    And the log contains "generator"
 
   Scenario: A fuel location that no row gives does not count for the kind
     Given the otoole set "REGION" holds "R1"

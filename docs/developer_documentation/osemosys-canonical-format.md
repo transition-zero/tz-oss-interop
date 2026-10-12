@@ -149,7 +149,7 @@ These parameters take a SiennaSchemas name, by rule 2:
 
 `capacity_limits_max`, `capacity_limits_min` and `duration_limits_max` keep their parent
 field, because the leaf `max` or `min` alone is not clear. A canonical parameter keeps the
-OSeMOSYS unit. For example, `duration_limits_max` holds hours, but Sienna's `duration_limits`
+model's own unit. For example, `duration_limits_max` holds hours, but Sienna's `duration_limits`
 holds minutes.
 
 Four parameters keep a prefix, so that one name means one table: `storage_lifetime`,
@@ -722,8 +722,8 @@ These problems in the data of the model do not stop the run:
   out those rows.
 
 The rule for an absent set member applies to each canonical parameter table. The engine
-checks each key column against the set that it holds: `start_region` and `end_region` against
-`region`, and each other column against the set with its name. An empty
+checks each key column against the set that it holds. It checks `start_region` and `end_region`
+against `region`, and each other column against the set with its name. An empty
 key cell counts as an absent member. The engine records `COMPONENT_SKIPPED` for each table
 and writes one warning. It does not apply this rule to an extension table.
 

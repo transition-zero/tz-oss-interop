@@ -476,7 +476,7 @@ parameters:
     meaning: Highest emission over the model period, where -1 means no limit.
     origin: OSeMOSYS v1.0.1
 
-  # tz-osemosys v0.4.1: trade.
+  # tz-osemosys v0.4.1: transport.
   line_loss:
     key: [start_region, end_region, fuel, year]
     roles: {start_region: region, end_region: region}
@@ -484,7 +484,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL, YEAR]
     default: 0
     unit: fraction
-    meaning: Share of a traded fuel lost on the route from start_region to end_region.
+    meaning: Share of a fuel lost in transport on the route from start_region to end_region.
     origin: tz-osemosys v0.4.1
   total_annual_max_transport_investment:
     key: [start_region, end_region, fuel, year]
@@ -492,7 +492,7 @@ parameters:
     osemosys_name: TotalAnnualMaxTradeInvestment
     osemosys_key: [REGION, _REGION, FUEL, YEAR]
     unit: capacity
-    meaning: Highest new trade capacity on the route from start_region to end_region in a year.
+    meaning: Highest new transport capacity on the route from start_region to end_region in a year.
     origin: tz-osemosys v0.4.1
   residual_transport_capacity:
     key: [start_region, end_region, fuel, year]
@@ -501,7 +501,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL, YEAR]
     default: 0
     unit: capacity
-    meaning: Trade capacity from start_region to end_region that exists before the model period.
+    meaning: Transport capacity from start_region to end_region that exists before the model period.
     origin: tz-osemosys v0.4.1
   transport_lifetime:
     key: [start_region, end_region, fuel, year]
@@ -510,7 +510,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL, YEAR]
     default: 1
     unit: years
-    meaning: Number of years that new trade capacity on a route operates.
+    meaning: Number of years that new transport capacity on a route operates.
     origin: tz-osemosys v0.4.1
   transport_capital_cost:
     key: [start_region, end_region, fuel, year]
@@ -519,7 +519,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL, YEAR]
     default: 0.00001
     unit: currency per capacity
-    meaning: Overnight investment cost of one unit of new trade capacity on a route.
+    meaning: Overnight investment cost of one unit of new transport capacity on a route.
     origin: tz-osemosys v0.4.1
   transport_discount_rate:
     key: [start_region, end_region, fuel]
@@ -528,7 +528,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL]
     default: 0.1
     unit: rate
-    meaning: Discount rate for the investments in the trade capacity of a route.
+    meaning: Discount rate for the investments in the transport capacity of a route.
     origin: tz-osemosys v0.4.1
   transport_capacity_to_activity_unit:
     key: [start_region, end_region, fuel]
@@ -537,7 +537,7 @@ parameters:
     osemosys_key: [REGION, _REGION, FUEL]
     default: 1
     unit: activity per capacity
-    meaning: Quantity of a fuel that one unit of trade capacity moves in a whole year.
+    meaning: Quantity of a fuel that one unit of transport capacity moves in a whole year.
     origin: tz-osemosys v0.4.1
   total_transport_annual_activity_upper_limit:
     key: [start_region, end_region, fuel, year]
@@ -657,7 +657,7 @@ parameters:
     unit: flag
     meaning: 1 when a region is a member of a region group in a year, otherwise 0.
     origin: tz-osemosys v0.4.1
-  region_group_renewable_min_production_target:
+  region_group_generation_fraction_requirement:
     key: [region_group, year]
     osemosys_name: RegionGroupREMinProductionTarget
     osemosys_key: [REGIONGROUP, YEAR]

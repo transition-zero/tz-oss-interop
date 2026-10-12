@@ -146,13 +146,15 @@ Every other parameter takes its OSeMOSYS name in snake_case. The trade family ta
 | `TotalTradeAnnualActivityLowerLimit` | `total_transport_annual_activity_lower_limit` |
 | `RETagTechnology` | `renewable_tag_technology` |
 | `RETagFuel` | `renewable_tag_fuel` |
-| `RegionGroupREMinProductionTarget` | `region_group_renewable_min_production_target` |
+| `RegionGroupREMinProductionTarget` | `region_group_generation_fraction_requirement` |
 | `Conversionls` | `timeslice_in_season` |
 | `Conversionld` | `timeslice_in_day_type` |
 | `Conversionlh` | `timeslice_in_daily_time_bracket` |
 | `YearSplit` | `year_split` |
 | `InputActivityRatio` | `input_activity_ratio` |
 | `TotalTechnologyAnnualActivityUpperLimit` | `total_technology_annual_activity_upper_limit` |
+
+A region-group twin of a parameter takes the Sienna name of that parameter with the prefix `region_group_`.
 
 The three `Conversionl*` names follow the field names of tz-osemosys, because `ls`, `ld`
 and `lh` are abbreviations.
