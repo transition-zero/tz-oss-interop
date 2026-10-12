@@ -1,5 +1,3 @@
-"""Build an OSeMOSYS model in the otoole CSV format: a config YAML and a directory of CSV files."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
@@ -50,8 +48,6 @@ class OtooleParameter:
 
 @dataclass
 class OtooleModelBuilder:
-    """Collects the sets, parameters and results of one model, then writes them at once."""
-
     sets: dict[str, OtooleSet] = field(default_factory=dict)
     parameters: dict[str, OtooleParameter] = field(default_factory=dict)
     results: dict[str, list[str]] = field(default_factory=dict)

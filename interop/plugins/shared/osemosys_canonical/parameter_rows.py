@@ -1,5 +1,3 @@
-"""How one `parameters:` row turns a raw table into the rows of its canonical parameter."""
-
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -29,9 +27,6 @@ _NO_OPERATIONS = "no operations"
 
 
 class RowMatch(NamedTuple):
-    """One raw table that a row matches, with the row, its position in the file and the named
-    groups of its pattern."""
-
     row_index: int
     row: ParameterRow
     table: str
@@ -39,9 +34,6 @@ class RowMatch(NamedTuple):
 
 
 class RowSource(NamedTuple):
-    """One raw table that a row matches, with its canonical parameter, and with its key and its
-    table in the canonical names of their set and value columns."""
-
     match: RowMatch
     parameter: CanonicalParameter
     key: list[str]
@@ -49,9 +41,6 @@ class RowSource(NamedTuple):
 
 
 class RowGroup(NamedTuple):
-    """The raw tables that rows map to one canonical parameter, and their distinct defaults, each
-    after its row's `multiply_by`."""
-
     canonical: str
     matches: list[RowMatch]
     defaults: list[float | None]
@@ -62,14 +51,11 @@ class RowGroup(NamedTuple):
 
 
 class RowTable(NamedTuple):
-    """The rows that one raw table gives its canonical parameter, in the canonical columns."""
-
     match: RowMatch
     table: pl.LazyFrame
 
 
 def find_row_match(rows: list[ParameterRow], table: str) -> RowMatch | None:
-    """The first row that matches the raw table wins."""
     for index, row in enumerate(rows):
         groups = row.find_groups(table)
         if groups is not None:
@@ -88,9 +74,6 @@ def reject_wrong_key(source: RowSource) -> None:
 
 
 class KeyChange(NamedTuple):
-    """The index columns of a raw table in canonical set names, the columns that a row's operations
-    give, and the canonical columns."""
-
     raw: list[str]
     derived: list[str]
     canonical_columns: list[str]
@@ -121,7 +104,6 @@ def build_row_key(row: ParameterRow, raw_key: list[str]) -> list[str]:
 
 
 def _list_missing_columns(row: ParameterRow, raw_key: list[str]) -> list[str]:
-    """The renamed and removed columns that the key does not hold when the operation runs."""
     missing = [column for column in row.rename_columns if column not in raw_key]
     renamed = [*(row.rename_columns.get(c, c) for c in raw_key), *row.columns_from_name.values()]
     if row.remove_column is not None and row.remove_column.column not in renamed:
@@ -130,7 +112,6 @@ def _list_missing_columns(row: ParameterRow, raw_key: list[str]) -> list[str]:
 
 
 def build_row_table(source: RowSource, sets: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
-    """The operations run in a fixed order: rename, name groups, remove, repeat, multiply."""
     row = source.match.row
     table = _reshape_named_columns(source.match, source.table)
     table = _reshape_without_column(table, row.remove_column)
@@ -139,7 +120,6 @@ def build_row_table(source: RowSource, sets: dict[str, pl.LazyFrame]) -> pl.Lazy
 
 
 def has_absent_choice(source: RowSource) -> bool:
-    """The raw table has rows, and no row holds the member that `remove_column` chooses."""
     remove = source.match.row.remove_column
     if remove is None or remove.rule != RemoveRule.CHOOSE:
         return False
@@ -148,7 +128,6 @@ def has_absent_choice(source: RowSource) -> bool:
 
 
 def has_empty_repeat(source: RowSource, sets: dict[str, pl.LazyFrame]) -> bool:
-    """The raw table has rows, and a set that `repeat_for_all` names has no members."""
     columns = source.match.row.repeat_for_all
     members = [_find_members(source, column, sets) for column in columns]
     has_empty_set = any(table is None or not _has_rows(table) for table in members)
@@ -158,12 +137,10 @@ def has_empty_repeat(source: RowSource, sets: dict[str, pl.LazyFrame]) -> bool:
 def _find_members(
     source: RowSource, column: str, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame | None:
-    """The members of the canonical set that a column holds; an absent set is `None`."""
     return sets.get(source.parameter.get_column_set(column))
 
 
 def _has_rows(table: pl.LazyFrame) -> bool:
-    """Collects one row at most."""
     return table.limit(1).collect().height > 0
 
 
@@ -203,7 +180,6 @@ def _convert_values(table: pl.LazyFrame, factor: float | None) -> pl.LazyFrame:
 
 
 def convert_default(row: ParameterRow, default: float | None) -> float | None:
-    """`multiply_by` multiplies the declared default as it multiplies the values."""
     if default is None or row.multiply_by is None:
         return default
     return default * row.multiply_by
@@ -218,7 +194,6 @@ def reject_overlapping_rows(canonical: str, tables: list[RowTable], key: list[st
 
 
 def _find_overlap(tables: list[RowTable], key: list[str]) -> dict[str, Any] | None:
-    """Collects one row at most: the first canonical row that two raw tables both write."""
     tagged = pl.concat(
         row_table.table.with_columns(pl.lit(row_table.match.table).alias(RAW_TABLE_COL))
         for row_table in tables
@@ -234,7 +209,6 @@ def _find_overlap(tables: list[RowTable], key: list[str]) -> dict[str, Any] | No
 
 
 def _build_overlap_message(canonical: str, tables: list[RowTable], overlap: dict[str, Any]) -> str:
-    """One pattern row can match both raw tables, so the message names the tables first."""
     raw_tables = overlap.pop(RAW_TABLE_COL)
     indexes = {row_table.match.table: row_table.match.row_index for row_table in tables}
     rows = sorted({indexes[name] for name in raw_tables})
@@ -259,7 +233,7 @@ def build_operations_note(match: RowMatch) -> str:
 
 
 def _list_operations(row: ParameterRow) -> list[str]:
-    """Each operation of the row, in the order that the engine applies them."""
+    """The note shows the operations in this order, so keep it the same as in `build_row_table`."""
     return [
         *(f"rename_columns {old} as {new}" for old, new in row.rename_columns.items()),
         *(f"columns_from_name {group} into {col}" for group, col in row.columns_from_name.items()),

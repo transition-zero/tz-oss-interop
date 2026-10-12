@@ -1,5 +1,3 @@
-"""How the tables that a source finds become raw stage tables, without the parts it cannot use."""
-
 from __future__ import annotations
 
 import logging
@@ -31,7 +29,6 @@ _WRONG_HEADER_REASON = "have a header that is not the declared key and VALUE"
 def map_set_tables(
     found: dict[str, bytes | None], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    """Each set with its members as strings; a set with no usable file has no members."""
     _report_missing_set_files(
         [name for name, content in found.items() if content is None], recorder
     )
@@ -53,8 +50,6 @@ def map_parameter_tables(
     declarations: dict[str, RawDeclaration],
     recorder: EventRecorder,
 ) -> dict[str, pl.DataFrame]:
-    """Each parameter table with its declared key and a float VALUE; a parameter with no usable
-    file has no rows."""
     parsed = _parse_files(found, TableKind.PARAMETER, recorder)
     tables = {
         name: table if table is not None else _build_empty_table(declarations[name])
@@ -104,7 +99,8 @@ def _build_error_summary(error: Exception) -> str:
 
 
 def _parse_csv_table(content: bytes) -> pl.DataFrame:
-    """Every column as a string, so a set member such as `1` keeps the form it has."""
+    """Schema inference turns a set member such as `01` into the number 1, so read every column
+    as a string."""
     return _normalise_cells(pl.read_csv(content, infer_schema=False))
 
 
@@ -126,7 +122,7 @@ def _list_tables_without_value(tables: dict[str, pl.DataFrame]) -> list[str]:
 def _build_wrong_header_notes(
     tables: dict[str, pl.DataFrame], declarations: dict[str, RawDeclaration]
 ) -> dict[str, str]:
-    """The key is a set of named columns, so the order of the header does not matter."""
+    """A file can list its key columns in any order, so do not compare the header unsorted."""
     return {
         name: _WRONG_HEADER_NOTE.format(
             found=", ".join(table.columns), key=", ".join(declarations[name].key)
@@ -152,7 +148,6 @@ def _report_skipped_files(
 
 
 def _build_float_values(table: pl.DataFrame) -> pl.DataFrame:
-    """A VALUE that is not a number becomes null."""
     return table.with_columns(pl.col(RAW_VALUE_COL).cast(pl.Float64, strict=False))
 
 

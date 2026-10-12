@@ -1,5 +1,3 @@
-"""The annotations that the first matching `objects:` row gives one member in one region."""
-
 from __future__ import annotations
 
 from typing import NamedTuple
@@ -15,23 +13,19 @@ from interop.ports.errors import UserInputError
 
 
 class MemberKey(NamedTuple):
-    """One row of an annotation table: a region and a member; a region is its own member."""
+    """The key of a region's own annotation row repeats the region name as `member`."""
 
     region: str
     member: str
 
 
 class RowAnnotations(NamedTuple):
-    """The annotations that one `objects:` row gives, with the index of the row."""
-
     part: ObjectPart
     row_index: int
     annotations: dict[AnnotationColumn, str]
 
 
 class RowMember(NamedTuple):
-    """One `objects:` row and the member it matches, with the named groups of the match."""
-
     part: ObjectPart
     row_index: int
     row: ObjectRow
@@ -41,7 +35,6 @@ class RowMember(NamedTuple):
 def find_row_annotations(
     rows: list[ObjectRow], part: ObjectPart, key: MemberKey
 ) -> RowAnnotations | None:
-    """The first row that matches the member wins."""
     for index, row in enumerate(rows):
         groups = row.find_groups(key.member)
         if groups is not None:

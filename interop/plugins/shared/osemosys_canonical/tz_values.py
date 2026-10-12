@@ -1,5 +1,3 @@
-"""How one nested TZ-format value becomes one entry for each combination of set members."""
-
 from __future__ import annotations
 
 import itertools
@@ -19,8 +17,6 @@ from interop.plugins.shared.tz_osemosys_fields import (
 
 
 class TzEntry(NamedTuple):
-    """The member of each nested level, outermost first, and the value that they lead to."""
-
     members: tuple[str, ...]
     value: object
 
@@ -41,14 +37,12 @@ def list_tz_entries(
 
 
 def build_bare_value(value: object) -> object:
-    """A composed value holds its nested value under a data key, beside a flag."""
     if isinstance(value, dict) and COMPOSED_FLAG in value and COMPOSED_DATA in value:
         return value[COMPOSED_DATA]
     return value
 
 
 def build_float_value(value: object) -> float | None:
-    """A boolean is 1 or 0, and a value that is not a number or a known word is `None`."""
     if isinstance(value, bool | int | float):
         return float(value)
     if not isinstance(value, str):
@@ -64,7 +58,6 @@ def build_float_value(value: object) -> float | None:
 def has_empty_expansion(
     value: object, levels: tuple[str, ...], sets: Mapping[str, list[str]]
 ) -> bool:
-    """A wildcard, or a value that stops above the last level, that stands for an empty set."""
     if not levels:
         return False
     if not isinstance(value, dict):
@@ -114,7 +107,6 @@ def _list_repeated_entries(
 def _list_level_members(
     level: dict[object, object], members: list[str]
 ) -> list[tuple[str, object]]:
-    """A wildcard stands for each member of the set that the level does not name itself."""
     named = [(str(key), child) for key, child in level.items() if key != WILDCARD]
     if WILDCARD not in level:
         return named
@@ -124,5 +116,4 @@ def _list_level_members(
 
 
 def _get_set_members(level: str, sets: Mapping[str, list[str]]) -> list[str]:
-    """The second region of a key takes its members from the region set."""
     return sets[OSEMOSYS_REGION if level == OSEMOSYS_SECOND_REGION else level]

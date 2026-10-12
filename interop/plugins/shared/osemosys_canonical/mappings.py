@@ -1,5 +1,3 @@
-"""The `osemosys:` part of a user mappings file, at the schema level and the object level."""
-
 from __future__ import annotations
 
 import re
@@ -26,8 +24,6 @@ from interop.plugins.shared.osemosys_canonical.schema import (
 
 
 class RemoveColumn(BaseModel):
-    """An extra set column that a row removes, and the rule that gives the one value left."""
-
     model_config = ConfigDict(extra="forbid")
 
     column: str
@@ -42,8 +38,6 @@ class RemoveColumn(BaseModel):
 
 
 class ParameterRow(BaseModel):
-    """How one raw table, or a family of raw tables, becomes a canonical parameter."""
-
     model_config = ConfigDict(extra="forbid")
 
     source: str | None = None
@@ -79,7 +73,6 @@ class ParameterRow(BaseModel):
         return self
 
     def find_groups(self, table: str) -> dict[str, str | None] | None:
-        """The named groups of the pattern for a raw table that this row matches, else `None`."""
         if self.source_pattern is None:
             return {} if table == self.source else None
         match = re.search(self.source_pattern, table)
@@ -96,8 +89,6 @@ def _list_pattern_groups(pattern: str | None) -> list[str]:
 
 
 class ObjectRow(BaseModel):
-    """The annotations of each member whose name the pattern `match` finds."""
-
     model_config = ConfigDict(extra="forbid")
 
     match: str
@@ -119,7 +110,7 @@ class ObjectRow(BaseModel):
 
     @property
     def annotations(self) -> dict[AnnotationColumn, str]:
-        """The annotations that this row states, by column; the location is still a template."""
+        """The location is still a `str.format` template, so a caller must fill it before use."""
         stated = {
             AnnotationColumn.KIND: self.kind,
             AnnotationColumn.CATEGORY: self.category,
@@ -129,13 +120,11 @@ class ObjectRow(BaseModel):
         return {column: value for column, value in stated.items() if value is not None}
 
     def find_groups(self, member: str) -> dict[str, str | None] | None:
-        """The named groups of `match` for a member that this row matches, else `None`."""
         match = re.search(self.match, member)
         return None if match is None else match.groupdict()
 
 
 def list_template_fields(template: str | None) -> list[str]:
-    """The names that a `str.format` template fills in."""
     if template is None:
         return []
     try:
@@ -151,8 +140,6 @@ def list_template_fields(template: str | None) -> list[str]:
 
 
 class ObjectRows(BaseModel):
-    """What each technology, fuel, storage and region of the model is."""
-
     model_config = ConfigDict(extra="forbid")
 
     technologies: list[ObjectRow] = Field(default_factory=list)
@@ -187,8 +174,6 @@ def _reject_foreign_annotations(part: ObjectPart, index: int, row: ObjectRow) ->
 
 
 class Units(BaseModel):
-    """The real units of the model, each optional."""
-
     model_config = ConfigDict(extra="forbid")
 
     capacity: str | None = None
@@ -199,8 +184,6 @@ class Units(BaseModel):
 
 
 class OsemosysMappings(BaseModel):
-    """The four parts of the `osemosys:` key."""
-
     model_config = ConfigDict(extra="forbid")
 
     sets: dict[str, str] = Field(default_factory=dict)
@@ -237,6 +220,7 @@ def _reject_unknown_canonical_names(index: int, row: ParameterRow, schema: Canon
 
 
 class OsemosysCanonicalMappings(UserMappings):
-    """Only the part under `osemosys:` rejects an unknown key, so other schemas share the file."""
+    """Other plugins read their own keys from the same file, so only `osemosys:` may reject an
+    unknown key."""
 
     osemosys: OsemosysMappings = Field(default_factory=OsemosysMappings)

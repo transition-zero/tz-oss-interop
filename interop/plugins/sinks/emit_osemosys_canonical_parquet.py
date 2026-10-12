@@ -1,5 +1,3 @@
-"""Write the canonical stage of an OSeMOSYS model to a directory, one parquet file per table."""
-
 from __future__ import annotations
 
 from pathlib import Path

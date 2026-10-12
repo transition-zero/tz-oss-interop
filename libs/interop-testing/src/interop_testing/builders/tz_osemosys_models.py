@@ -1,5 +1,3 @@
-"""Build an OSeMOSYS model in the TZ format: one model.json document."""
-
 from __future__ import annotations
 
 import json
@@ -12,8 +10,6 @@ _TIME_DEFINITION_ID = "model-time"
 
 @dataclass
 class TzOsemosysModelBuilder:
-    """Collects the sets and the objects of one model, then writes the document at once."""
-
     regions: list[str] = field(default_factory=list)
     years: list[int] = field(default_factory=list)
     timeslices: list[str] = field(default_factory=list)

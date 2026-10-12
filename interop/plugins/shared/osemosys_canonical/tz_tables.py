@@ -1,5 +1,3 @@
-"""How the fields of a TZ-format model become raw stage tables, one for each raw table name."""
-
 from __future__ import annotations
 
 import logging
@@ -41,7 +39,7 @@ log = logging.getLogger(__name__)
 _FIELDS_BY_OWNER: dict[tuple[TzOwner, str], TzField] = {
     (field.owner, field.field): field for field in TZ_FIELDS
 }
-# The value of a row whose field names a member in its value, in place of a number.
+# A field whose value names a set member moves the member into the key and states this value.
 _MEMBER_FLAG = True
 _NOT_A_NUMBER_NOTE = "{count} value(s) are not a number, so the raw stage leaves each out"
 _EMPTY_SET_NOTE = (
@@ -62,30 +60,22 @@ _REPEATED_KEY_FIELDS = TzPathReport(
 
 
 class StatedField(NamedTuple):
-    """One field that an object states, with the entry of the field table that reads it."""
-
     tz_object: TzObject
     field: TzField
     value: object
 
 
 class TzRow(NamedTuple):
-    """The member of each column of a raw table, in field order, and the value of the row."""
-
     members: tuple[str, ...]
     value: float | None
 
 
 class RowSplit(NamedTuple):
-    """The rows of one field whose key is new to their raw table, and the rows that repeat one."""
-
     new: list[TzRow]
     repeated: list[TzRow]
 
 
 class TzTableRows(NamedTuple):
-    """The rows of each raw table, and a note for each field that repeats the key of a row."""
-
     rows: dict[str, list[TzRow]]
     repeated: dict[TzPath, str]
 
@@ -93,8 +83,6 @@ class TzTableRows(NamedTuple):
 def map_tz_parameter_tables(
     objects: list[TzObject], sets: Mapping[str, list[str]], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    """Each raw table that the field table names, with its key and a float VALUE; a table that
-    no field states has no rows."""
     stated_fields = _list_stated_fields(objects)
     _report_empty_set_fields(stated_fields, sets, recorder)
     table_rows = _build_rows_by_table(stated_fields, sets)
@@ -109,8 +97,6 @@ def map_tz_parameter_tables(
 
 
 def build_tz_declarations() -> dict[str, RawDeclaration]:
-    """The index columns and the documented default of each raw table, and of the accumulated
-    demand."""
     declarations = {
         field.table: RawDeclaration(field.table, _list_osemosys_columns(field), field.default)
         for field in TZ_FIELDS
@@ -123,7 +109,6 @@ def build_tz_declarations() -> dict[str, RawDeclaration]:
 def _build_rows_by_table(
     stated_fields: list[StatedField], sets: Mapping[str, list[str]]
 ) -> TzTableRows:
-    """The first row of a key wins, so a later row with that key adds nothing."""
     keyed: dict[str, dict[tuple[str, ...], TzRow]] = {}
     repeated: dict[TzPath, str] = {}
     for stated in stated_fields:
@@ -173,7 +158,6 @@ def _build_bare_value(stated: StatedField) -> object:
 
 
 def _list_stated_fields(objects: list[TzObject]) -> list[StatedField]:
-    """A field that states null holds no model data, so it adds no rows."""
     return [
         StatedField(tz_object, _FIELDS_BY_OWNER[(tz_object.owner, name)], value)
         for tz_object in objects
@@ -208,8 +192,6 @@ def _list_field_columns(field: TzField) -> list[str]:
 
 
 def _list_osemosys_columns(field: TzField) -> list[str]:
-    """The OSeMOSYS columns of the canonical schema entry, in its order, when the schema holds the
-    table."""
     schema = load_canonical_schema()
     name = schema.find_parameter_name(field.table)
     if name is None:

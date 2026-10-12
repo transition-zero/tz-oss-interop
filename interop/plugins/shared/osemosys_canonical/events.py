@@ -1,5 +1,3 @@
-"""The events that the mappings engine records, one for each raw table or raw set."""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -22,8 +20,6 @@ from interop.ports.outbound.reporting import (
 
 
 class TableNames(NamedTuple):
-    """The name of a raw table or raw set, and the canonical name that it maps to."""
-
     source: str
     destination: str
 
@@ -72,8 +68,6 @@ def record_not_mapped(recorder: EventRecorder, component: str, name: str, note: 
 
 
 class AnnotatedMember(NamedTuple):
-    """One member of an annotated set, named `region/member`, and the annotations an event names."""
-
     set_name: str
     name: str
     values: Mapping[AnnotationColumn, str | None]

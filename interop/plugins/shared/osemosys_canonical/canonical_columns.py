@@ -1,5 +1,3 @@
-"""The canonical name of each column of a raw table: its OSeMOSYS set columns and its value."""
-
 from __future__ import annotations
 
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -13,7 +11,6 @@ from interop.plugins.shared.osemosys_canonical.schema import CanonicalParameter,
 
 
 def build_canonical_columns(schema: CanonicalSchema, raw_columns: list[str]) -> dict[str, str]:
-    """`_REGION` becomes `end_region`, and a column that names no OSeMOSYS set keeps its name."""
     names = {**schema.osemosys_set_columns, RAW_VALUE_COL: VALUE_COL}
     return {column: names.get(column, column) for column in raw_columns}
 
@@ -21,14 +18,11 @@ def build_canonical_columns(schema: CanonicalSchema, raw_columns: list[str]) -> 
 def build_parameter_columns(
     schema: CanonicalSchema, parameter: CanonicalParameter, raw_columns: list[str]
 ) -> dict[str, str]:
-    """The `region` column of a table whose canonical columns hold `start_region` becomes
-    `start_region`."""
     columns = build_canonical_columns(schema, raw_columns)
     return _build_start_region_columns(columns) if START_REGION in parameter.columns else columns
 
 
 def build_extension_columns(schema: CanonicalSchema, raw_columns: list[str]) -> dict[str, str]:
-    """The `region` column of a table that holds `end_region` becomes `start_region`."""
     columns = build_canonical_columns(schema, raw_columns)
     return _build_start_region_columns(columns) if END_REGION in columns.values() else columns
 

@@ -1,5 +1,3 @@
-"""How the raw sets of a model become the sets of the canonical stage."""
-
 from __future__ import annotations
 
 import logging
@@ -30,8 +28,6 @@ _RENAMED_SET_NOTE = f"renamed by the {SETS_PART} part of the user mappings file"
 
 
 class MappedSets(NamedTuple):
-    """The canonical sets, and the raw sets that stay extension tables, each by name."""
-
     sets: dict[str, pl.LazyFrame]
     extensions: dict[str, pl.LazyFrame]
 
@@ -66,8 +62,6 @@ def _warn_unmatched_renames(inputs: MappingInputs) -> None:
 
 
 def _build_set_targets(inputs: MappingInputs) -> dict[str, str]:
-    """The canonical set of each raw set that has one: its `sets:` entry, else the set whose
-    OSeMOSYS name it has."""
     renames = inputs.mappings.sets
     targets = {
         name: renames.get(name) or inputs.schema.find_set_name(name) for name in inputs.raw.sets

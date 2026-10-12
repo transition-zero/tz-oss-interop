@@ -1,5 +1,3 @@
-"""How the TZ-format source names a part of a model.json, and reports the parts it leaves out."""
-
 from __future__ import annotations
 
 import logging
@@ -16,8 +14,6 @@ _PATH_SEPARATOR = "."
 
 
 class TzPath(NamedTuple):
-    """The owner of an object or a field, and its name within the owner, outermost part first."""
-
     owner: TzOwner
     name: str
 
@@ -31,8 +27,8 @@ def build_tz_name(*parts: str) -> str:
 
 
 class TzPathReport(NamedTuple):
-    """The event that one reason records for each part, and the words that complete the warning
-    "N TZ-format <reason>, so the raw stage leaves each out"."""
+    """`reason` must complete the warning "N TZ-format <reason>, so the raw stage leaves each
+    out"."""
 
     record: Callable[[EventRecorder, TzOwner, str, str], None]
     reason: str

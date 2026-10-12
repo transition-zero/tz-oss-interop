@@ -1,5 +1,3 @@
-"""The kind and the location of a technology, inferred from what it takes in and puts out."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -33,31 +31,23 @@ _STORAGE_PARAMETERS = (FlowParameter.TECHNOLOGY_TO_STORAGE, FlowParameter.TECHNO
 
 
 class FuelFlow(NamedTuple):
-    """One fuel that a technology takes in or puts out in one mode."""
-
     mode: str
     is_input: bool
     fuel: str
 
 
 class FuelAnnotation(NamedTuple):
-    """What the kind inference needs to know about one fuel in one region."""
-
     location: str
     is_electricity: bool
     has_row_location: bool
 
 
 class LocatedFlow(NamedTuple):
-    """One fuel flow of a technology, with the annotation of its fuel."""
-
     flow: FuelFlow
     fuel: FuelAnnotation
 
 
 class TechnologyStructure(NamedTuple):
-    """What one technology in one region takes in and puts out, and whether it has a storage."""
-
     flows: list[LocatedFlow]
     has_storage: bool
 
@@ -71,22 +61,17 @@ class TechnologyStructure(NamedTuple):
 
 
 class Inference(NamedTuple):
-    """One inferred annotation, and the rule that gave it."""
-
     value: str
     rule: str
 
 
 class KindRule(NamedTuple):
-    """One kind of the closed list, the test of a technology for it, and the rule a note names."""
-
     kind: TechnologyKind
     is_match: Callable[[TechnologyStructure], bool]
     rule: str
 
 
 def build_technology_flows(canonical: dict[str, pl.LazyFrame]) -> dict[MemberKey, list[FuelFlow]]:
-    """Counts each row whose value is above zero, in any year and any mode."""
     flows: dict[MemberKey, list[FuelFlow]] = {}
     for parameter, is_input in _FLOW_DIRECTIONS.items():
         for region, technology, fuel, mode in _build_positive_keys(canonical, parameter).rows():
@@ -105,7 +90,7 @@ def build_storage_technologies(canonical: dict[str, pl.LazyFrame]) -> set[Member
 
 
 def _build_positive_keys(canonical: dict[str, pl.LazyFrame], parameter: str) -> pl.DataFrame:
-    """Collects only the distinct key columns, which are component scale."""
+    """A parameter table can hold billions of rows, so collect only the distinct key columns."""
     columns = _STORAGE_COLUMNS if parameter in _STORAGE_PARAMETERS else _FLOW_COLUMNS
     table = canonical.get(parameter)
     if table is None:
@@ -114,7 +99,6 @@ def _build_positive_keys(canonical: dict[str, pl.LazyFrame], parameter: str) -> 
 
 
 def choose_kind(structure: TechnologyStructure) -> Inference | None:
-    """The kinds are tried in the order of the closed list, and the first that fits wins."""
     for rule in _KIND_RULES:
         if rule.is_match(structure):
             return Inference(rule.kind.value, rule.rule)
@@ -122,7 +106,6 @@ def choose_kind(structure: TechnologyStructure) -> Inference | None:
 
 
 def build_technology_location(structure: TechnologyStructure, region: str) -> Inference:
-    """In the lowest mode, the location of the input fuel comes before the output fuel's."""
     located = sorted(
         (located for located in structure.flows if located.fuel.has_row_location),
         key=_build_location_order,
@@ -134,7 +117,7 @@ def build_technology_location(structure: TechnologyStructure, region: str) -> In
 
 
 def _build_location_order(located: LocatedFlow) -> tuple[int, str, bool, str]:
-    """A mode that is a whole number sorts by its number, so mode 2 comes before mode 10."""
+    """A string sort puts mode 10 before mode 2, so sort a whole-number mode by its number."""
     mode = located.flow.mode
     number = int(mode) if mode.isdigit() else -1
     return number, mode, not located.flow.is_input, located.fuel.location
@@ -145,8 +128,6 @@ def _is_storage_technology(structure: TechnologyStructure) -> bool:
 
 
 def _is_aggregate_transport_technology(structure: TechnologyStructure) -> bool:
-    """Two row-given electricity locations among its inputs and outputs mean one input and one
-    output differ."""
     inputs = [fuel for fuel in structure.inputs if fuel.is_electricity]
     outputs = [fuel for fuel in structure.outputs if fuel.is_electricity]
     return bool(inputs) and bool(outputs) and len(_list_row_locations([*inputs, *outputs])) > 1
@@ -172,11 +153,10 @@ def _is_conversion(structure: TechnologyStructure) -> bool:
 
 
 def _list_row_locations(fuels: list[FuelAnnotation]) -> list[str]:
-    """A location that the engine infers for a fuel does not count, as in the technology
-    location."""
     return list(dict.fromkeys(fuel.location for fuel in fuels if fuel.has_row_location))
 
 
+# The first rule that fits wins, so a new order changes the kind of some technologies.
 _KIND_RULES = (
     KindRule(
         TechnologyKind.STORAGE_TECHNOLOGY,

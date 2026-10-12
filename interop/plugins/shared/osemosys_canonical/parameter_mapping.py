@@ -1,5 +1,3 @@
-"""How the raw parameter tables of a model become canonical parameter tables or extension tables."""
-
 from __future__ import annotations
 
 import logging
@@ -70,9 +68,6 @@ _IGNORED_NOTE = "row {index} of " + PARAMETERS_PART + " says ignore: true, so th
 
 
 class MappedParameters(NamedTuple):
-    """The canonical and extension tables by name, with the default that the model declares for
-    each."""
-
     parameters: dict[str, pl.LazyFrame]
     extensions: dict[str, pl.LazyFrame]
     parameter_defaults: dict[str, float | None]
@@ -80,17 +75,12 @@ class MappedParameters(NamedTuple):
 
 
 class TablePlan(NamedTuple):
-    """The raw tables that no row matches; each maps automatically to its canonical parameter, or
-    stays an extension table with its note."""
-
     automatic: dict[str, str]
     unmatched: dict[str, str]
     overridden: dict[str, str]
 
 
 class ParameterPlan(NamedTuple):
-    """Where each raw parameter table goes; each extension dict holds the note of each table."""
-
     tables: TablePlan
     row_groups: list[RowGroup]
     ignored: list[RowMatch]
@@ -172,7 +162,6 @@ def _build_row_groups(inputs: MappingInputs, matches: dict[str, RowMatch]) -> li
 
 
 def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list[float | None]:
-    """The distinct defaults of the raw tables of a group, each after its row's `multiply_by`."""
     defaults = [
         convert_default(match.row, inputs.raw.declarations[match.table].default)
         for match in matches
@@ -181,7 +170,8 @@ def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list
 
 
 def _reject_wrong_keys(inputs: MappingInputs, groups: list[RowGroup]) -> None:
-    """Every group is checked, including a group whose defaults differ."""
+    """A group whose defaults differ becomes extension tables later, but its key still needs this
+    check."""
     for group in groups:
         for source in _list_row_sources(inputs, group):
             reject_wrong_key(source)
@@ -195,7 +185,6 @@ def _list_row_sources(inputs: MappingInputs, group: RowGroup) -> list[RowSource]
 def _build_row_source(
     inputs: MappingInputs, parameter: CanonicalParameter, match: RowMatch
 ) -> RowSource:
-    """The set and value columns take their canonical names before the row's operations run."""
     raw_key = inputs.raw.declarations[match.table].key
     columns = build_parameter_columns(inputs.schema, parameter, [*raw_key, RAW_VALUE_COL])
     table = inputs.raw.parameters[match.table].rename(columns)
@@ -216,7 +205,6 @@ def _build_plan(
 def _build_table_plan(
     inputs: MappingInputs, matches: dict[str, RowMatch], claimed: set[str]
 ) -> TablePlan:
-    """A raw table whose canonical parameter a row maps does not match automatically."""
     others = [name for name in inputs.raw.parameters if name not in matches]
     found = _build_automatic_matches(inputs, others)
     free = {name: canonical for name, canonical in found.items() if canonical not in claimed}
@@ -263,8 +251,7 @@ def _build_mapped_parameters(
 
 
 def _find_automatic_match(inputs: MappingInputs, name: str) -> str | None:
-    """The canonical parameter whose OSeMOSYS name and OSeMOSYS columns the raw table has; the
-    index columns are a set of named columns, so their order does not change what a row means."""
+    """A raw table can list its index columns in any order, so do not compare them unsorted."""
     canonical = inputs.schema.find_parameter_name(name)
     if canonical is None:
         return None
@@ -274,7 +261,6 @@ def _find_automatic_match(inputs: MappingInputs, name: str) -> str | None:
 
 
 def _reshape_to_columns(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
-    """Each OSeMOSYS column takes the canonical name at its position in the columns."""
     parameter = inputs.schema.parameters[names.destination]
     columns = {**parameter.column_by_osemosys_column, RAW_VALUE_COL: VALUE_COL}
     return (
@@ -359,7 +345,8 @@ def _report_extensions(notes: dict[str, str], reason: str, recorder: EventRecord
 def _build_parameter_defaults(
     inputs: MappingInputs, plan: ParameterPlan
 ) -> dict[str, float | None]:
-    """A group has one default, because a group whose defaults differ stays as extensions."""
+    """A group whose defaults differ stays as extension tables, so each row group has one
+    default."""
     automatic = plan.tables.automatic
     return {
         **{

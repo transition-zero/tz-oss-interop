@@ -1,5 +1,3 @@
-"""The mappings engine: it turns the raw stage of a model into the canonical stage."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,13 +24,10 @@ from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 from interop.plugins.shared.osemosys_canonical.set_mapping import map_sets
 
-# The kinds whose tables can hold a timeslice column, and so go into `source_time_series`.
 _TIME_SERIES_KINDS = frozenset({TableKind.PARAMETER, TableKind.EXTENSION})
 
 
 class CanonicalTable(NamedTuple):
-    """One table of the canonical stage, with its kind and its name."""
-
     kind: TableKind
     name: str
     table: pl.LazyFrame
@@ -101,7 +96,6 @@ def build_table_key(kind: TableKind, name: str) -> str:
 
 
 def list_canonical_tables(state: State) -> list[CanonicalTable]:
-    """Every table of the canonical stage that a `State` holds, wherever the state keeps it."""
     topology = [
         CanonicalTable(*_parse_table_key(key), table)
         for key, table in state.source_topology.items()

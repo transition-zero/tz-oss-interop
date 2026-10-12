@@ -15,7 +15,6 @@ from pytest_bdd import parsers, then
 
 from interop_testing.files import read_json
 
-# The prefix of a section heading in a Markdown decisions report.
 _SECTION_PREFIX = "## "
 
 
@@ -102,7 +101,6 @@ def assert_csv_row_matches(path: str, step: str, kind: str, destination_attribut
 
 @then(parsers.parse('the section "{heading}" of "{path}" contains "{expected}" {count:d} times'))
 def assert_section_contains_count(heading: str, path: str, expected: str, count: int) -> None:
-    """A section runs from its heading to the next heading, so it holds the events of one kind."""
     section = _read_section(Path(path).read_text(encoding="utf-8"), heading)
     actual = section.count(expected)
     assert actual == count, f"expected {expected!r} {count} times under {heading!r}, got {actual}"

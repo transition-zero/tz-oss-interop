@@ -1,5 +1,3 @@
-"""Stage an OSeMOSYS model in the TZ format, one model.json, into the canonical OSeMOSYS stage."""
-
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,5 +1,3 @@
-"""The raw stage: a source model with its file format removed, and its own names and keys kept."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,8 +23,6 @@ _DECLARATIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 
 
 class RawDeclaration(NamedTuple):
-    """The name, the key and the default value that a model declares for one parameter."""
-
     name: str
     key: list[str]
     default: float | None
@@ -34,8 +30,6 @@ class RawDeclaration(NamedTuple):
 
 @dataclass(frozen=True)
 class RawStage:
-    """The sets, parameter tables and declarations of one model, each set or table by name."""
-
     sets: dict[str, pl.LazyFrame]
     parameters: dict[str, pl.LazyFrame]
     declarations: dict[str, RawDeclaration]

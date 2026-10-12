@@ -1,6 +1,3 @@
-"""pytest-bdd vocabulary for an OSeMOSYS model, in the otoole or the TZ format, and the canonical
-stage files that it stages into."""
-
 from __future__ import annotations
 
 import json
@@ -176,7 +173,8 @@ def given_tz_model_written(tz_model_builder: TzOsemosysModelBuilder, path: str) 
 
 @then(parsers.parse('the canonical table "{path}" has the rows:'))
 def assert_canonical_rows(path: str, datatable: list[list[str]]) -> None:
-    """Compare the rows in any order, and each number in its shortest form."""
+    """Compare the rows in any order, each number in its shortest form, and an empty cell as a
+    null."""
     expected_header, *expected_rows = datatable
     table = pl.read_parquet(Path(path))
     assert table.columns == expected_header, f"expected columns {expected_header} in {path}"
@@ -228,7 +226,6 @@ def _read_default(directory: Path, kind: str, name: str) -> object:
 
 
 def _format_cell(cell: object) -> str:
-    """An empty cell of the table matches a null."""
     if cell is None:
         return ""
     return f"{cell:g}" if isinstance(cell, float) else str(cell)

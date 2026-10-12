@@ -41,7 +41,6 @@ sets:
     osemosys_name: REGIONGROUP
 
 parameters:
-  # OSeMOSYS v1.0.1, in the order of the model file.
   year_split:
     columns:
       timeslice: timeslice
@@ -626,7 +625,6 @@ parameters:
     meaning: Highest emission over the model period, where -1 means no limit.
     origin: OSeMOSYS v1.0.1
 
-  # tz-osemosys v0.4.1: transport.
   line_loss:
     columns:
       start_region: region
@@ -753,7 +751,6 @@ parameters:
     meaning: Lowest share of the year in which the route from start_region to end_region must operate.
     origin: tz-osemosys v0.4.1
 
-  # tz-osemosys v0.4.1: technologies.
   capacity_additional_max_growth_rate:
     columns:
       region: region
@@ -817,7 +814,6 @@ parameters:
     meaning: Highest share of the production of a fuel in a year that one technology can give.
     origin: tz-osemosys v0.4.1
 
-  # tz-osemosys v0.4.1: storages.
   duration_limits_max:
     columns:
       region: region
@@ -858,7 +854,6 @@ parameters:
     meaning: 1 when the charge of a storage must equal its discharge over each year, otherwise 0.
     origin: tz-osemosys v0.4.1
 
-  # tz-osemosys v0.4.1: region groups.
   region_group_tag_region:
     columns:
       region_group: region_group
@@ -899,7 +894,7 @@ parameters:
     meaning: Emission of a region group in a year from sources outside the technologies of the model.
     origin: tz-osemosys v0.4.1
 
-  # OSeMOSYS MUIO model v5.7: activity limits by mode, where 0 applies no limit.
+  # In the activity limits by mode below, a value of 0 applies no limit.
   technology_activity_by_mode_upper_limit:
     columns:
       region: region

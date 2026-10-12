@@ -1,5 +1,3 @@
-"""The canonical schema of an OSeMOSYS model, loaded from the data file that ships with interop."""
-
 from __future__ import annotations
 
 import functools
@@ -20,8 +18,6 @@ _SCHEMA_FILENAME = "osemosys_canonical_schema.yaml"
 
 
 class CanonicalSet(BaseModel):
-    """One set of the canonical schema, and the name that OSeMOSYS gives it."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     meaning: str
@@ -29,10 +25,6 @@ class CanonicalSet(BaseModel):
 
 
 class CanonicalParameter(BaseModel):
-    """One parameter of the canonical schema. `columns` maps each canonical column, in order, to
-    the set whose members it holds; `osemosys_columns` lists the same columns as OSeMOSYS names
-    them. `default_from` names the parameter whose default this one takes when it states none."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     columns: dict[str, str]
@@ -69,22 +61,17 @@ class CanonicalParameter(BaseModel):
 
     @property
     def column_names(self) -> list[str]:
-        """The canonical columns, in the order of the canonical table."""
         return list(self.columns)
 
     @property
     def column_by_osemosys_column(self) -> dict[str, str]:
-        """The canonical column at each position of the OSeMOSYS columns."""
         return dict(zip(self.osemosys_columns, self.columns, strict=True))
 
     def get_column_set(self, column: str) -> str:
-        """The set whose members a column holds."""
         return self.columns[column]
 
 
 class CanonicalSchema(BaseModel):
-    """Every set and every parameter of the canonical schema, by canonical name."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: int
@@ -111,25 +98,21 @@ class CanonicalSchema(BaseModel):
 
     @property
     def osemosys_set_columns(self) -> dict[str, str]:
-        """The canonical name of each column that names an OSeMOSYS set, or the second region."""
         names = {entry.osemosys_name: name for name, entry in self.sets.items()}
         return {**names, OSEMOSYS_SECOND_REGION: END_REGION}
 
     @property
     def column_names(self) -> set[str]:
-        """Every column that a canonical table can hold: a set, or a column that an entry names."""
         named = {column for entry in self.parameters.values() for column in entry.columns}
         return {*self.sets, *named}
 
     def find_parameter_name(self, osemosys_name: str) -> str | None:
-        """The canonical name of the parameter that OSeMOSYS calls `osemosys_name`."""
         found = (
             name for name, entry in self.parameters.items() if entry.osemosys_name == osemosys_name
         )
         return next(found, None)
 
     def find_set_name(self, osemosys_name: str) -> str | None:
-        """The canonical name of the set that OSeMOSYS calls `osemosys_name`."""
         found = (name for name, entry in self.sets.items() if entry.osemosys_name == osemosys_name)
         return next(found, None)
 
@@ -151,8 +134,6 @@ def _reject_duplicate_names(label: str, osemosys_names: list[str]) -> None:
 def _reject_misaligned_osemosys_columns(
     name: str, parameter: CanonicalParameter, sets: dict[str, CanonicalSet]
 ) -> None:
-    """Each OSeMOSYS column names the set of the canonical column at its position; `REGION` stands
-    at the first region of a pair, and `_REGION` at the second."""
     misaligned = [
         osemosys
         for osemosys, column in parameter.column_by_osemosys_column.items()
@@ -163,7 +144,6 @@ def _reject_misaligned_osemosys_columns(
 
 
 def _reject_misplaced_start_region(name: str, parameter: CanonicalParameter) -> None:
-    """An entry that holds `end_region` holds `REGION` at `start_region`."""
     if END_REGION not in parameter.columns:
         return
     if parameter.column_by_osemosys_column.get(OSEMOSYS_REGION) != START_REGION:

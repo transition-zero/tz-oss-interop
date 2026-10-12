@@ -1,6 +1,3 @@
-"""The metadata of the canonical stage: the default of each parameter, the units and the schema
-version."""
-
 from __future__ import annotations
 
 import polars as pl
@@ -39,8 +36,6 @@ def build_metadata_tables(
 
 
 def _build_defaults_table(schema: CanonicalSchema, parameters: MappedParameters) -> pl.DataFrame:
-    """One row for each canonical parameter and each extension table, with the default that
-    applies to this model."""
     canonical_defaults = {
         name: _choose_default(name, schema, parameters.parameter_defaults)
         for name in schema.parameters
@@ -64,7 +59,6 @@ def _build_default_rows(
 def _choose_default(
     name: str, schema: CanonicalSchema, declared_defaults: dict[str, float | None]
 ) -> float | None:
-    """The model's declared default, else the schema's default, else that of `default_from`."""
     declared = declared_defaults.get(name)
     if declared is not None:
         return declared
@@ -75,7 +69,6 @@ def _choose_default(
 
 
 def _build_units_table(units: Units) -> pl.DataFrame:
-    """One row for each unit that the user mappings file states."""
     rows = [
         {MetadataColumn.QUANTITY: quantity, MetadataColumn.UNIT: str(unit)}
         for quantity, unit in units.model_dump(exclude_none=True).items()

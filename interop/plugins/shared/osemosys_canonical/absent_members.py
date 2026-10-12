@@ -1,5 +1,3 @@
-"""The rule that leaves out a canonical value whose set member is not in its canonical set."""
-
 from __future__ import annotations
 
 import logging
@@ -21,7 +19,7 @@ from interop.plugins.shared.warning_text import name_a_few
 log = logging.getLogger(__name__)
 
 _EMPTY_MEMBERS = pl.Series(VALUE_COL, [], dtype=pl.Utf8)
-# How a note and a warning name an empty key cell among the absent members.
+# The label that a note and a warning give a null key cell in the list of absent members.
 _EMPTY_CELL = "an empty cell"
 _ABSENT_MEMBERS_NOTE = (
     "{count} row(s) name a set member that its canonical set does not hold ({members}), "
@@ -30,8 +28,6 @@ _ABSENT_MEMBERS_NOTE = (
 
 
 class AbsentMembers(NamedTuple):
-    """How many rows of one table name an absent member, and which members they name."""
-
     row_count: int
     members: list[str]
 
@@ -44,7 +40,6 @@ def build_set_members(sets: dict[str, pl.LazyFrame]) -> dict[str, pl.Series]:
 def build_absent_members(
     tables: dict[str, pl.LazyFrame], schema: CanonicalSchema, members: dict[str, pl.Series]
 ) -> dict[str, AbsentMembers]:
-    """Each table that names an absent member; an absent set holds no members."""
     found = {
         name: _build_table_absent_members(table, schema.parameters[name], members)
         for name, table in tables.items()
@@ -55,7 +50,7 @@ def build_absent_members(
 def _build_table_absent_members(
     table: pl.LazyFrame, parameter: CanonicalParameter, members: dict[str, pl.Series]
 ) -> AbsentMembers:
-    """Collects one aggregated row: the count and the absent members of each column."""
+    """A parameter table can hold billions of rows, so do not collect it before the aggregate."""
     absent_columns = (
         _express_absent(parameter, column, members) for column in parameter.column_names
     )
@@ -87,7 +82,8 @@ def _express_is_known(parameter: CanonicalParameter, members: dict[str, pl.Serie
 def _express_is_member(
     parameter: CanonicalParameter, column: str, members: dict[str, pl.Series]
 ) -> pl.Expr:
-    """A column holds members of its set; an empty cell names no member, so it counts as absent."""
+    """A null cell and a set that the model lacks must both count as absent, so do not drop
+    `fill_null(False)` or the `_EMPTY_MEMBERS` fallback."""
     known = members.get(parameter.get_column_set(column), _EMPTY_MEMBERS)
     return pl.col(column).is_in(known.implode()).fill_null(False)
 

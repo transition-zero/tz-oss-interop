@@ -1,5 +1,3 @@
-"""Stage an OSeMOSYS model in the otoole CSV format into the canonical OSeMOSYS stage."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -50,8 +48,6 @@ class StageOsemosysCsvParams(BaseModel):
 
 
 class OtooleEntry(BaseModel):
-    """One entry of an otoole config YAML; the source reads sets and parameters only."""
-
     type: str
     indices: list[str] = Field(default_factory=list)
     default: float | None = None
@@ -59,9 +55,6 @@ class OtooleEntry(BaseModel):
 
 
 class OtooleConfig(NamedTuple):
-    """The set names, the parameter declarations and the parameter short names of one otoole
-    config YAML."""
-
     sets: list[str]
     declarations: dict[str, RawDeclaration]
     short_names: dict[str, str]
@@ -139,7 +132,6 @@ class StageOsemosysCsv(StagedSource):
     def _find_csv_files(
         self, csv_dir: Path, names: list[str], short_names: dict[str, str]
     ) -> dict[str, bytes | None]:
-        """The full name is tried first, then the short name; a missing file is `None`."""
         return {
             name: self._find_csv_file(csv_dir, [name, short_names.get(name, name)])
             for name in names
@@ -154,7 +146,8 @@ class StageOsemosysCsv(StagedSource):
 
 
 def _reject_empty_csv_dir(csv_dir: Path, contents: list[bytes | None]) -> None:
-    """A directory that holds none of the declared files is a wrong path, not a model."""
+    """A directory that holds none of the declared files is a wrong path, not a model with
+    missing data, so this raises instead of reporting."""
     if contents and all(content is None for content in contents):
         raise UserInputError(
             f"The otoole CSV directory {csv_dir} holds none of the CSV files that the config "

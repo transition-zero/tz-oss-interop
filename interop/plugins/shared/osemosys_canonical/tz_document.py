@@ -1,10 +1,3 @@
-"""The structure of a TZ-format model.json: its objects, the key members they add, and its sets.
-
-The document must be a JSON object with a time definition. Each object of a list is checked
-alone, so an object that the source cannot use is left out and the rest of the model stays.
-Every field that an object does not declare holds model data, which the field table reads.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -41,7 +34,6 @@ _UNREAD_FIELDS = TzPathReport(record_not_mapped, "field(s) state a value that ca
 _UNKNOWN_FIELDS = TzPathReport(record_not_mapped, "field(s) have no raw table")
 _SKIPPED_OBJECTS = TzPathReport(record_skipped, "object(s) cannot be used")
 _KNOWN_FIELDS = frozenset((field.owner, field.field) for field in TZ_FIELDS)
-# The lists of objects that state an `id` and nothing else that the structure declares.
 _NAMED_OWNERS = (
     TzOwner.REGIONS,
     TzOwner.REGION_GROUPS,
@@ -52,7 +44,6 @@ _NAMED_OWNERS = (
 
 
 def _normalise_member(value: object) -> object:
-    """A member that the document states as a number keeps its digits, and 2030.0 is 2030."""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))
     if isinstance(value, int | float) and not isinstance(value, bool):
@@ -61,7 +52,7 @@ def _normalise_member(value: object) -> object:
 
 
 def _normalise_set_members(value: object) -> object:
-    """A count n stands for the members 1 to n."""
+    """The TZ format can state a set as a count n, which stands for the members 1 to n."""
     if value is None:
         return []
     if isinstance(value, int) and not isinstance(value, bool):
@@ -75,12 +66,13 @@ def _normalise_items(value: object) -> object:
 
 Member = Annotated[str, BeforeValidator(_normalise_member)]
 SetMembers = Annotated[list[Member], BeforeValidator(_normalise_set_members)]
-# The objects of a list, each unchecked, so that one object the source cannot use stays alone.
+# Check each object later and alone, so that one bad object does not fail the whole document.
 Items = Annotated[list[object], BeforeValidator(_normalise_items)]
 
 
 class TzPart(BaseModel):
-    """One object of the document; each field that it does not declare holds model data."""
+    """The fields that an object does not declare are its model data, so do not forbid extra
+    fields."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -95,8 +87,6 @@ class TzPart(BaseModel):
 
 
 class TzKeyedPart(TzPart):
-    """An object of a list, which adds one member to the key of its rows."""
-
     @property
     def key_member(self) -> str:
         raise NotImplementedError
@@ -106,7 +96,6 @@ class TzKeyedPart(TzPart):
         return self.key_member
 
     def list_unread_fields(self) -> dict[str, str]:
-        """Each declared field whose value the source cannot read, with a note."""
         return {}
 
 
@@ -123,7 +112,7 @@ class TzTechnologyPart(TzNamedPart):
 
 
 class TzTradePart(TzKeyedPart):
-    """A trade adds its commodity to its rows; its `id` names the trade and no set."""
+    """The `id` of a trade names no set member, so the commodity is the key member of its rows."""
 
     id: Member | None = None
     commodity: Member
@@ -139,7 +128,6 @@ class TzTradePart(TzKeyedPart):
 
     @property
     def field_values(self) -> dict[str, object]:
-        """With `construct_region_pairs`, a pair stated in one direction holds in both."""
         values = super().field_values
         if self.construct_region_pairs is not True:
             return values
@@ -184,9 +172,6 @@ class TzModelDocument(TzPart):
 
 
 class TzObject(NamedTuple):
-    """One object, its name in messages, the member of each owner column that it adds to its
-    rows, and its fields."""
-
     owner: TzOwner
     name: str
     keys: tuple[str, ...]
@@ -199,8 +184,6 @@ class SkippedObject(NamedTuple):
 
 
 class ItemPlace(NamedTuple):
-    """The owner of a list, and the key members that the object holding the list adds."""
-
     owner: TzOwner
     keys: tuple[str, ...]
 
@@ -210,8 +193,6 @@ Part = TypeVar("Part", bound=TzKeyedPart, covariant=True)
 
 @dataclass(frozen=True)
 class PartList(Generic[Part]):
-    """The objects of one list that the source can use, and a note for each that it cannot."""
-
     place: ItemPlace
     parts: Sequence[Part]
     skipped: Sequence[SkippedObject]
@@ -242,8 +223,6 @@ class PartList(Generic[Part]):
 
 @dataclass(frozen=True)
 class TzObjects:
-    """The objects that the source can use, and the objects and fields that it leaves out."""
-
     objects: list[TzObject]
     skipped: list[SkippedObject]
     unread_fields: dict[TzPath, str]
@@ -305,7 +284,6 @@ def _build_part_list(
 
 
 def _build_part(item: object, part_type: type[Part]) -> Part | str:
-    """The object, or the first reason that the source cannot use it."""
     try:
         return part_type.model_validate(item)
     except ValidationError as exc:
@@ -314,7 +292,6 @@ def _build_part(item: object, part_type: type[Part]) -> Part | str:
 
 
 def _build_item_label(position: int, item: object) -> str:
-    """An object that states a usable `id` takes it as its name, else its place in the list."""
     item_id = _normalise_member(item.get("id")) if isinstance(item, dict) else None
     return item_id if isinstance(item_id, str) else _ITEM_NAME.format(position=position)
 
@@ -325,7 +302,6 @@ def _build_skipped_object(place: ItemPlace, label: str, reason: str) -> SkippedO
 
 
 def build_tz_sets(document: TzModelDocument, objects: list[TzObject]) -> dict[str, list[str]]:
-    """The members of each set, once each, in the order that the document states them."""
     object_sets = {
         set_name: [tz_object.keys[-1] for tz_object in objects if tz_object.owner is owner]
         for owner, set_name in OBJECT_SETS.items()
@@ -349,7 +325,6 @@ def report_unknown_fields(objects: list[TzObject], recorder: EventRecorder) -> N
 
 
 def _list_unknown_fields(objects: list[TzObject]) -> list[TzPath]:
-    """A field that states null holds no model data, so it is not unknown."""
     return [
         TzPath(tz_object.owner, build_tz_name(tz_object.name, name))
         for tz_object in objects

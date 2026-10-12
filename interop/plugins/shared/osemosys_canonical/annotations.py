@@ -1,5 +1,3 @@
-"""The annotation tables: what each technology, fuel, storage and region of the model is."""
-
 from __future__ import annotations
 
 import logging
@@ -44,7 +42,6 @@ from interop.ports.outbound.reporting import EventKind
 
 log = logging.getLogger(__name__)
 
-# The rule of the location of a member that no row and no fuel gives a location.
 _REGION_LOCATION_RULES: dict[ObjectPart, str] = {
     ObjectPart.REGIONS: "a region is its own location",
     ObjectPart.FUELS: "a fuel takes the location of its region",
@@ -58,8 +55,6 @@ _NO_KIND_NOTE = (
 
 
 class MemberAnnotation(NamedTuple):
-    """The annotations of one member in one region: those a row gives, and those inferred."""
-
     part: ObjectPart
     key: MemberKey
     row: RowAnnotations | None
@@ -71,14 +66,13 @@ class MemberAnnotation(NamedTuple):
 
     @property
     def values(self) -> dict[AnnotationColumn, str]:
-        """A row overrides an inference."""
+        """Merge `given` last, so that a value a row gives overrides an inferred value."""
         return {**{column: found.value for column, found in self.inferred.items()}, **self.given}
 
 
 def map_annotations(
     canonical: dict[str, pl.LazyFrame], rows: ObjectRows, recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    """One table for each annotated set, keyed by the set name."""
     keys = _list_member_keys(canonical)
     annotated = {
         part: [_build_region_annotation(part, key, rows) for key in keys[part]]
@@ -91,7 +85,6 @@ def map_annotations(
 
 
 def _list_member_keys(canonical: dict[str, pl.LazyFrame]) -> dict[ObjectPart, list[MemberKey]]:
-    """Every member of an annotated set, once for each region; an absent set holds no members."""
     sets = {name: canonical[name] for name in OBJECT_PART_SETS.values() if name in canonical}
     members = {name: series.to_list() for name, series in build_set_members(sets).items()}
     regions = members.get(REGION, [])
@@ -120,7 +113,6 @@ def _build_member_annotation(
     rows: ObjectRows,
     inferences: dict[AnnotationColumn, Inference],
 ) -> MemberAnnotation:
-    """An inference that a row overrides records nothing."""
     row = find_row_annotations(rows.list_rows(part), part, key)
     given = {} if row is None else row.annotations
     inferred = {column: found for column, found in inferences.items() if column not in given}
@@ -163,7 +155,8 @@ def _build_technology_annotations(
 def _build_located_flows(
     key: MemberKey, flows: list[FuelFlow], fuels: dict[MemberKey, FuelAnnotation]
 ) -> list[LocatedFlow]:
-    """The absent-member rule leaves out every flow whose fuel is not in the fuel set."""
+    """The absent-member rule already left out each flow whose fuel is not in the fuel set, so
+    the lookup cannot fail."""
     return [LocatedFlow(flow, fuels[MemberKey(key.region, flow.fuel)]) for flow in flows]
 
 
@@ -187,7 +180,6 @@ def _report_annotations(
 
 
 def _record_member_events(annotation: MemberAnnotation, recorder: EventRecorder) -> None:
-    """One event for each source of annotation: the row, and the inferences."""
     if annotation.row is not None:
         member = _build_annotated_member(annotation, annotation.given)
         record_annotation(
@@ -230,7 +222,6 @@ def _report_missing_kinds(technologies: list[MemberAnnotation], recorder: EventR
 
 
 def _build_table(part: ObjectPart, annotations: list[MemberAnnotation]) -> pl.DataFrame:
-    """A region table holds one key column, since a region is its own member."""
     keys = [REGION] if part == ObjectPart.REGIONS else [REGION, OBJECT_PART_SETS[part]]
     columns = OBJECT_PART_COLUMNS[part]
     rows = [

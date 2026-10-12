@@ -1,9 +1,4 @@
-"""The fields of a TZ-format OSeMOSYS model.json, and the raw table of each field.
-
-The table follows the field documentation of tz-osemosys v0.4.1. Each field gives the
-OSeMOSYS-style name of its raw table, the set of each nested key level, outermost first, and
-the default value that the documentation states.
-"""
+"""The defaults in this table come from the field documentation of tz-osemosys v0.4.1."""
 
 from __future__ import annotations
 
@@ -28,7 +23,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 
 
 class TzOwner(StrEnum):
-    """The object of a model.json that holds a field; each value is its key in the document."""
+    """Each value is the key of the owner in a model.json, so a renamed value no longer finds it."""
 
     MODEL = "model"
     TIME_DEFINITION = "time_definition"
@@ -43,7 +38,8 @@ class TzOwner(StrEnum):
 
 
 class TzField(NamedTuple):
-    """One field of an owner; `value_set` names the set whose member the value states, if any."""
+    """`nesting` lists the set of each nested level, outermost first, and `value_set` names the
+    set of a value that states a member."""
 
     owner: TzOwner
     field: str
@@ -323,7 +319,6 @@ TZ_FIELDS: tuple[TzField, ...] = (
     ),
 )
 
-# The key columns that each owner adds to the rows of its fields.
 OWNER_COLUMNS: dict[TzOwner, tuple[str, ...]] = {
     TzOwner.MODEL: (),
     TzOwner.TIME_DEFINITION: (),
@@ -337,7 +332,6 @@ OWNER_COLUMNS: dict[TzOwner, tuple[str, ...]] = {
     TzOwner.TRADE: (OSEMOSYS_FUEL,),
 }
 
-# The owners whose objects each add one member, their `id`, to a set.
 OBJECT_SETS: dict[TzOwner, str] = {
     TzOwner.REGIONS: OSEMOSYS_REGION,
     TzOwner.REGION_GROUPS: OSEMOSYS_REGIONGROUP,
@@ -348,7 +342,6 @@ OBJECT_SETS: dict[TzOwner, str] = {
     TzOwner.OPERATING_MODES: OSEMOSYS_MODE_OF_OPERATION,
 }
 
-# The fields of the time definition that list the members of a set.
 TIME_SETS: dict[str, str] = {
     "years": OSEMOSYS_YEAR,
     "timeslices": OSEMOSYS_TIMESLICE,
@@ -371,7 +364,7 @@ REGION_PAIR_FIELDS = frozenset(
     }
 )
 
-# The key and the value of the wrapper that holds a composed value.
+# A composed value is a wrapper object that holds these two keys.
 COMPOSED_FLAG = "is_composed"
 COMPOSED_DATA = "data"
 
@@ -384,8 +377,6 @@ VALUE_WORDS: dict[str, float] = {"sinking-fund": 1.0, "straight-line": 2.0}
 
 
 class DemandSplit(NamedTuple):
-    """An annual demand with no profile for its region, fuel and year is an accumulated demand."""
-
     profile_table: str
     specified_table: str
     accumulated_table: str
