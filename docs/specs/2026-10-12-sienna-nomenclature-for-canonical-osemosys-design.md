@@ -100,9 +100,9 @@ Twelve parameters take a SiennaSchemas name:
 | `EmissionActivityRatio` | `emission_rate` | `EmissionsData.emission_rate` |
 | `REMinProductionTarget` | `generation_fraction_requirement` | `EnergyShareRequirements.generation_fraction_requirement` |
 
-Two of these keep the OSeMOSYS unit, not the Sienna unit. `duration_limits_max` holds hours,
-and Sienna's `duration_limits` holds minutes. The `units:` part of the mappings file and
-the metadata state the unit, as before.
+Every canonical parameter keeps the model's own unit, not the Sienna unit. For example,
+`duration_limits_max` holds hours, and Sienna's `duration_limits` holds minutes. The
+`units:` part of the mappings file and the metadata state the unit, as before.
 
 `CapitalCost` (a nested Sienna name) gives `capital_cost`, by rule 2. Two nested Sienna
 names keep their parent field, because the leaf alone is not clear: `capacity_limits_max`
