@@ -81,10 +81,6 @@ class CanonicalParameter(BaseModel):
         """The set whose members a column holds."""
         return self.columns[column]
 
-    def find_column_set(self, column: str) -> str | None:
-        """The set whose members a column holds; a column that the parameter lacks gives `None`."""
-        return self.columns.get(column)
-
 
 class CanonicalSchema(BaseModel):
     """Every set and every parameter of the canonical schema, by canonical name."""

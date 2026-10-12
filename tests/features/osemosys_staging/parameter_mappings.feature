@@ -208,7 +208,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     And the log contains "NotAParameter"
     And the log contains "row 0"
 
-  Scenario: A row whose operations do not give the canonical key stops the run
+  Scenario: A row whose operations do not give the canonical columns stops the run
     Given an otoole model
     And the otoole set "REGION" holds "R1"
     And the otoole set "TECHNOLOGY" holds "GAS"

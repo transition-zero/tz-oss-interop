@@ -19,11 +19,13 @@ These words have one meaning in this guide.
 
 | Word | Meaning |
 | --- | --- |
-| Model | Your OSeMOSYS model: an otoole configuration file and a directory of CSV files, or a TZ-format `model.json` file. |
+| Model | Your OSeMOSYS model: an otoole configuration file and a directory of CSV files, or a TZ-format model. |
+| TZ-format model | The `model.json` file that tz-osemosys writes. |
 | Raw set | One set of your model, with the name that your model gives it, for example `TECHNOLOGY` or `UNIT`. |
 | Set member | One value in a set, for example the technology `GASCC` or the year `2030`. |
 | Raw table | One parameter of your model, with its own name, for example `CapitalCost` or `MaxRampRate`. |
 | Index columns | The columns of a raw table that name set members, for example `REGION`, `TECHNOLOGY` and `YEAR`. In an otoole model, the `indices` of the parameter give them. |
+| Key | In a message from interop, the index columns of a raw table. For example, the note `matched by name and key` means that the name and the index columns match. |
 | `VALUE` | The column of a raw table that holds the number. |
 | Canonical schema | The fixed list of sets and parameters that interop knows. Each one has a canonical name, for example `capital_cost`. |
 | Canonical set, canonical parameter | A set or a parameter of the canonical schema. |
@@ -118,25 +120,8 @@ INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline tz-osemosys-to-canonic
 ```
 
 The TZ-format reader gives each table its OSeMOSYS name, so the tables match automatically.
-A mappings file for a TZ-format model can hold only `units:` and `objects:`. For example, this
-file annotates a model with the regions `NORTH` and `SOUTH`, and the fuels `natural-gas` and
-`electricity`:
-
-```yaml
-osemosys:
-  units: {capacity: MW, energy: MWh, currency: USD, currency_year: 2023}
-  objects:
-    fuels:
-      - match: "^electricity$"
-        carrier: electricity
-        location: "{region}"
-      - match: "^natural-gas$"
-        carrier: natural-gas
-        location: "{region}"
-    technologies:
-      - match: "^gas-cc$"
-        category: gas-combined-cycle
-```
+Usually a mappings file for a TZ-format model needs only `units:` and `objects:`. The section
+"`objects:`" shows how to write them.
 
 ### What the run writes
 
@@ -163,13 +148,7 @@ each decision of the engine, in five sections:
 | Components skipped | Each raw table that the engine left out, each table that lost table rows, and each problem that the model reader found |
 | Fields not mapped | Each extension table, each technology that got no `kind`, and each field that the model reader did not read |
 
-The `Note` column of each line tells you the reason. For example:
-
-```
-| `osemosys.parameter.CapitalCost` | `osemosys-canonical.parameter.capital_cost` |  | matched by name and key | ...
-| `osemosys.parameter.AvailabilityPercent` | `osemosys-canonical.parameter.availability_factor` |  | row 0 of `parameters:` maps the raw table AvailabilityPercent to availability_factor: multiply_by 0.01 | ...
-| `osemosys.parameter.MaxRampRate` |  |  | no canonical parameter has this name and key, so it stays an extension table | ...
-```
+The `Note` column of each line tells you the reason.
 
 ## The automatic match
 
@@ -464,6 +443,9 @@ The run writes `parameters/emission_rate.parquet`:
 | NORTH | GASCC | CO2 | 1 | 2030 | 0.056 |
 | SOUTH | GASCC | CO2 | 1 | 2030 | 0.056 |
 
+The `sets:` entry is necessary. Without it, the canonical set `pollutant` has no members, and
+the engine leaves out each table row of `emission_rate`.
+
 #### `columns_from_name`
 
 `columns_from_name` writes a part of the raw table name into a column. It needs a
@@ -506,8 +488,8 @@ puts the two tables into one `parameters/capacity_factor.parquet`:
 | SOUTH | WINDON | NIGHT | 2030 | 0.38 |
 
 The value in the new column must be a member of its canonical set. Here, `NORTH` and `SOUTH`
-must be in the `REGION` set. The section "Problems in the model data that do not stop the run"
-tells you what happens to a value whose member is not in its set.
+must be in the `REGION` set. If a member is not in its set, the engine leaves out the table
+row. The section "Problems in the model data that do not stop the run" tells you more.
 
 #### `remove_column`
 
@@ -670,6 +652,9 @@ The engine renames `TECH` to `technology`. Then it repeats each value for `R1`, 
 In `metadata/defaults.parquet`, the default of `capital_cost` is 1, which is 1000 multiplied
 by 0.001.
 
+The `sets:` entry is necessary. Without it, the canonical set `technology` has no members, and
+the engine leaves out each table row of `capital_cost`.
+
 ### The order of the rows
 
 The engine applies these rules to the `parameters:` rows:
@@ -677,9 +662,9 @@ The engine applies these rules to the `parameters:` rows:
 - **The first row that matches a raw table wins.** The engine does not try the rows after it.
 - **A row stops the automatic match for its canonical parameter.** When a row sends a raw table
   to a canonical parameter, no automatic match writes to that parameter.
-- **A family merges only when the defaults agree.** The raw tables that one canonical parameter
-  receives must declare the same default, after `multiply_by`. If not, each one stays an
-  extension table.
+- **A family merges only when the defaults agree.** The raw tables that `parameters:` rows send
+  to one canonical parameter are a family. They must declare the same default, after
+  `multiply_by`. If not, each one stays an extension table.
 - **Two raw tables cannot write one canonical table row.** If they do, the run stops.
 
 #### Example: the first row wins
@@ -703,6 +688,7 @@ holds the `SOUTH` values only:
 | region | technology | timeslice | year | value |
 | --- | --- | --- | --- | --- |
 | SOUTH | WINDON | DAY | 2030 | 0.27 |
+| SOUTH | WINDON | NIGHT | 2030 | 0.38 |
 
 #### Example: a row stops the automatic match
 
@@ -896,7 +882,7 @@ The run writes `annotations/fuel.parquet`:
 | `export` | Takes in a fuel and puts out nothing |
 | `conversion` | Changes one fuel into another at one location |
 
-The first three are type names of Sienna. Another value, for example `generator`, stops the run.
+The first three are type names in Sienna, the tool that a later translation writes to. Another value, for example `generator`, stops the run.
 The engine infers `kind` from the activity ratios and the storage tables, so a row needs `kind` only to
 change the inference. The section "What the engine infers" gives the rules.
 
@@ -908,6 +894,37 @@ The engine never infers a category.
 `carrier` is free text for a fuel, for example `natural-gas` or `coal`. The engine never infers
 a carrier. One value has a fixed meaning: `carrier: electricity` tells the engine that the fuel is
 electricity. The `kind` rules use it.
+
+#### Example: a TZ-format model
+
+A TZ-format model has the regions `NORTH` and `SOUTH`, the fuels `natural-gas` and
+`electricity`, and the technologies `gas-cc` and `gas-import`. This file gives the units, a
+carrier and a location for each fuel, and a category for `gas-cc`:
+
+```yaml
+osemosys:
+  units: {capacity: MW, energy: MWh, currency: USD, currency_year: 2023}
+  objects:
+    fuels:
+      - match: "^electricity$"
+        carrier: electricity
+        location: "{region}"
+      - match: "^natural-gas$"
+        carrier: natural-gas
+        location: "{region}"
+    technologies:
+      - match: "^gas-cc$"
+        category: gas-combined-cycle
+```
+
+The run writes `annotations/technology.parquet`:
+
+| region | technology | kind | category | location |
+| --- | --- | --- | --- | --- |
+| NORTH | gas-cc | SupplyTechnology | gas-combined-cycle | NORTH |
+| NORTH | gas-import | fuel_supply | | NORTH |
+| SOUTH | gas-cc | SupplyTechnology | gas-combined-cycle | SOUTH |
+| SOUTH | gas-import | fuel_supply | | SOUTH |
 
 ### What the engine infers
 
@@ -1018,7 +1035,7 @@ row 0 of `objects: technologies` gives kind, category
 An error in the mappings file stops the run. The run writes no canonical stage. The console
 shows the error, also without `INTEROP_LOG_LEVEL`.
 
-An error in the form of the file contains `Invalid user mappings at <file>`. The next line
+An error in the form of the file contains `Invalid user mappings at <file>`. A later line
 names the place in the file, for example `osemosys.parameters.0` for row 0 of `parameters:`.
 
 | The error contains | Cause | Fix |
@@ -1064,8 +1081,8 @@ use, and it reports it. To find these problems, read the warnings and `decisions
 | A value names a set member that its canonical set does not hold, or it has an empty cell | It leaves out that table row, and keeps the others | `hold values whose set member is not in its canonical set` | Components skipped |
 | A `parameters:` row matches no raw table | Nothing | `match no raw table` | None |
 | A `sets:` entry names no raw set | Nothing | `name no raw set` | None |
-| `choose` names a member that no table row holds | The canonical table has no table rows | `choose a member that no row of the raw table holds` | None |
-| `repeat_for_all` names a set with no members | The canonical table has no table rows | `repeat each value for a set with no members` | None |
+| `choose` names a member that no table row holds | That raw table gives no table rows | `choose a member that no row of the raw table holds` | None |
+| `repeat_for_all` names a set with no members | That raw table gives no table rows | `repeat each value for a set with no members` | None |
 | No kind fits a technology | `kind` stays empty | `no kind fits` | Fields not mapped |
 
 For example, a `CapitalCost` table row for the technology `OIL`, which is not in the
@@ -1197,7 +1214,7 @@ The run gives these results:
 | R1 | AABBLINK | AggregateTransportTechnology | interconnector | AA~BB |
 | R1 | AAGASIMP | fuel_supply | | AA |
 
-The run writes three warnings. Each one is expected:
+The run writes three warnings. You can expect each one:
 
 ```
 WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: UNIT
@@ -1314,7 +1331,7 @@ The run gives these results:
 `WINDON` has no table rows in `NORTH`, and `BATTERY` has no table rows in `SOUTH`. Without the
 two `kind` values in the file, `kind` stays empty for them there.
 
-The run writes two warnings. Each one is expected:
+The run writes two warnings. You can expect each one:
 
 ```
 WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: SCENARIO

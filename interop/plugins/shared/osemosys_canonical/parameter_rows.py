@@ -62,7 +62,7 @@ class RowGroup(NamedTuple):
 
 
 class RowTable(NamedTuple):
-    """The rows that one raw table gives its canonical parameter, in the canonical key."""
+    """The rows that one raw table gives its canonical parameter, in the canonical columns."""
 
     match: RowMatch
     table: pl.LazyFrame
@@ -159,9 +159,7 @@ def _find_members(
     source: RowSource, column: str, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame | None:
     """The members of the canonical set that a column holds; an absent set is `None`."""
-    # A column that the parameter lacks reads the set of the same name, as a set name is a column.
-    column_set = source.parameter.find_column_set(column) or column
-    return sets.get(column_set)
+    return sets.get(source.parameter.get_column_set(column))
 
 
 def _has_rows(table: pl.LazyFrame) -> bool:

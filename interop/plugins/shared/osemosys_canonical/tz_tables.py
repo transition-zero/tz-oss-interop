@@ -109,7 +109,8 @@ def map_tz_parameter_tables(
 
 
 def build_tz_declarations() -> dict[str, RawDeclaration]:
-    """The key and the documented default of each raw table, and of the accumulated demand."""
+    """The index columns and the documented default of each raw table, and of the accumulated
+    demand."""
     declarations = {
         field.table: RawDeclaration(field.table, _list_osemosys_columns(field), field.default)
         for field in TZ_FIELDS
