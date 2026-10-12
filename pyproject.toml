@@ -126,9 +126,8 @@ markers = [
 
 [tool.mutmut]
 source_paths = ["interop/"]
-# test_ci_python_matrix.py loads .github/scripts/python_versions.py by path (it isn't
-# importable), so mutmut's mutants/ sandbox needs a copy or that test fails to collect.
-also_copy = [".github/"]
+# Tests read these by path from the repository root, so mutmut's mutants/ sandbox needs a copy.
+also_copy = [".github/", "docs/", "scripts/"]
 do_not_mutate = [
     "interop/di/*",
     "interop/main.py",

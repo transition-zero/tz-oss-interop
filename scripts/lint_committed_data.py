@@ -44,6 +44,7 @@ DATA_SUFFIXES = frozenset(
 # Directory -> why data may live there. Every file under one is this project's own.
 ALLOWED_DIRECTORIES = {
     "interop/templates": "the synthetic example models that the tutorials translate",
+    ".claude/skills/nightly": "the GitHub label names and colours the nightly skill creates",
 }
 
 

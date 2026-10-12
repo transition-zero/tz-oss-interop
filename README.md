@@ -9,6 +9,38 @@ Translation tooling for energy-system model formats (PyPSA, Sienna, Plexos, OSeM
 
 interop is beta software. It runs end to end on published models, and the plugin interfaces and pipeline YAML shape are settled enough to build on, but they still change between versions.
 
+## Supported translations
+
+Sienna is the hub. Each built-in pipeline translates a model into Sienna, or translates Sienna into a different format.
+
+```mermaid
+flowchart LR
+    plexos[PLEXOS]
+    pypsa_in[PyPSA]
+    sienna[Sienna]
+    investments[Sienna investments]
+    pypsa_out[PyPSA]
+
+    plexos -->|"plexos-to-sienna<br/><i>plexos-to-pypsa, part 1</i>"| sienna
+    pypsa_in -->|"pypsa-to-sienna<br/>pypsa-to-sienna-ensemble"| sienna
+    sienna -->|"sienna-to-pypsa<br/>sienna-to-pypsa-ensemble<br/><i>plexos-to-pypsa, part 2</i>"| pypsa_out
+    plexos -->|plexos-to-sienna-investments| investments
+    pypsa_in -->|pypsa-to-sienna-investments| investments
+```
+
+| Pipeline | From | To |
+| --- | --- | --- |
+| `plexos-to-sienna` | PLEXOS XML model | Sienna system |
+| `plexos-to-sienna-investments` | PLEXOS XML model | Sienna system and Sienna investments portfolio |
+| `plexos-to-pypsa` (composed via Sienna) | PLEXOS XML model | PyPSA network, from `plexos-to-sienna`, then `sienna-to-pypsa` |
+| `pypsa-to-sienna` | PyPSA network | Sienna system |
+| `pypsa-to-sienna-ensemble` | PyPSA network ensemble | Sienna system ensemble |
+| `pypsa-to-sienna-investments` | PyPSA network | Sienna system and Sienna investments portfolio |
+| `sienna-to-pypsa` | Sienna system | PyPSA network |
+| `sienna-to-pypsa-ensemble` | Sienna system ensemble | PyPSA network ensemble |
+
+A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. interop writes a portfolio, but it does not read one. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
+
 ## Install
 
 interop is managed with [`uv`](https://docs.astral.sh/uv/); if you do not already have it, follow uv's [installation instructions](https://docs.astral.sh/uv/getting-started/installation/). Then sync the environment:
