@@ -1,276 +1,97 @@
-# OSeMOSYS Mappings Guide
+# OSeMOSYS Mappings Tutorial
 
-tz-oss-interop is a tool that translates energy-system models from one format to another. This guide
-is for a modeller who has an OSeMOSYS model and wants to use it with tz-oss-interop. It tells you what
-to write, and why.
+tz-oss-interop is a tool that translates energy-system models from one format to another. This
+tutorial is for a modeller who has an OSeMOSYS model and wants to use it with tz-oss-interop. It
+teaches you how to write a mappings file for your model.
 
-## What tz-oss-interop does with an OSeMOSYS model
+## Why your model needs a mappings file
 
 Each OSeMOSYS model names and shapes its data in its own way. For example, one model calls its
 set of technologies `TECHNOLOGY`, and another model calls it `TECH`. One model gives the
 availability of a technology as a fraction, and another model gives it in percent.
 
-So tz-oss-interop first puts each OSeMOSYS model into one standard form. tz-oss-interop calls this standard
-form the canonical stage. The canonical stage is a directory of files. It is not a translation to
-another tool. It is one fixed form of an OSeMOSYS model.
-
-tz-oss-interop does not yet translate the canonical stage to another tool. Sienna is a power-system
-modelling tool. A translation to Sienna is planned, and it will read the canonical stage. Because
-each OSeMOSYS model has the same form in the canonical stage, that translation will work for
-each OSeMOSYS model.
+So tz-oss-interop first puts each OSeMOSYS model into one standard form. tz-oss-interop calls this
+standard form the canonical stage. The canonical stage is a directory of files. It is one fixed
+form of an OSeMOSYS model.
 
 tz-oss-interop cannot find some facts in the files of your model. These are examples:
 
 - The real units of your values, for example GW and PJ.
 - That your set `TECH` holds the technologies.
-- That your parameter `AvailabilityPercent` holds a percent, so tz-oss-interop must multiply each value
-  by 0.01.
-- What each technology or fuel is, and where it is. For example, the fuel `AAGAS` is natural gas
-  in the country `AA`.
+- That your parameter `AvailabilityPercent` holds a percent, so tz-oss-interop must multiply each
+  value by 0.01.
+- Which fuel is electricity.
 
-You write these facts in a mappings file. The mappings file is a text file that you write and
-give to tz-oss-interop.
+You write these facts in a mappings file. The mappings file is a text file in YAML format that
+you give to tz-oss-interop. YAML is a text format for names and values.
 
-tz-oss-interop then gives you two things:
+## How this tutorial works
 
-- A directory of tables, with one table for each set and each parameter of your model. This
-  directory is the canonical stage.
-- A report, `decisions.md`. It lists each decision that tz-oss-interop made, with the reason.
+You make one very small OSeMOSYS model, the base model. The base model uses the default names,
+so it needs no mappings file. [Lesson 1](#the-canonical-names) explains the default names.
+
+Each lesson then changes the base model in one way, the way a real model differs. Each lesson has
+these parts:
+
+1. **The change.** The lesson changes one or two files of the base model.
+2. **The problem.** You do a run with an empty mappings file, and you see what goes wrong.
+3. **The fix.** You write the smallest mappings file that fixes the problem, and you do the run
+   again.
+4. **Mistakes.** The lesson shows the errors that you can get, and how to fix each one.
+
+Each lesson starts from the base model, so you can do the lessons in any order. Do
+[Set up](#set-up) and [Lesson 1](#lesson-1-a-model-that-needs-no-mappings) first.
 
 You must know your own model: its sets, its parameters and its files. You must be able to edit a
-text file. You do not need to read Python or the code of tz-oss-interop. The mappings file uses
-YAML, a text format for names and values. This guide explains each YAML form where an example
-first uses it.
+text file and type a command. You do not need to read Python.
 
-[The words](#the-words), at the end of this guide, lists each term that this guide uses.
+## Set up
 
-## How tz-oss-interop reads your model
+### Install tz-oss-interop
 
-### The two model formats
-
-tz-oss-interop reads an OSeMOSYS model in one of two formats:
-
-- **An otoole model.** otoole is a tool that reads and writes OSeMOSYS models. An otoole model
-  is a configuration file and a directory of CSV files. The configuration file declares each set
-  and each parameter. For each parameter, it gives its `indices` and its default value. The
-  `indices` are the sets that the values of the parameter depend on. Each CSV file holds one set
-  or one parameter.
-- **A TZ-format model.** This is the `model.json` file that tz-osemosys writes. tz-osemosys is
-  the OSeMOSYS tool of TransitionZero.
-
-### The model reader and the engine
-
-tz-oss-interop puts your model into the canonical stage in two steps:
-
-1. The model reader reads the files of your model. The model reader is the code in tz-oss-interop that
-   reads one file format. tz-oss-interop has one model reader for each of the two formats.
-2. The engine reads your mappings file, and writes the canonical stage. The engine is the code
-   in tz-oss-interop that applies your mappings file to your model.
-
-### Your model in its own names
-
-The model reader gives your model to the engine with the names that your model uses. This guide
-uses these words for it:
-
-- A **raw set** is one set of your model, with the name that your model gives it. For example,
-  `TECHNOLOGY` or `UNIT`.
-- A **set member**, or **member**, is one value in a set. For example, the technology `GASCC` or
-  the year `2030`.
-- A **raw table** is one parameter of your model, with the name that your model gives it. For
-  example, `CapitalCost` or `MaxRampRate`.
-- The **index columns** of a raw table are its columns that name set members. For example,
-  `REGION`, `TECHNOLOGY` and `YEAR`. In an otoole model, the `indices` of the parameter in the
-  configuration file give them.
-- The column `VALUE` of a raw table holds the number.
-- A **table row** is one line of values in a table. For example, the table row
-  `R1,GASCC,2030,950` gives the capital cost 950 of `GASCC` in the region `R1` in 2030.
-
-### The canonical schema
-
-tz-oss-interop knows a fixed list of sets and parameters. This list is the canonical schema. Each set
-and each parameter in it has a canonical name, in lower case. For example, the canonical name of
-the OSeMOSYS parameter `CapitalCost` is `capital_cost`.
-
-The OSeMOSYS name of a set or a parameter is its name in the OSeMOSYS v1.0.1 model file. For
-example, `CapitalCost` and `REGION` are OSeMOSYS names. A parameter that only tz-osemosys or
-OSeMOSYS MUIO has uses the name that that tool gives it. A file that comes with tz-oss-interop, the
-schema file, gives each OSeMOSYS name as `osemosys_name`.
-[Find the canonical names and columns](#find-the-canonical-names-and-columns) shows the schema
-file.
-
-- A **canonical set** is a set of the canonical schema, for example `technology`.
-- A **canonical parameter** is a parameter of the canonical schema, for example `capital_cost`.
-- The **canonical columns** of a canonical parameter are its columns, in a fixed order. For
-  example, the canonical columns of `capital_cost` are `region, technology, year`. A `value`
-  column comes after them.
-
-The engine writes each canonical set and each canonical parameter of your model to one file. This
-file is a canonical table. Each canonical table is a parquet file. A parquet file is a file that
-holds one table: the column names, a type for each column, and the table rows. A text editor
-cannot show a parquet file. [Look at a parquet file](#look-at-a-parquet-file) gives a command that
-shows it.
-
-### What the engine does with each raw set and raw table
-
-The engine looks at each raw set and each raw table of your model. For each one, it does one of
-these things:
-
-- It maps it. To map a raw set or a raw table to a canonical set or a canonical parameter is to
-  give it that canonical name. The result is a canonical table.
-- It keeps it with its own name. The result is an extension table. An extension table is a raw
-  table or a raw set that gets no canonical name. The canonical stage keeps it, so you lose
-  no data.
-- It leaves the raw table out, if your mappings file tells it to do so.
-
-The engine maps a raw table automatically when your model uses the published OSeMOSYS name and
-the published index columns. This is the automatic match. So the mappings file holds only the
-differences between your model and the canonical schema. [The automatic match](#the-automatic-match)
-tells you the rules.
-
-The engine also writes annotations. An annotation is a fact about a set member that the model
-does not state as a parameter. For example, an annotation can tell that a technology is in the
-country `AA`. You give an annotation in the mappings file, or the engine infers it. To infer a
-value is to find it from other data in the model.
-
-### How to read the examples
-
-A worked example in this guide has three items:
-
-1. A small raw table from an invented model.
-2. The lines of the mappings file.
-3. The canonical table that tz-oss-interop writes.
-
-Each model in the examples is invented. tz-oss-interop wrote each result table from that model, in a
-run. A run is one use of tz-oss-interop on a model, with the command of [Your first run](#your-first-run).
-
-## The mappings file
-
-### A YAML file
-
-The mappings file is a text file in YAML format. You can write it in any text editor.
-
-This is the smallest valid mappings file:
-
-```yaml
-osemosys: {}
-```
-
-Read it like this:
-
-- `osemosys` is a key. In YAML, a key is a name. A colon follows the key, then a space, then the
-  value of the key.
-- `{}` is an empty value. It means that `osemosys` holds nothing.
-- `osemosys` is a top-level key, because its line has no spaces at its start. This guide is about
-  the top-level key `osemosys:`.
-
-In a longer file, the lines below `osemosys:` start with spaces. These indented lines belong to
-`osemosys:`. This example uses `units:`, which [`units:`](#units) explains:
-
-```yaml
-osemosys:
-  units:
-    capacity: GW
-```
-
-Notice these points:
-
-- `units:` has two spaces at its start, so it belongs to `osemosys:`.
-- `capacity: GW` has four spaces at its start, so it belongs to `units:`.
-- A line belongs to the nearest line above it that has fewer spaces at its start.
-- `capacity` is a key, and `GW` is its value.
-- `osemosys:` has no `{}` now. When `osemosys:` holds a part, do not write `{}` after it.
-
-Two mistakes stop the run. [Errors that stop the run](#errors-that-stop-the-run) gives the error
-for each:
-
-- A tab character at the start of a line. YAML does not accept it, so use spaces. This guide uses
-  two spaces for each level.
-- A key with no space after its colon. YAML reads `capacity:GW` as one text value, and not as a
-  key and a value. Write `capacity: GW`.
-
-### Other top-level keys in the same file
-
-One file can hold more than one top-level key. For example, a translation of a PyPSA model reads
-the top-level key `carriers:`. PyPSA is another energy-system modelling tool. The engine reads
-only `osemosys:`, so `osemosys:` and `carriers:` can be in the same file.
-
-### The four parts of `osemosys:`
-
-The top-level key `osemosys:` holds four parts. Each part is optional:
-
-| Part | What it states |
-| --- | --- |
-| `units:` | The real units of your model |
-| `sets:` | The canonical set of a raw set whose name is not its OSeMOSYS name |
-| `parameters:` | How the engine maps a raw table to a canonical parameter |
-| `objects:` | What each technology, fuel, storage and region is |
-
-With `osemosys: {}`, the engine maps what it can automatically. It keeps the rest as extension
-tables.
-
-`parameters:` and `objects:` each hold lists. One item of such a list is a row. For example, a
-`parameters:` row tells the engine what to do with one raw table. In this guide, "row" alone
-means a row of the mappings file, and "table row" means one line of values in a table.
-
-A key inside a part or inside a row is a field. For example, `capacity` is a field of the part
-`units:`, and `source` is a field of a `parameters:` row.
-
-Inside `osemosys:`, a part or a field that the engine does not know stops the run.
-
-## Your first run
-
-Here you use tz-oss-interop on a very small model with the smallest mappings file. The text explains
-each item of the command and each item of the result. The later examples use the same command.
-
-### Before you start
-
-The console is the window where you type a command. The commands in this guide are for the
-console of Linux or macOS. On Windows, use WSL (the Windows Subsystem for Linux), or change each
-command to the form that your console needs.
+The console is the window where you type a command. The commands in this tutorial are for the
+console of Linux or macOS. On Windows, use WSL (the Windows Subsystem for Linux).
 
 The command of tz-oss-interop is `interop`. This command must work in any directory of your
-console. The tz-oss-interop directory is the directory `tz-oss-interop`, which the `git clone` step
-of the installation makes on your computer.
+console.
 
 1. Do all the steps of [Installation](user-tutorial.md#installation) in the user tutorial.
 2. Do not skip the last step, `uv tool install .`. Without it, `interop` works only in the
-   tz-oss-interop directory.
+   directory where you cloned tz-oss-interop.
 
-tz-oss-interop runs inside a project directory. A project directory is a directory that holds the files
-of one piece of work: your model, your mappings file and the results. It also holds
-`adapters.yaml`, a file of settings that tz-oss-interop reads at the start of each run.
+### Make a project directory
 
-A run in a directory with no `adapters.yaml` stops with this message:
-``adapters.yaml not found at ... Run `interop init <dir>` to scaffold a project.``
+tz-oss-interop runs inside a project directory. A project directory holds your model, your
+mappings file and the results. It also holds `adapters.yaml`, a file of settings that
+tz-oss-interop reads at the start of each run.
 
-So make a project directory first:
-
-1. Go to the directory where you keep your work. Do not use the tz-oss-interop directory.
+1. Go to the directory where you keep your work. Do not use the directory where you cloned
+   tz-oss-interop.
 2. Type `interop` and press Enter. tz-oss-interop shows a menu.
 3. Use the arrow keys to select `init`. Then press Enter.
-4. At `Target directory?`, type a name for a new directory, for example `my-osemosys-project`.
-5. At `Scaffold an example?`, select `none`. This gives a project with no example model.
+4. At `Target directory?`, type `my-osemosys-project`.
+5. At `Scaffold an example?`, select `osemosys`.
 6. tz-oss-interop shows the menu again. Press Ctrl-C to close it.
 7. Type `cd my-osemosys-project` and press Enter.
 
-[Setting up a project](user-tutorial.md#setting-up-a-project) in the user tutorial tells you more.
+The `osemosys` example puts the base model in `inputs/model/`. It also puts the mappings file
+`inputs/osemosys_mappings.yaml` in the project directory. The file `inputs/user_mappings.yaml` is
+not for an OSeMOSYS model, and this tutorial does not use it.
 
-The new project directory already holds the file `inputs/user_mappings.yaml`. `init` writes it,
-with the top-level key `carriers:` for a translation of a PyPSA model. This guide uses a new file,
-`inputs/osemosys_mappings.yaml`. The run command tells tz-oss-interop which file to read.
+### The base model
 
-### The model of the first run
+The base model is an otoole model. otoole is a tool that reads and writes OSeMOSYS models. An
+otoole model is a configuration file and a directory of CSV files, with one CSV file for each set
+and each parameter.
 
-The model of the first run is an otoole model. It has one region, two technologies, one year and
-one parameter.
+The base model has one region, two technologies, two fuels, one mode of operation and one year.
+The gas plant `GASCC` takes in the fuel `GAS` and puts out the fuel `ELEC`. The wind farm
+`WINDON` puts out `ELEC` and takes in nothing. Each value is invented.
 
-To do the first run, make the six files below in your project directory. First, make the
-directories `inputs/model/` and `inputs/model/csv/`:
+The model is a configuration file, `inputs/model/config.yaml`, and eight CSV files in
+`inputs/model/csv/`.
 
-1. Go to the project directory.
-2. Type `mkdir -p inputs/model/csv` and press Enter.
-
-Put the otoole configuration file at `inputs/model/config.yaml`:
+`inputs/model/config.yaml`:
 
 ```yaml
 REGION:
@@ -279,6 +100,12 @@ REGION:
 TECHNOLOGY:
   type: set
   dtype: str
+FUEL:
+  type: set
+  dtype: str
+MODE_OF_OPERATION:
+  type: set
+  dtype: int
 YEAR:
   type: set
   dtype: int
@@ -287,28 +114,37 @@ CapitalCost:
   indices: [REGION, TECHNOLOGY, YEAR]
   dtype: float
   default: 0
+InputActivityRatio:
+  type: param
+  indices: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+  dtype: float
+  default: 0
+OutputActivityRatio:
+  type: param
+  indices: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+  dtype: float
+  default: 0
 ```
 
-Put these four CSV files in `inputs/model/csv/`. `REGION.csv`:
+The configuration file declares each set and each parameter. For each parameter, `indices` gives
+the sets that its values depend on.
 
-```csv
-VALUE
-R1
-```
+Each of the five set files has the heading `VALUE`, then one member on each line:
 
-`TECHNOLOGY.csv`:
+| File | Its members |
+| --- | --- |
+| `REGION.csv` | `R1` |
+| `TECHNOLOGY.csv` | `GASCC`, `WINDON` |
+| `FUEL.csv` | `GAS`, `ELEC` |
+| `MODE_OF_OPERATION.csv` | `1` |
+| `YEAR.csv` | `2030` |
+
+For example, `TECHNOLOGY.csv` is:
 
 ```csv
 VALUE
 GASCC
 WINDON
-```
-
-`YEAR.csv`:
-
-```csv
-VALUE
-2030
 ```
 
 `CapitalCost.csv`:
@@ -319,104 +155,109 @@ R1,GASCC,2030,950
 R1,WINDON,2030,1300
 ```
 
-Put the mappings file at `inputs/osemosys_mappings.yaml`. It is the smallest valid file:
+`InputActivityRatio.csv`:
+
+```csv
+REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
+R1,GASCC,GAS,1,2030,1.8
+```
+
+`OutputActivityRatio.csv`:
+
+```csv
+REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
+R1,GASCC,ELEC,1,2030,1
+R1,WINDON,ELEC,1,2030,1
+```
+
+### Keep a copy of the base model
+
+Each lesson changes the base model. Keep a copy, so that you can start each lesson from the base
+model:
+
+1. In the project directory, type `cp -r inputs/model inputs/base-model` and press Enter.
+
+To start a lesson from the base model, do these steps.
+
+**Warning:** the first step deletes `inputs/model` and each change that you made in it.
+
+1. Type `rm -rf inputs/model` and press Enter.
+2. Type `cp -r inputs/base-model inputs/model` and press Enter.
+
+### Do a run
+
+A run reads your model and your mappings file, and writes the canonical stage. You start each run
+from the menu of tz-oss-interop.
+
+**Warning:** a run does not delete the files of an earlier run. An old file can stay and mislead
+you. Delete the old result before each run.
+
+#### The first run
+
+1. In the project directory, type `rm -rf outputs/canonical` and press Enter.
+2. Type `INTEROP_LOG_LEVEL=WARNING interop` and press Enter. tz-oss-interop shows the menu.
+3. Select `translate`.
+4. At `Source framework?`, select `osemosys`.
+5. At `Destination framework?`, select `osemosys-canonical`.
+6. At `Pipeline?`, select `osemosys-csv-to-canonical`.
+7. At `source.config_path`, press Enter.
+8. At `source.csv_dir`, press Enter.
+9. At `sink[0].output_dir`, press Enter.
+10. At `User mappings file?`, delete the path `inputs/user_mappings.yaml`.
+11. Type `inputs/osemosys_mappings.yaml` and press Enter. The run starts.
+12. When the menu shows again, the run is complete. Press Ctrl-C to close the menu.
+
+| Item | What it does |
+| --- | --- |
+| `rm -rf outputs/canonical` | It deletes the result of the last run. |
+| `INTEROP_LOG_LEVEL=WARNING` | It shows the warnings on the console. A warning tells you about a problem that does not stop the run. Without it, the console shows only the errors. |
+| `osemosys-csv-to-canonical` | This pipeline reads an otoole model. |
+| `User mappings file?` | It asks for the path of your mappings file. tz-oss-interop calls the mappings file "user mappings" in this question and in its messages. |
+
+Each path question shows the path that the run uses. To use another path, type it at the
+question:
+
+| Question | What it gives | The path that the run uses |
+| --- | --- | --- |
+| `source.config_path` | The otoole configuration file | `inputs/model/config.yaml` |
+| `source.csv_dir` | The directory that holds the CSV files | `inputs/model/csv` |
+| `sink[0].output_dir` | The directory where the run writes the canonical stage | `outputs/canonical` |
+
+If you change `sink[0].output_dir`, delete that directory in step 1.
+
+#### The next runs
+
+The menu keeps your last 30 runs in its history. A run from the history asks the same questions,
+and each question shows your answer from that run.
+
+1. In the project directory, type `rm -rf outputs/canonical` and press Enter.
+2. Type `INTEROP_LOG_LEVEL=WARNING interop` and press Enter.
+3. Select `history`.
+4. At `Re-run which past invocation?`, select the top row that names `osemosys-csv-to-canonical`.
+   The newest run is at the top.
+5. At each question, press Enter.
+6. When the menu shows again, press Ctrl-C to close the menu.
+
+Each lesson tells you to do the run. Do the steps of [The next runs](#the-next-runs).
+
+## Lesson 1: a model that needs no mappings
+
+This lesson shows what tz-oss-interop does with a model that uses the default names.
+
+### The run
+
+The example holds the file `inputs/osemosys_mappings.yaml`, with this text:
 
 ```yaml
 osemosys: {}
 ```
 
-The project directory holds other files too. This list shows only the files that the run uses:
+Do the steps of [The first run](#the-first-run).
 
-```
-my-osemosys-project/
-  adapters.yaml
-  inputs/
-    osemosys_mappings.yaml
-    model/
-      config.yaml
-      csv/
-        CapitalCost.csv
-        REGION.csv
-        TECHNOLOGY.csv
-        YEAR.csv
-```
+`osemosys: {}` is the smallest valid mappings file. It tells tz-oss-interop nothing about your
+model. [Lesson 2](#lesson-2-state-the-units) explains the YAML.
 
-You can put the mappings file anywhere in your project directory. This guide uses
-`inputs/osemosys_mappings.yaml`.
-
-### The two pipelines
-
-A pipeline is a named set of steps that tz-oss-interop runs. A pipeline starts with a model reader, and
-ends with a sink. A sink is the code in a pipeline that writes the result. Two pipelines write the canonical stage of a model to a
-directory:
-
-| Pipeline | Model that it reads |
-| --- | --- |
-| `osemosys-csv-to-canonical` | An otoole model: a configuration YAML file and a directory of CSV files |
-| `tz-osemosys-to-canonical` | A TZ-format `model.json` file |
-
-### Run the pipeline for an otoole model
-
-1. Put the otoole configuration file at `inputs/model/config.yaml`.
-2. Put the CSV files in `inputs/model/csv/`.
-3. Write the mappings file at `inputs/osemosys_mappings.yaml`.
-4. Go to the project directory.
-5. Run this command. [The items of the command](#the-items-of-the-command) explains each item.
-
-```bash
-INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline osemosys-csv-to-canonical \
-  --override 'source.config_path=inputs/model/config.yaml' \
-  --override 'source.csv_dir=inputs/model/csv' \
-  --override 'sink[0].output_dir=outputs/canonical' \
-  --user-mappings-path inputs/osemosys_mappings.yaml
-```
-
-Each path in the command starts from the project directory. If you put a file in another place,
-change its path in the command.
-
-### The items of the command
-
-| Item | What it does |
-| --- | --- |
-| `INTEROP_LOG_LEVEL=WARNING` | It tells tz-oss-interop to show the warnings on the console, for this command only. A warning tells you about a problem that does not stop the run. |
-| `interop headless_cli` | It runs tz-oss-interop with no menu and no questions. The command line gives all the settings. |
-| `--pipeline osemosys-csv-to-canonical` | It chooses the pipeline. |
-| `\` at the end of a line | It continues the command on the next line. |
-| `--override 'NAME=VALUE'` | It gives a value to one setting of the pipeline. The single quotes keep the text as it is. |
-| `source.config_path=inputs/model/config.yaml` | `source` is the model reader of the pipeline. `config_path` is the path of the otoole configuration file. |
-| `source.csv_dir=inputs/model/csv` | `csv_dir` is the directory that holds the CSV files. |
-| `sink[0].output_dir=outputs/canonical` | `sink[0]` is the first sink of the pipeline, and these pipelines have one sink only. `output_dir` is the directory where it writes the canonical stage. |
-| `--user-mappings-path inputs/osemosys_mappings.yaml` | It gives the path of your mappings file. tz-oss-interop calls the mappings file "user mappings" in this option and in its messages. |
-
-Without `INTEROP_LOG_LEVEL=WARNING`, the console shows only the errors. The line
-`log_level: INFO` in `adapters.yaml` does not change what the console shows. Only
-`INTEROP_LOG_LEVEL` changes it.
-
-### What the first run shows
-
-The console shows one warning:
-
-```
-WARNING ... no kind fits 2 technology(ies) in their region, so each keeps an empty kind: R1/GASCC, R1/WINDON
-```
-
-Each warning starts with `WARNING`. Then the console names the code in tz-oss-interop that writes the
-warning. This guide writes `...` in place of that name.
-
-This warning tells you that the engine cannot infer a `kind` for the two technologies:
-
-- `kind` is an annotation that tells the role of a technology in the power system, for example a
-  technology that makes electricity.
-- The engine infers `kind` from the activity ratios, and from the fuels that `objects:` marks as
-  electricity. This model has no activity ratios, so no kind fits.
-- `R1/GASCC` is the technology `GASCC` in the region `R1`.
-
-In the first run, you can ignore this warning. [`kind`](#kind) tells you more.
-
-If the run stops, the console shows a line that starts with `ERROR`, and the run writes no
-canonical stage. [Errors that stop the run](#errors-that-stop-the-run) lists the errors.
-
-The run writes these files in `outputs/canonical/`:
+The console shows no warning. The run writes these files in `outputs/canonical/`:
 
 ```
 annotations/fuel.parquet
@@ -427,35 +268,66 @@ metadata/defaults.parquet
 metadata/schema.parquet
 metadata/units.parquet
 parameters/capital_cost.parquet
+parameters/input_activity_ratio.parquet
+parameters/output_activity_ratio.parquet
+sets/fuel.parquet
+sets/operating_mode.parquet
 sets/region.parquet
 sets/technology.parquet
 sets/year.parquet
 ```
 
-Notice that the engine maps the raw table `CapitalCost` to `parameters/capital_cost.parquet`. The
-automatic match maps it, because it has the published name and index columns.
+This directory is the canonical stage. Each file holds one table:
 
-The run also writes two reports in the project directory, next to `adapters.yaml`:
+| Directory | What it holds |
+| --- | --- |
+| `sets/` | One table for each set of your model |
+| `parameters/` | One table for each parameter of your model |
+| `extensions/` | One table for each set and each parameter that tz-oss-interop cannot name. This run has none. |
+| `annotations/` | Facts about each technology, fuel, storage and region. [Lesson 11](#lesson-11-mark-the-electricity-fuel) explains them. |
+| `metadata/` | The default value of each parameter, the units, and the version of the canonical schema |
 
-- `decisions.md` lists each decision of the engine.
-- `validation-report.md` is a second report. This guide does not use it.
+### The canonical names
 
-The message that `init` shows says that `decisions.md` goes in `outputs/`. With the
-`adapters.yaml` that `init` writes, the run writes it in the project directory.
-[What the run writes](#what-the-run-writes) tells you more.
+tz-oss-interop gives each set and each parameter a canonical name, in lower case. For example, the
+canonical name of the parameter `CapitalCost` is `capital_cost`, and the canonical name of the set
+`MODE_OF_OPERATION` is `operating_mode`. The fixed list of canonical names is the canonical
+schema.
 
-### Look at a parquet file
+This tutorial uses these words:
 
-This command shows the canonical table `capital_cost` on the console. It uses uv, the tool that
-installs tz-oss-interop, and polars, a library that reads parquet files. Run it in the project
-directory:
+- A **raw table** is one parameter of your model, with the name that your model gives it, for
+  example `CapitalCost`.
+- A **raw set** is one set of your model, with the name that your model gives it, for example
+  `TECHNOLOGY`.
+- The **index columns** of a raw table are its columns that name set members, for example
+  `REGION`, `TECHNOLOGY` and `YEAR`. A set member is one value in a set, for example `GASCC`.
+- A **canonical table** is one file of the canonical stage, for example
+  `parameters/capital_cost.parquet`.
+
+A default name is a name that tz-oss-interop knows without a mappings file. For example,
+`CapitalCost` is the default name of the canonical parameter `capital_cost`. `EMISSION` is the
+default name of the canonical set `pollutant`. Many otoole models use these names, but OSeMOSYS
+does not require them. [What tz-oss-interop knows about an OSeMOSYS model](osemosys-default-names.md)
+lists each default name.
+
+tz-oss-interop maps a raw table automatically when both of these are true:
+
+- Its name is the default name of a canonical parameter, for example `CapitalCost`.
+- Its index columns are the default columns of that parameter. Their order does not matter.
+
+This is the automatic match. Each table of the base model matches automatically, so the mappings
+file needs nothing. A mappings file holds only the differences between your model and the default
+names.
+
+### Look at a canonical table
+
+A canonical table is a parquet file. A parquet file holds one table, with a type for each column.
+A text editor cannot show it. This command shows `capital_cost` on the console:
 
 ```bash
 uv run --with polars python -c "import polars as pl; print(pl.read_parquet('outputs/canonical/parameters/capital_cost.parquet'))"
 ```
-
-`--with polars` gives Python the polars library for this one command. To see another table,
-change the path between the single quotes.
 
 The command shows:
 
@@ -473,140 +345,260 @@ shape: (2, 4)
 
 Notice these points:
 
-- `shape: (2, 4)` tells you that the table has 2 table rows and 4 columns.
-- The canonical columns `region`, `technology` and `year` come first, in their fixed order. The
+- The columns have the canonical names `region`, `technology` and `year`, in a fixed order. The
   `value` column comes last.
-- Under each column name, polars shows the type of the column. `str` is text, and `f64` is a
-  number.
+- `shape: (2, 4)` tells you that the table has 2 rows and 4 columns.
 - polars writes 950 as `950.0`. It writes `null` for an empty cell.
-- For a long table, polars shows only the first table rows and the last table rows.
 
-This guide shows each table without the types. It writes 950 as `950`, and it shows an empty
-cell as blank.
+To see another table, change the path between the single quotes. This tutorial shows each table
+without the types. It writes 950 as `950`, and it shows an empty cell as blank:
 
-### Run the pipeline for a TZ-format model
+| region | technology | year | value |
+| --- | --- | --- | --- |
+| R1 | GASCC | 2030 | 950 |
+| R1 | WINDON | 2030 | 1300 |
 
-1. Put the model at `inputs/model.json`.
-2. Write the mappings file at `inputs/osemosys_mappings.yaml`.
-3. Go to the project directory.
-4. Run this command:
+### Read `decisions.md`
 
-```bash
-INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline tz-osemosys-to-canonical \
-  --override 'source.model_json_path=inputs/model.json' \
-  --override 'sink[0].output_dir=outputs/canonical' \
-  --user-mappings-path inputs/osemosys_mappings.yaml
+The run also writes the report `decisions.md` in the project directory. It is a text file in
+Markdown format. It lists each decision that tz-oss-interop made, with the reason in the `Note`
+column. For example, under the heading "Values derived":
+
+```
+| `osemosys.parameter.CapitalCost` | `osemosys-canonical.parameter.capital_cost` |  | matched by name and key | osemosys-csv-to-canonical | stage_osemosys_csv |
 ```
 
-This command has the same items as the command for an otoole model, with two differences:
+In a message from tz-oss-interop, "key" means the index columns. So `matched by name and key`
+tells you that `CapitalCost` matched automatically.
 
-- `--pipeline tz-osemosys-to-canonical` chooses the pipeline for a TZ-format model.
-- `source.model_json_path` is the path of the `model.json` file. It replaces `config_path` and
-  `csv_dir`.
-
-The TZ-format model reader gives each table its OSeMOSYS name, so the tables match
-automatically. Usually a mappings file for a TZ-format model needs only `units:` and `objects:`.
-[`objects:`](#objects) shows how to write them.
-
-## What the run writes
-
-### The canonical stage
-
-The run writes the canonical stage in the `output_dir` that you give:
-
-| Directory | What it holds |
-| --- | --- |
-| `sets/` | One file for each canonical set that the model has, with one column, `value` |
-| `parameters/` | One file for each canonical parameter that a raw table maps to |
-| `extensions/` | One file for each raw table and raw set that stays an extension table |
-| `annotations/` | One file each for `technology`, `fuel`, `storage` and `region` |
-| `metadata/` | `defaults.parquet`, `units.parquet` and `schema.parquet` |
-
-In `metadata/`, `defaults.parquet` holds the default value of each parameter. `units.parquet`
-holds the units that the `units:` part states. `schema.parquet` holds the version of the
-canonical schema.
-
-### `decisions.md`
-
-`decisions.md` is a text file in Markdown format, so you can open it in any text editor.
-`decisions.md` has five headings. Under each heading is a table, with one table row for each
-decision of the engine:
+`decisions.md` has five headings:
 
 | Heading | What it lists |
 | --- | --- |
-| Values derived | Each raw set and raw table that the engine mapped, and each annotation that the engine inferred |
-| Translator defaults applied | These pipelines record nothing in it |
-| User config defaults applied | Each annotation that an `objects:` row gave |
-| Components skipped | Each raw table that the engine left out, each table that lost table rows, and each problem that the model reader found |
-| Fields not mapped | Each extension table, each technology that got no `kind`, and each value of the model file that the model reader did not read |
+| Values derived | Each raw set and raw table that tz-oss-interop mapped, and each annotation that it inferred |
+| Translator defaults applied | Nothing. This heading is always empty for an OSeMOSYS model. |
+| User config defaults applied | Each annotation that your mappings file gave |
+| Components skipped | Each raw table that tz-oss-interop left out, and each table that lost rows |
+| Fields not mapped | Each extension table, and each technology that got no kind |
 
-The `Note` column of each table row gives the reason.
+The run also writes `validation-report.md`. This tutorial does not use it.
 
-### The warnings on the console
+## Lesson 2: state the units
 
-The console shows one warning for each type of problem that does not stop the run. For example,
-a warning names each extension table. A warning gives three names at most, and counts the others. [Problems in the model data that do not stop the run](#problems-in-the-model-data-that-do-not-stop-the-run)
-lists each warning.
+This lesson shows how to write YAML, and how to tell tz-oss-interop the units of your model.
 
-## Find the canonical names and columns
+### The problem
 
-The canonical schema is in the file
-[`interop/plugins/shared/osemosys_canonical_schema.yaml`](../../interop/plugins/shared/osemosys_canonical_schema.yaml).
-This file comes with tz-oss-interop. On your computer, it is in the tz-oss-interop directory, at
-`tz-oss-interop/interop/plugins/shared/osemosys_canonical_schema.yaml`. You can open it in any
-text editor. It has one entry for each canonical set and each canonical parameter. An entry is the group of lines that describes one set or one parameter.
+The files of an otoole model do not state units. tz-oss-interop cannot know that your capacity is
+in GW and your costs are in EUR of 2022. After the run of Lesson 1, `metadata/units.parquet` has
+no rows.
 
-To find the entry for a parameter of your model, search the file for its OSeMOSYS name, for
-example `osemosys_name: CapitalCost`. [Names](../developer_documentation/osemosys-canonical-format.md#names)
-in the developer document tells why each canonical name has its form. You do not need it to
-write a mappings file.
+### The fix
 
-This is the entry for `transport_capital_cost`. In the file, this entry is under the top-level
-key `parameters:`, with two more spaces at the start of each line:
+1. Write `inputs/osemosys_mappings.yaml` with this text:
 
-```yaml
-transport_capital_cost:
-  columns:
-    start_region: region
-    end_region: region
-    fuel: fuel
-    year: year
-  osemosys_name: CapitalCostTrade
-  osemosys_columns: [REGION, _REGION, FUEL, YEAR]
-  default: 0.00001
-  unit: currency per capacity
-  meaning: Overnight investment cost of one unit of new transport capacity on a route.
-  origin: tz-osemosys v0.4.1
+   ```yaml
+   osemosys:
+     units:
+       capacity: GW
+       energy: PJ
+       currency: EUR
+       currency_year: 2022
+       emissions: Mt
+   ```
+
+2. Do the run.
+
+Read the file like this:
+
+- `osemosys` is a key. In YAML, a key is a name. A colon follows the key.
+- `osemosys` has no spaces at the start of its line, so it is a top-level key.
+- `units:` has two spaces at its start, so it belongs to `osemosys:`.
+- `capacity: GW` has four spaces at its start, so it belongs to `units:`. `capacity` is a key,
+  and `GW` is its value.
+- A line belongs to the nearest line above it that has fewer spaces at its start.
+
+The run writes `metadata/units.parquet`:
+
+| quantity | unit |
+| --- | --- |
+| capacity | GW |
+| energy | PJ |
+| currency | EUR |
+| currency_year | 2022 |
+| emissions | Mt |
+
+Notice these points:
+
+- Each of the five fields is optional. A field that you do not write has no row.
+- `currency_year` must be a whole number. Each other unit is text, and tz-oss-interop does not
+  check it.
+- tz-oss-interop does not convert a value. It only records the units.
+
+In Lesson 1, `osemosys:` held nothing, so it had `{}` after it. When `osemosys:` holds a part,
+do not write `{}`.
+
+### The parts of the mappings file
+
+`osemosys:` holds four parts. Each part is optional:
+
+| Part | What it states | Lessons |
+| --- | --- | --- |
+| `units:` | The units of your model | 2 |
+| `sets:` | The canonical name of a raw set | 3 |
+| `parameters:` | How tz-oss-interop maps a raw table | 3 to 10 |
+| `objects:` | What each technology, fuel, storage and region is | 11 to 14 |
+
+A key inside a part is a field. For example, `capacity` is a field of `units:`.
+
+### Mistakes
+
+A mistake in the mappings file stops the run. The run then writes no canonical stage. The console
+shows the cause in red, and then the menu again.
+
+A tab character at the start of a line:
+
+```
+Invalid YAML in user mappings file: inputs/osemosys_mappings.yaml:
+while scanning for the next token
+found character '\t' that cannot start any token
+  in "<unicode string>", line 2, column 1:
 ```
 
-Read it like this:
+YAML does not accept a tab. Use spaces. This tutorial uses two spaces for each level.
 
-- `transport_capital_cost` is the canonical name. You write it in the field `canonical` of a
-  `parameters:` row. [`parameters:`](#parameters) tells you how.
-- `columns` gives the canonical columns, in order. The word after each colon is the canonical
-  set that the column holds. Here, `start_region` and `end_region` both hold members of
-  the set `region`.
-- `osemosys_name` is the OSeMOSYS name of the parameter. The automatic match uses it.
-- `osemosys_columns` gives the OSeMOSYS name of each column, at the same position as
-  `columns`. OSeMOSYS calls the second region `_REGION`.
-- `default` is the value that applies where the model states no value. The default that your
-  model declares wins over it.
-- `unit` tells the kind of unit. The canonical stage keeps the unit of your model.
-- `meaning` tells what the parameter holds.
-- `origin` tells which model first had the parameter. Here it is tz-osemosys, so the OSeMOSYS
-  v1.0.1 model file does not have `CapitalCostTrade`.
+No space after a colon, for example `capacity:GW`:
 
-`[REGION, _REGION, FUEL, YEAR]` is a YAML list on one line. A list on one line has its items in
-square brackets, with a comma between two items.
+```
+Invalid user mappings at inputs/osemosys_mappings.yaml:
+1 validation error for OsemosysCanonicalMappings
+osemosys.units
+  Input should be a valid dictionary or instance of Units [type=model_type, input_value='capacity:GW', input_type=str]
+```
 
-Most canonical columns have the name of their set, for example `technology` or `year`. Only
-`start_region` and `end_region` have other names. They are in each parameter that holds a
-pair of regions.
+YAML reads `capacity:GW` as one text value, and not as a key and a value. Write `capacity: GW`.
+The line `osemosys.units` tells you where the mistake is in the file.
 
-This table gives the canonical name of each OSeMOSYS set. Use these names in `sets:`, and in the
-fields `rename_columns`, `columns_from_name` and `repeat_for_all` of a `parameters:` row:
+A part that does not exist, for example `unit:` in place of `units:`:
 
-| OSeMOSYS set | Canonical set |
+```
+osemosys.unit
+  Extra inputs are not permitted [type=extra_forbidden, input_value={'capacity': 'GW'}, input_type=dict]
+```
+
+Correct the name of the part or the field.
+
+## Lesson 3: a set with another name
+
+This lesson shows how to map a raw set whose name is not the default name. It uses `sets:` and
+`rename_columns`.
+
+### The change
+
+Your model adds emissions, and calls its set of pollutants `GHG`. tz-oss-interop does not know
+the name `GHG`. Without a mappings file, tz-oss-interop finds the set of pollutants only when its
+name is `EMISSION`.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   GHG:
+     type: set
+     dtype: str
+   EmissionActivityRatio:
+     type: param
+     indices: [REGION, TECHNOLOGY, GHG, MODE_OF_OPERATION, YEAR]
+     dtype: float
+     default: 0
+   ```
+
+3. Make `inputs/model/csv/GHG.csv`:
+
+   ```csv
+   VALUE
+   CO2
+   ```
+
+4. Make `inputs/model/csv/EmissionActivityRatio.csv`:
+
+   ```csv
+   REGION,TECHNOLOGY,GHG,MODE_OF_OPERATION,YEAR,VALUE
+   R1,GASCC,CO2,1,2030,0.056
+   ```
+
+### The problem
+
+Write `osemosys: {}` in `inputs/osemosys_mappings.yaml`, and do the run. The console shows two
+warnings:
+
+```
+WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: GHG
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: EmissionActivityRatio
+```
+
+This tutorial writes `...` in place of the text between `WARNING` and the message.
+
+An extension table is a raw set or a raw table that gets no canonical name. tz-oss-interop keeps it
+in `extensions/` with its own name, so you lose no data. But a tool that reads the canonical
+stage does not find your emissions.
+
+`EmissionActivityRatio` does not match automatically, because the automatic match looks for the
+index column `EMISSION`, and your table has `GHG`.
+
+### The fix
+
+```yaml
+osemosys:
+  sets:
+    GHG: pollutant
+  parameters:
+    - source: EmissionActivityRatio
+      canonical: emission_rate
+      rename_columns: {GHG: pollutant}
+```
+
+Read the file like this:
+
+- `GHG: pollutant` in `sets:` gives the raw set `GHG` the canonical name `pollutant`.
+- `parameters:` holds a list. A line that starts with `- ` (a hyphen and a space) starts one item
+  of the list. In this tutorial, one item of `parameters:` is a row.
+- `source` names the raw table. `canonical` names the canonical parameter.
+- `rename_columns` gives the column `GHG` the new name `pollutant`.
+- `{GHG: pollutant}` writes a key and its value on one line, in braces.
+
+[Lesson 4](#find-the-canonical-name) tells you how to find a canonical name such as
+`emission_rate`.
+
+Do the run. The console shows no warning. The run writes `sets/pollutant.parquet`:
+
+| value |
+| --- |
+| CO2 |
+
+And `parameters/emission_rate.parquet`:
+
+| region | technology | pollutant | operating_mode | year | value |
+| --- | --- | --- | --- | --- | --- |
+| R1 | GASCC | CO2 | 1 | 2030 | 0.056 |
+
+### The column names that an operation sees
+
+`rename_columns` is an operation. An operation is a change that a row makes to a raw table.
+
+Before the operations, tz-oss-interop gives canonical names to some columns of the raw table:
+
+- A column with the default name of a set takes the canonical name. For example,
+  `MODE_OF_OPERATION` becomes `operating_mode`.
+- `VALUE` becomes `value`.
+- Each other column keeps its name, for example `GHG`.
+
+So in an operation, write `GHG` for the `GHG` column. Write `operating_mode` for a
+`MODE_OF_OPERATION` column.
+
+This table gives the default name of each canonical set:
+
+| Default name | Canonical set |
 | --- | --- |
 | `REGION` | `region` |
 | `TECHNOLOGY` | `technology` |
@@ -621,577 +613,194 @@ fields `rename_columns`, `columns_from_name` and `repeat_for_all` of a `paramete
 | `STORAGE` | `storage` |
 | `REGIONGROUP` | `region_group` |
 
-## The automatic match
+### Mistakes
 
-You need no `parameters:` row for a raw table when both of these are true:
+You need both parts. `sets:` changes the name of the set only. It does not change the `GHG`
+column of a raw table. And `rename_columns` without `sets:` gives a canonical set `pollutant`
+with no members. With only the `parameters:` row, the run writes an empty `emission_rate`:
 
-- Its name is the OSeMOSYS name of a canonical parameter, for example `CapitalCost`.
-- Its index columns are the OSeMOSYS columns of that canonical parameter. The order of the
-  index columns does not matter.
-
-You need nothing in `sets:` for a raw set when its name is the OSeMOSYS name of a canonical set,
-for example `TECHNOLOGY`.
-
-### Example: a raw table that matches automatically
-
-This example shows that the order of the index columns does not stop the automatic match.
-
-The raw table `CapitalCost.csv` has the index columns `TECHNOLOGY`, `REGION` and `YEAR`. The
-order is not the order of the schema, and the table still matches:
-
-```csv
-TECHNOLOGY,REGION,YEAR,VALUE
-GASCC,R1,2030,950
-WINDON,R1,2030,1300
+```
+WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: GHG
+WARNING ... 1 canonical parameter table(s) hold values whose set member is not in its canonical set, so those values are left out: emission_rate (absent members: CO2)
 ```
 
-The mappings file holds nothing for it:
+A canonical name that does not exist, for example `GHG: pollutants`, stops the run:
+
+```
+Value error, `sets:` names the canonical sets ['pollutants'], which do not exist
+```
+
+A raw set name that your model does not have, for example `GHGS: pollutant`, does not stop the
+run. With the `parameters:` row of the fix, the console shows:
+
+```
+WARNING ... 1 entry(ies) of `sets:` name no raw set: GHGS
+WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: GHG
+WARNING ... 1 canonical parameter table(s) hold values whose set member is not in its canonical set, so those values are left out: emission_rate (absent members: CO2)
+```
+
+The first warning tells you the cause. The other two warnings come from it: the set `GHG` gets no
+canonical name, so the canonical set `pollutant` has no members.
+
+## Lesson 4: a table with another name
+
+This lesson shows how to map a raw table whose name is not the default name. It also shows how to
+find a canonical name.
+
+### The change
+
+The model calls its capital cost `InvestmentCost`.
+
+1. Start from the base model.
+2. Rename `inputs/model/csv/CapitalCost.csv` to `InvestmentCost.csv`.
+3. In `inputs/model/config.yaml`, change the line `CapitalCost:` to `InvestmentCost:`.
+
+### The problem
+
+Write `osemosys: {}`, and do the run. The console shows:
+
+```
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: InvestmentCost
+```
+
+The run writes `extensions/InvestmentCost.parquet`, and no `parameters/capital_cost.parquet`.
+
+### Find the canonical name
+
+[What tz-oss-interop knows about an OSeMOSYS model](osemosys-default-names.md) gives the
+canonical name of each default name. Find `CapitalCost` in its table of parameters.
+
+The page copies the canonical schema file, `interop/plugins/shared/osemosys_canonical_schema.yaml`,
+in the directory where you cloned tz-oss-interop. The schema file has one entry for each canonical
+set and each canonical parameter.
+
+Search the schema file for the default name, `osemosys_name: CapitalCost`. The search also finds
+longer names that start with `CapitalCost`, for example `CapitalCostStorage`. Use the entry where
+the line stops after `CapitalCost`:
 
 ```yaml
-osemosys: {}
+  capital_cost:
+    columns:
+      region: region
+      technology: technology
+      year: year
+    osemosys_name: CapitalCost
+    osemosys_columns: [REGION, TECHNOLOGY, YEAR]
+    default: 0
+    unit: currency per capacity
+    meaning: Overnight investment cost of one unit of new capacity.
+    origin: OSeMOSYS v1.0.1
 ```
 
-The run writes `parameters/capital_cost.parquet`, with the canonical columns in their fixed order:
+Read it like this:
+
+- `capital_cost` is the canonical name. You write it in `canonical`.
+- `columns` gives the canonical columns, in order. The word after each colon is the canonical set
+  that the column holds.
+- `osemosys_name` and `osemosys_columns` are the default name and the default columns. The
+  automatic match looks for them.
+- `default` is the value where the model states no value. The default that your model declares
+  wins over it.
+- `meaning` tells what the parameter holds.
+
+### The fix
+
+```yaml
+osemosys:
+  parameters:
+    - source: InvestmentCost
+      canonical: capital_cost
+```
+
+Do the run. The console shows no warning, and the run writes `parameters/capital_cost.parquet`:
 
 | region | technology | year | value |
 | --- | --- | --- | --- |
 | R1 | GASCC | 2030 | 950 |
 | R1 | WINDON | 2030 | 1300 |
 
-Notice that `region` is now the first column.
-
-### Example: a raw table with the right name and other index columns
-
-This example shows what happens when a raw table has an extra index column. A raw table has an
-extra index column when your model adds a column to a published parameter.
-
-The raw table `FixedCost.csv` has a `MODE_OF_OPERATION` column. The canonical parameter
-`fixed_cost` has no such column, so the raw table does not match automatically:
-
-```csv
-REGION,TECHNOLOGY,MODE_OF_OPERATION,YEAR,VALUE
-R1,GASCC,1,2030,22
-```
-
-With `osemosys: {}`, the run writes `extensions/FixedCost.parquet`. An extension table keeps
-its own name, but its columns take the canonical set names. `MODE_OF_OPERATION` becomes
-`operating_mode`, its canonical set name:
-
-| region | technology | operating_mode | year | value |
-| --- | --- | --- | --- | --- |
-| R1 | GASCC | 1 | 2030 | 22 |
-
-The run writes this warning:
+`decisions.md` gives the row under "Values derived":
 
 ```
-WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: FixedCost
+row 0 of `parameters:` maps the raw table InvestmentCost to capital_cost: no operations
 ```
 
-In a message from tz-oss-interop, "key" means the index columns of a raw table. So "by name and key"
-means "by the name and the index columns".
-
-To map such a table, write a `parameters:` row. This row keeps the table rows of operating mode
-1, and removes the column:
-
-```yaml
-osemosys:
-  parameters:
-    - source: FixedCost
-      canonical: fixed_cost
-      remove_column: {column: operating_mode, rule: choose, member: "1"}
-```
-
-Read the row like this:
-
-- A line that starts with `- ` (a hyphen and a space) starts one row of `parameters:`. The
-  indented lines below it belong to the same row.
-- The braces hold the fields of `remove_column` on one line. A comma separates two fields.
-- A member that is a number must be in double quotes, so write `"1"` and not `1`.
-
-The run then writes `parameters/fixed_cost.parquet`:
-
-| region | technology | year | value |
-| --- | --- | --- | --- |
-| R1 | GASCC | 2030 | 22 |
-
-Write `operating_mode`, not `MODE_OF_OPERATION`. With `MODE_OF_OPERATION`, the run stops.
-[The column names that the operations see](#the-column-names-that-the-operations-see) tells why.
-[`remove_column`](#remove_column) explains each field of `remove_column`.
-
-### See what matched
-
-- In `decisions.md`, the table under the heading "Values derived" holds the note
-  `matched by name and key` for each automatic match.
-- The directory `extensions/` holds each raw table and raw set that did not match.
-- The warnings name each extension table.
+tz-oss-interop counts the rows from 0, so the first row is "row 0". Its messages use these
+numbers.
 
 ### Find out why a table did not match
 
-A run writes temporary files in a staging directory. A staging directory is a temporary
-directory that tz-oss-interop deletes at the end of the run. The option `--keep-staging`
-keeps it, so that you can read what the model reader read.
+If a raw table does not match automatically, compare it with the schema entry:
 
-Know these facts before you do the steps:
+1. Compare the name of the raw table with `osemosys_name`.
+2. Compare the `indices` of the parameter in `config.yaml` with `osemosys_columns`.
 
-- The temporary directory of the system is `/tmp` on Linux and in WSL. On macOS, it is the
-  directory in `$TMPDIR`.
-- For a TZ-format model, the name of the staging directory starts `interop-tz-osemosys-staging-`.
-- `raw/declarations.parquet` has one table row for each raw table that the model reader saw.
-- The `key` column holds the list of the index columns of the raw table, in their order.
+A difference in either one stops the automatic match.
 
-Do these steps:
+### Mistakes
 
-1. Put `--keep-staging` at the end of the last line of the run command. Then do the run.
-2. Find the directory `interop-osemosys-staging-<random>` in the temporary directory of the
-   system. `<random>` is a set of random characters.
-3. Show `raw/declarations.parquet` with the command below. In the command, replace
-   `abc123` with the random characters of your staging directory. On macOS, also replace `/tmp`
-   with the directory in `$TMPDIR`.
+The default name in `canonical`, for example `canonical: CapitalCost`, stops the run:
 
-   ```bash
-   uv run --with polars python -c "import polars as pl; pl.Config.set_fmt_str_lengths(200); print(pl.read_parquet('/tmp/interop-osemosys-staging-abc123/raw/declarations.parquet'))"
+```
+Value error, row 0 of `parameters:` names the canonical parameter CapitalCost, which the canonical schema does not hold
+```
+
+Use the canonical name, `capital_cost`.
+
+A `source` that names no raw table, for example `InvestmentCosts`, does not stop the run. The
+console shows:
+
+```
+WARNING ... 1 row(s) of `parameters:` match no raw table: row 0 (InvestmentCosts)
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: InvestmentCost
+```
+
+## Lesson 5: a percent in place of a fraction
+
+This lesson shows how to multiply each value of a raw table by a number. It uses `multiply_by`.
+
+### The change
+
+The model gives the availability of each technology in percent. The canonical parameter
+`availability_factor` holds a fraction from 0 to 1.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   AvailabilityPercent:
+     type: param
+     indices: [REGION, TECHNOLOGY, YEAR]
+     dtype: float
+     default: 100
    ```
 
-   `pl.Config.set_fmt_str_lengths(200)` stops polars from cutting a long `key`. For the model of
-   the first run, the command shows:
+3. Make `inputs/model/csv/AvailabilityPercent.csv`:
 
-   ```
-   shape: (1, 3)
-   ┌─────────────┬──────────────────────────────────┬─────────┐
-   │ name        ┆ key                              ┆ default │
-   │ ---         ┆ ---                              ┆ ---     │
-   │ str         ┆ list[str]                        ┆ f64     │
-   ╞═════════════╪══════════════════════════════════╪═════════╡
-   │ CapitalCost ┆ ["REGION", "TECHNOLOGY", "YEAR"] ┆ 0.0     │
-   └─────────────┴──────────────────────────────────┴─────────┘
+   ```csv
+   REGION,TECHNOLOGY,YEAR,VALUE
+   R1,GASCC,2030,92
+   R1,WINDON,2030,35
    ```
 
-4. Read the columns `name`, `key` and `default` of the table row for the raw table that did not
-   match.
-5. Compare `name` and `key` with `osemosys_name` and `osemosys_columns` in the schema entry.
+### The problem
 
-For example, a table row can have the `name` `MaxRampRate` and the `key`
-`["REGION", "TECHNOLOGY", "YEAR"]`. It matches only a schema entry with the same `osemosys_name`
-and the same `osemosys_columns`.
-
-## `units:`
-
-`units:` states the real units of your model. It has five optional fields: `capacity`,
-`energy`, `currency`, `currency_year` and `emissions`. The engine does not convert a value.
-It writes the units in `metadata/units.parquet`.
-
-This example states all five units of a model:
-
-```yaml
-osemosys:
-  units:
-    capacity: GW
-    energy: PJ
-    currency: EUR
-    currency_year: 2022
-    emissions: Mt
-```
-
-The run writes `metadata/units.parquet`:
-
-| quantity | unit |
-| --- | --- |
-| capacity | GW |
-| energy | PJ |
-| currency | EUR |
-| currency_year | 2022 |
-| emissions | Mt |
-
-`currency_year` must be a whole number. Each other unit is text. tz-oss-interop copies it and does not
-check it. A field that the file does not state has no table row.
-
-## `sets:`
-
-`sets:` maps a raw set to its canonical set. Write the raw set name, a colon, and the canonical
-set name. Write one line for each raw set.
-
-### Example: a set of pollutants with another name
-
-This example shows how to map a raw set whose name is not the OSeMOSYS name.
-
-The model calls its set of pollutants `GHG`. The file `GHG.csv` holds:
-
-```csv
-VALUE
-CO2
-```
-
-The mappings file:
-
-```yaml
-osemosys:
-  sets:
-    GHG: pollutant
-```
-
-The run writes `sets/pollutant.parquet`:
-
-| value |
-| --- |
-| CO2 |
-
-Notice that the canonical table has the canonical set name `pollutant`, and not `GHG`.
-
-`sets:` changes the name of the set only. It does not change the `GHG` column of a raw table.
-To change that column, use `rename_columns` on a `parameters:` row.
-[`rename_columns`](#rename_columns) shows it.
-
-When `sets:` maps two raw sets to one canonical set, the canonical set holds the members of both.
-For example, a raw set `TECHNOLOGY` and a raw set `TECH` that `sets:` maps to `technology` give
-one `technology` set.
-
-A raw set with no canonical name stays an extension table. For example, a raw set `UNIT`
-gives `extensions/UNIT.parquet`, and this warning:
+Write `osemosys: {}`, and do the run. The console shows:
 
 ```
-WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: UNIT
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: AvailabilityPercent
 ```
 
-## `parameters:`
-
-### Rows
-
-`parameters:` holds a list of rows. A row tells the engine what to do with one raw table, or with
-a group of raw tables.
-
-In YAML, a line that starts with `- ` (a hyphen and a space) starts one item of a list. The
-indented lines below it belong to the same item. Each example below shows rows in this form.
-
-The engine counts the rows from 0, so the first row is "row 0". Its messages use these numbers.
-
-### Patterns
-
-A pattern is a short text that describes a group of names. A pattern is a regular expression, a
-standard notation for a text search. You do not need to know regular expressions. The table
-below gives each
-symbol that this guide uses.
-
-The field `source_pattern` of a `parameters:` row takes a pattern. The field `match` of an
-`objects:` row also takes a pattern.
-
-The engine searches for the pattern in the name, so a pattern with no `^` and `$` can match
-inside a longer name. For example, the pattern `Cost` matches `CapitalCost`, `FixedCost` and
-`CostScenario`.
-
-A pattern uses these symbols. Each other character, for example a letter, matches itself. A
-pattern is case-sensitive, so `Cost` does not match `COST`.
-
-| Symbol | What it matches | Example pattern | Matches | Does not match |
-| --- | --- | --- | --- | --- |
-| `^` | The start of the name | `^AAGAS` | `AAGASCC`, `AAGASIMP` | `BBAAGAS` |
-| `$` | The end of the name | `GASCC$` | `GASCC`, `AAGASCC` | `GASCC2` |
-| `^` and `$` together | The whole name | `^AAGASCC$` | `AAGASCC` | `AAGASCC2`, `XAAGASCC` |
-| `[A-Z]` | One capital letter, from A to Z | `^[A-Z]GAS$` | `AGAS`, `BGAS` | `AAGAS`, `aGAS` |
-| `[a-z]` | One lowercase letter, from a to z | `^gas-[a-z][a-z]$` | `gas-cc` | `gas-CC`, `gas-ccc` |
-| `[0-9]` | One digit, from 0 to 9 | `^Z[0-9]+$` | `Z1`, `Z12` | `Z`, `ZA` |
-| `+` | One or more of the item before it | `^Z[0-9]+$` | `Z1`, `Z12` | `Z` |
-| `{2}` | Exactly two of the item before it | `^[A-Z]{2}ELEC$` | `AAELEC`, `BBELEC` | `AELEC`, `AAAELEC` |
-| `{4}` | Exactly four of the item before it | `^[A-Z]{4}LINK$` | `AABBLINK` | `AALINK` |
-| `(?P<name>X)` | A named group, where `X` is a pattern. The characters that `X` matches get the name `name`. | `^CapacityFactor(?P<zone>[A-Z]+)$` | `CapacityFactorNORTH`, with `zone` = `NORTH` | `CapacityFactor`, `CapacityFactorNorth` |
-| `?` after a group | The group is optional | `^(?P<country>[A-Z]{2})?GAS$` | `AAGAS`, with `country` = `AA`; `GAS`, with no `country` | `AGAS` |
-
-A named group lets the engine use some characters of a name. For example, `columns_from_name`
-writes them into a column. The annotation `location`, which tells where a member is, can also use
-them. [`location`](#location) shows how.
-
-In the mappings file, put each pattern in double quotes, for example `"^AAGASCC$"`. Some
-symbols of a pattern, for example `[` and `{`, have another meaning in YAML. The quotes keep the
-pattern as text.
-
-### The fields of a `parameters:` row
-
-Each row states exactly one of these two fields:
-
-| Field | What it names |
-| --- | --- |
-| `source` | One raw table, by its exact name, for example `source: AvailabilityPercent` |
-| `source_pattern` | Each raw table whose name the pattern finds, for example `source_pattern: "^CapacityFactor(?P<zone>[A-Z]+)$"` |
-
-Each row also states exactly one of these two fields:
-
-| Field | What it does |
-| --- | --- |
-| `canonical` | It names the canonical parameter that the engine maps the raw table to, for example `canonical: availability_factor`. |
-| `ignore: true` | It leaves the raw table out of the canonical stage. |
-
-`canonical` takes a canonical name only. An OSeMOSYS name such as `CapitalCost` stops the run.
-
-### Example: `ignore: true`
-
-This example shows how to leave out a raw table that you do not need in the canonical stage.
-
-The model has a raw table `ReportingFlag` that only its reports use:
-
-```csv
-TECHNOLOGY,VALUE
-AAGASCC,1
-```
-
-```yaml
-osemosys:
-  parameters:
-    - source: ReportingFlag
-      ignore: true
-```
-
-Notice that `- source: ReportingFlag` starts row 0, and `ignore: true` belongs to the same row.
-
-The run writes no file for `ReportingFlag`. `decisions.md` lists it under the heading
-"Components skipped", and the run writes this warning:
-
-```
-WARNING ... 1 raw table(s) match a `parameters:` row that says ignore: true, so each is left out: ReportingFlag
-```
-
-### The column names that the operations see
-
-A row can give operations. An operation is a change that a row makes to the raw table, for
-example a new name for a column. [The operations](#the-operations) lists them.
-
-Before the operations, the engine changes the column names of the raw table:
-
-- A column with the OSeMOSYS name of a set takes the canonical set name. For example,
-  `TECHNOLOGY` becomes `technology`, and `MODE_OF_OPERATION` becomes `operating_mode`.
-- `_REGION` becomes `end_region`.
-- If the canonical parameter has a `start_region` column, `REGION` becomes `start_region`.
-- `VALUE` becomes `value`.
-- Each other column keeps its name, for example `TECH`, `GHG` or `UNIT`.
-
-So in an operation, write `technology` for a `TECHNOLOGY` column. Write `TECH` for a `TECH`
-column.
-
-After the operations, the columns must be the canonical columns of the canonical parameter.
-If they are not, the run stops.
-
-### The operations
-
-The engine always does the operations of a row in this order. The order in the file does not
-change it.
-
-| Order | Operation | What it does |
-| --- | --- | --- |
-| 1 | `rename_columns` | It gives a column a new name. |
-| 2 | `columns_from_name` | It writes some characters of the raw table name into a new column. |
-| 3 | `remove_column` | It removes one column, and combines the table rows that differ only in that column. |
-| 4 | `repeat_for_all` | It repeats each value for each member of a canonical set. |
-| 5 | `multiply_by` | It multiplies each value, and the default of the raw table, by a number. |
-
-#### `rename_columns`
-
-`rename_columns` gives a column a new name. Write the old name, a colon, and the new name.
-
-This example shows how to rename a column whose name is not an OSeMOSYS set name.
-
-The raw table `EmissionActivityRatio.csv` has a `GHG` column. `GHG` is not an OSeMOSYS set
-name, so the column keeps its name:
-
-```csv
-REGION,TECHNOLOGY,GHG,MODE_OF_OPERATION,YEAR,VALUE
-NORTH,GASCC,CO2,1,2030,0.056
-SOUTH,GASCC,CO2,1,2030,0.056
-```
-
-```yaml
-osemosys:
-  sets:
-    GHG: pollutant
-  parameters:
-    - source: EmissionActivityRatio
-      canonical: emission_rate
-      rename_columns: {GHG: pollutant}
-```
-
-`{GHG: pollutant}` writes a key, a colon and a value on one line, in braces. It is the same as
-the line `GHG: pollutant`, indented below `rename_columns:`. Put a comma between two keys with
-their values, for example `{column: UNIT, rule: sum}`.
-
-The run writes `parameters/emission_rate.parquet`:
-
-| region | technology | pollutant | operating_mode | year | value |
-| --- | --- | --- | --- | --- | --- |
-| NORTH | GASCC | CO2 | 1 | 2030 | 0.056 |
-| SOUTH | GASCC | CO2 | 1 | 2030 | 0.056 |
-
-Notice that the `GHG` column is now `pollutant`.
-
-The line `GHG: pollutant` in `sets:` is necessary. Without it, the canonical set `pollutant` has
-no members, and the engine leaves out each table row of `emission_rate`.
-
-#### `columns_from_name`
-
-`columns_from_name` writes some characters of the raw table name into a column. It needs a
-`source_pattern` with a named group. A named group is a piece of the pattern in the form
-`(?P<name>X)`, where `X` is a pattern. Write the group name, a colon, and the column name.
-
-This example shows how to read a region from the name of a table. Your model needs this when it
-has one table for each region.
-
-The model has one capacity factor table for each zone, and the table name gives the zone.
-`CapacityFactorNORTH.csv`:
-
-```csv
-TECHNOLOGY,TIMESLICE,YEAR,VALUE
-WINDON,DAY,2030,0.31
-WINDON,NIGHT,2030,0.42
-```
-
-`CapacityFactorSOUTH.csv`:
-
-```csv
-TECHNOLOGY,TIMESLICE,YEAR,VALUE
-WINDON,DAY,2030,0.27
-WINDON,NIGHT,2030,0.38
-```
-
-```yaml
-osemosys:
-  parameters:
-    - source_pattern: "^CapacityFactor(?P<zone>[A-Z]+)$"
-      canonical: capacity_factor
-      columns_from_name: {zone: region}
-```
-
-The pattern finds a name that starts with `CapacityFactor` and ends with one or more capital
-letters. The group `zone` holds those letters.
-
-The row matches both tables. The engine writes `NORTH` or `SOUTH` into the `region` column, and
-puts the two tables into one `parameters/capacity_factor.parquet`:
-
-| region | technology | timeslice | year | value |
-| --- | --- | --- | --- | --- |
-| NORTH | WINDON | DAY | 2030 | 0.31 |
-| NORTH | WINDON | NIGHT | 2030 | 0.42 |
-| SOUTH | WINDON | DAY | 2030 | 0.27 |
-| SOUTH | WINDON | NIGHT | 2030 | 0.38 |
-
-Notice that one row gives one canonical table from two raw tables.
-
-The value in the new column must be a member of its canonical set. Here, `NORTH` and `SOUTH`
-must be in the `REGION` set. If a member is not in its set, the engine leaves out the table
-row. [Problems in the model data that do not stop the run](#problems-in-the-model-data-that-do-not-stop-the-run)
-tells you more.
-
-#### `remove_column`
-
-`remove_column` removes one column that the canonical parameter does not have. It has three
-fields:
-
-| Field | What it states |
-| --- | --- |
-| `column` | The column to remove |
-| `rule` | How to get one value from the table rows that differ only in that column |
-| `member` | The member to keep. Give it with the rule `choose` only. |
-
-The rule is one of these:
-
-| Rule | The value that it keeps |
-| --- | --- |
-| `choose` | The value of the table row that holds `member`. The engine leaves out the other table rows. |
-| `sum` | The sum of the values |
-| `mean` | The mean of the values. Each value has the same weight. |
-| `min` | The lowest value |
-| `max` | The highest value |
-
-This example shows how to sum the values of the generating units of a technology.
-
-The raw table `ResidualCapacity.csv` has one table row for each generating unit, in a `UNIT`
-column:
-
-```csv
-REGION,TECHNOLOGY,UNIT,YEAR,VALUE
-R1,COALST,U1,2030,0.6
-R1,COALST,U2,2030,0.4
-```
-
-```yaml
-osemosys:
-  parameters:
-    - source: ResidualCapacity
-      canonical: residual_capacity
-      remove_column: {column: UNIT, rule: sum}
-```
-
-The run writes `parameters/residual_capacity.parquet`:
+A row with only `source` and `canonical` maps the table, but the values are wrong:
 
 | region | technology | year | value |
 | --- | --- | --- | --- |
-| R1 | COALST | 2030 | 1 |
+| R1 | GASCC | 2030 | 92 |
+| R1 | WINDON | 2030 | 35 |
 
-Notice that the two table rows become one, with the value 0.6 + 0.4 = 1.
+The value 92 is not a fraction from 0 to 1. The console shows no warning about it.
 
-With each other rule, the same raw table gives this `value`:
-
-| `remove_column` | value |
-| --- | --- |
-| `{column: UNIT, rule: mean}` | 0.5 |
-| `{column: UNIT, rule: min}` | 0.4 |
-| `{column: UNIT, rule: max}` | 0.6 |
-| `{column: UNIT, rule: choose, member: U2}` | 0.4 |
-
-Write a member that is a number in quotes, for example `member: "2"`. Without the quotes, the
-run stops with `Input should be a valid string`.
-
-#### `repeat_for_all`
-
-`repeat_for_all` adds a column, and repeats each value for each member of its canonical set.
-Give a list of canonical columns.
-
-This example shows how to use one value for each region and each year. Your model needs this
-when it states a value once, and the canonical parameter needs it for each region and year.
-
-The raw table `FixedCostFlat.csv` gives one fixed cost for each technology:
-
-```csv
-TECHNOLOGY,VALUE
-AAGASCC,22
-BBWINDON,35
-```
-
-The `REGION` set holds `R1`. The `YEAR` set holds `2030` and `2035`.
-
-```yaml
-osemosys:
-  parameters:
-    - source: FixedCostFlat
-      canonical: fixed_cost
-      repeat_for_all: [region, year]
-```
-
-The run writes `parameters/fixed_cost.parquet`:
-
-| region | technology | year | value |
-| --- | --- | --- | --- |
-| R1 | AAGASCC | 2030 | 22 |
-| R1 | BBWINDON | 2030 | 35 |
-| R1 | AAGASCC | 2035 | 22 |
-| R1 | BBWINDON | 2035 | 35 |
-
-Notice that each value appears once for each year.
-
-You can also write `start_region` or `end_region` in `repeat_for_all`. Each one takes the members
-of the `region` set.
-
-#### `multiply_by`
-
-`multiply_by` multiplies each value by a number. It also multiplies the default that the model
-declares for the raw table.
-
-This example shows how to change a percent into a fraction.
-
-The raw table `AvailabilityPercent.csv` holds the availability in percent:
-
-```csv
-REGION,TECHNOLOGY,YEAR,VALUE
-R1,AAGASCC,2030,92
-R1,CCCOALST,2030,85
-```
-
-The canonical parameter `availability_factor` holds a fraction, so multiply by 0.01:
+### The fix
 
 ```yaml
 osemosys:
@@ -1201,113 +810,462 @@ osemosys:
       multiply_by: 0.01
 ```
 
-The run writes `parameters/availability_factor.parquet`:
+Do the run. `parameters/availability_factor.parquet` holds:
 
 | region | technology | year | value |
 | --- | --- | --- | --- |
-| R1 | AAGASCC | 2030 | 0.92 |
-| R1 | CCCOALST | 2030 | 0.85 |
+| R1 | GASCC | 2030 | 0.92 |
+| R1 | WINDON | 2030 | 0.35 |
 
-### Example: three operations in one row
+`multiply_by` also multiplies the default that your model declares. In
+`metadata/defaults.parquet`, the default of `availability_factor` is 1, which is 100 multiplied by
+0.01. Without `multiply_by`, it is 100.
 
-This example shows that one row can give more than one operation. The engine does them in the
-order of [The operations](#the-operations).
+`metadata/defaults.parquet` has one row for each canonical parameter. polars shows only the first
+five rows and the last five rows of a long table. This command shows only the row of
+`availability_factor`:
 
-The model calls its technology set `TECH`. The raw table `InvestmentCost.csv` states one cost
-in EUR per MW for each technology. The other costs of the model are in EUR per kW.
-
-```csv
-TECH,VALUE
-GASCC,900000
-WINDON,1250000
+```bash
+uv run --with polars python -c "import polars as pl; print(pl.read_parquet('outputs/canonical/metadata/defaults.parquet').filter(pl.col('parameter') == 'availability_factor'))"
 ```
 
-The otoole configuration file declares a default of 1000 for `InvestmentCost`. The `REGION` set
-holds `R1`. The `YEAR` set holds `2030` and `2035`.
+The command shows:
+
+```
+shape: (1, 3)
+┌───────────┬─────────────────────┬─────────┐
+│ kind      ┆ parameter           ┆ default │
+│ ---       ┆ ---                 ┆ ---     │
+│ str       ┆ str                 ┆ f64     │
+╞═══════════╪═════════════════════╪═════════╡
+│ parameter ┆ availability_factor ┆ 1.0     │
+└───────────┴─────────────────────┴─────────┘
+```
+
+## Lesson 6: a table with an extra column
+
+This lesson shows how to remove a column that the canonical parameter does not have. It uses
+`remove_column`.
+
+### The change
+
+The model gives the residual capacity of each generating unit, in a `UNIT` column. The canonical
+parameter `residual_capacity` has no such column.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   UNIT:
+     type: set
+     dtype: str
+   ResidualCapacity:
+     type: param
+     indices: [REGION, TECHNOLOGY, UNIT, YEAR]
+     dtype: float
+     default: 0
+   ```
+
+3. Make `inputs/model/csv/UNIT.csv`:
+
+   ```csv
+   VALUE
+   U1
+   U2
+   ```
+
+4. Make `inputs/model/csv/ResidualCapacity.csv`:
+
+   ```csv
+   REGION,TECHNOLOGY,UNIT,YEAR,VALUE
+   R1,GASCC,U1,2030,0.6
+   R1,GASCC,U2,2030,0.4
+   ```
+
+### The problem
+
+Write `osemosys: {}`, and do the run. The console shows:
+
+```
+WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: UNIT
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: ResidualCapacity
+```
+
+### The fix
 
 ```yaml
 osemosys:
-  sets:
-    TECH: technology
   parameters:
-    - source: InvestmentCost
-      canonical: capital_cost
-      rename_columns: {TECH: technology}
+    - source: ResidualCapacity
+      canonical: residual_capacity
+      remove_column: {column: UNIT, rule: sum}
+```
+
+`remove_column` has two fields here. A comma separates them. `column` names the column to remove.
+`rule` tells tz-oss-interop how to get one value from the rows that differ only in that column.
+
+Do the run. `parameters/residual_capacity.parquet` holds:
+
+| region | technology | year | value |
+| --- | --- | --- | --- |
+| R1 | GASCC | 2030 | 1 |
+
+Notice that the two rows become one, with the value 0.6 + 0.4 = 1.
+
+The console still shows the warning for `UNIT`. This is correct. No canonical set holds units, so
+the set `UNIT` stays an extension table.
+
+### The rules
+
+Each rule gives a different value from the same two rows:
+
+| `remove_column` | value |
+| --- | --- |
+| `{column: UNIT, rule: sum}` | 1 |
+| `{column: UNIT, rule: mean}` | 0.5 |
+| `{column: UNIT, rule: min}` | 0.4 |
+| `{column: UNIT, rule: max}` | 0.6 |
+| `{column: UNIT, rule: choose, member: U2}` | 0.4 |
+
+`mean` gives each value the same weight. `choose` keeps only the rows of one member, and needs the
+field `member`.
+
+### Mistakes
+
+A row with no `remove_column` stops the run:
+
+```
+Row 0 of `parameters:` cannot map the raw table ResidualCapacity to residual_capacity. Its operations turn the key region, technology, UNIT, year into region, technology, UNIT, year, but residual_capacity is keyed region, technology, year.
+```
+
+After the operations, the columns must be the canonical columns. Here the `UNIT` column is extra.
+
+`choose` with no `member`, or `member` with another rule, stops the run:
+
+```
+Value error, remove_column states a member when its rule is choose, and only then
+```
+
+A member that is a number must be in double quotes. Write `member: "2"`, not `member: 2`. Without
+the quotes, the run stops:
+
+```
+osemosys.parameters.0.remove_column.member
+  Input should be a valid string [type=string_type, input_value=2, input_type=int]
+```
+
+## Lesson 7: a table with a missing column
+
+This lesson shows how to repeat each value for each member of a set. It uses `repeat_for_all`.
+
+### The change
+
+The model states one fixed cost for each technology, with no region and no year. The canonical
+parameter `fixed_cost` needs a value for each region and each year. The model also has a second
+year.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   FixedCost:
+     type: param
+     indices: [TECHNOLOGY]
+     dtype: float
+     default: 0
+   ```
+
+3. Make `inputs/model/csv/FixedCost.csv`:
+
+   ```csv
+   TECHNOLOGY,VALUE
+   GASCC,22
+   WINDON,35
+   ```
+
+4. Change `inputs/model/csv/YEAR.csv` to:
+
+   ```csv
+   VALUE
+   2030
+   2035
+   ```
+
+### The problem
+
+Write `osemosys: {}`, and do the run. `FixedCost` has the default name, but not the default
+columns. So the console shows:
+
+```
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: FixedCost
+```
+
+### The fix
+
+```yaml
+osemosys:
+  parameters:
+    - source: FixedCost
+      canonical: fixed_cost
       repeat_for_all: [region, year]
-      multiply_by: 0.001
 ```
 
-The engine renames `TECH` to `technology`. Then it repeats each value for `R1`, `2030` and
-`2035`. Then it multiplies each value by 0.001. The run writes `parameters/capital_cost.parquet`:
+`[region, year]` is a YAML list on one line. A comma separates two items. Write canonical column
+names in `repeat_for_all`.
+
+Do the run. `parameters/fixed_cost.parquet` holds:
 
 | region | technology | year | value |
 | --- | --- | --- | --- |
-| R1 | GASCC | 2030 | 900 |
-| R1 | WINDON | 2030 | 1250 |
-| R1 | GASCC | 2035 | 900 |
-| R1 | WINDON | 2035 | 1250 |
+| R1 | GASCC | 2030 | 22 |
+| R1 | WINDON | 2030 | 35 |
+| R1 | GASCC | 2035 | 22 |
+| R1 | WINDON | 2035 | 35 |
 
-In `metadata/defaults.parquet`, the default of `capital_cost` is 1, which is 1000 multiplied
-by 0.001.
+Notice that each value appears once for each year.
 
-The line `TECH: technology` in `sets:` is necessary. Without it, the canonical set `technology`
-has no members, and the engine leaves out each table row of `capital_cost`.
+### Mistakes
 
-### The order of the rows
+A row with no `repeat_for_all` stops the run:
 
-The engine applies these rules to the `parameters:` rows:
+```
+Row 0 of `parameters:` cannot map the raw table FixedCost to fixed_cost. Its operations turn the key technology into technology, but fixed_cost is keyed region, technology, year.
+```
 
-- **The first row that matches a raw table wins.** The engine does not try the rows after it.
-- **A row stops the automatic match for its canonical parameter.** When a row maps a raw table
-  to a canonical parameter, no automatic match writes to that parameter.
-- **The engine maps a family to one canonical table only when the defaults agree.** The raw tables that `parameters:` rows map
-  to one canonical parameter are a family. They must declare the same default, after
-  `multiply_by`. If not, each one stays an extension table.
-- **Two raw tables cannot write one canonical table row.** If they do, the run stops.
+A name that is not a canonical set, for example `regions`, stops the run:
 
-#### Example: the first row wins
+```
+Value error, row 0 of `parameters:` repeats for ['regions'], which are not canonical sets
+```
 
-This example shows how to leave out one table of a group that a pattern finds.
+## Lesson 8: one table for each region
 
-The model has `CapacityFactorNORTH` and `CapacityFactorSOUTH`, as in
-[`columns_from_name`](#columns_from_name). The first row leaves out the `NORTH` table:
+This lesson shows how to read a region from the name of a raw table. It uses a pattern,
+`source_pattern` and `columns_from_name`.
+
+### The change
+
+The model has two regions. It gives the availability of each region in its own table, and the
+name of the table ends with the region.
+
+1. Start from the base model.
+2. Change `inputs/model/csv/REGION.csv` to:
+
+   ```csv
+   VALUE
+   R1
+   R2
+   ```
+
+3. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   AvailabilityFactorR1:
+     type: param
+     indices: [TECHNOLOGY, YEAR]
+     dtype: float
+     default: 1
+   AvailabilityFactorR2:
+     type: param
+     indices: [TECHNOLOGY, YEAR]
+     dtype: float
+     default: 1
+   ```
+
+4. Make `inputs/model/csv/AvailabilityFactorR1.csv`:
+
+   ```csv
+   TECHNOLOGY,YEAR,VALUE
+   GASCC,2030,0.92
+   WINDON,2030,0.35
+   ```
+
+5. Make `inputs/model/csv/AvailabilityFactorR2.csv`:
+
+   ```csv
+   TECHNOLOGY,YEAR,VALUE
+   GASCC,2030,0.9
+   WINDON,2030,0.41
+   ```
+
+### The problem
+
+Write `osemosys: {}`, and do the run. The console shows:
+
+```
+WARNING ... 2 raw table(s) match no canonical parameter by name and key, so each stays an extension table: AvailabilityFactorR1, AvailabilityFactorR2
+WARNING ... no kind fits 2 technology(ies) in their region, so each keeps an empty kind: R2/GASCC, R2/WINDON
+```
+
+The second warning tells you that `R2` has no activity ratios. Ignore it in this lesson.
+[Lesson 13](#lesson-13-give-a-kind-that-tz-oss-interop-cannot-infer) explains it.
+
+### Patterns
+
+A pattern is a short text that describes a group of names. A pattern is a regular expression, a
+standard notation for a text search. The field `source_pattern` takes a pattern in place of the
+one name of `source`.
+
+A letter or a digit in a pattern matches itself. These symbols have a special meaning:
+
+| Symbol | What it matches | Example pattern | Matches | Does not match |
+| --- | --- | --- | --- | --- |
+| `^` | The start of the name | `^GAS` | `GASCC` | `AAGAS` |
+| `$` | The end of the name | `ELEC$` | `ELEC`, `BBELEC` | `ELEC2` |
+| `[A-Z]` | One capital letter, from A to Z | `^[A-Z]GAS$` | `AGAS` | `AAGAS`, `aGAS` |
+| `[0-9]` | One digit, from 0 to 9 | `^R[0-9]$` | `R1`, `R2` | `R`, `R12` |
+| `+` | One or more of the item before it | `^R[0-9]+$` | `R1`, `R12` | `R` |
+| `{2}` | Exactly two of the item before it | `^[A-Z]{2}ELEC$` | `BBELEC` | `BELEC` |
+| `(?P<name>X)` | A named group. The characters that the pattern `X` matches get the name `name`. | `^AvailabilityFactor(?P<zone>R[0-9]+)$` | `AvailabilityFactorR1`, with `zone` = `R1` | `AvailabilityFactor` |
+
+Without `^` and `$`, a pattern can match inside a longer name. A pattern is case-sensitive.
+
+### The fix
 
 ```yaml
 osemosys:
   parameters:
-    - source: CapacityFactorNORTH
-      ignore: true
-    - source_pattern: "^CapacityFactor(?P<zone>[A-Z]+)$"
-      canonical: capacity_factor
+    - source_pattern: "^AvailabilityFactor(?P<zone>R[0-9]+)$"
+      canonical: availability_factor
       columns_from_name: {zone: region}
 ```
 
-Row 0 matches `CapacityFactorNORTH`, so row 1 does not get it. `parameters/capacity_factor.parquet`
-holds the `SOUTH` values only:
+Read the row like this:
 
-| region | technology | timeslice | year | value |
-| --- | --- | --- | --- | --- |
-| SOUTH | WINDON | DAY | 2030 | 0.27 |
-| SOUTH | WINDON | NIGHT | 2030 | 0.38 |
+- The pattern finds each name that starts with `AvailabilityFactor` and ends with `R` and one or
+  more digits.
+- The group `zone` holds `R1` or `R2`.
+- `columns_from_name` writes the group `zone` into the canonical column `region`.
+- Put each pattern in double quotes. Some symbols, for example `[` and `{`, have another meaning
+  in YAML.
 
-#### Example: a row stops the automatic match
+Do the run. One row maps the two raw tables into one `parameters/availability_factor.parquet`:
 
-This example shows how to use another raw table in place of the table that matches
-automatically.
+| region | technology | year | value |
+| --- | --- | --- | --- |
+| R1 | GASCC | 2030 | 0.92 |
+| R1 | WINDON | 2030 | 0.35 |
+| R2 | GASCC | 2030 | 0.9 |
+| R2 | WINDON | 2030 | 0.41 |
 
-The model has two cost tables with the same index columns. `CapitalCost.csv`:
+The value in the new column must be a member of its set. Here, `R1` and `R2` must be in
+`REGION.csv`. If a value is not a member, tz-oss-interop leaves out that row and gives a warning.
 
-```csv
-REGION,TECHNOLOGY,YEAR,VALUE
-R1,GASCC,2030,950
+### Mistakes
+
+The raw tables that rows map to one canonical parameter must declare the same default. If
+`AvailabilityFactorR2` declares the default 0.5, each table stays an extension table:
+
+```
+WARNING ... 2 raw table(s) map to one canonical parameter but declare different defaults, so each stays an extension table: AvailabilityFactorR1, AvailabilityFactorR2
 ```
 
-`OvernightCost.csv`:
+`columns_from_name` must name a group of the pattern. `{area: region}` stops the run:
 
-```csv
-REGION,TECHNOLOGY,YEAR,VALUE
-R1,GASCC,2030,870
 ```
+Value error, columns_from_name names the groups ['area'], which source_pattern does not hold
+```
+
+A pattern that is not correct stops the run. For example, a missing `)`:
+
+```
+Value error, the pattern '^AvailabilityFactor(?P<zone>R[0-9]+$' is not a regular expression: missing ), unterminated subpattern at position 19
+```
+
+## Lesson 9: a table that you do not need
+
+This lesson shows how to leave out a raw table. It uses `ignore: true`.
+
+### The change
+
+The model has a table that only its reports use.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   ReportingFlag:
+     type: param
+     indices: [TECHNOLOGY]
+     dtype: float
+     default: 0
+   ```
+
+3. Make `inputs/model/csv/ReportingFlag.csv`:
+
+   ```csv
+   TECHNOLOGY,VALUE
+   GASCC,1
+   ```
+
+### The problem
+
+Write `osemosys: {}`, and do the run. The table stays an extension table:
+
+```
+WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: ReportingFlag
+```
+
+### The fix
+
+```yaml
+osemosys:
+  parameters:
+    - source: ReportingFlag
+      ignore: true
+```
+
+Do the run. The run writes no file for `ReportingFlag`. The console shows:
+
+```
+WARNING ... 1 raw table(s) match a `parameters:` row that says ignore: true, so each is left out: ReportingFlag
+```
+
+`decisions.md` lists the table under the heading "Components skipped".
+
+### Mistakes
+
+A row states `canonical` or `ignore: true`, and never both. A row with both stops the run:
+
+```
+Value error, a row states exactly one of canonical and ignore: true
+```
+
+## Lesson 10: two tables for one parameter
+
+This lesson shows how a row changes the automatic match, and what happens when two rows give the
+same value.
+
+### The change
+
+The model has two capital-cost tables. `CapitalCost` matches automatically, but you want the
+values of `OvernightCost`.
+
+1. Start from the base model.
+2. Add these lines to the end of `inputs/model/config.yaml`:
+
+   ```yaml
+   OvernightCost:
+     type: param
+     indices: [REGION, TECHNOLOGY, YEAR]
+     dtype: float
+     default: 0
+   ```
+
+3. Make `inputs/model/csv/OvernightCost.csv`:
+
+   ```csv
+   REGION,TECHNOLOGY,YEAR,VALUE
+   R1,GASCC,2030,870
+   R1,WINDON,2030,1200
+   ```
+
+### The problem
+
+Write `osemosys: {}`, and do the run. `capital_cost` holds the values of `CapitalCost`, 950 and
+1300. `OvernightCost` stays an extension table.
+
+### The fix
 
 ```yaml
 osemosys:
@@ -1316,802 +1274,480 @@ osemosys:
       canonical: capital_cost
 ```
 
-`parameters/capital_cost.parquet` holds the value of `OvernightCost`:
+Do the run. `parameters/capital_cost.parquet` holds the values of `OvernightCost`:
 
 | region | technology | year | value |
 | --- | --- | --- | --- |
 | R1 | GASCC | 2030 | 870 |
+| R1 | WINDON | 2030 | 1200 |
 
-`CapitalCost` would match `capital_cost` automatically. The row takes `capital_cost`, so
-`CapitalCost` stays an extension table, `extensions/CapitalCost.parquet`. The run writes this
-warning:
+A row stops the automatic match for its canonical parameter. So `CapitalCost` stays an extension
+table, and the console shows:
 
 ```
 WARNING ... 1 raw table(s) match a canonical parameter that a `parameters:` row maps instead, so each stays an extension table: CapitalCost
 ```
 
-If you also add a row that maps `CapitalCost` to `capital_cost`, the two tables write the same
-table row. The run then stops:
+### The rules for the rows
+
+tz-oss-interop applies these rules to the `parameters:` rows:
+
+- The first row that matches a raw table wins. tz-oss-interop does not try the rows after it.
+- A row stops the automatic match for its canonical parameter.
+- Two raw tables cannot write the same canonical row.
+
+To leave out one table of a group that a pattern finds, write an `ignore: true` row for that
+table. Put it above the row with the pattern.
+
+### Mistakes
+
+A row for each table gives two values for the same canonical row. This file stops the run:
+
+```yaml
+osemosys:
+  parameters:
+    - source: CapitalCost
+      canonical: capital_cost
+    - source: OvernightCost
+      canonical: capital_cost
+```
 
 ```
 Rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the same capital_cost row (R1, GASCC, 2030). Change the rows so that one raw table gives each canonical row.
 ```
 
-## `objects:`
+The error names one canonical row only, the first one in the order of the columns. Here
+`WINDON` also has two values.
 
-`objects:` gives annotations to set members. An annotation tells what a member is, or where it
-is. There are four annotations:
+## Lesson 11: mark the electricity fuel
 
-- `kind` tells the role of a technology in the power system, from a fixed list.
-- `category` is free text that names the type of a technology.
-- `carrier` is free text that names the type of a fuel.
-- `location` tells where a member is.
+This lesson shows how to tell tz-oss-interop which fuel is electricity. It uses `objects:` and
+`carrier`.
 
-[`kind`](#kind), [`category` and `carrier`](#category-and-carrier) and [`location`](#location)
-explain each annotation.
+### The problem
 
-Nothing in tz-oss-interop reads the annotations yet. The planned translation to Sienna will read them.
-An empty annotation stops nothing today. But give each annotation that you know, because the
-translation to Sienna will need it.
-
-`objects:` has four lists. Each list annotates the members of one canonical set, and
-accepts only some annotations:
-
-| List | Canonical set | Annotations that it accepts |
-| --- | --- | --- |
-| `technologies:` | `technology` | `kind`, `category`, `location` |
-| `fuels:` | `fuel` | `carrier`, `location` |
-| `storages:` | `storage` | `location` |
-| `regions:` | `region` | `location` |
-
-Each item of a list is one `objects:` row. The engine counts these rows from 0 in each list.
-
-The run writes one annotation table for each list, in `annotations/`. An annotation table has
-one table row for each region and each member, because one member name can be in many regions.
-
-| File | Columns |
-| --- | --- |
-| `annotations/technology.parquet` | `region`, `technology`, `kind`, `category`, `location` |
-| `annotations/fuel.parquet` | `region`, `fuel`, `carrier`, `location` |
-| `annotations/storage.parquet` | `region`, `storage`, `location` |
-| `annotations/region.parquet` | `region`, `location` |
-
-**Warning:** mark each electricity fuel with `carrier: electricity` in a `fuels:` row. If you do
-not, the engine does not know that the fuel is electricity. Then no technology gets
-`SupplyTechnology`, and no warning tells you. For example, in a small model with no
-`carrier: electricity`, a wind technology that puts out only `ELEC` got the kind `fuel_supply`. A
-gas technology that takes in `GAS` and puts out `ELEC` got the kind `conversion`.
-
-### `match`
-
-Each `objects:` row has a `match`, which is a pattern. [Patterns](#patterns) tells you how to
-write one. The engine searches for the pattern in the member name. Then:
-
-- The first row that matches a member wins.
-- A row gives only the annotations that it states. When a row does not give `kind` or
-  `location`, the engine infers it. `category` and `carrier` stay empty.
-- A row gives the same annotations in each region.
-
-A search can match inside a longer name. Use `^` for the start of the name and `$` for the
-end.
-
-This example shows the result of a pattern that matches more names than you want. The model has
-the technologies `AAGASCC`, `AAGASIMP` and `BBWINDON`:
-
-```yaml
-osemosys:
-  objects:
-    technologies:
-      - match: "GAS"
-        category: gas-combined-cycle
-```
-
-The pattern `GAS` matches two technologies, and the gas import gets the wrong category:
+The base model needs no change. Look at `annotations/technology.parquet` from the run of
+[Lesson 1](#lesson-1-a-model-that-needs-no-mappings):
 
 | region | technology | kind | category | location |
 | --- | --- | --- | --- | --- |
-| R1 | AAGASCC | | gas-combined-cycle | R1 |
-| R1 | AAGASIMP | | gas-combined-cycle | R1 |
-| R1 | BBWINDON | | | R1 |
+| R1 | GASCC | conversion |  | R1 |
+| R1 | WINDON | fuel_supply |  | R1 |
 
-Write `match: "^AAGASCC$"` for one technology, or `match: "GASCC$"` for each name that ends in
-`GASCC`.
+An annotation is a fact about a set member that the model does not state as a parameter. `kind`
+is an annotation that tells the role of a technology in the power system. tz-oss-interop infers
+`kind` from the activity ratios. To infer a value is to find it from other data in the model.
 
-Because the first row wins, put a narrow row before a wide row. A narrow row matches few names,
-and a wide row matches many names. This example gives one technology its own category:
+Both kinds are wrong:
 
-```yaml
-osemosys:
-  objects:
-    technologies:
-      - match: "^AAGASOC$"
-        category: gas-open-cycle
-      - match: "^AAGAS"
-        category: gas-combined-cycle
-```
+- `WINDON` makes electricity, but it got `fuel_supply`. This is the kind of a technology that
+  supplies a fuel that is not electricity.
+- `GASCC` makes electricity, but it got `conversion`. This is the kind of a technology that
+  changes one fuel into another fuel.
 
-| region | technology | kind | category | location |
-| --- | --- | --- | --- | --- |
-| R1 | AAGASCC | | gas-combined-cycle | R1 |
-| R1 | AAGASOC | | gas-open-cycle | R1 |
+The console shows no warning. The cause is that the name `ELEC` does not tell tz-oss-interop that
+the fuel is electricity.
 
-Notice that `AAGASOC` gets the category of row 0, although row 1 also matches it.
-
-### `location`
-
-`location` is a text template. A template is a text with places that the engine fills in. Put a
-name in braces, for example `{country}`, and the engine writes a value in its place. You can use two kinds of
-names:
-
-- A named group of `match`, for example `{country}` from `(?P<country>[A-Z]{2})`.
-- `{region}`, which is the region of the table row.
-
-Put a template in double quotes, for example `"{country}"`. Without the quotes, YAML does not read
-the braces as text.
-
-A template can also hold fixed text. This example writes a zone name from the number in a region
-name. The regions are `Z1` and `Z2`:
-
-```yaml
-osemosys:
-  objects:
-    regions:
-      - match: "^Z(?P<number>[0-9]+)$"
-        location: "zone-{number}"
-```
-
-The run writes `annotations/region.parquet`:
-
-| region | location |
-| --- | --- |
-| Z1 | zone-1 |
-| Z2 | zone-2 |
-
-Notice that the fixed text `zone-` comes before the number from the group.
-
-#### Example: a country prefix
-
-This example shows how to read a country from the start of each fuel name. Your model needs this
-when one region of your model holds more than one country.
-
-The model has one region, `R1`, and three countries, `AA`, `BB` and `CC`. Each fuel name starts
-with the country:
-
-```csv
-VALUE
-AAELEC
-BBELEC
-CCELEC
-AAGAS
-CCCOAL
-```
+### The fix
 
 ```yaml
 osemosys:
   objects:
     fuels:
-      - match: "^(?P<country>[A-Z]{2})ELEC$"
+      - match: "^ELEC$"
         carrier: electricity
-        location: "{country}"
-      - match: "^(?P<country>[A-Z]{2})GAS$"
-        carrier: natural-gas
-        location: "{country}"
-      - match: "^(?P<country>[A-Z]{2})COAL$"
-        carrier: coal
-        location: "{country}"
 ```
 
-Each pattern finds a name that is two capital letters and then `ELEC`, `GAS` or `COAL`. The group
-`country` holds the two letters.
+Read the file like this:
 
-The run writes `annotations/fuel.parquet`:
+- `objects:` holds lists. `fuels:` is the list for the members of the set `FUEL`.
+- One item of the list is a row. `match` is a pattern that finds member names.
+  [Lesson 8](#patterns) explains patterns.
+- `carrier` is an annotation for a fuel. The value `electricity` tells tz-oss-interop that the
+  fuel is electricity.
+
+Do the run. `annotations/technology.parquet` holds:
+
+| region | technology | kind | category | location |
+| --- | --- | --- | --- | --- |
+| R1 | GASCC | SupplyTechnology |  | R1 |
+| R1 | WINDON | SupplyTechnology |  | R1 |
+
+And `annotations/fuel.parquet` holds:
 
 | region | fuel | carrier | location |
 | --- | --- | --- | --- |
-| R1 | AAELEC | electricity | AA |
-| R1 | BBELEC | electricity | BB |
-| R1 | CCELEC | electricity | CC |
-| R1 | AAGAS | natural-gas | AA |
-| R1 | CCCOAL | coal | CC |
+| R1 | GAS |  | R1 |
+| R1 | ELEC | electricity | R1 |
 
-### `kind`
+`decisions.md` gives the reason for each kind under "Values derived", for example:
 
-`kind` tells the role of a technology in the power system. It takes one value from this list:
-
-| `kind` | The technology |
-| --- | --- |
-| `StorageTechnology` | Charges or discharges a storage |
-| `AggregateTransportTechnology` | Moves electricity from one location to another |
-| `SupplyTechnology` | Makes electricity |
-| `fuel_supply` | Supplies a fuel that is not electricity |
-| `export` | Takes in a fuel and puts out nothing |
-| `conversion` | Changes one fuel into another at one location |
-
-The first three are type names in Sienna. The planned translation to Sienna will use `kind` to
-choose the Sienna type of each technology. Another value, for example `generator`, stops the run.
-
-The engine infers `kind` from the activity ratios, the storage tables and the fuels whose
-`carrier` is `electricity`. A row needs `kind` only to change the inference.
-[What the engine infers](#what-the-engine-infers) gives the rules.
-
-### `category` and `carrier`
-
-`category` is free text for a technology, for example `gas-combined-cycle` or `wind-onshore`.
-The engine never infers a category.
-
-`carrier` is free text for a fuel, for example `natural-gas` or `coal`. The engine never infers
-a carrier. One value has a fixed meaning: `carrier: electricity` tells the engine that the fuel is
-electricity. The `kind` rules use it.
-
-#### Example: a TZ-format model
-
-This example shows a typical mappings file for a TZ-format model. It holds only `units:` and
-`objects:`, because the tables of a TZ-format model match automatically.
-
-A TZ-format model has the regions `NORTH` and `SOUTH`, the fuels `natural-gas` and
-`electricity`, and the technologies `gas-cc` and `gas-import`. This file gives the units, a
-carrier and a location for each fuel, and a category for `gas-cc`:
-
-```yaml
-osemosys:
-  units: {capacity: MW, energy: MWh, currency: USD, currency_year: 2023}
-  objects:
-    fuels:
-      - match: "^electricity$"
-        carrier: electricity
-        location: "{region}"
-      - match: "^natural-gas$"
-        carrier: natural-gas
-        location: "{region}"
-    technologies:
-      - match: "^gas-cc$"
-        category: gas-combined-cycle
+```
+kind SupplyTechnology: it puts out electricity, and takes in no electricity
 ```
 
-`units:` here writes its fields and their values on one line, in braces, as in
-[`rename_columns`](#rename_columns).
+**Warning:** mark each electricity fuel of your model with `carrier: electricity`. Without it,
+each kind can be wrong, and no warning tells you.
 
-The run writes `annotations/technology.parquet`:
+### How tz-oss-interop infers a kind
 
-| region | technology | kind | category | location |
-| --- | --- | --- | --- | --- |
-| NORTH | gas-cc | SupplyTechnology | gas-combined-cycle | NORTH |
-| NORTH | gas-import | fuel_supply | | NORTH |
-| SOUTH | gas-cc | SupplyTechnology | gas-combined-cycle | SOUTH |
-| SOUTH | gas-import | fuel_supply | | SOUTH |
-
-The activity ratios of this model are not shown. They make `gas-cc` take in `natural-gas` and put
-out `electricity`. `gas-import` puts out `natural-gas` and takes in nothing.
-
-Notice that the engine infers each `kind`, and that `gas-import` gets no category.
-
-In this model, `location: "{region}"` changes no result. A fuel with no `location` also takes the
-location of its region. But when the engine infers the location and the kind of a technology, it
-counts only a location that a row gives. So the line matters when rows give other fuels another
-location.
-
-For example, the region `R1` holds the fuels `ELEC` and `AAELEC`. The technology `LINK` takes in
-`ELEC` and puts out `AAELEC`. Both fuels have `carrier: electricity`, and a row gives `AAELEC` the
-location `AA`. The row for `ELEC` changes the result:
-
-| Row for `ELEC` | `kind` of `LINK` | `location` of `LINK` |
-| --- | --- | --- |
-| `carrier: electricity` | `conversion` | `AA` |
-| `carrier: electricity` and `location: "{region}"` | `AggregateTransportTechnology` | `R1~AA` |
-
-### What the engine infers
-
-The engine infers each `location` and `kind` that no row gives. An `objects:` row overrides an
-inference.
-
-The engine infers a location like this:
-
-- A region is its own location.
-- A fuel and a storage take the location of their region.
-- A technology takes the locations that `objects:` rows give to the fuels that it takes in and
-  puts out. A fuel location that the engine inferred does not count.
-- If the fuels of a technology have two or more locations, `~` joins them, for example `AA~BB`.
-  The locations of the lowest operating mode come first. In each mode, the location of the input
-  fuel comes first.
-- If no fuel of a technology has a location from a row, the technology takes the location of
-  its region.
-
-The engine infers a kind from the canonical tables `input_activity_ratio`,
-`output_activity_ratio`, `technology_to_storage` and `technology_from_storage`. Only a table row
-with a `value` above zero counts. The engine tries the kinds in this order. The first kind that fits wins:
+tz-oss-interop reads the canonical tables `input_activity_ratio`, `output_activity_ratio`,
+`technology_to_storage` and `technology_from_storage`. Only a row with a value above zero counts.
+It tries the kinds in this order, and the first kind that fits wins:
 
 | Order | `kind` | The technology |
 | --- | --- | --- |
-| 1 | `StorageTechnology` | Has a table row in `technology_to_storage` or `technology_from_storage` |
+| 1 | `StorageTechnology` | Has a row in `technology_to_storage` or `technology_from_storage` |
 | 2 | `AggregateTransportTechnology` | Takes in electricity and puts out electricity, and rows give these fuels two or more locations |
 | 3 | `SupplyTechnology` | Puts out electricity, and takes in no electricity |
 | 4 | `fuel_supply` | Puts out a fuel that is not electricity, and takes in nothing |
 | 5 | `export` | Takes in a fuel, and puts out nothing |
 | 6 | `conversion` | Takes in and puts out, and rows give its fuels one location or none |
 
-If no kind fits, `kind` stays empty. `decisions.md` lists the technology under the heading
-"Fields not mapped", and the run writes a warning:
+[Lesson 14](#lesson-14-read-a-country-from-a-fuel-name) explains locations.
 
-```
-WARNING ... no kind fits 1 technology(ies) in their region, so each keeps an empty kind: R1/COALST
-```
+## Lesson 12: name the type of each technology
 
-A technology with no table rows in the activity ratio tables or the storage tables of a region
-gets this warning for that region.
+This lesson shows how to give each technology a category, and why the order of the rows matters.
+It uses `technologies:` and `category`.
 
-#### Example: the inferred kinds and locations
+### The problem
 
-This example shows the kinds and the locations that the engine infers from the activity ratios.
+The base model needs no change. In the run of Lesson 11, the `category` column is empty.
+tz-oss-interop never infers a category. Only your mappings file can give one.
 
-The model with the countries `AA`, `BB` and `CC` has these table rows in
-`InputActivityRatio.csv`:
-
-```csv
-REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
-R1,AAGASCC,AAGAS,1,2030,1.8
-R1,CCCOALST,CCCOAL,1,2030,2.5
-R1,AABBLINK,AAELEC,1,2030,1
-```
-
-And in `OutputActivityRatio.csv`:
-
-```csv
-REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
-R1,AAGASCC,AAELEC,1,2030,1
-R1,BBWINDON,BBELEC,1,2030,1
-R1,CCCOALST,CCELEC,1,2030,1
-R1,AABBLINK,BBELEC,1,2030,0.97
-R1,AAGASIMP,AAGAS,1,2030,1
-```
-
-With the `fuels:` rows of [Example: a country prefix](#example-a-country-prefix), and no
-`technologies:` row, the engine infers:
-
-| technology | kind | location | Why |
-| --- | --- | --- | --- |
-| AAGASCC | SupplyTechnology | AA | It puts out electricity, and takes in gas |
-| BBWINDON | SupplyTechnology | BB | It puts out electricity, and takes in nothing |
-| CCCOALST | SupplyTechnology | CC | It puts out electricity, and takes in coal |
-| AABBLINK | AggregateTransportTechnology | AA~BB | It takes in electricity in `AA`, and puts out electricity in `BB` |
-| AAGASIMP | fuel_supply | AA | It puts out gas, and takes in nothing |
-
-`decisions.md` gives the rule of each inference under the heading "Values derived", for example:
-
-```
-location AA~BB: the locations of the fuels that it takes in and puts out; kind AggregateTransportTechnology: it takes in electricity at one location and puts it out at another
-```
-
-#### Example: a row overrides an inference
-
-This example shows how to give a kind where the engine cannot infer one.
-
-In a model with the regions `NORTH` and `SOUTH`, the technology `WINDON` has table rows in
-`SOUTH` only. In `NORTH`, no kind fits. A row gives the kind in each region:
+### The fix
 
 ```yaml
 osemosys:
   objects:
+    fuels:
+      - match: "^ELEC$"
+        carrier: electricity
     technologies:
-      - match: "^WINDON$"
-        kind: SupplyTechnology
-        category: wind-onshore
+      - match: "^GASCC$"
+        category: gas-combined-cycle
+      - match: "^[A-Z]+$"
+        category: other
 ```
+
+`category` is free text. You choose the words.
+
+Do the run. `annotations/technology.parquet` holds:
 
 | region | technology | kind | category | location |
 | --- | --- | --- | --- | --- |
-| NORTH | WINDON | SupplyTechnology | wind-onshore | NORTH |
-| SOUTH | WINDON | SupplyTechnology | wind-onshore | SOUTH |
+| R1 | GASCC | SupplyTechnology | gas-combined-cycle | R1 |
+| R1 | WINDON | SupplyTechnology | other | R1 |
 
-Notice that `WINDON` has a kind in `NORTH` too.
+Notice that row 1 also matches `GASCC`, but `GASCC` gets the category of row 0. The first row that
+matches a member wins. So put a row for one member above a row that matches many members.
 
-`decisions.md` lists the row under the heading "User config defaults applied":
+A row gives the same annotations in each region.
+
+### The lists and their annotations
+
+`objects:` has four lists. Each list accepts only some annotations:
+
+| List | Members of the canonical set | Annotations that it accepts |
+| --- | --- | --- |
+| `technologies:` | `technology` | `kind`, `category`, `location` |
+| `fuels:` | `fuel` | `carrier`, `location` |
+| `storages:` | `storage` | `location` |
+| `regions:` | `region` | `location` |
+
+### Mistakes
+
+An annotation that the list does not accept stops the run. For example, `carrier` in a
+`technologies:` row:
 
 ```
-row 0 of `objects: technologies` gives kind, category
+Value error, row 0 of `objects: technologies` gives carrier, which a technologies row does not hold
 ```
 
-## Errors that stop the run
+## Lesson 13: give a kind that tz-oss-interop cannot infer
 
-An error in the mappings file stops the run. The run writes no canonical stage. The console
-shows the error, also without `INTEROP_LOG_LEVEL`.
+This lesson shows how to give a kind in your mappings file. It uses `kind`.
 
-An error in the YAML itself contains `Invalid YAML in user mappings file`. The message gives the
-line and the column of the error in the file.
+### The change
 
-The engine checks the mappings file before it reads your model. An error from this check contains
-`Invalid user mappings at <file>`. `<file>` is the path of your mappings file. A later line names
-the place in the file, for example `osemosys.parameters.0` for row 0 of `parameters:`.
+The model has no activity ratio for `WINDON`.
 
-| The error contains | Cause | Fix |
-| --- | --- | --- |
-| `` found character '\t' that cannot start any token `` | A tab character at the start of a line | Use spaces in place of the tab. |
-| `Input should be a valid dictionary` | A field with no space after its colon, for example `capacity:GW` | Put a space after the colon: `capacity: GW`. |
-| `Extra inputs are not permitted` | A part or a field that the engine does not know, for example `parameter:` in place of `parameters:` | Correct the name of the part or the field. |
-| `` `sets:` names the canonical sets ['technologies'], which do not exist `` | A line in `sets:` names a canonical set that does not exist | Use a canonical set name, for example `technology`. |
-| `` row 0 of `parameters:` names the canonical parameter CapitalCost, which the canonical schema does not hold `` | `canonical` holds an OSeMOSYS name or a wrong name | Use the canonical name from the schema file, for example `capital_cost`. |
-| `` row 0 of `parameters:` repeats for ['regions'], which are not canonical sets `` | `repeat_for_all` names a column that no canonical parameter has | Use a canonical column name, for example `region`. |
-| `remove_column states a member when its rule is choose, and only then` | `member` with a rule other than `choose`, or `choose` with no `member` | Give `member` with `choose` only. |
-| `Input should be a valid string` | A `member` that is a number with no quotes | Put the member in quotes, for example `"2"`. |
-| `a row states exactly one of source and source_pattern` | A row states both fields, or neither | Keep one of the two. |
-| `a row states exactly one of canonical and ignore: true` | A row states both fields, or neither | Keep one of the two. |
-| `is not a regular expression` | A `source_pattern` or a `match` that is not a correct pattern | Correct the pattern. |
-| `columns_from_name names the groups ['zone'], which source_pattern does not hold` | `columns_from_name` names a group that the pattern does not have | Add the named group to the pattern, for example `(?P<zone>[A-Z]+)`. |
-| `` row 0 of `objects: fuels` gives category, which a fuels row does not hold `` | An annotation that the list does not accept | Move the annotation to the correct list. |
-| `` Input should be 'StorageTechnology', 'AggregateTransportTechnology', 'SupplyTechnology', 'fuel_supply', 'export' or 'conversion' `` | A `kind` that is not in the list | Use a value from the list. |
-| `the location {country} names country, which match does not capture` | `location` names a group that `match` does not have | Add the group to `match`, or use `{region}`. |
-| `the location '{}' holds an empty {}` | `location` holds empty braces | Put a group name or `region` in the braces. |
+1. Start from the base model.
+2. Change `inputs/model/csv/OutputActivityRatio.csv` to:
 
-The engine finds the errors below when it applies the file to the model. So each one names the
-raw table or the member:
+   ```csv
+   REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
+   R1,GASCC,ELEC,1,2030,1
+   ```
 
-| The error contains | Cause | Fix |
-| --- | --- | --- |
-| `` Row 0 of `parameters:` cannot map the raw table InvestmentCost to capital_cost. Its operations turn the key TECH into technology, but capital_cost is keyed region, technology, year. `` | After the operations, the columns are not the canonical columns | Add the missing columns with `repeat_for_all` or `columns_from_name`, or remove the extra column with `remove_column`. |
-| `The row names the columns MODE_OF_OPERATION, which are not in the key.` | `rename_columns` or `remove_column` names a column that the raw table does not have at that step | Use the column name that the operation sees. [The column names that the operations see](#the-column-names-that-the-operations-see) gives the names. |
-| `` Rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the same capital_cost row (R1, GASCC, 2030). `` | Two raw tables write the same canonical table row | Change the rows, so that one raw table gives each table row. |
-| `` row 0 of `objects: fuels` gives the location {country}, but its match captures no country for GAS `` | The group is optional in `match`, and it is empty for this member | Remove the `?` after the group, or add a row for this member above this row. |
+### The problem
 
-## Problems in the model data that do not stop the run
-
-A problem in the data of your model never stops the run. The engine leaves out what it cannot
-use, and it reports it. To find these problems, read the warnings and `decisions.md`. Run with
-`INTEROP_LOG_LEVEL=WARNING` to see the warnings.
-
-| Problem | What the engine does | The warning contains | Heading in `decisions.md` |
-| --- | --- | --- | --- |
-| A raw table matches no canonical parameter | It keeps an extension table | `match no canonical parameter by name and key` | Fields not mapped |
-| A raw set has no canonical name | It keeps an extension table | `have no canonical set name` | Fields not mapped |
-| A raw table matches a canonical parameter that a row maps another table to | It keeps an extension table | `row maps instead` | Fields not mapped |
-| The raw tables of a family declare different defaults | It keeps each one as an extension table | `map to one canonical parameter but declare different defaults` | Fields not mapped |
-| A row says `ignore: true` | It leaves out the raw table | `row that says ignore: true` | Components skipped |
-| A value names a set member that its canonical set does not hold, or it has an empty cell | It leaves out that table row, and keeps the others | `hold values whose set member is not in its canonical set` | Components skipped |
-| A `parameters:` row matches no raw table | Nothing | `match no raw table` | None |
-| A line in `sets:` names no raw set | Nothing | `name no raw set` | None |
-| `choose` names a member that no table row holds | That raw table gives no table rows | `choose a member that no row of the raw table holds` | None |
-| `repeat_for_all` names a set with no members | That raw table gives no table rows | `repeat each value for a set with no members` | None |
-| No kind fits a technology | `kind` stays empty | `no kind fits` | Fields not mapped |
-
-For example, a `CapitalCost` table row for the technology `OIL`, which is not in the
-`TECHNOLOGY` set, gives this warning:
+Write the mappings file of [Lesson 11](#lesson-11-mark-the-electricity-fuel), and do the run. The
+console shows:
 
 ```
-WARNING ... 1 canonical parameter table(s) hold values whose set member is not in its canonical set, so those values are left out: capital_cost (absent members: OIL)
+WARNING ... no kind fits 1 technology(ies) in their region, so each keeps an empty kind: R1/WINDON
 ```
 
-The model readers also report problems in the files of your model. A problem in a file does not
-stop the run, with one exception. If the CSV directory holds none of the declared files, the run
-stops. The error names `csv_dir`.
+`R1/WINDON` is the technology `WINDON` in the region `R1`. `WINDON` has no row in the activity
+ratio tables, so no kind fits, and its `kind` stays empty. `decisions.md` lists it under "Fields
+not mapped".
 
-For an otoole model, the model reader does this:
-
-| Problem in the files | What the model reader does | Warning |
-| --- | --- | --- |
-| A set with no CSV file, or a set file that is not CSV | The set has no members | Yes |
-| A set file that is empty | The set has no members | No |
-| A set file with no `VALUE` column | It leaves out the set | Yes |
-| A parameter with no CSV file, or an empty file | The table has no table rows, so the default applies | No |
-| A parameter file that is not CSV | The table has no table rows | Yes |
-| A header that is not the declared index columns and `VALUE` | The table has no table rows | Yes |
-| A `VALUE` that is not a number | It leaves out that table row, and keeps the others | Yes |
-
-For a TZ-format model, the model reader does this. Each problem gives a warning:
-
-| Problem in the file | What the model reader does |
-| --- | --- |
-| An object that it cannot use, for example a technology with no `id` | It leaves out the object |
-| A field that it does not know | It leaves out the field |
-| A value that is not a number | It leaves out the value |
-| Two values for the same table row, for example from two trades | It keeps the first value |
-
-`decisions.md` lists each problem with a warning under the heading "Components skipped" or
-"Fields not mapped". [The sources](../developer_documentation/osemosys-canonical-format.md#the-sources)
-in the developer document gives more detail for developers. In that document, a source is a
-model reader.
-
-## What a mappings file cannot do
-
-A mappings file can rename, merge, remove a column, repeat and multiply. It cannot do these
-things:
-
-- **Change an equation of the model.** The engine copies parameter values. It does not read or
-  change the equations of your OSeMOSYS variant.
-- **Use a formula other than a factor.** `multiply_by` takes one number. The engine cannot add
-  a number, or calculate a value from two values.
-- **Join two tables.** Each row reads one raw table at a time. The engine cannot look up a value
-  in a second table, for example to divide a cost by a capacity.
-- **Calculate a weighted mean.** The `mean` rule gives each value the same weight.
-- **Keep characters of a name that have no canonical column.** `columns_from_name` must write into a
-  canonical column. A country code in a model with one region has no canonical column, so
-  write it into a `location` with an `objects:` row.
-- **Add a concept that the canonical schema does not have.** `canonical` must name a parameter
-  of the schema file.
-- **Change a set member.** No operation changes a member name, for example `GAS` to `gas`.
-- **Give a region its own annotation for one member.** An `objects:` row gives the same
-  annotations in each region. Only `{region}` in a `location` changes from region to region.
-
-A raw table that the mappings file cannot map stays an extension table, with its own name, in
-`extensions/`. You lose no data. If the table has no use, a row with `ignore: true` leaves it out.
-
-## Complete example: one region, three countries
-
-This example puts the earlier examples together in one file. Use it as a start for a file that
-annotates countries inside one region.
-
-An invented model has one region, `R1`, and three countries, `AA`, `BB` and `CC`. The first two
-letters of each technology and fuel name give the country.
-
-| Set | Members |
-| --- | --- |
-| `REGION` | `R1` |
-| `TECHNOLOGY` | `AAGASCC`, `BBWINDON`, `CCCOALST`, `AABBLINK`, `AAGASIMP` |
-| `FUEL` | `AAELEC`, `BBELEC`, `CCELEC`, `AAGAS`, `CCCOAL` |
-| `MODE_OF_OPERATION` | `1` |
-| `YEAR` | `2030`, `2035` |
-| `UNIT` | `U1`, `U2` |
-
-| Raw table | Index columns | What the mappings file does with it |
-| --- | --- | --- |
-| `InputActivityRatio`, `OutputActivityRatio`, `CapitalCost` | The published ones | Nothing. They match automatically. |
-| `AvailabilityPercent` | `REGION`, `TECHNOLOGY`, `YEAR` | It maps the table to `availability_factor`, and changes the percent to a fraction. |
-| `ResidualCapacity` | `REGION`, `TECHNOLOGY`, `UNIT`, `YEAR` | It sums the table rows of the units. The model has one table row for each unit. |
-| `FixedCostFlat` | `TECHNOLOGY` | It repeats the one value for each region and year. |
-| `ReportingFlag` | `TECHNOLOGY` | It leaves the table out. The model uses it for reports only. |
-| `MaxRampRate` | `REGION`, `TECHNOLOGY`, `YEAR` | Nothing. It stays an extension table, because the canonical schema has no such parameter. |
-
-In the file below, a line that starts with `#` is a comment. The engine does not read a comment.
-
-The mappings file:
+### The fix
 
 ```yaml
 osemosys:
-  units:
-    capacity: GW
-    energy: PJ
-    currency: EUR
-    currency_year: 2022
-    emissions: Mt
+  objects:
+    fuels:
+      - match: "^ELEC$"
+        carrier: electricity
+    technologies:
+      - match: "^WINDON$"
+        kind: SupplyTechnology
+```
 
-  parameters:
-    # Availability as a percentage, 0 to 100.
-    - source: AvailabilityPercent
-      canonical: availability_factor
-      multiply_by: 0.01
+Do the run. The console shows no warning. `annotations/technology.parquet` holds:
 
-    # One table row for each generating unit; the canonical table holds the total.
-    - source: ResidualCapacity
-      canonical: residual_capacity
-      remove_column: {column: UNIT, rule: sum}
+| region | technology | kind | category | location |
+| --- | --- | --- | --- | --- |
+| R1 | GASCC | SupplyTechnology |  | R1 |
+| R1 | WINDON | SupplyTechnology |  | R1 |
 
-    # One fixed cost for each technology, for every region and every year.
-    - source: FixedCostFlat
-      canonical: fixed_cost
-      repeat_for_all: [region, year]
+A `kind` in a row wins over the inferred kind. `decisions.md` lists it under "User config defaults
+applied":
 
-    # A table for the reports of the model only.
-    - source: ReportingFlag
-      ignore: true
+```
+row 0 of `objects: technologies` gives kind
+```
 
+### Mistakes
+
+`kind` takes one value from the table in [Lesson 11](#how-tz-oss-interop-infers-a-kind). Another
+value, for example `generator`, stops the run:
+
+```
+osemosys.objects.technologies.0.kind
+  Input should be 'StorageTechnology', 'AggregateTransportTechnology', 'SupplyTechnology', 'fuel_supply', 'export' or 'conversion'
+```
+
+## Lesson 14: read a country from a fuel name
+
+This lesson shows how to tell tz-oss-interop where each fuel is. It uses `location` and a named
+group.
+
+### The change
+
+The model has one region, but its fuels are in two countries. The first two letters of each fuel
+name give the country: `AAGAS` is gas in the country `AA`, and `BBELEC` is electricity in the
+country `BB`.
+
+1. Start from the base model.
+2. Change `inputs/model/csv/FUEL.csv` to:
+
+   ```csv
+   VALUE
+   AAGAS
+   BBELEC
+   ```
+
+3. Change `inputs/model/csv/InputActivityRatio.csv` to:
+
+   ```csv
+   REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
+   R1,GASCC,AAGAS,1,2030,1.8
+   ```
+
+4. Change `inputs/model/csv/OutputActivityRatio.csv` to:
+
+   ```csv
+   REGION,TECHNOLOGY,FUEL,MODE_OF_OPERATION,YEAR,VALUE
+   R1,GASCC,BBELEC,1,2030,1
+   R1,WINDON,BBELEC,1,2030,1
+   ```
+
+### The problem
+
+Write a mappings file that marks the electricity fuel:
+
+```yaml
+osemosys:
+  objects:
+    fuels:
+      - match: "ELEC$"
+        carrier: electricity
+```
+
+Do the run. Each fuel and each technology gets the location `R1`, the region:
+
+| region | fuel | carrier | location |
+| --- | --- | --- | --- |
+| R1 | AAGAS |  | R1 |
+| R1 | BBELEC | electricity | R1 |
+
+tz-oss-interop cannot find the countries in the files of the model.
+
+### The fix
+
+```yaml
+osemosys:
   objects:
     fuels:
       - match: "^(?P<country>[A-Z]{2})ELEC$"
         carrier: electricity
         location: "{country}"
       - match: "^(?P<country>[A-Z]{2})GAS$"
-        carrier: natural-gas
         location: "{country}"
-      - match: "^(?P<country>[A-Z]{2})COAL$"
-        carrier: coal
-        location: "{country}"
-    technologies:
-      - match: "GASCC$"
-        category: gas-combined-cycle
-      - match: "WINDON$"
-        category: wind-onshore
-      - match: "COALST$"
-        category: coal-steam
-      - match: "^[A-Z]{4}LINK$"
-        category: interconnector
 ```
 
-The run gives these results:
+Read the file like this:
 
-- `parameters/` holds `availability_factor`, `capital_cost`, `fixed_cost`,
-  `input_activity_ratio`, `output_activity_ratio` and `residual_capacity`.
-- `extensions/` holds `MaxRampRate` and `UNIT`.
-- The run writes no file for `ReportingFlag`.
+- The pattern `^(?P<country>[A-Z]{2})ELEC$` finds a name that is two capital letters and then
+  `ELEC`. The named group `country` holds the two letters.
+- `location` is a template. A template is a text with places that tz-oss-interop fills in. Put a
+  group name in braces, and tz-oss-interop writes the characters of that group in its place.
+- Put a template in double quotes.
 
-`annotations/technology.parquet`:
+Do the run. `annotations/fuel.parquet` holds:
+
+| region | fuel | carrier | location |
+| --- | --- | --- | --- |
+| R1 | AAGAS |  | AA |
+| R1 | BBELEC | electricity | BB |
+
+And `annotations/technology.parquet` holds:
 
 | region | technology | kind | category | location |
 | --- | --- | --- | --- | --- |
-| R1 | AAGASCC | SupplyTechnology | gas-combined-cycle | AA |
-| R1 | BBWINDON | SupplyTechnology | wind-onshore | BB |
-| R1 | CCCOALST | SupplyTechnology | coal-steam | CC |
-| R1 | AABBLINK | AggregateTransportTechnology | interconnector | AA~BB |
-| R1 | AAGASIMP | fuel_supply | | AA |
+| R1 | GASCC | SupplyTechnology |  | AA~BB |
+| R1 | WINDON | SupplyTechnology |  | BB |
 
-The run writes three warnings. Each warning is correct for this model. You do not need to change
-the file.
+Notice that each technology takes the locations of the fuels that it takes in and puts out.
+`GASCC` takes in gas in `AA` and puts out electricity in `BB`, so `~` joins the two locations.
+
+### How tz-oss-interop infers a location
+
+tz-oss-interop infers each location that no row gives:
+
+- A region is its own location.
+- A fuel and a storage take the location of their region.
+- A technology takes the locations that rows give to its fuels. A fuel location that
+  tz-oss-interop inferred does not count.
+- If no fuel of a technology has a location from a row, the technology takes the location of its
+  region.
+
+A template can also hold fixed text, for example `"zone-{country}"`. It can use `{region}`, which
+is the region of the row.
+
+### Mistakes
+
+A template that names a group that `match` does not have stops the run. For example,
+`location: "{zone}"`:
 
 ```
-WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: UNIT
-WARNING ... 1 raw table(s) match a `parameters:` row that says ignore: true, so each is left out: ReportingFlag
-WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: MaxRampRate
+Value error, the location {zone} names zone, which match does not capture
 ```
 
-## Complete example: one region for each zone
+A template with no double quotes stops the run. YAML reads `{country}` as a key with no value:
 
-This example puts the earlier examples together for a model with more than one region. Use it as
-a start for a file where each zone of your model is a region.
+```
+osemosys.objects.fuels.0.location
+  Input should be a valid string [type=string_type, input_value={'country': None}, input_type=dict]
+```
 
-An invented model has two zones, and each zone is a region: `NORTH` and `SOUTH`. The names of
-the technologies and fuels are the same in each region.
+## Lesson 15: a TZ-format model
 
-| Set | Members |
-| --- | --- |
-| `REGION` | `NORTH`, `SOUTH` |
-| `TECHNOLOGY` | `GASCC`, `WINDON`, `BATTERY`, `GASIMP` |
-| `FUEL` | `GAS`, `ELEC` |
-| `STORAGE` | `BATTSTORE` |
-| `GHG` | `CO2` |
-| `MODE_OF_OPERATION` | `1`, `2` |
-| `YEAR` | `2030`, `2035` |
-| `TIMESLICE` | `DAY`, `NIGHT` |
-| `SCENARIO` | `LOW`, `CENTRAL`, `HIGH` |
+This lesson shows how to use a TZ-format model. A TZ-format model is the `model.json` file that
+tz-osemosys writes. tz-osemosys is the OSeMOSYS tool of TransitionZero.
 
-| Raw table | Index columns | What the mappings file does with it |
-| --- | --- | --- |
-| `InputActivityRatio`, `OutputActivityRatio`, `TechnologyToStorage`, `TechnologyFromStorage`, `TradeRoute` | The published ones | Nothing. They match automatically. |
-| `CapacityFactorNORTH`, `CapacityFactorSOUTH` | `TECHNOLOGY`, `TIMESLICE`, `YEAR` | It reads the region from the table name. |
-| `EmissionActivityRatio` | `REGION`, `TECHNOLOGY`, `GHG`, `MODE_OF_OPERATION`, `YEAR` | It renames the pollutant column `GHG`. |
-| `CapitalCost` | `REGION`, `TECHNOLOGY`, `SCENARIO`, `YEAR` | It keeps the table rows of one cost scenario. The model has one table row for each scenario. |
-| `MinUpTime` | `REGION`, `TECHNOLOGY` | Nothing. It stays an extension table, because the canonical schema has no such parameter. |
+### The model
 
-The mappings file:
+This `model.json` holds the capital costs of the base model:
+
+```json
+{
+  "id": "tutorial",
+  "time_definition": {"id": "time", "years": [2030], "timeslices": []},
+  "regions": [{"id": "R1"}],
+  "commodities": [],
+  "impacts": [],
+  "technologies": [
+    {"id": "GASCC", "operating_modes": [], "capex": {"R1": {"2030": 950}}},
+    {"id": "WINDON", "operating_modes": [], "capex": {"R1": {"2030": 1300}}}
+  ],
+  "storage": [],
+  "trade": []
+}
+```
+
+Put the model at `inputs/model.json`.
+
+### The run
+
+Write this mappings file:
 
 ```yaml
 osemosys:
-  units:
-    capacity: MW
-    energy: MWh
-    currency: USD
-    currency_year: 2023
-    emissions: t
-
-  sets:
-    GHG: pollutant
-
-  parameters:
-    # One capacity factor table for each zone; the name gives the zone.
-    - source_pattern: "^CapacityFactor(?P<zone>[A-Z]+)$"
-      canonical: capacity_factor
-      columns_from_name: {zone: region}
-
-    # The model names its pollutant column GHG.
-    - source: EmissionActivityRatio
-      canonical: emission_rate
-      rename_columns: {GHG: pollutant}
-
-    # The model holds three cost scenarios; the canonical stage takes CENTRAL.
-    - source: CapitalCost
-      canonical: capital_cost
-      remove_column: {column: SCENARIO, rule: choose, member: CENTRAL}
-
-  objects:
-    fuels:
-      - match: "^ELEC$"
-        carrier: electricity
-        location: "{region}"
-      - match: "^GAS$"
-        carrier: natural-gas
-        location: "{region}"
-    technologies:
-      - match: "^GASCC$"
-        category: gas-combined-cycle
-      # A row gives the kind in every region, also where the technology has no table rows.
-      - match: "^WINDON$"
-        kind: SupplyTechnology
-        category: wind-onshore
-      - match: "^BATTERY$"
-        kind: StorageTechnology
-        category: battery
+  units: {capacity: MW, currency: USD}
 ```
 
-The run gives these results:
+`units:` here writes its fields on one line, in braces.
 
-- `parameters/` holds `capacity_factor`, `capital_cost`, `emission_rate`,
-  `input_activity_ratio`, `output_activity_ratio`, `technology_from_storage`,
-  `technology_to_storage` and `transport_route`.
-- `sets/pollutant.parquet` holds `CO2`.
-- `extensions/` holds `MinUpTime` and `SCENARIO`.
-- `parameters/capital_cost.parquet` holds only the values of the `CENTRAL` table rows. For
-  example, it holds 900 for `NORTH`, `GASCC` and `2030`.
+The pipeline `tz-osemosys-to-canonical` reads a TZ-format model. It has no default paths, so you
+must type both paths. Do these steps:
 
-`parameters/transport_route.parquet` comes from the automatic match. `REGION` becomes
-`start_region`, and `_REGION` becomes `end_region`:
+1. In the project directory, type `rm -rf outputs/canonical` and press Enter.
+2. Type `INTEROP_LOG_LEVEL=WARNING interop` and press Enter.
+3. Select `translate`.
+4. At `Source framework?`, select `tz-osemosys`.
+5. At `Destination framework?`, select `osemosys-canonical`.
+6. At `Pipeline?`, select `tz-osemosys-to-canonical`.
+7. At `source.model_json_path`, type `inputs/model.json` and press Enter.
+8. At `sink[0].output_dir`, type `outputs/canonical` and press Enter.
+9. At `User mappings file?`, delete the path `inputs/user_mappings.yaml`.
+10. Type `inputs/osemosys_mappings.yaml` and press Enter.
+11. When the menu shows again, press Ctrl-C to close the menu.
 
-| start_region | end_region | fuel | year | value |
-| --- | --- | --- | --- | --- |
-| NORTH | SOUTH | ELEC | 2030 | 1 |
-| SOUTH | NORTH | ELEC | 2030 | 1 |
+To do this run again, do the steps of [The next runs](#the-next-runs). At step 4, select the top
+row that names `tz-osemosys-to-canonical`.
 
-`annotations/technology.parquet`:
+`parameters/capital_cost.parquet` holds:
 
-| region | technology | kind | category | location |
-| --- | --- | --- | --- | --- |
-| NORTH | GASCC | SupplyTechnology | gas-combined-cycle | NORTH |
-| NORTH | WINDON | SupplyTechnology | wind-onshore | NORTH |
-| NORTH | BATTERY | StorageTechnology | battery | NORTH |
-| NORTH | GASIMP | fuel_supply | | NORTH |
-| SOUTH | GASCC | SupplyTechnology | gas-combined-cycle | SOUTH |
-| SOUTH | WINDON | SupplyTechnology | wind-onshore | SOUTH |
-| SOUTH | BATTERY | StorageTechnology | battery | SOUTH |
-| SOUTH | GASIMP | fuel_supply | | SOUTH |
+| region | technology | year | value |
+| --- | --- | --- | --- |
+| R1 | GASCC | 2030 | 950 |
+| R1 | WINDON | 2030 | 1300 |
 
-`WINDON` has no table rows in `NORTH`, and `BATTERY` has no table rows in `SOUTH`. Without the
-two `kind` values in the file, `kind` stays empty for them there.
+tz-oss-interop gives each field of a TZ-format model its default name. For example, `capex`
+becomes `CapitalCost`. So each table matches automatically, and you do not need `sets:` or
+`parameters:`. A mappings file for a TZ-format model usually needs only `units:` and `objects:`.
 
-The run writes two warnings. Each warning is correct for this model. You do not need to change
-the file.
+The console shows one warning:
 
 ```
-WARNING ... 1 raw set(s) have no canonical set name, so each stays an extension table: SCENARIO
-WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: MinUpTime
+WARNING ... no kind fits 2 technology(ies) in their region, so each keeps an empty kind: R1/GASCC, R1/WINDON
 ```
 
-## The words
+This model has no activity ratios. [Lesson 13](#lesson-13-give-a-kind-that-tz-oss-interop-cannot-infer)
+shows how to give a kind.
 
-Each term in this list has one meaning in this guide. The guide explains each term where it first
-uses it. This list is for reference.
+## What a mappings file cannot do
 
-| Word | Meaning |
-| --- | --- |
-| tz-oss-interop | A tool that translates energy-system models from one format to another. |
-| Model | Your OSeMOSYS model: an otoole configuration file and a directory of CSV files, or a TZ-format model. |
-| otoole model | A model in the format of otoole: a configuration file that declares each set and parameter, and one CSV file for each set and parameter. |
-| TZ-format model | The `model.json` file that tz-osemosys writes. |
-| Model reader | The code in tz-oss-interop that reads the files of your model. A pipeline calls it `source`. |
-| Engine | The code in tz-oss-interop that reads your mappings file and writes the canonical stage. |
-| Mappings file | The YAML file that tells the engine the facts that it cannot find in your model. tz-oss-interop calls it "user mappings" in its options and messages. |
-| Key | In YAML, a name before a colon. This guide is about the top-level key `osemosys:`. In a message from tz-oss-interop, "key" means the index columns of a raw table. For example, the note `matched by name and key` means that the name and the index columns match. |
-| Top-level key | A YAML key with no spaces at the start of its line, for example `osemosys:` or `carriers:`. |
-| Part | One of the four keys inside `osemosys:`: `units:`, `sets:`, `parameters:` and `objects:`. |
-| Field | A key inside a part or inside a row, for example `capacity` in `units:` or `source` in a `parameters:` row. |
-| Entry | The group of lines that describes one set or one parameter in the schema file. |
-| OSeMOSYS name | The name of a set or a parameter in the OSeMOSYS v1.0.1 model file, or in tz-osemosys or OSeMOSYS MUIO for a parameter that only that tool has. The schema file gives it as `osemosys_name`. |
-| Raw set | One set of your model, with the name that your model gives it, for example `TECHNOLOGY` or `UNIT`. |
-| Set member | One value in a set, for example the technology `GASCC` or the year `2030`. |
-| Raw table | One parameter of your model, with its own name, for example `CapitalCost` or `MaxRampRate`. |
-| Index columns | The columns of a raw table that name set members, for example `REGION`, `TECHNOLOGY` and `YEAR`. In an otoole model, the `indices` of the parameter give them. |
-| `VALUE` | The column of a raw table that holds the number. |
-| Canonical schema | The fixed list of sets and parameters that tz-oss-interop knows. Each one has a canonical name, for example `capital_cost`. |
-| Canonical set, canonical parameter | A set or a parameter of the canonical schema. |
-| Canonical columns | The columns of a canonical parameter, in a fixed order, for example `region, technology, year`. Each canonical table has a `value` column after them. |
-| Map | To give a raw set or a raw table a canonical name. |
-| Automatic match | The engine maps a raw table with no `parameters:` row, because its name and index columns are the published OSeMOSYS ones. |
-| Canonical stage | Your model in the canonical schema: one parquet file for each canonical set and each canonical parameter, with the annotations and the metadata. |
-| Canonical table | One parquet file of the canonical stage. |
-| Parquet file | A file that holds one table, with the column names and a type for each column. |
-| Extension table | A raw table or a raw set that gets no canonical name. The canonical stage keeps it with its own name, so you lose no data. |
-| Annotation | A fact about a set member that the model does not state as a parameter, for example that a technology is in the country `AA`. |
-| Infer | To find a value from other data in the model. |
-| Project directory | The directory that holds the files of one piece of work, with `adapters.yaml`. You run tz-oss-interop in it. |
-| Pipeline | A named set of steps that tz-oss-interop runs, from a model reader to a sink. |
-| Sink | The code in a pipeline that writes the result. `sink[0]` is the first sink. |
-| Console | The window where you type a command. |
-| Warning | A line on the console about a problem that does not stop the run. |
-| Staging directory | A temporary directory where a run writes temporary files. `--keep-staging` keeps it. |
-| Table row | One line of values in a table. |
-| `parameters:` row, `objects:` row | One item in the `parameters:` list or an `objects:` list of the mappings file. The engine counts these rows from 0, so the first row is "row 0". |
-| Family | The raw tables that `parameters:` rows map to one canonical parameter. |
-| Operation | A change that a `parameters:` row makes to a raw table, for example `rename_columns`. |
-| Pattern | A regular expression, a standard notation for a text search. It describes a group of names. `source_pattern` and `match` take one. |
-| Template | A text with places that the engine fills in, for example `"zone-{number}"` in `location`. |
-| Named group | A piece of a pattern in the form `(?P<name>X)`, where `X` is a pattern. It gives a name to the characters that `X` matches. |
-| `decisions.md` | The report that lists each decision of the engine, with the reason. |
+A mappings file can rename, remove a column, repeat and multiply. It cannot do these things:
 
-## More about the canonical stage
+- **Change an equation of the model.** tz-oss-interop copies parameter values. It does not read or
+  change the equations of your model.
+- **Use a formula other than a factor.** `multiply_by` takes one number. You cannot add a number,
+  or calculate a value from two values.
+- **Join two tables.** Each row reads one raw table at a time. A row cannot look up a value in a
+  second table, for example to divide a cost by a capacity.
+- **Calculate a weighted mean.** The rule `mean` gives each value the same weight.
+- **Add a parameter that the canonical schema does not have.** `canonical` must name a parameter
+  of the schema file.
+- **Change a set member.** No operation changes a member name, for example `GAS` to `gas`.
+- **Give a different annotation in each region.** An `objects:` row gives the same annotations in
+  each region. Only `{region}` in a `location` changes from region to region.
 
-The [developer document](../developer_documentation/osemosys-canonical-format.md) describes the
-canonical stage in full. It gives each canonical name and its reason, the metadata tables, and
-how each model reader reads its files.
+A raw table that the mappings file cannot map stays an extension table, so you lose no data. If
+you do not need the table, leave it out with `ignore: true`, as in
+[Lesson 9](#lesson-9-a-table-that-you-do-not-need).

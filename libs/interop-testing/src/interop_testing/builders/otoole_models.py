@@ -65,13 +65,9 @@ class OtooleModelBuilder:
         default: float,
         rows: list[list[str]],
         *,
-        short_name: str | None = None,
         has_file: bool = True,
-        header: list[str] | None = None,
     ) -> None:
-        self.parameters[name] = OtooleParameter(
-            name, key, default, rows, short_name, has_file, header
-        )
+        self.parameters[name] = OtooleParameter(name, key, default, rows, has_file=has_file)
 
     def add_result(self, name: str, key: list[str]) -> None:
         self.results[name] = key

@@ -14,8 +14,8 @@ from pathlib import Path
 from interop.core.runner import RESULTS_SUBDIR
 
 # `load_adapters_config` raises when adapters.yaml is absent, so a project needs one
-# before any run. This mirrors the file `interop init` writes.
-DEFAULT_ADAPTERS_YAML = "bindings: {}\nadapters: {}\nobservability:\n  log_level: INFO\n"
+# before any run.
+DEFAULT_ADAPTERS_YAML = "bindings: {}\nadapters: {}\n"
 
 
 def write_project_plugin(category: str, filename: str, source: str) -> None:

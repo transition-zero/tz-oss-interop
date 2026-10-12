@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from typing import NamedTuple
 
 import polars as pl
 
 from interop.core.reporting import EventRecorder
-from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL, TableKind
+from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL
 from interop.plugins.shared.osemosys_canonical.events import record_not_mapped, record_skipped
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
+from interop.plugins.shared.osemosys_canonical.raw_tables import (
+    UnreadableValuesReport,
+    drop_unreadable_values,
+)
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 from interop.plugins.shared.osemosys_canonical.tz_document import TzObject
 from interop.plugins.shared.osemosys_canonical.tz_reports import (
@@ -32,16 +35,17 @@ from interop.plugins.shared.tz_osemosys_fields import (
     TzField,
     TzOwner,
 )
-from interop.plugins.shared.warning_text import name_a_few
-
-log = logging.getLogger(__name__)
 
 _FIELDS_BY_OWNER: dict[tuple[TzOwner, str], TzField] = {
     (field.owner, field.field): field for field in TZ_FIELDS
 }
 # A field whose value names a set member moves the member into the key and states this value.
 _MEMBER_FLAG = True
-_NOT_A_NUMBER_NOTE = "{count} value(s) are not a number, so the raw stage leaves each out"
+_TZ_UNREADABLE_VALUES = UnreadableValuesReport(
+    "{count} value(s) are not a number, so the raw stage leaves each out",
+    "%d raw table(s) have values that are not a number, so the raw stage leaves those values "
+    "out: %s",
+)
 _EMPTY_SET_NOTE = (
     "a wildcard or a value above the last level stands for a set with no members, "
     "so that value adds no rows"
@@ -91,8 +95,7 @@ def map_tz_parameter_tables(
         field.table: _build_table(field, table_rows.rows.get(field.table, []))
         for field in TZ_FIELDS
     }
-    _report_unreadable_values(_build_unreadable_value_counts(tables), recorder)
-    readable = {name: table.drop_nulls(RAW_VALUE_COL) for name, table in tables.items()}
+    readable = drop_unreadable_values(tables, _TZ_UNREADABLE_VALUES, recorder)
     return _reshape_annual_demand(readable)
 
 
@@ -197,23 +200,6 @@ def _list_osemosys_columns(field: TzField) -> list[str]:
     if name is None:
         return _list_field_columns(field)
     return list(schema.parameters[name].osemosys_columns)
-
-
-def _build_unreadable_value_counts(tables: dict[str, pl.DataFrame]) -> dict[str, int]:
-    counts = {name: table.get_column(RAW_VALUE_COL).null_count() for name, table in tables.items()}
-    return {name: count for name, count in counts.items() if count}
-
-
-def _report_unreadable_values(counts: dict[str, int], recorder: EventRecorder) -> None:
-    for name, count in counts.items():
-        record_skipped(recorder, TableKind.PARAMETER, name, _NOT_A_NUMBER_NOTE.format(count=count))
-    if counts:
-        log.warning(
-            "%d raw table(s) have values that are not a number, so the raw stage leaves those "
-            "values out: %s",
-            len(counts),
-            name_a_few(counts),
-        )
 
 
 def _reshape_annual_demand(tables: dict[str, pl.DataFrame]) -> dict[str, pl.DataFrame]:

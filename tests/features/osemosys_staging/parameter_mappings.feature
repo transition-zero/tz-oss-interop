@@ -191,7 +191,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
     And the log contains "OIL"
     And the file "decisions.md" contains "## Components skipped (1)"
     And the file "decisions.md" contains "1 row(s) name a set member that its canonical set does not hold (OIL)"
@@ -244,6 +244,63 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "Rows 0, 1 of `parameters:` map the raw tables InvestmentCost, OvernightCost to the same capital_cost row (R1, GAS, 2030)"
+
+  Scenario: The error about two rows that write the same canonical row names the first clash in key order
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "T01 T02 T03 T04 T05 T06 T07 T08 T09 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "InvestmentCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | T20        | 2030 | 1     |
+      | R1     | T19        | 2030 | 1     |
+      | R1     | T18        | 2030 | 1     |
+      | R1     | T17        | 2030 | 1     |
+      | R1     | T16        | 2030 | 1     |
+      | R1     | T15        | 2030 | 1     |
+      | R1     | T14        | 2030 | 1     |
+      | R1     | T13        | 2030 | 1     |
+      | R1     | T12        | 2030 | 1     |
+      | R1     | T11        | 2030 | 1     |
+      | R1     | T10        | 2030 | 1     |
+      | R1     | T09        | 2030 | 1     |
+      | R1     | T08        | 2030 | 1     |
+      | R1     | T07        | 2030 | 1     |
+      | R1     | T06        | 2030 | 1     |
+      | R1     | T05        | 2030 | 1     |
+      | R1     | T04        | 2030 | 1     |
+      | R1     | T03        | 2030 | 1     |
+      | R1     | T02        | 2030 | 1     |
+      | R1     | T01        | 2030 | 1     |
+    And the otoole parameter "OvernightCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | T20        | 2030 | 2     |
+      | R1     | T19        | 2030 | 2     |
+      | R1     | T18        | 2030 | 2     |
+      | R1     | T17        | 2030 | 2     |
+      | R1     | T16        | 2030 | 2     |
+      | R1     | T15        | 2030 | 2     |
+      | R1     | T14        | 2030 | 2     |
+      | R1     | T13        | 2030 | 2     |
+      | R1     | T12        | 2030 | 2     |
+      | R1     | T11        | 2030 | 2     |
+      | R1     | T10        | 2030 | 2     |
+      | R1     | T09        | 2030 | 2     |
+      | R1     | T08        | 2030 | 2     |
+      | R1     | T07        | 2030 | 2     |
+      | R1     | T06        | 2030 | 2     |
+      | R1     | T05        | 2030 | 2     |
+      | R1     | T04        | 2030 | 2     |
+      | R1     | T03        | 2030 | 2     |
+      | R1     | T02        | 2030 | 2     |
+      | R1     | T01        | 2030 | 2     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                       |
+      | osemosys: {parameters: [{source: InvestmentCost, canonical: capital_cost}, {source: OvernightCost, canonical: capital_cost}]} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "to the same capital_cost row (R1, T01, 2030)"
 
   Scenario: A row that names a canonical parameter and says ignore stops the run
     Given an otoole model
@@ -360,7 +417,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | osemosys: {parameters: [{source: CapitalCost, canonical: capital_cost, remove_column: {column: operating_mode, rule: choose, member: "3"}}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
     And the log contains "1 row(s) of `parameters:` choose a member that no row of the raw table holds, so the raw table gives no rows: row 0 (CapitalCost)"
 
   Scenario: A row that repeats each value for a set with no members writes a warning
@@ -376,7 +433,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | osemosys: {parameters: [{source: InvestmentCost, canonical: capital_cost, repeat_for_all: [region, year]}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
     And the log contains "1 row(s) of `parameters:` repeat each value for a set with no members, so the raw table gives no rows: row 0 (InvestmentCost)"
 
   Scenario: A row over a raw table keyed by a pair of regions writes start_region and end_region

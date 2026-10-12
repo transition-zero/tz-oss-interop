@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.osemosys_canonical.canonical_stage import (
     CanonicalTable,
+    build_table_path,
     list_canonical_tables,
 )
-from interop.plugins.shared.osemosys_canonical.constants import PARQUET_SUFFIX, TABLE_DIRECTORIES
 from interop.ports.outbound.filesystem import FilesystemPort, OutputDirectory
 
 
@@ -37,6 +37,5 @@ class EmitOsemosysCanonicalParquet(Sink):
             self._write_table(params.output_dir, canonical)
 
     def _write_table(self, output_dir: Path, canonical: CanonicalTable) -> None:
-        directory = output_dir / TABLE_DIRECTORIES[canonical.kind]
-        with self._fs.open_write(directory / f"{canonical.name}{PARQUET_SUFFIX}") as stream:
+        with self._fs.open_write(output_dir / build_table_path(canonical)) as stream:
             canonical.table.sink_parquet(stream)

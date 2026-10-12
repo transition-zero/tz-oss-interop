@@ -52,9 +52,7 @@ class CanonicalParameter(BaseModel):
 
     @model_validator(mode="after")
     def _validate_unique_osemosys_columns(self) -> CanonicalParameter:
-        repeated = sorted(
-            {name for name in self.osemosys_columns if self.osemosys_columns.count(name) > 1}
-        )
+        repeated = _list_repeated(self.osemosys_columns)
         if repeated:
             raise ValueError(f"the osemosys_columns of {self.osemosys_name} repeat {repeated}")
         return self
@@ -126,9 +124,13 @@ def _reject_unknown_column_sets(
 
 
 def _reject_duplicate_names(label: str, osemosys_names: list[str]) -> None:
-    duplicated = sorted({name for name in osemosys_names if osemosys_names.count(name) > 1})
+    duplicated = _list_repeated(osemosys_names)
     if duplicated:
         raise ValueError(f"two {label} entries share the osemosys_name {duplicated}")
+
+
+def _list_repeated(names: list[str]) -> list[str]:
+    return sorted({name for name in names if names.count(name) > 1})
 
 
 def _reject_misaligned_osemosys_columns(

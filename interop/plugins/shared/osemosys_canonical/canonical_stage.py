@@ -69,11 +69,14 @@ def _build_canonical_tables(
 
 
 def _write_canonical_table(canonical: CanonicalTable, staging_dir: Path) -> CanonicalTable:
-    directory = staging_dir / CANONICAL_DIRECTORY / TABLE_DIRECTORIES[canonical.kind]
-    path = directory / f"{canonical.name}{PARQUET_SUFFIX}"
+    path = staging_dir / CANONICAL_DIRECTORY / build_table_path(canonical)
     path.parent.mkdir(parents=True, exist_ok=True)
     canonical.table.sink_parquet(path)
     return canonical._replace(table=pl.scan_parquet(path))
+
+
+def build_table_path(canonical: CanonicalTable) -> Path:
+    return Path(TABLE_DIRECTORIES[canonical.kind], f"{canonical.name}{PARQUET_SUFFIX}")
 
 
 def _build_state(tables: list[CanonicalTable], staging_dir: Path) -> State:

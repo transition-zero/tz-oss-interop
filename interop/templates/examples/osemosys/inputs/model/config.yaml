@@ -1,0 +1,30 @@
+REGION:
+  type: set
+  dtype: str
+TECHNOLOGY:
+  type: set
+  dtype: str
+FUEL:
+  type: set
+  dtype: str
+MODE_OF_OPERATION:
+  type: set
+  dtype: int
+YEAR:
+  type: set
+  dtype: int
+CapitalCost:
+  type: param
+  indices: [REGION, TECHNOLOGY, YEAR]
+  dtype: float
+  default: 0
+InputActivityRatio:
+  type: param
+  indices: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+  dtype: float
+  default: 0
+OutputActivityRatio:
+  type: param
+  indices: [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION, YEAR]
+  dtype: float
+  default: 0

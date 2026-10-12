@@ -13,10 +13,12 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.events import (
+    SourceReport,
     TableNames,
     record_automatic_match,
     record_not_mapped,
     record_value_derived,
+    report_source_events,
 )
 from interop.plugins.shared.osemosys_canonical.mapping_inputs import MappingInputs
 from interop.plugins.shared.warning_text import name_a_few
@@ -25,6 +27,11 @@ log = logging.getLogger(__name__)
 
 _UNMAPPED_SET_NOTE = "no canonical set has this name, so it stays an extension table"
 _RENAMED_SET_NOTE = f"renamed by the {SETS_PART} part of the user mappings file"
+_UNMAPPED_SETS = SourceReport(
+    record_not_mapped,
+    TableKind.SET,
+    "%d raw set(s) have no canonical set name, so each stays an extension table: %s",
+)
 
 
 class MappedSets(NamedTuple):
@@ -39,7 +46,7 @@ def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
     targets = _build_set_targets(inputs)
     unmapped = [name for name in raw_sets if name not in targets]
     _record_set_matches(inputs, targets, recorder)
-    _report_unmapped_sets(unmapped, recorder)
+    report_source_events(_UNMAPPED_SETS, dict.fromkeys(unmapped, _UNMAPPED_SET_NOTE), recorder)
     return MappedSets(
         sets=_build_canonical_sets(raw_sets, targets),
         extensions={name: raw_sets[name] for name in unmapped},
@@ -93,14 +100,3 @@ def _build_union(tables: list[pl.LazyFrame]) -> pl.LazyFrame:
     if len(tables) == 1:
         return tables[0]
     return pl.concat(tables).unique(VALUE_COL, maintain_order=True)
-
-
-def _report_unmapped_sets(names: list[str], recorder: EventRecorder) -> None:
-    for name in names:
-        record_not_mapped(recorder, TableKind.SET, name, _UNMAPPED_SET_NOTE)
-    if names:
-        log.warning(
-            "%d raw set(s) have no canonical set name, so each stays an extension table: %s",
-            len(names),
-            name_a_few(names),
-        )

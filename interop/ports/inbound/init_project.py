@@ -12,6 +12,7 @@ class Example(StrEnum):
 
     NONE = "none"
     PYPSA = "pypsa"
+    OSEMOSYS = "osemosys"
 
 
 class TargetDirectoryNotEmptyError(UserInputError, ValueError):

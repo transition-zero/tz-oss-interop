@@ -31,12 +31,8 @@ class InitializeProjectDirectory(InitProjectUseCase):
         self._overlay_example(target, example)
 
     def _overlay_example(self, target: Path, example: Example) -> None:
-        match example:
-            case Example.NONE:
-                return
-            case Example.PYPSA:
-                with as_file(files("interop") / "templates" / "examples" / "pypsa") as src:
-                    self._fs.copy_tree(src, target)
-                # The pypsa example ships its own pipeline; drop the bare
-                # skeleton's noop placeholder so the project has just the one.
-                (target / "pipelines" / "example.yaml").unlink(missing_ok=True)
+        if example is Example.NONE:
+            return
+        with as_file(files("interop") / "templates" / "examples" / example.value) as src:
+            self._fs.copy_tree(src, target)
+        (target / "pipelines" / "example.yaml").unlink(missing_ok=True)

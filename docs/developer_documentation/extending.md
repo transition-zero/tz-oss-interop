@@ -560,9 +560,10 @@ example that uses nothing but the published surface.
 | `bindings` | `dict[str, str]` | Bind a key to a single adapter `name`. |
 | `multi_bindings` | `dict[str, list[str]]` | Bind a key to a list of adapter names; the DI layer fans calls out to each. Only `reporter` is supported today. |
 | `adapters` | `dict[str, dict]` | Per-adapter config, keyed by adapter `name`. Each value is validated against the adapter's `config_schema`. |
-| `observability.log_level` | `str` | Root log level. Default `INFO`. |
 
 A binding key not present in either `bindings` or `multi_bindings` falls back to its built-in default. A single-value entry under `bindings` and a list entry under `multi_bindings` for the same key are mutually exclusive; `multi_bindings` wins.
+
+`adapters.yaml` does not set the log level. The environment variable `INTEROP_LOG_LEVEL` sets what the console shows. The console shows only errors when the variable is not set. A project from an older `interop init` can hold an `observability` key. tz-oss-interop ignores that key and writes a warning.
 
 ### Built-in binding keys
 

@@ -39,7 +39,7 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
     And the canonical table "canonical/parameters/energy_capital_cost.parquet" has the rows:
       | region | storage | year | value |
       | R1     | battery | 2030 | 310   |
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
 
   Scenario: A wildcard expands over the regions and an explicit member wins
     Given a TZ-format model
@@ -69,7 +69,7 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | osemosys: {} |
     When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/transport_route.parquet" has the columns "start_region end_region fuel year value"
+    And the parquet file "canonical/parameters/transport_route.parquet" has columns "start_region, end_region, fuel, year, value"
     And the canonical table "canonical/parameters/transport_route.parquet" has the rows:
       | start_region | end_region | fuel        | year | value |
       | R1           | R2         | electricity | 2030 | 1     |
@@ -153,7 +153,7 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | osemosys: {} |
     When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
     And the canonical default of "capital_cost" in "canonical" is 0.00001
     And the canonical default of "residual_storage_capacity" in "canonical" is 0
 
@@ -214,7 +214,7 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
     And the canonical table "canonical/sets/year.parquet" has the rows:
       | value |
       | 2030  |
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 1 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 1 rows
 
   Scenario: A trade that constructs region pairs holds each route in both directions
     Given a TZ-format model
@@ -291,7 +291,7 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | osemosys: {} |
     When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
     And the log contains "technologies.gas-combined-cycle.capex"
     And the file "decisions.md" contains "stands for a set with no members"
 

@@ -23,11 +23,13 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.events import (
+    SourceReport,
     TableNames,
     record_automatic_match,
     record_not_mapped,
     record_skipped,
     record_value_derived,
+    report_source_events,
 )
 from interop.plugins.shared.osemosys_canonical.mapping_inputs import MappingInputs
 from interop.plugins.shared.osemosys_canonical.mappings import ParameterRow
@@ -35,7 +37,6 @@ from interop.plugins.shared.osemosys_canonical.parameter_rows import (
     RowGroup,
     RowMatch,
     RowSource,
-    RowTable,
     build_operations_note,
     build_row_table,
     convert_default,
@@ -97,9 +98,9 @@ def map_parameters(
     matches = _build_row_matches(inputs)
     _warn_unmatched_rows(inputs.mappings.parameters, matches)
     groups = _build_row_groups(inputs, matches)
-    _reject_wrong_keys(inputs, groups)
+    _reject_wrong_keys(groups)
     plan = _build_plan(inputs, matches, groups)
-    _warn_empty_row_tables(inputs, plan.row_groups, sets)
+    _warn_empty_row_tables(plan.row_groups, sets)
     tables = _build_canonical_tables(inputs, plan, sets)
     _report_plan(plan, recorder)
     return _build_mapped_parameters(
@@ -129,10 +130,8 @@ def _warn_unmatched_rows(rows: list[ParameterRow], matches: dict[str, RowMatch])
         )
 
 
-def _warn_empty_row_tables(
-    inputs: MappingInputs, groups: list[RowGroup], sets: dict[str, pl.LazyFrame]
-) -> None:
-    sources = [source for group in groups for source in _list_row_sources(inputs, group)]
+def _warn_empty_row_tables(groups: list[RowGroup], sets: dict[str, pl.LazyFrame]) -> None:
+    sources = [source for group in groups for source in group.sources]
     absent = [source.match for source in sources if has_absent_choice(source)]
     empty = [source.match for source in sources if has_empty_repeat(source, sets)]
     _warn_rows(absent, _ABSENT_CHOICE_REASON)
@@ -155,10 +154,13 @@ def _build_row_groups(inputs: MappingInputs, matches: dict[str, RowMatch]) -> li
     for match in matches.values():
         if match.row.canonical is not None:
             grouped.setdefault(match.row.canonical, []).append(match)
-    return [
-        RowGroup(canonical, members, _list_group_defaults(inputs, members))
-        for canonical, members in grouped.items()
-    ]
+    return [_build_row_group(inputs, canonical, members) for canonical, members in grouped.items()]
+
+
+def _build_row_group(inputs: MappingInputs, canonical: str, matches: list[RowMatch]) -> RowGroup:
+    parameter = inputs.schema.parameters[canonical]
+    sources = [_build_row_source(inputs, parameter, match) for match in matches]
+    return RowGroup(canonical, sources, _list_group_defaults(inputs, matches))
 
 
 def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list[float | None]:
@@ -169,17 +171,12 @@ def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list
     return list(dict.fromkeys(defaults))
 
 
-def _reject_wrong_keys(inputs: MappingInputs, groups: list[RowGroup]) -> None:
+def _reject_wrong_keys(groups: list[RowGroup]) -> None:
     """A group whose defaults differ becomes extension tables later, but its key still needs this
     check."""
     for group in groups:
-        for source in _list_row_sources(inputs, group):
+        for source in group.sources:
             reject_wrong_key(source)
-
-
-def _list_row_sources(inputs: MappingInputs, group: RowGroup) -> list[RowSource]:
-    parameter = inputs.schema.parameters[group.canonical]
-    return [_build_row_source(inputs, parameter, match) for match in group.matches]
 
 
 def _build_row_source(
@@ -225,7 +222,7 @@ def _build_different_defaults_notes(groups: list[RowGroup]) -> dict[str, str]:
     for group in [group for group in groups if group.has_different_defaults]:
         text = ", ".join(str(default) for default in group.defaults)
         note = _DIFFERENT_DEFAULTS_NOTE.format(canonical=group.canonical, defaults=text)
-        notes.update(dict.fromkeys([match.table for match in group.matches], note))
+        notes.update(dict.fromkeys([source.match.table for source in group.sources], note))
     return notes
 
 
@@ -280,13 +277,12 @@ def _build_group_table(
     inputs: MappingInputs, group: RowGroup, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame:
     columns = [*inputs.schema.parameters[group.canonical].column_names, VALUE_COL]
-    tables = [
-        RowTable(source.match, build_row_table(source, sets))
-        for source in _list_row_sources(inputs, group)
+    keyed = [
+        source._replace(table=build_row_table(source, sets).select(columns))
+        for source in group.sources
     ]
-    keyed = [row_table._replace(table=row_table.table.select(columns)) for row_table in tables]
     reject_overlapping_rows(group.canonical, keyed, columns[:-1])
-    return pl.concat([row_table.table for row_table in keyed])
+    return pl.concat([source.table for source in keyed])
 
 
 def _drop_absent_members(
@@ -312,9 +308,10 @@ def _report_plan(plan: ParameterPlan, recorder: EventRecorder) -> None:
 
 
 def _record_row_group(group: RowGroup, recorder: EventRecorder) -> None:
-    for match in group.matches:
-        names = TableNames(match.table, group.canonical)
-        record_value_derived(recorder, TableKind.PARAMETER, names, build_operations_note(match))
+    for source in group.sources:
+        names = TableNames(source.match.table, group.canonical)
+        note = build_operations_note(source.match)
+        record_value_derived(recorder, TableKind.PARAMETER, names, note)
 
 
 def _report_ignored(ignored: list[RowMatch], recorder: EventRecorder) -> None:
@@ -331,15 +328,9 @@ def _report_ignored(ignored: list[RowMatch], recorder: EventRecorder) -> None:
 
 
 def _report_extensions(notes: dict[str, str], reason: str, recorder: EventRecorder) -> None:
-    for name, note in notes.items():
-        record_not_mapped(recorder, TableKind.PARAMETER, name, note)
-    if notes:
-        log.warning(
-            "%d raw table(s) %s, so each stays an extension table: %s",
-            len(notes),
-            reason,
-            name_a_few(notes),
-        )
+    warning = f"%d raw table(s) {reason}, so each stays an extension table: %s"
+    report = SourceReport(record_not_mapped, TableKind.PARAMETER, warning)
+    report_source_events(report, notes, recorder)
 
 
 def _build_parameter_defaults(

@@ -19,12 +19,15 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
   value of each parameter. The columns of a parameter name the sets that its value depends on.
 - **The object level** is the members of the sets, such as a technology called `ATGASCC1`,
   and the values with their units.
-- **An OSeMOSYS name** is the name that a published OSeMOSYS variant gives a set or a
-  parameter, for example `CapitalCost` or `REGION`.
+- **A default name** is the name that the automatic match looks for, for example `CapitalCost`
+  or `REGION`. The `osemosys_name` field of each schema entry holds it. OSeMOSYS does not
+  require these names, so a model can give a set or a parameter any name.
+- **The default columns** of a parameter are the index columns that the automatic match looks
+  for. The `osemosys_columns` field of each schema entry holds them.
 - **A canonical name** is the name of a set, a parameter or a column in the canonical schema,
   for example `capital_cost` or `region`. The section "Names" gives the rules.
 - **The raw stage** is the model after the source removes the file format. It keeps the
-  names, the index columns and the set members of the model, so it uses the OSeMOSYS names.
+  names, the index columns and the set members of the model, as the model states them.
 - **A raw table** is the table of one parameter in the raw stage. **A raw set** is the table
   of one set in the raw stage.
 - **The canonical schema** is the schema that interop defines for an OSeMOSYS model, in
@@ -70,7 +73,7 @@ schemas of the Sienna data model. The names come from SiennaSchemas commit `9d58
 mostly from its `Investments` domain. A translation from the canonical stage to Sienna then
 needs one vocabulary only.
 
-The raw stage keeps the OSeMOSYS names, because the source only removes the file format.
+The raw stage keeps the names of the model, because the source only removes the file format.
 
 ### The rules for a canonical name
 
@@ -79,7 +82,7 @@ The raw stage keeps the OSeMOSYS names, because the source only removes the file
 2. If SiennaSchemas has a field for the same quantity in the same sense, the canonical name is
    that field name. A nested Sienna field gives its leaf name, so `capital_costs.capital_cost`
    gives `capital_cost`.
-3. If SiennaSchemas has no such field, the canonical name is the OSeMOSYS name in snake_case.
+3. If SiennaSchemas has no such field, the canonical name is the default name in snake_case.
    The canonical name gives each abbreviation in full: `RE` becomes `renewable`, and `Idv`
    becomes `technology`.
 4. One concept takes one word. SiennaSchemas calls a link between two regions a transport
@@ -93,7 +96,7 @@ The raw stage keeps the OSeMOSYS names, because the source only removes the file
 
 ### The sets
 
-| OSeMOSYS name | Canonical name | Source of the name |
+| Default name | Canonical name | Source of the name |
 | --- | --- | --- |
 | `REGION` | `region` | `region` on each Sienna investment technology |
 | `TECHNOLOGY` | `technology` | The Sienna investment types end in `Technology` |
@@ -110,7 +113,7 @@ The raw stage keeps the OSeMOSYS names, because the source only removes the file
 
 A table that holds two regions names them `start_region` and `end_region`, as Sienna's
 `AggregateTransportTechnology` does. They are not sets. Each one is a column that holds the
-members of the `region` set. OSeMOSYS names the second region `_REGION`. The `columns` field of
+members of the `region` set. The default columns name the second region `_REGION`. The `columns` field of
 the schema entry names each column and its set:
 
 ```yaml
@@ -130,12 +133,12 @@ name of that column is `VALUE`.
 ### The parameters
 
 The schema file `interop/plugins/shared/osemosys_canonical_schema.yaml` holds the full table of
-the parameters. Each entry gives the canonical name, the OSeMOSYS name and the OSeMOSYS columns of
+the parameters. Each entry gives the canonical name, the default name and the default columns of
 one parameter.
 
 These parameters take a SiennaSchemas name, by rule 2:
 
-| OSeMOSYS name | Canonical name | SiennaSchemas field |
+| Default name | Canonical name | SiennaSchemas field |
 | --- | --- | --- |
 | `CapitalCost` | `capital_cost` | `SupplyTechnology.capital_costs.capital_cost` |
 | `CapitalCostStorage` | `energy_capital_cost` | `StorageTechnology.capital_costs.energy_capital_cost` |
@@ -158,9 +161,9 @@ holds minutes.
 Four parameters keep a prefix, so that one name means one table: `storage_lifetime`,
 `transport_lifetime`, `transport_capital_cost` and `storage_discount_rate`.
 
-Each other parameter takes its OSeMOSYS name in snake_case, by rules 3 and 4. For example:
+Each other parameter takes its default name in snake_case, by rules 3 and 4. For example:
 
-| OSeMOSYS name | Canonical name |
+| Default name | Canonical name |
 | --- | --- |
 | `DiscountRateIdv` | `technology_discount_rate` |
 | `TradeRoute` | `transport_route` |
@@ -175,8 +178,8 @@ The three `Conversionl*` parameters take the field names of tz-osemosys, because
 
 ### Where each vocabulary applies
 
-- The raw stage uses the OSeMOSYS names: the raw sets, the raw tables, their index columns and
-  `VALUE`.
+- The raw stage uses the names of the model: the raw sets, the raw tables, their index columns
+  and `VALUE`.
 - The automatic match compares the name and the index columns of a raw table with the
   `osemosys_name` and the `osemosys_columns` of each canonical parameter. It compares the name of a raw set with
   the `osemosys_name` of each canonical set.
@@ -184,7 +187,7 @@ The three `Conversionl*` parameters take the field names of tz-osemosys, because
   paths and the `State` keys.
 - An extension table keeps its own name. Its columns take the canonical set names and
   `value`. If it holds a pair of regions, they are `start_region` and `end_region`.
-- The user mappings file accepts canonical names only. An OSeMOSYS name such as `CapitalCost`
+- The user mappings file accepts canonical names only. A default name such as `CapitalCost`
   in a `canonical:` value stops the run.
 
 ## The stages
@@ -230,7 +233,7 @@ canonical parameter that no raw table maps to gives no table.
 An extension table keeps the name and the values of its raw table. Its columns take canonical
 names by these rules:
 
-- A column with the OSeMOSYS name of a set takes the canonical name of that set.
+- A column with the default name of a set takes the canonical name of that set.
 - `_REGION` becomes `end_region`. Then, if the table holds `end_region`, `region` becomes
   `start_region`.
 - `VALUE` becomes `value`.
@@ -291,7 +294,7 @@ A core parameter takes its columns from the OSeMOSYS v1.0.1 model file. It takes
 from the otoole reference config, which has the MIT licence.
 
 The name of a set entry is its canonical name. Each set entry has two fields, and both are
-required. `meaning` states what the members are. `osemosys_name` states the OSeMOSYS name of
+required. `meaning` states what the members are. `osemosys_name` states the default name of
 the set.
 
 The name of a parameter entry is its canonical name. Each parameter entry has these fields:
@@ -299,8 +302,8 @@ The name of a parameter entry is its canonical name. Each parameter entry has th
 | Field | Required | What it states |
 | --- | --- | --- |
 | `columns` | Yes | An ordered mapping from each canonical column to the set whose members it holds. A column of a set has the name of the set. `start_region` and `end_region` hold `region`. |
-| `osemosys_name` | Yes | The OSeMOSYS name of the parameter. |
-| `osemosys_columns` | Yes | The OSeMOSYS columns: the OSeMOSYS name of the set at each position of `columns`, or `_REGION`. |
+| `osemosys_name` | Yes | The default name of the parameter. |
+| `osemosys_columns` | Yes | The default columns: the default name of the set at each position of `columns`, or `_REGION`. |
 | `default` | No | The default value. |
 | `default_from` | No | The parameter whose default this parameter takes. |
 | `unit` | Yes | The kind of unit, for example `currency per capacity`. |
@@ -347,7 +350,7 @@ Describe the parameter by its meaning. Never name a model that uses it.
 7. Add `default` only if the variant documents a default.
 8. Run `uv run pytest -q tests/step_defs/osemosys_staging`.
 
-After the change, a raw table with the OSeMOSYS name and the OSeMOSYS columns of the entry maps to
+After the change, a raw table with the default name and the default columns of the entry maps to
 the new parameter automatically. Before the change, it stayed an extension table.
 
 ## The user mappings file
@@ -377,7 +380,7 @@ set. It maps a raw table automatically when its name is the `osemosys_name` of a
 parameter, and its index columns are the `osemosys_columns`. The order of the index columns
 does not matter.
 
-The engine then gives each OSeMOSYS column the canonical column at the same position in
+The engine then gives each default column the canonical column at the same position in
 `columns`. For example, the raw table `CapitalCostTrade`, with the index columns `REGION,
 _REGION, FUEL, YEAR`, becomes `transport_capital_cost`, with the columns `start_region,
 end_region, fuel, year`.
@@ -415,7 +418,7 @@ pattern is a Python regular expression. The engine uses `re.search`, so a patter
 Before the operations of a row, the engine gives canonical names to the columns of the raw
 table:
 
-- A column with the OSeMOSYS name of a set takes the canonical name of that set.
+- A column with the default name of a set takes the canonical name of that set.
 - `_REGION` becomes `end_region`.
 - Then, if the canonical columns hold `start_region`, `region` becomes `start_region`.
 - `VALUE` becomes `value`.
@@ -583,9 +586,10 @@ osemosys:
 ## The sources
 
 Each source reads its input through `self._fs`, writes the raw stage, and calls the mappings
-engine. The sets and the raw tables in this section are in the raw stage, so they have
-OSeMOSYS names. Each source records its events through its `recorder`, so `decisions.md` names the
-source in its `Step` column.
+engine. The sets and the raw tables in this section are in the raw stage. `stage_osemosys_csv`
+keeps the names of the model. `stage_tz_osemosys_json` gives each field its default name. Each
+source records its events through its `recorder`, so `decisions.md` names the source in its
+`Step` column.
 
 ### `stage_osemosys_csv`
 
@@ -701,7 +705,7 @@ problem in the data of the model never stops the run.
 | --- | --- |
 | The user mappings file is not given, or it does not parse | The run stops |
 | `osemosys:`, or a part in it, holds a key that the schema does not declare | The run stops |
-| `sets:` or a `parameters:` row names a canonical set or parameter that the schema does not hold, for example the OSeMOSYS name `CapitalCost` | The run stops |
+| `sets:` or a `parameters:` row names a canonical set or parameter that the schema does not hold, for example the default name `CapitalCost` | The run stops |
 | `repeat_for_all` names a column that is not a canonical set, `start_region` or `end_region` | The run stops |
 | `remove_column` gives a `member` with a rule other than `choose`, or no `member` with `choose` | The run stops |
 | A `parameters:` row states both or neither of `source` and `source_pattern` | The run stops |

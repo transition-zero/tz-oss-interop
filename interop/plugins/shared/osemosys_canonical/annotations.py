@@ -224,11 +224,15 @@ def _report_missing_kinds(technologies: list[MemberAnnotation], recorder: EventR
 def _build_table(part: ObjectPart, annotations: list[MemberAnnotation]) -> pl.DataFrame:
     keys = [REGION] if part == ObjectPart.REGIONS else [REGION, OBJECT_PART_SETS[part]]
     columns = OBJECT_PART_COLUMNS[part]
-    rows = [
-        [*_list_key_values(part, found.key), *(found.values.get(column) for column in columns)]
-        for found in annotations
-    ]
+    rows = [_build_table_row(found, columns) for found in annotations]
     return pl.DataFrame(rows, schema=dict.fromkeys([*keys, *columns], pl.Utf8), orient="row")
+
+
+def _build_table_row(
+    found: MemberAnnotation, columns: tuple[AnnotationColumn, ...]
+) -> list[str | None]:
+    values = found.values
+    return [*_list_key_values(found.part, found.key), *(values.get(column) for column in columns)]
 
 
 def _list_key_values(part: ObjectPart, key: MemberKey) -> list[str]:

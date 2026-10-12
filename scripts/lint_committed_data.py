@@ -6,8 +6,6 @@ it carries whatever terms its publisher set. A test gets its fixture from a buil
 `interop-testing`, and a case study tells the reader where to download the model instead.
 
 So a file in a data format fails this check unless it sits under an allowed directory.
-`interop/templates/` is the one allowance: the tutorial ships a small synthetic network
-written for the purpose, which the example pipelines read.
 
 A new data format worth stopping belongs in `DATA_SUFFIXES`. A new allowed directory
 needs a reason recorded beside it in `ALLOWED_DIRECTORIES`, and only holds files this
@@ -45,7 +43,7 @@ DATA_SUFFIXES = frozenset(
 
 # Directory -> why data may live there. Every file under one is this project's own.
 ALLOWED_DIRECTORIES = {
-    "interop/templates": "the synthetic example network the tutorial translates",
+    "interop/templates": "the synthetic example models that the tutorials translate",
 }
 
 

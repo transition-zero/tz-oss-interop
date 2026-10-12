@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import logging
+from collections.abc import Callable, Mapping
 from typing import NamedTuple
 
 from interop.core.reporting import EventRecorder
@@ -11,12 +12,15 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AnnotationColumn,
     TableKind,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
     SourceField,
     TranslationEvent,
 )
+
+log = logging.getLogger(__name__)
 
 
 class TableNames(NamedTuple):
@@ -65,6 +69,23 @@ def record_not_mapped(recorder: EventRecorder, component: str, name: str, note: 
             note=note,
         )
     )
+
+
+class SourceReport(NamedTuple):
+    """`warning` takes the count of names, then the names."""
+
+    record: Callable[[EventRecorder, str, str, str], None]
+    component: str
+    warning: str
+
+
+def report_source_events(
+    report: SourceReport, notes: Mapping[str, str], recorder: EventRecorder
+) -> None:
+    for name, note in notes.items():
+        report.record(recorder, report.component, name, note)
+    if notes:
+        log.warning(report.warning, len(notes), name_a_few(notes))
 
 
 class AnnotatedMember(NamedTuple):

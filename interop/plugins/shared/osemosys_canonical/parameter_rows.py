@@ -42,17 +42,12 @@ class RowSource(NamedTuple):
 
 class RowGroup(NamedTuple):
     canonical: str
-    matches: list[RowMatch]
+    sources: list[RowSource]
     defaults: list[float | None]
 
     @property
     def has_different_defaults(self) -> bool:
         return len(self.defaults) > 1
-
-
-class RowTable(NamedTuple):
-    match: RowMatch
-    table: pl.LazyFrame
 
 
 def find_row_match(rows: list[ParameterRow], table: str) -> RowMatch | None:
@@ -185,7 +180,7 @@ def convert_default(row: ParameterRow, default: float | None) -> float | None:
     return default * row.multiply_by
 
 
-def reject_overlapping_rows(canonical: str, tables: list[RowTable], key: list[str]) -> None:
+def reject_overlapping_rows(canonical: str, tables: list[RowSource], key: list[str]) -> None:
     if len(tables) < 2:
         return
     overlap = _find_overlap(tables, key)
@@ -193,24 +188,25 @@ def reject_overlapping_rows(canonical: str, tables: list[RowTable], key: list[st
         raise UserInputError(_build_overlap_message(canonical, tables, overlap))
 
 
-def _find_overlap(tables: list[RowTable], key: list[str]) -> dict[str, Any] | None:
+def _find_overlap(tables: list[RowSource], key: list[str]) -> dict[str, Any] | None:
     tagged = pl.concat(
-        row_table.table.with_columns(pl.lit(row_table.match.table).alias(RAW_TABLE_COL))
-        for row_table in tables
+        source.table.with_columns(pl.lit(source.match.table).alias(RAW_TABLE_COL))
+        for source in tables
     )
     overlap = (
         tagged.group_by(key)
         .agg(pl.col(RAW_TABLE_COL).unique().sort())
         .filter(pl.col(RAW_TABLE_COL).list.len() > 1)
+        .sort(key)
         .limit(1)
         .collect()
     )
     return overlap.row(0, named=True) if overlap.height else None
 
 
-def _build_overlap_message(canonical: str, tables: list[RowTable], overlap: dict[str, Any]) -> str:
+def _build_overlap_message(canonical: str, tables: list[RowSource], overlap: dict[str, Any]) -> str:
     raw_tables = overlap.pop(RAW_TABLE_COL)
-    indexes = {row_table.match.table: row_table.match.row_index for row_table in tables}
+    indexes = {source.match.table: source.match.row_index for source in tables}
     rows = sorted({indexes[name] for name in raw_tables})
     rows_text = (
         f"Row {rows[0]} of {PARAMETERS_PART} maps"

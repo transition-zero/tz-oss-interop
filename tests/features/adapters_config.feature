@@ -50,6 +50,15 @@ Feature: adapters.yaml binds outbound adapters
     Then the printed output contains "adapters.yaml"
     And the printed output contains "binigs"
 
+  Scenario: the observability key in adapters.yaml is ignored with a warning that names INTEROP_LOG_LEVEL
+    Given I have run init at "demo"
+    And I cd into "demo"
+    And I add an adapters.yaml with raw content "observability: {log_level: WARNING}"
+    When I run translate with source "noop" destination "noop" pipeline "example"
+    Then the file "outputs/noop-ran.txt" exists
+    And the log contains "holds `observability`, which tz-oss-interop ignores"
+    And the log contains "INTEROP_LOG_LEVEL"
+
   Scenario: non-mapping adapters.yaml surfaces a UserError
     Given I have run init at "demo"
     And I cd into "demo"

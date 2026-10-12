@@ -39,6 +39,3 @@
 #     output_path: outputs/decisions.md
 #   csv_report:
 #     output_path: outputs/decisions.csv
-
-observability:
-  log_level: INFO

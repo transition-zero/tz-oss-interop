@@ -371,6 +371,9 @@ written as parquet files. Two pipelines write it:
 Each run reads a mappings file that tells interop how your model differs from the canonical
 schema. A file that holds only `osemosys: {}` is valid.
 
+The `osemosys` example of `interop init` holds a small invented otoole model in
+`inputs/model/`, and the mappings file `inputs/osemosys_mappings.yaml`. To use your own model:
+
 1. Put the otoole configuration file at `inputs/model/config.yaml`.
 2. Put the CSV files in `inputs/model/csv/`.
 3. Write `inputs/osemosys_mappings.yaml`.
@@ -378,16 +381,16 @@ schema. A file that holds only `osemosys: {}` is valid.
 
    ```bash
    INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline osemosys-csv-to-canonical \
-     --override 'source.config_path=inputs/model/config.yaml' \
-     --override 'source.csv_dir=inputs/model/csv' \
-     --override 'sink[0].output_dir=outputs/canonical' \
      --user-mappings-path inputs/osemosys_mappings.yaml
    ```
 
 5. Read `outputs/canonical/` and `decisions.md`.
 
-The [OSeMOSYS mappings guide](osemosys-mappings.md) tells you how to write the mappings file,
-with a worked example for each feature.
+The pipeline reads `inputs/model/` and writes `outputs/canonical/` by default. An `--override`
+item changes a path, for example `--override 'source.csv_dir=my/csv'`.
+
+The [OSeMOSYS mappings tutorial](osemosys-mappings.md) teaches you how to write the mappings
+file, with one lesson for each feature.
 
 ## Extending interop
 

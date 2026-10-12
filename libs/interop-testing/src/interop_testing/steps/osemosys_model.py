@@ -184,18 +184,6 @@ def assert_canonical_rows(path: str, datatable: list[list[str]]) -> None:
     )
 
 
-@then(parsers.parse('the canonical table "{path}" has {count:d} rows'))
-def assert_canonical_row_count(path: str, count: int) -> None:
-    height = pl.read_parquet(Path(path)).height
-    assert height == count, f"expected {count} rows in {path}, got {height}"
-
-
-@then(parsers.parse('the canonical table "{path}" has the columns "{columns}"'))
-def assert_canonical_columns(path: str, columns: str) -> None:
-    actual = pl.read_parquet(Path(path)).columns
-    assert actual == columns.split(), f"expected columns {columns.split()} in {path}, got {actual}"
-
-
 @then(parsers.parse('the column "{column}" of the canonical table "{path}" has the type "{dtype}"'))
 def assert_canonical_column_type(column: str, path: str, dtype: str) -> None:
     actual = pl.read_parquet(Path(path)).schema[column]

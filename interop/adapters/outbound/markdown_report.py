@@ -49,19 +49,16 @@ class MarkdownReport(ReportingPort):
 
         lines: list[str] = ["# Translation decisions", ""]
         for kind in EventKind:
-            kind_events = by_kind[kind]
-            lines.append(f"## {_SECTION_HEADINGS[kind]} ({len(kind_events)})")
-            lines.append("")
-            if not kind_events:
-                lines.append("_(none)_")
-                lines.append("")
-                continue
-            lines.append(_TABLE_HEADER)
-            lines.append(_TABLE_SEPARATOR)
-            for event in kind_events:
-                lines.extend(_render_event_rows(event))
-            lines.append("")
+            lines.extend(_render_section(kind, by_kind[kind]))
         self._fs.write_bytes(self._config.output_path, "\n".join(lines).encode("utf-8"))
+
+
+def _render_section(kind: EventKind, events: list[TranslationEvent]) -> list[str]:
+    rows = [row for event in events for row in _render_event_rows(event)]
+    heading = [f"## {_SECTION_HEADINGS[kind]} ({len(rows)})", ""]
+    if not rows:
+        return [*heading, "_(none)_", ""]
+    return [*heading, _TABLE_HEADER, _TABLE_SEPARATOR, *rows, ""]
 
 
 def _render_event_rows(event: TranslationEvent) -> list[str]:

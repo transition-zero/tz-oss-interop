@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import logging
+from typing import NamedTuple
 
 import polars as pl
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL, TableKind
-from interop.plugins.shared.osemosys_canonical.events import record_skipped
+from interop.plugins.shared.osemosys_canonical.events import (
+    SourceReport,
+    record_skipped,
+    report_source_events,
+)
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
-from interop.plugins.shared.warning_text import name_a_few
-
-log = logging.getLogger(__name__)
 
 _NO_VALUE_COLUMN_NOTE = "the file has no VALUE column, so the raw stage leaves it out"
 _UNREADABLE_FILE_NOTE = "the file cannot be read as CSV ({reason}), so the raw stage leaves it out"
@@ -19,19 +20,38 @@ _WRONG_HEADER_NOTE = (
     "so the raw stage leaves it out"
 )
 _NO_SET_FILE_NOTE = "the set has no CSV file, so the raw stage stages it with no members"
-_UNREADABLE_VALUES_NOTE = "{count} row(s) state a VALUE that is not a number, so each is left out"
 
 _NO_VALUE_COLUMN_REASON = "have no VALUE column"
 _UNREADABLE_FILE_REASON = "cannot be read as CSV"
 _WRONG_HEADER_REASON = "have a header that is not the declared key and VALUE"
 
+_MISSING_SET_FILES = SourceReport(
+    record_skipped,
+    TableKind.SET,
+    "%d set(s) have no CSV file, so the raw stage stages each with no members: %s",
+)
+
+
+class UnreadableValuesReport(NamedTuple):
+    """`note` takes the `count` of values in one table."""
+
+    note: str
+    warning: str
+
+
+_CSV_UNREADABLE_VALUES = UnreadableValuesReport(
+    "{count} row(s) state a VALUE that is not a number, so each is left out",
+    "%d parameter file(s) have rows whose VALUE is not a number, so the raw stage "
+    "leaves those rows out: %s",
+)
+
 
 def map_set_tables(
     found: dict[str, bytes | None], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    _report_missing_set_files(
-        [name for name, content in found.items() if content is None], recorder
-    )
+    missing_files = [name for name, content in found.items() if content is None]
+    missing_notes = dict.fromkeys(missing_files, _NO_SET_FILE_NOTE)
+    report_source_events(_MISSING_SET_FILES, missing_notes, recorder)
     parsed = _parse_files(found, TableKind.SET, recorder)
     tables = {
         name: table if table is not None else pl.DataFrame(schema={RAW_VALUE_COL: pl.Utf8})
@@ -64,8 +84,7 @@ def map_parameter_tables(
         for name, table in tables.items()
     }
     floated = {name: _build_float_values(table) for name, table in keyed.items()}
-    _report_unreadable_values(_build_unreadable_value_counts(floated), recorder)
-    return {name: table.drop_nulls(RAW_VALUE_COL) for name, table in floated.items()}
+    return drop_unreadable_values(floated, _CSV_UNREADABLE_VALUES, recorder)
 
 
 def _parse_files(
@@ -81,17 +100,6 @@ def _parse_files(
             notes[name] = _UNREADABLE_FILE_NOTE.format(reason=_build_error_summary(exc))
     _report_skipped_files(kind, notes, _UNREADABLE_FILE_REASON, recorder)
     return tables
-
-
-def _report_missing_set_files(names: list[str], recorder: EventRecorder) -> None:
-    for name in names:
-        record_skipped(recorder, TableKind.SET, name, _NO_SET_FILE_NOTE)
-    if names:
-        log.warning(
-            "%d set(s) have no CSV file, so the raw stage stages each with no members: %s",
-            len(names),
-            name_a_few(names),
-        )
 
 
 def _build_error_summary(error: Exception) -> str:
@@ -135,35 +143,25 @@ def _build_wrong_header_notes(
 def _report_skipped_files(
     kind: TableKind, notes: dict[str, str], reason: str, recorder: EventRecorder
 ) -> None:
-    for name, note in notes.items():
-        record_skipped(recorder, kind, name, note)
-    if notes:
-        log.warning(
-            "%d %s file(s) %s, so the raw stage leaves each out: %s",
-            len(notes),
-            kind,
-            reason,
-            name_a_few(notes),
-        )
+    warning = f"%d {kind} file(s) {reason}, so the raw stage leaves each out: %s"
+    report_source_events(SourceReport(record_skipped, kind, warning), notes, recorder)
 
 
 def _build_float_values(table: pl.DataFrame) -> pl.DataFrame:
     return table.with_columns(pl.col(RAW_VALUE_COL).cast(pl.Float64, strict=False))
 
 
+def drop_unreadable_values(
+    tables: dict[str, pl.DataFrame], report: UnreadableValuesReport, recorder: EventRecorder
+) -> dict[str, pl.DataFrame]:
+    """A null VALUE is one that could not be read as a number."""
+    counts = _build_unreadable_value_counts(tables)
+    notes = {name: report.note.format(count=count) for name, count in counts.items()}
+    source_report = SourceReport(record_skipped, TableKind.PARAMETER, report.warning)
+    report_source_events(source_report, notes, recorder)
+    return {name: table.drop_nulls(RAW_VALUE_COL) for name, table in tables.items()}
+
+
 def _build_unreadable_value_counts(tables: dict[str, pl.DataFrame]) -> dict[str, int]:
     counts = {name: table.get_column(RAW_VALUE_COL).null_count() for name, table in tables.items()}
     return {name: count for name, count in counts.items() if count}
-
-
-def _report_unreadable_values(counts: dict[str, int], recorder: EventRecorder) -> None:
-    for name, count in counts.items():
-        note = _UNREADABLE_VALUES_NOTE.format(count=count)
-        record_skipped(recorder, TableKind.PARAMETER, name, note)
-    if counts:
-        log.warning(
-            "%d parameter file(s) have rows whose VALUE is not a number, so the raw stage "
-            "leaves those rows out: %s",
-            len(counts),
-            name_a_few(counts),
-        )

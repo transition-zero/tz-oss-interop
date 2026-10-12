@@ -30,6 +30,24 @@ Feature: interop init scaffolds a new project
     And the file "my-model/plugins/sinks/emit_sienna_csv.py" exists
     And the file "my-model/plugins/sources/README.md" exists
 
+  Scenario: init scaffolds the osemosys example project
+    When I run init with target "my-model" and example "osemosys"
+    Then the file "my-model/inputs/model/config.yaml" exists
+    And the file "my-model/inputs/model/csv/REGION.csv" exists
+    And the file "my-model/inputs/model/csv/TECHNOLOGY.csv" exists
+    And the file "my-model/inputs/model/csv/FUEL.csv" exists
+    And the file "my-model/inputs/model/csv/MODE_OF_OPERATION.csv" exists
+    And the file "my-model/inputs/model/csv/YEAR.csv" exists
+    And the file "my-model/inputs/model/csv/CapitalCost.csv" exists
+    And the file "my-model/inputs/model/csv/InputActivityRatio.csv" exists
+    And the file "my-model/inputs/model/csv/OutputActivityRatio.csv" exists
+    And the file "my-model/inputs/osemosys_mappings.yaml" exists
+    And the file "my-model/adapters.yaml" exists
+
+  Scenario: the osemosys example replaces the skeleton's placeholder pipeline
+    When I run init with target "my-model" and example "osemosys"
+    Then the file "my-model/pipelines/example.yaml" does not exist
+
   Scenario: init prints next-steps guidance on success
     When I run init with target "my-model"
     Then the printed output contains "cd into that directory"
