@@ -10,7 +10,7 @@ import polars as pl
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     LOCATION_SEPARATOR,
-    MODE_OF_OPERATION,
+    OPERATING_MODE,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -19,7 +19,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.object_rows import MemberKey
 
-_FLOW_COLUMNS = [REGION, TECHNOLOGY, FUEL, MODE_OF_OPERATION]
+_FLOW_COLUMNS = [REGION, TECHNOLOGY, FUEL, OPERATING_MODE]
 _STORAGE_COLUMNS = [REGION, TECHNOLOGY]
 _REGION_LOCATION_RULE = (
     "a technology takes the location of its region when no row gives a location to its fuels"
@@ -86,7 +86,7 @@ class KindRule(NamedTuple):
 
 
 def build_technology_flows(canonical: dict[str, pl.LazyFrame]) -> dict[MemberKey, list[FuelFlow]]:
-    """Counts each row whose VALUE is above zero, in any year and any mode."""
+    """Counts each row whose value is above zero, in any year and any mode."""
     flows: dict[MemberKey, list[FuelFlow]] = {}
     for parameter, is_input in _FLOW_DIRECTIONS.items():
         for region, technology, fuel, mode in _build_positive_keys(canonical, parameter).rows():
@@ -181,7 +181,8 @@ _KIND_RULES = (
     KindRule(
         TechnologyKind.STORAGE,
         _is_storage,
-        "it connects to a storage through TechnologyToStorage or TechnologyFromStorage",
+        f"it connects to a storage through {FlowParameter.TECHNOLOGY_TO_STORAGE} or "
+        f"{FlowParameter.TECHNOLOGY_FROM_STORAGE}",
     ),
     KindRule(
         TechnologyKind.LINK,

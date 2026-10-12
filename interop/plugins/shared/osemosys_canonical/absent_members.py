@@ -15,8 +15,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.events import record_skipped
-from interop.plugins.shared.osemosys_canonical.schema import CanonicalSchema
-from interop.plugins.shared.osemosys_canonical.set_mapping import normalise_set_name
+from interop.plugins.shared.osemosys_canonical.schema import CanonicalParameter, CanonicalSchema
 from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
@@ -47,22 +46,23 @@ def build_absent_members(
 ) -> dict[str, AbsentMembers]:
     """Each table that names an absent member; an absent set holds no members."""
     found = {
-        name: _build_table_absent_members(table, schema.parameters[name].key, members)
+        name: _build_table_absent_members(table, schema.parameters[name], members)
         for name, table in tables.items()
     }
     return {name: absent for name, absent in found.items() if absent.row_count}
 
 
 def _build_table_absent_members(
-    table: pl.LazyFrame, key: list[str], members: dict[str, pl.Series]
+    table: pl.LazyFrame, parameter: CanonicalParameter, members: dict[str, pl.Series]
 ) -> AbsentMembers:
     """Collects one aggregated row: the count and the absent members of each key column."""
+    absent_columns = (_express_absent(parameter, column, members) for column in parameter.key)
     summary = (
-        table.filter(~_express_is_known(key, members))
-        .select(pl.len().alias(ROW_COUNT_COL), *(_express_absent(c, members) for c in key))
+        table.filter(~_express_is_known(parameter, members))
+        .select(pl.len().alias(ROW_COUNT_COL), *absent_columns)
         .collect()
     )
-    absent = chain.from_iterable(summary.item(0, column) for column in key)
+    absent = chain.from_iterable(summary.item(0, column) for column in parameter.key)
     labels = {_EMPTY_CELL if member is None else member for member in absent}
     return AbsentMembers(summary.item(0, ROW_COUNT_COL), sorted(labels))
 
@@ -71,25 +71,31 @@ def drop_absent_members(
     tables: dict[str, pl.LazyFrame], schema: CanonicalSchema, members: dict[str, pl.Series]
 ) -> dict[str, pl.LazyFrame]:
     return {
-        name: table.filter(_express_is_known(schema.parameters[name].key, members))
+        name: table.filter(_express_is_known(schema.parameters[name], members))
         for name, table in tables.items()
     }
 
 
-def _express_is_known(key: list[str], members: dict[str, pl.Series]) -> pl.Expr:
-    return pl.all_horizontal(_express_is_member(column, members) for column in key)
+def _express_is_known(parameter: CanonicalParameter, members: dict[str, pl.Series]) -> pl.Expr:
+    return pl.all_horizontal(
+        _express_is_member(parameter, column, members) for column in parameter.key
+    )
 
 
-def _express_is_member(column: str, members: dict[str, pl.Series]) -> pl.Expr:
-    """An empty key cell names no member, so it counts as absent."""
-    known = members.get(normalise_set_name(column), _EMPTY_MEMBERS)
+def _express_is_member(
+    parameter: CanonicalParameter, column: str, members: dict[str, pl.Series]
+) -> pl.Expr:
+    """A key column holds members of the set that its role names; an empty key cell names no
+    member, so it counts as absent."""
+    known = members.get(parameter.get_column_set(column), _EMPTY_MEMBERS)
     return pl.col(column).is_in(known.implode()).fill_null(False)
 
 
-def _express_absent(column: str, members: dict[str, pl.Series]) -> pl.Expr:
-    return (
-        pl.col(column).filter(~_express_is_member(column, members)).unique().implode().alias(column)
-    )
+def _express_absent(
+    parameter: CanonicalParameter, column: str, members: dict[str, pl.Series]
+) -> pl.Expr:
+    is_member = _express_is_member(parameter, column, members)
+    return pl.col(column).filter(~is_member).unique().implode().alias(column)
 
 
 def report_absent_members(absent: dict[str, AbsentMembers], recorder: EventRecorder) -> None:

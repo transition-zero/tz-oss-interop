@@ -9,8 +9,7 @@ import polars as pl
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
-    REGION,
-    SECOND_REGION,
+    RAW_VALUE_COL,
     SETS_PART,
     VALUE_COL,
     TableKind,
@@ -39,11 +38,11 @@ class MappedSets(NamedTuple):
 
 def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
     """A canonical set that two raw sets map to holds the members of both."""
-    raw_sets = inputs.raw.sets
+    raw_sets = {name: _reshape_value_column(table) for name, table in inputs.raw.sets.items()}
     _warn_unmatched_renames(inputs)
     targets = _build_set_targets(inputs)
     unmapped = [name for name in raw_sets if name not in targets]
-    _record_set_matches(targets, recorder)
+    _record_set_matches(inputs, targets, recorder)
     _report_unmapped_sets(unmapped, recorder)
     return MappedSets(
         sets=_build_canonical_sets(raw_sets, targets),
@@ -51,9 +50,8 @@ def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
     )
 
 
-def normalise_set_name(column: str) -> str:
-    """The set whose members a key column holds; a second region column holds regions."""
-    return REGION if column == SECOND_REGION else column
+def _reshape_value_column(table: pl.LazyFrame) -> pl.LazyFrame:
+    return table.rename({RAW_VALUE_COL: VALUE_COL})
 
 
 def _warn_unmatched_renames(inputs: MappingInputs) -> None:
@@ -68,20 +66,24 @@ def _warn_unmatched_renames(inputs: MappingInputs) -> None:
 
 
 def _build_set_targets(inputs: MappingInputs) -> dict[str, str]:
-    """The canonical set of each raw set that has one."""
+    """The canonical set of each raw set that has one: its `sets:` entry, else the set whose
+    OSeMOSYS name it has."""
     renames = inputs.mappings.sets
-    targets = {name: renames.get(name, name) for name in inputs.raw.sets}
-    return {name: target for name, target in targets.items() if target in inputs.schema.sets}
+    targets = {
+        name: renames.get(name) or inputs.schema.find_set_name(name) for name in inputs.raw.sets
+    }
+    return {name: target for name, target in targets.items() if target is not None}
 
 
-def _record_set_matches(targets: dict[str, str], recorder: EventRecorder) -> None:
+def _record_set_matches(
+    inputs: MappingInputs, targets: dict[str, str], recorder: EventRecorder
+) -> None:
     for name, target in targets.items():
-        if name == target:
-            record_automatic_match(recorder, TableKind.SET, name)
+        names = TableNames(name, target)
+        if name in inputs.mappings.sets:
+            record_value_derived(recorder, TableKind.SET, names, _RENAMED_SET_NOTE)
         else:
-            record_value_derived(
-                recorder, TableKind.SET, TableNames(name, target), _RENAMED_SET_NOTE
-            )
+            record_automatic_match(recorder, TableKind.SET, names)
 
 
 def _build_canonical_sets(

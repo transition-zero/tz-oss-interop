@@ -7,7 +7,7 @@ import logging
 import polars as pl
 
 from interop.core.reporting import EventRecorder
-from interop.plugins.shared.osemosys_canonical.constants import VALUE_COL, TableKind
+from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL, TableKind
 from interop.plugins.shared.osemosys_canonical.events import record_skipped
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
 from interop.plugins.shared.warning_text import name_a_few
@@ -37,13 +37,15 @@ def map_set_tables(
     )
     parsed = _parse_files(found, TableKind.SET, recorder)
     tables = {
-        name: table if table is not None else pl.DataFrame(schema={VALUE_COL: pl.Utf8})
+        name: table if table is not None else pl.DataFrame(schema={RAW_VALUE_COL: pl.Utf8})
         for name, table in parsed.items()
     }
     missing = _list_tables_without_value(tables)
     notes = dict.fromkeys(missing, _NO_VALUE_COLUMN_NOTE)
     _report_skipped_files(TableKind.SET, notes, _NO_VALUE_COLUMN_REASON, recorder)
-    return {name: table.select(VALUE_COL) for name, table in tables.items() if name not in missing}
+    return {
+        name: table.select(RAW_VALUE_COL) for name, table in tables.items() if name not in missing
+    }
 
 
 def map_parameter_tables(
@@ -63,12 +65,12 @@ def map_parameter_tables(
     keyed = {
         name: _build_empty_table(declarations[name])
         if name in wrong_headers
-        else table.select([*declarations[name].key, VALUE_COL])
+        else table.select([*declarations[name].key, RAW_VALUE_COL])
         for name, table in tables.items()
     }
     floated = {name: _build_float_values(table) for name, table in keyed.items()}
     _report_unreadable_values(_build_unreadable_value_counts(floated), recorder)
-    return {name: table.drop_nulls(VALUE_COL) for name, table in floated.items()}
+    return {name: table.drop_nulls(RAW_VALUE_COL) for name, table in floated.items()}
 
 
 def _parse_files(
@@ -114,11 +116,11 @@ def _normalise_cells(table: pl.DataFrame) -> pl.DataFrame:
 
 
 def _build_empty_table(declaration: RawDeclaration) -> pl.DataFrame:
-    return pl.DataFrame(schema=dict.fromkeys([*declaration.key, VALUE_COL], pl.Utf8))
+    return pl.DataFrame(schema=dict.fromkeys([*declaration.key, RAW_VALUE_COL], pl.Utf8))
 
 
 def _list_tables_without_value(tables: dict[str, pl.DataFrame]) -> list[str]:
-    return [name for name, table in tables.items() if VALUE_COL not in table.columns]
+    return [name for name, table in tables.items() if RAW_VALUE_COL not in table.columns]
 
 
 def _build_wrong_header_notes(
@@ -130,7 +132,7 @@ def _build_wrong_header_notes(
             found=", ".join(table.columns), key=", ".join(declarations[name].key)
         )
         for name, table in tables.items()
-        if sorted(table.columns) != sorted([*declarations[name].key, VALUE_COL])
+        if sorted(table.columns) != sorted([*declarations[name].key, RAW_VALUE_COL])
     }
 
 
@@ -151,11 +153,11 @@ def _report_skipped_files(
 
 def _build_float_values(table: pl.DataFrame) -> pl.DataFrame:
     """A VALUE that is not a number becomes null."""
-    return table.with_columns(pl.col(VALUE_COL).cast(pl.Float64, strict=False))
+    return table.with_columns(pl.col(RAW_VALUE_COL).cast(pl.Float64, strict=False))
 
 
 def _build_unreadable_value_counts(tables: dict[str, pl.DataFrame]) -> dict[str, int]:
-    counts = {name: table.get_column(VALUE_COL).null_count() for name, table in tables.items()}
+    counts = {name: table.get_column(RAW_VALUE_COL).null_count() for name, table in tables.items()}
     return {name: count for name, count in counts.items() if count}
 
 

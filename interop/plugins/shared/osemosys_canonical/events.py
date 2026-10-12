@@ -28,8 +28,8 @@ class TableNames(NamedTuple):
     destination: str
 
 
-def record_automatic_match(recorder: EventRecorder, kind: TableKind, name: str) -> None:
-    record_value_derived(recorder, kind, TableNames(name, name), AUTOMATIC_MATCH_NOTE)
+def record_automatic_match(recorder: EventRecorder, kind: TableKind, names: TableNames) -> None:
+    record_value_derived(recorder, kind, names, AUTOMATIC_MATCH_NOTE)
 
 
 def record_value_derived(
@@ -72,7 +72,7 @@ def record_not_mapped(recorder: EventRecorder, component: str, name: str, note: 
 
 
 class AnnotatedMember(NamedTuple):
-    """One member of an annotated set, named `REGION/member`, and the annotations an event names."""
+    """One member of an annotated set, named `region/member`, and the annotations an event names."""
 
     set_name: str
     name: str

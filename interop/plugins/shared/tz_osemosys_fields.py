@@ -11,19 +11,19 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from interop.plugins.shared.osemosys_canonical.constants import (
-    DAILYTIMEBRACKET,
-    DAYTYPE,
-    EMISSION,
-    FUEL,
-    MODE_OF_OPERATION,
-    REGION,
-    REGIONGROUP,
-    SEASON,
-    SECOND_REGION,
-    STORAGE,
-    TECHNOLOGY,
-    TIMESLICE,
-    YEAR,
+    OSEMOSYS_DAILYTIMEBRACKET,
+    OSEMOSYS_DAYTYPE,
+    OSEMOSYS_EMISSION,
+    OSEMOSYS_FUEL,
+    OSEMOSYS_MODE_OF_OPERATION,
+    OSEMOSYS_REGION,
+    OSEMOSYS_REGIONGROUP,
+    OSEMOSYS_SEASON,
+    OSEMOSYS_SECOND_REGION,
+    OSEMOSYS_STORAGE,
+    OSEMOSYS_TECHNOLOGY,
+    OSEMOSYS_TIMESLICE,
+    OSEMOSYS_YEAR,
 )
 
 
@@ -53,15 +53,15 @@ class TzField(NamedTuple):
     value_set: str | None = None
 
 
-_BY_REGION = (REGION,)
-_BY_REGION_YEAR = (REGION, YEAR)
-_BY_REGION_YEAR_TIMESLICE = (REGION, YEAR, TIMESLICE)
-_BY_REGION_FUEL_YEAR = (REGION, FUEL, YEAR)
-_BY_REGION_EMISSION_YEAR = (REGION, EMISSION, YEAR)
-_BY_REGION_STORAGE = (REGION, STORAGE)
-_BY_REGION_PAIR = (REGION, SECOND_REGION)
-_BY_REGION_PAIR_YEAR = (REGION, SECOND_REGION, YEAR)
-_BY_REGIONGROUP_YEAR = (REGIONGROUP, YEAR)
+_BY_REGION = (OSEMOSYS_REGION,)
+_BY_REGION_YEAR = (OSEMOSYS_REGION, OSEMOSYS_YEAR)
+_BY_REGION_YEAR_TIMESLICE = (OSEMOSYS_REGION, OSEMOSYS_YEAR, OSEMOSYS_TIMESLICE)
+_BY_REGION_FUEL_YEAR = (OSEMOSYS_REGION, OSEMOSYS_FUEL, OSEMOSYS_YEAR)
+_BY_REGION_EMISSION_YEAR = (OSEMOSYS_REGION, OSEMOSYS_EMISSION, OSEMOSYS_YEAR)
+_BY_REGION_STORAGE = (OSEMOSYS_REGION, OSEMOSYS_STORAGE)
+_BY_REGION_PAIR = (OSEMOSYS_REGION, OSEMOSYS_SECOND_REGION)
+_BY_REGION_PAIR_YEAR = (OSEMOSYS_REGION, OSEMOSYS_SECOND_REGION, OSEMOSYS_YEAR)
+_BY_REGIONGROUP_YEAR = (OSEMOSYS_REGIONGROUP, OSEMOSYS_YEAR)
 
 # The default that the documentation states for a capital cost and a fixed cost.
 _SMALL_COST_DEFAULT = 0.00001
@@ -69,7 +69,9 @@ _SMALL_COST_DEFAULT = 0.00001
 TZ_FIELDS: tuple[TzField, ...] = (
     TzField(TzOwner.MODEL, "depreciation_method", "DepreciationMethod", _BY_REGION, 1.0),
     TzField(TzOwner.MODEL, "discount_rate", "DiscountRate", _BY_REGION, 0.05),
-    TzField(TzOwner.MODEL, "cost_of_capital", "DiscountRateIdv", (REGION, TECHNOLOGY)),
+    TzField(
+        TzOwner.MODEL, "cost_of_capital", "DiscountRateIdv", (OSEMOSYS_REGION, OSEMOSYS_TECHNOLOGY)
+    ),
     TzField(TzOwner.MODEL, "cost_of_capital_storage", "DiscountRateStorage", _BY_REGION_STORAGE),
     TzField(TzOwner.MODEL, "reserve_margin", "ReserveMargin", _BY_REGION_YEAR, 1.0),
     TzField(TzOwner.MODEL, "renewable_production_target", "REMinProductionTarget", _BY_REGION_YEAR),
@@ -79,29 +81,38 @@ TZ_FIELDS: tuple[TzField, ...] = (
         "RegionGroupREMinProductionTarget",
         _BY_REGIONGROUP_YEAR,
     ),
-    TzField(TzOwner.TIME_DEFINITION, "year_split", "YearSplit", (TIMESLICE, YEAR)),
-    TzField(TzOwner.TIME_DEFINITION, "day_split", "DaySplit", (DAILYTIMEBRACKET, YEAR)),
-    TzField(TzOwner.TIME_DEFINITION, "days_in_day_type", "DaysInDayType", (SEASON, DAYTYPE, YEAR)),
+    TzField(
+        TzOwner.TIME_DEFINITION, "year_split", "YearSplit", (OSEMOSYS_TIMESLICE, OSEMOSYS_YEAR)
+    ),
+    TzField(
+        TzOwner.TIME_DEFINITION, "day_split", "DaySplit", (OSEMOSYS_DAILYTIMEBRACKET, OSEMOSYS_YEAR)
+    ),
+    TzField(
+        TzOwner.TIME_DEFINITION,
+        "days_in_day_type",
+        "DaysInDayType",
+        (OSEMOSYS_SEASON, OSEMOSYS_DAYTYPE, OSEMOSYS_YEAR),
+    ),
     TzField(
         TzOwner.TIME_DEFINITION,
         "timeslice_in_timebracket",
         "Conversionlh",
-        (TIMESLICE,),
-        value_set=DAILYTIMEBRACKET,
+        (OSEMOSYS_TIMESLICE,),
+        value_set=OSEMOSYS_DAILYTIMEBRACKET,
     ),
     TzField(
         TzOwner.TIME_DEFINITION,
         "timeslice_in_daytype",
         "Conversionld",
-        (TIMESLICE,),
-        value_set=DAYTYPE,
+        (OSEMOSYS_TIMESLICE,),
+        value_set=OSEMOSYS_DAYTYPE,
     ),
     TzField(
         TzOwner.TIME_DEFINITION,
         "timeslice_in_season",
         "Conversionls",
-        (TIMESLICE,),
-        value_set=SEASON,
+        (OSEMOSYS_TIMESLICE,),
+        value_set=OSEMOSYS_SEASON,
     ),
     TzField(
         TzOwner.REGION_GROUPS, "include_in_region_group", "RegionGroupTagRegion", _BY_REGION_YEAR
@@ -316,34 +327,34 @@ TZ_FIELDS: tuple[TzField, ...] = (
 OWNER_COLUMNS: dict[TzOwner, tuple[str, ...]] = {
     TzOwner.MODEL: (),
     TzOwner.TIME_DEFINITION: (),
-    TzOwner.REGIONS: (REGION,),
-    TzOwner.REGION_GROUPS: (REGIONGROUP,),
-    TzOwner.COMMODITIES: (FUEL,),
-    TzOwner.IMPACTS: (EMISSION,),
-    TzOwner.TECHNOLOGIES: (TECHNOLOGY,),
-    TzOwner.OPERATING_MODES: (TECHNOLOGY, MODE_OF_OPERATION),
-    TzOwner.STORAGE: (STORAGE,),
-    TzOwner.TRADE: (FUEL,),
+    TzOwner.REGIONS: (OSEMOSYS_REGION,),
+    TzOwner.REGION_GROUPS: (OSEMOSYS_REGIONGROUP,),
+    TzOwner.COMMODITIES: (OSEMOSYS_FUEL,),
+    TzOwner.IMPACTS: (OSEMOSYS_EMISSION,),
+    TzOwner.TECHNOLOGIES: (OSEMOSYS_TECHNOLOGY,),
+    TzOwner.OPERATING_MODES: (OSEMOSYS_TECHNOLOGY, OSEMOSYS_MODE_OF_OPERATION),
+    TzOwner.STORAGE: (OSEMOSYS_STORAGE,),
+    TzOwner.TRADE: (OSEMOSYS_FUEL,),
 }
 
 # The owners whose objects each add one member, their `id`, to a set.
 OBJECT_SETS: dict[TzOwner, str] = {
-    TzOwner.REGIONS: REGION,
-    TzOwner.REGION_GROUPS: REGIONGROUP,
-    TzOwner.COMMODITIES: FUEL,
-    TzOwner.IMPACTS: EMISSION,
-    TzOwner.TECHNOLOGIES: TECHNOLOGY,
-    TzOwner.STORAGE: STORAGE,
-    TzOwner.OPERATING_MODES: MODE_OF_OPERATION,
+    TzOwner.REGIONS: OSEMOSYS_REGION,
+    TzOwner.REGION_GROUPS: OSEMOSYS_REGIONGROUP,
+    TzOwner.COMMODITIES: OSEMOSYS_FUEL,
+    TzOwner.IMPACTS: OSEMOSYS_EMISSION,
+    TzOwner.TECHNOLOGIES: OSEMOSYS_TECHNOLOGY,
+    TzOwner.STORAGE: OSEMOSYS_STORAGE,
+    TzOwner.OPERATING_MODES: OSEMOSYS_MODE_OF_OPERATION,
 }
 
 # The fields of the time definition that list the members of a set.
 TIME_SETS: dict[str, str] = {
-    "years": YEAR,
-    "timeslices": TIMESLICE,
-    "seasons": SEASON,
-    "day_types": DAYTYPE,
-    "daily_time_brackets": DAILYTIMEBRACKET,
+    "years": OSEMOSYS_YEAR,
+    "timeslices": OSEMOSYS_TIMESLICE,
+    "seasons": OSEMOSYS_SEASON,
+    "day_types": OSEMOSYS_DAYTYPE,
+    "daily_time_brackets": OSEMOSYS_DAILYTIMEBRACKET,
 }
 
 # The trade fields that `construct_region_pairs` copies to the opposite direction of each pair.

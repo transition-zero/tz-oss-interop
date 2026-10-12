@@ -14,8 +14,13 @@ from interop.plugins.shared.osemosys_canonical.absent_members import (
     drop_absent_members,
     report_absent_members,
 )
+from interop.plugins.shared.osemosys_canonical.canonical_columns import (
+    build_canonical_columns,
+    build_parameter_columns,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     PARAMETERS_PART,
+    RAW_VALUE_COL,
     VALUE_COL,
     TableKind,
 )
@@ -31,6 +36,7 @@ from interop.plugins.shared.osemosys_canonical.mappings import ParameterRow
 from interop.plugins.shared.osemosys_canonical.parameter_rows import (
     RowGroup,
     RowMatch,
+    RowSource,
     RowTable,
     build_operations_note,
     build_row_table,
@@ -41,6 +47,7 @@ from interop.plugins.shared.osemosys_canonical.parameter_rows import (
     reject_overlapping_rows,
     reject_wrong_key,
 )
+from interop.plugins.shared.osemosys_canonical.schema import CanonicalParameter
 from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
@@ -73,10 +80,10 @@ class MappedParameters(NamedTuple):
 
 
 class TablePlan(NamedTuple):
-    """The raw tables that no row matches; each maps automatically or stays an extension table,
-    with its note."""
+    """The raw tables that no row matches; each maps automatically to its canonical parameter, or
+    stays an extension table with its note."""
 
-    automatic: list[str]
+    automatic: dict[str, str]
     unmatched: dict[str, str]
     overridden: dict[str, str]
 
@@ -135,10 +142,9 @@ def _warn_unmatched_rows(rows: list[ParameterRow], matches: dict[str, RowMatch])
 def _warn_empty_row_tables(
     inputs: MappingInputs, groups: list[RowGroup], sets: dict[str, pl.LazyFrame]
 ) -> None:
-    matches = [match for group in groups for match in group.matches]
-    raw = inputs.raw.parameters
-    absent = [match for match in matches if has_absent_choice(match, raw[match.table])]
-    empty = [match for match in matches if has_empty_repeat(match, raw[match.table], sets)]
+    sources = [source for group in groups for source in _list_row_sources(inputs, group)]
+    absent = [source.match for source in sources if has_absent_choice(source)]
+    empty = [source.match for source in sources if has_empty_repeat(source, sets)]
     _warn_rows(absent, _ABSENT_CHOICE_REASON)
     _warn_rows(empty, _EMPTY_REPEAT_REASON)
 
@@ -177,9 +183,23 @@ def _list_group_defaults(inputs: MappingInputs, matches: list[RowMatch]) -> list
 def _reject_wrong_keys(inputs: MappingInputs, groups: list[RowGroup]) -> None:
     """Every group is checked, including a group whose defaults differ."""
     for group in groups:
-        canonical_key = inputs.schema.parameters[group.canonical].key
-        for match in group.matches:
-            reject_wrong_key(match, inputs.raw.declarations[match.table].key, canonical_key)
+        for source in _list_row_sources(inputs, group):
+            reject_wrong_key(source)
+
+
+def _list_row_sources(inputs: MappingInputs, group: RowGroup) -> list[RowSource]:
+    parameter = inputs.schema.parameters[group.canonical]
+    return [_build_row_source(inputs, parameter, match) for match in group.matches]
+
+
+def _build_row_source(
+    inputs: MappingInputs, parameter: CanonicalParameter, match: RowMatch
+) -> RowSource:
+    """The set and value columns take their canonical names before the row's operations run."""
+    raw_key = inputs.raw.declarations[match.table].key
+    columns = build_parameter_columns(inputs.schema, parameter, [*raw_key, RAW_VALUE_COL])
+    table = inputs.raw.parameters[match.table].rename(columns)
+    return RowSource(match, parameter, [columns[column] for column in raw_key], table)
 
 
 def _build_plan(
@@ -198,13 +218,17 @@ def _build_table_plan(
 ) -> TablePlan:
     """A raw table whose canonical parameter a row maps does not match automatically."""
     others = [name for name in inputs.raw.parameters if name not in matches]
-    automatic = [name for name in others if _is_automatic_match(inputs, name)]
+    found = {name: _find_automatic_match(inputs, name) for name in others}
+    automatic = {name: canonical for name, canonical in found.items() if canonical is not None}
+    overridden = [name for name, canonical in automatic.items() if canonical in claimed]
     return TablePlan(
-        automatic=[name for name in automatic if name not in claimed],
+        automatic={
+            name: canonical for name, canonical in automatic.items() if canonical not in claimed
+        },
         unmatched=dict.fromkeys(
             [name for name in others if name not in automatic], _UNMATCHED_NOTE
         ),
-        overridden=dict.fromkeys([name for name in automatic if name in claimed], _OVERRIDDEN_NOTE),
+        overridden=dict.fromkeys(overridden, _OVERRIDDEN_NOTE),
     )
 
 
@@ -220,8 +244,9 @@ def _build_different_defaults_notes(groups: list[RowGroup]) -> dict[str, str]:
 def _build_canonical_tables(
     inputs: MappingInputs, plan: ParameterPlan, sets: dict[str, pl.LazyFrame]
 ) -> dict[str, pl.LazyFrame]:
+    automatic = [TableNames(*pair) for pair in plan.tables.automatic.items()]
     return {
-        **{name: _reshape_to_key(inputs, name) for name in plan.tables.automatic},
+        **{names.destination: _reshape_to_key(inputs, names) for names in automatic},
         **{group.canonical: _build_group_table(inputs, group, sets) for group in plan.row_groups},
     }
 
@@ -231,20 +256,34 @@ def _build_mapped_parameters(
 ) -> MappedParameters:
     return MappedParameters(
         parameters=parameters,
-        extensions={name: inputs.raw.parameters[name] for name in plan.extensions},
+        extensions={name: _reshape_extension(inputs, name) for name in plan.extensions},
         parameter_defaults=_build_parameter_defaults(inputs, plan),
         extension_defaults=_build_declared_defaults(inputs, plan.extensions),
     )
 
 
-def _is_automatic_match(inputs: MappingInputs, name: str) -> bool:
-    """The key is a set of named columns, so its order does not change what a row means."""
-    entry = inputs.schema.parameters.get(name)
-    return entry is not None and sorted(entry.key) == sorted(inputs.raw.declarations[name].key)
+def _find_automatic_match(inputs: MappingInputs, name: str) -> str | None:
+    """The canonical parameter whose OSeMOSYS name and key the raw table has; the key is a set of
+    named columns, so its order does not change what a row means."""
+    canonical = inputs.schema.find_parameter_name(name)
+    if canonical is None:
+        return None
+    osemosys_key = inputs.schema.parameters[canonical].osemosys_key
+    is_match = sorted(osemosys_key) == sorted(inputs.raw.declarations[name].key)
+    return canonical if is_match else None
 
 
-def _reshape_to_key(inputs: MappingInputs, name: str) -> pl.LazyFrame:
-    return inputs.raw.parameters[name].select([*inputs.schema.parameters[name].key, VALUE_COL])
+def _reshape_to_key(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
+    """Each key column takes the canonical name at its position in the OSeMOSYS key."""
+    parameter = inputs.schema.parameters[names.destination]
+    columns = {**parameter.osemosys_columns, RAW_VALUE_COL: VALUE_COL}
+    return inputs.raw.parameters[names.source].rename(columns).select([*parameter.key, VALUE_COL])
+
+
+def _reshape_extension(inputs: MappingInputs, name: str) -> pl.LazyFrame:
+    raw_columns = [*inputs.raw.declarations[name].key, RAW_VALUE_COL]
+    columns = build_canonical_columns(inputs.schema, raw_columns)
+    return inputs.raw.parameters[name].rename(columns)
 
 
 def _build_group_table(
@@ -252,8 +291,8 @@ def _build_group_table(
 ) -> pl.LazyFrame:
     columns = [*inputs.schema.parameters[group.canonical].key, VALUE_COL]
     tables = [
-        RowTable(match, build_row_table(match, inputs.raw.parameters[match.table], sets))
-        for match in group.matches
+        RowTable(source.match, build_row_table(source, sets))
+        for source in _list_row_sources(inputs, group)
     ]
     keyed = [row_table._replace(table=row_table.table.select(columns)) for row_table in tables]
     reject_overlapping_rows(group.canonical, keyed, columns[:-1])
@@ -272,8 +311,8 @@ def _drop_absent_members(
 
 
 def _report_plan(plan: ParameterPlan, recorder: EventRecorder) -> None:
-    for name in plan.tables.automatic:
-        record_automatic_match(recorder, TableKind.PARAMETER, name)
+    for name, canonical in plan.tables.automatic.items():
+        record_automatic_match(recorder, TableKind.PARAMETER, TableNames(name, canonical))
     for group in plan.row_groups:
         _record_row_group(group, recorder)
     _report_ignored(plan.ignored, recorder)
@@ -317,8 +356,12 @@ def _build_parameter_defaults(
     inputs: MappingInputs, plan: ParameterPlan
 ) -> dict[str, float | None]:
     """A group has one default, because a group whose defaults differ stays as extensions."""
+    automatic = plan.tables.automatic
     return {
-        **_build_declared_defaults(inputs, plan.tables.automatic),
+        **{
+            canonical: inputs.raw.declarations[name].default
+            for name, canonical in automatic.items()
+        },
         **{group.canonical: group.defaults[0] for group in plan.row_groups},
     }
 

@@ -14,7 +14,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     RemoveRule,
 )
 from interop.plugins.shared.osemosys_canonical.mappings import ParameterRow, RemoveColumn
-from interop.plugins.shared.osemosys_canonical.set_mapping import normalise_set_name
+from interop.plugins.shared.osemosys_canonical.schema import CanonicalParameter
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
 
@@ -36,6 +36,16 @@ class RowMatch(NamedTuple):
     row: ParameterRow
     table: str
     groups: dict[str, str | None]
+
+
+class RowSource(NamedTuple):
+    """One raw table that a row matches, with its canonical parameter, and with its key and its
+    table in the canonical names of their set and value columns."""
+
+    match: RowMatch
+    parameter: CanonicalParameter
+    key: list[str]
+    table: pl.LazyFrame
 
 
 class RowGroup(NamedTuple):
@@ -67,18 +77,19 @@ def find_row_match(rows: list[ParameterRow], table: str) -> RowMatch | None:
     return None
 
 
-def reject_wrong_key(match: RowMatch, raw_key: list[str], canonical_key: list[str]) -> None:
-    missing = _list_missing_columns(match.row, raw_key)
-    key = build_row_key(match.row, raw_key)
-    if missing or sorted(key) != sorted(canonical_key):
+def reject_wrong_key(source: RowSource) -> None:
+    row = source.match.row
+    missing = _list_missing_columns(row, source.key)
+    keys = KeyChange(source.key, build_row_key(row, source.key), source.parameter.key)
+    if missing or sorted(keys.derived) != sorted(keys.canonical):
         raise UserInputError(
-            _build_wrong_key_message(match, KeyChange(raw_key, key, canonical_key))
-            + _build_missing_columns_note(missing)
+            _build_wrong_key_message(source.match, keys) + _build_missing_columns_note(missing)
         )
 
 
 class KeyChange(NamedTuple):
-    """The key of a raw table, the key that a row's operations give, and the canonical key."""
+    """The key of a raw table in canonical set names, the key that a row's operations give, and
+    the canonical key."""
 
     raw: list[str]
     derived: list[str]
@@ -118,33 +129,37 @@ def _list_missing_columns(row: ParameterRow, raw_key: list[str]) -> list[str]:
     return missing
 
 
-def build_row_table(
-    match: RowMatch, raw_table: pl.LazyFrame, sets: dict[str, pl.LazyFrame]
-) -> pl.LazyFrame:
+def build_row_table(source: RowSource, sets: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
     """The operations run in a fixed order: rename, name groups, remove, repeat, multiply."""
-    row = match.row
-    table = _reshape_named_columns(match, raw_table)
+    row = source.match.row
+    table = _reshape_named_columns(source.match, source.table)
     table = _reshape_without_column(table, row.remove_column)
-    table = _reshape_for_all_members(table, row.repeat_for_all, sets)
+    table = _reshape_for_all_members(table, source, sets)
     return _convert_values(table, row.multiply_by)
 
 
-def has_absent_choice(match: RowMatch, raw_table: pl.LazyFrame) -> bool:
+def has_absent_choice(source: RowSource) -> bool:
     """The raw table has rows, and no row holds the member that `remove_column` chooses."""
-    remove = match.row.remove_column
+    remove = source.match.row.remove_column
     if remove is None or remove.rule != RemoveRule.CHOOSE:
         return False
-    table = _reshape_named_columns(match, raw_table)
+    table = _reshape_named_columns(source.match, source.table)
     return _has_rows(table) and not _has_rows(table.filter(pl.col(remove.column) == remove.member))
 
 
-def has_empty_repeat(
-    match: RowMatch, raw_table: pl.LazyFrame, sets: dict[str, pl.LazyFrame]
-) -> bool:
+def has_empty_repeat(source: RowSource, sets: dict[str, pl.LazyFrame]) -> bool:
     """The raw table has rows, and a set that `repeat_for_all` names has no members."""
-    members = [sets.get(normalise_set_name(column)) for column in match.row.repeat_for_all]
+    columns = source.match.row.repeat_for_all
+    members = [_find_members(source, column, sets) for column in columns]
     has_empty_set = any(table is None or not _has_rows(table) for table in members)
-    return has_empty_set and _has_rows(raw_table)
+    return has_empty_set and _has_rows(source.table)
+
+
+def _find_members(
+    source: RowSource, column: str, sets: dict[str, pl.LazyFrame]
+) -> pl.LazyFrame | None:
+    """The canonical set of a key column, through its role; an absent set is `None`."""
+    return sets.get(source.parameter.get_column_set(column))
 
 
 def _has_rows(table: pl.LazyFrame) -> bool:
@@ -174,10 +189,11 @@ def _reshape_without_column(table: pl.LazyFrame, remove: RemoveColumn | None) ->
 
 
 def _reshape_for_all_members(
-    table: pl.LazyFrame, columns: list[str], sets: dict[str, pl.LazyFrame]
+    table: pl.LazyFrame, source: RowSource, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame:
-    for column in columns:
-        members = sets.get(normalise_set_name(column), _EMPTY_SET)
+    for column in source.match.row.repeat_for_all:
+        members = _find_members(source, column, sets)
+        members = _EMPTY_SET if members is None else members
         table = table.join(members.select(pl.col(VALUE_COL).alias(column)), how="cross")
     return table
 

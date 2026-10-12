@@ -19,8 +19,8 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/TotalAnnualMaxCapacityInvestment.parquet" has the rows:
-      | REGION | TECHNOLOGY | YEAR | VALUE |
+    And the canonical table "canonical/parameters/total_annual_max_capacity_investment.parquet" has the rows:
+      | region | technology | year | value |
       | R1     | GAS        | 2030 | 5     |
 
   Scenario: A header that is not the declared key leaves out the table
@@ -37,8 +37,8 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the columns "REGION TECHNOLOGY YEAR VALUE"
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the columns "region technology year value"
     And the log contains "CapitalCost"
     And the file "decisions.md" contains "the file header is REGION, TECHNOLOGY, VALUE"
 
@@ -56,7 +56,7 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
     And the log contains "CapitalCost"
     And the file "decisions.md" contains "the file header is REGION, TECHNOLOGY, YEAR"
 
@@ -82,8 +82,8 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
-    And the canonical table "canonical/parameters/FixedCost.parquet" has 1 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/fixed_cost.parquet" has 1 rows
     And the log contains "CapitalCost"
     And the file "decisions.md" contains "the file cannot be read as CSV"
 
@@ -102,8 +102,8 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/sets/TECHNOLOGY.parquet" has 0 rows
-    And the canonical table "canonical/sets/REGION.parquet" has 1 rows
+    And the canonical table "canonical/sets/technology.parquet" has 0 rows
+    And the canonical table "canonical/sets/region.parquet" has 1 rows
     And the log contains "TECHNOLOGY"
     And the file "decisions.md" contains "the file cannot be read as CSV"
 
@@ -181,14 +181,14 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/sets/REGION.parquet" has the rows:
-      | VALUE |
+    And the canonical table "canonical/sets/region.parquet" has the rows:
+      | value |
       | R1    |
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
-      | REGION | TECHNOLOGY | YEAR | VALUE  |
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology | year | value  |
       | R1     | GAS        | 2030 | 689.84 |
-    And the canonical table "canonical/parameters/FixedCost.parquet" has the rows:
-      | REGION | TECHNOLOGY | YEAR | VALUE |
+    And the canonical table "canonical/parameters/fixed_cost.parquet" has the rows:
+      | region | technology | year | value |
       | R1     | GAS        | 2030 | 12    |
 
   Scenario: A set with no CSV file stages with no members and is reported
@@ -201,8 +201,8 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/sets/TECHNOLOGY.parquet" has 0 rows
-    And the canonical table "canonical/sets/REGION.parquet" has 1 rows
+    And the canonical table "canonical/sets/technology.parquet" has 0 rows
+    And the canonical table "canonical/sets/region.parquet" has 1 rows
     And the log contains "1 set(s) have no CSV file, so the raw stage stages each with no members: TECHNOLOGY"
     And the file "decisions.md" contains "the set has no CSV file"
 

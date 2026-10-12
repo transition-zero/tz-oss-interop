@@ -17,6 +17,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     OBJECT_PART_SETS,
     REGION,
     AnnotationColumn,
+    FlowParameter,
     ObjectPart,
 )
 from interop.plugins.shared.osemosys_canonical.events import AnnotatedMember, record_annotation
@@ -50,8 +51,9 @@ _REGION_LOCATION_RULES: dict[ObjectPart, str] = {
     ObjectPart.STORAGES: "a storage takes the location of its region",
 }
 _NO_KIND_NOTE = (
-    "no kind fits its rows in InputActivityRatio, OutputActivityRatio, TechnologyToStorage and "
-    "TechnologyFromStorage, so kind stays empty"
+    f"no kind fits its rows in {FlowParameter.INPUT_ACTIVITY_RATIO}, "
+    f"{FlowParameter.OUTPUT_ACTIVITY_RATIO}, {FlowParameter.TECHNOLOGY_TO_STORAGE} and "
+    f"{FlowParameter.TECHNOLOGY_FROM_STORAGE}, so kind stays empty"
 )
 
 
@@ -161,7 +163,7 @@ def _build_technology_annotations(
 def _build_located_flows(
     key: MemberKey, flows: list[FuelFlow], fuels: dict[MemberKey, FuelAnnotation]
 ) -> list[LocatedFlow]:
-    """The absent-member rule leaves out every flow whose fuel is not in the FUEL set."""
+    """The absent-member rule leaves out every flow whose fuel is not in the fuel set."""
     return [LocatedFlow(flow, fuels[MemberKey(key.region, flow.fuel)]) for flow in flows]
 
 
@@ -228,7 +230,7 @@ def _report_missing_kinds(technologies: list[MemberAnnotation], recorder: EventR
 
 
 def _build_table(part: ObjectPart, annotations: list[MemberAnnotation]) -> pl.DataFrame:
-    """A REGION table holds one key column, since a region is its own member."""
+    """A region table holds one key column, since a region is its own member."""
     keys = [REGION] if part == ObjectPart.REGIONS else [REGION, OBJECT_PART_SETS[part]]
     columns = OBJECT_PART_COLUMNS[part]
     rows = [

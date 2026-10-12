@@ -1,6 +1,6 @@
 @slow @fork_unsafe
 Feature: The objects part of a user mappings file and the inferences annotate each set member
-  The engine writes one annotation table for each of TECHNOLOGY, FUEL, STORAGE and REGION, with
+  The engine writes one annotation table for each of technology, fuel, storage and region, with
   one row for each region and member. A row of `objects:` gives annotations to the members that
   its pattern matches. The engine infers each annotation that no row gives from the structure
   of the model, and it records the rule of each inference.
@@ -18,8 +18,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/REGION.parquet" has the rows:
-      | REGION | location |
+    And the canonical table "canonical/annotations/region.parquet" has the rows:
+      | region | location |
       | R1     | R1       |
     And the file "decisions.md" contains "a region is its own location"
 
@@ -31,8 +31,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {regions: [{match: "^R(?P<number>[0-9])$", location: "zone-{number}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/REGION.parquet" has the rows:
-      | REGION | location |
+    And the canonical table "canonical/annotations/region.parquet" has the rows:
+      | region | location |
       | R1     | zone-1   |
     And the file "decisions.md" contains "row 0 of `objects: regions` gives location"
 
@@ -45,8 +45,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/FUEL.parquet" has the rows:
-      | REGION | FUEL | carrier     | location |
+    And the canonical table "canonical/annotations/fuel.parquet" has the rows:
+      | region | fuel | carrier     | location |
       | R1     | ATE1 | electricity | AT       |
       | R1     | DEE1 | electricity | DE       |
     And the file "decisions.md" contains "row 0 of `objects: fuels` gives carrier, location"
@@ -67,8 +67,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind | category | location |
       | R1     | ATDELINK   | link |          | AT~DE    |
     And the section "Values derived" of "decisions.md" contains "kind link: it takes in electricity at one location and puts it out at another" 2 times
     And the file "decisions.md" contains "location AT~DE: the locations of the fuels that it takes in and puts out"
@@ -92,8 +92,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind | category | location |
       | R1     | ATDELINK   | link |          | DE~AT    |
 
   Scenario: A generator is inferred
@@ -112,8 +112,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}, {match: "^(?P<country>[A-Z]{2})NG$", carrier: natural-gas, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind      | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind      | category | location |
       | R1     | ATGAS      | generator |          | AT       |
     And the file "decisions.md" contains "kind generator: it puts out electricity, and takes in no electricity"
 
@@ -134,11 +134,11 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind    | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind    | category | location |
       | R1     | ATBAT      | storage |          | AT       |
-    And the canonical table "canonical/annotations/STORAGE.parquet" has the rows:
-      | REGION | STORAGE | location |
+    And the canonical table "canonical/annotations/storage.parquet" has the rows:
+      | region | storage | location |
       | R1     | ATBATS  | R1       |
 
   Scenario: Supply, export and conversion are inferred
@@ -159,8 +159,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E[12]$", carrier: electricity, location: "{country}"}, {match: "^(?P<country>[A-Z]{2})NG$", carrier: natural-gas, location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind       | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind       | category | location |
       | R1     | ATNGX      | supply     |          | AT       |
       | R1     | ATEXP      | export     |          | AT       |
       | R1     | ATTD       | conversion |          | AT       |
@@ -181,8 +181,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}], technologies: [{match: "^ATDELINK$", kind: conversion, category: interconnector}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind       | category       | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind       | category       | location |
       | R1     | ATDELINK   | conversion | interconnector | AT~DE    |
     And the section "User config defaults applied" of "decisions.md" contains "row 0 of `objects: technologies` gives kind, category" 2 times
     And the file "decisions.md" does not contain "kind link"
@@ -196,8 +196,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/FUEL.parquet" has the rows:
-      | REGION | FUEL | carrier | location |
+    And the canonical table "canonical/annotations/fuel.parquet" has the rows:
+      | region | fuel | carrier | location |
       | R1     | ATE1 |         | R1       |
       | R2     | ATE1 |         | R2       |
     And the file "decisions.md" contains "location R1: a fuel takes the location of its region"
@@ -211,12 +211,12 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind | category | location |
       | R1     | IDLE       |      |          | R1       |
     And the log contains "no kind fits"
     And the log contains "IDLE"
-    And the section "Fields not mapped" of "decisions.md" contains "no kind fits its rows in InputActivityRatio" 1 times
+    And the section "Fields not mapped" of "decisions.md" contains "no kind fits its rows in input_activity_ratio" 1 times
 
   Scenario: A location that names a group the pattern does not hold stops the run
     Given the otoole set "REGION" holds "R1"
@@ -238,7 +238,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "objects.fuels.0"
-    And the log contains "the location '{}' holds an empty {}; name a group of match or REGION in it"
+    And the log contains "the location '{}' holds an empty {}; name a group of match or region in it"
 
   Scenario: A location whose group captures nothing for a member stops the run
     Given the otoole set "REGION" holds "R1"
@@ -290,7 +290,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})NG$", carrier: natural-gas, location: "{country}"}, {match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}, {match: "^ELC$", carrier: electricity}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/annotations/TECHNOLOGY.parquet" has the rows:
-      | REGION | TECHNOLOGY | kind       | category | location |
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind       | category | location |
       | R1     | ATELY      | conversion |          | AT       |
       | R1     | ATCONV     | conversion |          | AT       |

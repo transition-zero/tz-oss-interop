@@ -37,12 +37,37 @@ CANONICAL_DIRECTORY = "canonical"
 PARQUET_SUFFIX = ".parquet"
 DECLARATIONS_TABLE = "declarations"
 
-# The column of a set table, and the value column of a parameter table.
-VALUE_COL = "VALUE"
+# The column of a raw set table, and the value column of a raw parameter table.
+RAW_VALUE_COL = "VALUE"
+# The column of a canonical set table, and the value column of a canonical table.
+VALUE_COL = "value"
+
+# The OSeMOSYS names of the sets, which the raw stage keeps.
+OSEMOSYS_REGION = "REGION"
+OSEMOSYS_TECHNOLOGY = "TECHNOLOGY"
+OSEMOSYS_FUEL = "FUEL"
+OSEMOSYS_EMISSION = "EMISSION"
+OSEMOSYS_MODE_OF_OPERATION = "MODE_OF_OPERATION"
+OSEMOSYS_STORAGE = "STORAGE"
+OSEMOSYS_YEAR = "YEAR"
+OSEMOSYS_TIMESLICE = "TIMESLICE"
+OSEMOSYS_SEASON = "SEASON"
+OSEMOSYS_DAYTYPE = "DAYTYPE"
+OSEMOSYS_DAILYTIMEBRACKET = "DAILYTIMEBRACKET"
+OSEMOSYS_REGIONGROUP = "REGIONGROUP"
 # The column name of a second region in a key, as otoole and the TZ format write it.
-SECOND_REGION = "_REGION"
-TIMESLICE = "TIMESLICE"
-REGION = "REGION"
+OSEMOSYS_SECOND_REGION = "_REGION"
+
+# The canonical names of the sets and key columns that the engine reads.
+REGION = "region"
+TECHNOLOGY = "technology"
+FUEL = "fuel"
+STORAGE = "storage"
+OPERATING_MODE = "operating_mode"
+TIMESLICE = "timeslice"
+# The two regions of a pair, each of which holds a member of the region set.
+START_REGION = "start_region"
+END_REGION = "end_region"
 
 
 class DeclarationColumn(StrEnum):
@@ -117,17 +142,6 @@ SETS_PART = "`sets:`"
 # The hidden column that counts the rows a summary describes.
 ROW_COUNT_COL = "__row_count"
 
-TECHNOLOGY = "TECHNOLOGY"
-FUEL = "FUEL"
-STORAGE = "STORAGE"
-MODE_OF_OPERATION = "MODE_OF_OPERATION"
-YEAR = "YEAR"
-EMISSION = "EMISSION"
-SEASON = "SEASON"
-DAYTYPE = "DAYTYPE"
-DAILYTIMEBRACKET = "DAILYTIMEBRACKET"
-REGIONGROUP = "REGIONGROUP"
-
 # How a message names one list of the `objects:` part of a user mappings file.
 OBJECT_PART_LABEL = "`objects: {part}`"
 
@@ -181,7 +195,7 @@ ANNOTATION_NAME_SEPARATOR = "/"
 class FlowParameter(StrEnum):
     """The canonical parameters whose rows show what a technology takes in and puts out."""
 
-    INPUT_ACTIVITY_RATIO = "InputActivityRatio"
-    OUTPUT_ACTIVITY_RATIO = "OutputActivityRatio"
-    TECHNOLOGY_TO_STORAGE = "TechnologyToStorage"
-    TECHNOLOGY_FROM_STORAGE = "TechnologyFromStorage"
+    INPUT_ACTIVITY_RATIO = "input_activity_ratio"
+    OUTPUT_ACTIVITY_RATIO = "output_activity_ratio"
+    TECHNOLOGY_TO_STORAGE = "technology_to_storage"
+    TECHNOLOGY_FROM_STORAGE = "technology_from_storage"

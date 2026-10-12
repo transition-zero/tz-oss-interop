@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from interop.core.pipeline import StagedSource, State
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.canonical_stage import build_canonical_stage
-from interop.plugins.shared.osemosys_canonical.constants import VALUE_COL
+from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL
 from interop.plugins.shared.osemosys_canonical.mappings import OsemosysCanonicalMappings
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage, write_raw_stage
 from interop.plugins.shared.osemosys_canonical.tz_document import (
@@ -88,4 +88,4 @@ class StageTzOsemosysJson(StagedSource):
 
 
 def _build_set_table(members: list[str]) -> pl.DataFrame:
-    return pl.DataFrame({VALUE_COL: members}, schema={VALUE_COL: pl.Utf8})
+    return pl.DataFrame({RAW_VALUE_COL: members}, schema={RAW_VALUE_COL: pl.Utf8})

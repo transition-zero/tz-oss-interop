@@ -26,7 +26,7 @@ from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 from interop.plugins.shared.osemosys_canonical.set_mapping import map_sets
 
-# The kinds whose tables can hold a TIMESLICE column, and so go into `source_time_series`.
+# The kinds whose tables can hold a timeslice column, and so go into `source_time_series`.
 _TIME_SERIES_KINDS = frozenset({TableKind.PARAMETER, TableKind.EXTENSION})
 
 

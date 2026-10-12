@@ -13,7 +13,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     OBJECT_PART_LABEL,
     PARAMETERS_PART,
     REGION,
-    SECOND_REGION,
     SETS_PART,
     AnnotationColumn,
     ObjectPart,
@@ -145,7 +144,8 @@ def list_template_fields(template: str | None) -> list[str]:
         raise ValueError(f"the location {template!r} is not a template: {exc}") from exc
     if "" in names:
         raise ValueError(
-            f"the location {template!r} holds an empty {{}}; name a group of match or REGION in it"
+            f"the location {template!r} holds an empty {{}}; "
+            f"name a group of match or {REGION} in it"
         )
     return names
 
@@ -229,8 +229,7 @@ def _reject_unknown_canonical_names(index: int, row: ParameterRow, schema: Canon
             f"row {index} of {PARAMETERS_PART} names the canonical parameter {row.canonical}, "
             "which the canonical schema does not hold"
         )
-    known_columns = {*schema.sets, SECOND_REGION}
-    unknown = [column for column in row.repeat_for_all if column not in known_columns]
+    unknown = [column for column in row.repeat_for_all if column not in schema.key_columns]
     if unknown:
         raise ValueError(
             f"row {index} of {PARAMETERS_PART} repeats for {unknown}, which are not canonical sets"

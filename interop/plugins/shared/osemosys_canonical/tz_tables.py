@@ -9,7 +9,7 @@ from typing import NamedTuple
 import polars as pl
 
 from interop.core.reporting import EventRecorder
-from interop.plugins.shared.osemosys_canonical.constants import VALUE_COL, TableKind
+from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL, TableKind
 from interop.plugins.shared.osemosys_canonical.events import record_not_mapped, record_skipped
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
@@ -104,7 +104,7 @@ def map_tz_parameter_tables(
         for field in TZ_FIELDS
     }
     _report_unreadable_values(_build_unreadable_value_counts(tables), recorder)
-    readable = {name: table.drop_nulls(VALUE_COL) for name, table in tables.items()}
+    readable = {name: table.drop_nulls(RAW_VALUE_COL) for name, table in tables.items()}
     return _reshape_annual_demand(readable)
 
 
@@ -195,10 +195,10 @@ def _build_field_rows(stated: StatedField, sets: Mapping[str, list[str]]) -> lis
 def _build_table(field: TzField, rows: list[TzRow]) -> pl.DataFrame:
     schema: dict[str, pl.DataType | type[pl.DataType]] = {
         **dict.fromkeys(_list_field_columns(field), pl.Utf8),
-        VALUE_COL: pl.Float64,
+        RAW_VALUE_COL: pl.Float64,
     }
     table = pl.DataFrame([(*row.members, row.value) for row in rows], schema=schema, orient="row")
-    return table.select([*_build_table_key(field), VALUE_COL])
+    return table.select([*_build_table_key(field), RAW_VALUE_COL])
 
 
 def _list_field_columns(field: TzField) -> list[str]:
@@ -207,13 +207,17 @@ def _list_field_columns(field: TzField) -> list[str]:
 
 
 def _build_table_key(field: TzField) -> list[str]:
-    """The key of the canonical schema entry, in its order, when the schema holds the table."""
-    entry = load_canonical_schema().parameters.get(field.table)
-    return list(entry.key) if entry is not None else _list_field_columns(field)
+    """The OSeMOSYS key of the canonical schema entry, in its order, when the schema holds the
+    table."""
+    schema = load_canonical_schema()
+    name = schema.find_parameter_name(field.table)
+    if name is None:
+        return _list_field_columns(field)
+    return list(schema.parameters[name].osemosys_key)
 
 
 def _build_unreadable_value_counts(tables: dict[str, pl.DataFrame]) -> dict[str, int]:
-    counts = {name: table.get_column(VALUE_COL).null_count() for name, table in tables.items()}
+    counts = {name: table.get_column(RAW_VALUE_COL).null_count() for name, table in tables.items()}
     return {name: count for name, count in counts.items() if count}
 
 
@@ -233,7 +237,7 @@ def _reshape_annual_demand(tables: dict[str, pl.DataFrame]) -> dict[str, pl.Data
     """An annual demand with no profile for its region, fuel and year is an accumulated one."""
     split = ANNUAL_DEMAND_SPLIT
     demand = tables[split.specified_table]
-    key = [column for column in demand.columns if column != VALUE_COL]
+    key = [column for column in demand.columns if column != RAW_VALUE_COL]
     profiled = tables[split.profile_table].select(key).unique()
     return {
         **tables,

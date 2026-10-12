@@ -20,11 +20,11 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
-      | REGION | TECHNOLOGY | YEAR | VALUE  |
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology | year | value  |
       | R1     | GAS        | 2030 | 689.84 |
-    And the canonical table "canonical/sets/TECHNOLOGY.parquet" has the rows:
-      | VALUE |
+    And the canonical table "canonical/sets/technology.parquet" has the rows:
+      | value |
       | GAS   |
     And the file "decisions.md" contains "matched by name and key"
 
@@ -42,7 +42,7 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/extensions/YearlyPeakXX.parquet" has the rows:
-      | REGION | YEAR | VALUE |
+      | region | year | value |
       | R1     | 2030 | 10.19 |
     And the file "canonical/parameters/YearlyPeakXX.parquet" does not exist
     And the log contains "YearlyPeakXX"
@@ -62,9 +62,9 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapacityFactor.parquet" has 0 rows
-    And the canonical table "canonical/parameters/CapacityFactor.parquet" has the columns "REGION TECHNOLOGY TIMESLICE YEAR VALUE"
-    And the canonical default of "CapacityFactor" in "canonical" is 1
+    And the canonical table "canonical/parameters/capacity_factor.parquet" has 0 rows
+    And the canonical table "canonical/parameters/capacity_factor.parquet" has the columns "region technology timeslice year value"
+    And the canonical default of "capacity_factor" in "canonical" is 1
 
   Scenario: A model default that differs from the schema default wins
     Given an otoole model
@@ -77,9 +77,9 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical default of "DiscountRate" in "canonical" is 0.075
-    And the canonical default of "DiscountRateIdv" in "canonical" is 0.075
-    And the canonical default of "CapitalCost" in "canonical" is 0
+    And the canonical default of "discount_rate" in "canonical" is 0.075
+    And the canonical default of "technology_discount_rate" in "canonical" is 0.075
+    And the canonical default of "capital_cost" in "canonical" is 0
 
   Scenario: A mode member stays a string
     Given an otoole model
@@ -96,12 +96,12 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/VariableCost.parquet" has the rows:
-      | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
-      | R1     | GAS        | 1                 | 2030 | 0.83  |
-    And the column "MODE_OF_OPERATION" of the canonical table "canonical/parameters/VariableCost.parquet" has the type "String"
-    And the column "VALUE" of the canonical table "canonical/parameters/VariableCost.parquet" has the type "Float64"
-    And the column "VALUE" of the canonical table "canonical/sets/MODE_OF_OPERATION.parquet" has the type "String"
+    And the canonical table "canonical/parameters/variable_operation_cost.parquet" has the rows:
+      | region | technology | operating_mode | year | value |
+      | R1     | GAS        | 1              | 2030 | 0.83  |
+    And the column "operating_mode" of the canonical table "canonical/parameters/variable_operation_cost.parquet" has the type "String"
+    And the column "value" of the canonical table "canonical/parameters/variable_operation_cost.parquet" has the type "Float64"
+    And the column "value" of the canonical table "canonical/sets/operating_mode.parquet" has the type "String"
 
   Scenario: An empty mappings file is valid
     Given an otoole model
@@ -117,7 +117,7 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | {}   |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 1 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 1 rows
 
   Scenario: The units from the mappings file reach the metadata
     Given an otoole model
@@ -148,8 +148,8 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the columns "REGION TECHNOLOGY YEAR VALUE"
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the columns "region technology year value"
 
   Scenario: The metadata keeps the declared default of an extension table
     Given an otoole model
@@ -181,8 +181,8 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the rows:
-      | REGION | TECHNOLOGY | YEAR | VALUE  |
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology | year | value  |
       | R1     | GAS        | 2030 | 689.84 |
     And the log contains "CapitalCost"
     And the file "decisions.md" contains "## Components skipped (1)"
@@ -202,8 +202,8 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the file "canonical/sets/TECHNOLOGY.parquet" does not exist
-    And the file "canonical/sets/REGION.parquet" exists
+    And the file "canonical/sets/technology.parquet" does not exist
+    And the file "canonical/sets/region.parquet" exists
     And the log contains "TECHNOLOGY"
     And the file "decisions.md" contains "## Components skipped (1)"
     And the file "decisions.md" contains "the file has no VALUE column, so the raw stage leaves it out"
@@ -224,8 +224,8 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the file "model/csv/CapitalCost.csv" does not contain "VALUE"
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has 0 rows
-    And the canonical table "canonical/parameters/CapitalCost.parquet" has the columns "REGION TECHNOLOGY YEAR VALUE"
+    And the canonical table "canonical/parameters/capital_cost.parquet" has 0 rows
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the columns "region technology year value"
 
   Scenario: A raw set with no canonical name stays an extension table
     Given an otoole model
@@ -238,9 +238,49 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/extensions/COUNTRY.parquet" has the rows:
-      | VALUE |
+      | value |
       | AT    |
       | DE    |
     And the log contains "COUNTRY"
     And the file "decisions.md" contains "`osemosys.set.COUNTRY`"
     And the file "decisions.md" contains "## Fields not mapped (1)"
+
+  Scenario: A parameter keyed by a pair of regions maps automatically to start_region and end_region
+    Given an otoole model
+    And the otoole set "REGION" holds "R1 R2"
+    And the otoole set "FUEL" holds "ELC"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "TradeRoute" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | _REGION | FUEL | YEAR | VALUE |
+      | R1     | R2      | ELC  | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/transport_route.parquet" has the columns "start_region end_region fuel year value"
+    And the canonical table "canonical/parameters/transport_route.parquet" has the rows:
+      | start_region | end_region | fuel | year | value |
+      | R1           | R2         | ELC  | 2030 | 1     |
+    And the file "decisions.md" contains "matched by name and key"
+
+  Scenario: An extension table takes the canonical set names and value
+    Given an otoole model
+    And the otoole set "REGION" holds "R1 R2"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "EMISSION" holds "CO2"
+    And the otoole set "MODE_OF_OPERATION" holds "1"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "PairEmissionXX" keyed by "REGION _REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | _REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | R2      | GAS        | CO2      | 1                 | 2030 | 0.5   |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/extensions/PairEmissionXX.parquet" has the rows:
+      | region | end_region | technology | pollutant | operating_mode | year | value |
+      | R1     | R2         | GAS        | CO2       | 1              | 2030 | 0.5   |

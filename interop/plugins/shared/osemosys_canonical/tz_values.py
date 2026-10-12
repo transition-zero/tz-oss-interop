@@ -6,7 +6,10 @@ import itertools
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from interop.plugins.shared.osemosys_canonical.constants import REGION, SECOND_REGION
+from interop.plugins.shared.osemosys_canonical.constants import (
+    OSEMOSYS_REGION,
+    OSEMOSYS_SECOND_REGION,
+)
 from interop.plugins.shared.tz_osemosys_fields import (
     COMPOSED_DATA,
     COMPOSED_FLAG,
@@ -122,4 +125,4 @@ def _list_level_members(
 
 def _get_set_members(level: str, sets: Mapping[str, list[str]]) -> list[str]:
     """The second region of a key takes its members from the region set."""
-    return sets[REGION if level == SECOND_REGION else level]
+    return sets[OSEMOSYS_REGION if level == OSEMOSYS_SECOND_REGION else level]
