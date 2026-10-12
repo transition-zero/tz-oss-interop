@@ -246,7 +246,7 @@ def _build_canonical_tables(
 ) -> dict[str, pl.LazyFrame]:
     automatic = [TableNames(*pair) for pair in plan.tables.automatic.items()]
     return {
-        **{names.destination: _reshape_to_key(inputs, names) for names in automatic},
+        **{names.destination: _reshape_to_columns(inputs, names) for names in automatic},
         **{group.canonical: _build_group_table(inputs, group, sets) for group in plan.row_groups},
     }
 
@@ -273,7 +273,7 @@ def _find_automatic_match(inputs: MappingInputs, name: str) -> str | None:
     return canonical if is_match else None
 
 
-def _reshape_to_key(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
+def _reshape_to_columns(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
     """Each OSeMOSYS column takes the canonical name at its position in the columns."""
     parameter = inputs.schema.parameters[names.destination]
     columns = {**parameter.column_by_osemosys_column, RAW_VALUE_COL: VALUE_COL}

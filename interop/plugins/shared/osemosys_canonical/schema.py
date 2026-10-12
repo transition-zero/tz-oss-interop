@@ -12,6 +12,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
     OSEMOSYS_REGION,
     OSEMOSYS_SECOND_REGION,
+    START_REGION,
 )
 
 _SCHEMA_PACKAGE = "interop.plugins.shared"
@@ -57,6 +58,15 @@ class CanonicalParameter(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_unique_osemosys_columns(self) -> CanonicalParameter:
+        repeated = sorted(
+            {name for name in self.osemosys_columns if self.osemosys_columns.count(name) > 1}
+        )
+        if repeated:
+            raise ValueError(f"the osemosys_columns of {self.osemosys_name} repeat {repeated}")
+        return self
+
     @property
     def column_names(self) -> list[str]:
         """The canonical columns, in the order of the canonical table."""
@@ -98,6 +108,7 @@ class CanonicalSchema(BaseModel):
         for name, parameter in self.parameters.items():
             _reject_unknown_column_sets(name, parameter, self.sets)
             _reject_misaligned_osemosys_columns(name, parameter, self.sets)
+            _reject_misplaced_start_region(name, parameter)
             if parameter.default_from is not None and parameter.default_from not in self.parameters:
                 raise ValueError(f"{name} takes its default from unknown {parameter.default_from}")
         return self
@@ -153,6 +164,14 @@ def _reject_misaligned_osemosys_columns(
     ]
     if misaligned:
         raise ValueError(f"the osemosys_columns of {name} do not match its columns at {misaligned}")
+
+
+def _reject_misplaced_start_region(name: str, parameter: CanonicalParameter) -> None:
+    """An entry that holds `end_region` holds `REGION` at `start_region`."""
+    if END_REGION not in parameter.columns:
+        return
+    if parameter.column_by_osemosys_column.get(OSEMOSYS_REGION) != START_REGION:
+        raise ValueError(f"the osemosys_columns of {name} do not hold REGION at start_region")
 
 
 def _is_aligned(osemosys: str, column: str, held: CanonicalSet) -> bool:

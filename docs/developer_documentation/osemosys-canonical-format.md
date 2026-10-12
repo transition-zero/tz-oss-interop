@@ -318,10 +318,12 @@ The loader stops with an error for each of these faults in the schema file:
 - An entry states both `default` and `default_from`.
 - A set in `columns` is not a set of the schema.
 - `osemosys_columns` and `columns` have different lengths.
+- `osemosys_columns` holds the same column two times.
 - A column of `osemosys_columns` does not name the set of the column at the same position in
   `columns`.
 - `REGION` stands at `end_region`, or `_REGION` stands at any column other than `end_region`.
   `REGION` at the position of `start_region` is correct.
+- An entry holds `end_region`, but `REGION` does not stand at `start_region`.
 - Two set entries, or two parameter entries, have the same `osemosys_name`.
 - `default_from` names a parameter that the schema does not hold.
 - An entry holds a field that the tables above do not name.
@@ -706,7 +708,7 @@ problem in the data of the model never stops the run.
 | A `parameters:` row states both or neither of `canonical` and `ignore: true` | The run stops |
 | A pattern or a `match` is not a regular expression | The run stops |
 | `columns_from_name` names a group that `source_pattern` does not hold | The run stops |
-| The operations of a row do not give the canonical key | The run stops, and the error names the row |
+| The operations of a row do not give the canonical columns | The run stops, and the error names the row |
 | Two raw tables write the same canonical row | The run stops, and the error names the rows |
 | An `objects:` row gives an annotation that its list does not accept | The run stops |
 | A `kind` is not in the closed list, for example `generator` | The run stops |

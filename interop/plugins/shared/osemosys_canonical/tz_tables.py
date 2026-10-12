@@ -111,7 +111,7 @@ def map_tz_parameter_tables(
 def build_tz_declarations() -> dict[str, RawDeclaration]:
     """The key and the documented default of each raw table, and of the accumulated demand."""
     declarations = {
-        field.table: RawDeclaration(field.table, _build_table_key(field), field.default)
+        field.table: RawDeclaration(field.table, _list_osemosys_columns(field), field.default)
         for field in TZ_FIELDS
     }
     split = ANNUAL_DEMAND_SPLIT
@@ -198,7 +198,7 @@ def _build_table(field: TzField, rows: list[TzRow]) -> pl.DataFrame:
         RAW_VALUE_COL: pl.Float64,
     }
     table = pl.DataFrame([(*row.members, row.value) for row in rows], schema=schema, orient="row")
-    return table.select([*_build_table_key(field), RAW_VALUE_COL])
+    return table.select([*_list_osemosys_columns(field), RAW_VALUE_COL])
 
 
 def _list_field_columns(field: TzField) -> list[str]:
@@ -206,7 +206,7 @@ def _list_field_columns(field: TzField) -> list[str]:
     return [*OWNER_COLUMNS[field.owner], *field.nesting, *value_columns]
 
 
-def _build_table_key(field: TzField) -> list[str]:
+def _list_osemosys_columns(field: TzField) -> list[str]:
     """The OSeMOSYS columns of the canonical schema entry, in its order, when the schema holds the
     table."""
     schema = load_canonical_schema()

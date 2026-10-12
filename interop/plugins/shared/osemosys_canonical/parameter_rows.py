@@ -81,19 +81,19 @@ def reject_wrong_key(source: RowSource) -> None:
     row = source.match.row
     missing = _list_missing_columns(row, source.key)
     keys = KeyChange(source.key, build_row_key(row, source.key), source.parameter.column_names)
-    if missing or sorted(keys.derived) != sorted(keys.canonical):
+    if missing or sorted(keys.derived) != sorted(keys.canonical_columns):
         raise UserInputError(
             _build_wrong_key_message(source.match, keys) + _build_missing_columns_note(missing)
         )
 
 
 class KeyChange(NamedTuple):
-    """The key of a raw table in canonical set names, the key that a row's operations give, and
-    the canonical key."""
+    """The index columns of a raw table in canonical set names, the columns that a row's operations
+    give, and the canonical columns."""
 
     raw: list[str]
     derived: list[str]
-    canonical: list[str]
+    canonical_columns: list[str]
 
 
 def _build_wrong_key_message(match: RowMatch, keys: KeyChange) -> str:
@@ -102,7 +102,7 @@ def _build_wrong_key_message(match: RowMatch, keys: KeyChange) -> str:
         f"Row {match.row_index} of {PARAMETERS_PART} cannot map the raw table {match.table} to "
         f"{canonical}. Its operations turn the key {_build_name_list(keys.raw)} into "
         f"{_build_name_list(keys.derived)}, but {canonical} is keyed "
-        f"{_build_name_list(keys.canonical)}."
+        f"{_build_name_list(keys.canonical_columns)}."
     )
 
 
@@ -159,6 +159,7 @@ def _find_members(
     source: RowSource, column: str, sets: dict[str, pl.LazyFrame]
 ) -> pl.LazyFrame | None:
     """The members of the canonical set that a column holds; an absent set is `None`."""
+    # A column that the parameter lacks reads the set of the same name, as a set name is a column.
     column_set = source.parameter.find_column_set(column) or column
     return sets.get(column_set)
 
