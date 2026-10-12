@@ -68,7 +68,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind | category | location |
+      | region | technology | kind                         | category | location |
       | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
     And the section "Values derived" of "decisions.md" contains "kind AggregateTransportTechnology: it takes in electricity at one location and puts it out at another" 2 times
     And the file "decisions.md" contains "location AT~DE: the locations of the fuels that it takes in and puts out"
@@ -93,7 +93,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind | category | location |
+      | region | technology | kind                         | category | location |
       | R1     | ATDELINK   | AggregateTransportTechnology |          | DE~AT    |
 
   Scenario: A generator is inferred
@@ -113,7 +113,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind      | category | location |
+      | region | technology | kind             | category | location |
       | R1     | ATGAS      | SupplyTechnology |          | AT       |
     And the file "decisions.md" contains "kind SupplyTechnology: it puts out electricity, and takes in no electricity"
 
@@ -135,7 +135,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind    | category | location |
+      | region | technology | kind              | category | location |
       | R1     | ATBAT      | StorageTechnology |          | AT       |
     And the canonical table "canonical/annotations/storage.parquet" has the rows:
       | region | storage | location |
@@ -160,10 +160,10 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind       | category | location |
+      | region | technology | kind        | category | location |
       | R1     | ATNGX      | fuel_supply |          | AT       |
-      | R1     | ATEXP      | export     |          | AT       |
-      | R1     | ATTD       | conversion |          | AT       |
+      | R1     | ATEXP      | export      |          | AT       |
+      | R1     | ATTD       | conversion  |          | AT       |
 
   Scenario: A row overrides an inference
     Given the otoole set "REGION" holds "R1"
@@ -177,7 +177,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | R1     | ATDELINK   | DEE1 | 1                 | 2030 | 0.95  |
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "user_mappings.yaml" containing the lines:
-      | line                                                                                                                                                                                                  |
+      | line                                                                                                                                                                                                 |
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}], technologies: [{match: "^ATDELINK$", kind: conversion, category: interconnector}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
@@ -266,7 +266,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Given the otoole set "REGION" holds "R1"
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "user_mappings.yaml" containing the lines:
-      | line                                                        |
+      | line                                                                                  |
       | osemosys: {objects: {fuels: [{match: "^ATE1$", kind: AggregateTransportTechnology}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
@@ -276,7 +276,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Given the otoole set "REGION" holds "R1"
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "user_mappings.yaml" containing the lines:
-      | line                                                                        |
+      | line                                                                       |
       | osemosys: {objects: {technologies: [{match: "^ATGAS$", kind: generator}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1

@@ -24,14 +24,14 @@ def build_parameter_columns(
     """The `region` column of a table whose canonical key holds `start_region` becomes
     `start_region`."""
     columns = build_canonical_columns(schema, raw_columns)
-    return _name_first_region(columns) if START_REGION in parameter.key else columns
+    return _build_start_region_columns(columns) if START_REGION in parameter.key else columns
 
 
 def build_extension_columns(schema: CanonicalSchema, raw_columns: list[str]) -> dict[str, str]:
     """The `region` column of a table that holds `end_region` becomes `start_region`."""
     columns = build_canonical_columns(schema, raw_columns)
-    return _name_first_region(columns) if END_REGION in columns.values() else columns
+    return _build_start_region_columns(columns) if END_REGION in columns.values() else columns
 
 
-def _name_first_region(columns: dict[str, str]) -> dict[str, str]:
+def _build_start_region_columns(columns: dict[str, str]) -> dict[str, str]:
     return {raw: START_REGION if name == REGION else name for raw, name in columns.items()}

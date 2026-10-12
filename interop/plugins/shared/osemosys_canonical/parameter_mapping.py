@@ -218,7 +218,7 @@ def _build_table_plan(
 ) -> TablePlan:
     """A raw table whose canonical parameter a row maps does not match automatically."""
     others = [name for name in inputs.raw.parameters if name not in matches]
-    found = _list_automatic_matches(inputs, others)
+    found = _build_automatic_matches(inputs, others)
     free = {name: canonical for name, canonical in found.items() if canonical not in claimed}
     return TablePlan(
         automatic=free,
@@ -227,7 +227,7 @@ def _build_table_plan(
     )
 
 
-def _list_automatic_matches(inputs: MappingInputs, names: list[str]) -> dict[str, str]:
+def _build_automatic_matches(inputs: MappingInputs, names: list[str]) -> dict[str, str]:
     found = {name: _find_automatic_match(inputs, name) for name in names}
     return {name: canonical for name, canonical in found.items() if canonical is not None}
 
