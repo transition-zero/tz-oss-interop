@@ -150,6 +150,22 @@ must come from the table.
   that `State` uses.
 - Do not name a type `...Set` unless it holds a `set`.
 
+### The name of the tool
+
+In prose, call the tool **tz-oss-interop**. This applies to documentation, docstrings,
+comments, messages to users, PR descriptions and commit messages. Do not write "interop" alone
+for the tool.
+
+Keep `interop` where it is a Technical Name, which a reader must type or find as it is:
+
+- the command `interop`;
+- the Python package `interop` and its paths, for example `interop/plugins/`;
+- the environment variables, for example `INTEROP_LOG_LEVEL`;
+- the package `interop-testing`.
+
+Where a document first gives the command, say that it is the command of tz-oss-interop, for
+example "The command of tz-oss-interop is `interop`."
+
 ### A property against a method
 
 - A property takes a noun name. A property that answers `bool` takes `is_` or `has_`.

@@ -1,54 +1,54 @@
 # OSeMOSYS Mappings Guide
 
-interop is a tool that translates energy-system models from one format to another. This guide
-is for a modeller who has an OSeMOSYS model and wants to use it with interop. It tells you what
+tz-oss-interop is a tool that translates energy-system models from one format to another. This guide
+is for a modeller who has an OSeMOSYS model and wants to use it with tz-oss-interop. It tells you what
 to write, and why.
 
-## What interop does with an OSeMOSYS model
+## What tz-oss-interop does with an OSeMOSYS model
 
 Each OSeMOSYS model names and shapes its data in its own way. For example, one model calls its
 set of technologies `TECHNOLOGY`, and another model calls it `TECH`. One model gives the
 availability of a technology as a fraction, and another model gives it in percent.
 
-So interop first puts each OSeMOSYS model into one standard form. interop calls this standard
+So tz-oss-interop first puts each OSeMOSYS model into one standard form. tz-oss-interop calls this standard
 form the canonical stage. The canonical stage is a directory of files. It is not a translation to
 another tool. It is one fixed form of an OSeMOSYS model.
 
-interop does not yet translate the canonical stage to another tool. Sienna is a power-system
+tz-oss-interop does not yet translate the canonical stage to another tool. Sienna is a power-system
 modelling tool. A translation to Sienna is planned, and it will read the canonical stage. Because
 each OSeMOSYS model has the same form in the canonical stage, that translation will work for
 each OSeMOSYS model.
 
-interop cannot find some facts in the files of your model. These are examples:
+tz-oss-interop cannot find some facts in the files of your model. These are examples:
 
 - The real units of your values, for example GW and PJ.
 - That your set `TECH` holds the technologies.
-- That your parameter `AvailabilityPercent` holds a percent, so interop must multiply each value
+- That your parameter `AvailabilityPercent` holds a percent, so tz-oss-interop must multiply each value
   by 0.01.
 - What each technology or fuel is, and where it is. For example, the fuel `AAGAS` is natural gas
   in the country `AA`.
 
 You write these facts in a mappings file. The mappings file is a text file that you write and
-give to interop.
+give to tz-oss-interop.
 
-interop then gives you two things:
+tz-oss-interop then gives you two things:
 
 - A directory of tables, with one table for each set and each parameter of your model. This
   directory is the canonical stage.
-- A report, `decisions.md`. It lists each decision that interop made, with the reason.
+- A report, `decisions.md`. It lists each decision that tz-oss-interop made, with the reason.
 
 You must know your own model: its sets, its parameters and its files. You must be able to edit a
-text file. You do not need to read Python or the code of interop. The mappings file uses
+text file. You do not need to read Python or the code of tz-oss-interop. The mappings file uses
 YAML, a text format for names and values. This guide explains each YAML form where an example
 first uses it.
 
 [The words](#the-words), at the end of this guide, lists each term that this guide uses.
 
-## How interop reads your model
+## How tz-oss-interop reads your model
 
 ### The two model formats
 
-interop reads an OSeMOSYS model in one of two formats:
+tz-oss-interop reads an OSeMOSYS model in one of two formats:
 
 - **An otoole model.** otoole is a tool that reads and writes OSeMOSYS models. An otoole model
   is a configuration file and a directory of CSV files. The configuration file declares each set
@@ -60,12 +60,12 @@ interop reads an OSeMOSYS model in one of two formats:
 
 ### The model reader and the engine
 
-interop puts your model into the canonical stage in two steps:
+tz-oss-interop puts your model into the canonical stage in two steps:
 
-1. The model reader reads the files of your model. The model reader is the code in interop that
-   reads one file format. interop has one model reader for each of the two formats.
+1. The model reader reads the files of your model. The model reader is the code in tz-oss-interop that
+   reads one file format. tz-oss-interop has one model reader for each of the two formats.
 2. The engine reads your mappings file, and writes the canonical stage. The engine is the code
-   in interop that applies your mappings file to your model.
+   in tz-oss-interop that applies your mappings file to your model.
 
 ### Your model in its own names
 
@@ -87,13 +87,13 @@ uses these words for it:
 
 ### The canonical schema
 
-interop knows a fixed list of sets and parameters. This list is the canonical schema. Each set
+tz-oss-interop knows a fixed list of sets and parameters. This list is the canonical schema. Each set
 and each parameter in it has a canonical name, in lower case. For example, the canonical name of
 the OSeMOSYS parameter `CapitalCost` is `capital_cost`.
 
 The OSeMOSYS name of a set or a parameter is its name in the OSeMOSYS v1.0.1 model file. For
 example, `CapitalCost` and `REGION` are OSeMOSYS names. A parameter that only tz-osemosys or
-OSeMOSYS MUIO has uses the name that that tool gives it. A file that comes with interop, the
+OSeMOSYS MUIO has uses the name that that tool gives it. A file that comes with tz-oss-interop, the
 schema file, gives each OSeMOSYS name as `osemosys_name`.
 [Find the canonical names and columns](#find-the-canonical-names-and-columns) shows the schema
 file.
@@ -138,10 +138,10 @@ A worked example in this guide has three items:
 
 1. A small raw table from an invented model.
 2. The lines of the mappings file.
-3. The canonical table that interop writes.
+3. The canonical table that tz-oss-interop writes.
 
-Each model in the examples is invented. interop wrote each result table from that model, in a
-run. A run is one use of interop on a model, with the command of [Your first run](#your-first-run).
+Each model in the examples is invented. tz-oss-interop wrote each result table from that model, in a
+run. A run is one use of tz-oss-interop on a model, with the command of [Your first run](#your-first-run).
 
 ## The mappings file
 
@@ -219,7 +219,7 @@ Inside `osemosys:`, a part or a field that the engine does not know stops the ru
 
 ## Your first run
 
-Here you use interop on a very small model with the smallest mappings file. The text explains
+Here you use tz-oss-interop on a very small model with the smallest mappings file. The text explains
 each item of the command and each item of the result. The later examples use the same command.
 
 ### Before you start
@@ -228,35 +228,36 @@ The console is the window where you type a command. The commands in this guide a
 console of Linux or macOS. On Windows, use WSL (the Windows Subsystem for Linux), or change each
 command to the form that your console needs.
 
-The `interop` command must work in any directory of your console. The interop directory is the
-directory `tz-oss-interop`, which the `git clone` step of the installation makes on your computer.
+The command of tz-oss-interop is `interop`. This command must work in any directory of your
+console. The tz-oss-interop directory is the directory `tz-oss-interop`, which the `git clone` step
+of the installation makes on your computer.
 
 1. Do all the steps of [Installation](user-tutorial.md#installation) in the user tutorial.
 2. Do not skip the last step, `uv tool install .`. Without it, `interop` works only in the
-   interop directory.
+   tz-oss-interop directory.
 
-interop runs inside a project directory. A project directory is a directory that holds the files
+tz-oss-interop runs inside a project directory. A project directory is a directory that holds the files
 of one piece of work: your model, your mappings file and the results. It also holds
-`adapters.yaml`, a file of settings that interop reads at the start of each run.
+`adapters.yaml`, a file of settings that tz-oss-interop reads at the start of each run.
 
 A run in a directory with no `adapters.yaml` stops with this message:
 ``adapters.yaml not found at ... Run `interop init <dir>` to scaffold a project.``
 
 So make a project directory first:
 
-1. Go to the directory where you keep your work. Do not use the interop directory.
-2. Type `interop` and press Enter. interop shows a menu.
+1. Go to the directory where you keep your work. Do not use the tz-oss-interop directory.
+2. Type `interop` and press Enter. tz-oss-interop shows a menu.
 3. Use the arrow keys to select `init`. Then press Enter.
 4. At `Target directory?`, type a name for a new directory, for example `my-osemosys-project`.
 5. At `Scaffold an example?`, select `none`. This gives a project with no example model.
-6. interop shows the menu again. Press Ctrl-C to close it.
+6. tz-oss-interop shows the menu again. Press Ctrl-C to close it.
 7. Type `cd my-osemosys-project` and press Enter.
 
 [Setting up a project](user-tutorial.md#setting-up-a-project) in the user tutorial tells you more.
 
 The new project directory already holds the file `inputs/user_mappings.yaml`. `init` writes it,
 with the top-level key `carriers:` for a translation of a PyPSA model. This guide uses a new file,
-`inputs/osemosys_mappings.yaml`. The run command tells interop which file to read.
+`inputs/osemosys_mappings.yaml`. The run command tells tz-oss-interop which file to read.
 
 ### The model of the first run
 
@@ -345,7 +346,7 @@ You can put the mappings file anywhere in your project directory. This guide use
 
 ### The two pipelines
 
-A pipeline is a named set of steps that interop runs. A pipeline starts with a model reader, and
+A pipeline is a named set of steps that tz-oss-interop runs. A pipeline starts with a model reader, and
 ends with a sink. A sink is the code in a pipeline that writes the result. Two pipelines write the canonical stage of a model to a
 directory:
 
@@ -377,15 +378,15 @@ change its path in the command.
 
 | Item | What it does |
 | --- | --- |
-| `INTEROP_LOG_LEVEL=WARNING` | It tells interop to show the warnings on the console, for this command only. A warning tells you about a problem that does not stop the run. |
-| `interop headless_cli` | It runs interop with no menu and no questions. The command line gives all the settings. |
+| `INTEROP_LOG_LEVEL=WARNING` | It tells tz-oss-interop to show the warnings on the console, for this command only. A warning tells you about a problem that does not stop the run. |
+| `interop headless_cli` | It runs tz-oss-interop with no menu and no questions. The command line gives all the settings. |
 | `--pipeline osemosys-csv-to-canonical` | It chooses the pipeline. |
 | `\` at the end of a line | It continues the command on the next line. |
 | `--override 'NAME=VALUE'` | It gives a value to one setting of the pipeline. The single quotes keep the text as it is. |
 | `source.config_path=inputs/model/config.yaml` | `source` is the model reader of the pipeline. `config_path` is the path of the otoole configuration file. |
 | `source.csv_dir=inputs/model/csv` | `csv_dir` is the directory that holds the CSV files. |
 | `sink[0].output_dir=outputs/canonical` | `sink[0]` is the first sink of the pipeline, and these pipelines have one sink only. `output_dir` is the directory where it writes the canonical stage. |
-| `--user-mappings-path inputs/osemosys_mappings.yaml` | It gives the path of your mappings file. interop calls the mappings file "user mappings" in this option and in its messages. |
+| `--user-mappings-path inputs/osemosys_mappings.yaml` | It gives the path of your mappings file. tz-oss-interop calls the mappings file "user mappings" in this option and in its messages. |
 
 Without `INTEROP_LOG_LEVEL=WARNING`, the console shows only the errors. The line
 `log_level: INFO` in `adapters.yaml` does not change what the console shows. Only
@@ -399,7 +400,7 @@ The console shows one warning:
 WARNING ... no kind fits 2 technology(ies) in their region, so each keeps an empty kind: R1/GASCC, R1/WINDON
 ```
 
-Each warning starts with `WARNING`. Then the console names the code in interop that writes the
+Each warning starts with `WARNING`. Then the console names the code in tz-oss-interop that writes the
 warning. This guide writes `...` in place of that name.
 
 This warning tells you that the engine cannot infer a `kind` for the two technologies:
@@ -446,7 +447,7 @@ The message that `init` shows says that `decisions.md` goes in `outputs/`. With 
 ### Look at a parquet file
 
 This command shows the canonical table `capital_cost` on the console. It uses uv, the tool that
-installs interop, and polars, a library that reads parquet files. Run it in the project
+installs tz-oss-interop, and polars, a library that reads parquet files. Run it in the project
 directory:
 
 ```bash
@@ -551,7 +552,7 @@ lists each warning.
 
 The canonical schema is in the file
 [`interop/plugins/shared/osemosys_canonical_schema.yaml`](../../interop/plugins/shared/osemosys_canonical_schema.yaml).
-This file comes with interop. On your computer, it is in the interop directory, at
+This file comes with tz-oss-interop. On your computer, it is in the tz-oss-interop directory, at
 `tz-oss-interop/interop/plugins/shared/osemosys_canonical_schema.yaml`. You can open it in any
 text editor. It has one entry for each canonical set and each canonical parameter. An entry is the group of lines that describes one set or one parameter.
 
@@ -686,7 +687,7 @@ The run writes this warning:
 WARNING ... 1 raw table(s) match no canonical parameter by name and key, so each stays an extension table: FixedCost
 ```
 
-In a message from interop, "key" means the index columns of a raw table. So "by name and key"
+In a message from tz-oss-interop, "key" means the index columns of a raw table. So "by name and key"
 means "by the name and the index columns".
 
 To map such a table, write a `parameters:` row. This row keeps the table rows of operating mode
@@ -727,7 +728,7 @@ Write `operating_mode`, not `MODE_OF_OPERATION`. With `MODE_OF_OPERATION`, the r
 ### Find out why a table did not match
 
 A run writes temporary files in a staging directory. A staging directory is a temporary
-directory that interop deletes at the end of the run. The option `--keep-staging`
+directory that tz-oss-interop deletes at the end of the run. The option `--keep-staging`
 keeps it, so that you can read what the model reader read.
 
 Know these facts before you do the steps:
@@ -801,7 +802,7 @@ The run writes `metadata/units.parquet`:
 | currency_year | 2022 |
 | emissions | Mt |
 
-`currency_year` must be a whole number. Each other unit is text. interop copies it and does not
+`currency_year` must be a whole number. Each other unit is text. tz-oss-interop copies it and does not
 check it. A field that the file does not state has no table row.
 
 ## `sets:`
@@ -1349,7 +1350,7 @@ is. There are four annotations:
 [`kind`](#kind), [`category` and `carrier`](#category-and-carrier) and [`location`](#location)
 explain each annotation.
 
-Nothing in interop reads the annotations yet. The planned translation to Sienna will read them.
+Nothing in tz-oss-interop reads the annotations yet. The planned translation to Sienna will read them.
 An empty annotation stops nothing today. But give each annotation that you know, because the
 translation to Sienna will need it.
 
@@ -2065,14 +2066,14 @@ uses it. This list is for reference.
 
 | Word | Meaning |
 | --- | --- |
-| interop | A tool that translates energy-system models from one format to another. |
+| tz-oss-interop | A tool that translates energy-system models from one format to another. |
 | Model | Your OSeMOSYS model: an otoole configuration file and a directory of CSV files, or a TZ-format model. |
 | otoole model | A model in the format of otoole: a configuration file that declares each set and parameter, and one CSV file for each set and parameter. |
 | TZ-format model | The `model.json` file that tz-osemosys writes. |
-| Model reader | The code in interop that reads the files of your model. A pipeline calls it `source`. |
-| Engine | The code in interop that reads your mappings file and writes the canonical stage. |
-| Mappings file | The YAML file that tells the engine the facts that it cannot find in your model. interop calls it "user mappings" in its options and messages. |
-| Key | In YAML, a name before a colon. This guide is about the top-level key `osemosys:`. In a message from interop, "key" means the index columns of a raw table. For example, the note `matched by name and key` means that the name and the index columns match. |
+| Model reader | The code in tz-oss-interop that reads the files of your model. A pipeline calls it `source`. |
+| Engine | The code in tz-oss-interop that reads your mappings file and writes the canonical stage. |
+| Mappings file | The YAML file that tells the engine the facts that it cannot find in your model. tz-oss-interop calls it "user mappings" in its options and messages. |
+| Key | In YAML, a name before a colon. This guide is about the top-level key `osemosys:`. In a message from tz-oss-interop, "key" means the index columns of a raw table. For example, the note `matched by name and key` means that the name and the index columns match. |
 | Top-level key | A YAML key with no spaces at the start of its line, for example `osemosys:` or `carriers:`. |
 | Part | One of the four keys inside `osemosys:`: `units:`, `sets:`, `parameters:` and `objects:`. |
 | Field | A key inside a part or inside a row, for example `capacity` in `units:` or `source` in a `parameters:` row. |
@@ -2083,7 +2084,7 @@ uses it. This list is for reference.
 | Raw table | One parameter of your model, with its own name, for example `CapitalCost` or `MaxRampRate`. |
 | Index columns | The columns of a raw table that name set members, for example `REGION`, `TECHNOLOGY` and `YEAR`. In an otoole model, the `indices` of the parameter give them. |
 | `VALUE` | The column of a raw table that holds the number. |
-| Canonical schema | The fixed list of sets and parameters that interop knows. Each one has a canonical name, for example `capital_cost`. |
+| Canonical schema | The fixed list of sets and parameters that tz-oss-interop knows. Each one has a canonical name, for example `capital_cost`. |
 | Canonical set, canonical parameter | A set or a parameter of the canonical schema. |
 | Canonical columns | The columns of a canonical parameter, in a fixed order, for example `region, technology, year`. Each canonical table has a `value` column after them. |
 | Map | To give a raw set or a raw table a canonical name. |
@@ -2094,8 +2095,8 @@ uses it. This list is for reference.
 | Extension table | A raw table or a raw set that gets no canonical name. The canonical stage keeps it with its own name, so you lose no data. |
 | Annotation | A fact about a set member that the model does not state as a parameter, for example that a technology is in the country `AA`. |
 | Infer | To find a value from other data in the model. |
-| Project directory | The directory that holds the files of one piece of work, with `adapters.yaml`. You run interop in it. |
-| Pipeline | A named set of steps that interop runs, from a model reader to a sink. |
+| Project directory | The directory that holds the files of one piece of work, with `adapters.yaml`. You run tz-oss-interop in it. |
+| Pipeline | A named set of steps that tz-oss-interop runs, from a model reader to a sink. |
 | Sink | The code in a pipeline that writes the result. `sink[0]` is the first sink. |
 | Console | The window where you type a command. |
 | Warning | A line on the console about a problem that does not stop the run. |
