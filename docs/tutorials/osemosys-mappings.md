@@ -93,9 +93,10 @@ the OSeMOSYS parameter `CapitalCost` is `capital_cost`.
 
 The OSeMOSYS name of a set or a parameter is its name in the OSeMOSYS v1.0.1 model file. For
 example, `CapitalCost` and `REGION` are OSeMOSYS names. A parameter that only tz-osemosys or
-OSeMOSYS MUIO has uses the name that that tool gives it. The schema file gives each OSeMOSYS name
-as `osemosys_name`. [Find the canonical names and columns](#find-the-canonical-names-and-columns)
-shows the schema file.
+OSeMOSYS MUIO has uses the name that that tool gives it. A file that comes with interop, the
+schema file, gives each OSeMOSYS name as `osemosys_name`.
+[Find the canonical names and columns](#find-the-canonical-names-and-columns) shows the schema
+file.
 
 - A **canonical set** is a set of the canonical schema, for example `technology`.
 - A **canonical parameter** is a parameter of the canonical schema, for example `capital_cost`.
@@ -177,6 +178,7 @@ Notice these points:
 - `capacity: GW` has four spaces at its start, so it belongs to `units:`.
 - A line belongs to the nearest line above it that has fewer spaces at its start.
 - `capacity` is a key, and `GW` is its value.
+- `osemosys:` has no `{}` now. When `osemosys:` holds a part, do not write `{}` after it.
 
 Two mistakes stop the run. [Errors that stop the run](#errors-that-stop-the-run) gives the error
 for each:
@@ -226,7 +228,8 @@ The console is the window where you type a command. The commands in this guide a
 console of Linux or macOS. On Windows, use WSL (the Windows Subsystem for Linux), or change each
 command to the form that your console needs.
 
-The `interop` command must work in any directory of your console:
+The `interop` command must work in any directory of your console. The interop directory is the
+directory `tz-oss-interop`, which the `git clone` step of the installation makes on your computer.
 
 1. Do all the steps of [Installation](user-tutorial.md#installation) in the user tutorial.
 2. Do not skip the last step, `uv tool install .`. Without it, `interop` works only in the
@@ -261,7 +264,10 @@ The model of the first run is an otoole model. It has one region, two technologi
 one parameter.
 
 To do the first run, make the six files below in your project directory. First, make the
-directories `inputs/model/` and `inputs/model/csv/`.
+directories `inputs/model/` and `inputs/model/csv/`:
+
+1. Go to the project directory.
+2. Type `mkdir -p inputs/model/csv` and press Enter.
 
 Put the otoole configuration file at `inputs/model/config.yaml`:
 
@@ -398,8 +404,8 @@ warning. This guide writes `...` in place of that name.
 
 This warning tells you that the engine cannot infer a `kind` for the two technologies:
 
-- `kind` is an annotation that tells what a technology is, for example a technology that makes
-  electricity.
+- `kind` is an annotation that tells the role of a technology in the power system, for example a
+  technology that makes electricity.
 - The engine infers `kind` from the activity ratios, and from the fuels that `objects:` marks as
   electricity. This model has no activity ratios, so no kind fits.
 - `R1/GASCC` is the technology `GASCC` in the region `R1`.
@@ -537,16 +543,17 @@ The `Note` column of each table row gives the reason.
 
 ### The warnings on the console
 
-For example, a warning names each extension table. A warning gives three names at most, and
-counts the others. [Problems in the model data that do not stop the run](#problems-in-the-model-data-that-do-not-stop-the-run)
+The console shows one warning for each type of problem that does not stop the run. For example,
+a warning names each extension table. A warning gives three names at most, and counts the others. [Problems in the model data that do not stop the run](#problems-in-the-model-data-that-do-not-stop-the-run)
 lists each warning.
 
 ## Find the canonical names and columns
 
 The canonical schema is in the file
 [`interop/plugins/shared/osemosys_canonical_schema.yaml`](../../interop/plugins/shared/osemosys_canonical_schema.yaml).
-This file comes with interop. It has one entry for each canonical set and each canonical
-parameter. An entry is the group of lines that describes one set or one parameter.
+This file comes with interop. On your computer, it is in the interop directory, at
+`tz-oss-interop/interop/plugins/shared/osemosys_canonical_schema.yaml`. You can open it in any
+text editor. It has one entry for each canonical set and each canonical parameter. An entry is the group of lines that describes one set or one parameter.
 
 To find the entry for a parameter of your model, search the file for its OSeMOSYS name, for
 example `osemosys_name: CapitalCost`. [Names](../developer_documentation/osemosys-canonical-format.md#names)
@@ -613,9 +620,6 @@ fields `rename_columns`, `columns_from_name` and `repeat_for_all` of a `paramete
 | `STORAGE` | `storage` |
 | `REGIONGROUP` | `region_group` |
 
-A parameter that holds a pair of regions has the columns `start_region` and `end_region` in
-place of `region`.
-
 ## The automatic match
 
 You need no `parameters:` row for a raw table when both of these are true:
@@ -657,8 +661,8 @@ Notice that `region` is now the first column.
 
 ### Example: a raw table with the right name and other index columns
 
-This example shows what happens when a raw table has an extra index column. Your model needs
-this when it adds a column to a published parameter.
+This example shows what happens when a raw table has an extra index column. A raw table has an
+extra index column when your model adds a column to a published parameter.
 
 The raw table `FixedCost.csv` has a `MODE_OF_OPERATION` column. The canonical parameter
 `fixed_cost` has no such column, so the raw table does not match automatically:
@@ -696,6 +700,13 @@ osemosys:
       remove_column: {column: operating_mode, rule: choose, member: "1"}
 ```
 
+Read the row like this:
+
+- A line that starts with `- ` (a hyphen and a space) starts one row of `parameters:`. The
+  indented lines below it belong to the same row.
+- The braces hold the fields of `remove_column` on one line. A comma separates two fields.
+- A member that is a number must be in double quotes, so write `"1"` and not `1`.
+
 The run then writes `parameters/fixed_cost.parquet`:
 
 | region | technology | year | value |
@@ -719,25 +730,44 @@ A run writes temporary files in a staging directory. A staging directory is a te
 directory that interop deletes at the end of the run. The option `--keep-staging`
 keeps it, so that you can read what the model reader read.
 
+Know these facts before you do the steps:
+
+- The temporary directory of the system is `/tmp` on Linux and in WSL. On macOS, it is the
+  directory in `$TMPDIR`.
+- For a TZ-format model, the name of the staging directory starts `interop-tz-osemosys-staging-`.
+- `raw/declarations.parquet` has one table row for each raw table that the model reader saw.
+- The `key` column holds the list of the index columns of the raw table, in their order.
+
+Do these steps:
+
 1. Put `--keep-staging` at the end of the last line of the run command. Then do the run.
 2. Find the directory `interop-osemosys-staging-<random>` in the temporary directory of the
    system. `<random>` is a set of random characters.
-3. Open `raw/declarations.parquet` in that directory, with the command of
-   [Look at a parquet file](#look-at-a-parquet-file). Write the full path of the file in the
-   command.
+3. Show `raw/declarations.parquet` with the command below. In the command, replace
+   `abc123` with the random characters of your staging directory. On macOS, also replace `/tmp`
+   with the directory in `$TMPDIR`.
+
+   ```bash
+   uv run --with polars python -c "import polars as pl; pl.Config.set_fmt_str_lengths(200); print(pl.read_parquet('/tmp/interop-osemosys-staging-abc123/raw/declarations.parquet'))"
+   ```
+
+   `pl.Config.set_fmt_str_lengths(200)` stops polars from cutting a long `key`. For the model of
+   the first run, the command shows:
+
+   ```
+   shape: (1, 3)
+   ┌─────────────┬──────────────────────────────────┬─────────┐
+   │ name        ┆ key                              ┆ default │
+   │ ---         ┆ ---                              ┆ ---     │
+   │ str         ┆ list[str]                        ┆ f64     │
+   ╞═════════════╪══════════════════════════════════╪═════════╡
+   │ CapitalCost ┆ ["REGION", "TECHNOLOGY", "YEAR"] ┆ 0.0     │
+   └─────────────┴──────────────────────────────────┴─────────┘
+   ```
+
 4. Read the columns `name`, `key` and `default` of the table row for the raw table that did not
    match.
 5. Compare `name` and `key` with `osemosys_name` and `osemosys_columns` in the schema entry.
-
-These facts help you with the steps:
-
-- The temporary directory of the system is `/tmp` on Linux. On macOS, it is the directory in
-  `$TMPDIR`. On Windows, it is the directory in `%TEMP%`.
-- For a TZ-format model, the name of the staging directory starts `interop-tz-osemosys-staging-`.
-- An example of a full path is
-  `'/tmp/interop-osemosys-staging-abc123/raw/declarations.parquet'`.
-- `raw/declarations.parquet` has one table row for each raw table that the model reader saw.
-- The `key` column holds the list of the index columns of the raw table, in their order.
 
 For example, a table row can have the `name` `MaxRampRate` and the `key`
 `["REGION", "TECHNOLOGY", "YEAR"]`. It matches only a schema entry with the same `osemosys_name`
@@ -836,7 +866,8 @@ The engine counts the rows from 0, so the first row is "row 0". Its messages use
 ### Patterns
 
 A pattern is a short text that describes a group of names. A pattern is a regular expression, a
-standard notation for a text search. You do not need to know Python. The table below gives each
+standard notation for a text search. You do not need to know regular expressions. The table
+below gives each
 symbol that this guide uses.
 
 The field `source_pattern` of a `parameters:` row takes a pattern. The field `match` of an
@@ -854,11 +885,12 @@ pattern is case-sensitive, so `Cost` does not match `COST`.
 | `^` | The start of the name | `^AAGAS` | `AAGASCC`, `AAGASIMP` | `BBAAGAS` |
 | `$` | The end of the name | `GASCC$` | `GASCC`, `AAGASCC` | `GASCC2` |
 | `^` and `$` together | The whole name | `^AAGASCC$` | `AAGASCC` | `AAGASCC2`, `XAAGASCC` |
-| `{2}` | Exactly two of the item before it. `{4}` is exactly four. | `^[A-Z]{2}ELEC$` | `AAELEC`, `BBELEC` | `AELEC`, `AAAELEC` |
-| `[A-Z]` | One capital letter, from A to Z | `^[A-Z]{4}LINK$` | `AABBLINK` | `AALINK` |
-| `[a-z]` | One lowercase letter, from a to z | `^gas-(?P<type>[a-z]+)$` | `gas-cc`, with `type` = `cc` | `gas-CC` |
+| `[A-Z]` | One capital letter, from A to Z | `^[A-Z]GAS$` | `AGAS`, `BGAS` | `AAGAS`, `aGAS` |
+| `[a-z]` | One lowercase letter, from a to z | `^gas-[a-z][a-z]$` | `gas-cc` | `gas-CC`, `gas-ccc` |
 | `[0-9]` | One digit, from 0 to 9 | `^Z[0-9]+$` | `Z1`, `Z12` | `Z`, `ZA` |
 | `+` | One or more of the item before it | `^Z[0-9]+$` | `Z1`, `Z12` | `Z` |
+| `{2}` | Exactly two of the item before it | `^[A-Z]{2}ELEC$` | `AAELEC`, `BBELEC` | `AELEC`, `AAAELEC` |
+| `{4}` | Exactly four of the item before it | `^[A-Z]{4}LINK$` | `AABBLINK` | `AALINK` |
 | `(?P<name>X)` | A named group, where `X` is a pattern. The characters that `X` matches get the name `name`. | `^CapacityFactor(?P<zone>[A-Z]+)$` | `CapacityFactorNORTH`, with `zone` = `NORTH` | `CapacityFactor`, `CapacityFactorNorth` |
 | `?` after a group | The group is optional | `^(?P<country>[A-Z]{2})?GAS$` | `AAGAS`, with `country` = `AA`; `GAS`, with no `country` | `AGAS` |
 
@@ -973,9 +1005,9 @@ osemosys:
       rename_columns: {GHG: pollutant}
 ```
 
-`{GHG: pollutant}` writes a name, a colon and a value on one line, in braces. It is the same as
-the line `GHG: pollutant`, indented below `rename_columns:`. A comma separates two of them, for
-example `{column: UNIT, rule: sum}`.
+`{GHG: pollutant}` writes a key, a colon and a value on one line, in braces. It is the same as
+the line `GHG: pollutant`, indented below `rename_columns:`. Put a comma between two keys with
+their values, for example `{column: UNIT, rule: sum}`.
 
 The run writes `parameters/emission_rate.parquet`:
 
@@ -1058,13 +1090,13 @@ The rule is one of these:
 
 | Rule | The value that it keeps |
 | --- | --- |
-| `choose` | The value of the table row that holds `member`. The engine drops the other table rows. |
+| `choose` | The value of the table row that holds `member`. The engine leaves out the other table rows. |
 | `sum` | The sum of the values |
 | `mean` | The mean of the values. Each value has the same weight. |
 | `min` | The lowest value |
 | `max` | The highest value |
 
-This example shows how to add the values of the generating units of a technology.
+This example shows how to sum the values of the generating units of a technology.
 
 The raw table `ResidualCapacity.csv` has one table row for each generating unit, in a `UNIT`
 column:
@@ -1227,7 +1259,7 @@ The engine applies these rules to the `parameters:` rows:
 - **The first row that matches a raw table wins.** The engine does not try the rows after it.
 - **A row stops the automatic match for its canonical parameter.** When a row maps a raw table
   to a canonical parameter, no automatic match writes to that parameter.
-- **A family merges only when the defaults agree.** The raw tables that `parameters:` rows map
+- **The engine maps a family to one canonical table only when the defaults agree.** The raw tables that `parameters:` rows map
   to one canonical parameter are a family. They must declare the same default, after
   `multiply_by`. If not, each one stays an extension table.
 - **Two raw tables cannot write one canonical table row.** If they do, the run stops.
@@ -1309,7 +1341,7 @@ Rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the 
 `objects:` gives annotations to set members. An annotation tells what a member is, or where it
 is. There are four annotations:
 
-- `kind` tells what a technology is, from a fixed list.
+- `kind` tells the role of a technology in the power system, from a fixed list.
 - `category` is free text that names the type of a technology.
 - `carrier` is free text that names the type of a fuel.
 - `location` tells where a member is.
@@ -1317,14 +1349,7 @@ is. There are four annotations:
 [`kind`](#kind), [`category` and `carrier`](#category-and-carrier) and [`location`](#location)
 explain each annotation.
 
-Nothing in interop reads the annotations yet. They record the facts that the planned translation
-to Sienna needs:
-
-- `location` tells where each technology is.
-- `kind` tells which Sienna type each technology becomes.
-- `category` tells what each technology is.
-- `carrier` tells which fuels are electricity.
-
+Nothing in interop reads the annotations yet. The planned translation to Sienna will read them.
 An empty annotation stops nothing today. But give each annotation that you know, because the
 translation to Sienna will need it.
 
@@ -1350,13 +1375,20 @@ one table row for each region and each member, because one member name can be in
 | `annotations/storage.parquet` | `region`, `storage`, `location` |
 | `annotations/region.parquet` | `region`, `location` |
 
+**Warning:** mark each electricity fuel with `carrier: electricity` in a `fuels:` row. If you do
+not, the engine does not know that the fuel is electricity. Then no technology gets
+`SupplyTechnology`, and no warning tells you. For example, in a small model with no
+`carrier: electricity`, a wind technology that puts out only `ELEC` got the kind `fuel_supply`. A
+gas technology that takes in `GAS` and puts out `ELEC` got the kind `conversion`.
+
 ### `match`
 
 Each `objects:` row has a `match`, which is a pattern. [Patterns](#patterns) tells you how to
 write one. The engine searches for the pattern in the member name. Then:
 
 - The first row that matches a member wins.
-- A row gives only the annotations that it states. The engine infers the others.
+- A row gives only the annotations that it states. When a row does not give `kind` or
+  `location`, the engine infers it. `category` and `carrier` stay empty.
 - A row gives the same annotations in each region.
 
 A search can match inside a longer name. Use `^` for the start of the name and `$` for the
@@ -1483,7 +1515,7 @@ The run writes `annotations/fuel.parquet`:
 
 ### `kind`
 
-`kind` tells what a technology is. It takes one value from this list:
+`kind` tells the role of a technology in the power system. It takes one value from this list:
 
 | `kind` | The technology |
 | --- | --- |
@@ -1494,7 +1526,8 @@ The run writes `annotations/fuel.parquet`:
 | `export` | Takes in a fuel and puts out nothing |
 | `conversion` | Changes one fuel into another at one location |
 
-The first three are type names in Sienna. Another value, for example `generator`, stops the run.
+The first three are type names in Sienna. The planned translation to Sienna will use `kind` to
+choose the Sienna type of each technology. Another value, for example `generator`, stops the run.
 
 The engine infers `kind` from the activity ratios, the storage tables and the fuels whose
 `carrier` is `electricity`. A row needs `kind` only to change the inference.
@@ -1551,6 +1584,20 @@ out `electricity`. `gas-import` puts out `natural-gas` and takes in nothing.
 
 Notice that the engine infers each `kind`, and that `gas-import` gets no category.
 
+In this model, `location: "{region}"` changes no result. A fuel with no `location` also takes the
+location of its region. But when the engine infers the location and the kind of a technology, it
+counts only a location that a row gives. So the line matters when rows give other fuels another
+location.
+
+For example, the region `R1` holds the fuels `ELEC` and `AAELEC`. The technology `LINK` takes in
+`ELEC` and puts out `AAELEC`. Both fuels have `carrier: electricity`, and a row gives `AAELEC` the
+location `AA`. The row for `ELEC` changes the result:
+
+| Row for `ELEC` | `kind` of `LINK` | `location` of `LINK` |
+| --- | --- | --- |
+| `carrier: electricity` | `conversion` | `AA` |
+| `carrier: electricity` and `location: "{region}"` | `AggregateTransportTechnology` | `R1~AA` |
+
 ### What the engine infers
 
 The engine infers each `location` and `kind` that no row gives. An `objects:` row overrides an
@@ -1568,16 +1615,9 @@ The engine infers a location like this:
 - If no fuel of a technology has a location from a row, the technology takes the location of
   its region.
 
-**Warning:** mark each electricity fuel with `carrier: electricity` in a `fuels:` row. If you do
-not, the engine does not know that the fuel is electricity. Then no technology gets
-`SupplyTechnology`, and no warning tells you. For example, in a small model with no
-`carrier: electricity`, a wind technology that puts out only `ELEC` got the kind `fuel_supply`. A
-gas technology that takes in `GAS` and puts out `ELEC` got the kind `conversion`.
-
 The engine infers a kind from the canonical tables `input_activity_ratio`,
 `output_activity_ratio`, `technology_to_storage` and `technology_from_storage`. Only a table row
-with a `value` above zero counts. A fuel is electricity when its `carrier` is `electricity`.
-The engine tries the kinds in this order. The first kind that fits wins:
+with a `value` above zero counts. The engine tries the kinds in this order. The first kind that fits wins:
 
 | Order | `kind` | The technology |
 | --- | --- | --- |
@@ -1708,7 +1748,7 @@ raw table or the member:
 | `` Row 0 of `parameters:` cannot map the raw table InvestmentCost to capital_cost. Its operations turn the key TECH into technology, but capital_cost is keyed region, technology, year. `` | After the operations, the columns are not the canonical columns | Add the missing columns with `repeat_for_all` or `columns_from_name`, or remove the extra column with `remove_column`. |
 | `The row names the columns MODE_OF_OPERATION, which are not in the key.` | `rename_columns` or `remove_column` names a column that the raw table does not have at that step | Use the column name that the operation sees. [The column names that the operations see](#the-column-names-that-the-operations-see) gives the names. |
 | `` Rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the same capital_cost row (R1, GASCC, 2030). `` | Two raw tables write the same canonical table row | Change the rows, so that one raw table gives each table row. |
-| `` row 0 of `objects: fuels` gives the location {country}, but its match captures no country for GAS `` | The group is optional in `match`, and it is empty for this member | Make the group required, or add a row for this member before the row. |
+| `` row 0 of `objects: fuels` gives the location {country}, but its match captures no country for GAS `` | The group is optional in `match`, and it is empty for this member | Remove the `?` after the group, or add a row for this member above this row. |
 
 ## Problems in the model data that do not stop the run
 
@@ -1737,9 +1777,35 @@ For example, a `CapitalCost` table row for the technology `OIL`, which is not in
 WARNING ... 1 canonical parameter table(s) hold values whose set member is not in its canonical set, so those values are left out: capital_cost (absent members: OIL)
 ```
 
-The model readers also report problems in the files, for example a `VALUE` that is not a
-number. [The sources](../developer_documentation/osemosys-canonical-format.md#the-sources) in the
-developer document lists them. In that document, a source is a model reader.
+The model readers also report problems in the files of your model. A problem in a file does not
+stop the run, with one exception. If the CSV directory holds none of the declared files, the run
+stops. The error names `csv_dir`.
+
+For an otoole model, the model reader does this:
+
+| Problem in the files | What the model reader does | Warning |
+| --- | --- | --- |
+| A set with no CSV file, or a set file that is not CSV | The set has no members | Yes |
+| A set file that is empty | The set has no members | No |
+| A set file with no `VALUE` column | It leaves out the set | Yes |
+| A parameter with no CSV file, or an empty file | The table has no table rows, so the default applies | No |
+| A parameter file that is not CSV | The table has no table rows | Yes |
+| A header that is not the declared index columns and `VALUE` | The table has no table rows | Yes |
+| A `VALUE` that is not a number | It leaves out that table row, and keeps the others | Yes |
+
+For a TZ-format model, the model reader does this. Each problem gives a warning:
+
+| Problem in the file | What the model reader does |
+| --- | --- |
+| An object that it cannot use, for example a technology with no `id` | It leaves out the object |
+| A field that it does not know | It leaves out the field |
+| A value that is not a number | It leaves out the value |
+| Two values for the same table row, for example from two trades | It keeps the first value |
+
+`decisions.md` lists each problem with a warning under the heading "Components skipped" or
+"Fields not mapped". [The sources](../developer_documentation/osemosys-canonical-format.md#the-sources)
+in the developer document gives more detail for developers. In that document, a source is a
+model reader.
 
 ## What a mappings file cannot do
 
@@ -1786,7 +1852,7 @@ letters of each technology and fuel name give the country.
 | --- | --- | --- |
 | `InputActivityRatio`, `OutputActivityRatio`, `CapitalCost` | The published ones | Nothing. They match automatically. |
 | `AvailabilityPercent` | `REGION`, `TECHNOLOGY`, `YEAR` | It maps the table to `availability_factor`, and changes the percent to a fraction. |
-| `ResidualCapacity` | `REGION`, `TECHNOLOGY`, `UNIT`, `YEAR` | It adds the table rows of the units. The model has one table row for each unit. |
+| `ResidualCapacity` | `REGION`, `TECHNOLOGY`, `UNIT`, `YEAR` | It sums the table rows of the units. The model has one table row for each unit. |
 | `FixedCostFlat` | `TECHNOLOGY` | It repeats the one value for each region and year. |
 | `ReportingFlag` | `TECHNOLOGY` | It leaves the table out. The model uses it for reports only. |
 | `MaxRampRate` | `REGION`, `TECHNOLOGY`, `YEAR` | Nothing. It stays an extension table, because the canonical schema has no such parameter. |
