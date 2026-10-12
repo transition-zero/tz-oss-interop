@@ -8,7 +8,12 @@ from importlib.resources import files
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from interop.plugins.shared.osemosys_canonical.constants import END_REGION, OSEMOSYS_SECOND_REGION
+from interop.plugins.shared.osemosys_canonical.constants import (
+    END_REGION,
+    OSEMOSYS_SECOND_REGION,
+    REGION,
+    START_REGION,
+)
 
 _SCHEMA_PACKAGE = "interop.plugins.shared"
 _SCHEMA_FILENAME = "osemosys_canonical_schema.yaml"
@@ -72,6 +77,14 @@ class CanonicalSchema(BaseModel):
     parameters: dict[str, CanonicalParameter]
 
     @model_validator(mode="after")
+    def _validate_unique_osemosys_names(self) -> CanonicalSchema:
+        _reject_duplicate_names("set", [entry.osemosys_name for entry in self.sets.values()])
+        _reject_duplicate_names(
+            "parameter", [entry.osemosys_name for entry in self.parameters.values()]
+        )
+        return self
+
+    @model_validator(mode="after")
     def _validate_references(self) -> CanonicalSchema:
         for name, parameter in self.parameters.items():
             _reject_unknown_key_sets(name, parameter, self.sets)
@@ -113,18 +126,28 @@ def _reject_unknown_key_sets(
         raise ValueError(f"the key of {name} names unknown sets {unknown}")
 
 
+def _reject_duplicate_names(label: str, osemosys_names: list[str]) -> None:
+    duplicated = sorted({name for name in osemosys_names if osemosys_names.count(name) > 1})
+    if duplicated:
+        raise ValueError(f"two {label} entries share the osemosys_name {duplicated}")
+
+
 def _reject_misaligned_osemosys_key(
     name: str, parameter: CanonicalParameter, set_columns: dict[str, str]
 ) -> None:
-    """Each OSeMOSYS key column names the set of the canonical column at its position."""
+    """Each OSeMOSYS key column names the canonical column at its position, or the first region of
+    a pair, which `region` stands for."""
     misaligned = [
         osemosys
         for osemosys, column in parameter.osemosys_columns.items()
-        if parameter.get_column_set(set_columns.get(osemosys, osemosys))
-        != parameter.get_column_set(column)
+        if not _is_aligned(set_columns.get(osemosys, osemosys), column)
     ]
     if misaligned:
         raise ValueError(f"the osemosys_key of {name} does not match its key at {misaligned}")
+
+
+def _is_aligned(expected: str, column: str) -> bool:
+    return column == expected or (expected, column) == (REGION, START_REGION)
 
 
 @functools.cache

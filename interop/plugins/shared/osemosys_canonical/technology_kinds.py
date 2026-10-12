@@ -140,11 +140,11 @@ def _build_location_order(located: LocatedFlow) -> tuple[int, str, bool, str]:
     return number, mode, not located.flow.is_input, located.fuel.location
 
 
-def _is_storage(structure: TechnologyStructure) -> bool:
+def _is_storage_technology(structure: TechnologyStructure) -> bool:
     return structure.has_storage
 
 
-def _is_link(structure: TechnologyStructure) -> bool:
+def _is_aggregate_transport_technology(structure: TechnologyStructure) -> bool:
     """Two row-given electricity locations among its inputs and outputs mean one input and one
     output differ."""
     inputs = [fuel for fuel in structure.inputs if fuel.is_electricity]
@@ -152,12 +152,12 @@ def _is_link(structure: TechnologyStructure) -> bool:
     return bool(inputs) and bool(outputs) and len(_list_row_locations([*inputs, *outputs])) > 1
 
 
-def _is_generator(structure: TechnologyStructure) -> bool:
+def _is_supply_technology(structure: TechnologyStructure) -> bool:
     puts_out_electricity = any(fuel.is_electricity for fuel in structure.outputs)
     return puts_out_electricity and not any(fuel.is_electricity for fuel in structure.inputs)
 
 
-def _is_supply(structure: TechnologyStructure) -> bool:
+def _is_fuel_supply(structure: TechnologyStructure) -> bool:
     puts_out_other = any(not fuel.is_electricity for fuel in structure.outputs)
     return puts_out_other and not structure.inputs
 
@@ -179,24 +179,24 @@ def _list_row_locations(fuels: list[FuelAnnotation]) -> list[str]:
 
 _KIND_RULES = (
     KindRule(
-        TechnologyKind.STORAGE,
-        _is_storage,
+        TechnologyKind.STORAGE_TECHNOLOGY,
+        _is_storage_technology,
         f"it connects to a storage through {FlowParameter.TECHNOLOGY_TO_STORAGE} or "
         f"{FlowParameter.TECHNOLOGY_FROM_STORAGE}",
     ),
     KindRule(
-        TechnologyKind.LINK,
-        _is_link,
+        TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY,
+        _is_aggregate_transport_technology,
         "it takes in electricity at one location and puts it out at another",
     ),
     KindRule(
-        TechnologyKind.GENERATOR,
-        _is_generator,
+        TechnologyKind.SUPPLY_TECHNOLOGY,
+        _is_supply_technology,
         "it puts out electricity, and takes in no electricity",
     ),
     KindRule(
-        TechnologyKind.SUPPLY,
-        _is_supply,
+        TechnologyKind.FUEL_SUPPLY,
+        _is_fuel_supply,
         "it puts out a fuel that is not electricity, and takes in nothing",
     ),
     KindRule(TechnologyKind.EXPORT, _is_export, "it takes in a fuel, and puts out nothing"),

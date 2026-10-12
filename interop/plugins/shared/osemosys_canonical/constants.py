@@ -102,12 +102,14 @@ AUTOMATIC_MATCH_NOTE = "matched by name and key"
 
 
 class TechnologyKind(StrEnum):
-    """What a technology is, from a closed list; the first kind that fits wins, in this order."""
+    """What a technology is, from a closed list; the first kind that fits wins, in this order.
 
-    STORAGE = "storage"
-    LINK = "link"
-    GENERATOR = "generator"
-    SUPPLY = "supply"
+    A value is a Sienna type name when Sienna has the type."""
+
+    STORAGE_TECHNOLOGY = "StorageTechnology"
+    AGGREGATE_TRANSPORT_TECHNOLOGY = "AggregateTransportTechnology"
+    SUPPLY_TECHNOLOGY = "SupplyTechnology"
+    FUEL_SUPPLY = "fuel_supply"
     EXPORT = "export"
     CONVERSION = "conversion"
 

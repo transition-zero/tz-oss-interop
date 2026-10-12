@@ -69,8 +69,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
       | region | technology | kind | category | location |
-      | R1     | ATDELINK   | link |          | AT~DE    |
-    And the section "Values derived" of "decisions.md" contains "kind link: it takes in electricity at one location and puts it out at another" 2 times
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+    And the section "Values derived" of "decisions.md" contains "kind AggregateTransportTechnology: it takes in electricity at one location and puts it out at another" 2 times
     And the file "decisions.md" contains "location AT~DE: the locations of the fuels that it takes in and puts out"
 
   Scenario: A link that runs both ways takes the order of its lowest mode
@@ -94,7 +94,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
       | region | technology | kind | category | location |
-      | R1     | ATDELINK   | link |          | DE~AT    |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | DE~AT    |
 
   Scenario: A generator is inferred
     Given the otoole set "REGION" holds "R1"
@@ -114,8 +114,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
       | region | technology | kind      | category | location |
-      | R1     | ATGAS      | generator |          | AT       |
-    And the file "decisions.md" contains "kind generator: it puts out electricity, and takes in no electricity"
+      | R1     | ATGAS      | SupplyTechnology |          | AT       |
+    And the file "decisions.md" contains "kind SupplyTechnology: it puts out electricity, and takes in no electricity"
 
   Scenario: Storage is inferred first
     Given the otoole set "REGION" holds "R1"
@@ -136,7 +136,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
       | region | technology | kind    | category | location |
-      | R1     | ATBAT      | storage |          | AT       |
+      | R1     | ATBAT      | StorageTechnology |          | AT       |
     And the canonical table "canonical/annotations/storage.parquet" has the rows:
       | region | storage | location |
       | R1     | ATBATS  | R1       |
@@ -161,7 +161,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
       | region | technology | kind       | category | location |
-      | R1     | ATNGX      | supply     |          | AT       |
+      | R1     | ATNGX      | fuel_supply |          | AT       |
       | R1     | ATEXP      | export     |          | AT       |
       | R1     | ATTD       | conversion |          | AT       |
 
@@ -185,7 +185,7 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | region | technology | kind       | category       | location |
       | R1     | ATDELINK   | conversion | interconnector | AT~DE    |
     And the section "User config defaults applied" of "decisions.md" contains "row 0 of `objects: technologies` gives kind, category" 2 times
-    And the file "decisions.md" does not contain "kind link"
+    And the file "decisions.md" does not contain "kind AggregateTransportTechnology"
 
   Scenario: Location defaults to the region, once for each region
     Given the otoole set "REGION" holds "R1 R2"
@@ -267,10 +267,20 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "user_mappings.yaml" containing the lines:
       | line                                                        |
-      | osemosys: {objects: {fuels: [{match: "^ATE1$", kind: link}]}} |
+      | osemosys: {objects: {fuels: [{match: "^ATE1$", kind: AggregateTransportTechnology}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 1
     And the log contains "row 0 of `objects: fuels` gives kind, which a fuels row does not hold"
+
+  Scenario: A technologies row with an OSeMOSYS-style kind stops the run
+    Given the otoole set "REGION" holds "R1"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                        |
+      | osemosys: {objects: {technologies: [{match: "^ATGAS$", kind: generator}]}} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "objects.technologies.0.kind"
 
   Scenario: A fuel location that no row gives does not count for the kind
     Given the otoole set "REGION" holds "R1"

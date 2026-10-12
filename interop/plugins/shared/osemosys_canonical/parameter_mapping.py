@@ -15,7 +15,7 @@ from interop.plugins.shared.osemosys_canonical.absent_members import (
     report_absent_members,
 )
 from interop.plugins.shared.osemosys_canonical.canonical_columns import (
-    build_canonical_columns,
+    build_extension_columns,
     build_parameter_columns,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -218,18 +218,18 @@ def _build_table_plan(
 ) -> TablePlan:
     """A raw table whose canonical parameter a row maps does not match automatically."""
     others = [name for name in inputs.raw.parameters if name not in matches]
-    found = {name: _find_automatic_match(inputs, name) for name in others}
-    automatic = {name: canonical for name, canonical in found.items() if canonical is not None}
-    overridden = [name for name, canonical in automatic.items() if canonical in claimed]
+    found = _list_automatic_matches(inputs, others)
+    free = {name: canonical for name, canonical in found.items() if canonical not in claimed}
     return TablePlan(
-        automatic={
-            name: canonical for name, canonical in automatic.items() if canonical not in claimed
-        },
-        unmatched=dict.fromkeys(
-            [name for name in others if name not in automatic], _UNMATCHED_NOTE
-        ),
-        overridden=dict.fromkeys(overridden, _OVERRIDDEN_NOTE),
+        automatic=free,
+        unmatched=dict.fromkeys([name for name in others if name not in found], _UNMATCHED_NOTE),
+        overridden=dict.fromkeys([name for name in found if name not in free], _OVERRIDDEN_NOTE),
     )
+
+
+def _list_automatic_matches(inputs: MappingInputs, names: list[str]) -> dict[str, str]:
+    found = {name: _find_automatic_match(inputs, name) for name in names}
+    return {name: canonical for name, canonical in found.items() if canonical is not None}
 
 
 def _build_different_defaults_notes(groups: list[RowGroup]) -> dict[str, str]:
@@ -282,7 +282,7 @@ def _reshape_to_key(inputs: MappingInputs, names: TableNames) -> pl.LazyFrame:
 
 def _reshape_extension(inputs: MappingInputs, name: str) -> pl.LazyFrame:
     raw_columns = [*inputs.raw.declarations[name].key, RAW_VALUE_COL]
-    columns = build_canonical_columns(inputs.schema, raw_columns)
+    columns = build_extension_columns(inputs.schema, raw_columns)
     return inputs.raw.parameters[name].rename(columns)
 
 
