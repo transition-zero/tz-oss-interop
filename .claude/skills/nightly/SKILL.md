@@ -7,10 +7,11 @@ argument-hint: "[preflight]"
 # Nightly
 
 One run a night, unattended, on `transition-zero/tz-oss-interop`, as a Conductor routine.
-**The owner** is the GitHub account the routine runs as, `ME` (Phase 0 step 1). The team agrees on one person to schedule it, and the pinned issue records who
-(Phase 0 step 3). The design is `docs/specs/2026-10-13-nightly-routine-design.md`; this
-skill is the contract the run follows. When they disagree, this file wins and the design
-is out of date.
+**The owner** is the GitHub account the routine runs as, `ME` (Phase 0 step 1). The team
+agrees on one person to schedule it, and the pinned issue records who (Phase 0 step 4).
+The design is `docs/specs/2026-10-13-nightly-routine-design.md`; this skill is the
+contract the run follows. When they disagree, this file wins and the design is out of
+date.
 
 The owner's PRs belong to `/pr-steward`: this run never touches an open PR it did not open
 tonight.
@@ -89,16 +90,17 @@ one line, and the run stops.
    final message, after the archive (Phase 5).
 2. Find the pinned issue: an open issue titled exactly `Nightly triage`. If there is none,
    create it with the body in "The pinned issue" below.
-3. Check who schedules it. Find the body's line `Scheduled by @<login>: one person runs
+3. If the pinned issue carries `nightly:paused`, post "Paused: nothing done." and stop,
+   before anything changes.
+4. Check who schedules it. Find the body's line `Scheduled by @<login>: one person runs
    this routine for the repo.`
    - If `<login>` is not `ME`, post "Another person's nightly already runs here
      (@<login>); this run does nothing." and stop, before anything changes.
    - If the line is absent, add it to the body with `ME` as the login, then carry on.
    - If the rest of the body differs from "The pinned issue" below, replace it with that
      text, keeping the `Scheduled by` line, and say so in the digest.
-4. If the pinned issue carries `nightly:paused`, post "Paused: nothing done." and stop,
-   before anything changes. Otherwise, if the issue is not pinned, pin it. A repository
-   pins three issues at most, so a refused pin goes in the checklist.
+   - If the issue is not pinned, pin it. A repository pins three issues at most, so a
+     refused pin goes in the checklist.
 5. `bash .claude/skills/nightly/labels.sh ensure` — creates or updates every label in
    `labels.tsv`. Then `bash .claude/skills/nightly/labels.sh migrate` — only does work
    while `bug` or `enhancement` still exist.

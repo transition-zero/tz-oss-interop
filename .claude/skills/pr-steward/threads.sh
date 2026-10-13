@@ -7,10 +7,13 @@ set -euo pipefail
 repo=transition-zero/tz-oss-interop
 
 # GraphQL drops the "[bot]" that REST puts on a bot's login, so isBot comes from the author's type.
+# A thread keeps its root, which a reply targets, and its newest comments, which the reply rule reads.
 shape() {
 	jq '[.[].data.repository.pullRequest.reviewThreads.nodes[]
-		| {id, isResolved, comments: [.comments.nodes[]
-			| {databaseId, login: .author.login, isBot: (.author.__typename == "Bot"), createdAt, body}]}]'
+		| ((.root.nodes // []) | map(.databaseId)) as $root_ids
+		| {id, isResolved, comments: [(.root.nodes // [])[],
+			(.comments.nodes[] | select(.databaseId as $id | $root_ids | index($id) | not))]
+			| map({databaseId, login: .author.login, isBot: (.author.__typename == "Bot"), createdAt, body})}]'
 }
 
 list() {
@@ -22,11 +25,13 @@ list() {
 					reviewThreads(first: 100, after: $endCursor) {
 						pageInfo { hasNextPage endCursor }
 						nodes { id isResolved
-							comments(first: 100) { nodes { databaseId author { login __typename } createdAt body } } }
+							root: comments(first: 1) { nodes { ...comment } }
+							comments(last: 100) { nodes { ...comment } } }
 					}
 				}
 			}
-		}' | shape
+		}
+		fragment comment on PullRequestReviewComment { databaseId author { login __typename } createdAt body }' | shape
 }
 
 resolve() {
