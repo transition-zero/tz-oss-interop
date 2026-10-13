@@ -29,17 +29,17 @@ class TzOsemosysModelBuilder:
     def add_timeslices(self, timeslices: list[str]) -> None:
         self.timeslices.extend(timeslices)
 
-    def add_commodity(self, commodity_id: str, **fields: object) -> None:
+    def set_commodity(self, commodity_id: str, **fields: object) -> None:
         self.commodities.setdefault(commodity_id, {"id": commodity_id}).update(fields)
 
-    def add_technology(self, technology_id: str, **fields: object) -> None:
+    def set_technology(self, technology_id: str, **fields: object) -> None:
         default: dict[str, object] = {"id": technology_id, "operating_modes": []}
         self.technologies.setdefault(technology_id, default).update(fields)
 
-    def add_storage(self, storage_id: str, **fields: object) -> None:
+    def set_storage(self, storage_id: str, **fields: object) -> None:
         self.storage.setdefault(storage_id, {"id": storage_id}).update(fields)
 
-    def add_trade(self, trade_id: str, commodity: str, **fields: object) -> None:
+    def set_trade(self, trade_id: str, commodity: str, **fields: object) -> None:
         default: dict[str, object] = {"id": trade_id, "commodity": commodity}
         self.trade.setdefault(trade_id, default).update(fields)
 

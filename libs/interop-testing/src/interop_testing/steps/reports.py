@@ -107,7 +107,7 @@ def assert_section_contains_count(heading: str, path: str, expected: str, count:
 
 
 def _read_section(report: str, heading: str) -> str:
-    start = report.find(f"{_SECTION_PREFIX}{heading}")
+    start = report.find(f"\n{_SECTION_PREFIX}{heading} (")
     assert start >= 0, f"expected a section {heading!r} in the report"
-    end = report.find(_SECTION_PREFIX, start + len(_SECTION_PREFIX))
+    end = report.find(f"\n{_SECTION_PREFIX}", start + 1)
     return report[start:] if end < 0 else report[start:end]

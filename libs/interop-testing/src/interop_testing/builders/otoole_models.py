@@ -52,13 +52,13 @@ class OtooleModelBuilder:
     parameters: dict[str, OtooleParameter] = field(default_factory=dict)
     results: dict[str, list[str]] = field(default_factory=dict)
 
-    def add_set(self, name: str, members: list[str], *, has_file: bool = True) -> None:
+    def set_members(self, name: str, members: list[str], *, has_file: bool = True) -> None:
         self.sets[name] = OtooleSet(members, has_file)
 
     def set_member_padding(self, name: str) -> None:
         self.sets[name] = replace(self.sets[name], is_padded=True)
 
-    def add_parameter(
+    def set_parameter(
         self,
         name: str,
         key: list[str],
@@ -69,7 +69,7 @@ class OtooleModelBuilder:
     ) -> None:
         self.parameters[name] = OtooleParameter(name, key, default, rows, has_file=has_file)
 
-    def add_result(self, name: str, key: list[str]) -> None:
+    def set_result(self, name: str, key: list[str]) -> None:
         self.results[name] = key
 
     def set_short_name(self, name: str, short_name: str) -> None:

@@ -15,6 +15,7 @@ _PARAMETER_COLUMN = "parameter"
 _PARAMETER_KIND = "parameter"
 _EXTENSION_KIND = "extension"
 _DEFAULT_COLUMN = "default"
+_EMPTY_STRING_CELL = '""'
 
 
 @given("an otoole model", target_fixture="otoole_model_builder")
@@ -24,12 +25,12 @@ def given_otoole_model() -> OtooleModelBuilder:
 
 @given(parsers.parse('the otoole set "{name}" holds "{members}"'))
 def given_otoole_set(otoole_model_builder: OtooleModelBuilder, name: str, members: str) -> None:
-    otoole_model_builder.add_set(name, members.split())
+    otoole_model_builder.set_members(name, members.split())
 
 
 @given(parsers.parse('the otoole set "{name}" is declared with no file'))
 def given_otoole_set_without_file(otoole_model_builder: OtooleModelBuilder, name: str) -> None:
-    otoole_model_builder.add_set(name, [], has_file=False)
+    otoole_model_builder.set_members(name, [], has_file=False)
 
 
 @given(parsers.parse('the otoole set "{name}" file pads each member with spaces'))
@@ -52,7 +53,7 @@ def given_otoole_parameter_rows(
     header, *rows = datatable
     columns = [*key.split(), VALUE_COLUMN]
     assert header == columns, f"the table of {name} must have the header {columns}, not {header}"
-    otoole_model_builder.add_parameter(name, key.split(), default, rows)
+    otoole_model_builder.set_parameter(name, key.split(), default, rows)
 
 
 @given(
@@ -63,7 +64,7 @@ def given_otoole_parameter_rows(
 def given_otoole_parameter_without_file(
     otoole_model_builder: OtooleModelBuilder, name: str, key: str, default: float
 ) -> None:
-    otoole_model_builder.add_parameter(name, key.split(), default, [], has_file=False)
+    otoole_model_builder.set_parameter(name, key.split(), default, [], has_file=False)
 
 
 @given(parsers.parse('the otoole parameter "{name}" has the short name "{short_name}"'))
@@ -82,7 +83,7 @@ def given_otoole_file_header(
 
 @given(parsers.parse('the otoole result "{name}" keyed by "{key}"'))
 def given_otoole_result(otoole_model_builder: OtooleModelBuilder, name: str, key: str) -> None:
-    otoole_model_builder.add_result(name, key.split())
+    otoole_model_builder.set_result(name, key.split())
 
 
 @given(
@@ -118,7 +119,7 @@ def given_tz_timeslices(tz_model_builder: TzOsemosysModelBuilder, timeslices: st
 @given(parsers.parse('the TZ-format model has the commodities "{commodity_ids}"'))
 def given_tz_commodities(tz_model_builder: TzOsemosysModelBuilder, commodity_ids: str) -> None:
     for commodity_id in commodity_ids.split():
-        tz_model_builder.add_commodity(commodity_id)
+        tz_model_builder.set_commodity(commodity_id)
 
 
 @given(parsers.parse('the TZ-format model has the field "{name}" set to {value}'))
@@ -135,7 +136,7 @@ def given_tz_time_field(tz_model_builder: TzOsemosysModelBuilder, name: str, val
 def given_tz_commodity_field(
     tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
 ) -> None:
-    tz_model_builder.add_commodity(object_id, **{name: json.loads(value)})
+    tz_model_builder.set_commodity(object_id, **{name: json.loads(value)})
 
 
 @given(
@@ -144,14 +145,14 @@ def given_tz_commodity_field(
 def given_tz_technology_field(
     tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
 ) -> None:
-    tz_model_builder.add_technology(object_id, **{name: json.loads(value)})
+    tz_model_builder.set_technology(object_id, **{name: json.loads(value)})
 
 
 @given(parsers.parse('the TZ-format storage "{object_id}" has the field "{name}" set to {value}'))
 def given_tz_storage_field(
     tz_model_builder: TzOsemosysModelBuilder, object_id: str, name: str, value: str
 ) -> None:
-    tz_model_builder.add_storage(object_id, **{name: json.loads(value)})
+    tz_model_builder.set_storage(object_id, **{name: json.loads(value)})
 
 
 @given(
@@ -163,7 +164,7 @@ def given_tz_storage_field(
 def given_tz_trade_field(
     tz_model_builder: TzOsemosysModelBuilder, object_id: str, commodity: str, name: str, value: str
 ) -> None:
-    tz_model_builder.add_trade(object_id, commodity, **{name: json.loads(value)})
+    tz_model_builder.set_trade(object_id, commodity, **{name: json.loads(value)})
 
 
 @given(parsers.parse('the TZ-format model is written to "{path}"'))
@@ -173,8 +174,8 @@ def given_tz_model_written(tz_model_builder: TzOsemosysModelBuilder, path: str) 
 
 @then(parsers.parse('the canonical table "{path}" has the rows:'))
 def assert_canonical_rows(path: str, datatable: list[list[str]]) -> None:
-    """Compare the rows in any order, each number in its shortest form, and an empty cell as a
-    null."""
+    """Compare the rows in any order. A whole number has no decimal point, an empty cell is a null,
+    and `""` is an empty string."""
     expected_header, *expected_rows = datatable
     table = pl.read_parquet(Path(path))
     assert table.columns == expected_header, f"expected columns {expected_header} in {path}"
@@ -216,4 +217,10 @@ def _read_default(directory: Path, kind: str, name: str) -> object:
 def _format_cell(cell: object) -> str:
     if cell is None:
         return ""
-    return f"{cell:g}" if isinstance(cell, float) else str(cell)
+    if cell == "":
+        return _EMPTY_STRING_CELL
+    return _format_number(cell) if isinstance(cell, float) else str(cell)
+
+
+def _format_number(number: float) -> str:
+    return str(int(number)) if number.is_integer() else repr(number)

@@ -74,5 +74,5 @@ Feature: translation decisions report
 
   Scenario: an event that a source records reaches decisions.md
     Given a project-local source plugin that records the note "staged by the source"
-    When I translate with that source
+    When I run translate with source "noop" destination "noop" pipeline "record-note-test"
     Then the file "decisions.md" contains "|  |  |  | staged by the source | record-note-test | record_note |"

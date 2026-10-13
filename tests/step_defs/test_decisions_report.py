@@ -1,10 +1,7 @@
 from pathlib import Path
 
-import pytest
 from interop_testing import write_adapters_config, write_pipeline, write_project_plugin
-from pytest_bdd import given, parsers, scenarios, when
-
-from tests.step_defs.conftest import invoke_translate
+from pytest_bdd import given, parsers, scenarios
 
 FEATURE = Path(__file__).resolve().parents[1] / "features" / "decisions_report.feature"
 scenarios(str(FEATURE))
@@ -255,7 +252,7 @@ class _RecordNote(StagedSource):
         self._recorder = recorder
 
     def load_into_state(self, params: BaseModel | None, staging_dir: Path) -> State:
-        self._recorder.append(TranslationEvent(kind=EventKind.NOT_MAPPED, note="{note}"))
+        self._recorder.append(TranslationEvent(kind=EventKind.NOT_MAPPED, note={note!r}))
         return State(staging_dir=staging_dir)
 """
 
@@ -275,8 +272,3 @@ _RECORD_NOTE_PIPELINE = "record-note-test"
 def given_record_note_source(note: str) -> None:
     write_project_plugin("sources", "record_note", _RECORD_NOTE_SOURCE_PY.format(note=note))
     write_pipeline(_RECORD_NOTE_PIPELINE, _RECORD_NOTE_PIPELINE_YAML)
-
-
-@when("I translate with that source")
-def run_translate_with_record_note_source(monkeypatch: pytest.MonkeyPatch) -> None:
-    invoke_translate(monkeypatch, "noop", "noop", _RECORD_NOTE_PIPELINE)
