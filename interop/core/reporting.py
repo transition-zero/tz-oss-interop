@@ -23,6 +23,13 @@ class EventLog(EventRecorder):
         return self._events
 
 
+class DiscardingRecorder(EventRecorder):
+    """Keeps no event, for a run whose report does not show the events."""
+
+    def append(self, event: TranslationEvent) -> None:
+        pass
+
+
 class ScopedRecorder(EventRecorder):
     """Only the scope it was given is stamped, so these nest: a run wraps the log in a
     pipeline-scoped recorder and the step factory wraps that in a step-scoped one, neither
