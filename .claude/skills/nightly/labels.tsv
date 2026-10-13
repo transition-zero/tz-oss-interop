@@ -13,3 +13,13 @@ hold	bfbfbf	Paused by a person: the nightly run neither builds nor pushes it
 nightly:generated	bfd4f2	Opened by the nightly run
 nightly:paused	000000	On the Nightly triage issue: the next run does nothing
 epic:approved	0e8a16	The epic's owner approved it: /epic approve may create its sub-issues
+PR Ready	0e8a16	Its author checked this draft: their PR steward may mark it ready and have it reviewed
+coderabbit done	0e8a16	CodeRabbit reviewed it once, its findings are answered, and reviews are paused
+needs owner	d93f0b	A design choice or a larger ask waits for the PR's author; their PR steward skips it until answered
+needs owner review	d93f0b	The PR steward fixed this Dependabot PR; a teammate approves the new head before it merges
+decided-by-bot	c5def5	The PR body records a Minor decision the PR steward made
+merge-risk:minimal	ededed	Set by the PR steward: CodeRabbit rates the merge risk Minimal
+merge-risk:low	1d76db	Set by the PR steward: CodeRabbit rates the merge risk Low
+merge-risk:moderate	fbca04	Set by the PR steward: CodeRabbit rates the merge risk Moderate
+merge-risk:high	d93f0b	Set by the PR steward: CodeRabbit rates the merge risk High
+merge-risk:critical	b60205	Set by the PR steward: CodeRabbit rates the merge risk Critical

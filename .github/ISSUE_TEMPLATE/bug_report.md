@@ -2,7 +2,7 @@
 name: Bug report
 about: Something interop does that it should not
 title: ''
-labels: bug
+labels: type:bug
 assignees: ''
 ---
 

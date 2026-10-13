@@ -101,8 +101,9 @@ Fork the repository, branch from `main`, and open a pull request back to `main`.
 Branches are named `issue-<number>-<short-slug>`, or a short slug alone when
 there is no issue.
 
-Keep a pull request to one subject. Rebase on `main` rather than merging it in,
-so the history stays linear.
+Keep a pull request to one subject. To bring new work from `main` into a pull
+request under review, merge `main` into it. Do not rebase it: a rebase replaces
+the commits that a reviewer already read. The squash merge keeps `main` linear.
 
 ### Sign your commits off
 

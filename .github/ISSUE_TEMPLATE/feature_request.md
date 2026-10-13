@@ -2,7 +2,7 @@
 name: Feature request
 about: Something interop should do that it does not
 title: ''
-labels: enhancement
+labels: type:feature
 assignees: ''
 ---
 

@@ -1,0 +1,18 @@
+# shellcheck shell=bash
+now=$(date -u -d 2026-09-30T12:00:00Z +%s 2>/dev/null || date -u -j -f %Y-%m-%dT%H:%M:%SZ 2026-09-30T12:00:00Z +%s)
+marker=$'<!-- pr-steward:working -->\nrun started'
+comments() { jq -n --arg m "$marker" "$1"; }
+
+assert_eq free "$(comments '[]' | bash "$skill/lock.sh" state "$now")" "lock: no comments is free"
+assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-30T11:10:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a 50-minute marker holds"
+assert_eq free "$(comments '[{id:1,body:$m,created_at:"2026-09-30T11:05:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a 55-minute marker has expired"
+assert_eq free "$(comments '[{id:1,body:"not a marker <!-- pr-steward:working -->",created_at:"2026-09-30T11:59:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: the marker must be the first line"
+assert_eq 7 "$(comments '[{id:7,body:$m,created_at:"2026-09-30T10:00:00Z"},{id:8,body:$m,created_at:"2026-09-30T11:50:00Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: stale lists only expired markers"
+assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-30T12:00:30Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a marker posted after now holds"
+assert_eq "" "$(comments '[{id:1,body:$m,created_at:"2026-09-30T12:00:30Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: a marker posted after now is not stale"
+released=$'<!-- pr-steward:released -->\nrun ended'
+assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a marker taken again is dated by its last edit"
+assert_eq "" "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: a marker taken again is not stale"
+assert_eq free "$(jq -n --arg r "$released" '[{id:1,body:$r,created_at:"2026-09-30T11:59:00Z",updated_at:"2026-09-30T11:59:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a released marker does not hold"
+assert_eq 4 "$(jq -n --arg r "$released" --arg m "$marker" '[{id:3,body:$r,created_at:"2026-09-28T09:00:00Z"},{id:4,body:$r,created_at:"2026-09-29T09:00:00Z"},{id:5,body:$m,created_at:"2026-09-30T09:00:00Z"}]' | bash "$skill/lock.sh" reuse)" "lock: reuse names the newest released marker"
+assert_eq "" "$(comments '[{id:5,body:$m,created_at:"2026-09-30T09:00:00Z"}]' | bash "$skill/lock.sh" reuse)" "lock: reuse names nothing when no marker is released"

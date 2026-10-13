@@ -323,6 +323,17 @@ The source table passed to `apply_translations` can be enriched with any pre-com
 - **Current behaviour lives in `docs/developer_documentation/`.** Where a spec and the developer documentation disagree, the developer documentation is correct and the spec is history. Do not copy a spec into the documentation tree, and do not point a reader at a spec for how the code works today.
 - **The implementation plan stays out of git.** Write it to `.context/plans/YYYY-MM-DD-<feature-name>.md`, which git already excludes. The plan is a task list for one branch and has no value after the branch merges.
 
+## Decisions
+
+- When work needs a convention rather than one that exists (how config is read, which
+  errors are raised, how a dependency is reached, how an object is built), **ask before
+  implementing**. Give the options with their consequences. Do not pick one and carry on,
+  even when one option looks better: the owner records and owns the choice.
+- The same holds for a concrete technology, and for a new dependency. Ask which engine,
+  library or service is wanted. Do not copy the nearest existing component.
+- Once a convention is chosen, write it down in this file, so the next change applies it
+  instead of deciding again.
+
 ## PR review
 
 - When addressing PR review comments, reply to each comment thread to confirm it has been addressed, briefly noting how (and the commit, if useful). Do this for every comment you act on, not just a subset.

@@ -337,6 +337,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/translation_mappings/translation-from-plexos-to-sienna.md` states the same for Sienna, and `plexos-to-sienna-gap-analysis.md` beside it names each thing a PLEXOS model states that SiennaSchemas holds no type and no field for.
 - `docs/translation_mappings/translation-from-plexos-to-sienna-investments.md` states what a PLEXOS expansion plan becomes in a Sienna investments portfolio, which `plexos-to-sienna-investments` writes beside the base system.
 - `docs/developer_documentation/mutation-testing.md` covers the mutmut workflow.
+- `docs/developer_documentation/routines.md` covers the nightly and PR steward agents that run on this repository as Conductor routines.
 - `tests/features/README.md` explains the in-process REPL-driven BDD harness and when subprocess is needed.
 
 ## Community

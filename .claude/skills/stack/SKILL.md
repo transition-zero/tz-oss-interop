@@ -7,7 +7,8 @@ argument-hint: "cascade <pr> | check <pr>"
 # Stack
 
 A stack is a chain of PRs in which each rung's base is the branch of the rung below. This
-skill moves its rungs the same way every time, for anyone: people and `/epic build`.
+skill moves its rungs the same way every time, for anyone: people, `/epic build` and the PR
+steward.
 
 `R` is `repos/transition-zero/tz-oss-interop`.
 
