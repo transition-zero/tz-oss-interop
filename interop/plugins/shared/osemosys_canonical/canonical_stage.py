@@ -11,20 +11,28 @@ from interop.plugins.shared.osemosys_canonical.annotations import map_annotation
 from interop.plugins.shared.osemosys_canonical.constants import (
     CANONICAL_DIRECTORY,
     PARQUET_SUFFIX,
+    PLANNED_DIRECTORY,
     TABLE_DIRECTORIES,
     TABLE_KEY_SEPARATOR,
-    TIMESLICE,
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.mapping_inputs import MappingInputs
 from interop.plugins.shared.osemosys_canonical.mappings import OsemosysMappings
-from interop.plugins.shared.osemosys_canonical.metadata import build_metadata_tables
-from interop.plugins.shared.osemosys_canonical.parameter_mapping import map_parameters
+from interop.plugins.shared.osemosys_canonical.metadata import map_metadata
+from interop.plugins.shared.osemosys_canonical.parameter_mapping import (
+    ParameterPlan,
+    build_parameter_plan,
+    map_parameters,
+)
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 from interop.plugins.shared.osemosys_canonical.set_mapping import map_sets
 
+# A parameter or an extension table can hold billions of rows, so `State` keeps it as a time
+# series, which no reader collects in full.
 _TIME_SERIES_KINDS = frozenset({TableKind.PARAMETER, TableKind.EXTENSION})
+# The annotations read the written sets and parameters, so no parameter plan computes twice.
+_ANNOTATED_KINDS = frozenset({TableKind.SET, TableKind.PARAMETER})
 
 
 class CanonicalTable(NamedTuple):
@@ -36,30 +44,43 @@ class CanonicalTable(NamedTuple):
 def build_canonical_stage(
     raw: RawStage, mappings: OsemosysMappings, recorder: EventRecorder, staging_dir: Path
 ) -> State:
-    tables = _map_raw_stage(raw, mappings, recorder)
-    written = [_write_canonical_table(table, staging_dir) for table in tables]
-    return _build_state(written, staging_dir)
+    inputs = MappingInputs(raw, mappings, load_canonical_schema())
+    mapped = _write_canonical_tables(_map_raw_stage(inputs, recorder, staging_dir), staging_dir)
+    annotated = {table.name: table.table for table in mapped if table.kind in _ANNOTATED_KINDS}
+    annotations = map_annotations(annotated, mappings.objects, recorder)
+    tables = _build_canonical_tables(
+        TableKind.ANNOTATION, {name: table.lazy() for name, table in annotations.items()}
+    )
+    return _build_state([*mapped, *_write_canonical_tables(tables, staging_dir)], staging_dir)
 
 
 def _map_raw_stage(
-    raw: RawStage, mappings: OsemosysMappings, recorder: EventRecorder
+    inputs: MappingInputs, recorder: EventRecorder, staging_dir: Path
 ) -> list[CanonicalTable]:
-    inputs = MappingInputs(raw, mappings, load_canonical_schema())
     sets = map_sets(inputs, recorder)
-    parameters = map_parameters(inputs, sets.sets, recorder)
-    metadata = build_metadata_tables(inputs.schema, parameters, mappings.units)
-    canonical = {**sets.sets, **parameters.parameters}
-    annotations = map_annotations(canonical, mappings.objects, recorder)
+    plan = _write_planned_tables(build_parameter_plan(inputs, sets.sets, recorder), staging_dir)
+    parameters = map_parameters(inputs, plan, recorder)
     return [
         *_build_canonical_tables(TableKind.SET, sets.sets),
         *_build_canonical_tables(TableKind.EXTENSION, sets.extensions),
         *_build_canonical_tables(TableKind.PARAMETER, parameters.parameters),
         *_build_canonical_tables(TableKind.EXTENSION, parameters.extensions),
-        *_build_canonical_tables(TableKind.METADATA, metadata),
-        *_build_canonical_tables(
-            TableKind.ANNOTATION, {name: table.lazy() for name, table in annotations.items()}
-        ),
+        *_build_canonical_tables(TableKind.METADATA, map_metadata(inputs, parameters, recorder)),
     ]
+
+
+def _write_planned_tables(plan: ParameterPlan, staging_dir: Path) -> ParameterPlan:
+    """A table that a row maps can join and aggregate, so it computes once here; an automatic
+    match only renames the raw scan."""
+    directory = staging_dir / PLANNED_DIRECTORY
+    grouped = {group.canonical for group in plan.row_groups}
+    planned = {
+        name: _write_table(table, directory / f"{name}{PARQUET_SUFFIX}")
+        if name in grouped
+        else table
+        for name, table in plan.planned.items()
+    }
+    return plan._replace(planned=planned)
 
 
 def _build_canonical_tables(
@@ -68,11 +89,22 @@ def _build_canonical_tables(
     return [CanonicalTable(kind, name, table) for name, table in tables.items()]
 
 
-def _write_canonical_table(canonical: CanonicalTable, staging_dir: Path) -> CanonicalTable:
-    path = staging_dir / CANONICAL_DIRECTORY / build_table_path(canonical)
+def _write_canonical_tables(
+    tables: list[CanonicalTable], staging_dir: Path
+) -> list[CanonicalTable]:
+    directory = staging_dir / CANONICAL_DIRECTORY
+    return [
+        canonical._replace(
+            table=_write_table(canonical.table, directory / build_table_path(canonical))
+        )
+        for canonical in tables
+    ]
+
+
+def _write_table(table: pl.LazyFrame, path: Path) -> pl.LazyFrame:
     path.parent.mkdir(parents=True, exist_ok=True)
-    canonical.table.sink_parquet(path)
-    return canonical._replace(table=pl.scan_parquet(path))
+    table.sink_parquet(path)
+    return pl.scan_parquet(path)
 
 
 def build_table_path(canonical: CanonicalTable) -> Path:
@@ -82,16 +114,11 @@ def build_table_path(canonical: CanonicalTable) -> Path:
 def _build_state(tables: list[CanonicalTable], staging_dir: Path) -> State:
     state = State(staging_dir=staging_dir)
     for canonical in tables:
-        if _is_time_series(canonical):
+        if canonical.kind in _TIME_SERIES_KINDS:
             state.source_time_series[(canonical.kind, canonical.name)] = canonical.table
         else:
             state.source_topology[build_table_key(canonical.kind, canonical.name)] = canonical.table
     return state
-
-
-def _is_time_series(canonical: CanonicalTable) -> bool:
-    columns = canonical.table.collect_schema().names()
-    return canonical.kind in _TIME_SERIES_KINDS and TIMESLICE in columns
 
 
 def build_table_key(kind: TableKind, name: str) -> str:

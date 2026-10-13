@@ -136,6 +136,7 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
 
   Scenario: A CSV directory that names a file stops the run
     Given an otoole model
+    And the otoole set "REGION" holds "R1"
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "model/data.txt" exists
     And a file "user_mappings.yaml" containing the lines:
@@ -145,17 +146,6 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
     Then the pipeline exit code is 1
     And the log contains "model/data.txt"
     And the log contains "directory"
-
-  Scenario: A config URL with a query string is not refused as a non-YAML path
-    Given an otoole model
-    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
-    And a file "user_mappings.yaml" containing the lines:
-      | line         |
-      | osemosys: {} |
-    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=http://127.0.0.1:1/model/config.yaml?X-Amz-Signature=abc source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
-    Then the pipeline exit code is 1
-    And the log does not contain "must be a YAML file"
-    And the log contains "config.yaml?X-Amz-Signature=abc"
 
   Scenario: Spaces around a set member, a key cell, a VALUE or a header name do not count
     Given an otoole model
@@ -217,3 +207,49 @@ Feature: stage_osemosys_csv enforces the input contract of an otoole model
     Then the pipeline exit code is 1
     And the log contains "model/missing"
     And the log contains "holds none of the CSV files"
+
+  Scenario: A repeated set member counts once, and a repeated key keeps its first row and is reported
+    Given an otoole model
+    And the otoole set "REGION" holds "R1 R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | GAS        | 2030 | 1     |
+      | R1     | GAS        | 2030 | 2     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/region.parquet" has the rows:
+      | value |
+      | R1    |
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology | year | value |
+      | R1     | GAS        | 2030 | 1     |
+    And the parquet file "canonical/annotations/region.parquet" has 1 rows
+    And the log contains "1 raw table(s) have rows that repeat the key of an earlier row, so the raw stage keeps the first row of each key: CapitalCost"
+    And the section "Components skipped" of "decisions.md" contains "1 row(s) repeat the key of an earlier row, so the raw stage leaves each out; the first is R1, GAS, 2030" 1 times
+
+  Scenario: A config that names a table with a path separator stops the run
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "model/config.yaml" containing the lines:
+      | line                                        |
+      | REGION: {type: set}                         |
+      | ../escape: {type: param, indices: [REGION]} |
+    And a file "model/escape.csv" containing the lines:
+      | line         |
+      | REGION,VALUE |
+      | R1,1         |
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "../escape"
+    And the log contains "which a file name cannot"
+    And the file "canonical/escape.parquet" does not exist

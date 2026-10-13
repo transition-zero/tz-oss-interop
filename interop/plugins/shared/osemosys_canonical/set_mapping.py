@@ -13,23 +13,23 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.events import (
+    SourceName,
     SourceReport,
     TableNames,
     record_automatic_match,
-    record_not_mapped,
     record_value_derived,
     report_source_events,
 )
 from interop.plugins.shared.osemosys_canonical.mapping_inputs import MappingInputs
 from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.outbound.reporting import EventKind
 
 log = logging.getLogger(__name__)
 
 _UNMAPPED_SET_NOTE = "no canonical set has this name, so it stays an extension table"
 _RENAMED_SET_NOTE = f"renamed by the {SETS_PART} part of the user mappings file"
 _UNMAPPED_SETS = SourceReport(
-    record_not_mapped,
-    TableKind.SET,
+    EventKind.NOT_MAPPED,
     "%d raw set(s) have no canonical set name, so each stays an extension table: %s",
 )
 
@@ -46,11 +46,16 @@ def map_sets(inputs: MappingInputs, recorder: EventRecorder) -> MappedSets:
     targets = _build_set_targets(inputs)
     unmapped = [name for name in raw_sets if name not in targets]
     _record_set_matches(inputs, targets, recorder)
-    report_source_events(_UNMAPPED_SETS, dict.fromkeys(unmapped, _UNMAPPED_SET_NOTE), recorder)
+    _report_unmapped_sets(unmapped, recorder)
     return MappedSets(
         sets=_build_canonical_sets(raw_sets, targets),
         extensions={name: raw_sets[name] for name in unmapped},
     )
+
+
+def _report_unmapped_sets(unmapped: list[str], recorder: EventRecorder) -> None:
+    notes = {SourceName(TableKind.SET, name): _UNMAPPED_SET_NOTE for name in unmapped}
+    report_source_events(_UNMAPPED_SETS, notes, recorder)
 
 
 def _reshape_value_column(table: pl.LazyFrame) -> pl.LazyFrame:

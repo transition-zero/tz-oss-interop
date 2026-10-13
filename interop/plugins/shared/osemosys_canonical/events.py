@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import NamedTuple
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     AUTOMATIC_MATCH_NOTE,
     CANONICAL_FRAMEWORK,
+    NAME_SEPARATOR,
     OSEMOSYS_FRAMEWORK,
     AnnotationColumn,
     TableKind,
@@ -49,43 +50,78 @@ def record_value_derived(
     )
 
 
-def record_skipped(recorder: EventRecorder, component: str, name: str, note: str) -> None:
-    """`component` is a table kind, or the TZ-format owner of an object or a field."""
+class AppliedDefault(NamedTuple):
+    """`attribute` is the column of the defaults table that the stage fills, and `value` its
+    value."""
+
+    names: TableNames
+    attribute: str
+    value: object
+    note: str
+
+
+def record_default_applied(recorder: EventRecorder, applied: AppliedDefault) -> None:
+    name = applied.names.source
+    source = SourceField(framework=OSEMOSYS_FRAMEWORK, component=TableKind.PARAMETER, name=name)
     recorder.append(
         TranslationEvent(
-            kind=EventKind.COMPONENT_SKIPPED,
-            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=component, name=name)],
-            note=note,
+            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+            sources=[source],
+            destinations=[_build_default_destination(applied)],
+            note=applied.note,
         )
     )
 
 
-def record_not_mapped(recorder: EventRecorder, component: str, name: str, note: str) -> None:
-    """`component` is a table kind, or the TZ-format owner of an object or a field."""
-    recorder.append(
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=[SourceField(framework=OSEMOSYS_FRAMEWORK, component=component, name=name)],
-            note=note,
-        )
+def _build_default_destination(applied: AppliedDefault) -> DestinationField:
+    return DestinationField(
+        framework=CANONICAL_FRAMEWORK,
+        component=TableKind.PARAMETER,
+        name=applied.names.destination,
+        attribute=applied.attribute,
+        value=applied.value,
     )
+
+
+class SourceName(NamedTuple):
+    """`component` is a table kind, or the TZ-format owner of an object or a field."""
+
+    component: str
+    name: str
+
+    @property
+    def path(self) -> str:
+        return NAME_SEPARATOR.join(part for part in self if part)
 
 
 class SourceReport(NamedTuple):
-    """`warning` takes the count of names, then the names."""
+    """`warning` takes the count, a few labels (the name, or the path where
+    `is_labelled_by_path` holds), then each of `details`."""
 
-    record: Callable[[EventRecorder, str, str, str], None]
-    component: str
+    kind: EventKind
     warning: str
+    is_labelled_by_path: bool = False
+    details: tuple[str, ...] = ()
+
+    def build_label(self, name: SourceName) -> str:
+        return name.path if self.is_labelled_by_path else name.name
 
 
 def report_source_events(
-    report: SourceReport, notes: Mapping[str, str], recorder: EventRecorder
+    report: SourceReport, notes: Mapping[SourceName, str], recorder: EventRecorder
 ) -> None:
     for name, note in notes.items():
-        report.record(recorder, report.component, name, note)
+        record_source_event(recorder, report.kind, name, note)
     if notes:
-        log.warning(report.warning, len(notes), name_a_few(notes))
+        labels = name_a_few(report.build_label(name) for name in notes)
+        log.warning(report.warning, len(notes), labels, *report.details)
+
+
+def record_source_event(
+    recorder: EventRecorder, kind: EventKind, name: SourceName, note: str
+) -> None:
+    source = SourceField(framework=OSEMOSYS_FRAMEWORK, component=name.component, name=name.name)
+    recorder.append(TranslationEvent(kind=kind, sources=[source], note=note))
 
 
 class AnnotatedMember(NamedTuple):

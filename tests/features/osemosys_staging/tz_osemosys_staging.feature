@@ -346,3 +346,53 @@ Feature: stage_tz_osemosys_json stages a TZ-format model into the canonical OSeM
       | R1           | R2         | electricity | 2030 | 500   |
     And the log contains "trade.south-line.capex"
     And the file "decisions.md" contains "1 row(s) of CapitalCostTrade have a key that an earlier field already gives"
+
+  Scenario: A set member that a field states as a whole decimal number matches its set member
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the timeslices "S1 S2"
+    And the TZ-format time definition has the field "seasons" set to [1, 2]
+    And the TZ-format time definition has the field "timeslice_in_season" set to {"S1": 1.0, "S2": 2}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/timeslice_in_season.parquet" has the rows:
+      | timeslice | season | value |
+      | S1        | 1      | 1     |
+      | S2        | 2      | 1     |
+
+  Scenario: A time set member that is not a string or a number is left out and the rest of the model stays
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format time definition has the field "years" set to [2030, true]
+    And the TZ-format technology "gas-combined-cycle" has the field "capex" set to {"R1": {"2030": 1040.0}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/year.parquet" has the rows:
+      | value |
+      | 2030  |
+    And the parquet file "canonical/parameters/capital_cost.parquet" has 1 rows
+    And the log contains "1 TZ-format set member(s) are not a string or a number, so the raw stage leaves each out: time_definition.years.item 2"
+    And the section "Components skipped" of "decisions.md" contains "the member True is not a string or a number, so the raw stage leaves it out" 1 times
+
+  Scenario: Spaces around a member of a TZ-format model do not count
+    Given a TZ-format model
+    And the TZ-format model has the regions "R1"
+    And the TZ-format model has the years "2030"
+    And the TZ-format technology "gas-combined-cycle" has the field "capex" set to {" R1 ": {"2030": 1040.0}}
+    And the TZ-format model is written to "model/model.json"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "tz-osemosys-to-canonical" with overrides "source.model_json_path=model/model.json sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology         | year | value |
+      | R1     | gas-combined-cycle | 2030 | 1040  |

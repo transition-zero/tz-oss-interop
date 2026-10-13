@@ -23,9 +23,13 @@ TABLE_DIRECTORIES: dict[TableKind, str] = {
 }
 
 TABLE_KEY_SEPARATOR = "/"
+# The character between the parts of a source name, such as `technologies.GAS.capex`.
+NAME_SEPARATOR = "."
 
 RAW_DIRECTORY = "raw"
 CANONICAL_DIRECTORY = "canonical"
+# The parameter tables before the absent-member rule, written so that each computes once.
+PLANNED_DIRECTORY = "planned"
 PARQUET_SUFFIX = ".parquet"
 DECLARATIONS_TABLE = "declarations"
 
@@ -34,27 +38,21 @@ RAW_VALUE_COL = "VALUE"
 # A canonical set table also holds its members in this column.
 VALUE_COL = "value"
 
-OSEMOSYS_REGION = "REGION"
-OSEMOSYS_TECHNOLOGY = "TECHNOLOGY"
-OSEMOSYS_FUEL = "FUEL"
-OSEMOSYS_EMISSION = "EMISSION"
-OSEMOSYS_MODE_OF_OPERATION = "MODE_OF_OPERATION"
-OSEMOSYS_STORAGE = "STORAGE"
-OSEMOSYS_YEAR = "YEAR"
-OSEMOSYS_TIMESLICE = "TIMESLICE"
-OSEMOSYS_SEASON = "SEASON"
-OSEMOSYS_DAYTYPE = "DAYTYPE"
-OSEMOSYS_DAILYTIMEBRACKET = "DAILYTIMEBRACKET"
-OSEMOSYS_REGIONGROUP = "REGIONGROUP"
 # The column name of a second region in a key, as otoole and the TZ format write it.
 OSEMOSYS_SECOND_REGION = "_REGION"
 
 REGION = "region"
 TECHNOLOGY = "technology"
 FUEL = "fuel"
+POLLUTANT = "pollutant"
 STORAGE = "storage"
 OPERATING_MODE = "operating_mode"
+YEAR = "year"
 TIMESLICE = "timeslice"
+SEASON = "season"
+DAY_TYPE = "day_type"
+DAILY_TIME_BRACKET = "daily_time_bracket"
+REGION_GROUP = "region_group"
 START_REGION = "start_region"
 END_REGION = "end_region"
 
@@ -75,6 +73,7 @@ class MetadataColumn(StrEnum):
     KIND = "kind"
     PARAMETER = "parameter"
     DEFAULT = "default"
+    DEFAULT_FROM = "default_from"
     QUANTITY = "quantity"
     UNIT = "unit"
     SCHEMA_VERSION = "schema_version"
@@ -92,16 +91,6 @@ class TechnologyKind(StrEnum):
     FUEL_SUPPLY = "fuel_supply"
     EXPORT = "export"
     CONVERSION = "conversion"
-
-
-class OtooleEntryType(StrEnum):
-    SET = "set"
-    PARAM = "param"
-    RESULT = "result"
-
-
-CSV_SUFFIX = ".csv"
-YAML_SUFFIXES = (".yaml", ".yml")
 
 
 class RemoveRule(StrEnum):

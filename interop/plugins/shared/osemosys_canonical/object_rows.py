@@ -9,7 +9,11 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     ObjectPart,
 )
 from interop.plugins.shared.osemosys_canonical.mappings import ObjectRow, list_template_fields
-from interop.ports.errors import UserInputError
+
+_UNFILLED_LOCATION_NOTE = (
+    "row {index} of {part} gives the location {template}, but its match captures no {groups} "
+    "for {member}, so location stays empty"
+)
 
 
 class MemberKey(NamedTuple):
@@ -20,9 +24,18 @@ class MemberKey(NamedTuple):
 
 
 class RowAnnotations(NamedTuple):
+    """`unfilled_note` says why the row gives a location that it cannot fill for this member."""
+
     part: ObjectPart
     row_index: int
     annotations: dict[AnnotationColumn, str]
+    unfilled_note: str | None = None
+
+    @property
+    def stated_columns(self) -> set[AnnotationColumn]:
+        """A location that the row cannot fill still stops an inference of the location."""
+        unfilled = {AnnotationColumn.LOCATION} if self.unfilled_note is not None else set()
+        return {*self.annotations, *unfilled}
 
 
 class RowMember(NamedTuple):
@@ -30,6 +43,12 @@ class RowMember(NamedTuple):
     row_index: int
     row: ObjectRow
     groups: dict[str, str | None]
+
+
+class LocationTemplate(NamedTuple):
+    matched: RowMember
+    template: str
+    key: MemberKey
 
 
 def find_row_annotations(
@@ -44,22 +63,31 @@ def find_row_annotations(
 
 def _build_row_annotations(matched: RowMember, key: MemberKey) -> RowAnnotations:
     annotations = matched.row.annotations
-    template = annotations.get(AnnotationColumn.LOCATION)
-    if template is not None:
-        annotations[AnnotationColumn.LOCATION] = _build_location(matched, template, key)
-    return RowAnnotations(matched.part, matched.row_index, annotations)
+    template = annotations.pop(AnnotationColumn.LOCATION, None)
+    found = RowAnnotations(matched.part, matched.row_index, annotations)
+    if template is None:
+        return found
+    return _build_located_annotations(found, LocationTemplate(matched, template, key))
 
 
-def _build_location(matched: RowMember, template: str, key: MemberKey) -> str:
-    values = {**matched.groups, REGION: key.region}
-    uncaptured = [name for name in list_template_fields(template) if values.get(name) is None]
+def _build_located_annotations(found: RowAnnotations, location: LocationTemplate) -> RowAnnotations:
+    values = {**location.matched.groups, REGION: location.key.region}
+    fields = list_template_fields(location.template)
+    uncaptured = [name for name in fields if values.get(name) is None]
     if uncaptured:
-        raise UserInputError(
-            f"row {matched.row_index} of {OBJECT_PART_LABEL.format(part=matched.part)} gives the "
-            f"location {template}, but its match captures no {', '.join(uncaptured)} "
-            f"for {key.member}"
-        )
-    return template.format(**values)
+        return found._replace(unfilled_note=_build_unfilled_note(location, uncaptured))
+    filled = {**found.annotations, AnnotationColumn.LOCATION: location.template.format(**values)}
+    return found._replace(annotations=filled)
+
+
+def _build_unfilled_note(location: LocationTemplate, uncaptured: list[str]) -> str:
+    return _UNFILLED_LOCATION_NOTE.format(
+        index=location.matched.row_index,
+        part=OBJECT_PART_LABEL.format(part=location.matched.part),
+        template=location.template,
+        groups=", ".join(uncaptured),
+        member=location.key.member,
+    )
 
 
 def build_row_note(row: RowAnnotations) -> str:

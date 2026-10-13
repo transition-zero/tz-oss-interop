@@ -109,7 +109,7 @@ def _list_missing_columns(row: ParameterRow, raw_key: list[str]) -> list[str]:
 def build_row_table(source: RowSource, sets: dict[str, pl.LazyFrame]) -> pl.LazyFrame:
     row = source.match.row
     table = _reshape_named_columns(source.match, source.table)
-    table = _reshape_without_column(table, row.remove_column)
+    table = _build_table_without_column(table, row.remove_column)
     table = _reshape_for_all_members(table, source, sets)
     return _convert_values(table, row.multiply_by)
 
@@ -147,7 +147,7 @@ def _reshape_named_columns(match: RowMatch, raw_table: pl.LazyFrame) -> pl.LazyF
     )
 
 
-def _reshape_without_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyFrame:
+def _build_table_without_column(table: pl.LazyFrame, remove: RemoveColumn | None) -> pl.LazyFrame:
     if remove is None:
         return table
     if remove.rule == RemoveRule.CHOOSE:
@@ -180,21 +180,15 @@ def convert_default(row: ParameterRow, default: float | None) -> float | None:
     return default * row.multiply_by
 
 
-def reject_overlapping_rows(canonical: str, tables: list[RowSource], key: list[str]) -> None:
-    if len(tables) < 2:
-        return
-    overlap = _find_overlap(tables, key)
-    if overlap is not None:
-        raise UserInputError(_build_overlap_message(canonical, tables, overlap))
+def build_tagged_table(source: RowSource) -> pl.LazyFrame:
+    """The tag names the raw table of each row, so that an overlap can name its raw tables."""
+    return source.table.with_columns(pl.lit(source.match.table).alias(RAW_TABLE_COL))
 
 
-def _find_overlap(tables: list[RowSource], key: list[str]) -> dict[str, Any] | None:
-    tagged = pl.concat(
-        source.table.with_columns(pl.lit(source.match.table).alias(RAW_TABLE_COL))
-        for source in tables
-    )
+def find_overlap(table: pl.LazyFrame, key: list[str]) -> dict[str, Any] | None:
+    """Returns the first key in key order that two raw tables of a tagged table both give."""
     overlap = (
-        tagged.group_by(key)
+        table.group_by(key)
         .agg(pl.col(RAW_TABLE_COL).unique().sort())
         .filter(pl.col(RAW_TABLE_COL).list.len() > 1)
         .sort(key)
@@ -204,20 +198,21 @@ def _find_overlap(tables: list[RowSource], key: list[str]) -> dict[str, Any] | N
     return overlap.row(0, named=True) if overlap.height else None
 
 
-def _build_overlap_message(canonical: str, tables: list[RowSource], overlap: dict[str, Any]) -> str:
+def build_overlap_note(canonical: str, sources: list[RowSource], overlap: dict[str, Any]) -> str:
     raw_tables = overlap.pop(RAW_TABLE_COL)
-    indexes = {source.match.table: source.match.row_index for source in tables}
+    indexes = {source.match.table: source.match.row_index for source in sources}
     rows = sorted({indexes[name] for name in raw_tables})
-    rows_text = (
-        f"Row {rows[0]} of {PARAMETERS_PART} maps"
-        if len(rows) == 1
-        else f"Rows {_build_name_list(map(str, rows))} of {PARAMETERS_PART} map"
-    )
     return (
-        f"{rows_text} the raw tables {name_a_few(raw_tables)} to the "
-        f"same {canonical} row ({_build_name_list(map(str, overlap.values()))}). Change the rows "
-        "so that one raw table gives each canonical row."
+        f"{_build_rows_text(rows)} the raw tables {name_a_few(raw_tables)} to the same "
+        f"{canonical} row ({_build_name_list(map(str, overlap.values()))}), "
+        "so each stays an extension table"
     )
+
+
+def _build_rows_text(rows: list[int]) -> str:
+    if len(rows) == 1:
+        return f"row {rows[0]} of {PARAMETERS_PART} maps"
+    return f"rows {_build_name_list(map(str, rows))} of {PARAMETERS_PART} map"
 
 
 def build_operations_note(match: RowMatch) -> str:

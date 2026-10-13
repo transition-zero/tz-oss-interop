@@ -77,9 +77,44 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | osemosys: {} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
-    And the canonical default of "discount_rate" in "canonical" is 0.075
-    And the canonical default of "technology_discount_rate" in "canonical" is 0.075
-    And the canonical default of "capital_cost" in "canonical" is 0
+    And the canonical defaults in "canonical" have the rows:
+      | kind      | parameter                | default | default_from  |
+      | parameter | discount_rate            | 0.075   |               |
+      | parameter | technology_discount_rate |         | discount_rate |
+      | parameter | capital_cost             | 0.0     |               |
+
+  Scenario: A parameter that takes its default from another parameter names it in the defaults
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole parameter "DiscountRate" keyed by "REGION" with default 0.05 has the rows:
+      | REGION | VALUE |
+      | R1     | 0.10  |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical defaults in "canonical" have the rows:
+      | kind      | parameter                | default | default_from  |
+      | parameter | discount_rate            | 0.05    |               |
+      | parameter | technology_discount_rate |         | discount_rate |
+    And the section "Translator defaults applied" of "decisions.md" contains "the model declares no default, so the default is the value of discount_rate at the same key columns" 1 times
+
+  Scenario: A parameter that the model declares no default for takes the schema default, and the event says so
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical defaults in "canonical" have the rows:
+      | kind      | parameter     | default | default_from |
+      | parameter | discount_rate | 0.05    |              |
+    And the file "decisions.md" contains "the model declares no default, so the canonical stage takes the default of the canonical schema"
+    And the file "decisions.md" contains "`osemosys.parameter.DiscountRate`"
 
   Scenario: A mode member stays a string
     Given an otoole model
@@ -321,3 +356,29 @@ Feature: stage_osemosys_csv stages an otoole CSV model into the canonical OSeMOS
       | region | technology | year | value  |
       | R1     | GAS        | 2030 | 689.84 |
     And the file "decisions.md" contains "matched by name and key"
+
+  Scenario: The source keeps each parameter and extension table as a time series, and every other table as topology
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE  |
+      | R1     | GAS        | 2030 | 689.84 |
+    And the otoole parameter "YearlyPeakXX" keyed by "REGION YEAR" with default 0 has the rows:
+      | REGION | YEAR | VALUE |
+      | R1     | 2030 | 10.19 |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line         |
+      | osemosys: {} |
+    And a pipeline "osemosys-state-probe" that stages an otoole model and writes the keys of its state to "outputs/state.txt"
+    When I run the pipeline "osemosys-state-probe" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the file "outputs/state.txt" contains "time series parameter/capital_cost"
+    And the file "outputs/state.txt" contains "time series extension/YearlyPeakXX"
+    And the file "outputs/state.txt" contains "topology set/region"
+    And the file "outputs/state.txt" contains "topology metadata/defaults"
+    And the file "outputs/state.txt" contains "topology annotation/technology"
+    And the file "outputs/state.txt" does not contain "topology parameter/"
+    And the file "outputs/state.txt" does not contain "topology extension/"

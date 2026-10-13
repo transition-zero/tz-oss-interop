@@ -196,6 +196,7 @@ unless you give `--keep-staging`.
 raw/sets/<SET>.parquet                    one column, VALUE
 raw/parameters/<Name>.parquet             the index columns of the model, then VALUE
 raw/declarations.parquet                  name, index columns and default of each parameter
+planned/<name>.parquet                    each table that a parameters: row maps, before the absent-member rule
 canonical/sets/<set>.parquet              one column, value
 canonical/parameters/<name>.parquet       the canonical columns, then value
 canonical/extensions/<Name>.parquet       each raw table and raw set with no canonical name
@@ -208,8 +209,12 @@ canonical/metadata/schema.parquet         the version of the canonical schema
 For example, the raw table `raw/parameters/CapitalCost.parquet` becomes
 `canonical/parameters/capital_cost.parquet`.
 
+The engine computes each canonical parameter table that a `parameters:` row maps one time,
+into `planned/`. The overlap check, the absent-member rule and the canonical table then read
+that file. The annotations read the canonical tables that the engine writes.
+
 The sink `emit_osemosys_canonical_parquet` writes the `canonical/` part to its `output_dir`,
-with the same five directories. It does not write the raw stage.
+with the same five directories. It does not write the raw stage or `planned/`.
 
 ### The raw stage
 
@@ -242,20 +247,33 @@ extension table with one column, `value`.
 
 ### The metadata
 
-`defaults.parquet` has the columns `kind`, `parameter` and `default`. It holds one row for
-each parameter of the canonical schema, with the kind `parameter`. It also holds one row for
-each parameter extension table, with the kind `extension`.
+`defaults.parquet` has the columns `kind`, `parameter`, `default` and `default_from`. It
+holds one row for each parameter of the canonical schema, with the kind `parameter`. It also
+holds one row for each parameter extension table, with the kind `extension`.
 
 The default of a canonical parameter comes from the first of these that gives one:
 
 1. The default that the model declares for the raw table that maps to it, after
-   `multiply_by`.
-2. The `default` of the schema entry.
-3. The default of the parameter that the entry names in `default_from`, by the same rules.
+   `multiply_by`. This fills `default`.
+2. The `default` of the schema entry. This fills `default`.
+3. The `default_from` of the schema entry. This fills `default_from`, and `default` stays
+   empty.
 
-For example, a model that declares 0.075 for `DiscountRate` gets 0.075 for `discount_rate`.
-It also gets 0.075 for `technology_discount_rate`, because that entry states `default_from:
-discount_rate`. The default of an extension table is the default that the model declares.
+`default_from` names another canonical parameter. The default of a row is the value of that
+parameter at the same key columns. A consumer joins the two tables on the columns that both
+hold. Where the named parameter has no row, its own `default` applies. The engine does not
+put one number in `default`, because OSeMOSYS gives each row the value of the named
+parameter, not its default.
+
+For example, a model states 0.10 for `DiscountRate` in the region `R1`, and declares no
+default for `DiscountRateIdv`. The row of `technology_discount_rate` has an empty `default`
+and the `default_from` value `discount_rate`. A consumer gives each technology in `R1` the
+default 0.10.
+
+When the model declares no default, the engine records `TRANSLATOR_DEFAULT_APPLIED` for the
+parameter. The note says whether the default comes from the schema or from `default_from`.
+The default of an extension table is the default that the model declares, and its
+`default_from` is empty.
 
 The `parameter` column holds the canonical name of a parameter, or the name of an extension
 table.
@@ -268,11 +286,14 @@ the `units:` part of the user mappings file states. `schema.parquet` has one col
 
 The source gives back a `State` that holds only the canonical stage:
 
-- A parameter table or an extension table with a `timeslice` column goes into
-  `source_time_series`, under the key `(kind, name)`, for example `("parameter",
-  "capacity_factor")`. The table stays lazy.
-- Every other table goes into `source_topology`, under the key `<kind>/<name>`, for example
-  `set/technology`, `parameter/capital_cost` or `annotation/fuel`.
+- Each parameter table and each extension table goes into `source_time_series`, under the key
+  `(kind, name)`, for example `("parameter", "capital_cost")`. A reader must not collect
+  such a table in full, because it can hold billions of rows.
+- Each set table, annotation table and metadata table goes into `source_topology`, under the
+  key `<kind>/<name>`, for example `set/technology`, `annotation/fuel` or
+  `metadata/defaults`.
+
+Every table stays lazy.
 
 ## The canonical schema
 
@@ -326,6 +347,8 @@ The loader stops with an error for each of these faults in the schema file:
 - An entry holds `end_region`, but `REGION` does not stand at `start_region`.
 - Two set entries, or two parameter entries, have the same `osemosys_name`.
 - `default_from` names a parameter that the schema does not hold.
+- `default_from` names a parameter that itself states `default_from`. A consumer then needs
+  one join only, and a cycle is not possible.
 - An entry holds a field that the tables above do not name.
 
 ### Add an extension
@@ -442,8 +465,9 @@ A row can give operations. The engine applies them in this order:
 `repeat_for_all` takes its members from the canonical set. `start_region` and `end_region`
 take the members of `region`. If the canonical set has no members, the row gives no rows.
 
-Two operations can give an empty table from a raw table that has rows. Each writes a warning
-that names the row and the raw table:
+Two operations can give an empty table from a raw table that has rows. Each records
+`NOT_MAPPED` against the raw table, with a note that names the row. Each also writes a
+warning:
 
 - `remove_column` with `choose` gives a `member` that no row of the raw table holds.
 - `repeat_for_all` names a set that has no members.
@@ -477,7 +501,9 @@ The second row merges each table such as `ATReserveTag` and `BEReserveTag` into 
 - A family of raw tables merges into one canonical table only when all of its tables declare
   the same default, after `multiply_by`. If the defaults differ, each table of the family
   stays an extension table.
-- If two raw tables write the same canonical row, the run stops.
+- If two raw tables write the same canonical row, each raw table that maps to that canonical
+  parameter stays an extension table. The note names the rows and the first key in key
+  order that two raw tables both give.
 - A row that matches no raw table writes a warning.
 
 ### `objects:`
@@ -502,7 +528,9 @@ the annotations that it states, and the inferences give the rest.
 - `category` is free text, for example `gas-combined-cycle`.
 - `carrier` is free text. The value `electricity` has a fixed meaning for the kind inference.
 - `location` is a template. It can name a named group of `match`, for example `"{country}"`,
-  or the region, `"{region}"`.
+  or the region, `"{region}"`. If the group captures nothing for a member, the location of
+  that member stays empty, and no inference fills it. The engine records `NOT_MAPPED` and
+  writes a warning.
 
 An annotation table has one row for each region and each member of its set. Its key is
 `region` and the member, because one member name can exist in many regions. The `region`
@@ -582,15 +610,34 @@ osemosys:
 
 ## The sources
 
-Each source reads its input through `self._fs`, writes the raw stage, and calls the mappings
-engine. The sets and the raw tables in this section are in the raw stage. `stage_osemosys_csv`
-keeps the names of the model. `stage_tz_osemosys_json` gives each field its default name. Each
+Each source reads its input through `self._fs` into raw tables. The shared base class
+`OsemosysCanonicalSource`, in
+`interop/plugins/shared/osemosys_canonical/canonical_source.py`, then cleans the raw tables,
+writes the raw stage, and calls the mappings engine. A new source implements only
+`_build_raw_tables`.
+
+The sets and the raw tables in this section are in the raw stage. `stage_osemosys_csv` keeps
+the names of the model. `stage_tz_osemosys_json` gives each field its default name. Each
 source records its events through its `recorder`, so `decisions.md` names the source in its
 `Step` column.
 
+### The rules that both sources apply
+
+`normalise_raw_tables` in `interop/plugins/shared/osemosys_canonical/raw_values.py` cleans
+the raw tables of both sources, so that one model gives the same raw stage from each format:
+
+- It removes the spaces and tabs before and after each set member and each key cell. A
+  MathProg data file splits on spaces, so a space is not part of a member.
+- It keeps one copy of a set member that a set holds two times.
+- It keeps the first row of a key that a raw table holds two times, and leaves out the later
+  rows. It records `COMPONENT_SKIPPED` for each such raw table, with a note that gives the
+  count and the first repeated key. It also writes one warning.
+
 ### `stage_osemosys_csv`
 
-This source reads a model in the otoole CSV format. It has two parameters:
+This source reads a model in the otoole CSV format, from local paths only. A URL cannot name
+the directory `csv_dir`, so the source does not accept a URL for either parameter. It has two
+parameters:
 
 | Parameter | What it names |
 | --- | --- |
@@ -599,14 +646,16 @@ This source reads a model in the otoole CSV format. It has two parameters:
 
 The config YAML can be outside `csv_dir`. The source reads the entries of `type: set` and
 `type: param`. It does not read an entry of `type: result`. The `indices` of a parameter
-give its index columns, and its `default` gives its declared default.
+give its index columns, and its `default` gives its declared default. The name of an entry,
+and its `short_name`, become file names. So a name that holds `/`, `\` or `..` stops the run.
 
 The source finds each parameter file by its full name, then by its `short_name`. It finds
 each set file by its full name only. A raw table takes the full name. If `csv_dir` holds none
-of the declared files, the run stops. The error names `csv_dir`.
+of the declared files, the run stops. The error names `csv_dir`. A `csv_dir` that names a
+file holds none of the declared files, so it stops the run in the same way.
 
-The source removes the spaces and tabs before and after each header name and each cell. A
-MathProg data file splits on spaces, so a space is not part of a member or a value.
+The source removes the spaces and tabs before and after each header name and each `VALUE`.
+The rules that both sources apply remove them from the other cells.
 
 | Input | What the source does | Event and warning |
 | --- | --- | --- |
@@ -628,7 +677,7 @@ This source reads a model in the TZ format: the `model.json` file that tz-osemos
 one parameter, `model_json_path`, names that file. The document must be a JSON object with a
 `time_definition`.
 
-The field table in `interop/plugins/shared/tz_osemosys_fields.py` follows the field
+The field table in `interop/plugins/shared/osemosys_canonical/tz_fields.py` follows the field
 documentation of tz-osemosys v0.4.1. It gives the raw table, the nested sets and the default
 of each field. The object that holds a field decides the raw table. For example, `capex` on a
 technology goes to `CapitalCost`, and `capex` on a storage goes to `CapitalCostStorage`.
@@ -648,7 +697,9 @@ The source makes the sets from the objects:
 
 The `id` of an object is its set member. The `id` of a trade names the trade, not a member.
 The `time_definition` gives `YEAR`, `TIMESLICE`, `SEASON`, `DAYTYPE` and
-`DAILYTIMEBRACKET`. A count `n` in place of a list stands for the members 1 to `n`.
+`DAILYTIMEBRACKET`. A count `n` in place of a list stands for the members 1 to `n`. A member
+of these lists must be a string or a number. The source leaves out any other member, records
+`COMPONENT_SKIPPED` and writes a warning.
 
 The source reads each value as follows:
 
@@ -658,7 +709,8 @@ The source reads each value as follows:
 - A value that stops above the last nested level applies to each member of each level below.
 - `true` becomes 1 and `false` becomes 0. A null field adds no rows.
 - `sinking-fund` becomes 1 and `straight-line` becomes 2, as `DepreciationMethod` uses them.
-- A number written as `2030.0` in a member becomes `2030`.
+- A number written as `2030.0` in a member becomes `2030`. This applies also to a value that
+  names a set member, such as the season in `timeslice_in_season`.
 - A field such as `timeslice_in_season` names a set member as its value. Each such value
   becomes a row with that member and the value 1.
 - An annual demand with a profile for its region, fuel and year goes to
@@ -675,6 +727,7 @@ field states has no rows. The declared defaults are the defaults of the field ta
 | Input | What the source does |
 | --- | --- |
 | An object that cannot be used, such as a technology with no `id` | It leaves out the object and keeps the rest |
+| A member of a `time_definition` list that is not a string or a number, such as `true` | It leaves out the member and keeps the rest |
 | A field that the field table does not hold | It leaves out the field |
 | A `construct_region_pairs` that is not `true` or `false` | It copies no pair and keeps the trade |
 | A wildcard over a set with no members | The value adds no rows |
@@ -685,6 +738,7 @@ For each problem in the table above, the source records an event and writes a wa
 problems record `COMPONENT_SKIPPED`:
 
 - An object that cannot be used.
+- A member of a `time_definition` list that is not a string or a number.
 - A value that is not a number.
 - A row with the same index columns as an earlier row of the raw table.
 
@@ -710,15 +764,13 @@ problem in the data of the model never stops the run.
 | A pattern or a `match` is not a regular expression | The run stops |
 | `columns_from_name` names a group that `source_pattern` does not hold | The run stops |
 | The operations of a row do not give the canonical columns | The run stops, and the error names the row |
-| Two raw tables write the same canonical row | The run stops, and the error names the rows |
 | An `objects:` row gives an annotation that its list does not accept | The run stops |
 | A `kind` is not in the closed list, for example `generator` | The run stops |
 | A `location` names a group that `match` does not hold, or holds an empty `{}` | The run stops |
-| A `location` group captures nothing for a member | The run stops, and the error names the row |
 | `config_path` does not end in `.yaml` or `.yml` | The run stops |
-| `csv_dir` names a file | The run stops |
-| `csv_dir` holds none of the declared set and parameter files | The run stops, and the error names `csv_dir` |
+| `csv_dir` names a file, or holds none of the declared set and parameter files | The run stops, and the error names `csv_dir` |
 | The config YAML cannot be read, or it is not an otoole config | The run stops |
+| The name or the `short_name` of a config entry holds `/`, `\` or `..` | The run stops |
 | The `model.json` cannot be read, or it is not a JSON object with a `time_definition` | The run stops |
 
 These problems in the data of the model do not stop the run:
@@ -727,6 +779,10 @@ These problems in the data of the model do not stop the run:
   part that it cannot use.
 - A value that names a set member that its canonical set does not hold. The engine leaves
   out those rows.
+- Two raw tables that write the same canonical row. Each raw table of that canonical
+  parameter stays an extension table.
+- A `location` group that captures nothing for a member. The location of that member stays
+  empty.
 
 The rule for an absent set member applies to each canonical parameter table. The engine
 checks each column against the set that it holds, as `columns` states. An empty
@@ -746,16 +802,22 @@ event for a single value row, because a table can hold millions of rows.
 | A `parameters:` row maps a raw table | `VALUE_DERIVED`, with a note that names the row and its operations |
 | A `parameters:` row says `ignore: true` | `COMPONENT_SKIPPED` |
 | A raw table or a raw set becomes an extension table | `NOT_MAPPED` |
+| A `parameters:` row makes a raw table give no rows | `NOT_MAPPED` |
+| The model declares no default, so the default comes from the schema | `TRANSLATOR_DEFAULT_APPLIED` |
+| A raw table repeats a key | `COMPONENT_SKIPPED` |
 | A canonical table loses rows to absent set members | `COMPONENT_SKIPPED` |
 | An `objects:` row gives annotations | `USER_CONFIG_DEFAULT_APPLIED`, with a note that names the row |
 | The engine infers annotations | `VALUE_DERIVED`, with a note that names each rule |
 | No kind fits a technology | `NOT_MAPPED` |
+| A `location` group captures nothing for a member | `NOT_MAPPED` |
 
-The source field of each event has the framework `osemosys`. Two groups of events also have
-a destination field, with the framework `osemosys-canonical`:
+The source field of each event has the framework `osemosys`. Three groups of events also
+have a destination field, with the framework `osemosys-canonical`:
 
 - Each `VALUE_DERIVED` event.
-- Each annotation event, including the `NOT_MAPPED` event when no kind fits a technology.
+- Each annotation event, including each `NOT_MAPPED` annotation event.
+- Each `TRANSLATOR_DEFAULT_APPLIED` event. Its destination field names the column of
+  `defaults.parquet` that the default fills.
 
 Every other event has a source field only. This includes each `COMPONENT_SKIPPED` event, and
 each `NOT_MAPPED` event for an extension table.

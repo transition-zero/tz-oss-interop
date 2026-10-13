@@ -1,31 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import ClassVar
 
-import polars as pl
 from pydantic import BaseModel, Field, ValidationError
 
-from interop.core.pipeline import StagedSource, State
-from interop.core.reporting import EventRecorder
-from interop.plugins.shared.osemosys_canonical.canonical_stage import build_canonical_stage
-from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL
-from interop.plugins.shared.osemosys_canonical.mappings import OsemosysCanonicalMappings
-from interop.plugins.shared.osemosys_canonical.raw_stage import RawStage, write_raw_stage
-from interop.plugins.shared.osemosys_canonical.tz_document import (
-    TzModelDocument,
-    build_tz_objects,
-    build_tz_sets,
-    report_skipped_objects,
-    report_unknown_fields,
-    report_unread_fields,
-)
-from interop.plugins.shared.osemosys_canonical.tz_tables import (
-    build_tz_declarations,
-    map_tz_parameter_tables,
-)
+from interop.core.pipeline import StagedSource
+from interop.plugins.shared.osemosys_canonical.canonical_source import OsemosysCanonicalSource
+from interop.plugins.shared.osemosys_canonical.raw_stage import RawTables
+from interop.plugins.shared.osemosys_canonical.tz_document import TzModelDocument
+from interop.plugins.shared.osemosys_canonical.tz_raw_tables import build_tz_raw_tables
 from interop.ports.errors import MissingInputError, UserInputError
-from interop.ports.outbound.filesystem import FilesystemPort, InputFile, Location
+from interop.ports.outbound.filesystem import InputFile, Location
 
 _MODEL_DESCRIPTION = "TZ-format model.json"
 
@@ -36,30 +21,15 @@ class StageTzOsemosysJsonParams(BaseModel):
     )
 
 
-class StageTzOsemosysJson(StagedSource):
+# The plugin inheritance lint follows bases in this directory only, so name StagedSource too.
+class StageTzOsemosysJson(OsemosysCanonicalSource[StageTzOsemosysJsonParams], StagedSource):
     name: ClassVar[str] = "stage_tz_osemosys_json"
     params_schema: ClassVar[type[BaseModel] | None] = StageTzOsemosysJsonParams
     prefix: ClassVar[str] = "tz-osemosys"
 
-    def __init__(
-        self,
-        fs: FilesystemPort,
-        osemosys_mappings: OsemosysCanonicalMappings,
-        recorder: EventRecorder,
-    ) -> None:
-        self._fs = fs
-        self._mappings = osemosys_mappings
-        self._recorder = recorder
-
-    def load_into_state(self, params: BaseModel | None, staging_dir: Path) -> State:
-        if not isinstance(params, StageTzOsemosysJsonParams):
-            raise TypeError(
-                f"{type(self).__name__} requires {StageTzOsemosysJsonParams.__name__}, "
-                f"got {type(params).__name__}"
-            )
+    def _build_raw_tables(self, params: StageTzOsemosysJsonParams) -> RawTables:
         document = self._read_document(params.model_json_path)
-        raw = self._stage_raw(document, staging_dir)
-        return build_canonical_stage(raw, self._mappings.osemosys, self._recorder, staging_dir)
+        return build_tz_raw_tables(document, self._recorder)
 
     def _read_document(self, model_json_path: Location) -> TzModelDocument:
         if not self._fs.can_read(model_json_path):
@@ -70,20 +40,3 @@ class StageTzOsemosysJson(StagedSource):
             raise UserInputError(
                 f"The file at {model_json_path} is not a {_MODEL_DESCRIPTION}:\n{exc}"
             ) from exc
-
-    def _stage_raw(self, document: TzModelDocument, staging_dir: Path) -> RawStage:
-        tz_objects = build_tz_objects(document)
-        report_skipped_objects(tz_objects.skipped, self._recorder)
-        report_unknown_fields(tz_objects.objects, self._recorder)
-        report_unread_fields(tz_objects.unread_fields, self._recorder)
-        sets = build_tz_sets(document, tz_objects.objects)
-        return write_raw_stage(
-            sets={name: _build_set_table(members) for name, members in sets.items()},
-            parameters=map_tz_parameter_tables(tz_objects.objects, sets, self._recorder),
-            declarations=build_tz_declarations(),
-            staging_dir=staging_dir,
-        )
-
-
-def _build_set_table(members: list[str]) -> pl.DataFrame:
-    return pl.DataFrame({RAW_VALUE_COL: members}, schema={RAW_VALUE_COL: pl.Utf8})

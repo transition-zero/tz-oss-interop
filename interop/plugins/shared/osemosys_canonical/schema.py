@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
-    OSEMOSYS_REGION,
     OSEMOSYS_SECOND_REGION,
+    REGION,
     START_REGION,
 )
 
@@ -89,9 +89,8 @@ class CanonicalSchema(BaseModel):
         for name, parameter in self.parameters.items():
             _reject_unknown_column_sets(name, parameter, self.sets)
             _reject_misaligned_osemosys_columns(name, parameter, self.sets)
-            _reject_misplaced_start_region(name, parameter)
-            if parameter.default_from is not None and parameter.default_from not in self.parameters:
-                raise ValueError(f"{name} takes its default from unknown {parameter.default_from}")
+            _reject_misplaced_start_region(name, parameter, self.sets)
+            _reject_unusable_default_from(name, parameter, self.parameters)
         return self
 
     @property
@@ -109,6 +108,9 @@ class CanonicalSchema(BaseModel):
             name for name, entry in self.parameters.items() if entry.osemosys_name == osemosys_name
         )
         return next(found, None)
+
+    def get_osemosys_set_name(self, set_name: str) -> str:
+        return self.sets[set_name].osemosys_name
 
     def find_set_name(self, osemosys_name: str) -> str | None:
         found = (name for name, entry in self.sets.items() if entry.osemosys_name == osemosys_name)
@@ -139,23 +141,43 @@ def _reject_misaligned_osemosys_columns(
     misaligned = [
         osemosys
         for osemosys, column in parameter.column_by_osemosys_column.items()
-        if not _is_aligned(osemosys, column, sets[parameter.columns[column]])
+        if osemosys != _find_expected_osemosys_column(column, parameter.columns[column], sets)
     ]
     if misaligned:
         raise ValueError(f"the osemosys_columns of {name} do not match its columns at {misaligned}")
 
 
-def _reject_misplaced_start_region(name: str, parameter: CanonicalParameter) -> None:
+def _reject_misplaced_start_region(
+    name: str, parameter: CanonicalParameter, sets: dict[str, CanonicalSet]
+) -> None:
     if END_REGION not in parameter.columns:
         return
-    if parameter.column_by_osemosys_column.get(OSEMOSYS_REGION) != START_REGION:
-        raise ValueError(f"the osemosys_columns of {name} do not hold REGION at start_region")
+    region = sets[REGION].osemosys_name
+    if parameter.column_by_osemosys_column.get(region) != START_REGION:
+        raise ValueError(f"the osemosys_columns of {name} do not hold {region} at start_region")
 
 
-def _is_aligned(osemosys: str, column: str, held: CanonicalSet) -> bool:
-    if osemosys == OSEMOSYS_SECOND_REGION:
-        return column == END_REGION and held.osemosys_name == OSEMOSYS_REGION
-    return held.osemosys_name == osemosys and column != END_REGION
+def _reject_unusable_default_from(
+    name: str, parameter: CanonicalParameter, parameters: dict[str, CanonicalParameter]
+) -> None:
+    """A consumer resolves `default_from` by one join, so the parameter it names must state its
+    own default."""
+    source = parameter.default_from
+    if source is None:
+        return
+    if source not in parameters:
+        raise ValueError(f"{name} takes its default from unknown {source}")
+    if parameters[source].default_from is not None:
+        raise ValueError(f"{name} must take its default from a parameter that states its own")
+
+
+def _find_expected_osemosys_column(
+    column: str, held: str, sets: dict[str, CanonicalSet]
+) -> str | None:
+    """Only `end_region` takes `_REGION`, and only when it holds the region set."""
+    if column == END_REGION:
+        return OSEMOSYS_SECOND_REGION if held == REGION else None
+    return sets[held].osemosys_name
 
 
 @functools.cache

@@ -1,38 +1,23 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, NamedTuple
-from urllib.parse import urlsplit
+from typing import ClassVar
 
 import yaml
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
-from interop.core.pipeline import StagedSource, State
-from interop.core.reporting import EventRecorder
-from interop.plugins.shared.osemosys_canonical.canonical_stage import build_canonical_stage
-from interop.plugins.shared.osemosys_canonical.constants import (
+from interop.core.pipeline import StagedSource
+from interop.plugins.shared.osemosys_canonical.canonical_source import OsemosysCanonicalSource
+from interop.plugins.shared.osemosys_canonical.csv_tables import CsvFiles, build_csv_raw_tables
+from interop.plugins.shared.osemosys_canonical.otoole_config import (
     CSV_SUFFIX,
     YAML_SUFFIXES,
-    OtooleEntryType,
+    OtooleConfig,
+    parse_otoole_config,
 )
-from interop.plugins.shared.osemosys_canonical.mappings import OsemosysCanonicalMappings
-from interop.plugins.shared.osemosys_canonical.raw_stage import (
-    RawDeclaration,
-    RawStage,
-    write_raw_stage,
-)
-from interop.plugins.shared.osemosys_canonical.raw_tables import (
-    map_parameter_tables,
-    map_set_tables,
-)
+from interop.plugins.shared.osemosys_canonical.raw_stage import RawTables
 from interop.ports.errors import MissingInputError, UserInputError
-from interop.ports.outbound.filesystem import (
-    FilesystemPort,
-    InputDirectory,
-    InputFile,
-    Location,
-    location_name,
-)
+from interop.ports.outbound.filesystem import InputDirectory, InputFile, location_name
 
 _CONFIG_DESCRIPTION = "otoole config YAML"
 _YAML_SUFFIX_TEXT = " or ".join(YAML_SUFFIXES)
@@ -47,81 +32,29 @@ class StageOsemosysCsvParams(BaseModel):
     )
 
 
-class OtooleEntry(BaseModel):
-    type: str
-    indices: list[str] = Field(default_factory=list)
-    default: float | None = None
-    short_name: str | None = None
+# The plugin inheritance lint follows bases in this directory only, so name StagedSource too.
+class StageOsemosysCsv(OsemosysCanonicalSource[StageOsemosysCsvParams], StagedSource):
+    """Reads local paths only, because `csv_dir` names a directory, which a URL cannot."""
 
-
-class OtooleConfig(NamedTuple):
-    sets: list[str]
-    declarations: dict[str, RawDeclaration]
-    short_names: dict[str, str]
-
-
-_CONFIG_ADAPTER = TypeAdapter(dict[str, OtooleEntry])
-
-
-class StageOsemosysCsv(StagedSource):
     name: ClassVar[str] = "stage_osemosys_csv"
     params_schema: ClassVar[type[BaseModel] | None] = StageOsemosysCsvParams
     prefix: ClassVar[str] = "osemosys"
 
-    def __init__(
-        self,
-        fs: FilesystemPort,
-        osemosys_mappings: OsemosysCanonicalMappings,
-        recorder: EventRecorder,
-    ) -> None:
-        self._fs = fs
-        self._mappings = osemosys_mappings
-        self._recorder = recorder
+    def _build_raw_tables(self, params: StageOsemosysCsvParams) -> RawTables:
+        self._reject_non_yaml_config(params.config_path)
+        config = self._read_config(params.config_path)
+        files = self._build_csv_files(params.csv_dir, config)
+        _reject_empty_csv_dir(params.csv_dir, files)
+        return build_csv_raw_tables(files, config, self._recorder)
 
-    def load_into_state(self, params: BaseModel | None, staging_dir: Path) -> State:
-        if not isinstance(params, StageOsemosysCsvParams):
-            raise TypeError(
-                f"{type(self).__name__} requires {StageOsemosysCsvParams.__name__}, "
-                f"got {type(params).__name__}"
-            )
-        self._reject_unusable_inputs(params)
-        raw = self._stage_raw(params, staging_dir)
-        return build_canonical_stage(raw, self._mappings.osemosys, self._recorder, staging_dir)
-
-    def _reject_unusable_inputs(self, params: StageOsemosysCsvParams) -> None:
-        if not self._is_yaml_path(params.config_path):
+    def _reject_non_yaml_config(self, config_path: Path | str) -> None:
+        if not location_name(config_path).lower().endswith(YAML_SUFFIXES):
             raise UserInputError(
                 f"The {_CONFIG_DESCRIPTION} must be a YAML file ending in {_YAML_SUFFIX_TEXT}, "
-                f"but it is {params.config_path}."
-            )
-        if self._fs.can_read(params.csv_dir):
-            raise UserInputError(
-                f"The otoole CSV directory {params.csv_dir} does not name a directory. "
-                "Give the directory that holds one CSV file for each set and parameter."
+                f"but it is {config_path}."
             )
 
-    def _is_yaml_path(self, config_path: Location) -> bool:
-        """A URL may carry a query or a fragment after the file name, so only its path counts."""
-        name = location_name(
-            urlsplit(config_path).path if isinstance(config_path, str) else config_path
-        )
-        return name.lower().endswith(YAML_SUFFIXES)
-
-    def _stage_raw(self, params: StageOsemosysCsvParams, staging_dir: Path) -> RawStage:
-        config = self._read_config(params.config_path)
-        found_sets = self._find_csv_files(params.csv_dir, config.sets, {})
-        found_parameters = self._find_csv_files(
-            params.csv_dir, list(config.declarations), config.short_names
-        )
-        _reject_empty_csv_dir(params.csv_dir, [*found_sets.values(), *found_parameters.values()])
-        return write_raw_stage(
-            sets=map_set_tables(found_sets, self._recorder),
-            parameters=map_parameter_tables(found_parameters, config.declarations, self._recorder),
-            declarations=config.declarations,
-            staging_dir=staging_dir,
-        )
-
-    def _read_config(self, config_path: Location) -> OtooleConfig:
+    def _read_config(self, config_path: Path | str) -> OtooleConfig:
         if not self._fs.can_read(config_path):
             raise MissingInputError(self.name, _CONFIG_DESCRIPTION, f"{config_path}")
         try:
@@ -129,13 +62,14 @@ class StageOsemosysCsv(StagedSource):
         except (yaml.YAMLError, ValidationError) as exc:
             raise UserInputError(f"Invalid {_CONFIG_DESCRIPTION} at {config_path}:\n{exc}") from exc
 
-    def _find_csv_files(
-        self, csv_dir: Path, names: list[str], short_names: dict[str, str]
-    ) -> dict[str, bytes | None]:
-        return {
-            name: self._find_csv_file(csv_dir, [name, short_names.get(name, name)])
-            for name in names
-        }
+    def _build_csv_files(self, csv_dir: Path, config: OtooleConfig) -> CsvFiles:
+        return CsvFiles(
+            sets={name: self._find_csv_file(csv_dir, [name]) for name in config.sets},
+            parameters={
+                name: self._find_csv_file(csv_dir, [name, config.short_names.get(name, name)])
+                for name in config.declarations
+            },
+        )
 
     def _find_csv_file(self, csv_dir: Path, stems: list[str]) -> bytes | None:
         for stem in stems:
@@ -145,28 +79,12 @@ class StageOsemosysCsv(StagedSource):
         return None
 
 
-def _reject_empty_csv_dir(csv_dir: Path, contents: list[bytes | None]) -> None:
+def _reject_empty_csv_dir(csv_dir: Path, files: CsvFiles) -> None:
     """A directory that holds none of the declared files is a wrong path, not a model with
     missing data, so this raises instead of reporting."""
+    contents = [*files.sets.values(), *files.parameters.values()]
     if contents and all(content is None for content in contents):
         raise UserInputError(
             f"The otoole CSV directory {csv_dir} holds none of the CSV files that the config "
             "declares. Give the directory that holds one CSV file for each set and parameter."
         )
-
-
-def parse_otoole_config(text: bytes) -> OtooleConfig:
-    entries = _CONFIG_ADAPTER.validate_python(yaml.safe_load(text))
-    parameters = {
-        name: entry for name, entry in entries.items() if entry.type == OtooleEntryType.PARAM
-    }
-    return OtooleConfig(
-        sets=[name for name, entry in entries.items() if entry.type == OtooleEntryType.SET],
-        declarations={
-            name: RawDeclaration(name, entry.indices, entry.default)
-            for name, entry in parameters.items()
-        },
-        short_names={
-            name: entry.short_name for name, entry in parameters.items() if entry.short_name
-        },
-    )

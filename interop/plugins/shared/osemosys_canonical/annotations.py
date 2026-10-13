@@ -65,6 +65,10 @@ class MemberAnnotation(NamedTuple):
         return {} if self.row is None else self.row.annotations
 
     @property
+    def unfilled_note(self) -> str | None:
+        return None if self.row is None else self.row.unfilled_note
+
+    @property
     def values(self) -> dict[AnnotationColumn, str]:
         """Merge `given` last, so that a value a row gives overrides an inferred value."""
         return {**{column: found.value for column, found in self.inferred.items()}, **self.given}
@@ -114,17 +118,16 @@ def _build_member_annotation(
     inferences: dict[AnnotationColumn, Inference],
 ) -> MemberAnnotation:
     row = find_row_annotations(rows.list_rows(part), part, key)
-    given = {} if row is None else row.annotations
-    inferred = {column: found for column, found in inferences.items() if column not in given}
+    stated = set() if row is None else row.stated_columns
+    inferred = {column: found for column, found in inferences.items() if column not in stated}
     return MemberAnnotation(part, key, row, inferred)
 
 
 def _build_fuel_annotations(fuels: list[MemberAnnotation]) -> dict[MemberKey, FuelAnnotation]:
     return {
         fuel.key: FuelAnnotation(
-            location=fuel.values[AnnotationColumn.LOCATION],
+            row_location=fuel.given.get(AnnotationColumn.LOCATION),
             is_electricity=fuel.values.get(AnnotationColumn.CARRIER) == ELECTRICITY_CARRIER,
-            has_row_location=AnnotationColumn.LOCATION in fuel.given,
         )
         for fuel in fuels
     }
@@ -177,10 +180,11 @@ def _report_annotations(
         for annotation in found:
             _record_member_events(annotation, recorder)
     _report_missing_kinds(annotated[ObjectPart.TECHNOLOGIES], recorder)
+    _report_unfilled_locations([found for part in annotated.values() for found in part], recorder)
 
 
 def _record_member_events(annotation: MemberAnnotation, recorder: EventRecorder) -> None:
-    if annotation.row is not None:
+    if annotation.row is not None and annotation.given:
         member = _build_annotated_member(annotation, annotation.given)
         record_annotation(
             recorder, EventKind.USER_CONFIG_DEFAULT_APPLIED, member, build_row_note(annotation.row)
@@ -218,6 +222,26 @@ def _report_missing_kinds(technologies: list[MemberAnnotation], recorder: EventR
             "no kind fits %d technology(ies) in their region, so each keeps an empty kind: %s",
             len(missing),
             name_a_few(_build_member_name(found) for found in missing),
+        )
+
+
+def _report_unfilled_locations(
+    annotations: list[MemberAnnotation], recorder: EventRecorder
+) -> None:
+    unfilled = [found for found in annotations if found.unfilled_note is not None]
+    for annotation in unfilled:
+        member = _build_annotated_member(annotation, {AnnotationColumn.LOCATION: None})
+        record_annotation(recorder, EventKind.NOT_MAPPED, member, annotation.unfilled_note or "")
+    _warn_unfilled_locations(unfilled)
+
+
+def _warn_unfilled_locations(unfilled: list[MemberAnnotation]) -> None:
+    if unfilled:
+        log.warning(
+            "%d member(s) match an `objects:` row whose location captures nothing for them, so "
+            "each keeps an empty location: %s",
+            len(unfilled),
+            name_a_few(_build_member_name(found) for found in unfilled),
         )
 
 

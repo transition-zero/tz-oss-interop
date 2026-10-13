@@ -37,9 +37,10 @@ class FuelFlow(NamedTuple):
 
 
 class FuelAnnotation(NamedTuple):
-    location: str
+    """`row_location` is the location that an `objects:` row gives the fuel, if any."""
+
+    row_location: str | None
     is_electricity: bool
-    has_row_location: bool
 
 
 class LocatedFlow(NamedTuple):
@@ -106,11 +107,8 @@ def choose_kind(structure: TechnologyStructure) -> Inference | None:
 
 
 def build_technology_location(structure: TechnologyStructure, region: str) -> Inference:
-    located = sorted(
-        (located for located in structure.flows if located.fuel.has_row_location),
-        key=_build_location_order,
-    )
-    locations = list(dict.fromkeys(flow.fuel.location for flow in located))
+    located = sorted(structure.flows, key=_build_location_order)
+    locations = _list_row_locations([flow.fuel for flow in located])
     if not locations:
         return Inference(region, _REGION_LOCATION_RULE)
     return Inference(LOCATION_SEPARATOR.join(locations), _FUEL_LOCATION_RULE)
@@ -119,8 +117,8 @@ def build_technology_location(structure: TechnologyStructure, region: str) -> In
 def _build_location_order(located: LocatedFlow) -> tuple[int, str, bool, str]:
     """A string sort puts mode 10 before mode 2, so sort a whole-number mode by its number."""
     mode = located.flow.mode
-    number = int(mode) if mode.isdigit() else -1
-    return number, mode, not located.flow.is_input, located.fuel.location
+    number = int(mode) if mode.isdecimal() else -1
+    return number, mode, not located.flow.is_input, located.fuel.row_location or ""
 
 
 def _is_storage_technology(structure: TechnologyStructure) -> bool:
@@ -153,7 +151,8 @@ def _is_conversion(structure: TechnologyStructure) -> bool:
 
 
 def _list_row_locations(fuels: list[FuelAnnotation]) -> list[str]:
-    return list(dict.fromkeys(fuel.location for fuel in fuels if fuel.has_row_location))
+    rows = [fuel.row_location for fuel in fuels if fuel.row_location is not None]
+    return list(dict.fromkeys(rows))
 
 
 # The first rule that fits wins, so a new order changes the kind of some technologies.

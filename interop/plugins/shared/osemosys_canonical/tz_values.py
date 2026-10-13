@@ -4,16 +4,23 @@ import itertools
 from collections.abc import Mapping
 from typing import NamedTuple
 
-from interop.plugins.shared.osemosys_canonical.constants import (
-    OSEMOSYS_REGION,
-    OSEMOSYS_SECOND_REGION,
-)
-from interop.plugins.shared.tz_osemosys_fields import (
+from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_SECOND_REGION
+from interop.plugins.shared.osemosys_canonical.tz_fields import (
     COMPOSED_DATA,
     COMPOSED_FLAG,
+    OSEMOSYS_REGION,
     VALUE_WORDS,
     WILDCARD,
 )
+
+
+def normalise_member(value: object) -> object:
+    """A number becomes the text of a member, and `2030.0` becomes `2030`."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        return str(value)
+    return value
 
 
 class TzEntry(NamedTuple):

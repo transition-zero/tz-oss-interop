@@ -7,19 +7,23 @@ import polars as pl
 
 from interop.core.reporting import EventRecorder
 from interop.plugins.shared.osemosys_canonical.constants import RAW_VALUE_COL
-from interop.plugins.shared.osemosys_canonical.events import record_not_mapped, record_skipped
+from interop.plugins.shared.osemosys_canonical.events import (
+    SourceName,
+    SourceReport,
+    report_source_events,
+)
 from interop.plugins.shared.osemosys_canonical.raw_stage import RawDeclaration
-from interop.plugins.shared.osemosys_canonical.raw_tables import (
+from interop.plugins.shared.osemosys_canonical.raw_values import (
     UnreadableValuesReport,
-    drop_unreadable_values,
+    report_unreadable_values,
 )
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
-from interop.plugins.shared.osemosys_canonical.tz_document import TzObject
-from interop.plugins.shared.osemosys_canonical.tz_reports import (
-    TzPath,
-    TzPathReport,
-    build_tz_name,
-    report_tz_paths,
+from interop.plugins.shared.osemosys_canonical.tz_document import StatedField
+from interop.plugins.shared.osemosys_canonical.tz_fields import (
+    ANNUAL_DEMAND_SPLIT,
+    OWNER_COLUMNS,
+    TZ_FIELDS,
+    TzField,
 )
 from interop.plugins.shared.osemosys_canonical.tz_values import (
     TzEntry,
@@ -27,46 +31,41 @@ from interop.plugins.shared.osemosys_canonical.tz_values import (
     build_float_value,
     has_empty_expansion,
     list_tz_entries,
+    normalise_member,
 )
-from interop.plugins.shared.tz_osemosys_fields import (
-    ANNUAL_DEMAND_SPLIT,
-    OWNER_COLUMNS,
-    TZ_FIELDS,
-    TzField,
-    TzOwner,
-)
+from interop.ports.outbound.reporting import EventKind
 
-_FIELDS_BY_OWNER: dict[tuple[TzOwner, str], TzField] = {
-    (field.owner, field.field): field for field in TZ_FIELDS
-}
 # A field whose value names a set member moves the member into the key and states this value.
 _MEMBER_FLAG = True
 _TZ_UNREADABLE_VALUES = UnreadableValuesReport(
     "{count} value(s) are not a number, so the raw stage leaves each out",
-    "%d raw table(s) have values that are not a number, so the raw stage leaves those values "
-    "out: %s",
+    SourceReport(
+        EventKind.COMPONENT_SKIPPED,
+        "%d raw table(s) have values that are not a number, so the raw stage leaves those "
+        "values out: %s",
+    ),
 )
 _EMPTY_SET_NOTE = (
     "a wildcard or a value above the last level stands for a set with no members, "
     "so that value adds no rows"
 )
-_EMPTY_SET_FIELDS = TzPathReport(
-    record_not_mapped, "field(s) state a value for every member of a set with no members"
+_EMPTY_SET_FIELDS = SourceReport(
+    EventKind.NOT_MAPPED,
+    "%d TZ-format field(s) state a value for every member of a set with no members, so the "
+    "raw stage leaves each out: %s",
+    is_labelled_by_path=True,
 )
 
 _REPEATED_KEY_NOTE = (
     "{count} row(s) of {table} have a key that an earlier field already gives, so the raw stage "
     "leaves each out; the first is {key}"
 )
-_REPEATED_KEY_FIELDS = TzPathReport(
-    record_skipped, "field(s) write a row whose key an earlier field already writes"
+_REPEATED_KEY_FIELDS = SourceReport(
+    EventKind.COMPONENT_SKIPPED,
+    "%d TZ-format field(s) write a row whose key an earlier field already writes, so the raw "
+    "stage leaves each out: %s",
+    is_labelled_by_path=True,
 )
-
-
-class StatedField(NamedTuple):
-    tz_object: TzObject
-    field: TzField
-    value: object
 
 
 class TzRow(NamedTuple):
@@ -81,21 +80,20 @@ class RowSplit(NamedTuple):
 
 class TzTableRows(NamedTuple):
     rows: dict[str, list[TzRow]]
-    repeated: dict[TzPath, str]
+    repeated: dict[SourceName, str]
 
 
-def map_tz_parameter_tables(
-    objects: list[TzObject], sets: Mapping[str, list[str]], recorder: EventRecorder
+def build_tz_parameter_tables(
+    stated_fields: list[StatedField], sets: Mapping[str, list[str]], recorder: EventRecorder
 ) -> dict[str, pl.DataFrame]:
-    stated_fields = _list_stated_fields(objects)
     _report_empty_set_fields(stated_fields, sets, recorder)
     table_rows = _build_rows_by_table(stated_fields, sets)
-    report_tz_paths(_REPEATED_KEY_FIELDS, table_rows.repeated, recorder)
+    report_source_events(_REPEATED_KEY_FIELDS, table_rows.repeated, recorder)
     tables = {
         field.table: _build_table(field, table_rows.rows.get(field.table, []))
         for field in TZ_FIELDS
     }
-    readable = drop_unreadable_values(tables, _TZ_UNREADABLE_VALUES, recorder)
+    readable = report_unreadable_values(tables, _TZ_UNREADABLE_VALUES, recorder)
     return _reshape_annual_demand(readable)
 
 
@@ -113,17 +111,17 @@ def _build_rows_by_table(
     stated_fields: list[StatedField], sets: Mapping[str, list[str]]
 ) -> TzTableRows:
     keyed: dict[str, dict[tuple[str, ...], TzRow]] = {}
-    repeated: dict[TzPath, str] = {}
+    repeated: dict[SourceName, str] = {}
     for stated in stated_fields:
         kept = keyed.setdefault(stated.field.table, {})
-        split = _split_repeated_rows(kept, _build_field_rows(stated, sets))
+        split = _build_row_split(kept, _build_field_rows(stated, sets))
         kept.update((row.members, row) for row in split.new)
         if split.repeated:
-            repeated[_build_field_path(stated)] = _build_repeated_note(stated, split.repeated)
+            repeated[stated.path] = _build_repeated_note(stated, split.repeated)
     return TzTableRows({table: list(kept.values()) for table, kept in keyed.items()}, repeated)
 
 
-def _split_repeated_rows(kept: Mapping[tuple[str, ...], TzRow], rows: list[TzRow]) -> RowSplit:
+def _build_row_split(kept: Mapping[tuple[str, ...], TzRow], rows: list[TzRow]) -> RowSplit:
     new: dict[tuple[str, ...], TzRow] = {}
     repeated: list[TzRow] = []
     for row in rows:
@@ -144,40 +142,30 @@ def _report_empty_set_fields(
     stated_fields: list[StatedField], sets: Mapping[str, list[str]], recorder: EventRecorder
 ) -> None:
     notes = {
-        _build_field_path(stated): _EMPTY_SET_NOTE
+        stated.path: _EMPTY_SET_NOTE
         for stated in stated_fields
         if has_empty_expansion(_build_bare_value(stated), stated.field.nesting, sets)
     }
-    report_tz_paths(_EMPTY_SET_FIELDS, notes, recorder)
-
-
-def _build_field_path(stated: StatedField) -> TzPath:
-    owner = stated.tz_object.owner
-    return TzPath(owner, build_tz_name(stated.tz_object.name, stated.field.field))
+    report_source_events(_EMPTY_SET_FIELDS, notes, recorder)
 
 
 def _build_bare_value(stated: StatedField) -> object:
     return build_bare_value(stated.value)
 
 
-def _list_stated_fields(objects: list[TzObject]) -> list[StatedField]:
-    return [
-        StatedField(tz_object, _FIELDS_BY_OWNER[(tz_object.owner, name)], value)
-        for tz_object in objects
-        for name, value in tz_object.field_values.items()
-        if value is not None and (tz_object.owner, name) in _FIELDS_BY_OWNER
-    ]
-
-
 def _build_field_rows(stated: StatedField, sets: Mapping[str, list[str]]) -> list[TzRow]:
     field = stated.field
     entries = list_tz_entries(_build_bare_value(stated), field.nesting, sets)
     if field.value_set is not None:
-        entries = [TzEntry((*entry.members, str(entry.value)), _MEMBER_FLAG) for entry in entries]
+        entries = [_build_member_entry(entry) for entry in entries]
     return [
         TzRow((*stated.tz_object.keys, *entry.members), build_float_value(entry.value))
         for entry in entries
     ]
+
+
+def _build_member_entry(entry: TzEntry) -> TzEntry:
+    return TzEntry((*entry.members, str(normalise_member(entry.value))), _MEMBER_FLAG)
 
 
 def _build_table(field: TzField, rows: list[TzRow]) -> pl.DataFrame:

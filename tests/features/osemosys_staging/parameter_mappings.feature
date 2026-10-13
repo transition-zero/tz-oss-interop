@@ -3,7 +3,8 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
   A row of `parameters:` names one raw table, or a family of raw tables with a pattern. It maps
   them to a canonical parameter through a fixed list of operations, or it says `ignore: true`.
   A row of `sets:` gives a raw set its canonical set name. The engine leaves out a value whose
-  set member is not in its canonical set. An error in the user mappings file stops the run.
+  set member is not in its canonical set. An error in the user mappings file stops the run. Two
+  raw tables that give the same canonical row both stay extension tables.
 
   Scenario: A row renames a column, repeats each value for the members of a missing set, and multiplies it
     Given an otoole model
@@ -226,7 +227,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     And the log contains "region"
     And the log contains "Row 0"
 
-  Scenario: Two rows that write the same canonical row stop the run
+  Scenario: Two rows that write the same canonical row keep both raw tables as extension tables
     Given an otoole model
     And the otoole set "REGION" holds "R1"
     And the otoole set "TECHNOLOGY" holds "GAS"
@@ -242,10 +243,18 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | line                                                                                                                       |
       | osemosys: {parameters: [{source: InvestmentCost, canonical: capital_cost}, {source: OvernightCost, canonical: capital_cost}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
-    Then the pipeline exit code is 1
-    And the log contains "Rows 0, 1 of `parameters:` map the raw tables InvestmentCost, OvernightCost to the same capital_cost row (R1, GAS, 2030)"
+    Then the pipeline exit code is 0
+    And the file "canonical/parameters/capital_cost.parquet" does not exist
+    And the canonical table "canonical/extensions/InvestmentCost.parquet" has the rows:
+      | region | technology | year | value |
+      | R1     | GAS        | 2030 | 1     |
+    And the canonical table "canonical/extensions/OvernightCost.parquet" has the rows:
+      | region | technology | year | value |
+      | R1     | GAS        | 2030 | 2     |
+    And the log contains "2 raw table(s) map to one canonical parameter but give the same canonical row, so each stays an extension table: InvestmentCost, OvernightCost"
+    And the section "Fields not mapped" of "decisions.md" contains "rows 0, 1 of `parameters:` map the raw tables InvestmentCost, OvernightCost to the same capital_cost row (R1, GAS, 2030), so each stays an extension table" 2 times
 
-  Scenario: The error about two rows that write the same canonical row names the first clash in key order
+  Scenario: The note about two rows that write the same canonical row names the first clash in key order
     Given an otoole model
     And the otoole set "REGION" holds "R1"
     And the otoole set "TECHNOLOGY" holds "T01 T02 T03 T04 T05 T06 T07 T08 T09 T10 T11 T12 T13 T14 T15 T16 T17 T18 T19 T20"
@@ -299,8 +308,8 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | line                                                                                                                       |
       | osemosys: {parameters: [{source: InvestmentCost, canonical: capital_cost}, {source: OvernightCost, canonical: capital_cost}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
-    Then the pipeline exit code is 1
-    And the log contains "to the same capital_cost row (R1, T01, 2030)"
+    Then the pipeline exit code is 0
+    And the file "decisions.md" contains "to the same capital_cost row (R1, T01, 2030)"
 
   Scenario: A row that names a canonical parameter and says ignore stops the run
     Given an otoole model
@@ -372,7 +381,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     Then the pipeline exit code is 1
     And the log contains "Row 0 of `parameters:` cannot map the raw table ATTag to reserve_margin_tag_technology"
 
-  Scenario: One pattern row whose two tables write the same canonical row stops the run
+  Scenario: One pattern row whose two tables write the same canonical row keeps both as extension tables
     Given an otoole model
     And the otoole set "REGION" holds "AT BE R1"
     And the otoole set "TECHNOLOGY" holds "GAS"
@@ -388,8 +397,11 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
       | line                                                                                               |
       | osemosys: {parameters: [{source_pattern: "^[A-Z]{2}Tag$", canonical: reserve_margin_tag_technology}]} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
-    Then the pipeline exit code is 1
-    And the log contains "Row 0 of `parameters:` maps the raw tables ATTag, BETag to the same reserve_margin_tag_technology row (R1, GAS, 2030)"
+    Then the pipeline exit code is 0
+    And the file "canonical/parameters/reserve_margin_tag_technology.parquet" does not exist
+    And the parquet file "canonical/extensions/ATTag.parquet" has 1 rows
+    And the parquet file "canonical/extensions/BETag.parquet" has 1 rows
+    And the file "decisions.md" contains "row 0 of `parameters:` maps the raw tables ATTag, BETag to the same reserve_margin_tag_technology row (R1, GAS, 2030), so each stays an extension table"
 
   Scenario: A sets entry that names no raw set writes a warning
     Given an otoole model
@@ -402,7 +414,7 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     Then the pipeline exit code is 0
     And the log contains "1 entry(ies) of `sets:` name no raw set: TECH"
 
-  Scenario: A row that chooses a member that no row of its raw table holds writes a warning
+  Scenario: A row that chooses a member that no row of its raw table holds is reported
     Given an otoole model
     And the otoole set "REGION" holds "R1"
     And the otoole set "TECHNOLOGY" holds "GAS"
@@ -418,9 +430,11 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
-    And the log contains "1 row(s) of `parameters:` choose a member that no row of the raw table holds, so the raw table gives no rows: row 0 (CapitalCost)"
+    And the log contains "1 raw table(s) match a `parameters:` row that chooses a member that no row of the raw table holds, so each gives no rows: CapitalCost"
+    And the section "Fields not mapped" of "decisions.md" contains "row 0 of `parameters:` chooses a member that no row of the raw table holds, so the raw table gives no rows" 1 times
+    And the file "decisions.md" contains "`osemosys.parameter.CapitalCost`"
 
-  Scenario: A row that repeats each value for a set with no members writes a warning
+  Scenario: A row that repeats each value for a set with no members is reported
     Given an otoole model
     And the otoole set "TECHNOLOGY" holds "GAS"
     And the otoole set "YEAR" holds "2030"
@@ -434,7 +448,8 @@ Feature: The parameters and sets parts of a user mappings file map raw tables to
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the parquet file "canonical/parameters/capital_cost.parquet" has 0 rows
-    And the log contains "1 row(s) of `parameters:` repeat each value for a set with no members, so the raw table gives no rows: row 0 (InvestmentCost)"
+    And the log contains "1 raw table(s) match a `parameters:` row that repeats each value for a set with no members, so each gives no rows: InvestmentCost"
+    And the section "Fields not mapped" of "decisions.md" contains "row 0 of `parameters:` repeats each value for a set with no members, so the raw table gives no rows" 1 times
 
   Scenario: A row over a raw table keyed by a pair of regions writes start_region and end_region
     Given an otoole model

@@ -240,16 +240,21 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     And the log contains "objects.fuels.0"
     And the log contains "the location '{}' holds an empty {}; name a group of match or region in it"
 
-  Scenario: A location whose group captures nothing for a member stops the run
+  Scenario: A location whose group captures nothing for a member stays empty and is reported
     Given the otoole set "REGION" holds "R1"
-    And the otoole set "FUEL" holds "E1"
+    And the otoole set "FUEL" holds "E1 ATE1"
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a file "user_mappings.yaml" containing the lines:
       | line                                                                                     |
       | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})?E1$", location: "{country}"}]}} |
     When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
-    Then the pipeline exit code is 1
-    And the log contains "row 0 of `objects: fuels` gives the location {country}, but its match captures no country for E1"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/annotations/fuel.parquet" has the rows:
+      | region | fuel | carrier | location |
+      | R1     | E1   |         |          |
+      | R1     | ATE1 |         | AT       |
+    And the log contains "1 member(s) match an `objects:` row whose location captures nothing for them, so each keeps an empty location: R1/E1"
+    And the section "Fields not mapped" of "decisions.md" contains "row 0 of `objects: fuels` gives the location {country}, but its match captures no country for E1, so location stays empty" 1 times
 
   Scenario: A match that is not a regular expression stops the run
     Given the otoole set "REGION" holds "R1"
@@ -305,3 +310,24 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
       | region | technology | kind       | category | location |
       | R1     | ATELY      | conversion |          | AT       |
       | R1     | ATCONV     | conversion |          | AT       |
+
+  Scenario: A mode name that is a digit but not a decimal number does not stop the run
+    Given the otoole set "REGION" holds "R1"
+    And the otoole set "MODE_OF_OPERATION" holds "²"
+    And the otoole set "FUEL" holds "ATE1 DEE1"
+    And the otoole set "TECHNOLOGY" holds "ATDELINK"
+    And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATDELINK   | ATE1 | ²                 | 2030 | 1     |
+    And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATDELINK   | DEE1 | ²                 | 2030 | 0.95  |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                   |
+      | osemosys: {objects: {fuels: [{match: "^(?P<country>[A-Z]{2})E1$", carrier: electricity, location: "{country}"}]}} |
+    When I run the pipeline "osemosys-csv-to-canonical" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind                         | category | location |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |

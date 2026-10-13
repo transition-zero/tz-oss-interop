@@ -6,20 +6,22 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from interop.plugins.shared.osemosys_canonical.constants import (
-    OSEMOSYS_DAILYTIMEBRACKET,
-    OSEMOSYS_DAYTYPE,
-    OSEMOSYS_EMISSION,
-    OSEMOSYS_FUEL,
-    OSEMOSYS_MODE_OF_OPERATION,
-    OSEMOSYS_REGION,
-    OSEMOSYS_REGIONGROUP,
-    OSEMOSYS_SEASON,
+    DAILY_TIME_BRACKET,
+    DAY_TYPE,
+    FUEL,
+    NAME_SEPARATOR,
+    OPERATING_MODE,
     OSEMOSYS_SECOND_REGION,
-    OSEMOSYS_STORAGE,
-    OSEMOSYS_TECHNOLOGY,
-    OSEMOSYS_TIMESLICE,
-    OSEMOSYS_YEAR,
+    POLLUTANT,
+    REGION,
+    REGION_GROUP,
+    SEASON,
+    STORAGE,
+    TECHNOLOGY,
+    TIMESLICE,
+    YEAR,
 )
+from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
 
 
 class TzOwner(StrEnum):
@@ -37,6 +39,10 @@ class TzOwner(StrEnum):
     TRADE = "trade"
 
 
+def build_tz_name(*parts: str) -> str:
+    return NAME_SEPARATOR.join(part for part in parts if part)
+
+
 class TzField(NamedTuple):
     """`nesting` lists the set of each nested level, outermost first, and `value_set` names the
     set of a value that states a member."""
@@ -48,6 +54,21 @@ class TzField(NamedTuple):
     default: float | None = None
     value_set: str | None = None
 
+
+# The TZ format keys its sets by their default names, which the canonical schema states.
+_SCHEMA = load_canonical_schema()
+OSEMOSYS_REGION = _SCHEMA.get_osemosys_set_name(REGION)
+OSEMOSYS_TECHNOLOGY = _SCHEMA.get_osemosys_set_name(TECHNOLOGY)
+OSEMOSYS_FUEL = _SCHEMA.get_osemosys_set_name(FUEL)
+OSEMOSYS_EMISSION = _SCHEMA.get_osemosys_set_name(POLLUTANT)
+OSEMOSYS_MODE_OF_OPERATION = _SCHEMA.get_osemosys_set_name(OPERATING_MODE)
+OSEMOSYS_STORAGE = _SCHEMA.get_osemosys_set_name(STORAGE)
+OSEMOSYS_YEAR = _SCHEMA.get_osemosys_set_name(YEAR)
+OSEMOSYS_TIMESLICE = _SCHEMA.get_osemosys_set_name(TIMESLICE)
+OSEMOSYS_SEASON = _SCHEMA.get_osemosys_set_name(SEASON)
+OSEMOSYS_DAYTYPE = _SCHEMA.get_osemosys_set_name(DAY_TYPE)
+OSEMOSYS_DAILYTIMEBRACKET = _SCHEMA.get_osemosys_set_name(DAILY_TIME_BRACKET)
+OSEMOSYS_REGIONGROUP = _SCHEMA.get_osemosys_set_name(REGION_GROUP)
 
 _BY_REGION = (OSEMOSYS_REGION,)
 _BY_REGION_YEAR = (OSEMOSYS_REGION, OSEMOSYS_YEAR)
@@ -318,6 +339,10 @@ TZ_FIELDS: tuple[TzField, ...] = (
         _BY_REGION_PAIR_YEAR,
     ),
 )
+
+TZ_FIELDS_BY_KEY: dict[tuple[TzOwner, str], TzField] = {
+    (field.owner, field.field): field for field in TZ_FIELDS
+}
 
 OWNER_COLUMNS: dict[TzOwner, tuple[str, ...]] = {
     TzOwner.MODEL: (),

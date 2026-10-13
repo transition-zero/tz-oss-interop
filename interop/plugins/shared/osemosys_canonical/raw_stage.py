@@ -28,6 +28,14 @@ class RawDeclaration(NamedTuple):
     default: float | None
 
 
+class RawTables(NamedTuple):
+    """The model in its own schema, in memory, before the raw stage writes it."""
+
+    sets: dict[str, pl.DataFrame]
+    parameters: dict[str, pl.DataFrame]
+    declarations: dict[str, RawDeclaration]
+
+
 @dataclass(frozen=True)
 class RawStage:
     sets: dict[str, pl.LazyFrame]
@@ -35,18 +43,15 @@ class RawStage:
     declarations: dict[str, RawDeclaration]
 
 
-def write_raw_stage(
-    sets: dict[str, pl.DataFrame],
-    parameters: dict[str, pl.DataFrame],
-    declarations: dict[str, RawDeclaration],
-    staging_dir: Path,
-) -> RawStage:
+def write_raw_stage(tables: RawTables, staging_dir: Path) -> RawStage:
     raw_dir = staging_dir / RAW_DIRECTORY
-    _write_table(_build_declarations_table(declarations), raw_dir / DECLARATIONS_TABLE)
+    _write_table(_build_declarations_table(tables.declarations), raw_dir / DECLARATIONS_TABLE)
     return RawStage(
-        sets=_write_tables(sets, raw_dir / TABLE_DIRECTORIES[TableKind.SET]),
-        parameters=_write_tables(parameters, raw_dir / TABLE_DIRECTORIES[TableKind.PARAMETER]),
-        declarations=dict(declarations),
+        sets=_write_tables(tables.sets, raw_dir / TABLE_DIRECTORIES[TableKind.SET]),
+        parameters=_write_tables(
+            tables.parameters, raw_dir / TABLE_DIRECTORIES[TableKind.PARAMETER]
+        ),
+        declarations=dict(tables.declarations),
     )
 
 
