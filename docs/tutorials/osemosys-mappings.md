@@ -832,14 +832,14 @@ uv run --with polars python -c "import polars as pl; print(pl.read_parquet('outp
 The command shows:
 
 ```
-shape: (1, 3)
-┌───────────┬─────────────────────┬─────────┐
-│ kind      ┆ parameter           ┆ default │
-│ ---       ┆ ---                 ┆ ---     │
-│ str       ┆ str                 ┆ f64     │
-╞═══════════╪═════════════════════╪═════════╡
-│ parameter ┆ availability_factor ┆ 1.0     │
-└───────────┴─────────────────────┴─────────┘
+shape: (1, 4)
+┌───────────┬─────────────────────┬─────────┬──────────────┐
+│ kind      ┆ parameter           ┆ default ┆ default_from │
+│ ---       ┆ ---                 ┆ ---     ┆ ---          │
+│ str       ┆ str                 ┆ f64     ┆ str          │
+╞═══════════╪═════════════════════╪═════════╪══════════════╡
+│ parameter ┆ availability_factor ┆ 1.0     ┆ null         │
+└───────────┴─────────────────────┴─────────┴──────────────┘
 ```
 
 ## Lesson 6: a table with an extra column
@@ -1294,14 +1294,14 @@ tz-oss-interop applies these rules to the `parameters:` rows:
 
 - The first row that matches a raw table wins. tz-oss-interop does not try the rows after it.
 - A row stops the automatic match for its canonical parameter.
-- Two raw tables cannot write the same canonical row.
+- If two raw tables write the same canonical row, both stay extension tables.
 
 To leave out one table of a group that a pattern finds, write an `ignore: true` row for that
 table. Put it above the row with the pattern.
 
 ### Mistakes
 
-A row for each table gives two values for the same canonical row. This file stops the run:
+A row for each table gives two values for the same canonical row:
 
 ```yaml
 osemosys:
@@ -1312,12 +1312,21 @@ osemosys:
       canonical: capital_cost
 ```
 
+The run does not stop. Both raw tables stay extension tables, so the canonical stage has no
+`capital_cost`. The console shows:
+
 ```
-Rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the same capital_cost row (R1, GASCC, 2030). Change the rows so that one raw table gives each canonical row.
+WARNING ... 2 raw table(s) map to one canonical parameter but give the same canonical row, so each stays an extension table: CapitalCost, OvernightCost
 ```
 
-The error names one canonical row only, the first one in the order of the columns. Here
-`WINDON` also has two values.
+`decisions.md` names one canonical row only, the first one in the order of the columns:
+
+```
+rows 0, 1 of `parameters:` map the raw tables CapitalCost, OvernightCost to the same capital_cost row (R1, GASCC, 2030), so each stays an extension table
+```
+
+Here `WINDON` also has two values. Change the rows so that one raw table gives each canonical
+row.
 
 ## Lesson 11: mark the electricity fuel
 
