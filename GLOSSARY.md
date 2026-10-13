@@ -28,9 +28,9 @@ _Avoid_: PyPSA model
 A model in the SiennaSchemas format, for an operational problem.
 _Avoid_: dispatch system, base system, operations system
 
-**Investments portfolio**:
-A SiennaSchemas document for a capacity expansion problem. interop writes a portfolio but does not read one.
-_Avoid_: expansion plan, long-term plan
+**Sienna Investments Portfolio**:
+A SiennaSchemas document for a capacity expansion problem. interop writes a Sienna Investments Portfolio but does not read one.
+_Avoid_: portfolio (alone), investments portfolio, expansion plan, long-term plan
 
 **PLEXOS model**:
 A model in the PLEXOS XML format.
@@ -50,9 +50,9 @@ One named value on a component. PLEXOS calls it a property, and SiennaSchemas ca
 The name of a component's technology or fuel, for example `coal` or `solar`.
 _Avoid_: category (a PLEXOS category is a different thing)
 
-**Candidate**:
+**Candidate component**:
 A component that an expansion problem can choose to build.
-_Avoid_: build, build candidate, extendable component, technology
+_Avoid_: candidate (alone), build, build candidate, extendable component, technology
 
 ## Time
 
@@ -96,7 +96,7 @@ The YAML file that names a pipeline's plugins and their parameters.
 _Avoid_: manifest (alone), pipeline config
 
 **Plugin**:
-A unit that a pipeline names. Each plugin is a source, a step, a validator or a sink.
+A unit that interop finds and registers by its name. Each plugin is a source, a step, a validator, a sink or an adapter for a port.
 _Avoid_: node (except for a plugin's place in a pipeline manifest), module
 
 **Source**:
