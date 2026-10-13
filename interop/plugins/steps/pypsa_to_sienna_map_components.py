@@ -546,9 +546,9 @@ def _relay_constraints(state: State, reader: ExtensionReader) -> None:
 def _relay_reserves(state: State, reader: ExtensionReader) -> None:
     """Carry each reserve the hop before set aside into this hop's own sidecar.
 
-    Sienna has reserves and PyPSA has none, so a reserve crossing the PyPSA hub survives only
-    in the sidecar. No Sienna component is built from one yet, so the record travels on as it
-    stands rather than being read into a field, and its companion series travels with it.
+    Sienna has reserves and PyPSA has none, so a reserve that passes through PyPSA survives
+    only in the sidecar. No Sienna component is built from one yet, so the record travels on as
+    it stands rather than being read into a field, and its companion series travels with it.
     """
     append_extensions(
         state.destination_extensions, ExtensionKind.RESERVE, reader.relay(ExtensionKind.RESERVE)

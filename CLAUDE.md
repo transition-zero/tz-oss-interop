@@ -15,7 +15,8 @@ When the following terms appear in prompts or docs, they refer to:
 
 - **Breakthrough / BTE** — Breakthrough Energy, whose grant funds the PyPSA → Sienna translation. That work runs offline, over electricity-only PyPSA networks, and its output is consumed by PowerSimulations.jl.
 - **Sienna** — NLR's (née NREL's) open-source power systems modelling ecosystem. Primary packages: PowerSystems.jl (data model), PowerSimulations.jl (simulation framework), SiennaSchemas (JSON schemas).
-- **SiennaGridDB** — NLR's canonical domain model. Intended as the hub in the hub-and-spoke architecture.
+- **Hub**: Sienna, and nothing else. Every built-in pipeline translates a model into a SiennaSchemas system, or a SiennaSchemas system into another format. When code or docs mean PyPSA, they say PyPSA.
+- **SiennaGridDB** — NLR's canonical domain model. Intended as the store behind the Sienna hub.
 
 ## Scope assumptions (current, v1)
 

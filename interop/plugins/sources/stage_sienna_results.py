@@ -39,7 +39,7 @@ class StageSiennaResults(StagesExtensionsSidecar, StagedSource):
     """Stage a PowerSimulations.jl solve output together with its system JSON and extensions.
 
     The system topology and extensions feed the reused Sienna to PyPSA mapping steps, which
-    recover hub names and carriers. The wide solve CSVs are unpivoted to the long
+    recover PyPSA names and carriers. The wide solve CSVs are unpivoted to the long
     ``(snapshot, component, value)`` contract and staged lazily, so the normalisation step
     reads them the same way it reads any staged series. The source makes no decisions: sign
     normalisation, the storage out-minus-in, and the HVDC scaling are the step's job.

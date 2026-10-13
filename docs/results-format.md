@@ -2,7 +2,7 @@
 
 The results format is the shared shape every solved network or reference
 dataset is normalised into before comparison. It is a long-format Parquet table
-plus a small run manifest. Names, carriers, and categories use the hub (PyPSA)
+plus a small run manifest. Names, carriers, and categories use the PyPSA
 vocabulary, so two tables produced from artifacts related by translation align
 on plain name equality.
 
@@ -21,8 +21,8 @@ is left null rather than encoded in a second shape.
 | Column | Type | Nullable | Meaning |
 | --- | --- | --- | --- |
 | `variable` | Enum (see vocabulary) | no | What the row measures. |
-| `component` | string | yes | Hub component name (a generator, a line). Null on aggregate and scalar rows. |
-| `category` | string | yes | Hub carrier the row belongs to (`coal`, `solar`). Null when it does not apply. |
+| `component` | string | yes | PyPSA component name (a generator, a line). Null on aggregate and scalar rows. |
+| `category` | string | yes | PyPSA carrier the row belongs to (`coal`, `solar`). Null when it does not apply. |
 | `timestamp` | datetime, microsecond, naive | yes | The snapshot the observation belongs to. Null on scalar rows. |
 | `value` | float64 | no | The number, in the variable's fixed unit. |
 
