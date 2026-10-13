@@ -22,7 +22,8 @@ gh api "$R/commits/<head sha>/check-runs" --jq '.check_runs[] | {id, name, concl
   except the owner (`ME`, from `SKILL.md` Setup) is a person, handled by `SKILL.md` step 5.
 - **`github-actions[bot]`** posts the `maintainability` and `mutation` reports. They are
   CI output, not findings: read them, and act only on a failed check.
-- A thread is open when no reply by `ME` follows the bot's last message in it.
+- A thread is open when its `isResolved` is `false` and no reply by `ME` follows the
+  bot's last message in it.
 - **Read the review bodies too.** Copilot lists findings under
   `### Suppressed comments (N)`; CodeRabbit puts findings about unchanged lines in a
   `> [!CAUTION]` block headed `⚠️ Outside diff range comments (N)`. These never reach
@@ -73,7 +74,7 @@ the change unstaged.
 ```bash
 git status --short     # must be empty
 git log --oneline -1   # must be your commit
-git push --force-with-lease=<branch>:<head sha you read> origin <branch>
+git push --force-with-lease="$branch:$sha" origin "$branch"   # $sha: the head you read
 ```
 
 ## 5. Reply

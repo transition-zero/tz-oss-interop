@@ -88,8 +88,7 @@ one line, and the run stops.
 1. Record `ME=$(gh api user --jq .login)`. If it is empty, end the run with that as the
    final message, after the archive (Phase 5).
 2. Find the pinned issue: an open issue titled exactly `Nightly triage`. If there is none,
-   create it with the body in "The pinned issue" below. If it is not pinned, pin it. A
-   repository pins three issues at most, so a refused pin goes in the checklist.
+   create it with the body in "The pinned issue" below.
 3. Check who schedules it. Find the body's line `Scheduled by @<login>: one person runs
    this routine for the repo.`
    - If `<login>` is not `ME`, post "Another person's nightly already runs here
@@ -98,7 +97,8 @@ one line, and the run stops.
    - If the rest of the body differs from "The pinned issue" below, replace it with that
      text, keeping the `Scheduled by` line, and say so in the digest.
 4. If the pinned issue carries `nightly:paused`, post "Paused: nothing done." and stop,
-   before anything changes.
+   before anything changes. Otherwise, if the issue is not pinned, pin it. A repository
+   pins three issues at most, so a refused pin goes in the checklist.
 5. `bash .claude/skills/nightly/labels.sh ensure` — creates or updates every label in
    `labels.tsv`. Then `bash .claude/skills/nightly/labels.sh migrate` — only does work
    while `bug` or `enhancement` still exist.

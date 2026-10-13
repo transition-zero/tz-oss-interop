@@ -36,10 +36,11 @@ GitHub. `2026-10-13-pr-steward-design.md` is the design of the second routine.
 ## One night
 
 The routine starts Opus in a new workspace on `main`. It runs `/nightly`. The phases run in
-order. A phase that fails is reported, and the next phase still runs.
+order. A failure in Phase 0 stops the run, except a failed install, which only skips the
+phases that run tests. A failure in a later phase is reported, and the next phase runs.
 
-0. **Preflight.** Find or create the pinned issue, and pin it. Stop if the issue names
-   another scheduler, or if it has `nightly:paused`. Create the labels. Read the time of
+0. **Preflight.** Find or create the pinned issue. Stop if the issue names another
+   scheduler, or if it has `nightly:paused`. Pin the issue. Create the labels. Read the time of
    the last digest. Install the Python environment with `uv sync --locked --all-groups`.
 1. **Triage** with Opus. Give each new issue one `type:` label and one `size:` label.
 2. **Builds** with Sonnet. Build up to two issues in worktrees. Opus reviews each one. Each

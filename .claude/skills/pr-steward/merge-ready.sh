@@ -19,6 +19,7 @@ jq -r '
 	  elif ($author != $owner and ($author != "dependabot[bot]" or $owner != .dependabot_owner)) then "not-ready: author not allowed"
 	  elif ($l | index("hold")) or ($l | index("needs owner")) then "not-ready: held for the owner"
 	  elif $author == "dependabot[bot]" and ($l | index("needs owner review")) then "not-ready: needs owner review"
+	  elif $author == $owner and (($l | index("PR Ready")) | not) then "not-ready: no PR Ready"
 	  elif $author == $owner and (($l | index("coderabbit done")) | not) then "not-ready: no coderabbit done"
 	  elif any($latest[]; .state == "CHANGES_REQUESTED") then "not-ready: changes requested"
 	  elif any($latest[]; .state == "APPROVED") | not then "not-ready: no approval"
