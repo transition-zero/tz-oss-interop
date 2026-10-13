@@ -368,7 +368,7 @@ written as parquet files. Two pipelines write it:
   directory of CSV files.
 - `tz-osemosys-to-canonical` reads a TZ-format `model.json` file.
 
-Each run reads a mappings file that tells interop how your model differs from the canonical
+Each run reads a mappings file that tells tz-oss-interop how your model differs from the canonical
 schema. A file that holds only `osemosys: {}` is valid.
 
 The `osemosys` example of `interop init` holds a small invented otoole model in

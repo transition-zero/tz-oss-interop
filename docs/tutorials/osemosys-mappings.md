@@ -1693,8 +1693,8 @@ osemosys:
 
 `units:` here writes its fields on one line, in braces.
 
-The pipeline `tz-osemosys-to-canonical` reads a TZ-format model. It has no default paths, so you
-must type both paths. Do these steps:
+The pipeline `tz-osemosys-to-canonical` reads a TZ-format model. It has no default path for the
+model, so you must type that path. Do these steps:
 
 1. In the project directory, type `rm -rf outputs/canonical` and press Enter.
 2. Type `INTEROP_LOG_LEVEL=WARNING interop` and press Enter.
@@ -1703,7 +1703,7 @@ must type both paths. Do these steps:
 5. At `Destination framework?`, select `osemosys-canonical`.
 6. At `Pipeline?`, select `tz-osemosys-to-canonical`.
 7. At `source.model_json_path`, type `inputs/model.json` and press Enter.
-8. At `sink[0].output_dir`, type `outputs/canonical` and press Enter.
+8. At `sink[0].output_dir`, press Enter.
 9. At `User mappings file?`, delete the path `inputs/user_mappings.yaml`.
 10. Type `inputs/osemosys_mappings.yaml` and press Enter.
 11. When the menu shows again, press Ctrl-C to close the menu.

@@ -30,7 +30,7 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
   names, the index columns and the set members of the model, as the model states them.
 - **A raw table** is the table of one parameter in the raw stage. **A raw set** is the table
   of one set in the raw stage.
-- **The canonical schema** is the schema that interop defines for an OSeMOSYS model, in
+- **The canonical schema** is the schema that tz-oss-interop defines for an OSeMOSYS model, in
   `interop/plugins/shared/osemosys_canonical_schema.yaml`.
 - **The canonical stage** is the model in the canonical schema, with its annotations and its
   metadata.
@@ -57,10 +57,7 @@ mappings file. In `headless_cli`, give the file with `--user-mappings-path` or w
 
 ```bash
 interop headless_cli --pipeline osemosys-csv-to-canonical \
-  --override 'source.config_path=inputs/model/config.yaml' \
-  --override 'source.csv_dir=inputs/model/csv' \
-  --override 'sink[0].output_dir=outputs/canonical' \
-  --user-mappings-path inputs/user_mappings.yaml
+  --user-mappings-path inputs/osemosys_mappings.yaml
 ```
 
 The console shows only errors by default. Set `INTEROP_LOG_LEVEL=WARNING` to see the

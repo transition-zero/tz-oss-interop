@@ -4,3 +4,5 @@ source:
   name: stage_tz_osemosys_json
 sinks:
   - name: emit_osemosys_canonical_parquet
+    params:
+      output_dir: outputs/canonical
