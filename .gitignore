@@ -299,8 +299,6 @@ terraform.rc
 # Published models a reader downloads to reproduce a case study. Gigabytes each, out of repo.
 /case_study_inputs/*
 !/case_study_inputs/README.md
-/case_study_inputs_synched/*
-!/case_study_inputs_synched/README.md
 
 # Claude Code worktrees (created by EnterWorktree)
 .claude/worktrees/
