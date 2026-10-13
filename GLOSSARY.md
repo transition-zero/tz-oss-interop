@@ -115,6 +115,14 @@ _Avoid_: checker, linter
 A plugin that writes the destination model, or a report, from a pipeline.
 _Avoid_: writer, emitter, output
 
+**Port**:
+A service that interop needs from outside, for example file access, a solver or a report. A project binds each port to one or more adapters.
+_Avoid_: interface, backend, service (alone)
+
+**Adapter**:
+A plugin that gives one port its service in one specified way, for example from the local disk or as a Markdown file.
+_Avoid_: backend, driver, provider, implementation
+
 **Run**:
 One execution of one pipeline.
 _Avoid_: invocation, job
