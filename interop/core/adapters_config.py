@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,9 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from interop.ports.errors import UserInputError
 
-# An older `interop init` wrote this key to set the log level.
-_RETIRED_LOG_LEVEL_KEY = "observability"
-_YAML_KEYS = {"bindings", "multi_bindings", "adapters"}
+log = logging.getLogger(__name__)
+
+# Keep this in `_YAML_KEYS`: an older `interop init` wrote it, and an unknown key fails the load.
+_IGNORED_OBSERVABILITY_KEY = "observability"
+_YAML_KEYS = {"bindings", "multi_bindings", "adapters", _IGNORED_OBSERVABILITY_KEY}
 _MULTI_BINDING_KEYS = frozenset({"reporter"})
 
 
@@ -64,16 +67,6 @@ class MissingAdaptersConfigError(UserInputError, FileNotFoundError):
         self.path = path
 
 
-class RetiredLogLevelKeyError(UserInputError, ValueError):
-    def __init__(self, path: Path) -> None:
-        super().__init__(
-            f"adapters.yaml at {path} holds `{_RETIRED_LOG_LEVEL_KEY}`, which tz-oss-interop no "
-            "longer reads. Delete that key, and set INTEROP_LOG_LEVEL to choose what the console "
-            "shows."
-        )
-        self.path = path
-
-
 class MalformedAdaptersYamlError(UserInputError, ValueError):
     def __init__(self, path: Path, original: yaml.YAMLError) -> None:
         super().__init__(f"adapters.yaml at {path} is not valid YAML:\n{original}")
@@ -91,13 +84,18 @@ def load_adapters_config(project_root: Path | None = None) -> AdaptersConfig:
     except yaml.YAMLError as exc:
         raise MalformedAdaptersYamlError(path, exc) from exc
     data = parsed if parsed is not None else {}
-    _reject_retired_log_level_key(path, data)
+    if isinstance(data, dict) and _IGNORED_OBSERVABILITY_KEY in data:
+        _warn_ignored_observability_key(path)
     try:
         return AdaptersConfig.model_validate(data)
     except ValidationError as exc:
         raise AdaptersConfigError(path, exc) from exc
 
 
-def _reject_retired_log_level_key(path: Path, data: Any) -> None:
-    if isinstance(data, dict) and _RETIRED_LOG_LEVEL_KEY in data:
-        raise RetiredLogLevelKeyError(path)
+def _warn_ignored_observability_key(path: Path) -> None:
+    log.warning(
+        "adapters.yaml at %s holds `%s`, which tz-oss-interop ignores. Set INTEROP_LOG_LEVEL "
+        "to choose what the console shows.",
+        path,
+        _IGNORED_OBSERVABILITY_KEY,
+    )

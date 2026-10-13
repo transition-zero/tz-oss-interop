@@ -563,7 +563,7 @@ example that uses nothing but the published surface.
 
 A binding key not present in either `bindings` or `multi_bindings` falls back to its built-in default. A single-value entry under `bindings` and a list entry under `multi_bindings` for the same key are mutually exclusive; `multi_bindings` wins.
 
-`adapters.yaml` does not set the log level. The environment variable `INTEROP_LOG_LEVEL` sets what the console shows. The console shows only errors when the variable is not set. A project from an older `interop init` can hold an `observability` key. tz-oss-interop stops with an error that tells you to delete that key.
+`adapters.yaml` does not set the log level. The environment variable `INTEROP_LOG_LEVEL` sets what the console shows. The console shows only errors when the variable is not set. A project from an older `interop init` can hold an `observability` key. tz-oss-interop ignores that key and writes a warning.
 
 ### Built-in binding keys
 
