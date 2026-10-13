@@ -7,9 +7,9 @@ argument-hint: "[preflight|dry-run]"
 # PR Steward
 
 One run each weekday hour, unattended, on `transition-zero/tz-oss-interop`, as a Conductor
-routine (`.claude/skills/nightly/conductor.md`). **The owner** is the GitHub account the
-routine runs as, `ME` (Setup step 1). Each person who wants a steward schedules their own
-routine; it works only on that person's PRs and keeps its own tracker. The design is
+routine. **The owner** is the GitHub account the routine runs as, `ME` (Setup step 1). Each
+person who wants a steward schedules their own routine; it works only on that person's PRs
+and keeps its own tracker. The design is
 `docs/specs/2026-10-13-pr-steward-design.md`; this skill is the contract the run follows.
 When they disagree, this file wins and the design is out of date.
 
@@ -383,8 +383,10 @@ Leave out a section with nothing in it, except the heading line and **Did**.
 
 ### 9. Archive
 
-Archive this run's Conductor workspace, as `.claude/skills/nightly/conductor.md` says. A
-run that ends early, at the lock or at a failed Setup, archives it too.
+Every run ends with `conductor workspace archive "$CONDUCTOR_WORKSPACE_ID"`, a run that
+ends early at the lock or at a failed Setup included. Run it after the last GitHub write. If
+it fails, put its error text in the final message. Do not rename the workspace's branch or
+the workspace.
 
 ## Stacks
 
@@ -411,7 +413,7 @@ waiting for.
 
 ## Modes
 
-- **`preflight`:** run Setup and the checks in `.claude/skills/nightly/conductor.md`. Run
+- **`preflight`:** run Setup and the checks in `.claude/skills/nightly/preflight-checks.md`. Run
   `threads.sh list` on one PR that has review threads, and print the keys of one thread,
   so the owner can check how step 3 counts unresolved threads. Run each script on live
   data. Post one comment on the tracker, headed `### Preflight · <YYYY-MM-DD>`, that lists

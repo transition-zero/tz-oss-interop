@@ -6,9 +6,8 @@ argument-hint: "[preflight]"
 
 # Nightly
 
-One run a night, unattended, on `transition-zero/tz-oss-interop`, as a Conductor routine
-(`conductor.md`). **The owner** is the GitHub account the routine runs as, `ME` (Phase 0
-step 1). The team agrees on one person to schedule it, and the pinned issue records who
+One run a night, unattended, on `transition-zero/tz-oss-interop`, as a Conductor routine.
+**The owner** is the GitHub account the routine runs as, `ME` (Phase 0 step 1). The team agrees on one person to schedule it, and the pinned issue records who
 (Phase 0 step 3). The design is `docs/specs/2026-10-13-nightly-routine-design.md`; this
 skill is the contract the run follows. When they disagree, this file wins and the design
 is out of date.
@@ -52,7 +51,7 @@ Every PR the run opens carries the `nightly:generated` label.
 
 ## GitHub
 
-**Every read and every write uses `gh` from the shell** (`conductor.md`). `R` below is
+**Every read and every write uses `gh` from the shell.** `R` below is
 `repos/transition-zero/tz-oss-interop`, and `ME` is `gh api user --jq .login`, read once
 in Phase 0.
 
@@ -111,7 +110,7 @@ one line, and the run stops.
    `uv sync --locked --all-groups`. A failure here is reported and skips the phases that
    run tests.
 
-With the argument `preflight`, also run the checks in `conductor.md`. Then post one comment
+With the argument `preflight`, also run the checks in `preflight-checks.md`. Then post one comment
 headed `### Preflight check · <YYYY-MM-DD>` that lists what each step and each check found,
 and go to Phase 5. It is not a digest, so it does not end the first run's lifted caps.
 
@@ -232,8 +231,10 @@ with one of its labels. An issue still blocked for the same reason is not listed
 
 ## Phase 5 · Archive
 
-Archive this run's Conductor workspace, as `conductor.md` says. Every run does this last: a
-night, a preflight, and a run that stopped early in Phase 0.
+Every run ends with `conductor workspace archive "$CONDUCTOR_WORKSPACE_ID"`: a night, a
+preflight, and a run that stopped early in Phase 0. Run it after the last GitHub write. If
+it fails, put its error text in the final message. Do not rename the workspace's branch or
+the workspace.
 
 ## The pinned issue
 
