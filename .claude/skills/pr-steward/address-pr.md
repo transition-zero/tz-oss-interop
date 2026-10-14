@@ -1,8 +1,8 @@
 # Addressing one PR's findings
 
 Adapted from the team's `/pr-address` skill for an unattended run: nothing here asks a
-question. People's comments follow `SKILL.md` step 5; this file covers how any finding is
-verified, fixed and answered.
+question. People's comments follow `SKILL.md` step 4, "People's asks"; this file covers
+how any finding is verified, fixed and answered.
 
 ## 1. Collect the findings
 
@@ -19,7 +19,8 @@ gh api "$R/commits/<head sha>/check-runs" --jq '.check_runs[] | {id, name, concl
   `copilot-pull-request-reviewer[bot]`, `claude[bot]` and `github-actions[bot]`. Match the
   whole login, never a substring: a person's login can contain a bot's name. In
   `threads.sh` output, a comment is a bot's when its `isBot` is `true`. Everyone else
-  except the owner (`ME`, from `SKILL.md` Setup) is a person, handled by `SKILL.md` step 5.
+  except the owner (`ME`, from `SKILL.md` Setup) is a person, handled by `SKILL.md`
+  step 4, "People's asks".
 - **`github-actions[bot]`** posts the `maintainability` and `mutation` reports. They are
   CI output, not findings: read them, and act only on a failed check.
 - A thread is open when its `isResolved` is `false` and no reply by `ME` follows the
@@ -54,7 +55,7 @@ In a worktree on the PR's branch:
 1. For a behaviour bug, write the failing test first and watch it fail for the finding's
    reason.
 2. Make the smallest change that fixes it.
-3. Prove the test with `../nightly/prove-the-test.md`: a test that stays green without
+3. Prove the test with `.claude/routines/prove-the-test.md`: a test that stays green without
    the fix does not pin it.
 4. Run `make lint` and `make test`, not only the scoped tests.
 
@@ -67,9 +68,11 @@ diff and that list to a fresh sub-agent and ask only for regressions the fixes i
 
 ## 4. Commit and push
 
-Commit with `git commit -s` and the steward's trailers (`SKILL.md`, "Run identity"), then check the commit
-landed before using its SHA: a pre-commit hook that reformats aborts the commit and leaves
-the change unstaged.
+Commit with `git commit -s` and the steward's trailers (`SKILL.md`, "Run identity"), then
+check the commit landed before using its SHA: a pre-commit hook that reformats aborts the
+commit and leaves the change unstaged. Push only when every part of the PR's work is
+committed: `SKILL.md` step 4 makes one push for an owner PR, and step 2 one for a
+Dependabot PR.
 
 ```bash
 git status --short     # must be empty

@@ -1,26 +1,22 @@
 #!/usr/bin/env bash
-# merge-ready.sh   ready | not-ready: <reason>, from {pr: <pulls/n>, reviews, checks, open_threads, owner, dependabot_owner}
+# merge-ready.sh   ready | not-ready: <reason>, from {pr: <pulls/n>, lane: <lane.sh's lane>, reviews, checks, open_threads}
 set -euo pipefail
 
 # Reviews arrive oldest first, so each person's last APPROVED or CHANGES_REQUESTED is their
 # verdict; COMMENTED is dropped first so a later comment cannot hide an approval.
-# An approval counts only when it was given on the head commit, so a restack or a fix after it
-# needs a fresh one.
+# The ruleset also dismisses stale approvals and requires resolved threads; the head-commit and
+# thread gates stay so that a change to the ruleset cannot loosen the steward's merge rule.
 # CI runs only on a PR whose base is main, so lint and the test legs must succeed, not merely be
 # skipped. The Windows leg's Python version follows requires-python, so it is matched by prefix.
 jq -r '
-	.pr as $p | [$p.labels[].name] as $l | $p.user.login as $author | (.owner // "") as $owner
+	.pr as $p | [$p.labels[].name] as $l | $p.user.login as $author
 	| ([.reviews[] | select(.user.login != $author) | select(.user.login | endswith("[bot]") | not)
 	    | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED")]
 	   | group_by(.user.login) | map(last)) as $latest
-	| if $owner == "" then "not-ready: owner unknown"
+	| if (.lane // "") | IN("done", "dependabot") | not then "not-ready: lane is \(.lane // "unknown")"
 	  elif $p.state != "open" or $p.draft then "not-ready: not an open ready PR"
 	  elif $p.base.ref != "main" then "not-ready: base is not main"
-	  elif ($author != $owner and ($author != "dependabot[bot]" or $owner != .dependabot_owner)) then "not-ready: author not allowed"
-	  elif ($l | index("hold")) or ($l | index("needs owner")) then "not-ready: held for the owner"
-	  elif $author == "dependabot[bot]" and ($l | index("needs owner review")) then "not-ready: needs owner review"
-	  elif $author == $owner and (($l | index("PR Ready")) | not) then "not-ready: no PR Ready"
-	  elif $author == $owner and (($l | index("coderabbit done")) | not) then "not-ready: no coderabbit done"
+	  elif .lane == "dependabot" and ($l | index("needs owner review")) then "not-ready: needs owner review"
 	  elif any($latest[]; .state == "CHANGES_REQUESTED") then "not-ready: changes requested"
 	  elif any($latest[]; .state == "APPROVED") | not then "not-ready: no approval"
 	  elif any($latest[]; .state == "APPROVED" and .commit_id == $p.head.sha) | not then "not-ready: no approval on the head"

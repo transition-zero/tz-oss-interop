@@ -21,6 +21,23 @@ after the merge uses it.
 - **See what a run did:** read its comment on the tracker issue. Each run archives its own
   Conductor workspace, so look for the run in the archived workspaces of the project.
 
+## How the steward moves a PR
+
+The steward gives each open PR one lane, from its labels, its draft flag and CodeRabbit's
+review. A run then works on each lane in turn:
+
+| Lane | The PR | The steward |
+| --- | --- | --- |
+| `queued` | your draft with `PR Ready` | marks it ready when CodeRabbit has a free slot |
+| `in-review` | ready, and CodeRabbit has not reviewed it | waits |
+| `reviewed` | CodeRabbit reviewed it | answers the findings, then adds `coderabbit done` |
+| `needs-owner` | labelled `needs owner` | waits for your answer on the PR |
+| `done` | labelled `coderabbit done` | merges it after a person approves the head |
+| `dependabot` | Dependabot's, for the Dependabot owner | approves it when CI is green, then merges it |
+
+It never touches another person's PR, a PR with `hold`, or your PR without `PR Ready`. A
+run pushes to one of your PRs at most.
+
 ## Create a routine
 
 Each routine has two triggers. The `webhook` trigger runs it on an HTTP POST, and the API
@@ -59,9 +76,6 @@ add it.
    result.
 6. In the Conductor app, open the routine and add a schedule trigger with the time from
    the table above.
-
-Run the nightly preflight before the steward's. It creates the labels that the steward
-needs.
 
 ## One owner for each routine
 

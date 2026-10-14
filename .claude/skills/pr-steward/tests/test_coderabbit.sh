@@ -53,3 +53,12 @@ assert_eq "wait 20" "$(slot_for "$(allowance_note 4 2026-09-30T08:00:00Z),$(allo
 assert_eq free "$(slot_for "$(review_at 2026-09-30T11:20:00Z)" '{user:{login:$cr},body:($w + "\nYour plan provides up to 10 included reviews per hour; 9 remain after this review."),created_at:"2026-09-30T11:21:00Z",updated_at:"2026-09-30T11:21:00Z"}')" "slot: a summary's included-reviews note states the allowance"
 assert_eq "wait 30" "$(slot_for "$(allowance_note 4 2026-09-30T11:20:00Z)" '{user:{login:$cr},body:$l,updated_at:"2026-09-30T11:48:00Z"}')" "slot: a limit notice holds even under the allowance"
 assert_eq "wait 20" "$(j "{prs:[{author:\"bob\",reviews:[$(allowance_note 4 2026-09-30T11:55:00Z)],comments:[]},{author:\"alice\",reviews:[$(review_at 2026-09-30T11:20:00Z)],comments:[]}]}" | bash "$skill/coderabbit.sh" slot "$now" alice)" "slot: another author's note does not set the owner's allowance"
+
+pause_ask() { printf '{user:{login:"%s"},body:"@coderabbitai pause",created_at:"%s"}' "$1" "$2"; }
+pause_reply() { printf '{user:{login:$cr},body:"<summary>✅ Action performed</summary>\\n\\nReviews paused.",created_at:"%s"}' "$1"; }
+paused_for() { j "{comments:[$1]}" | bash "$skill/coderabbit.sh" paused "${2:-alice}"; }
+assert_eq paused "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z),$(pause_reply 2026-09-30T11:01:00Z)")" "paused: a reply after the owner's request"
+assert_eq none "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z)")" "paused: a request with no reply yet"
+assert_eq none "$(paused_for "$(pause_ask bob 2026-09-30T11:00:00Z),$(pause_reply 2026-09-30T11:01:00Z)")" "paused: another login's request does not count"
+assert_eq none "$(paused_for "$(pause_reply 2026-09-30T10:00:00Z),$(pause_ask alice 2026-09-30T11:00:00Z)")" "paused: a reply before the newest request does not count"
+assert_eq none "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z),{user:{login:\"mallory\"},body:\"Reviews paused\",created_at:\"2026-09-30T11:01:00Z\"}")" "paused: only CodeRabbit's reply counts"

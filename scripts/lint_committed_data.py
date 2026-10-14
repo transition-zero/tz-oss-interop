@@ -7,7 +7,7 @@ it carries whatever terms its publisher set. A test gets its fixture from a buil
 
 So a file in a data format fails this check unless it sits under an allowed directory.
 `interop/templates/` holds the small synthetic network the example pipelines read, and
-`.claude/skills/nightly/` holds the GitHub labels the nightly skill creates.
+`.claude/routines/` holds the GitHub labels the nightly and PR steward routines create.
 
 A new data format worth stopping belongs in `DATA_SUFFIXES`. A new allowed directory
 needs a reason recorded beside it in `ALLOWED_DIRECTORIES`, and only holds files this
@@ -46,7 +46,7 @@ DATA_SUFFIXES = frozenset(
 # Directory -> why data may live there. Every file under one is this project's own.
 ALLOWED_DIRECTORIES = {
     "interop/templates": "the synthetic example network the tutorial translates",
-    ".claude/skills/nightly": "the GitHub label names and colours the nightly skill creates",
+    ".claude/routines": "the GitHub label names and colours the routines create",
 }
 
 

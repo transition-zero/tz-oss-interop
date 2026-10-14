@@ -36,11 +36,32 @@ workspace gives the agent.
 
 So a teammate approves, and the next hourly run merges. The nightly routine merges nothing.
 
+## Lanes
+
+The source steward filtered PRs by labels and author again in each step, and the filters
+did not agree. Here `lane.sh` gives each open PR one lane, and each step names its lanes:
+
+```mermaid
+stateDiagram-v2
+  queued --> in_review: step 7 promotes
+  in_review --> reviewed: CodeRabbit reviews
+  reviewed --> needs_owner: design choice
+  needs_owner --> reviewed: owner answers
+  reviewed --> done: step 4 answers, adds coderabbit done
+  done --> merged: step 3, merge-ready.sh
+```
+
+The other lanes are `foreign`, `held`, `owner-work` and `dependabot`. `merge-ready.sh` and
+`promote.sh` take the lane as input, so the author and label rules are in one script.
+
 ## One run
 
-The steps are the source design's steps. The changes are:
+The steps follow the source design. The changes are:
 
-1. **Lock.** The same comment marker on the tracker, with a 55-minute expiry.
+1. **Lock.** The same comment marker on the tracker, with a 55-minute expiry. After a run
+   writes its marker, it reads the comments again. It continues only when the oldest live
+   marker is its own and holds its run id (`lock.sh mine`), so two runs that start together
+   cannot both hold the lock.
 2. **Dependabot.** The organisation ruleset for public repositories has
    `dismiss_stale_reviews_on_push` and `require_last_push_approval`. When the steward pushes
    a fix to a red Dependabot PR, the owner becomes the last pusher. The owner's approval
@@ -48,15 +69,25 @@ The steps are the source design's steps. The changes are:
    and mentions this in its comment.
 3. **Merge.** `gh pr merge --squash --match-head-commit <sha>`. GitHub refuses the merge if
    the head moved after the last check.
-4. **Findings.** No change.
-5. **People's comments.** No change.
-6. **Red CI.** No change.
-7. **Conflicts.** No change. A PR under review takes `main` by a merge, not a rebase.
-8. **Promote.** `gh pr ready <n>`. The source steward could not do this, so it added a
-   `steward:promote` label and a workflow marked the draft ready. Neither exists here.
-9. **Merge risk.** No change.
-10. **Report.** No change.
-11. **Archive.** The run archives its own Conductor workspace.
+4. **The push.** The source spent one push budget across four steps, and stated no rule
+   for which PR wins. Here the run chooses one PR by a stated order: findings to answer,
+   then red CI in the PR's code, then a conflict, then a person's small ask. It does all
+   of that PR's work in one worktree, and pushes one time. A PR under review takes `main`
+   by a merge, not a rebase.
+5. **Comments on other PRs.** A larger ask gets a proposal and `needs owner`. A small ask
+   waits for its PR's turn at step 4.
+6. **Red CI on other PRs.** A re-run of a flake, a note for a check that is red on `main`,
+   or `needs owner` after a steward fix that stays red. No push.
+7. **Promote.** `gh pr ready <n>`. The source steward could not do this, so it added a
+   `steward:promote` label and a workflow marked the draft ready. Neither exists here. The
+   run reads each queued draft's `mergeable_state` once, with `pull.sh`, and gives the
+   states to `promote.sh`.
+8. **Merge risk.** No change.
+9. **Report.** No change.
+10. **Archive.** The run archives its own Conductor workspace.
+
+The CodeRabbit pause is one rule in the skill's "GitHub" section, checked by
+`coderabbit.sh paused`. `/stack` uses the same rule and the same 3-minute wait.
 
 ## The CodeRabbit allowance
 
@@ -126,10 +157,10 @@ The rule "never change `.github/` unless the PR's own diff changes it" stays. Wi
 
 ## Rollout
 
-1. The PR that adds this design adds the skill and its tests.
-2. The nightly preflight runs first. It creates the steward's labels.
-3. One webhook call with `{"mode": "preflight"}` runs the steward's preflight. It creates
-   and pins the tracker, and it posts one `### Preflight` comment.
-4. One webhook call with `{"mode": "dry-run"}`. The owner checks its "Would" list against
+1. The PR that adds this design adds the skill and its tests. `make skills-test` runs the
+   tests of every skill, and the `skills-test` CI job runs it.
+2. One webhook call with `{"mode": "preflight"}` runs the steward's preflight. It creates
+   and pins the tracker, creates the labels, and posts one `### Preflight` comment.
+3. One webhook call with `{"mode": "dry-run"}`. The owner checks its "Would" list against
    the PRs of that day.
-5. The owner adds the cron trigger in the Conductor app, and reads the first day's tracker.
+4. The owner adds the cron trigger in the Conductor app, and reads the first day's tracker.

@@ -1,10 +1,13 @@
-.PHONY: lint test coverage maintainability mutation mutation-full
+.PHONY: lint test skills-test coverage maintainability mutation mutation-full
 
 lint:
 	uv run pre-commit run --all-files --show-diff-on-failure
 
 test:
 	uv run pytest
+
+skills-test:
+	bash .claude/skills/run-tests.sh .claude/skills/*/
 
 coverage:
 	uv run pytest --cov=interop --cov-report=term-missing

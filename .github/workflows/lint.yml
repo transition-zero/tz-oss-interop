@@ -35,6 +35,16 @@ jobs:
       - name: Lint
         run: make lint
 
+  # The skills' helper scripts are bash and jq, with tests of their own.
+  skills-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Test the skills' scripts
+        run: make skills-test
+
   # Enforce that every workflow action is pinned to an immutable commit SHA.
   action-pins:
     runs-on: ubuntu-latest

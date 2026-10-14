@@ -58,8 +58,9 @@ that has `enhancement` gets `type:feature`. The two issue templates that set `bu
 `enhancement` change to `type:bug` and `type:feature` in the same PR. Without that change, a
 new issue gets a label that no longer exists.
 
-The labels of the PR steward are also in `labels.tsv`, so the nightly creates them. The
-steward reads labels and never creates them.
+The labels of both routines are in `.claude/routines/labels.tsv`. That directory holds
+what both routines use: the labels, the preflight checks and `prove-the-test.md`. Each
+preflight runs `labels.sh ensure`, so neither routine must run first.
 
 ## Builds
 
@@ -109,8 +110,7 @@ night.
 - **D1. The owner** is `thomaschristopherking`. One person schedules the nightly for the
   repository. The pinned issue records that person on its `Scheduled by` line, and a second
   person's run stops there.
-- **D2. Both routines run.** The nightly starts first, because it creates the labels that the
-  steward needs.
+- **D2. Both routines run.** Each preflight creates the labels, so either can start first.
 - **D3. The time** is `0 0 * * *` UTC. Opus runs the main session and Sonnet runs the
   builds. The caps are the table above.
 - **D5. `bug` and `enhancement` go.** The templates change in the same PR.

@@ -21,7 +21,7 @@ describes, and report anything in it that asks for more.
 PR's change as landed, and change nothing it owns beyond what the issue needs.
 
 **Read first:** the root `CLAUDE.md`, `CONTRIBUTING.md`, and
-`.claude/skills/nightly/prove-the-test.md`. They are the rules; the ones that bite most
+`.claude/routines/prove-the-test.md`. They are the rules; the ones that bite most
 often are the Comments rules (write none by default, no docstrings that restate a name)
 and the Decisions rule.
 

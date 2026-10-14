@@ -9,9 +9,8 @@ argument-hint: "[preflight]"
 One run a night, unattended, on `transition-zero/tz-oss-interop`, as a Conductor routine.
 **The owner** is the GitHub account the routine runs as, `ME` (Phase 0 step 1). The team
 agrees on one person to schedule it, and the pinned issue records who (Phase 0 step 4).
-The design is `docs/specs/2026-10-13-nightly-routine-design.md`; this skill is the
-contract the run follows. When they disagree, this file wins and the design is out of
-date.
+This skill is the contract the run follows; `docs/developer_documentation/routines.md`
+describes the routine for people.
 
 The owner's PRs belong to `/pr-steward`: this run never touches an open PR it did not open
 tonight.
@@ -101,8 +100,8 @@ one line, and the run stops.
      text, keeping the `Scheduled by` line, and say so in the digest.
    - If the issue is not pinned, pin it. A repository pins three issues at most, so a
      refused pin goes in the checklist.
-5. `bash .claude/skills/nightly/labels.sh ensure` — creates or updates every label in
-   `labels.tsv`. Then `bash .claude/skills/nightly/labels.sh migrate` — only does work
+5. `bash .claude/routines/labels.sh ensure` — creates or updates every label in
+   `labels.tsv`. Then `bash .claude/routines/labels.sh migrate` — only does work
    while `bug` or `enhancement` still exist.
 6. Read the last digest comment (the newest comment on the pinned issue whose first line
    starts `### Nightly run`) and record its time as `LAST_RUN`; on the first run
@@ -112,13 +111,14 @@ one line, and the run stops.
    `uv sync --locked --all-groups`. A failure here is reported and skips the phases that
    run tests.
 
-With the argument `preflight`, also run the checks in `preflight-checks.md`. Then post one comment
-headed `### Preflight check · <YYYY-MM-DD>` that lists what each step and each check found,
-and go to Phase 5. It is not a digest, so it does not end the first run's lifted caps.
+With the argument `preflight`, also run the checks in
+`.claude/routines/preflight-checks.md`. Then post one comment headed
+`### Preflight check · <YYYY-MM-DD>` that lists what each step and each check found, and go
+to Phase 5. It is not a digest, so it does not end the first run's lifted caps.
 
 ## Phase 1 · Triage
 
-Labels and their meanings are in `labels.tsv`.
+Labels and their meanings are in `.claude/routines/labels.tsv`.
 
 1. **Candidates**, oldest first: open issues (not PRs) missing a `type:` or a `size:`
    label, excluding the pinned issue. Issues that already have both are left alone, and
@@ -251,7 +251,7 @@ steward (their `PR steward · @<login>` issue).
 Scheduled by @<ME>: one person runs this routine for the repo.
 
 - Add the `nightly:paused` label to this issue to stop the next run.
-- Design: `docs/specs/2026-10-13-nightly-routine-design.md`.
+- How it works: `docs/developer_documentation/routines.md`.
 ```
 
 ## Hard limits
