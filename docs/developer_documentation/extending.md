@@ -72,6 +72,12 @@ A Source's `__init__` may take a `fs: FilesystemPort` to read through the
 configured outbound adapter rather than touching the disk directly (it hands paths
 only to `self._fs`). Sources that need no I/O omit the parameter.
 
+A Source's `__init__` may also take a `recorder: EventRecorder`
+(`interop.core.reporting`) to record `TranslationEvent`s in the decisions report, the
+same way a step does (see [Emitting translation decisions](#emitting-translation-decisions)).
+The factory tags each event with the source's `name`. `interop validate` writes no
+decisions report, so the events that a source records there are not shown.
+
 In a pipeline YAML:
 
 ```yaml
@@ -171,7 +177,7 @@ class DefaultBusVoltage(TranslationStep):
         return state
 ```
 
-`recorder` is the only auto-injected dependency available to steps. The factory tags every recorded event with the step's `name` before it reaches the reporter, so the report's `Step` column populates without further effort. See `interop/ports/outbound/reporting.py` for the full `TranslationEvent` field set.
+Steps and sources can both declare `recorder`; validators and sinks cannot. The factory tags every recorded event with the step's or the source's `name` before it reaches the reporter, so the report's `Step` column populates without further effort. See `interop/ports/outbound/reporting.py` for the full `TranslationEvent` field set.
 
 ### Validator
 
@@ -554,9 +560,10 @@ example that uses nothing but the published surface.
 | `bindings` | `dict[str, str]` | Bind a key to a single adapter `name`. |
 | `multi_bindings` | `dict[str, list[str]]` | Bind a key to a list of adapter names; the DI layer fans calls out to each. Only `reporter` is supported today. |
 | `adapters` | `dict[str, dict]` | Per-adapter config, keyed by adapter `name`. Each value is validated against the adapter's `config_schema`. |
-| `observability.log_level` | `str` | Root log level. Default `INFO`. |
 
 A binding key not present in either `bindings` or `multi_bindings` falls back to its built-in default. A single-value entry under `bindings` and a list entry under `multi_bindings` for the same key are mutually exclusive; `multi_bindings` wins.
+
+`adapters.yaml` does not set the log level. The environment variable `INTEROP_LOG_LEVEL` sets what the console shows. The console shows only errors when the variable is not set. A project from an older `interop init` can hold an `observability` key. tz-oss-interop ignores that key and writes a warning.
 
 ### Built-in binding keys
 

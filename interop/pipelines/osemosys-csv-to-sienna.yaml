@@ -1,0 +1,11 @@
+source_framework: osemosys
+destination_framework: sienna
+source:
+  name: stage_osemosys_csv
+  params:
+    config_path: inputs/model/config.yaml
+    csv_dir: inputs/model/csv
+sinks:
+  - name: emit_sienna_files
+    params:
+      output_system_json_file_path: outputs/system.json

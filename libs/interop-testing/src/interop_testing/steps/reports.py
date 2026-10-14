@@ -15,6 +15,8 @@ from pytest_bdd import parsers, then
 
 from interop_testing.files import read_json
 
+_SECTION_PREFIX = "## "
+
 
 @then(parsers.parse('the parquet file "{path}" has {count:d} rows'))
 def assert_parquet_rows(path: str, count: int) -> None:
@@ -95,3 +97,17 @@ def assert_csv_row_matches(path: str, step: str, kind: str, destination_attribut
         if all(fields[column] == value for column, value in wanted.items()):
             return
     raise AssertionError(f"no row in {path} with {wanted}")
+
+
+@then(parsers.parse('the section "{heading}" of "{path}" contains "{expected}" {count:d} times'))
+def assert_section_contains_count(heading: str, path: str, expected: str, count: int) -> None:
+    section = _read_section(Path(path).read_text(encoding="utf-8"), heading)
+    actual = section.count(expected)
+    assert actual == count, f"expected {expected!r} {count} times under {heading!r}, got {actual}"
+
+
+def _read_section(report: str, heading: str) -> str:
+    start = report.find(f"\n{_SECTION_PREFIX}{heading} (")
+    assert start >= 0, f"expected a section {heading!r} in the report"
+    end = report.find(f"\n{_SECTION_PREFIX}", start + 1)
+    return report[start:] if end < 0 else report[start:end]

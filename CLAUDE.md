@@ -15,7 +15,8 @@ When the following terms appear in prompts or docs, they refer to:
 
 - **Breakthrough / BTE** — Breakthrough Energy, whose grant funds the PyPSA → Sienna translation. That work runs offline, over electricity-only PyPSA networks, and its output is consumed by PowerSimulations.jl.
 - **Sienna** — NLR's (née NREL's) open-source power systems modelling ecosystem. Primary packages: PowerSystems.jl (data model), PowerSimulations.jl (simulation framework), SiennaSchemas (JSON schemas).
-- **SiennaGridDB** — NLR's canonical domain model. Intended as the hub in the hub-and-spoke architecture.
+- **Hub**: Sienna, and nothing else. When code or docs mean PyPSA, they say PyPSA.
+- **SiennaGridDB** — NLR's canonical domain model. Intended as the store behind the Sienna hub.
 
 ## Scope assumptions (current, v1)
 
@@ -149,6 +150,22 @@ must come from the table.
 - A name that stands for data in `State` keeps the `source_` or `destination_` prefix
   that `State` uses.
 - Do not name a type `...Set` unless it holds a `set`.
+
+### The name of the tool
+
+In prose, call the tool **tz-oss-interop**. This applies to documentation, docstrings,
+comments, messages to users, PR descriptions and commit messages. Do not write "interop" alone
+for the tool.
+
+Keep `interop` where it is a Technical Name, which a reader must type or find as it is:
+
+- the command `interop`;
+- the Python package `interop` and its paths, for example `interop/plugins/`;
+- the environment variables, for example `INTEROP_LOG_LEVEL`;
+- the package `interop-testing`.
+
+Where a document first gives the command, say that it is the command of tz-oss-interop, for
+example "The command of tz-oss-interop is `interop`."
 
 ### A property against a method
 

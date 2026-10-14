@@ -359,6 +359,39 @@ one carrier, so the run stops and names the carrier where two rows disagree.
 component is left out, a `COMPONENT_SKIPPED` event names it in `decisions.md`,
 and the log warns once per carrier.
 
+### Translating an OSeMOSYS model
+
+An OSeMOSYS model goes first into the canonical stage: one fixed form of an OSeMOSYS model,
+written as parquet files. Two pipelines write it:
+
+- `osemosys-csv-to-canonical` reads an otoole model: a configuration YAML file and a
+  directory of CSV files.
+- `tz-osemosys-to-canonical` reads a TZ-format `model.json` file.
+
+Each run reads a mappings file that tells tz-oss-interop how your model differs from the canonical
+schema. A file that holds only `osemosys: {}` is valid.
+
+The `osemosys` example of `interop init` holds a small invented otoole model in
+`inputs/model/`, and the mappings file `inputs/osemosys_mappings.yaml`. To use your own model:
+
+1. Put the otoole configuration file at `inputs/model/config.yaml`.
+2. Put the CSV files in `inputs/model/csv/`.
+3. Write `inputs/osemosys_mappings.yaml`.
+4. Run this command in the project directory:
+
+   ```bash
+   INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline osemosys-csv-to-canonical \
+     --user-mappings-path inputs/osemosys_mappings.yaml
+   ```
+
+5. Read `outputs/canonical/` and `decisions.md`.
+
+The pipeline reads `inputs/model/` and writes `outputs/canonical/` by default. An `--override`
+item changes a path, for example `--override 'source.csv_dir=my/csv'`.
+
+The [OSeMOSYS mappings tutorial](osemosys-mappings.md) teaches you how to write the mappings
+file, with one lesson for each feature.
+
 ## Extending interop
 
 The built-in pipelines cover the common PyPSA to Sienna case, but real networks

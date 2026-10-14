@@ -14,6 +14,7 @@ from interop.core.composition.planning import (
     load_legs,
 )
 from interop.core.factories import SourceFactoryBuilder, ValidatorFactoryBuilder
+from interop.core.reporting import DiscardingRecorder
 from interop.core.runner import run_validation
 from interop.core.user_mappings_loader import MappingsFile, UserMappingsLoader
 from interop.ports.errors import UserInputError
@@ -72,7 +73,9 @@ class ValidateUsingPipeline(ValidateUseCase):
 
         errors = run_validation(
             spec,
-            self._source_factory_builder(self._filesystem, user_mappings_lookup),
+            self._source_factory_builder(
+                self._filesystem, DiscardingRecorder(), user_mappings_lookup
+            ),
             self._validator_factory_builder(user_mappings_lookup),
             keep_staging=keep_staging,
             on_validators_complete=lambda found: self._validation_report.render(

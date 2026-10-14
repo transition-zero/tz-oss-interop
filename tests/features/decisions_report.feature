@@ -24,6 +24,10 @@ Feature: translation decisions report
     And the file "decisions.md" contains "| `pypsa.ShuntImpedance.shunt-1` |  |  | ShuntImpedance has no Sienna equivalent | decisions-test | emit_test_events |"
     And the file "decisions.md" contains "| `pypsa.Generator.gas\|peaker.carrier` = gas | `sienna.ThermalStandard.gas\|peaker.prime_mover_type` = GT | carrier_lookup[gas] = (GT, GAS) |  | decisions-test | emit_test_events |"
 
+  Scenario: a heading counts the rows of its table, one row per destination
+    When I run translate with source "noop" destination "noop" pipeline "decisions-test"
+    Then the file "decisions.md" contains "## Values derived (5)"
+
   Scenario: csv_report writes one row per destination with the step column
     Given adapters.yaml binds reporter to "csv_report"
     When I run translate with source "noop" destination "noop" pipeline "decisions-test"
@@ -67,3 +71,8 @@ Feature: translation decisions report
     And I run translate with source "noop" destination "noop" pipeline "decisions-test"
     Then the file "decisions.md" exists
     And the file "decisions-2.md" does not exist
+
+  Scenario: an event that a source records reaches decisions.md
+    Given a project-local source plugin that records the note "staged by the source"
+    When I run translate with source "noop" destination "noop" pipeline "record-note-test"
+    Then the file "decisions.md" contains "|  |  |  | staged by the source | record-note-test | record_note |"

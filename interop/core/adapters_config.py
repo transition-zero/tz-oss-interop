@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from interop.ports.errors import UserInputError
 
-_YAML_KEYS = {"bindings", "multi_bindings", "adapters", "observability"}
+log = logging.getLogger(__name__)
+
+# Keep this in `_YAML_KEYS`: an older `interop init` wrote it, and an unknown key fails the load.
+_IGNORED_OBSERVABILITY_KEY = "observability"
+_YAML_KEYS = {"bindings", "multi_bindings", "adapters", _IGNORED_OBSERVABILITY_KEY}
 _MULTI_BINDING_KEYS = frozenset({"reporter"})
 
 
@@ -21,7 +26,6 @@ class AdaptersConfig(BaseModel):
     # (via MultiReport for `reporter`).
     multi_bindings: dict[str, list[str]] = Field(default_factory=dict)
     adapter_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
-    log_level: str = "INFO"
 
     @model_validator(mode="before")
     @classmethod
@@ -35,7 +39,6 @@ class AdaptersConfig(BaseModel):
             "bindings": data.get("bindings", {}),
             "multi_bindings": data.get("multi_bindings", {}),
             "adapter_configs": data.get("adapters", {}),
-            "log_level": data.get("observability", {}).get("log_level", "INFO"),
         }
 
     @model_validator(mode="after")
@@ -81,7 +84,18 @@ def load_adapters_config(project_root: Path | None = None) -> AdaptersConfig:
     except yaml.YAMLError as exc:
         raise MalformedAdaptersYamlError(path, exc) from exc
     data = parsed if parsed is not None else {}
+    if isinstance(data, dict) and _IGNORED_OBSERVABILITY_KEY in data:
+        _warn_ignored_observability_key(path)
     try:
         return AdaptersConfig.model_validate(data)
     except ValidationError as exc:
         raise AdaptersConfigError(path, exc) from exc
+
+
+def _warn_ignored_observability_key(path: Path) -> None:
+    log.warning(
+        "adapters.yaml at %s holds `%s`, which tz-oss-interop ignores. Set INTEROP_LOG_LEVEL "
+        "to choose what the console shows.",
+        path,
+        _IGNORED_OBSERVABILITY_KEY,
+    )

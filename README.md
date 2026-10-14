@@ -332,6 +332,9 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three case study models and over synthetic PyPSA networks.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
+- `docs/developer_documentation/osemosys-canonical-format.md` describes how an OSeMOSYS model stages into the canonical OSeMOSYS stage, and the user mappings file that controls it.
+- `docs/tutorials/osemosys-mappings.md` is a tutorial for the `osemosys:` part of the mappings file. Each lesson changes one small OSeMOSYS model, and fixes the change with a minimal mappings file.
+- `docs/tutorials/osemosys-default-names.md` lists the default OSeMOSYS names that tz-oss-interop maps with no mappings file, and the facts that a mappings file must state.
 - `docs/translation_mappings/translation-from-pypsa-to-sienna.md` is the authoritative mapping reference for PyPSA / Sienna field translation.
 - `docs/translation_mappings/translation-from-plexos-to-pypsa.md` states what each part of a PLEXOS model becomes in PyPSA.
 - `docs/translation_mappings/translation-from-plexos-to-sienna.md` states the same for Sienna, and `plexos-to-sienna-gap-analysis.md` beside it names each thing a PLEXOS model states that SiennaSchemas holds no type and no field for.

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from interop_testing import write_adapters_config, write_project_plugin
+from interop_testing import write_adapters_config, write_pipeline, write_project_plugin
 from pytest_bdd import given, parsers, scenarios
 
 FEATURE = Path(__file__).resolve().parents[1] / "features" / "decisions_report.feature"
@@ -230,3 +230,45 @@ def given_reporter_binding(name: str) -> None:
 )
 def given_reporter_multi_binding(first: str, second: str) -> None:
     write_adapters_config(f"multi_bindings:\n  reporter: [{first}, {second}]\n")
+
+
+_RECORD_NOTE_SOURCE_PY = """\
+from pathlib import Path
+from typing import ClassVar
+
+from pydantic import BaseModel
+
+from interop.core.pipeline import StagedSource, State
+from interop.core.reporting import EventRecorder
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+
+class _RecordNote(StagedSource):
+    name: ClassVar[str] = "record_note"
+    params_schema: ClassVar[type[BaseModel] | None] = None
+    prefix: ClassVar[str] = "record_note"
+
+    def __init__(self, recorder: EventRecorder) -> None:
+        self._recorder = recorder
+
+    def load_into_state(self, params: BaseModel | None, staging_dir: Path) -> State:
+        self._recorder.append(TranslationEvent(kind=EventKind.NOT_MAPPED, note={note!r}))
+        return State(staging_dir=staging_dir)
+"""
+
+_RECORD_NOTE_PIPELINE_YAML = """\
+source_framework: noop
+destination_framework: noop
+source:
+  name: record_note
+sinks:
+  - name: noop
+"""
+
+_RECORD_NOTE_PIPELINE = "record-note-test"
+
+
+@given(parsers.parse('a project-local source plugin that records the note "{note}"'))
+def given_record_note_source(note: str) -> None:
+    write_project_plugin("sources", "record_note", _RECORD_NOTE_SOURCE_PY.format(note=note))
+    write_pipeline(_RECORD_NOTE_PIPELINE, _RECORD_NOTE_PIPELINE_YAML)

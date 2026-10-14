@@ -106,9 +106,7 @@ def http_store(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
 
 @given(parsers.parse('adapters.yaml binds filesystem to "{name}"'))
 def given_filesystem_binding(name: str) -> None:
-    write_adapters_config(
-        f"bindings:\n  filesystem: {name}\nadapters: {{}}\nobservability:\n  log_level: INFO\n"
-    )
+    write_adapters_config(f"bindings:\n  filesystem: {name}\nadapters: {{}}\n")
 
 
 @given(parsers.parse('an http source at "{url}" containing "{content}"'))
@@ -708,9 +706,7 @@ def assert_written_into_project_once(caplog: pytest.LogCaptureFixture, filename:
 
 @given(parsers.parse('adapters.yaml binds solver to "{name}"'))
 def given_solver_binding(name: str) -> None:
-    write_adapters_config(
-        f"bindings:\n  solver: {name}\nadapters: {{}}\nobservability:\n  log_level: INFO\n"
-    )
+    write_adapters_config(f"bindings:\n  solver: {name}\nadapters: {{}}\n")
 
 
 @given(parsers.parse('I have run init at "{target}"'))
@@ -743,6 +739,11 @@ def run_init(monkeypatch: pytest.MonkeyPatch, target: str) -> None:
 
 @when(parsers.parse('I run init with target "{target}" and example "{example}"'))
 def run_init_with_example(monkeypatch: pytest.MonkeyPatch, target: str, example: str) -> None:
+    invoke_init(monkeypatch, target, example)
+
+
+@given(parsers.parse('I have scaffolded the {example} example at "{target}"'))
+def given_scaffolded_example(monkeypatch: pytest.MonkeyPatch, example: str, target: str) -> None:
     invoke_init(monkeypatch, target, example)
 
 

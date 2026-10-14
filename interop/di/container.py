@@ -95,7 +95,7 @@ class PluginProvider(Provider):
 
     @provide
     def source_factory_builder(self, registry: Registry) -> SourceFactoryBuilder:
-        return lambda fs, umf: make_source_factory(registry, fs, umf)
+        return lambda fs, recorder, umf: make_source_factory(registry, fs, recorder, umf)
 
     @provide
     def interior_filesystem_factory(self) -> InteriorFilesystemFactory:

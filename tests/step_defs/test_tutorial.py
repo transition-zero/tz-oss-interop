@@ -1,17 +1,12 @@
 from pathlib import Path
 
 import pytest
-from pytest_bdd import given, parsers, scenarios, when
+from pytest_bdd import parsers, scenarios, when
 
-from tests.step_defs.conftest import invoke_init, invoke_translate
+from tests.step_defs.conftest import invoke_translate
 
 FEATURE = Path(__file__).resolve().parents[1] / "features" / "tutorial.feature"
 scenarios(str(FEATURE))
-
-
-@given(parsers.parse('I have scaffolded the pypsa example at "{target}"'))
-def scaffold_pypsa_example(monkeypatch: pytest.MonkeyPatch, target: str) -> None:
-    invoke_init(monkeypatch, target, "pypsa")
 
 
 @when(parsers.parse('I translate the example network to "{sink_output}"'))

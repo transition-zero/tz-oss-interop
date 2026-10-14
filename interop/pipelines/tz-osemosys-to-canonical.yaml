@@ -1,0 +1,8 @@
+source_framework: tz-osemosys
+destination_framework: osemosys-canonical
+source:
+  name: stage_tz_osemosys_json
+sinks:
+  - name: emit_osemosys_canonical_parquet
+    params:
+      output_dir: outputs/canonical

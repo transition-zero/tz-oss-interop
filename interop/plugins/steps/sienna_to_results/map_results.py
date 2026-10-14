@@ -1,6 +1,6 @@
 """Turn a Sienna solve output into the long-format results table.
 
-An earlier step (the reused Sienna to PyPSA mapping) has already recovered the hub
+An earlier step (the reused Sienna to PyPSA mapping) has already recovered the PyPSA
 names and carriers into the ``generators`` and ``storage_units`` tables. This step
 reads the staged solve series, looks up each dispatch row's carrier from those tables,
 and normalises every value to the results-format conventions: dispatch positive into
