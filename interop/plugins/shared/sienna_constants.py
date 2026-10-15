@@ -32,15 +32,12 @@ class SiennaSchemasSystem:
     """Top-level keys of a SiennaSchemas system document.
 
     The document is a JSON object with a ``components`` sub-object mapping each Sienna type
-    name to a list of that type's component objects, plus top-level metadata keys for the
-    time-series association list and pointers to the companion HDF5 value store and
-    ``extensions.json`` sidecar.
+    name to a list of that type's component objects, plus the time-series association list.
+    The SDK writes the rest of the envelope.
     """
 
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
-    TIME_SERIES_STORAGE_FILENAME = "time_series_storage_filename"
-    EXTENSIONS_FILENAME = "extensions_filename"
 
 
 class SiennaCompanionFilename(StrEnum):
@@ -312,7 +309,7 @@ class SiennaTimeSeriesAssociationCol:
     """
 
     # SiennaSchemas TimeSeriesAssociation fields
-    ID = "id"
+    ASSOCIATION_ID = "association_id"
     TIME_SERIES_UUID = "time_series_uuid"
     TIME_SERIES_TYPE = "time_series_type"
     INITIAL_TIMESTAMP = "initial_timestamp"
@@ -734,7 +731,7 @@ _SIENNA_COMPONENT_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaComponent
 
 TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # SiennaSchemas TimeSeriesAssociation fields (emitted to JSON).
-    # ID is omitted here; the sink assigns sequential IDs at serialisation time.
+    # ASSOCIATION_ID is omitted here; sienna_relate_components assigns it.
     SiennaTimeSeriesAssociationCol.TIME_SERIES_UUID: pl.Utf8,
     SiennaTimeSeriesAssociationCol.TIME_SERIES_TYPE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP: pl.Utf8,
