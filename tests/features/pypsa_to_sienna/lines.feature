@@ -36,8 +36,9 @@ Feature: pypsa_to_sienna translates PyPSA Line rows to Sienna Line plus a shared
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "base_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "arc" set to 4
     And the file "outputs/system.json" parses as JSON with "components.Arc.0.id" set to 4
-    And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1
-    And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 2
+    And the file "outputs/system.json" parses as JSON with "components.Arc.0.from_id" set to 1
+    And the file "outputs/system.json" parses as JSON with "components.Arc.0.to_id" set to 2
+    And every "Arc" component in the written Sienna system is valid SiennaSchemas 0.2
     And the file "decisions.md" contains "| `pypsa.Line.line_1_2.r` = 2.0 Ohm | `sienna.Line.line_1_2.r` = 0.02 | r_ohm * S_base / v_nom^2 (per-unit on 100 MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Line.line_1_2.x` = 8.0 Ohm | `sienna.Line.line_1_2.x` = 0.08 | x_ohm * S_base / v_nom^2 (per-unit on 100 MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Line.line_1_2.b` = 0.5 Siemens | `sienna.Line.line_1_2.b` = {'from': 25.0, 'to': 25.0} | b_siemens * v_nom^2 / S_base, split equally (per-unit on 100 MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"

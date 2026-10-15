@@ -292,8 +292,8 @@ class SiennaSystemBuilder:
                 {
                     "sienna_type": "Arc",
                     "id": arc_id,
-                    "from": from_id,
-                    "to": to_id,
+                    "from_id": from_id,
+                    "to_id": to_id,
                 }
             )
             self._arc_by_endpoints[endpoint_key] = arc_id
@@ -325,8 +325,8 @@ class SiennaSystemBuilder:
             {
                 "sienna_type": "Arc",
                 "id": arc_id,
-                "from": self._bus_ids[from_bus],
-                "to": self._bus_ids[to_bus],
+                "from_id": self._bus_ids[from_bus],
+                "to_id": self._bus_ids[to_bus],
             }
         )
         self._links.append(
