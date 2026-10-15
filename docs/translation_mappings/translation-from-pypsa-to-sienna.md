@@ -219,10 +219,10 @@ The `Sienna ThermalFuels` column is populated only for `ThermalStandard` targets
 | **Geothermal** |  |  |  |  |  |
 | `geothermal` | `ThermalStandard` | `GEOTHERMAL` | `BT` | default assumption | `BT` = Binary Cycle Turbine (most common for new geothermal). Flash-steam plants use `ST`. Ambiguous without plant-level metadata |
 | **Biomass / Bioenergy** |  |  |  |  |  |
-| `biomass` | `ThermalStandard` | `OTHER_BIOMASS_SOLIDS` | `ST` | default assumption | Broad category. `AG_BYPRODUCT` (crop residue), `WOOD_WASTE_SOLIDS` (forestry), `OTHEHR_BIOMASS_GAS` (biogas) are more specific alternatives |
+| `biomass` | `ThermalStandard` | `OTHER_BIOMASS_SOLIDS` | `ST` | default assumption | Broad category. `AG_BYPRODUCT` (crop residue), `WOOD_WASTE_SOLIDS` (forestry), `OTHER_BIOMASS_GAS` (biogas) are more specific alternatives |
 | `bioenergy` | `ThermalStandard` | `OTHER_BIOMASS_SOLIDS` | `ST` | default assumption | Even broader than `biomass`; could span solids, liquids, or gas fractions. Very coarse mapping |
 | **Waste** |  |  |  |  |  |
-| `waste` | `ThermalStandard` | `MUNICIPAL_WASTE` | `ST` | direct | Municipal solid waste incineration. `TIREDERIVED_FUEL` or `SLUDGE_WASTE` for more specific waste streams |
+| `waste` | `ThermalStandard` | `MUNICIPAL_WASTE` | `ST` | direct | Municipal solid waste incineration. `TIRE_DERIVED_FUEL` or `SLUDGE_WASTE` for more specific waste streams |
 | **Hydrogen** |  |  |  |  |  |
 | `hydrogen` | `ThermalStandard` | `OTHER_GAS` | `FC` | default assumption | **Lossy.** No `HYDROGEN` in `ThermalFuels`. `FC` = Fuel Cell; use `GT` for hydrogen combustion turbine. See flags |
 
