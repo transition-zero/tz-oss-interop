@@ -241,16 +241,24 @@ def thermal_generation_cost(marginal_cost: float) -> dict[str, Any]:
         "fixed": 0.0,
         "start_up": 0.0,
         "shut_down": 0.0,
-        "variable": _cost_curve(marginal_cost),
+        "variable_operation_cost": _cost_curve(marginal_cost),
     }
 
 
 def renewable_generation_cost(marginal_cost: float) -> dict[str, Any]:
-    return {"cost_type": "RENEWABLE", "fixed": 0.0, "variable": _cost_curve(marginal_cost)}
+    return {
+        "cost_type": "RENEWABLE",
+        "fixed": 0.0,
+        "variable_operation_cost": _cost_curve(marginal_cost),
+    }
 
 
 def hydro_generation_cost(marginal_cost: float) -> dict[str, Any]:
-    return {"cost_type": "HYDRO_GEN", "fixed": 0.0, "variable": _cost_curve(marginal_cost)}
+    return {
+        "cost_type": "HYDRO_GEN",
+        "fixed": 0.0,
+        "variable_operation_cost": _cost_curve(marginal_cost),
+    }
 
 
 def storage_cost(discharge_marginal_cost: float, *, cyclic: bool) -> dict[str, Any]:

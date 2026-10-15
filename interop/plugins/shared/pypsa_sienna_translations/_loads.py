@@ -472,7 +472,7 @@ def _load_operation_cost() -> Translation:
                     dest(
                         old[PyPSALoadCol.NAME],
                         f"{SiennaLoadCol.OPERATION_COST}"
-                        ".variable.value_curve.function_data.proportional_term",
+                        ".variable_operation_cost.value_curve.function_data.proportional_term",
                         old[_VOLL],
                         UNIT_DOLLARS_PER_MWH,
                     )
