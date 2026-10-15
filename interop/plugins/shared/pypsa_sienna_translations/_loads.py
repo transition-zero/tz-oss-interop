@@ -7,7 +7,6 @@ and compute time-series metadata after translations complete.
 
 from __future__ import annotations
 
-import uuid as _uuid
 from functools import partial
 
 import polars as pl
@@ -46,7 +45,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
-    time_series_uuid,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     load_cost,
@@ -215,8 +213,6 @@ def build_load_ts_association(
     col = SiennaTimeSeriesAssociationCol
     rows = [
         {
-            col.TIME_SERIES_UUID: time_series_uuid(component, name, SiennaLoadCol.MAX_ACTIVE_POWER),
-            col.TIME_SERIES_TYPE: "SingleTimeSeries",
             col.INITIAL_TIMESTAMP: (
                 ts_info.initial_timestamp.isoformat()
                 if ts_info.initial_timestamp is not None
@@ -227,10 +223,6 @@ def build_load_ts_association(
             col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
             col.OWNER_ID: name_to_id[name],
             col.OWNER_TYPE: component,
-            col.OWNER_CATEGORY: "Component",
-            col.FEATURES: "[]",
-            col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-            col.METADATA_UUID: str(_uuid.uuid4()),
             col.COMPONENT_NAME: name,
             col.SOURCE_TABLE: PyPSATable.LOADS,
             col.SOURCE_ATTRIBUTE: PyPSALoadCol.P_SET,

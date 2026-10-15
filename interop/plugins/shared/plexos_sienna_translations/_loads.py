@@ -14,7 +14,6 @@ megawatts would give a network with one megawatt of demand.
 from __future__ import annotations
 
 import logging
-import uuid as _uuid
 from typing import Any
 
 import polars as pl
@@ -56,7 +55,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
     SiennaUnitSystem,
-    time_series_uuid,
 )
 from interop.plugins.shared.sienna_time_series import TimeSeriesInfo
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
@@ -469,10 +467,6 @@ def build_load_ts_associations(
     col = SiennaTimeSeriesAssociationCol
     rows = [
         {
-            col.TIME_SERIES_UUID: time_series_uuid(
-                SiennaComponent.POWER_LOAD, row[LOAD_NAME], SiennaLoadCol.MAX_ACTIVE_POWER
-            ),
-            col.TIME_SERIES_TYPE: "SingleTimeSeries",
             col.INITIAL_TIMESTAMP: (
                 ts_info.initial_timestamp.isoformat()
                 if ts_info.initial_timestamp is not None
@@ -483,10 +477,6 @@ def build_load_ts_associations(
             col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
             col.OWNER_ID: id_by_name[row[LOAD_NAME]],
             col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
-            col.OWNER_CATEGORY: "Component",
-            col.FEATURES: "[]",
-            col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-            col.METADATA_UUID: str(_uuid.uuid4()),
             col.COMPONENT_NAME: row[LOAD_OWNER],
             col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
             col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,

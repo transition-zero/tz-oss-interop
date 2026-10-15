@@ -2,18 +2,9 @@
 
 from __future__ import annotations
 
-import uuid as _uuid
 from enum import StrEnum
 
 import polars as pl
-
-_TS_NS = _uuid.uuid5(_uuid.NAMESPACE_OID, "transitionzero.interop")
-
-
-def time_series_uuid(owner_type: str, owner_name: str, attribute: str) -> str:
-    """Deterministic UUID for a time series dataset keyed by owner type, name, and attribute."""
-    key = f"ts.{owner_type}.{owner_name}.{attribute}"
-    return str(_uuid.uuid5(_TS_NS, key))
 
 
 class SiennaTable:
@@ -51,20 +42,29 @@ class SiennaCompanionFilename(StrEnum):
 class TimeSeriesAssociationCol:
     """Fields of a SiennaSchemas ``TimeSeriesAssociation`` record (Core/TimeSeries)."""
 
+    ASSOCIATION_ID = "association_id"
     OWNER_TYPE = "owner_type"
     OWNER_ID = "owner_id"
     NAME = "name"
-    TIME_SERIES_UUID = "time_series_uuid"
     RESOLUTION = "resolution"
     INITIAL_TIMESTAMP = "initial_timestamp"
+    LENGTH = "length"
+    UNIT_SYSTEM = "unit_system"
 
 
-class Hdf5TimeSeriesStore:
-    """Layout of the HDF5 value store: ``time_series/<uuid>/data`` arrays keyed by
-    ``time_series_uuid`` (the external store SiennaSchemas points at)."""
+class InfraStoreSidecar:
+    """The InfraStore file that holds the time-series values a system document names."""
 
-    ROOT_GROUP = "time_series"
-    DATA_DATASET = "data"
+    SCRATCH_FILENAME = "time_series.h5"
+    STAGING_DIRECTORY = "time_series_store"
+
+
+class InfraStoreSeriesLabel:
+    """What a stored power series states about its values."""
+
+    UNIT_SYSTEM_NATURAL = "natural_units"
+    UNITS_POWER = "MW"
+    QUANTITY_ACTIVE_POWER = "ActivePower"
 
 
 class SiennaComponent(StrEnum):
@@ -316,31 +316,24 @@ class SiennaTimeSeriesField:
 class SiennaTimeSeriesAssociationCol:
     """Column names for the time_series_association destination table.
 
-    SiennaSchemas fields (emitted to JSON) plus internal-only fields used by the h5 sidecar.
+    Every column is internal. The sidecar sink turns a row into a stored series, and the store
+    states the association row that reaches the system document.
     """
 
-    # SiennaSchemas TimeSeriesAssociation fields
-    ASSOCIATION_ID = "association_id"
-    TIME_SERIES_UUID = "time_series_uuid"
-    TIME_SERIES_TYPE = "time_series_type"
     INITIAL_TIMESTAMP = "initial_timestamp"
     RESOLUTION = "resolution"
     LENGTH = "length"
     NAME = "name"
     OWNER_ID = "owner_id"
     OWNER_TYPE = "owner_type"
-    OWNER_CATEGORY = "owner_category"
-    FEATURES = "features"
-    SCALING_FACTOR_MULTIPLIER = "scaling_factor_multiplier"
-    METADATA_UUID = "metadata_uuid"
 
-    # Internal-only: used by emit_h5_sidecar to locate source data; never emitted to JSON
+    # Locate the staged values the sink reads.
     COMPONENT_NAME = "component_name"
     SOURCE_TABLE = "source_table"
     SOURCE_ATTRIBUTE = "source_attribute"
-    # Internal-only divisor the h5 sink applies: stored array = source values / scaling_factor,
-    # so the h5 holds the per-unit shape that the declared scaling_factor_multiplier
-    # reconstructs on read. 1.0 for sources that are already per-unit (e.g. p_max_pu).
+    # Divisor the sink applies to reach the per-unit shape before it multiplies by the
+    # component capacity: stored array = source values / scaling_factor * capacity.
+    # 1.0 for sources that are already per-unit (e.g. p_max_pu).
     SCALING_FACTOR = "scaling_factor"
 
 
@@ -758,21 +751,12 @@ LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 _SIENNA_COMPONENT_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaComponent])
 
 TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    # SiennaSchemas TimeSeriesAssociation fields (emitted to JSON).
-    # ASSOCIATION_ID is omitted here; sienna_relate_components assigns it.
-    SiennaTimeSeriesAssociationCol.TIME_SERIES_UUID: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.TIME_SERIES_TYPE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP: pl.Utf8,
     SiennaTimeSeriesAssociationCol.RESOLUTION: pl.Utf8,
     SiennaTimeSeriesAssociationCol.LENGTH: pl.Int64,
     SiennaTimeSeriesAssociationCol.NAME: pl.Utf8,
     SiennaTimeSeriesAssociationCol.OWNER_ID: pl.Int64,
     SiennaTimeSeriesAssociationCol.OWNER_TYPE: _SIENNA_COMPONENT_DTYPE,
-    SiennaTimeSeriesAssociationCol.OWNER_CATEGORY: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.FEATURES: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.SCALING_FACTOR_MULTIPLIER: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.METADATA_UUID: pl.Utf8,
-    # Internal-only fields (not emitted to JSON)
     SiennaTimeSeriesAssociationCol.COMPONENT_NAME: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_TABLE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE: pl.Utf8,

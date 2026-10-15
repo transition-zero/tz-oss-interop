@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-import numpy as np
 import pandas as pd
 import polars as pl
 import pypsa
@@ -24,6 +23,7 @@ from interop.plugins.shared.pypsa_constants import (
     ReverseTimeSeriesMetadataCol,
 )
 from interop.plugins.shared.series_batches import (
+    NO_VALUES,
     FloatArray,
     list_component_batches,
     read_batch_by_component,
@@ -36,7 +36,6 @@ log = logging.getLogger(__name__)
 
 
 # What a component with no staged values scales and compounds as.
-_NO_VALUES: FloatArray = np.empty(0, dtype=np.float64)
 
 
 class EmitPypsaNetworkParams(BaseModel):
@@ -395,7 +394,7 @@ def _columns_by_attribute(
             )
         scaling = row[ReverseTimeSeriesMetadataCol.SCALING_FACTOR]
         offset = row[ReverseTimeSeriesMetadataCol.OFFSET]
-        staged = series_cache[cache_key].get(source_component, _NO_VALUES)
+        staged = series_cache[cache_key].get(source_component, NO_VALUES)
         scaled = staged * scaling + offset
         key = (
             row[ReverseTimeSeriesMetadataCol.COMPONENT_TABLE],

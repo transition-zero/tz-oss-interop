@@ -79,3 +79,13 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     When I run translate against "inputs/phs_default_extendable.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_1" is not extendable
     And the file "decisions.md" contains "| `pypsa.StorageUnit.phs_1.p_nom_extendable` = False |  | no ext.p_nom_extendable; p_nom_extendable defaults to False | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
+  Scenario: a natural-units series on an owner type with no capacity rule is left out, and the run completes
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains an EnergyReservoirStorage "phs_1" on bus "node_a" with base_power 1000.0 storage_capacity 6.0 initial_level 0.5 rating 1.0 input_max 1.0 output_max 1.0 efficiency_in 0.9 efficiency_out 0.9 discharge_cost 3.0
+    And the EnergyReservoirStorage "phs_1" has a storage_target series 0.5 0.6 0.7
+    And the system is saved as "inputs/phs_series.json"
+    When I run translate against "inputs/phs_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 storage unit
+    And the log contains "EnergyReservoirStorage storage_target"
