@@ -116,6 +116,7 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/system.json" parses as JSON with 1 components of type "Arc"
     And the file "outputs/system.json" parses as JSON with component "Line" named "ac_line" having "arc" set to 5
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "dc_link" having "arc" set to 5
+    And every "Arc" component in the written Sienna system is valid SiennaSchemas 0.2
     And the file "outputs/system.json" parses as JSON with component "Line" named "ac_line" having "id" set to 3
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "dc_link" having "id" set to 4
     And the component ids in the written Sienna system are unique

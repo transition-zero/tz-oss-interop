@@ -2,7 +2,7 @@
 
 An Arc is the topological edge two branches reference by integer id. Arcs are derived from
 the already-translated branch tables (lines, links): one Arc per distinct ordered endpoint
-pair, with ``from``/``to`` resolved to the buses' integer ids. The endpoint name columns
+pair, with ``from_id``/``to_id`` resolved to the buses' integer ids. The endpoint name columns
 (bus0/bus1) are kept as enrichment for event attribution and dropped by finalise().
 """
 
@@ -33,7 +33,7 @@ def build_arcs_source_table(
     """One row per distinct ordered (bus0, bus1) pair with endpoint bus ids resolved.
 
     ``branch_endpoints`` is any frame carrying ``bus0``/``bus1`` name columns (the line and
-    link destination tables). Returns the endpoint name columns plus ``from``/``to`` (the
+    link destination tables). Returns the endpoint name columns plus ``from_id``/``to_id`` (the
     buses' integer ids); empty when there are no branches.
     """
     bus_lookup = sienna_buses.select([pl.col(SiennaACBusCol.NAME), pl.col(SiennaACBusCol.ID)])
