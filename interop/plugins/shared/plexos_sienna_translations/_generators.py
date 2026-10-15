@@ -101,6 +101,7 @@ from interop.plugins.shared.sienna_constants import (
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
+    SiennaOperationalState,
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
@@ -132,7 +133,6 @@ _AVAILABLE_NOTE = "PLEXOS states no generator availability; every generator is a
 _STATUS_NOTE = "PLEXOS states no starting commitment; status defaults to on"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "PLEXOS states no reactive limits; reactive_power_limits is left unset"
-_MUST_RUN_NOTE = "PLEXOS commits a unit rather than forcing it on; must_run defaults to False"
 _TIME_AT_STATUS_NOTE = (
     f"PLEXOS states no commitment history; time_at_status takes the {TIME_AT_STATUS_SENTINEL} "
     "sentinel"
@@ -222,8 +222,7 @@ class _ThermalMapping:
     start_up: Decision = declares(_START_UP_COLUMN)
     operation_cost: Decision = declares(_THERMAL_COST_COLUMN)
     prime_mover_type: Decision = maps_to(SiennaThermalGeneratorCol.PRIME_MOVER_TYPE)
-    fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL_TYPE)
-    must_run: Decision = maps_to(SiennaThermalGeneratorCol.MUST_RUN)
+    fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL)
     time_at_status: Decision = maps_to(SiennaThermalGeneratorCol.TIME_AT_STATUS)
 
 
@@ -678,7 +677,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         name=mapping.name,
         base_power=decide_generator(mapping).p_nom,
         available=Decision.default(True, _AVAILABLE_NOTE),
-        status=Decision.default(True, _STATUS_NOTE),
+        status=Decision.default(SiennaOperationalState.ONLINE.value, _STATUS_NOTE),
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=_active_power(mapping),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
@@ -691,7 +690,6 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
         fuel_type=_fuel_type(mapping, target),
-        must_run=Decision.default(False, _MUST_RUN_NOTE),
         time_at_status=Decision.default(TIME_AT_STATUS_SENTINEL, _TIME_AT_STATUS_NOTE),
     )
 

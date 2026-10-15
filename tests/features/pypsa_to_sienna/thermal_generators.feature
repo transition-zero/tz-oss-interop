@@ -11,7 +11,10 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And a user mappings file with all standard carriers
     When I run translate against "inputs/ccgt.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "fuel_type" set to "NATURAL_GAS"
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "fuel" set to "NATURAL_GAS"
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "status" set to "ONLINE"
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" without field "must_run"
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" without field "fuel_type"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "prime_mover_type" set to "CC"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "base_power" set to 500.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "active_power" set to 100.0
@@ -32,15 +35,14 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.marginal_cost` = 30.0 | `sienna.ThermalStandard.ccgt_1.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 30.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # USER_CONFIG_DEFAULT_APPLIED decisions (carrier classification according to user defined mapping)
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.type` = ThermalStandard |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.fuel_type` = NATURAL_GAS |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.fuel` = NATURAL_GAS |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.prime_mover_type` = CC |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # TRANSLATOR_DEFAULT_APPLIED decisions
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.id` = 2 |  | assigned by row position in thermal generators DataFrame, after the ids of earlier components | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.available` = True |  | PyPSA Generator has no active field; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.status` = True |  | PyPSA has no separate initial on/off state; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.status` = ONLINE |  | PyPSA has no separate initial on/off state; defaulted to ONLINE | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.reactive_power` = 0.0 |  | PyPSA networks rarely model reactive power for generators | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.ramp_limits` |  | ramp_limit_up/down absent in PyPSA network; ramp_limits set to null | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.must_run` = False |  | PyPSA Generator has no must_run concept; defaulted to False | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.time_limits` |  | min_up_time and min_down_time both zero; time_limits set to null | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.up_time_before` = 0.0 | `sienna.ThermalStandard.ccgt_1.time_at_status` = 10000.0 | up_time_before=0; defaulted to 10000.0 (Sienna schema default) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # Verify values in output JSON
@@ -105,7 +107,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the network is saved as "inputs/<carrier>_carrier.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/<carrier>_carrier.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "gen_1" having "fuel_type" set to "<fuel_type>"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "gen_1" having "fuel" set to "<fuel_type>"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "gen_1" having "prime_mover_type" set to "<prime_mover>"
 
     Examples:
