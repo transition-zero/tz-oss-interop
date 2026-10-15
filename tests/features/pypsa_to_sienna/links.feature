@@ -18,7 +18,7 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/system.json" parses as JSON with 1 components of type "Arc"
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "available" set to true
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_flow" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "arc" set to 1
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "arc" set to 4
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_from.min" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_from.max" set to 2000.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_to.min" set to 0.0
@@ -112,8 +112,11 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     Then the file "outputs/system.json" parses as JSON with 1 components of type "Line"
     And the file "outputs/system.json" parses as JSON with 1 components of type "TwoTerminalGenericHVDCLine"
     And the file "outputs/system.json" parses as JSON with 1 components of type "Arc"
-    And the file "outputs/system.json" parses as JSON with component "Line" named "ac_line" having "arc" set to 1
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "dc_link" having "arc" set to 1
+    And the file "outputs/system.json" parses as JSON with component "Line" named "ac_line" having "arc" set to 5
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "dc_link" having "arc" set to 5
+    And the file "outputs/system.json" parses as JSON with component "Line" named "ac_line" having "id" set to 3
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "dc_link" having "id" set to 4
+    And the component ids in the written Sienna system are unique
 
   Scenario: time-varying efficiency uses the static value and flags only the affected link
     Given a PyPSA network

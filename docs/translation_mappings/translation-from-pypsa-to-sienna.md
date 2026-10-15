@@ -100,7 +100,7 @@ SiennaSchemas defines per-component schemas but not how a whole system is packag
 }
 ```
 
-The type is implied by the key, so the objects stay **pure SiennaSchemas** — no `type`/`__metadata__` discriminator on the objects themselves. Identity is `(type, id)`: `id` is unique within its type's list, and a reference resolves by looking up the type's array and matching `id`. This is how every cross-reference within the system document resolves — a bus's integer `bus`/`area`, and a `TimeSeriesAssociation`'s `owner_type`/`owner_id`. The extensions sidecar is the exception: it keys by `name`, because the frameworks either side of a hop share names and not integer ids.
+The type is implied by the key, so the objects stay **pure SiennaSchemas** — no `type`/`__metadata__` discriminator on the objects themselves. Identity is `id`: every `id` is unique across all component lists of the document, and a reference resolves by matching `id` in the list of the type that the field names. This is how every cross-reference within the system document resolves — a bus's integer `bus`/`area`, and a `TimeSeriesAssociation`'s `owner_type`/`owner_id`. The extensions sidecar is the exception: it keys by `name`, because the frameworks either side of a hop share names and not integer ids.
 
 `TimeSeriesAssociation` records sit alongside the components (a sibling key, e.g. `"TimeSeriesAssociation": [ ... ]`); the extensions document and the HDF5 value arrays are separate companion files.
 
@@ -752,7 +752,7 @@ These are aggregation containers for buses. A bus references its `Area`/`LoadZon
 
 `name` matches the `Area` name; `peak_active_power`/`peak_reactive_power` are schema-required and default to `0.0` (backfill with zonal totals after loads are translated if needed).
 
-**Id-assignment order:** assign integer `id`s so referenced types come first — `Area`/`LoadZone`, then `ACBus`/`DCBus` (which reference them), then generators, loads, and branches (which reference buses). The serialised lists are unordered; only the `id` references matter.
+**Id-assignment order:** one counter numbers every component of the document. `ACBus` takes ids 1 to N. The next tables count on from there, in this order: `PowerLoad`, `InterruptiblePowerLoad`, `ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch`, `HydroDispatch`, `EnergyReservoirStorage`, `Line`, `TwoTerminalGenericHVDCLine`, `Area`, `Arc`. Each id is the row position in its table plus the number of ids that earlier tables took. The serialised lists are unordered; only the `id` references matter.
 
 ---
 
@@ -1091,7 +1091,7 @@ If `bus0` or `bus1` refers to a non-electricity bus excluded during bus filterin
 
 #### Id-assignment order
 
-References resolve by `id`, so the lists are unordered; assign `id`s so referenced components exist first: `Area`/`LoadZone` → `ACBus` → `Arc` → `Line`/`MonitoredLine` → generators and loads.
+References resolve by `id`, so the lists are unordered. See "Id-assignment order" in the `Area` section for the one counter that numbers every component.
 
 #### Relationship between `Line` and `Link` in the translator
 

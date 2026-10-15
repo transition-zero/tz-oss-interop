@@ -30,7 +30,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_nom` = 200.0 MW | `sienna.RenewableDispatch.solar_1.base_power` = 200.0 MW | p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a build cannot take away, else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_max_pu` = 1.0 | `sienna.RenewableDispatch.solar_1.rating` = 1.0 | p_max_pu (per-unit nameplate rating; typically 1.0) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # TRANSLATOR_DEFAULT_APPLIED decisions
-    And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.id` = 1 |  | assigned by 1-based row position in renewable generators DataFrame | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.id` = 2 |  | assigned by row position in renewable generators DataFrame, after the ids of earlier components | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.available` = True |  | PyPSA Generator has no active field; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.reactive_power` = 0.0 |  | PyPSA networks rarely model reactive power for generators | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.RenewableDispatch.solar_1.power_factor` = 1.0 |  | PyPSA generator schema has no scalar power factor; defaulted to 1.0 | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -93,7 +93,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "solar_1" attribute "max_active_power" with length 3
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "solar_1" attribute "max_active_power" with values 0.9 0.85 0.92
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
-    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 1 has resolution "PT1H"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 2 has resolution "PT1H"
 
   Scenario: flat time-varying p_max_pu is skipped (no time series emitted)
     Given a PyPSA network

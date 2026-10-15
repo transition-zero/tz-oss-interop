@@ -47,6 +47,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLinkCol,
 )
 from interop.plugins.shared.sienna_cost_curves import linear_value_curve_value
+from interop.plugins.shared.translation_runner import build_first_free_id
 
 # PLEXOS states no voltage-angle limit, and a quarter turn each way is the widest a Sienna
 # consumer reads as unbounded.
@@ -57,7 +58,7 @@ SINGLE_CIRCUIT: float = 1.0
 ZERO_LENGTH: float = 0.0
 NO_REACTIVE_LIMIT: float = 0.0
 
-_ID_NOTE = "assigned by 1-based row position in the component's table"
+_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
 _SUSCEPTANCE_NOTE = "PLEXOS states no shunt susceptance or conductance; both default to 0.0"
@@ -140,6 +141,7 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
             SourceValue(PlexosClass.LINE, endpointless.name, None, None), _ENDPOINTLESS_NOTE
         )
     translated = TranslatedTransmission([], [], [], [])
+    first_id = build_first_free_id(state)
     for line in source.lines:
         if not _endpoints_are_buses(line, voltages):
             reporter = line_reporter if line.is_electrical else link_reporter
@@ -148,9 +150,9 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
             )
             continue
         if line.is_electrical:
-            _add_line(translated, line, voltages, line_reporter)
+            _add_line(translated, line, voltages, line_reporter, first_id)
         else:
-            _add_link(translated, line, link_reporter)
+            _add_link(translated, line, link_reporter, first_id)
     return translated
 
 
@@ -176,12 +178,13 @@ def _add_line(
     line: StagedLine,
     voltages: dict[str, float],
     reporter: SiennaComponentReporter,
+    first_id: int,
 ) -> None:
     voltage = voltages[line.endpoints.node_from]
     mapping = _derive_line(line, voltage)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLineCol.NAME, line.name)
-    row[SiennaLineCol.ID] = len(translated.lines) + 1
+    row[SiennaLineCol.ID] = first_id + len(translated.lines) + len(translated.links)
     reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID], _ID_NOTE)
     translated.lines.append(row)
     _record_dropped(reporter, line, _DROPPED_LINE_PROPERTIES)
@@ -197,7 +200,10 @@ def _add_line(
 
 
 def _add_link(
-    translated: TranslatedTransmission, line: StagedLine, reporter: SiennaComponentReporter
+    translated: TranslatedTransmission,
+    line: StagedLine,
+    reporter: SiennaComponentReporter,
+    first_id: int,
 ) -> None:
     mapping = _derive_link(line)
     reporter.record_mapping(line.name, mapping)
@@ -205,7 +211,7 @@ def _add_link(
     limits = _limits_value(line)
     row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM] = limits
     row[SiennaLinkCol.ACTIVE_POWER_LIMITS_TO] = limits
-    row[SiennaLinkCol.ID] = len(translated.links) + 1
+    row[SiennaLinkCol.ID] = first_id + len(translated.lines) + len(translated.links)
     reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID], _ID_NOTE)
     translated.links.append(row)
     _record_dropped(reporter, line, _DROPPED_LINK_PROPERTIES)

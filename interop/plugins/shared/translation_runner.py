@@ -18,8 +18,10 @@ from typing import Any
 
 import polars as pl
 
+from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
+from interop.plugins.shared.sienna_constants import SiennaACBusCol, SiennaComponent
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -163,6 +165,49 @@ def row_position_id_translation(
     return Translation(
         exprs=[pl.int_range(start, start + pl.len(), dtype=pl.Int64).alias(id_col)],
         make_events=make_events,
+    )
+
+
+# A step adds this column to a source table. It holds the id that the first row takes.
+FIRST_ID_COLUMN = "_first_id"
+
+
+def build_first_free_id(state: State) -> int:
+    """The id after every id that the component tables in ``state`` already hold.
+
+    Ids are unique across the whole document, so each table counts on from the tables written
+    before it. A component table is a table with an id column. The time-series associations
+    number themselves, so they do not count.
+    """
+    taken = 0
+    for key, table in state.destination_tables.items():
+        if key == SiennaComponent.TIME_SERIES_ASSOCIATION:
+            continue
+        if SiennaACBusCol.ID in table.columns:
+            taken += table.height
+    return taken + 1
+
+
+def enrich_first_id(table: pl.DataFrame, state: State) -> pl.DataFrame:
+    """Add the ``FIRST_ID_COLUMN`` column that ``express_document_id`` reads."""
+    first_id = pl.lit(build_first_free_id(state), dtype=pl.Int64)
+    return table.with_columns(first_id.alias(FIRST_ID_COLUMN))
+
+
+def express_document_id() -> pl.Expr:
+    """Ids that count on from the first free id, one for each row."""
+    return pl.col(FIRST_ID_COLUMN) + pl.int_range(0, pl.len(), dtype=pl.Int64)
+
+
+def build_document_id_translation(
+    dest_field: DestinationFieldFactory, *, dest_name_col: str, id_col: str, note: str
+) -> Translation:
+    """A TRANSLATOR_DEFAULT_APPLIED translation that numbers rows from the first free id."""
+    position = row_position_id_translation(
+        dest_field, dest_name_col=dest_name_col, id_col=id_col, note=note
+    )
+    return Translation(
+        exprs=[express_document_id().alias(id_col)], make_events=position.make_events
     )
 
 
