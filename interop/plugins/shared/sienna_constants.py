@@ -156,8 +156,8 @@ class SiennaArcCol:
     """Sienna Arc column names (topology element joining two buses by integer id)."""
 
     ID = "id"
-    FROM = "from"
-    TO = "to"
+    FROM = "from_id"
+    TO = "to_id"
 
 
 class FromToField:
