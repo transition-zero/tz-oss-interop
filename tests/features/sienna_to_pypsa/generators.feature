@@ -27,7 +27,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
     And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.rating` = 1.0 | `pypsa.Generator.coal_1.p_max_pu` = 1.0 | direct |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
     And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.active_power_limits.min` = 100.0 MW | `pypsa.Generator.coal_1.p_min_pu` = 0.2 | active_power_limits.min / base_power |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
     And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.operation_cost` = 25.0 | `pypsa.Generator.coal_1.marginal_cost` = 25.0 | variable cost proportional term |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
-    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.prime_mover_type` = ST<br>`sienna.ThermalStandard.coal_1.fuel_type` = COAL | `pypsa.Generator.coal_1.carrier` = coal | (prime_mover_type, fuel_type) -> carrier |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.prime_mover_type` = ST<br>`sienna.ThermalStandard.coal_1.fuel` = COAL | `pypsa.Generator.coal_1.carrier` = coal | (prime_mover_type, fuel_type) -> carrier |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
 
   Scenario: a ThermalStandard with an ext carrier overrides the derived carrier
     Given a Sienna system

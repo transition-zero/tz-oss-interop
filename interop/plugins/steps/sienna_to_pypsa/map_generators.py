@@ -278,7 +278,7 @@ def _derive_thermal(
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     active_power_max = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MAX])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
-    fuel = ThermalFuel(row[SiennaGeneratorCol.FUEL_TYPE])
+    fuel = ThermalFuel(row[SiennaGeneratorCol.FUEL])
     bus_id = row[SiennaGeneratorCol.BUS]
     ext = extensions.get(row[SiennaGeneratorCol.NAME])
     operation_cost = row[SiennaGeneratorCol.OPERATION_COST]

@@ -39,6 +39,7 @@ from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeries
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
+    OPERATIONAL_STATE_DTYPE,
     PRIME_MOVERS_DTYPE,
     RAMP_LIMITS_DTYPE,
     REACTIVE_POWER_LIMITS_DTYPE,
@@ -50,6 +51,7 @@ from interop.plugins.shared.sienna_constants import (
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
     SiennaCostType,
+    SiennaOperationalState,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
 )
@@ -271,8 +273,9 @@ GENERATOR_AVAILABLE = _default(
 
 GENERATOR_STATUS = _default(
     dest_col=T.STATUS,
-    value=True,
-    note="PyPSA has no separate initial on/off state; defaulted to True",
+    value=SiennaOperationalState.ONLINE.value,
+    note="PyPSA has no separate initial on/off state; defaulted to ONLINE",
+    dtype=OPERATIONAL_STATE_DTYPE,
 )
 
 GENERATOR_BUS_NAME = _direct(source_col=PyPSAGeneratorCol.BUS, dest_col=T.BUS_NAME)
@@ -302,9 +305,7 @@ GENERATOR_SIENNA_TYPE = Translation(
 )
 
 GENERATOR_FUEL_TYPE = Translation(
-    exprs=[
-        pl.col(_FUEL_TYPE_COL).cast(THERMAL_FUELS_DTYPE).alias(SiennaThermalGeneratorCol.FUEL_TYPE)
-    ],
+    exprs=[pl.col(_FUEL_TYPE_COL).cast(THERMAL_FUELS_DTYPE).alias(SiennaThermalGeneratorCol.FUEL)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.USER_CONFIG_DEFAULT_APPLIED,
@@ -322,8 +323,8 @@ GENERATOR_FUEL_TYPE = Translation(
                     framework=Framework.SIENNA,
                     component=SiennaComponent.THERMAL_STANDARD,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=SiennaThermalGeneratorCol.FUEL_TYPE,
-                    value=new[SiennaThermalGeneratorCol.FUEL_TYPE],
+                    attribute=SiennaThermalGeneratorCol.FUEL,
+                    value=new[SiennaThermalGeneratorCol.FUEL],
                 )
             ],
             note="according to user defined mapping",
@@ -686,13 +687,6 @@ GENERATOR_TIME_AT_STATUS = Translation(
     ],
 )
 
-GENERATOR_MUST_RUN = _default(
-    dest_col=T.MUST_RUN,
-    value=False,
-    note="PyPSA Generator has no must_run concept; defaulted to False",
-    dtype=pl.Boolean,
-)
-
 GENERATOR_TRANSLATIONS: list[Translation] = [
     GENERATOR_ID,
     GENERATOR_NAME,
@@ -710,7 +704,6 @@ GENERATOR_TRANSLATIONS: list[Translation] = [
     GENERATOR_APL,
     GENERATOR_RAMP_LIMITS,
     GENERATOR_TIME_LIMITS,
-    GENERATOR_MUST_RUN,
     GENERATOR_TIME_AT_STATUS,
     GENERATOR_COST,
 ]
