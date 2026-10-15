@@ -847,6 +847,7 @@ dependencies = [
     { name = "netcdf4" },
     { name = "pandas" },
     { name = "polars" },
+    { name = "power-openapi-models" },
     { name = "pydantic" },
     { name = "pypsa" },
     { name = "pyyaml" },
@@ -880,6 +881,7 @@ requires-dist = [
     { name = "netcdf4", specifier = ">=1.6" },
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "polars", specifier = ">=1.44.1" },
+    { name = "power-openapi-models", specifier = "==0.2.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pypsa", specifier = ">=1.3.0" },
     { name = "pyyaml", specifier = ">=6" },
@@ -1893,6 +1895,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/98/ac/769c598dd106e2a6647798da3ed25ddeee67f2d12c04f5da316cb3da6360/polars_runtime_32-1.44.1-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:0956f0cae632d8fad3a04b4315bf2bb69b56d10c83c79a75c2c4c5a13b9ce5cc", size = 56447612, upload-time = "2026-08-26T07:08:12.36Z" },
     { url = "https://files.pythonhosted.org/packages/b2/ee/98408296e15388020b6183323fdbe78ccab4f72c20d8e0d7092c062d3ad2/polars_runtime_32-1.44.1-cp310-abi3-win_amd64.whl", hash = "sha256:159334184e6fbb074c9f4692221ea19970a5e2bed2a479f9d7bdb00b7f3eedb9", size = 53702970, upload-time = "2026-08-26T07:08:15.398Z" },
     { url = "https://files.pythonhosted.org/packages/e9/9d/8b17e075aac73c881a50b6c1f690d20df46db2f3bcabc99f600ecdee1290/polars_runtime_32-1.44.1-cp310-abi3-win_arm64.whl", hash = "sha256:3ba28d638d0513e0b4afbcdab5c0059a85021e5f81d62b5f793e7e23badb2cf7", size = 47281050, upload-time = "2026-08-26T07:08:18.43Z" },
+]
+
+[[package]]
+name = "power-openapi-models"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/01/cbe0a041b902e5a13effe9f569647a50ee62ea4dfc32db467b52f9fbd22e/power_openapi_models-0.2.0.tar.gz", hash = "sha256:6450ae6605ca856b4fddc22d86a3174ca9e5a5d849692285ac6f48a39861a8b9", size = 160100, upload-time = "2026-10-06T00:47:26.801Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/c0/10e5e0ffe56b7aa0dc9d9079028581e5bddd2c0b658b384aff1d678c806d/power_openapi_models-0.2.0-py3-none-any.whl", hash = "sha256:57228392dee13800fe46e0b610861b9ea75c11d2197254a2744c3bde45dc5527", size = 151563, upload-time = "2026-10-06T00:47:25.308Z" },
 ]
 
 [[package]]
