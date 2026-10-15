@@ -45,6 +45,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaLineCol,
     SiennaLinkCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import linear_value_curve_value
 from interop.plugins.shared.translation_runner import build_first_free_id
@@ -60,6 +61,11 @@ NO_REACTIVE_LIMIT: float = 0.0
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
+_LINE_UNITS_NOTE = (
+    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+_LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
+_BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
 _SUSCEPTANCE_NOTE = "PLEXOS states no shunt susceptance or conductance; both default to 0.0"
 _ANGLE_NOTE = "PLEXOS states no voltage-angle limits; the limits default to a quarter turn"
@@ -99,6 +105,8 @@ class _LineMapping:
     rating: Decision = maps_to(SiennaLineCol.RATING)
     rating_b: Decision = maps_to(SiennaLineCol.RATING_B, SiennaLineCol.RATING_C)
     angle_limits: Decision = maps_to(SiennaLineCol.ANGLE_LIMITS)
+    power_units: Decision = maps_to(SiennaLineCol.POWER_UNITS)
+    base_power: Decision = maps_to(SiennaLineCol.BASE_POWER, unit=UNIT_MVA)
 
 
 @dataclass(frozen=True)
@@ -115,6 +123,8 @@ class _LinkMapping:
         SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.REACTIVE_POWER_LIMITS_TO
     )
     loss: Decision = maps_to(SiennaLinkCol.LOSS)
+    power_units: Decision = maps_to(SiennaLinkCol.POWER_UNITS)
+    base_power: Decision = maps_to(SiennaLinkCol.BASE_POWER, unit=UNIT_MVA)
 
 
 @dataclass(frozen=True)
@@ -263,6 +273,8 @@ def _derive_line(line: StagedLine, voltage: float) -> _LineMapping:
         b=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         g=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         rating=_rating(line),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, _LINE_UNITS_NOTE),
+        base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         rating_b=Decision.default(
             PerColumn({SiennaLineCol.RATING_B: None, SiennaLineCol.RATING_C: None}), _RATING_B_NOTE
         ),
@@ -280,6 +292,8 @@ def _derive_link(line: StagedLine) -> _LinkMapping:
         active_power_flow=Decision.default(NO_FLOW, _FLOW_NOTE),
         active_power_limits=_active_power_limits(line),
         marginal_cost=_marginal_cost(line),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _LINK_UNITS_NOTE),
+        base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         reactive_power_limits=Decision.default(
             {"min": NO_REACTIVE_LIMIT, "max": NO_REACTIVE_LIMIT}, _REACTIVE_LIMITS_NOTE
         ),

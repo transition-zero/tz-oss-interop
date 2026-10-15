@@ -60,6 +60,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
     SiennaStorageTech,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve_value,
@@ -106,6 +107,9 @@ _HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UN
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
+_POWER_UNITS_NOTE = (
+    "storage rating and limits are per unit on the base_power, so the units are COMPONENT_BASE"
+)
 _RATING_NOTE = "the unit states no availability cap, so it runs at its whole rating"
 _ACTIVE_POWER_NOTE = "PLEXOS states no starting output; active_power defaults to 0.0"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
@@ -157,6 +161,7 @@ class _StorageMapping:
     conversion_factor: Decision = maps_to(SiennaEnergyReservoirStorageCol.CONVERSION_FACTOR)
     storage_target: Decision = maps_to(SiennaEnergyReservoirStorageCol.STORAGE_TARGET)
     cycle_limits: Decision = maps_to(SiennaEnergyReservoirStorageCol.CYCLE_LIMITS)
+    power_units: Decision = maps_to(SiennaEnergyReservoirStorageCol.POWER_UNITS)
 
 
 @dataclass(frozen=True)
@@ -301,6 +306,7 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
         conversion_factor=Decision.default(CONVERSION_FACTOR, _CONVERSION_NOTE),
         storage_target=replace(mapping.cyclic, value=_target(hours, is_cyclic)),
         cycle_limits=Decision.default(DEFAULT_CYCLE_LIMITS, _CYCLE_LIMITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, _POWER_UNITS_NOTE),
     )
 
 
