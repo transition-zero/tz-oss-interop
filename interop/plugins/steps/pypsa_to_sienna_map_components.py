@@ -85,6 +85,7 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     apply_translations,
+    enrich_first_id,
     filter_component,
     finalise,
 )
@@ -289,7 +290,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
     def _map_one(self, state: State, mapping: ComponentMapping, source: pl.DataFrame) -> State:
         """Translate one carrier-filtered ComponentMapping into its Sienna destination table."""
         prepared = self._prepare_source(state, mapping, source)
-        table = prepared.table
+        table = enrich_first_id(prepared.table, state)
         self._add_derived_series(state, mapping, prepared)
         dst = apply_translations(table, mapping.translations, self._recorder)
         out = finalise(dst, mapping.schema, self._recorder, mapping.sienna_component)
@@ -410,7 +411,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         """Translate one of the two load types, leaving no destination table where none apply."""
         if table.is_empty():
             return
-        dst = apply_translations(table, kind.phase_1, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), kind.phase_1, self._recorder)
         dst = apply_translations(dst, kind.phase_2, self._recorder)
         out = finalise(dst, kind.schema, self._recorder, kind.sienna_component)
         state.destination_tables[kind.sienna_component] = out
@@ -477,7 +478,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         )
         table = enrich_line_voltage(table, buses)
 
-        dst = apply_translations(table, LINE_TRANSLATIONS, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), LINE_TRANSLATIONS, self._recorder)
         state.destination_tables[SiennaComponent.LINE] = finalise(
             dst,
             LINES_DESTINATION_SCHEMA,
@@ -510,7 +511,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         for rule in (unbuilt_candidate_skip(naming), rejected_build_skip(naming)):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
 
-        dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
         state.destination_tables[hvdc] = finalise(
             dst,

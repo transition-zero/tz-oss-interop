@@ -20,7 +20,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLineCol,
 )
 from interop.plugins.shared.sienna_time_series import TIME_SERIES_ASSOCIATION_ID
-from interop.plugins.shared.translation_runner import apply_translations, finalise
+from interop.plugins.shared.translation_runner import (
+    apply_translations,
+    enrich_first_id,
+    finalise,
+)
 
 # Branch component tables whose endpoints feed Arc derivation.
 _BRANCH_COMPONENTS: tuple[str, ...] = (
@@ -49,7 +53,7 @@ class SiennaRelateComponents(TranslationStep):
             return state
 
         buses = state.destination_tables[SiennaComponent.AC_BUS]
-        areas_src = build_areas_source_table(buses)
+        areas_src = enrich_first_id(build_areas_source_table(buses), state)
         dst = apply_translations(areas_src, AREA_TRANSLATIONS, self._recorder)
         state.destination_tables[SiennaComponent.AREA] = finalise(
             dst,
@@ -81,7 +85,7 @@ class SiennaRelateComponents(TranslationStep):
         endpoints = pl.concat(
             [t.select([SiennaLineCol.BUS0, SiennaLineCol.BUS1]) for t in endpoint_tables]
         )
-        arcs_src = build_arcs_source_table(endpoints, buses)
+        arcs_src = enrich_first_id(build_arcs_source_table(endpoints, buses), state)
         dst = apply_translations(arcs_src, ARC_TRANSLATIONS, self._recorder)
         state.destination_tables[SiennaComponent.ARC] = finalise(
             dst,

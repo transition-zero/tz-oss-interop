@@ -54,9 +54,9 @@ from interop.plugins.shared.staged_samples import choose_reference_sample, filte
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -268,7 +268,7 @@ def build_load_extensions(
 # parameter because an interruptible load fills the same fields as a plain one, and each
 # report must name the type the pipeline actually wrote.
 
-_ID_NOTE = "assigned by 1-based row position in loads DataFrame"
+_ID_NOTE = "assigned by row position in loads DataFrame, after the ids of earlier components"
 _AVAILABLE_NOTE = "PyPSA Load has no active input field; always True"
 _BUS_NAME_NOTE = "bus string name; FK resolution to ACBus deferred"
 _Q_SET_NOTE = "time-varying q_set deferred"
@@ -289,7 +289,7 @@ def _load_translations(component: SiennaComponent) -> list[Translation]:
     direct = partial(direct_translation, _source, dest, name_col=PyPSALoadCol.NAME)
     default = partial(default_translation, dest, name_col=PyPSALoadCol.NAME)
     return [
-        row_position_id_translation(
+        build_document_id_translation(
             dest, dest_name_col=SiennaLoadCol.NAME, id_col=SiennaLoadCol.ID, note=_ID_NOTE
         ),
         direct(source_col=PyPSALoadCol.NAME, dest_col=SiennaLoadCol.NAME),
