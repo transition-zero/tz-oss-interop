@@ -165,17 +165,19 @@ class _LinkPowerLimits:
 def _reconstruct_link_power_limits(
     reporter: LinkReporter,
     name: str,
-    limits_from: dict[str, float],
+    rating_from: float,
+    rating_to: float,
     ext: ControllableLineExtension,
 ) -> _LinkPowerLimits:
-    """Invert the forward ``active_power_limits_from`` split back into p_nom/p_min_pu/p_max_pu.
+    """Invert the forward ``rating_from`` and ``rating_to`` back into p_nom/p_min_pu/p_max_pu.
 
-    Forward writes ``max = capacity * p_max_pu`` and ``min = capacity * p_min_pu`` (only when
-    p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu therefore cannot be
-    read off the limits alone; both travel in the ext sidecar so the round-trip stays lossless.
+    Forward writes ``rating_from = capacity * p_max_pu`` and ``rating_to = -capacity * p_min_pu``
+    (only when p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu therefore
+    cannot be read off the ratings alone; both travel in the ext sidecar so the round-trip stays
+    lossless.
     """
-    limit_max = float(limits_from[SiennaStructField.MAX])
-    limit_min = float(limits_from[SiennaStructField.MIN])
+    limit_max = rating_from
+    limit_min = -rating_to if rating_to > 0.0 else 0.0
     p_max_pu = ext.p_max_pu
     if p_max_pu is None:
         p_nom = limit_max
@@ -192,7 +194,7 @@ def _reconstruct_link_power_limits(
         reporter.record_p_min_pu_zero_capacity(name)
     else:
         p_min_pu = limit_min / p_nom
-        reporter.record_p_min_pu(name, limit_min, p_min_pu)
+        reporter.record_p_min_pu(name, rating_to, p_min_pu)
     return _LinkPowerLimits(limit_max=limit_max, p_nom=p_nom, p_min_pu=p_min_pu, p_max_pu=p_max_pu)
 
 
@@ -278,15 +280,19 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
             ext = extensions.get(name)
             loss_term = float(
-                row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
-                    SiennaStructField.PROPORTIONAL_TERM
-                ]
+                row[SiennaLinkCol.LOSS][SiennaStructField.VALUE_CURVE][
+                    SiennaStructField.FUNCTION_DATA
+                ][SiennaStructField.PROPORTIONAL_TERM]
             )
             efficiency = 1.0 - loss_term
             reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
             reporter.record_available(name, available, available)
             limits = _reconstruct_link_power_limits(
-                reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
+                reporter,
+                name,
+                float(row[SiennaLinkCol.RATING_FROM]),
+                float(row[SiennaLinkCol.RATING_TO]),
+                ext,
             )
             reporter.record_efficiency(name, loss_term, efficiency)
             carrier = ext.carrier

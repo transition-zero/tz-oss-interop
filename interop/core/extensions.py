@@ -196,11 +196,11 @@ class ControllableLineExtension(ExtensionRecord):
     # prices no flow over a branch, so the charge has no field there.
     marginal_cost: float | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
-    # PyPSA Link.p_max_pu. Sienna's active_power_limits_from folds p_nom * p_max_pu into one
-    # number, so the split is unrecoverable without this.
+    # PyPSA Link.p_max_pu. Sienna's rating_from folds p_nom * p_max_pu into one number, so
+    # the split is unrecoverable without this.
     p_max_pu: float | None = None
-    # PyPSA Link.p_min_pu. Sienna forces the from-end minimum to zero, so a positive lower
-    # bound is lost without this.
+    # PyPSA Link.p_min_pu. Sienna states a lower bound only as a reverse rating, so a
+    # positive lower bound is lost without this.
     p_min_pu: float | None = None
     # Ours, not either framework's: a marker that PyPSA held a series where the destination
     # field is a single number, so a consumer knows the value was flattened.

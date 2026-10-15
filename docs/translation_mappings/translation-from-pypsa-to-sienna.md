@@ -1286,13 +1286,12 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 | — | `active_power_flow` | Set to `0.0` | PyPSA has `p0`/`p1` result fields, not an initial condition; initialise to 0 |
 | `bus0` | `arc` (from) | resolve name → bus `id` | `arc` is the integer `id` of an `Arc` whose `from_id`/`to_id` are the bus `id`s of `bus0`/`bus1` |
 | `bus1` | `arc` (to) | Name lookup → `ACBus` | Same Arc; both buses must already exist in the system |
-| `p_nom × p_min_pu` | `active_power_limits_from.min` | Multiply; see directionality | If `p_min_pu ≥ 0`: min = 0.0. If `p_min_pu < 0`: min = `p_nom × p_min_pu` (negative MW) |
-| `p_nom × p_max_pu` | `active_power_limits_from.max` | Multiply | `p_nom × p_max_pu` (MW); use `p_nom_opt` if available after solve |
-| `p_nom × p_min_pu × efficiency` | `active_power_limits_to.min` | Multiply + efficiency | For bidirectional: min = `p_nom × p_min_pu × efficiency` |
-| `p_nom × p_max_pu × efficiency` | `active_power_limits_to.max` | Multiply + efficiency | `p_nom × p_max_pu × efficiency` (MW arriving at bus1) |
+| `p_nom × p_max_pu` | `rating_from` | Multiply | `p_nom × p_max_pu` (MW); use `p_nom_opt` if available after solve |
+| `p_nom × p_min_pu` | `rating_to` | Multiply; see directionality | If `p_min_pu < 0`: `rating_to = −p_nom × p_min_pu` (positive MW). Otherwise `0.0` |
+| — | `rating` | `max(rating_from, rating_to)` | The transfer rating of the DC line. The loss model carries the efficiency, so no limit is scaled by it |
 | — | `reactive_power_limits_from` | Set to `(min=0.0, max=0.0)` | PyPSA Links carry no reactive power; DC assumption |
 | — | `reactive_power_limits_to` | Set to `(min=0.0, max=0.0)` | Same |
-| `efficiency` | `loss` | `InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0))` | efficiency=1.0 → proportional_term=0.0; efficiency=0.97 → proportional_term=0.03 |
+| `efficiency` | `loss` | `LossCurve(power_units=NATURAL_UNITS, value_curve=InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0)))` | efficiency=1.0 → proportional_term=0.0; efficiency=0.97 → proportional_term=0.03 |
 | `marginal_cost` | `ext["marginal_cost"]` | Store in ext | No native Sienna field; preserve for downstream use |
 | `capital_cost` | `ext["capital_cost"]` | Store in ext | For capacity expansion context |
 | `p_nom_extendable` | `ext["p_nom_extendable"]` | Store in ext | Sienna has no native expansion mechanism (see below) |

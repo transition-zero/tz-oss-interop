@@ -40,3 +40,5 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.__metadata__.type" equal to "InputOutputCurve"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.__metadata__.type" equal to "LinearFunctionData"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
+    And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_from" equal to {"min": 0.0, "max": 1000.0}
+    And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_to" equal to {"min": 0.0, "max": 500.0}
