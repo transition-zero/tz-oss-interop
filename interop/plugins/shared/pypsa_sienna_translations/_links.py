@@ -29,6 +29,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_skip_report,
     rated_from,
 )
+from interop.plugins.shared.pypsa_sienna_translations._units import LINK_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
@@ -424,6 +425,7 @@ LINK_LOSS = Translation(
 )
 
 LINK_TRANSLATIONS: list[Translation] = [
+    *LINK_UNIT_TRANSLATIONS,
     LINK_ID,
     LINK_NAME,
     LINK_AVAILABLE,
