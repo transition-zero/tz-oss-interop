@@ -216,8 +216,9 @@ class SiennaLinkCol:
     AVAILABLE = "available"
     ACTIVE_POWER_FLOW = "active_power_flow"
     ARC = "arc"
-    ACTIVE_POWER_LIMITS_FROM = "active_power_limits_from"
-    ACTIVE_POWER_LIMITS_TO = "active_power_limits_to"
+    RATING = "rating"
+    RATING_FROM = "rating_from"
+    RATING_TO = "rating_to"
     REACTIVE_POWER_LIMITS_FROM = "reactive_power_limits_from"
     REACTIVE_POWER_LIMITS_TO = "reactive_power_limits_to"
     LOSS = "loss"
@@ -803,6 +804,12 @@ IO_CURVE_DTYPE: pl.DataType = pl.Struct(
         "input_at_zero": pl.Float64,
     }
 )
+LOSS_CURVE_DTYPE: pl.DataType = pl.Struct(
+    {
+        SiennaStructField.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+        SiennaStructField.VALUE_CURVE: IO_CURVE_DTYPE,
+    }
+)
 COST_CURVE_DTYPE: pl.DataType = pl.Struct(
     {
         "variable_cost_type": VARIABLECOST_TYPE_DTYPE,
@@ -971,11 +978,12 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # Endpoint names; the sink resolves these to the shared Arc and drops them.
     SiennaLinkCol.BUS0: pl.Utf8,
     SiennaLinkCol.BUS1: pl.Utf8,
-    SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
-    SiennaLinkCol.ACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
+    SiennaLinkCol.RATING: pl.Float64,
+    SiennaLinkCol.RATING_FROM: pl.Float64,
+    SiennaLinkCol.RATING_TO: pl.Float64,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
-    SiennaLinkCol.LOSS: IO_CURVE_DTYPE,
+    SiennaLinkCol.LOSS: LOSS_CURVE_DTYPE,
     SiennaLinkCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaLinkCol.BASE_POWER: pl.Float64,
 }

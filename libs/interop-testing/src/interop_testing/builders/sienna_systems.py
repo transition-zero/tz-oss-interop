@@ -337,18 +337,22 @@ class SiennaSystemBuilder:
                 "available": True,
                 "active_power_flow": 0.0,
                 "arc": arc_id,
-                "active_power_limits_from": {"min": 0.0, "max": p_nom},
-                "active_power_limits_to": {"min": 0.0, "max": p_nom * efficiency},
+                "rating": p_nom,
+                "rating_from": p_nom,
+                "rating_to": 0.0,
                 "reactive_power_limits_from": {"min": 0.0, "max": 0.0},
                 "reactive_power_limits_to": {"min": 0.0, "max": 0.0},
                 "loss": {
-                    "curve_type": "INPUT_OUTPUT",
-                    "function_data": {
-                        "function_type": "LINEAR",
-                        "proportional_term": 1.0 - efficiency,
-                        "constant_term": 0.0,
+                    "power_units": "NATURAL_UNITS",
+                    "value_curve": {
+                        "curve_type": "INPUT_OUTPUT",
+                        "function_data": {
+                            "function_type": "LINEAR",
+                            "proportional_term": 1.0 - efficiency,
+                            "constant_term": 0.0,
+                        },
+                        "input_at_zero": None,
                     },
-                    "input_at_zero": None,
                 },
             }
         )

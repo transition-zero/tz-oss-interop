@@ -49,6 +49,8 @@ class PowerSimulationsCol:
     TO_BUS = "to"
     FUEL = "fuel"
     LOSS = "loss"
+    ACTIVE_POWER_LIMITS_FROM = "active_power_limits_from"
+    ACTIVE_POWER_LIMITS_TO = "active_power_limits_to"
 
 
 class PowerSimulationsOpCostPath:
