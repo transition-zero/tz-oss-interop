@@ -225,7 +225,8 @@ mappings file gives that fuel the type `ThermalStandard`.
 | `fuel_type` | | The `Fuel` of the generator, through your mappings file | `mapped by you` |
 | `prime_mover_type` | | The `Fuel` of the generator, through your mappings file | `mapped by you` |
 | `base_power` | MVA | `Max Capacity × Units`, or the static `Rating` where that is higher | `derived` |
-| `rating` | pu | The availability, which is 1.0 unless an outage or a `Rating` derates it | `derived` |
+| `rating` | MVA | `base_power` × the availability, which is 1.0 unless an outage or a `Rating` derates it | `derived` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power_limits` | MW | `(Min Stable Level, the available capacity)` | `derived` |
 | `active_power` | MW | `Min Stable Level` | `derived` |
 | `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot | `derived` |
@@ -269,7 +270,8 @@ its category the type `RenewableDispatch`.
 | `bus` | | The `Node` of the generator | `direct` |
 | `prime_mover_type` | | The category of the generator, through your mappings file | `mapped by you` |
 | `base_power` | MVA | `Max Capacity × Units`, or the peak of the profile that supplies the capacity | `derived` |
-| `rating` | pu | The availability | `derived` |
+| `rating` | MVA | `base_power` × the availability | `derived` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power` | MW | The available capacity | `derived` |
 | `power_factor` | | `1.0` | `default` |
 | `operation_cost.variable` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
@@ -296,7 +298,8 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 | `bus` | | The `Node` of the turbine | `direct` |
 | `prime_mover_type` | | `HY` | `mapped by you` |
 | `base_power` | MVA | `Max Capacity × Units` | `derived` |
-| `rating` | pu | The availability | `derived` |
+| `rating` | MVA | `base_power` × the availability | `derived` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power_limits` | MW | `(0, the available capacity)` | `derived` |
 | `operation_cost.variable` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `ramp_limits`, `time_limits`, `status`, `time_at_status` | | The type carries them, and the chain supplies none. | `dropped` |

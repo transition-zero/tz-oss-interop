@@ -255,7 +255,8 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived | Must resolve string bus name to instantiated `ACBus` object |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Initial dispatch point; use min operating point. If `committable=False` and `p_min_pu=0`, use `0.0` |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted | PyPSA networks rarely model Q for generators |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` | `p_max_pu` | derived | Nameplate in pu of `base_power`; typically `1.0` |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA, because `power_units` is `NATURAL_UNITS` |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit: MW, MVAR, MVA and MW/min |
 | `active_power_limits` | `MinMax` (MW) | `n.generators`: `p_nom`, `p_min_pu`, `p_max_pu` | `(min=effective_p_nom×p_min_pu, max=effective_p_nom×p_max_pu)` | derived | Use static values. If `p_max_pu` / `p_min_pu` are time-varying, use the representative max (e.g. mean or peak) for the static field, and attach a time series — see time series section |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted | PyPSA does not carry Q limits for most generators |
 | `ramp_limits` | `Union{Nothing,UpDown}` (MW/min) | `n.generators.ramp_limit_up`, `ramp_limit_down` | `effective_p_nom × ramp_limit_up ÷ (dt_h × 60)` | derived | PyPSA ramp is pu/snapshot → MW/min: divide by snapshot duration (hours) and by 60. If `NaN` → `nothing`. See snapshot note in cross-cutting section |
@@ -340,7 +341,8 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Typically `0.0` for renewables (p_min_pu default = 0) |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` (static) | `p_max_pu` | derived | Typically `1.0`; derating possible |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` (static) | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA; derating possible |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `PVe` / `WT` / `WS` | derived | From carrier mapping table |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted | No scalar power factor in PyPSA generator schema |
@@ -410,7 +412,8 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Initial active power — use peak available for initialisation |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` | `p_max_pu` | derived | Typically `1.0` |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `PVe` | derived |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted |  |
 | `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
@@ -459,7 +462,8 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
 | `bus` | `ACBus` | `n.storage_units.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `n.storage_units.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived |  |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.storage_units.p_max_pu` | `p_max_pu` | derived |  |
+| `rating` | `Float64` (MVA) | `n.storage_units.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the unit is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `HY` | derived |  |
 | `active_power_limits` | `MinMax` (MW) | `p_nom`, `p_min_pu`, `p_max_pu` | `(effective_p_nom×p_min_pu, effective_p_nom×p_max_pu)` | derived |  |
 | `base_power` | `Float64` (MVA) | `n.storage_units.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |

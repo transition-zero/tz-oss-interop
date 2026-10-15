@@ -43,6 +43,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaStructField,
     SiennaTable,
+    SiennaUnitSystem,
     ThermalFuel,
 )
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
@@ -57,6 +58,8 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     extendable_floor,
     per_unit_of,
+    rated_per_unit,
+    reject_unsupported_power_units,
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
@@ -126,7 +129,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, dispatch)
                     rows.append(_renewable_row(dispatch))
-                    p_max_pu_scale_by_name[dispatch.name] = dispatch.rating
+                    p_max_pu_scale_by_name[dispatch.name] = dispatch.p_max_pu
                 case SiennaComponent.RENEWABLE_NON_DISPATCH:
                     non_dispatch = _derive_renewable(
                         row,
@@ -137,7 +140,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, non_dispatch)
                     rows.append(_renewable_row(non_dispatch))
-                    p_max_pu_scale_by_name[non_dispatch.name] = non_dispatch.rating
+                    p_max_pu_scale_by_name[non_dispatch.name] = non_dispatch.p_max_pu
                 case SiennaComponent.HYDRO_DISPATCH:
                     continue
                 case SiennaComponent.ENERGY_RESERVOIR_STORAGE:
@@ -238,6 +241,7 @@ class _ThermalMapping:
     p_nom_min: float | None
     base_power: float
     rating: float
+    p_max_pu: float
     active_power_min: float
     active_power_max: float
     p_min_pu: float
@@ -274,6 +278,7 @@ def _derive_thermal(
     extensions: ExtensionLookup[GeneratorExtension],
     dt_minutes: float,
 ) -> _ThermalMapping:
+    reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     active_power_max = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MAX])
@@ -320,6 +325,7 @@ def _derive_thermal(
         build_year=ext.build_year,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
+        p_max_pu=rated_per_unit(float(row[SiennaGeneratorCol.RATING]), base_power),
         active_power_min=active_power_min,
         active_power_max=active_power_max,
         p_min_pu=per_unit_of(active_power_min, base_power),
@@ -396,7 +402,7 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     sienna_type = SiennaComponent.THERMAL_STANDARD
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
-    reporter.record_p_max_pu(sienna_type, m.name, m.rating)
+    reporter.record_p_max_pu(sienna_type, m.name, m.rating, m.p_max_pu)
     reporter.record_p_min_pu_from_limits(sienna_type, m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     if m.ext_carrier is not None:
@@ -446,7 +452,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.CARRIER: m.ext_carrier if m.ext_carrier is not None else m.carrier,
         PyPSAGeneratorCol.P_NOM: m.base_power,
         PyPSAGeneratorCol.P_MIN_PU: m.p_min_pu,
-        PyPSAGeneratorCol.P_MAX_PU: m.rating,
+        PyPSAGeneratorCol.P_MAX_PU: m.p_max_pu,
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: m.committable,
         PyPSAGeneratorCol.RAMP_LIMIT_UP: m.ramp_limit_up,
@@ -490,6 +496,7 @@ class _RenewableMapping:
     build_year: int | None
     base_power: float
     rating: float
+    p_max_pu: float
     active_power: float
     p_min_pu: float
     marginal_cost: float
@@ -504,6 +511,7 @@ def _derive_renewable(
     *,
     has_cost: bool,
 ) -> _RenewableMapping:
+    reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
     active_power = float(row[SiennaGeneratorCol.ACTIVE_POWER])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
@@ -532,6 +540,7 @@ def _derive_renewable(
         build_year=ext.build_year,
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
+        p_max_pu=rated_per_unit(float(row[SiennaGeneratorCol.RATING]), base_power),
         active_power=active_power,
         p_min_pu=per_unit_of(active_power, base_power),
         marginal_cost=marginal_cost,
@@ -543,7 +552,7 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
     _record_carried(reporter, m.sienna_type, m)
     reporter.record_bus(m.sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(m.sienna_type, m.name, m.base_power)
-    reporter.record_p_max_pu(m.sienna_type, m.name, m.rating)
+    reporter.record_p_max_pu(m.sienna_type, m.name, m.rating, m.p_max_pu)
     reporter.record_p_min_pu_from_active_power(m.sienna_type, m.name, m.active_power, m.p_min_pu)
     if m.has_cost:
         reporter.record_marginal_cost(m.sienna_type, m.name, m.marginal_cost)
@@ -570,7 +579,7 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.CARRIER: m.ext_carrier if m.ext_carrier is not None else m.carrier,
         PyPSAGeneratorCol.P_NOM: m.base_power,
         PyPSAGeneratorCol.P_MIN_PU: m.p_min_pu,
-        PyPSAGeneratorCol.P_MAX_PU: m.rating,
+        PyPSAGeneratorCol.P_MAX_PU: m.p_max_pu,
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,

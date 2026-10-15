@@ -36,6 +36,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import (
+    GENERATOR_UNITS_NOTE,
+    build_power_units_translation,
+)
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -54,6 +58,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaOperationalState,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
@@ -384,10 +389,19 @@ GENERATOR_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for generators",
 )
 
-GENERATOR_RATING = _direct(
-    source_col=PyPSAGeneratorCol.P_MAX_PU,
+GENERATOR_RATING = _rated(
     dest_col=T.RATING,
-    derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
+    expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
+    unit=UNIT_MW,
+    derivation="effective_p_nom * p_max_pu (nameplate rating, MVA)",
+)
+
+GENERATOR_POWER_UNITS = build_power_units_translation(
+    _dest,
+    name_col=PyPSAGeneratorCol.NAME,
+    dest_col=T.POWER_UNITS,
+    units=SiennaUnitSystem.NATURAL_UNITS,
+    note=GENERATOR_UNITS_NOTE,
 )
 
 GENERATOR_APL = Translation(
@@ -701,6 +715,7 @@ GENERATOR_TRANSLATIONS: list[Translation] = [
     GENERATOR_REACTIVE_POWER,
     GENERATOR_REACTIVE_POWER_LIMITS,
     GENERATOR_RATING,
+    GENERATOR_POWER_UNITS,
     GENERATOR_APL,
     GENERATOR_RAMP_LIMITS,
     GENERATOR_TIME_LIMITS,

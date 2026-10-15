@@ -24,8 +24,12 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
     SiennaSeriesName,
     SiennaTable,
+    SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_pypsa_translations.mapping import bus_id_to_name
+from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    bus_id_to_name,
+    reject_unsupported_power_units,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LoadReporter
 
 # Load series carried back to p_set. A load's per-unit max_active_power profile becomes
@@ -58,6 +62,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
         max_active_power_by_name: dict[str, float] = {}
 
         for row in source.collect().iter_rows(named=True):
+            reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
             name = row[SiennaLoadCol.NAME]
             ext = records.get(name)
             bus_id = row[SiennaLoadCol.BUS]

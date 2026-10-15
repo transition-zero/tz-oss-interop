@@ -224,11 +224,13 @@ class GeneratorReporter(_Reporter):
             derivation="direct",
         )
 
-    def record_p_max_pu(self, sienna_type: SiennaComponent, name: str, rating: float) -> None:
+    def record_p_max_pu(
+        self, sienna_type: SiennaComponent, name: str, rating: float, p_max_pu: float
+    ) -> None:
         self._derived(
-            sources=[self._source(sienna_type, name, SiennaGeneratorCol.RATING, rating)],
-            destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, rating)],
-            derivation="direct",
+            sources=[self._source(sienna_type, name, SiennaGeneratorCol.RATING, rating, UNIT_MVA)],
+            destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, p_max_pu)],
+            derivation="rating / base_power",
         )
 
     def record_p_min_pu_from_limits(

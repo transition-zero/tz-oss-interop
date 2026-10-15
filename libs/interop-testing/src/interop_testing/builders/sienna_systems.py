@@ -101,6 +101,7 @@ class SiennaSystemBuilder:
                 "active_power_limits": {"min": active_power_min, "max": active_power_max},
                 "operation_cost": thermal_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
                 "prime_mover_type": prime_mover,
                 "fuel": fuel,
             }
@@ -131,6 +132,7 @@ class SiennaSystemBuilder:
                 "power_factor": 1.0,
                 "operation_cost": renewable_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -157,6 +159,7 @@ class SiennaSystemBuilder:
                 "prime_mover_type": prime_mover,
                 "power_factor": 1.0,
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -185,6 +188,7 @@ class SiennaSystemBuilder:
                 "active_power_limits": {"min": active_power_min, "max": active_power_max},
                 "operation_cost": hydro_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -226,6 +230,7 @@ class SiennaSystemBuilder:
                 "conversion_factor": 1.0,
                 "storage_target": initial_level * storage_capacity,
                 "cycle_limits": 10000,
+                "power_units": "COMPONENT_BASE",
             }
         )
 
@@ -238,6 +243,10 @@ class SiennaSystemBuilder:
     def set_thermal_ramp_limits(self, name: str, up: float, down: float) -> None:
         self._check_not_saved(f"ramp_limits for ThermalStandard {name!r}")
         self._generator_by_name(name)["ramp_limits"] = {"up": up, "down": down}
+
+    def set_generator_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for generator {name!r}")
+        self._generator_by_name(name)["power_units"] = power_units
 
     def set_thermal_time_limits(self, name: str, up: float, down: float) -> None:
         self._check_not_saved(f"time_limits for ThermalStandard {name!r}")
@@ -268,6 +277,7 @@ class SiennaSystemBuilder:
                 "max_active_power": max_active_power,
                 "max_reactive_power": 0.0,
                 "conformity": "UNDEFINED",
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -312,6 +322,8 @@ class SiennaSystemBuilder:
                 "b": {"from": b / 2, "to": b / 2},
                 "g": {"from": g / 2, "to": g / 2},
                 "rating": rating,
+                "base_power": 100.0,
+                "power_units": "COMPONENT_BASE",
                 "angle_limits": {"min": -1.5707963267948966, "max": 1.5707963267948966},
             }
         )
@@ -376,6 +388,14 @@ class SiennaSystemBuilder:
     def set_line_angle_limits(self, name: str, min_rad: float, max_rad: float) -> None:
         self._check_not_saved(f"angle_limits for Line {name!r}")
         self._line_by_name(name)["angle_limits"] = {"min": min_rad, "max": max_rad}
+
+    def set_line_base_power(self, name: str, base_power: float) -> None:
+        self._check_not_saved(f"base_power for Line {name!r}")
+        self._line_by_name(name)["base_power"] = base_power
+
+    def set_line_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for Line {name!r}")
+        self._line_by_name(name)["power_units"] = power_units
 
     def set_link_available(self, name: str, available: bool) -> None:
         self._check_not_saved(f"availability for HVDC line {name!r}")
