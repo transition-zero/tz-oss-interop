@@ -233,7 +233,7 @@ class PSThermalGenerationCost(_MetadataMixin, BaseModel):
     fixed: float
     start_up: float
     shut_down: float
-    variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
+    variable: PSCostCurve
 
 
 class PSRenewableGenerationCost(_MetadataMixin, BaseModel):
@@ -249,7 +249,7 @@ class PSRenewableGenerationCost(_MetadataMixin, BaseModel):
         )
     )
     fixed: float
-    variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
+    variable: PSCostCurve
     curtailment_cost: PSCostCurve = Field(default_factory=_zero_cost_curve)
 
 
@@ -260,7 +260,7 @@ class PSHydroGenerationCost(_MetadataMixin, BaseModel):
         default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.HYDRO_GENERATION_COST)
     )
     fixed: float
-    variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
+    variable: PSCostCurve
 
 
 class PSLoadCost(_MetadataMixin, BaseModel):
@@ -270,7 +270,7 @@ class PSLoadCost(_MetadataMixin, BaseModel):
         default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.LOAD_COST)
     )
     fixed: float
-    variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
+    variable: PSCostCurve
 
 
 class PSStorageCost(_MetadataMixin, BaseModel):
