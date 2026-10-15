@@ -279,7 +279,7 @@ class SiennaStructField:
     DOWN = "down"
     START_UP = "start_up"
     SHUT_DOWN = "shut_down"
-    VARIABLE = "variable"
+    VARIABLE_OPERATION_COST = "variable_operation_cost"
     DISCHARGE_VARIABLE_COST = "discharge_variable_cost"
     CHARGE_VARIABLE_COST = "charge_variable_cost"
     VALUE_CURVE = "value_curve"
@@ -807,7 +807,7 @@ THERMAL_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
         "fixed": pl.Float64,
         "shut_down": pl.Float64,
         "start_up": pl.Float64,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
     }
 )
 
@@ -836,7 +836,7 @@ LOAD_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
         "fixed": pl.Float64,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
     }
 )
 
@@ -849,7 +849,7 @@ INTERRUPTIBLE_LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType
 RENEWABLE_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
         "fixed": pl.Float64,
     }
 )
@@ -872,7 +872,7 @@ RENEWABLE_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
 HYDRO_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
         "fixed": pl.Float64,
     }
 )

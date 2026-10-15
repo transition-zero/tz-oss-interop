@@ -223,7 +223,7 @@ def _derive_hydro(
         active_power_min=active_power_min,
         p_min_pu=per_unit_of(active_power_min, base_power),
         marginal_cost=variable_proportional_term(
-            row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE
+            row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE_OPERATION_COST
         ),
         max_hours=_carried(carried, "max_hours", DEFAULT_HYDRO_MAX_HOURS),
         state_of_charge_initial=_carried(carried, "state_of_charge_initial", 0.0),
