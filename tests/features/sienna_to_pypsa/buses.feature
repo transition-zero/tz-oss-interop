@@ -29,3 +29,35 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against Sienna system "inputs/no_area.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 bus
     And the PyPSA network "outputs/network.nc" bus "bus_1" has empty location
+
+  Scenario: a ThermalStandard missing a required field is left out and the rest translate
+    The reader checks every row against SiennaSchemas. A row that fails is left out and
+    named in the log, and the other components are still translated.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "bad_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "bad_1" has no base_power
+    And the system is saved as "inputs/bad_row.json"
+    When I run translate against "inputs/bad_row.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "ThermalStandard bad_1 (field base_power)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has bus "node_a"
+
+  Scenario: a system on another schema line stops and names its version
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system states schema_version "9.0.0"
+    And the system is saved as "inputs/other_line.json"
+    When I run translate against Sienna system "inputs/other_line.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the printed output contains "schema_version '9.0.0' is incompatible"
+
+  Scenario: a component type that SiennaSchemas does not define is left out and named
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system has a component "x_1" of the unknown type "FluxCapacitor"
+    And the system is saved as "inputs/unknown_type.json"
+    When I run translate against "inputs/unknown_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "FluxCapacitor (type unknown to SiennaSchemas)"
+    And the PyPSA network "outputs/network.nc" has 1 bus

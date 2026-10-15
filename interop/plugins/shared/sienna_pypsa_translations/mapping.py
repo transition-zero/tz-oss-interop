@@ -28,8 +28,8 @@ def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
 def reject_unsupported_power_units(row: dict[str, Any], supported: SiennaUnitSystem) -> None:
     """Raise when a component states a power basis that the reader does not convert.
 
-    SiennaSchemas 0.2 requires power_units. A missing key raises KeyError and an unknown
-    value raises ValueError, as every other contract error does in the readers.
+    The reader has already checked the row against SiennaSchemas 0.2, which requires
+    power_units with a known value, so the key is present here.
     """
     stated = SiennaUnitSystem(row[SiennaStructField.POWER_UNITS])
     if stated is not supported:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -40,9 +41,12 @@ _LINES = "lines"
 _LINKS = "links"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
+_UNKNOWN = "unknown"
 
 
-def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -> None:
+def write_sienna_system(
+    path: Path, sections: dict[str, list[dict[str, Any]]], *, schema_version: str | None = None
+) -> None:
     """Serialise builder sections as a SiennaSchemas system document.
 
     Components are grouped under a ``components`` sub-object mapping each Sienna type name
@@ -54,6 +58,34 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
     storage_file = sienna_h5_filename(path)
+    write_system_document(
+        path,
+        components,
+        _build_associations(
+            sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
+        ),
+        schema_version=schema_version,
+    )
+
+    extensions_file = sienna_extensions_filename(path)
+    (path.parent / extensions_file).write_text(
+        json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
+    )
+
+
+def write_system_document(
+    path: Path,
+    components: dict[str, Any],
+    time_series_associations: Sequence[dict[str, Any]] = (),
+    *,
+    schema_version: str | None = None,
+) -> None:
+    """Write ``components`` and association rows as a SiennaSchemas system document.
+
+    The rows are not validated, so a fixture can state a bad one. ``schema_version`` replaces
+    the SDK's own version in the written file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
     document = SystemDocument(
         name=None,
         description=None,
@@ -65,20 +97,15 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
         combined_cycle_associations=[],
         service_associations=[],
         time_series_associations=[
-            TimeSeriesAssociation.model_validate(row)
-            for row in _build_associations(
-                sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
-            )
+            TimeSeriesAssociation.model_validate(row) for row in time_series_associations
         ],
-        time_series_storage_file=storage_file,
+        time_series_storage_file=sienna_h5_filename(path),
     )
-
-    extensions_file = sienna_extensions_filename(path)
-    (path.parent / extensions_file).write_text(
-        json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
-    )
-
     write_document(document, path, indent=2)
+    if schema_version is not None:
+        written = read_json(path)
+        written["schema_version"] = schema_version
+        path.write_text(json.dumps(written, indent=2), encoding="utf-8")
 
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
@@ -135,13 +162,13 @@ def _build_container(
     id_by_owner: dict[tuple[str, str], int] = {}
 
     for area in sections.get(_AREAS, []):
-        components.setdefault("Area", []).append({"id": area["id"], "name": area["name"]})
+        components.setdefault("Area", []).append(area)
 
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS):
+    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]

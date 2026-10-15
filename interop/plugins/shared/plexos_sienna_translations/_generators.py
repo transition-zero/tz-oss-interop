@@ -150,7 +150,12 @@ _NATURAL_UNITS_NOTE = "PLEXOS states generator power in MW, so power_units is NA
 _ACTIVE_POWER_DERIVATION = "the minimum this generator can be held to"
 _ACTIVE_POWER_NOTE = "the generator states no minimum; active_power defaults to 0.0"
 _LIMITS_DERIVATION = "the minimum and the rated capacity, in MW"
+_NON_BINDING_RAMP = 1.0
 _RAMP_DERIVATION = "Max Ramp Up, capped at the rate that covers p_nom in one snapshot"
+_RAMP_DOWN_NOTE = (
+    "the generator states no Max Ramp Down, so ramp_limits.down takes the rate that covers "
+    "p_nom in one snapshot, which never binds"
+)
 _TIME_LIMITS_DERIVATION = "Min Up Time and Min Down Time, in hours"
 _COST_DERIVATION = "the marginal cost, as the variable cost curve's proportional term"
 _START_UP_DERIVATION = "what a start costs"
@@ -197,6 +202,8 @@ _TIME_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.TIME_LIMITS}.up"
 _START_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST}.start_up"
 _LIMITS_MIN_COLUMN = MappedColumns((_LIMITS_MIN_ATTRIBUTE,), UNIT_MW)
 _RAMP_UP_COLUMN = MappedColumns((_RAMP_UP_ATTRIBUTE,), UNIT_MW_PER_MINUTE)
+_RAMP_DOWN_ATTRIBUTE = f"{SiennaThermalGeneratorCol.RAMP_LIMITS}.down"
+_RAMP_DOWN_COLUMN = MappedColumns((_RAMP_DOWN_ATTRIBUTE,), UNIT_MW_PER_MINUTE)
 _TIME_UP_COLUMN = MappedColumns((_TIME_UP_ATTRIBUTE,), UNIT_HOURS)
 _START_UP_COLUMN = MappedColumns((_START_UP_ATTRIBUTE,), UNIT_DOLLARS)
 _CARBON_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST} carbon term"
@@ -643,6 +650,7 @@ def _row_for(translated: _Translated, reporter: SiennaComponentReporter) -> dict
     if translated.sienna_type == SiennaComponent.THERMAL_STANDARD:
         thermal = _derive_thermal(translated)
         reporter.record_mapping(name, thermal)
+        _record_ramp_down_default(reporter, translated)
         row = destination_row(thermal, SiennaThermalGeneratorCol.NAME, name)
         row[SiennaThermalGeneratorCol.OPERATION_COST] = thermal_cost_value(
             mapping.cost.marginal_cost, _start_up_cost(mapping)
@@ -755,15 +763,30 @@ def _minimum_decision(translated: _Translated) -> Decision:
     return replace(decision, value=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom))
 
 
-def _ramp_struct(translated: _Translated) -> dict[str, float | None] | None:
-    """The rates the unit may change output at, in megawatts per minute."""
+def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
+    """The rates the unit may change output at, in megawatts per minute.
+
+    A direction the generator does not state takes the rate that covers p_nom in one snapshot.
+    """
     commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.ramp_limit_up is None:
         return None
+    down = commitment.ramp_limit_down
+    if down is None:
+        down = _NON_BINDING_RAMP
     return {
         "up": _rate_per_minute(commitment.ramp_limit_up, translated),
-        "down": _rate_per_minute(commitment.ramp_limit_down, translated),
+        "down": _rate_per_minute(down, translated),
     }
+
+
+def _record_ramp_down_default(reporter: SiennaComponentReporter, translated: _Translated) -> None:
+    struct = _ramp_struct(translated)
+    commitment = translated.mapping.unit_commitment
+    if struct is None or commitment is None or commitment.ramp_limit_down is not None:
+        return
+    decision = Decision.default(struct["down"], _RAMP_DOWN_NOTE)
+    reporter.record(translated.mapping.name, _RAMP_DOWN_COLUMN, decision)
 
 
 def _ramp_decision(translated: _Translated) -> Decision:
@@ -783,10 +806,8 @@ def _ramp_decision(translated: _Translated) -> Decision:
     return Decision.derived(struct["up"], [source], _RAMP_DERIVATION)
 
 
-def _rate_per_minute(per_snapshot: float | None, translated: _Translated) -> float | None:
+def _rate_per_minute(per_snapshot: float, translated: _Translated) -> float:
     """A per-unit-per-snapshot limit read back as the megawatts per minute Sienna states."""
-    if per_snapshot is None:
-        return None
     return per_snapshot * translated.mapping.p_nom / translated.minutes_per_snapshot
 
 

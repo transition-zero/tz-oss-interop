@@ -234,7 +234,7 @@ mappings file gives that fuel the type `ThermalStandard`.
 | `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power_limits` | MW | `(Min Stable Level, the available capacity)` | `derived` |
 | `active_power` | MW | `Min Stable Level` | `derived` |
-| `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot | `derived` |
+| `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot. A direction the source does not state takes that same non-binding rate (`ramp_limits.down` is a `default` event) | `derived` |
 | `time_limits` | h | `Min Up Time` / `Min Down Time` | `direct` |
 | `time_at_status` | h | `10000.0`, because PLEXOS states no prior on-time | `default` |
 | `must_run` | | not written | `dropped` |
@@ -463,7 +463,7 @@ A currency symbol has no conversion, so a model in euros reads as a model in dol
 | Value | Becomes |
 | --- | --- |
 | `Min Stable Factor`, `Rating Factor`, `Outage Factor` | The percentage ÷ 100 |
-| `Max Ramp Up` / `Max Ramp Down` | Sienna holds a ramp in MW/min, the unit PLEXOS states. A rate that covers the whole capacity within one snapshot reads back as the rate that covers exactly that, because neither rate ever binds. |
+| `Max Ramp Up` / `Max Ramp Down` | Sienna holds a ramp in MW/min, the unit PLEXOS states. A rate that covers the whole capacity within one snapshot reads back as the rate that covers exactly that, because neither rate ever binds. SiennaSchemas requires both directions, so a generator that states only `Max Ramp Up` gets the non-binding rate for down. |
 | Impedance | Ω into per unit, on the base of the bus voltage and 100 MVA |
 
 ### Storage
