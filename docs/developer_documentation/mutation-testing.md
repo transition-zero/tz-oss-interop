@@ -40,7 +40,7 @@ MUTATION_TARGETS_FILE=mutation_targets.txt uv run python scripts/run_mutmut.py r
 
 ## Reading the score
 
-The mutation workflow posts a sticky comment on every PR with a table:
+The mutation workflow builds a table, and `.github/workflows/pr-comment.yml` posts it as a sticky comment on every PR:
 
 ```
 | 🎉 Killed | n |

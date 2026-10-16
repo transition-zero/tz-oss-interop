@@ -6,7 +6,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   versions:
@@ -34,9 +33,20 @@ jobs:
       - name: Build maintainability report
         run: uv run python .github/scripts/maintainability_report.py
 
-      - name: Post sticky PR comment
+      - name: Stage PR comment
         if: always()
-        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p pr-comment
+          cp maintainability_report.md pr-comment/body.md
+          echo "$PR_NUMBER" > pr-comment/number
+
+      # A fork PR gets a read-only token, so pr-comment.yml posts this from main.
+      - name: Upload PR comment
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          header: maintainability-report
-          path: maintainability_report.md
+          name: pr-comment
+          path: pr-comment/
+          retention-days: 1

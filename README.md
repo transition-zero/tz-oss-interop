@@ -281,7 +281,7 @@ Contributions are welcome — bug reports, case studies, translation mappings, a
 
 The pre-commit hook runs ruff (autofix + format), mypy strict, `lint-imports`, a plugin-inheritance check, and basic file-hygiene checks (trailing whitespace, EOF newlines, YAML/TOML validity) on every `git commit`. Config: `.pre-commit-config.yaml`.
 
-CI runs the lint, test, and mutation suites on every push to a PR branch targeting `main` (`.github/workflows/lint.yml`, `test.yml`, `mutation.yml`). The mutation workflow posts a sticky kill-score comment on the PR.
+CI runs the lint, test, and mutation suites on every push to a PR branch targeting `main` (`.github/workflows/lint.yml`, `test.yml`, `mutation.yml`). The mutation workflow builds a kill-score report, and `pr-comment.yml` posts it as a sticky comment on the PR. `pr-comment.yml` runs from `main`, so a PR from a fork gets the comment too.
 
 ### Layout
 
