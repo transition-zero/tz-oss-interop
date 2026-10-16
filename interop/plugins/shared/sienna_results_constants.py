@@ -8,6 +8,7 @@ tree, and the ``State.source_time_series`` keys the staged solve series land und
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import NamedTuple
 
 from interop.plugins.shared.sienna_constants import SiennaComponent
@@ -53,6 +54,11 @@ HYDRO_DISPATCH_KEY = ResultSeriesKey(
 )
 RENEWABLE_DISPATCH_KEY = ResultSeriesKey(
     SiennaComponent.RENEWABLE_DISPATCH, SiennaResultSeries.ACTIVE_POWER
+)
+# PowerSimulations.jl solves a RenewableNonDispatch with FixedOutput, so it has no variable and
+# its output is the parameter.
+RENEWABLE_NON_DISPATCH_KEY = ResultSeriesKey(
+    SiennaComponent.RENEWABLE_NON_DISPATCH, SiennaResultSeries.ACTIVE_POWER_PARAMETER
 )
 STORAGE_OUTPUT_KEY = ResultSeriesKey(
     SiennaComponent.ENERGY_RESERVOIR_STORAGE, SiennaResultSeries.ACTIVE_POWER_OUT
@@ -106,6 +112,9 @@ LINK_FLOW_CSVS = (
         SiennaResultSeries.FLOW_ACTIVE_POWER, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
     ),
 )
+RENEWABLE_NON_DISPATCH_CSVS = (
+    f"results_wide/parameters/{SiennaResultSeries.ACTIVE_POWER_PARAMETER}__{SiennaComponent.RENEWABLE_NON_DISPATCH}.csv",
+)
 LOAD_CSVS = (
     f"results_wide/parameters/{SiennaResultSeries.ACTIVE_POWER_PARAMETER}__{SiennaComponent.POWER_LOAD}.csv",
 )
@@ -125,6 +134,7 @@ WIDE_RESULT_SERIES: tuple[StagedSeriesSource, ...] = (
     StagedSeriesSource(THERMAL_DISPATCH_KEY, THERMAL_DISPATCH_CSVS),
     StagedSeriesSource(HYDRO_DISPATCH_KEY, HYDRO_DISPATCH_CSVS),
     StagedSeriesSource(RENEWABLE_DISPATCH_KEY, RENEWABLE_DISPATCH_CSVS),
+    StagedSeriesSource(RENEWABLE_NON_DISPATCH_KEY, RENEWABLE_NON_DISPATCH_CSVS),
     StagedSeriesSource(STORAGE_OUTPUT_KEY, STORAGE_OUTPUT_CSVS),
     StagedSeriesSource(STORAGE_INPUT_KEY, STORAGE_INPUT_CSVS),
     StagedSeriesSource(LINE_FLOW_KEY, LINE_FLOW_CSVS),
@@ -139,3 +149,16 @@ scaled by the system base, so the reverse divides by this to recover MW. See com
 
 SNAPSHOT_HOURS = 1.0
 """Hours one row of a solve result covers: the solve runs at an hourly resolution."""
+
+MAX_PERIOD_HOURS = 8784
+"""The most hours a representative period can hold: the hours of a leap year."""
+
+
+class AnnualCol(StrEnum):
+    """Working columns of the annual rows, which the results table does not keep."""
+
+    WEIGHT = "weight"
+    YEAR = "year"
+    POLLUTANT = "pollutant"
+    RATE = "rate"
+    SIENNA_TYPE = "sienna_type"

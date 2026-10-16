@@ -87,7 +87,9 @@ hour of a period, its number of hours and its weight. The weight is the number o
 the period occurs in the year. The `sienna-to-results` pipeline then writes these rows:
 
 - `production` of a generator or a storage is the sum over the hours of the positive part of
-  `dispatch`, multiplied by 1 h and by the weight of the period of the hour.
+  `dispatch`, multiplied by 1 h and by the weight of the period of the hour. The `dispatch` of
+  a `RenewableNonDispatch` is its fixed output, the `ActivePowerTimeSeriesParameter` of the
+  solve.
 - `production` of a `TwoTerminalGenericHVDCLine` is the same sum of the absolute `flow`. The
   solve models the line as lossless, so the energy that it delivers equals the energy that it
   sends.
@@ -96,9 +98,19 @@ the period occurs in the year. The `sienna-to-results` pipeline then writes thes
 - `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
   rate in `emission_rates_t_per_mwh` of the generator record.
 
-An hour of the solve that is in no period has no weight. The pipeline leaves it out of the
-sum, records it in `decisions.md` and writes a warning. A solve with no `representative_period`
-records gives no annual rows.
+The pipeline leaves out a period that cannot give a weight to its hours. These periods are left
+out:
+
+- a period with no `first_timestamp`, `hours` or `weight`;
+- a period whose `first_timestamp` does not parse, or states a time zone;
+- a period whose `hours` is not between 1 and 8784;
+- a period whose `weight` is not a finite number of 0 or more;
+- a period that holds an hour that an earlier period holds.
+
+An hour of the solve that is in no period has no weight. The pipeline leaves it out of the sum.
+It records each run of consecutive hours in `decisions.md` and writes one warning. A component
+with a rating and no output in the solve gets `installed_capacity` and no `production`, and the
+pipeline reports it. A solve with no `representative_period` records gives no annual rows.
 
 ## How a comparison meets at a shared granularity
 

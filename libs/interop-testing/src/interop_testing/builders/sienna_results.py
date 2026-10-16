@@ -31,6 +31,9 @@ _STORAGE_IN = f"{_VARIABLES}/ActivePowerInVariable__EnergyReservoirStorage.csv"
 _LINE_FLOW = f"{_VARIABLES}/FlowActivePowerVariable__Line.csv"
 _LINK_FLOW = f"{_VARIABLES}/FlowActivePowerVariable__TwoTerminalGenericHVDCLine.csv"
 _LOAD = f"{_PARAMETERS}/ActivePowerTimeSeriesParameter__PowerLoad.csv"
+_RENEWABLE_NON_DISPATCH_OUTPUT = (
+    f"{_PARAMETERS}/ActivePowerTimeSeriesParameter__RenewableNonDispatch.csv"
+)
 _OPTIMIZER_STATS = f"{_RESULTS}/optimizer_stats.csv"
 
 
@@ -64,6 +67,9 @@ class SiennaResultsBuilder:
 
     def add_renewable_dispatch(self, component: str, values: list[float]) -> None:
         self._add(_RENEWABLE_DISPATCH, component, values)
+
+    def add_renewable_non_dispatch_output(self, component: str, values: list[float]) -> None:
+        self._add(_RENEWABLE_NON_DISPATCH_OUTPUT, component, values)
 
     def add_storage_output(self, component: str, values: list[float]) -> None:
         self._add(_STORAGE_OUT, component, values)

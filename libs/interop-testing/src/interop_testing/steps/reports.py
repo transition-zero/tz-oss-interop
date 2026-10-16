@@ -54,6 +54,20 @@ def assert_results_rows(path: str, variable: str, datatable: list[list[str]]) ->
         )
 
 
+@then(parsers.parse('the results parquet "{path}" holds these "{variable}" rows among others:'))
+def assert_results_rows_among_others(path: str, variable: str, datatable: list[list[str]]) -> None:
+    """Find each row of one variable. The parquet can hold other rows of that variable."""
+    header, *expected_rows = datatable
+    assert tuple(header) == (*_RESULTS_KEY_COLUMNS, _VALUE_COLUMN), header
+    table = pl.read_parquet(Path(path)).filter(pl.col(_VARIABLE_COLUMN).cast(pl.Utf8) == variable)
+    actual = {_build_results_key(row): row[_VALUE_COLUMN] for row in table.iter_rows(named=True)}
+    for *key, value in expected_rows:
+        assert tuple(key) in actual, f"no {variable} row {key}; got {sorted(actual)}"
+        assert math.isclose(actual[tuple(key)], float(value), rel_tol=_RELATIVE_TOLERANCE), (
+            f"expected {value} for {key}, got {actual[tuple(key)]}"
+        )
+
+
 def _build_results_key(row: dict[str, object]) -> tuple[str, ...]:
     return tuple(_normalise_key_cell(row[column]) for column in _RESULTS_KEY_COLUMNS)
 

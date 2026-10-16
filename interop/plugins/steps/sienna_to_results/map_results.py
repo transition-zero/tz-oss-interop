@@ -48,6 +48,7 @@ from interop.plugins.shared.sienna_results_constants import (
     LOAD_KEY,
     OBJECTIVE_VALUE_FIELD,
     RENEWABLE_DISPATCH_KEY,
+    RENEWABLE_NON_DISPATCH_KEY,
     RESULTS_OBJECTIVE_KEY,
     STORAGE_INPUT_KEY,
     STORAGE_OUTPUT_KEY,
@@ -68,7 +69,7 @@ from interop.ports.outbound.reporting import (
 _STORAGE_OUT_COL = "_storage_out"
 _STORAGE_IN_COL = "_storage_in"
 
-_DISPATCH_FROM_ACTIVE_POWER = "ActivePowerVariable -> dispatch"
+_DISPATCH_FROM_SERIES = "{series} -> dispatch"
 _DISPATCH_FROM_STORAGE = "ActivePowerOutVariable - ActivePowerInVariable -> dispatch"
 _FLOW_FROM_FLOW = "FlowActivePowerVariable -> flow"
 _FLOW_FROM_SCALED_FLOW = "FlowActivePowerVariable / system base -> flow"
@@ -105,6 +106,7 @@ class SiennaResultsToResultsFormat(TranslationStep):
                 *self._map_dispatch(state, THERMAL_DISPATCH_KEY, carrier_lookup),
                 *self._map_dispatch(state, HYDRO_DISPATCH_KEY, carrier_lookup),
                 *self._map_dispatch(state, RENEWABLE_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, RENEWABLE_NON_DISPATCH_KEY, carrier_lookup),
             ],
             storage_dispatch=self._map_storage_dispatch(state, carrier_lookup),
             line_flow=self._map_flow(state, LINE_FLOW_KEY, scale=1.0, derivation=_FLOW_FROM_FLOW),
@@ -131,7 +133,7 @@ class SiennaResultsToResultsFormat(TranslationStep):
             sienna_type=key.owner_type,
             series=key.series_name,
             variable=ResultsVariable.DISPATCH,
-            derivation=_DISPATCH_FROM_ACTIVE_POWER,
+            derivation=_DISPATCH_FROM_SERIES.format(series=key.series_name),
         )
         return [_build_dispatch_frame(frame, carrier_lookup, pl.col(StagedTimeSeriesCol.VALUE))]
 
