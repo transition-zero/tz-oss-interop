@@ -21,14 +21,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     AnnotationColumn,
 )
-from interop.plugins.shared.osemosys_sienna_constants import (
-    DEFAULT_ANGLE,
-    DEFAULT_BASE_VOLTAGE,
-    DEFAULT_MAGNITUDE,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
-    VOLTAGE_LIMIT_MAX,
-    VOLTAGE_LIMIT_MIN,
-)
+from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_annotations
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
@@ -36,7 +29,12 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 )
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
+    BUS_VOLTAGE_LIMIT_MAX,
+    BUS_VOLTAGE_LIMIT_MIN,
     BUSTYPE_DTYPE,
+    DEFAULT_BUS_ANGLE,
+    DEFAULT_BUS_BASE_VOLTAGE,
+    DEFAULT_BUS_MAGNITUDE,
     VOLTAGE_LIMIT_DTYPE,
     ACBusType,
     SiennaACBusCol,
@@ -159,21 +157,21 @@ BUS_TRANSLATIONS: list[Translation] = [
         _bus_field,
         name_col=AnnotationColumn.LOCATION,
         dest_col=SiennaACBusCol.ANGLE,
-        value=DEFAULT_ANGLE,
+        value=DEFAULT_BUS_ANGLE,
         note=_ANGLE_NOTE,
     ),
     default_translation(
         _bus_field,
         name_col=AnnotationColumn.LOCATION,
         dest_col=SiennaACBusCol.MAGNITUDE,
-        value=DEFAULT_MAGNITUDE,
+        value=DEFAULT_BUS_MAGNITUDE,
         note=_MAGNITUDE_NOTE,
     ),
     default_translation(
         _bus_field,
         name_col=AnnotationColumn.LOCATION,
         dest_col=SiennaACBusCol.VOLTAGE_LIMITS,
-        value={"min": VOLTAGE_LIMIT_MIN, "max": VOLTAGE_LIMIT_MAX},
+        value={"min": BUS_VOLTAGE_LIMIT_MIN, "max": BUS_VOLTAGE_LIMIT_MAX},
         note=_VOLTAGE_LIMITS_NOTE,
         dtype=VOLTAGE_LIMIT_DTYPE,
     ),
@@ -181,7 +179,7 @@ BUS_TRANSLATIONS: list[Translation] = [
         _bus_field,
         name_col=AnnotationColumn.LOCATION,
         dest_col=SiennaACBusCol.BASE_VOLTAGE,
-        value=DEFAULT_BASE_VOLTAGE,
+        value=DEFAULT_BUS_BASE_VOLTAGE,
         note=_BASE_VOLTAGE_NOTE,
     ),
     direct_translation(

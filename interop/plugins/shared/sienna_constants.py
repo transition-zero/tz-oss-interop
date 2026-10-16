@@ -656,6 +656,13 @@ LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])
 PRIME_MOVERS_DTYPE: pl.DataType = pl.Enum([p.value for p in SiennaPrimeMovers])
 THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels])
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
+
+# The bus values that a Sienna consumer assumes when a source states no voltage, in per unit.
+DEFAULT_BUS_BASE_VOLTAGE: float = 1.0
+DEFAULT_BUS_MAGNITUDE: float = 1.0
+DEFAULT_BUS_ANGLE: float = 0.0
+BUS_VOLTAGE_LIMIT_MIN: float = 0.9
+BUS_VOLTAGE_LIMIT_MAX: float = 1.1
 FROM_TO_DTYPE: pl.DataType = pl.Struct({FromToField.FROM: pl.Float64, FromToField.TO: pl.Float64})
 MIN_MAX_DTYPE: pl.DataType = pl.Struct({MinMaxField.MIN: pl.Float64, MinMaxField.MAX: pl.Float64})
 

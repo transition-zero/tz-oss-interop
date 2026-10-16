@@ -38,13 +38,6 @@ ACCUMULATED_LOAD_SUFFIX = "accumulated"
 # The fallback that the base power of a load takes when its peak is lower, in MVA.
 MIN_LOAD_BASE_POWER_MVA = 0.1
 
-# OSeMOSYS states no voltage, so a bus takes the per-unit values that a Sienna consumer assumes.
-DEFAULT_BASE_VOLTAGE = 1.0
-DEFAULT_MAGNITUDE = 1.0
-DEFAULT_ANGLE = 0.0
-VOLTAGE_LIMIT_MIN = 0.9
-VOLTAGE_LIMIT_MAX = 1.1
-
 
 class UnitQuantity(StrEnum):
     """A field of the `units:` part of the user mappings file."""
