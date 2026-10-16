@@ -290,6 +290,8 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capacity_limits" set to {"min": 0.0, "max": 2000.0}
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capital_costs.capital_cost.function_data.proportional_term" set to 200000.0
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "power_systems_type" set to "TwoTerminalGenericHVDCLine"
+    And the file "decisions.md" contains "`sienna.AggregateTransportTechnology.ATDELINK.financial_data.capital_recovery_period`"
+    And the file "decisions.md" does not contain "`sienna.AggregateTransportTechnology.ATDELINK.lifetime`"
 
   Scenario: The demand of each year and the availability of each candidate reach the portfolio and its HDF5 companion
     When I translate the otoole model to a Sienna investments portfolio

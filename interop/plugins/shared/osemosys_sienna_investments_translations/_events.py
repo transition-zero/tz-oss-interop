@@ -207,7 +207,7 @@ def build_lifetime_translations(component: str, cost_year: int) -> list[Translat
             _LIFETIME_DERIVATION,
             UNIT_YEARS,
         ),
-        _build_financial_translation(component, cost_year),
+        build_financial_translation(component, cost_year),
     ]
 
 
@@ -237,7 +237,7 @@ def _build_type_translation(
     )
 
 
-def _build_financial_translation(component: str, cost_year: int) -> Translation:
+def build_financial_translation(component: str, cost_year: int) -> Translation:
     """The six fields of `TechnologyFinancialData`, as all-equity financing at the rate."""
     target = FinancialDataTarget(
         partial(build_sienna_field, component), CANDIDATE_NAME, _FINANCIAL_DATA, cost_year

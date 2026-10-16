@@ -46,8 +46,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     TECHNOLOGY_SOURCE,
     Identity,
     build_derived_translation,
+    build_financial_translation,
     build_identity_translations,
-    build_lifetime_translations,
     build_priced_field,
     build_technology_field,
 )
@@ -169,7 +169,7 @@ def build_transport_translations(cost_year: int, start: int) -> list[Translation
     return [
         *build_identity_translations(_COMPONENT, start, _IDENTITY),
         *_TRANSPORT_TRANSLATIONS,
-        *build_lifetime_translations(_COMPONENT, cost_year),
+        build_financial_translation(_COMPONENT, cost_year),
     ]
 
 
