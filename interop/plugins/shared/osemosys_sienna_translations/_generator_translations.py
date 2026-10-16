@@ -129,6 +129,7 @@ _PROPORTIONAL_TERM = f"{_Col.OPERATION_COST}.variable.value_curve.function_data.
 _FIXED_ATTRIBUTE = f"{_Col.OPERATION_COST}.fixed"
 _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
 _SERIES_ATTRIBUTE = f"{SiennaSeriesName.MAX_ACTIVE_POWER} time series"
+_BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
 _EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
 _OTHER_MODE_COSTS_ATTRIBUTE = "extensions.other_mode_variable_costs_per_mwh"
@@ -164,6 +165,10 @@ _AVAILABILITY_DERIVATION = (
     "capacity_factor of the timeslice of each hour × availability_factor, per unit of "
     "base_power; OSeMOSYS states availability_factor as a limit on the energy of the year, and "
     "the operations system applies it as a derate in each hour"
+)
+_BUDGET_DERIVATION = (
+    "OSeMOSYS states no energy budget, so the budget is the availability, which binds nothing "
+    "beyond the hourly limit"
 )
 _FLAT_LIMITS_DERIVATION = (
     "min = 0, as OSeMOSYS states no minimum stable level; max = base_power × capacity_factor × "
@@ -220,8 +225,9 @@ def _build_no_producer_note(old: dict[str, Any], term: dict[str, Any]) -> str:
 def _build_other_mode_note(row: dict[str, Any]) -> str:
     if row[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST:
         return (
-            "the operations system runs one operating mode, so the cost of another mode goes "
-            f"to {_OTHER_MODE_COSTS_ATTRIBUTE}"
+            "the operations system runs one operating mode, so the cost of another mode that "
+            f"puts out electricity goes to {_OTHER_MODE_COSTS_ATTRIBUTE}, for each MWh of that "
+            "output"
         )
     return "the operations system runs one operating mode, so this value of another mode is lost"
 
@@ -757,6 +763,18 @@ def _build_hydro_dispatch() -> list[Translation]:
         *_build_shared(dest),
         _build_power_limits(dest, pl.col(OUTPUT_CAPACITY_MW)),
         *_build_operation_cost(dest, cost, HYDRO_GENERATION_COST_DTYPE),
+        Translation(
+            exprs=[],
+            make_events=lambda old, _new: build_derived(
+                [
+                    build_sienna_source(
+                        SiennaComponent.HYDRO_DISPATCH, old[GENERATOR_NAME], _SERIES_ATTRIBUTE
+                    )
+                ],
+                [dest(old[GENERATOR_NAME], _BUDGET_ATTRIBUTE)],
+                _BUDGET_DERIVATION,
+            ),
+        ),
     ]
 
 

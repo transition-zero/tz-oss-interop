@@ -24,7 +24,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_generators_source,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
-from interop.plugins.shared.sienna_constants import SiennaSeriesName
+from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
 from interop.plugins.shared.translation_runner import apply_translations, finalise
 
 
@@ -62,5 +62,14 @@ class OsemosysToSiennaMapGenerators(OperationsMapping):
         series = source.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(names))
         if series.height == 0:
             return
-        staged = StagedSeries(mapping.sienna_type, SiennaSeriesName.MAX_ACTIVE_POWER, series)
-        add_per_unit_series(state, staged, generators)
+        for attribute in _list_series_names(mapping.sienna_type):
+            add_per_unit_series(
+                state, StagedSeries(mapping.sienna_type, attribute, series), generators
+            )
+
+
+def _list_series_names(sienna_type: SiennaComponent) -> list[SiennaSeriesName]:
+    """A HydroDispatch needs a budget, and the availability in each hour is that budget."""
+    if sienna_type == SiennaComponent.HYDRO_DISPATCH:
+        return [SiennaSeriesName.MAX_ACTIVE_POWER, SiennaSeriesName.HYDRO_BUDGET]
+    return [SiennaSeriesName.MAX_ACTIVE_POWER]

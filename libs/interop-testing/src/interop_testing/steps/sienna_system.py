@@ -626,6 +626,25 @@ def assert_ts_association_name(
     assert actual == expected_name, f"expected series name {expected_name!r}, got {actual!r}"
 
 
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where component "{owner_type}" owner id {owner_id:d}'
+        ' has a TimeSeriesAssociation named "{expected_name}"'
+    )
+)
+def assert_ts_association_named(
+    path: str, owner_type: str, owner_id: int, expected_name: str
+) -> None:
+    """An owner can carry several series, so this looks at each of its associations."""
+    associations: list[dict[str, Any]] = read_json(path).get("time_series_associations", [])
+    names = [
+        a.get("name")
+        for a in associations
+        if a.get("owner_type") == owner_type and a.get("owner_id") == owner_id
+    ]
+    assert expected_name in names, f"expected a series named {expected_name!r}, got {names!r}"
+
+
 def _find_ts_association(path: str, owner_type: str, owner_id: int) -> dict[str, Any]:
     associations: list[dict[str, Any]] = read_json(path).get("time_series_associations", [])
     matching = [

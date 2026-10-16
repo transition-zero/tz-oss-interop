@@ -25,6 +25,9 @@ from interop.plugins.steps.osemosys_to_sienna.map_generators import (
     OsemosysToSiennaMapGenerators,
 )
 from interop.plugins.steps.osemosys_to_sienna.map_loads import OsemosysToSiennaMapLoads
+from interop.plugins.steps.osemosys_to_sienna.map_storage import OsemosysToSiennaMapStorage
+from interop.plugins.steps.osemosys_to_sienna.map_transport import OsemosysToSiennaMapTransport
+from interop.plugins.steps.osemosys_to_sienna.report_left_out import OsemosysToSiennaReportLeftOut
 
 # The calendar is a concern of the whole year, so its decisions name a step of their own.
 _BUILD_CALENDAR = "osemosys_to_sienna_build_calendar"
@@ -59,6 +62,14 @@ class OsemosysToSiennaMapComponents(TranslationStep):
             OsemosysToSiennaMapGenerators(
                 _scoped(recorder, OsemosysToSiennaMapGenerators.step_name),
                 osemosys_sienna_mappings,
+            ),
+            OsemosysToSiennaMapStorage(
+                _scoped(recorder, OsemosysToSiennaMapStorage.step_name),
+                osemosys_sienna_mappings,
+            ),
+            OsemosysToSiennaMapTransport(_scoped(recorder, OsemosysToSiennaMapTransport.step_name)),
+            OsemosysToSiennaReportLeftOut(
+                _scoped(recorder, OsemosysToSiennaReportLeftOut.step_name)
             ),
         )
 

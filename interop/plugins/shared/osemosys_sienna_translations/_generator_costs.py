@@ -25,7 +25,9 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
+    ELECTRICITY_RATIO,
     express_per_output,
+    read_electricity_ratios,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
@@ -128,7 +130,7 @@ def enrich_other_modes(
             for parameter, detail in _MODE_PARAMETERS.items()
         ]
     )
-    costs = _build_other_mode_costs(operations, values)
+    costs = _build_other_mode_costs(state, operations, values)
     listed = (
         values.sort(PARAMETER, OPERATING_MODE, DETAIL)
         .group_by(_KEYS)
@@ -214,11 +216,19 @@ def _read_other_mode_rows(
     )
 
 
-def _build_other_mode_costs(operations: OperationsYear, values: pl.DataFrame) -> pl.DataFrame:
-    costs = values.filter(pl.col(PARAMETER) == SupplyParameter.VARIABLE_OPERATION_COST)
+def _build_other_mode_costs(
+    state: State, operations: OperationsYear, values: pl.DataFrame
+) -> pl.DataFrame:
+    """Each cost for each MWh of the electricity of its own mode; a mode with none has no cost."""
+    ratios = read_electricity_ratios(state, operations.year, FlowParameter.OUTPUT_ACTIVITY_RATIO)
+    costs = values.filter(pl.col(PARAMETER) == SupplyParameter.VARIABLE_OPERATION_COST).join(
+        ratios, on=[*_KEYS, OPERATING_MODE], how="left"
+    )
     convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
+    per_output = express_converted(costs, VALUE_COL, convert) / pl.col(ELECTRICITY_RATIO)
     return (
-        costs.with_columns(express_converted(costs, VALUE_COL, convert).alias(COST_MWH))
+        costs.with_columns(per_output.alias(COST_MWH))
+        .filter(pl.col(ELECTRICITY_RATIO) > 0)
         .sort(OPERATING_MODE)
         .group_by(_KEYS)
         .agg(pl.struct(OPERATING_MODE, COST_MWH).alias(OTHER_MODE_COSTS))

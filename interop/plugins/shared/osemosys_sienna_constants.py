@@ -101,3 +101,11 @@ class SupplyParameter(StrEnum):
     FIXED_COST = "fixed_cost"
     EMISSION_RATE = "emission_rate"
     ACTIVITY_UPPER_LIMIT = "total_technology_annual_activity_upper_limit"
+
+
+class StorageParameter(StrEnum):
+    """A canonical parameter that states the energy of a storage."""
+
+    RESIDUAL_STORAGE_CAPACITY = "residual_storage_capacity"
+    STORAGE_LEVEL_START = "storage_level_start"
+    MIN_STORAGE_CHARGE = "min_storage_charge"

@@ -174,7 +174,7 @@ class GeneratorExtension(ExpansionExtension):
     marginal_cost_series: str | None = None
     # OSeMOSYS only: t/MWh by pollutant, with the emissions of the fuel that the plant burns.
     emission_rates_t_per_mwh: dict[str, float] | None = None
-    # OSeMOSYS only: $/MWh by operating mode, for each mode that the operations system skips.
+    # OSeMOSYS only: $/MWh of electricity output by operating mode, for each mode the system skips.
     other_mode_variable_costs_per_mwh: dict[str, float] | None = None
 
 
