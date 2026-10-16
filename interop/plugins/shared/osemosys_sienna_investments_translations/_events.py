@@ -33,20 +33,17 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
-    financial_data_struct,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
-    ALL_EQUITY_NOTE,
     PORTFOLIO_ID_NOTE,
     WACC_DERIVATION,
+    FinancialDataSources,
+    FinancialDataTarget,
+    build_stated_financial_data_translation,
 )
 from interop.plugins.shared.sienna_constants import SIENNA_TYPE_ATTRIBUTE
 from interop.plugins.shared.sienna_investments_constants import (
-    ALL_EQUITY_DEBT_FRACTION,
-    ALL_EQUITY_DEBT_RATE,
-    ALL_EQUITY_TAX_RATE,
     SiennaSupplyTechnologyCol,
-    SiennaTechnologyFinancialDataField,
 )
 from interop.plugins.shared.translation_runner import (
     Translation,
@@ -242,61 +239,22 @@ def _build_type_translation(
 
 def _build_financial_translation(component: str, cost_year: int) -> Translation:
     """The six fields of `TechnologyFinancialData`, as all-equity financing at the rate."""
-    expr = financial_data_struct(pl.col(LIFETIME), pl.col(DISCOUNT_RATE), cost_year)
-
-    def make_events(old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
-        written = new[_FINANCIAL_DATA]
-        return _build_financial_events(component, old, written, cost_year)
-
-    return Translation(exprs=[expr.alias(_FINANCIAL_DATA)], make_events=make_events)
+    target = FinancialDataTarget(
+        partial(build_sienna_field, component), CANDIDATE_NAME, _FINANCIAL_DATA, cost_year
+    )
+    return build_stated_financial_data_translation(_FINANCIAL_SOURCES, target)
 
 
-def _build_financial_events(
-    component: str, old: dict[str, Any], written: dict[str, Any], cost_year: int
-) -> list[TranslationEvent]:
-    field = SiennaTechnologyFinancialDataField
+def _build_rate_field(old: dict[str, Any]) -> SourceField:
+    return build_osemosys_field(old[RATE_PARAMETER], old[RATE_MEMBER], None, old[DISCOUNT_RATE])
 
-    def dest(attribute: str, value: object, unit: str | None = None) -> Any:
-        return build_sienna_field(
-            component, old[CANDIDATE_NAME], f"{_FINANCIAL_DATA}.{attribute}", value, unit
-        )
 
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[_build_lifetime_field(old)],
-            destinations=[
-                dest(
-                    field.CAPITAL_RECOVERY_PERIOD,
-                    written[field.CAPITAL_RECOVERY_PERIOD],
-                    UNIT_YEARS,
-                )
-            ],
-            derivation=_RECOVERY_DERIVATION,
-        ),
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                build_osemosys_field(
-                    old[RATE_PARAMETER], old[RATE_MEMBER], None, old[DISCOUNT_RATE]
-                )
-            ],
-            destinations=[dest(field.RETURN_ON_EQUITY, written[field.RETURN_ON_EQUITY])],
-            derivation=_RATE_DERIVATION,
-            note=ALL_EQUITY_NOTE,
-        ),
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[
-                dest(field.DEBT_FRACTION, ALL_EQUITY_DEBT_FRACTION),
-                dest(field.DEBT_RATE, ALL_EQUITY_DEBT_RATE),
-                dest(field.TAX_RATE, ALL_EQUITY_TAX_RATE),
-            ],
-            note=ALL_EQUITY_NOTE,
-        ),
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[dest(field.TECHNOLOGY_BASE_YEAR, cost_year)],
-            note=_BASE_YEAR_NOTE,
-        ),
-    ]
+_FINANCIAL_SOURCES = FinancialDataSources(
+    lifetime_col=LIFETIME,
+    discount_rate_col=DISCOUNT_RATE,
+    lifetime=_build_lifetime_field,
+    discount_rate=_build_rate_field,
+    recovery_derivation=_RECOVERY_DERIVATION,
+    rate_derivation=_RATE_DERIVATION,
+    base_year_note=_BASE_YEAR_NOTE,
+)

@@ -77,14 +77,15 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATIONS,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import capital_cost_struct
+from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    capacity_limits_struct,
+)
 from interop.plugins.shared.sienna_constants import (
     SIENNA_NAME_COLUMN,
     SiennaComponent,
-    SiennaStructField,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA,
-    CAPACITY_LIMITS_DTYPE,
     SiennaAggregateTransportTechnologyCol,
     SiennaInvestmentsComponent,
 )
@@ -218,10 +219,9 @@ def _limit_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-_CAPACITY_LIMITS = pl.struct(
-    pl.col(CAPACITY_LIMITS_MIN_MW).alias(SiennaStructField.MIN),
-    pl.col(CAPACITY_LIMITS_MAX_MW).alias(SiennaStructField.MAX),
-).cast(CAPACITY_LIMITS_DTYPE)
+_CAPACITY_LIMITS = capacity_limits_struct(
+    pl.col(CAPACITY_LIMITS_MIN_MW), pl.col(CAPACITY_LIMITS_MAX_MW)
+)
 
 _TRANSPORT_TRANSLATIONS: list[Translation] = [
     build_derived_translation(
