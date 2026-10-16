@@ -42,6 +42,8 @@ Feature: aetos-to-results reads a published results CSV into the results format
     And a results CSV with one column for each year
     And the results CSV has the row "TotalCapacityAnnual" in "R1" for "GASCC" with the values "2 3"
     And the results CSV has the row "TotalCapacityAnnual" in "R1" for "GASX" with the values "10 10"
+    And the results CSV has the row "TotalCapacityAnnual" in "R1" for "ATT" with the values "100 100"
+    And the results CSV has the row "NewCapacity" in "R1" for "ATT" with the values "0 5"
     And the results CSV has the row "NewCapacity" in "R1" for "GASCC" with the values "0 1"
     And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "GASCC 1" with the values "10 20"
     And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "GASCC 2" with the values "4 4"
@@ -93,11 +95,46 @@ Feature: aetos-to-results reads a published results CSV into the results format
     And the log contains "1 technology(ies) put out no electricity, so their production rows are left out: R1/GASX"
     And the file "decisions.md" contains "`aetos.technology.R1/GASX`"
 
-  Scenario: The production of a technology that converts electricity at one location is left out and reported
+  Scenario: The capacity and production of a technology that converts electricity at one location are left out and reported once
+    The capacity of a conversion is in units of its activity, not in the capacity unit, and the
+    Sienna system leaves such a technology out, so ATT has no row in any of the three variables.
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "1 technology(ies) convert electricity at one location, so their production rows are left out: R1/ATT"
-    And the file "decisions.md" contains "the technology converts one electricity fuel into another at one location"
+    And the log contains "1 technology(ies) convert electricity at one location, so their installed_capacity, new_capacity and production rows are left out: R1/ATT"
+    And the log does not contain "so their production rows are left out: R1/ATT"
+    And the file "decisions.md" contains "the technology converts one electricity fuel into another at one location, and the Sienna system leaves such a technology out, so its installed_capacity, new_capacity and production rows are left out"
+
+  Scenario: A technology that discharges a storage states its capacity and production under the name of the storage
+    The Sienna system names a storage after the OSeMOSYS storage, so the pumped-storage plant
+    ATPHS reports under the name of its storage ATPHSS, and the two sides of a comparison join.
+    ATPHS puts out 0.8 of a unit of electricity for each unit of activity when it discharges.
+    Given the otoole set "TECHNOLOGY" holds "GASCC ATDE ATT GASX ATPHS"
+    And the otoole set "STORAGE" holds "ATPHSS"
+    Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC  | 1                 | 2030 | 1     |
+      | R1     | GASCC      | ATELEC  | 1                 | 2031 | 1     |
+      | R1     | ATPHS      | ATELEC  | 2                 | 2030 | 0.8   |
+      | R1     | ATPHS      | ATELEC  | 2                 | 2031 | 0.8   |
+    And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+      | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+      | R1     | ATPHS      | ATPHSS  | 1                 | 1     |
+    And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+      | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+      | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+    And the results CSV has the row "TotalCapacityAnnual" in "R1" for "ATPHS" with the values "0.5 0.5"
+    And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "ATPHS 2" with the values "1 2"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | ATPHSS    |          | 2030-01-01T00:00:00 | 500   |
+      | installed_capacity | ATPHSS    |          | 2031-01-01T00:00:00 | 500   |
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | ATPHSS    |          | 2030-01-01T00:00:00 | 800   |
+      | production | ATPHSS    |          | 2031-01-01T00:00:00 | 1600  |
+    And the file "decisions.md" contains "`aetos.technology.R1/ATPHS.technology_from_storage` = ATPHSS | `results.results.ATPHSS.component` | the Sienna system names a storage after the OSeMOSYS storage, so the technology that discharges it states its installed_capacity, new_capacity and production under the Sienna name of the storage"
 
   Scenario: The rows of a technology that the model does not hold are left out and reported
     Given the results CSV has the row "TotalCapacityAnnual" in "R1" for "GHOST" with the values "1 1"
