@@ -112,6 +112,22 @@ It records each run of consecutive hours in `decisions.md` and writes one warnin
 with a rating and no output in the solve gets `installed_capacity` and no `production`, and the
 pipeline reports it. A solve with no `representative_period` records gives no annual rows.
 
+Two more results pipelines write annual rows:
+
+- `aetos-to-results` reads a published results CSV of an OSeMOSYS model, which holds one value
+  for each model year in a row. It also stages the model with its user mappings file, to convert
+  the units and to find the electricity fuels. `installed_capacity` comes from
+  `TotalCapacityAnnual`, `new_capacity` from `NewCapacity`, and `emissions` from
+  `AnnualEmissions`. `production` is the sum over the modes of
+  `TotalAnnualTechnologyActivityByMode` × the `OutputActivityRatio` of the electricity fuels.
+  The pipeline leaves out a technology that puts out no electricity, and a conversion between
+  two electricity fuels at one location, because the Sienna translation has no component for
+  either. A technology that discharges a storage takes the name of the storage, as the Sienna
+  system names it.
+- `power-systems-investments-to-results` reads an expansion solve. Its rows are in
+  [Running a capacity expansion](developer_documentation/capacity-expansion.md#reading-the-results).
+  It writes no `emissions` rows, and its rows state no category.
+
 ## How a comparison meets at a shared granularity
 
 Compare joins the two tables per variable at the finest granularity both sides share.
@@ -161,7 +177,7 @@ zone for the table's naive timestamps.
 
 | Field | Meaning |
 | --- | --- |
-| `framework` | The source the table was normalised from (`pypsa`, `sienna`, `caiso-plexos`, `aetos`). |
+| `framework` | The source the table was normalised from (`pypsa`, `sienna`, `caiso-plexos`, `aetos`, `power-systems-investments`). |
 | `label` | A human-readable name for the run. |
 | `timezone` | IANA zone name for the table's naive timestamps. |
 | `translator_version` | The translator version the table was built with. |

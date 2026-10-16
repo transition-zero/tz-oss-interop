@@ -17,15 +17,18 @@ Sienna is the hub. Each built-in pipeline translates a model into Sienna, or tra
 flowchart LR
     plexos[PLEXOS]
     pypsa_in[PyPSA]
+    osemosys[OSeMOSYS]
     sienna[Sienna]
     investments[Sienna investments]
     pypsa_out[PyPSA]
 
     plexos -->|"plexos-to-sienna<br/><i>plexos-to-pypsa, part 1</i>"| sienna
     pypsa_in -->|"pypsa-to-sienna<br/>pypsa-to-sienna-ensemble"| sienna
+    osemosys -->|"osemosys-csv-to-sienna<br/>tz-osemosys-to-sienna"| sienna
     sienna -->|"sienna-to-pypsa<br/>sienna-to-pypsa-ensemble<br/><i>plexos-to-pypsa, part 2</i>"| pypsa_out
     plexos -->|plexos-to-sienna-investments| investments
     pypsa_in -->|pypsa-to-sienna-investments| investments
+    osemosys -->|"osemosys-csv-to-sienna-investments<br/>tz-osemosys-to-sienna-investments"| investments
 ```
 
 | Pipeline | From | To |
@@ -36,10 +39,14 @@ flowchart LR
 | `pypsa-to-sienna` | PyPSA network | Sienna system |
 | `pypsa-to-sienna-ensemble` | PyPSA network ensemble | Sienna system ensemble |
 | `pypsa-to-sienna-investments` | PyPSA network | Sienna system and Sienna investments portfolio |
+| `osemosys-csv-to-sienna` | otoole OSeMOSYS model (configuration YAML and CSV files) | Sienna system of one model year |
+| `tz-osemosys-to-sienna` | TZ-format OSeMOSYS `model.json` | Sienna system of one model year |
+| `osemosys-csv-to-sienna-investments` | otoole OSeMOSYS model | Sienna system and Sienna investments portfolio over every model year |
+| `tz-osemosys-to-sienna-investments` | TZ-format OSeMOSYS `model.json` | Sienna system and Sienna investments portfolio over every model year |
 | `sienna-to-pypsa` | Sienna system | PyPSA network |
 | `sienna-to-pypsa-ensemble` | Sienna system ensemble | PyPSA network ensemble |
 
-A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. interop writes a portfolio, but it does not read one. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
+A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. tz-oss-interop writes a portfolio, and the leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
 
 ## Install
 
@@ -340,6 +347,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/translation_mappings/translation-from-plexos-to-pypsa.md` states what each part of a PLEXOS model becomes in PyPSA.
 - `docs/translation_mappings/translation-from-plexos-to-sienna.md` states the same for Sienna, and `plexos-to-sienna-gap-analysis.md` beside it names each thing a PLEXOS model states that SiennaSchemas holds no type and no field for.
 - `docs/translation_mappings/translation-from-plexos-to-sienna-investments.md` states what a PLEXOS expansion plan becomes in a Sienna investments portfolio, which `plexos-to-sienna-investments` writes beside the base system.
+- `docs/translation_mappings/translation-from-osemosys-to-sienna.md` states what each part of an OSeMOSYS model becomes in a Sienna system, and `translation-from-osemosys-to-sienna-investments.md` states the same for a Sienna investments portfolio. `osemosys-to-sienna-gap-analysis.md` beside them names each thing that the translation and the solves lose, and its effect.
 - `docs/developer_documentation/mutation-testing.md` covers the mutmut workflow.
 - `docs/developer_documentation/routines.md` covers the nightly and PR steward agents that run on this repository as Conductor routines.
 - `tests/features/README.md` explains the in-process REPL-driven BDD harness and when subprocess is needed.

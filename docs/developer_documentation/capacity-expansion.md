@@ -208,6 +208,46 @@ days is not done here.
 A demand profile is multiplied by the load's own `max_active_power`, because a SiennaSchemas
 system stores it per unit of that peak and the model reads `ops_demand` as MW.
 
+## An OSeMOSYS portfolio
+
+`osemosys-csv-to-sienna-investments` and `tz-osemosys-to-sienna-investments` write a portfolio
+over every year in scope.
+[Translation from OSeMOSYS to a Sienna Investments Portfolio](../translation_mappings/translation-from-osemosys-to-sienna-investments.md)
+gives each field. The leg reads such a portfolio with the rules above. This section collects
+what each rule does to an OSeMOSYS plan.
+
+| Part of the portfolio | What the leg does |
+| --- | --- |
+| `SupplyTechnology.capacity_limits`, keyed by year | One limit: the largest yearly maximum, and no minimum. Each minimum is recorded as not mapped. |
+| The series of each year, with the feature `year` | Split into the representative days of the `representative_period` records, one investment period for each year. |
+| `AggregateTransportTechnology` | Built between two Zones as `AggregateTransportTechnology{ACBranch}`, lossless, in both directions. The stated loss and the direction are recorded as not mapped. |
+| `CarbonCaps`, one for each year | Passed with its `target_year`. The model builds no constraint from it. |
+| A limit or a unit size that the portfolio does not state | The default of the package. |
+| The `ExistingDevices` of a candidate | Attached after the read. The model holds that capacity constant over every period. |
+
+### The existing fleet of an OSeMOSYS plan
+
+An OSeMOSYS candidate holds one existing device at most: the component of the base system
+with its own name. A plant of the base system that is not a candidate is in no technology of
+the portfolio. So the leg adds such a plant as a technology of its own, as
+[The fleet that already runs](#the-fleet-that-already-runs) describes. Without the existing
+fleet, the plan builds the whole fleet again in the first period.
+
+Three parts of this are open, and can change:
+
+- the financial data of a technology that the leg adds for an existing plant: the rate and the
+  recovery period;
+- what happens to an existing plant whose name a technology holds, when that technology does
+  not list the plant as a device;
+- how a `capacity_limits.min` adds to the capacity that the existing devices already hold.
+
+### What an OSeMOSYS plan loses in the expansion
+
+[The gap analysis](../translation_mappings/osemosys-to-sienna-gap-analysis.md#the-expansion-solve)
+gives one entry for each loss, with its effect. In short: no cap binds, trade has no loss, the
+fleet does not retire, a thermal candidate has no availability profile, and the years between
+two periods carry no operations.
+
 ## Running it
 
 The `solve` command's model type `sienna-investments` takes the portfolio path and two

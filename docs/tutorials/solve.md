@@ -45,6 +45,11 @@ Select **solve** from the menu. The first prompt, **Model type?**, chooses betwe
    - `dcp` (default): DC power flow with voltage-angle variables and KVL constraints; closest to PyPSA's Kirchhoff formulation.
    - `ptdf`: PTDF approximation of AC flows; faster than DCP on large networks.
    - `copperplate`: single-bus per AC subnetwork; fastest, ignores line flows.
+
+   A system with no AC line must use `copperplate`, because `dcp` needs AC branches. A system
+   that tz-oss-interop translates from OSeMOSYS is an example: each connection between two
+   locations is a `TwoTerminalGenericHVDCLine`. Each bus is then its own AC subnetwork, and the
+   HVDC lines join them.
 3. **Unserved energy?** Choose one of:
    - `refused` (default): every load is met in every hour. If one location cannot meet its load in one hour, the whole solve is infeasible.
    - `penalised`: the network model gets the PowerSimulations network balance slacks (`NetworkModel(<model>; use_slacks = true)`), so a shortfall goes unserved at a penalty. See [Unserved energy](#unserved-energy).
