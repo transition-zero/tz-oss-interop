@@ -23,6 +23,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
+    REGION,
     YEAR,
     AnnotationColumn,
     FlowParameter,
@@ -35,12 +36,15 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     AREA,
+    CANDIDATE_NAME,
     CAPACITY_LIMITS_BY_YEAR,
     CAPITAL_COST,
     CAPITAL_COST_MW,
     CAPITAL_COST_YEAR,
+    EMISSION_COST_MWH,
     FIXED_COST,
     FIXED_COST_MW_YEAR,
+    OWN_AND_FUEL_COST_MWH,
     RATING_RATIO,
     REPORT_NAME,
     UNIT_SIZE,
@@ -79,6 +83,11 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
     enrich_electricity_output_ratios,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import (
+    build_osemosys_field,
+    build_sienna_field,
+    build_sienna_source,
+)
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     build_fuel_supply,
     read_input_ratios,
@@ -93,6 +102,16 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     enrich_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    enrich_emission_rates,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    EMISSION_COST_MWH as OPERATIONS_EMISSION_COST_MWH,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    OPERATION_COST_MWH,
+    enrich_emission_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import GENERATOR_TYPES
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
@@ -119,6 +138,7 @@ from interop.plugins.shared.translation_runner import (
     Translation,
     filter_component,
 )
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 S = SiennaSupplyTechnologyCol
 _IDENTITY = Identity(kind_note="a supply technology that a plan may build is a candidate")
@@ -157,7 +177,9 @@ def build_supply_candidates(
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     table = enrich_base_year_values(technologies, yearly, plan).join(
-        build_year_values(yearly, plan.base_year).select(*TECHNOLOGY_KEYS, VARIABLE_COST_MWH),
+        build_year_values(yearly, plan.base_year).select(
+            *TECHNOLOGY_KEYS, VARIABLE_COST_MWH, OWN_AND_FUEL_COST_MWH, EMISSION_COST_MWH
+        ),
         on=TECHNOLOGY_KEYS,
         how="left",
     )
@@ -248,7 +270,8 @@ def _enrich_variable_costs(
     technologies: pl.DataFrame,
     yearly: pl.DataFrame,
 ) -> pl.DataFrame:
-    """The variable cost of each year in $/MWh, with the fuel cost, as operations derives it."""
+    """The variable cost of each year in $/MWh, with the fuel cost and the emission penalty, as
+    the operations step derives it."""
     costs = [
         _read_variable_costs(state, operations, technologies) for operations in plan_years.values()
     ]
@@ -261,10 +284,14 @@ def _read_variable_costs(
     inputs = read_input_ratios(state, operations.year, operations.mode, technologies)
     fuel_supply = build_fuel_supply(state, operations.year, operations.mode)
     costs = enrich_variable_costs(state, operations, technologies, inputs, fuel_supply)
+    costs = enrich_emission_rates(state, operations, costs, inputs, fuel_supply)
+    costs = enrich_emission_penalties(state, operations, costs)
     return costs.select(
         *TECHNOLOGY_KEYS,
         pl.lit(operations.year, dtype=pl.Int64).alias(YEAR),
-        pl.col(OPERATIONS_VARIABLE_COST_MWH).alias(VARIABLE_COST_MWH),
+        pl.col(OPERATION_COST_MWH).alias(VARIABLE_COST_MWH),
+        pl.col(OPERATIONS_VARIABLE_COST_MWH).alias(OWN_AND_FUEL_COST_MWH),
+        pl.col(OPERATIONS_EMISSION_COST_MWH).alias(EMISSION_COST_MWH),
     )
 
 
@@ -279,12 +306,57 @@ def _cost_sources(old: dict[str, Any]) -> list[Any]:
 
 
 def _operation_sources(old: dict[str, Any]) -> list[Any]:
+    """The fixed cost, the variable cost with the fuel cost, and the emission penalty."""
     return [
         build_technology_field(old, FIXED_COST, FIXED_COST, BASE_YEAR),
         build_technology_field(
-            old, SupplyParameter.VARIABLE_OPERATION_COST, VARIABLE_COST_MWH, BASE_YEAR
+            old,
+            SupplyParameter.VARIABLE_OPERATION_COST,
+            OWN_AND_FUEL_COST_MWH,
+            BASE_YEAR,
+            UNIT_DOLLARS_PER_MWH,
         ),
+        *_build_penalty_sources(old),
         build_technology_field(old, _ELECTRICITY_OUTPUT, RATING_RATIO),
+    ]
+
+
+def _build_penalty_sources(old: dict[str, Any]) -> list[SourceField]:
+    if not old[EMISSION_COST_MWH]:
+        return []
+    return [
+        build_sienna_source(
+            _COMPONENT,
+            old[CANDIDATE_NAME],
+            _PENALTY_ATTRIBUTE,
+            old[EMISSION_COST_MWH],
+            UNIT_DOLLARS_PER_MWH,
+        )
+    ]
+
+
+def _build_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    """The emission penalty of the earliest year, which the variable cost then reads."""
+    if not old[EMISSION_COST_MWH]:
+        return []
+    return [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
+                build_osemosys_field(SupplyParameter.EMISSION_RATE, old[REPORT_NAME], BASE_YEAR),
+                build_osemosys_field(SupplyParameter.EMISSION_PENALTY, old[REGION], BASE_YEAR),
+            ],
+            destinations=[
+                build_sienna_field(
+                    _COMPONENT,
+                    old[CANDIDATE_NAME],
+                    _PENALTY_ATTRIBUTE,
+                    old[EMISSION_COST_MWH],
+                    UNIT_DOLLARS_PER_MWH,
+                )
+            ],
+            derivation=_PENALTY_DERIVATION,
+        )
     ]
 
 
@@ -300,6 +372,13 @@ _FUEL_LIST = (
     pl.when(pl.col(FUEL_TYPE).is_not_null())
     .then(pl.concat_list(pl.col(FUEL_TYPE)))
     .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8)))
+)
+
+_PENALTY_ATTRIBUTE = f"{S.OPERATION_COSTS} emission penalty"
+_PENALTY_DERIVATION = (
+    "Σ over pollutants of the emission rate in t/MWh, with the rate of the fuel that the "
+    "technology burns, × emission_penalty of the region in $/tonne, as the operations step "
+    "derives it"
 )
 
 _SUPPLY_TRANSLATIONS: list[Translation] = [
@@ -348,6 +427,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
         "term of a linear capital cost curve; extensions.json holds each year",
         UNIT_DOLLARS_PER_MW,
     ),
+    Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(old)),
     build_derived_translation(
         _COMPONENT,
         S.OPERATION_COSTS,
@@ -357,8 +437,9 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
             pl.col(VARIABLE_COST_MWH),
         ),
         _operation_sources,
-        "fixed_cost in $/MW/yr as the fixed term, and the variable cost with the fuel cost in "
-        "$/MWh, as the operations step derives it, of the earliest year in scope",
+        "fixed_cost in $/MW/yr as the fixed term, and the variable cost with the fuel cost and "
+        "the emission penalty in $/MWh, as the operations step derives it, of the earliest year "
+        "in scope",
         f"{UNIT_DOLLARS_PER_MW_YEAR}, {UNIT_DOLLARS_PER_MWH}",
     ),
     build_derived_translation(

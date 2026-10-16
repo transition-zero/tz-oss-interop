@@ -198,6 +198,20 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capital_cost_per_mw_by_year" set to {"2030": 1000000.0, "2035": 900000.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 7.0, "2035": 7.0}
 
+  Scenario: The emission penalty of each year adds to the variable cost of a candidate
+    ATGASNEW emits 0.35 t of CO2 for each MWh in 2030 and none in 2035. At 100 USD/t, the
+    penalty adds 35 $/MWh in 2030 to its cost of 7 $/MWh.
+    Given the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+      | REGION | EMISSION | YEAR | VALUE |
+      | R1     | CO2      | 2030 | 100   |
+      | R1     | CO2      | 2035 | 100   |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.variable_operation_cost.value_curve.function_data.proportional_term" set to 42.0
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 42.0, "2035": 7.0}
+    And the file "decisions.md" contains "`sienna.SupplyTechnology.ATGASNEW.operation_costs emission penalty` = 35.0 \$/MWh | Σ over pollutants of the emission rate in t/MWh"
+    And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASNEW.the earliest year in scope` = 7.0 \$/MWh"
+
   Scenario: A candidate with no capital cost in the earliest year takes the cost of the first year in which a plan can build it at a cost
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0

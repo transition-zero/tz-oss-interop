@@ -24,6 +24,9 @@ CAPITAL_COST_MW = "capital_cost_mw"
 FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
 UNIT_SIZE_MW = "unit_size_mw"
 VARIABLE_COST_MWH = "variable_cost_mwh"
+EMISSION_COST_MWH = "emission_cost_mwh"
+# The variable cost without the emission penalty: the own cost and the fuel cost.
+OWN_AND_FUEL_COST_MWH = "own_and_fuel_cost_mwh"
 ENERGY_CAPITAL_COST_MWH = "energy_capital_cost_mwh"
 
 # Whether a plan can add capacity to the technology in the year of the row.
