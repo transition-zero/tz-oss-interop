@@ -71,7 +71,7 @@ Four things the step settles, because the two documents differ on them:
   `fuel`, `requirements` and `region` state `[]`, `co2` and the cofire limits state `{}`, and
   the ramp and time limits state a pair of ones, which means no limit.
 
-Three more things the step settles, because the package reads a field in a different way
+Four more things the step settles, because the package reads a field in a different way
 from the schema:
 
 - **A limit stated once for each year becomes one limit.** The package holds one `MinMax`. It
@@ -84,6 +84,10 @@ from the schema:
   reader rejects a null, and indexes both bounds of a limit by name. So an absent capacity limit
   states `{"min": 0.0, "max": 1e8}`, a limit with one bound gets the other from that default,
   and an absent transport `unit_size` states `1.0`.
+- **A storage duration becomes hours.** SiennaSchemas states `duration_limits` in minutes. The
+  package reads hours: it bounds the stored energy by `duration_limits.max` × the discharge
+  power. So the step divides each stated bound by 60, and records the value in both units. An
+  absent duration takes the package's default of `{"min": 0.0, "max": 1000.0}` hours.
 - **A transport technology is lossless and flows both ways.** An `AggregateTransportTechnology` names its start and
   end regions by id, and the package resolves each against the Zones. It flows both ways, and
   the package takes the loss from the energy that reaches the end region. A flow from the end
@@ -222,6 +226,7 @@ what each rule does to an OSeMOSYS plan.
 | The series of each year, with the feature `year` | Split into the representative days of the `representative_period` records, one investment period for each year. |
 | `AggregateTransportTechnology` | Built between two Zones as `AggregateTransportTechnology{ACBranch}`, lossless, in both directions. The stated loss and the direction are recorded as not mapped. |
 | `CarbonCaps`, one for each year | Passed with its `target_year`. The model builds no constraint from it. |
+| `StorageTechnology.duration_limits`, in minutes | Divided by 60, because the model reads hours. |
 | A limit or a unit size that the portfolio does not state | The default of the package. |
 | The `ExistingDevices` of a candidate | Attached after the read. The model holds that capacity constant over every period. |
 
@@ -294,11 +299,11 @@ rows with those of the model that the portfolio came from. The solve states no c
 
 ## What does not work
 
-- **A renewable candidate with no profile cannot be solved.** `BasicDispatch` reads
-  `ops_variable_cap_factor` for a `SupplyTechnology{RenewableDispatch}`, and stops where a
-  technology states none. A candidate that holds no capacity today is dropped from the
-  operations system as retired, so its profile never reaches either document. Give the
-  candidate the capacity it already holds, or its profile will not be there.
+- **A renewable candidate with no profile runs at full availability, and the step warns.**
+  A candidate that holds no capacity today is dropped from the operations system as retired,
+  so its profile never reaches either document. The step then writes 1.0 for every hour of the
+  slice, so the plan can build the candidate at full output in each hour. Give the candidate
+  the capacity it already holds, and its profile reaches the plan.
 - **Existing capacity never retires.** See "The fleet that already runs".
 - **The years between the periods have no operations.** The model counts the operations of
   each period's own year only, while it amortises capital over the whole recovery period. The

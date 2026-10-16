@@ -148,6 +148,9 @@ _NO_CAPACITY_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1e8}
 _NO_DURATION_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1000.0}
 _TRANSPORT_UNIT_SIZE = 1.0
 
+# SiennaSchemas states a storage duration in minutes, and the package reads hours.
+_MINUTES_PER_HOUR = 60.0
+
 # The fields the reader rejects as null where a source may state none, with the package's default.
 _PACKAGE_DEFAULTS: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] = {
     SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: (
@@ -292,6 +295,7 @@ def _map_one(
     name = row[SIENNA_NAME_COLUMN]
     if sienna_type is SiennaInvestmentsComponent.STORAGE_TECHNOLOGY:
         _map_storage_capital_costs(row, name, recorder)
+        _convert_duration_limits(row, name, recorder)
     elif SiennaSupplyTechnologyCol.CAPITAL_COSTS in row:
         _map_capital_costs(row, sienna_type, name, recorder)
     _fill_required(row, sienna_type, name, recorder)
@@ -426,6 +430,28 @@ def _map_storage_capital_costs(row: dict[str, Any], name: str, recorder: ScopedR
         )
     _report_interconnection_cost(
         wrapper, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY.value, name, recorder
+    )
+
+
+def _convert_duration_limits(row: dict[str, Any], name: str, recorder: ScopedRecorder) -> None:
+    """The duration bounds of a store in hours, where SiennaSchemas states them in minutes."""
+    minutes = row.get(SiennaStorageTechnologyCol.DURATION_LIMITS)
+    if minutes is None:
+        return
+    hours = {
+        bound: None if value is None else value / _MINUTES_PER_HOUR
+        for bound, value in minutes.items()
+    }
+    row[SiennaStorageTechnologyCol.DURATION_LIMITS] = hours
+    record_translation(
+        recorder,
+        component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY.value,
+        name=name,
+        source_field=f"{SiennaStorageTechnologyCol.DURATION_LIMITS} (min)",
+        source_value=minutes,
+        destination_field=f"{SiennaStorageTechnologyCol.DURATION_LIMITS} (h)",
+        destination_value=hours,
+        derivation="duration_limits in minutes ÷ 60 min/h, because the package reads hours",
     )
 
 

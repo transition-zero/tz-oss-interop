@@ -178,92 +178,170 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe},                          |
       | {osemosys_category: wind, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: WT},                            |
       | {osemosys_category: rooftop, sienna_component_type: RenewableNonDispatch, sienna_prime_mover_type: PVe}]                     |
-    When I run the pipeline "osemosys-csv-to-sienna-investments" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv" with user mappings "user_mappings.yaml"
-    And I run the pipeline "sienna-to-power-systems-investments" with overrides "source.portfolio_json_path=outputs/portfolio.json source.system_json_path=outputs/system.json source.time_series_h5_path=outputs/system_time_series_storage.h5 source.extensions_json_path=outputs/extensions.json sink[0].portfolio_path=psi/portfolio.json sink[0].h5_output_path=psi/portfolio_base_system_time_series.h5"
 
-  Scenario: A capacity limit for each year becomes the largest yearly maximum, with no minimum
-    Then the pipeline exit code is 0
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASNEW" has field "capacity_limits" equal to {"min": 0.0, "max": 2000.0}
-    And the file "decisions.md" contains "so max = the largest yearly max"
-    And the file "decisions.md" contains "so no yearly minimum reaches it"
-    And the log contains "so each takes its largest yearly maximum and no minimum: ATGASNEW"
+  Rule: The plants, the demand, the interconnector and the cap reach the four files
 
-  Scenario: A technology with no capacity limit takes the limit of the package, which bounds nothing
-    Then the pipeline exit code is 0
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATSOLAR" has field "capacity_limits" equal to {"min": 0.0, "max": 100000000.0}
+    Background:
+      When I run the pipeline "osemosys-csv-to-sienna-investments" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv" with user mappings "user_mappings.yaml"
+      And I run the pipeline "sienna-to-power-systems-investments" with overrides "source.portfolio_json_path=outputs/portfolio.json source.system_json_path=outputs/system.json source.time_series_h5_path=outputs/system_time_series_storage.h5 source.extensions_json_path=outputs/extensions.json sink[0].portfolio_path=psi/portfolio.json sink[0].h5_output_path=psi/portfolio_base_system_time_series.h5"
 
-  Scenario: A transport technology joins two Zones as a lossless AggregateTransportTechnology
-    Then the pipeline exit code is 0
-    And the portfolio "psi/portfolio.json" contains 1 component of type "AggregateTransportTechnology"
-    And the portfolio "psi/portfolio.json" component "Zone" named "AT" has field "id" equal to 1
-    And the portfolio "psi/portfolio.json" component "Zone" named "DE" has field "id" equal to 2
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "__metadata__.parameters" equal to "['ACBranch']"
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "power_systems_type" equal to "ACBranch"
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "start_region" equal to 1
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "end_region" equal to 2
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "line_loss" equal to 0.0
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "unit_size" equal to 1.0
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "capacity_limits" equal to {"min": 0.0, "max": 100000000.0}
-    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "capital_costs.function_data.proportional_term" equal to "200000.0"
-    And the file "decisions.md" contains "a flow from the end to the start would make energy"
-    And the log contains "so each is lossless: ATDELINK"
-    And the file "decisions.md" contains "so the direction that the source states does not bound the flow"
-    And the log contains "flows 1 transport technology(ies) both ways, whatever direction the source states: ATDELINK"
+    Scenario: A capacity limit for each year becomes the largest yearly maximum, with no minimum
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASNEW" has field "capacity_limits" equal to {"min": 0.0, "max": 2000.0}
+      And the file "decisions.md" contains "so max = the largest yearly max"
+      And the file "decisions.md" contains "so no yearly minimum reaches it"
+      And the log contains "so each takes its largest yearly maximum and no minimum: ATGASNEW"
 
-  Scenario: The series of each year splits into its representative days, numbered across the years
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" states one period for each of the years "2030 2035"
-    And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 1 of the year "2030" starts at "2030-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 100
-    And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 2 of the year "2030" starts at "2030-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 200
-    And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 4 of the year "2035" starts at "2035-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 400
-    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAR" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 0.6
-    And the file "decisions.md" contains "rep_day numbers the slices of every year in order"
+    Scenario: A technology with no capacity limit takes the limit of the package, which bounds nothing
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATSOLAR" has field "capacity_limits" equal to {"min": 0.0, "max": 100000000.0}
 
-  Scenario: A renewable candidate available in every hour gets a profile of ones for every day
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATWIND" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 1
-    And the file "decisions.md" contains "so each slice of the year states 1.0"
+    Scenario: A transport technology joins two Zones as a lossless AggregateTransportTechnology
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" contains 1 component of type "AggregateTransportTechnology"
+      And the portfolio "psi/portfolio.json" component "Zone" named "AT" has field "id" equal to 1
+      And the portfolio "psi/portfolio.json" component "Zone" named "DE" has field "id" equal to 2
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "__metadata__.parameters" equal to "['ACBranch']"
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "power_systems_type" equal to "ACBranch"
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "start_region" equal to 1
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "end_region" equal to 2
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "line_loss" equal to 0.0
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "unit_size" equal to 1.0
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "capacity_limits" equal to {"min": 0.0, "max": 100000000.0}
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "capital_costs.function_data.proportional_term" equal to "200000.0"
+      And the file "decisions.md" contains "a flow from the end to the start would make energy"
+      And the log contains "so each is lossless: ATDELINK"
+      And the file "decisions.md" contains "so the direction that the source states does not bound the flow"
+      And the log contains "flows 1 transport technology(ies) both ways, whatever direction the source states: ATDELINK"
 
-  Scenario: A carbon cap reaches the portfolio with its target year, and limits nothing
-    Then the pipeline exit code is 0
-    And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "target_year" equal to 2035
-    And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "max_mtons" equal to 0.25
-    And the log contains "PowerSystemsInvestments builds no constraint from a CarbonCaps, so none limits the plan: CO2/2030, CO2/2035"
+    Scenario: The series of each year splits into its representative days, numbered across the years
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" states one period for each of the years "2030 2035"
+      And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 1 of the year "2030" starts at "2030-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 100
+      And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 2 of the year "2030" starts at "2030-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 200
+      And the series document "psi/portfolio_series.json" record for "DemandRequirement" named "ATELEC" in the representative day 4 of the year "2035" starts at "2035-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 400
+      And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAR" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 0.6
+      And the file "decisions.md" contains "rep_day numbers the slices of every year in order"
 
-  Scenario: A candidate that holds an existing plant names it, and its limit holds at least the plant
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASCC" the existing devices "ATGASCC"
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASCC" has field "capacity_limits" equal to {"min": 0.0, "max": 500.0}
-    And the file "decisions.md" contains "so max is at least the rating of the existing devices"
-    And the log contains "holds the existing capacity of 3 technology(ies) constant over every period and reads no retirement"
+    Scenario: A renewable candidate available in every hour gets a profile of ones for every day
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATWIND" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 1
+      And the file "decisions.md" contains "so each slice of the year states 1.0"
 
-  Scenario: An existing plant that is no candidate becomes a technology that the plan cannot add to
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASOLD" the existing devices "ATGASOLD"
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "capacity_limits" equal to {"min": 0.0, "max": 200.0}
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "capital_costs.function_data.proportional_term" equal to "0.0"
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "operation_costs.__metadata__.type" equal to "ThermalGenerationCost"
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "region" equal to [1]
-    And the file "decisions.md" contains "a technology of its own that holds its rating"
+    Scenario: A carbon cap reaches the portfolio with its target year, and limits nothing
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "target_year" equal to 2035
+      And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "max_mtons" equal to 0.25
+      And the log contains "PowerSystemsInvestments builds no constraint from a CarbonCaps, so none limits the plan: CO2/2030, CO2/2035"
 
-  Scenario: An existing renewable plant takes its base system profile in every year
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 0.4
-    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 2 of the year "2030" starts at "2030-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 0.7
-    And the file "decisions.md" contains "so its base system profile splits into the representative days of every year"
+    Scenario: A candidate that holds an existing plant names it, and its limit holds at least the plant
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASCC" the existing devices "ATGASCC"
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASCC" has field "capacity_limits" equal to {"min": 0.0, "max": 500.0}
+      And the file "decisions.md" contains "so max is at least the rating of the existing devices"
+      And the log contains "holds the existing capacity of 3 technology(ies) constant over every period and reads no retirement"
 
-  Scenario: The profile of a thermal candidate does not reach the model, and the log names it
-    Then the pipeline exit code is 0
-    And the series document "psi/portfolio_series.json" holds no record for "SupplyTechnology" named "ATGASNEW"
-    And the file "decisions.md" contains "so a technology of this type runs up to its capacity in every hour"
-    And the log contains "so each runs up to its capacity in every hour: ATGASNEW"
+    Scenario: An existing plant that is no candidate becomes a technology that the plan cannot add to
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASOLD" the existing devices "ATGASOLD"
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "capacity_limits" equal to {"min": 0.0, "max": 200.0}
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "capital_costs.function_data.proportional_term" equal to "0.0"
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "operation_costs.__metadata__.type" equal to "ThermalGenerationCost"
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "region" equal to [1]
+      And the file "decisions.md" contains "a technology of its own that holds its rating"
 
-  Scenario: The years between the investment periods carry no operations, and the log says so
-    Then the pipeline exit code is 0
-    And the file "decisions.md" contains "so the years 2031, 2032, 2033, 2034 between the periods carry no operating cost"
-    And the log contains "the 4 year(s) between the periods carry no operating cost: 2031, 2032, 2033 and 1 more"
+    Scenario: An existing renewable plant takes its base system profile in every year
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 0.4
+      And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 2 of the year "2030" starts at "2030-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 0.7
+      And the file "decisions.md" contains "so its base system profile splits into the representative days of every year"
 
-  Scenario: A candidate of a type that no model covers is recorded as left out of the plan
-    Then the pipeline exit code is 0
-    And the file "decisions.md" contains "so a technology of this type is left out of the plan"
-    And the log contains "no PowerSystemsInvestments model covers, so the plan leaves each out: ATROOF"
+    Scenario: The profile of a thermal candidate does not reach the model, and the log names it
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" holds no record for "SupplyTechnology" named "ATGASNEW"
+      And the file "decisions.md" contains "so a technology of this type runs up to its capacity in every hour"
+      And the log contains "so each runs up to its capacity in every hour: ATGASNEW"
+
+    Scenario: The years between the investment periods carry no operations, and the log says so
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "so the years 2031, 2032, 2033, 2034 between the periods carry no operating cost"
+      And the log contains "the 4 year(s) between the periods carry no operating cost: 2031, 2032, 2033 and 1 more"
+
+    Scenario: A candidate of a type that no model covers is recorded as left out of the plan
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "so a technology of this type is left out of the plan"
+      And the log contains "no PowerSystemsInvestments model covers, so the plan leaves each out: ATROOF"
+
+  Rule: A storage of an OSeMOSYS portfolio reaches the model in hours, with its three costs
+    The pumped-storage plant ATPHS charges the storage ATPHSS in mode 1 and discharges it in
+    mode 2. It puts out 0.8 when it discharges. It exists in 2030 at 0.1 GW, and may hold 0.3 GW
+    in 2030 and 0.5 GW in 2035. The storage may hold energy for 8 hours of discharge at most. The
+    portfolio states the duration in minutes, and the model reads hours.
+
+    Background:
+      Given the otoole set "TECHNOLOGY" holds "ATPHS"
+      And the otoole set "STORAGE" holds "ATPHSS"
+      And the otoole set "MODE_OF_OPERATION" holds "1 2"
+      And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.1   |
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | ATELEC | 1                 | 2030 | 1.25  |
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | ATELEC | 2                 | 2030 | 0.8   |
+      And the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.3   |
+        | R1     | ATPHS      | 2035 | 0.5   |
+      And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+      And the otoole parameter "ResidualStorageCapacity" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
+        | REGION | STORAGE | YEAR | VALUE |
+        | R1     | ATPHSS  | 2030 | 0.8   |
+      And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE      |
+        | R1     | ATPHS      | 2030 | 1000000000 |
+      And the otoole parameter "CapitalCostStorage" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
+        | REGION | STORAGE | YEAR | VALUE    |
+        | R1     | ATPHSS  | 2030 | 50000000 |
+      And the otoole parameter "StorageMaxHours" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 8     |
+      And the otoole parameter "OperationalLifeStorage" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 50    |
+      And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+      And a file "user_mappings.yaml" containing the lines:
+        | line                                                                                                             |
+        | osemosys: {                                                                                                      |
+        | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                                 |
+        | objects: {                                                                                                       |
+        | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}],                   |
+        | technologies: [{match: "PHS$", category: pumped-storage}]}}                                                      |
+        | carriers: [                                                                                                      |
+        | {osemosys_category: pumped-storage, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: PS}] |
+      When I run the pipeline "osemosys-csv-to-sienna-investments" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv" with user mappings "user_mappings.yaml"
+      And I run the pipeline "sienna-to-power-systems-investments" with overrides "source.portfolio_json_path=outputs/portfolio.json source.system_json_path=outputs/system.json source.time_series_h5_path=outputs/system_time_series_storage.h5 source.extensions_json_path=outputs/extensions.json sink[0].portfolio_path=psi/portfolio.json sink[0].h5_output_path=psi/portfolio_base_system_time_series.h5"
+
+    Scenario: A storage duration in minutes reaches the model in hours
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" contains 1 component of type "StorageTechnology"
+      And the portfolio "psi/portfolio.json" component "StorageTechnology" named "ATPHSS" has field "duration_limits" equal to {"min": 0.0, "max": 8.0}
+      And the file "decisions.md" contains "duration_limits in minutes ÷ 60 min/h, because the package reads hours"
+
+    Scenario: A storage gets one capital cost curve for each capacity that a plan may add
+      Then the pipeline exit code is 0
+      And the portfolio "psi/portfolio.json" component "StorageTechnology" named "ATPHSS" has "capital_costs_discharge.function_data.proportional_term" equal to "1250000.0"
+      And the portfolio "psi/portfolio.json" component "StorageTechnology" named "ATPHSS" has "capital_costs_energy.function_data.proportional_term" equal to "50000.0"
+      And the portfolio "psi/portfolio.json" component "StorageTechnology" named "ATPHSS" has "capital_costs_charge.function_data.proportional_term" equal to "0.0"
+
+    Scenario: A storage that exists names its device, and its discharge limit is the largest yearly limit
+      Then the pipeline exit code is 0
+      And the series document "psi/portfolio_series.json" gives "StorageTechnology" "ATPHSS" the existing devices "ATPHSS"
+      And the portfolio "psi/portfolio.json" component "StorageTechnology" named "ATPHSS" has field "capacity_limits_discharge" equal to {"min": 0.0, "max": 400.0}
