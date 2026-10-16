@@ -194,8 +194,15 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
 
+  Scenario: The REPL offers the locations that a pipeline states, and Enter keeps them
+    Given a pipeline "osemosys-at-to-sienna" that keeps the location "AT" before the translation
+    When I run the otoole model through the pipeline "osemosys-at-to-sienna" in the REPL and answer the year "2030"
+    Then the prompt "step[0].locations" offered default "AT"
+    And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+
   Scenario: A scope of one location gives a system with the bus of that location only
-    When I translate the otoole model to Sienna for the locations "AT" in the year "2030"
+    When I translate the otoole model to Sienna for the locations "AT" and the years "2030" in the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"

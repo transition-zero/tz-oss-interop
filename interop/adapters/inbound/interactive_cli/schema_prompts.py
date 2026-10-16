@@ -19,6 +19,7 @@ from interop.ports.outbound.filesystem import (
 )
 
 PATH_PROMPT_HINT = "(Tab to list files)"
+_LIST_PREFILL_SEPARATOR = ", "
 
 
 def _annotation_includes_path(annotation: Any) -> bool:
@@ -173,9 +174,9 @@ def _prompt_for_field(prompt: str, field_info: FieldInfo, default_value: Any) ->
 
     default_str = ""
     if default_value is not None:
-        default_str = str(default_value)
+        default_str = _build_prefill_text(default_value)
     elif _has_stated_default(field_info):
-        default_str = str(field_info.default)
+        default_str = _build_prefill_text(field_info.default)
 
     if _annotation_includes_path(field_info.annotation):
         # The path widget autocompletes on Tab so the user is not typing blind.
@@ -188,6 +189,13 @@ def _prompt_for_field(prompt: str, field_info: FieldInfo, default_value: Any) ->
     if _does_user_want_default(answer):
         return None
     return answer
+
+
+def _build_prefill_text(value: Any) -> str:
+    """A list reads as its members separated by commas, the text that a list parameter parses."""
+    if isinstance(value, list):
+        return _LIST_PREFILL_SEPARATOR.join(str(member) for member in value)
+    return str(value)
 
 
 def _has_stated_default(field_info: FieldInfo) -> bool:
