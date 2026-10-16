@@ -15,7 +15,7 @@ retained at a lower weight so module-level bloat still registers. Files with no
 functions (pure constant/vocabulary modules) score on file MI alone.
 
 The script exits non-zero if any file scores below grade A so the CI step fails; the
-comment still posts thanks to `if: always()` on the workflow step.
+report still uploads thanks to `if: always()`, and `pr-comment.yml` posts it.
 
 Radon's MI grading (also applied to the combined score, same 0-100 scale):
     100 >= MI > 20  -> A (very high maintainability)
