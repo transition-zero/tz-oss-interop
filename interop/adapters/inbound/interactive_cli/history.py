@@ -47,6 +47,8 @@ class DetailKey(StrEnum):
     SIDE_B_FRAMEWORK = "side_b_framework"
     SIDE_B_PIPELINE = "side_b_pipeline"
     SIDE_B_PARAMS = "side_b_params"
+    SIDE_A_USER_MAPPINGS_PATH = "side_a_user_mappings_path"
+    SIDE_B_USER_MAPPINGS_PATH = "side_b_user_mappings_path"
     OUTPUT_PATH = "output_path"
 
 

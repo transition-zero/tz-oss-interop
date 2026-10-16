@@ -527,12 +527,15 @@ def invoke_compare_run(
     framework_a: str,
     framework_b: str,
     path_answers: dict[str, str],
+    text_answers: Mapping[str, str] | None = None,
 ) -> None:
     """Run compare from the REPL main menu, recording prompt defaults."""
     stub_questionary_attr(
         monkeypatch, "select", iter([Command.COMPARE, framework_a, framework_b, Command.QUIT])
     )
     _stub_questionary_path_by_prompt(monkeypatch, path_answers)
+    if text_answers is not None:
+        _stub_questionary_text_by_prompt(monkeypatch, text_answers)
     run(make_container())
 
 

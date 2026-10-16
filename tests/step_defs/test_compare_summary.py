@@ -203,3 +203,28 @@ def when_run_compare(
         framework_b=framework_b,
         path_answers={"Output path for summary report?": output},
     )
+
+
+@when(
+    parsers.parse(
+        "I run from the menu a compare of aetos against {framework_b}, giving aetos its model, "
+        'its results CSV and its user mappings file, into "{output}"'
+    )
+)
+def when_run_compare_with_mappings(
+    monkeypatch: pytest.MonkeyPatch, framework_b: str, output: str
+) -> None:
+    """The model, the CSV and the mappings file are where the Given steps wrote them."""
+    invoke_compare_run(
+        monkeypatch,
+        framework_a="aetos",
+        framework_b=framework_b,
+        path_answers={
+            "aetos.config_path": "model/config.yaml",
+            "aetos.csv_dir": "model/csv",
+            "aetos.results_csv_path": "results/results.csv",
+            "User mappings file for aetos?": "user_mappings.yaml",
+            "Output path for summary report?": output,
+        },
+        text_answers={"aetos.first_year": "2030"},
+    )

@@ -177,6 +177,9 @@ Run `interop`, select **compare**, and provide:
 - **Path to decisions CSV?** → `outputs/decisions.csv`
 - **Output path for summary report?** → `outputs/comparison_summary.md`
 
+When the results pipeline of a side needs a user mappings file, compare also asks
+**User mappings file for `<framework>`?** for that side. `aetos-to-results` is an example.
+
 The command writes a Markdown report with six sections:
 
 1. Objective comparison (PyPSA `network__objective` vs Sienna `optimizer_stats.objective_value`)

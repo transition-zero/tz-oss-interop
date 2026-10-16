@@ -167,8 +167,15 @@ class _MappingsCancelled:
 _MAPPINGS_CANCELLED = _MappingsCancelled()
 
 
+_USER_MAPPINGS_PROMPT = "User mappings file?"
+_SIDE_USER_MAPPINGS_PROMPT = "User mappings file for {framework}?"
+
+
 def _prompt_user_mappings(
-    needed: bool, replay: dict[str, Any], details: dict[str, Any]
+    needed: bool,
+    replay: dict[str, Any],
+    details: dict[str, Any],
+    prompt: str = _USER_MAPPINGS_PROMPT,
 ) -> Location | None | _MappingsCancelled:
     """Prompt for a user-mappings file when the pipeline needs one.
 
@@ -180,7 +187,7 @@ def _prompt_user_mappings(
     if not needed:
         return None
     mapping_path_str = questionary.path(
-        f"User mappings file?  {PATH_PROMPT_HINT}",
+        f"{prompt}  {PATH_PROMPT_HINT}",
         default=replay.get(DetailKey.USER_MAPPINGS_PATH, "inputs/user_mappings.yaml"),
     ).ask()
     if mapping_path_str is None:
@@ -820,32 +827,85 @@ def _run_solve_pypsa(
     return details
 
 
-def _collect_compare_side(
-    container: Container,
-    framework: str,
-    pipelines: list[str],
-    replay_pipeline: Any,
-    replay_params: dict[str, Any] | None,
-) -> CompareSide | None:
-    """Pick the framework's results pipeline (when it has more than one) and its source params."""
-    if len(pipelines) == 1:
-        pipeline_name = pipelines[0]
-    else:
-        pipeline_name = questionary.select(
-            f"Which {framework} results pipeline?",
-            choices=sorted(pipelines),
-            default=_select_default(replay_pipeline, pipelines),
-        ).ask()
-        if pipeline_name is None:
-            return None
+@dataclass(frozen=True)
+class _SideReplay:
+    """What a history replay gives one side of a comparison."""
 
+    pipeline: Any
+    params: dict[str, Any] | None
+    user_mappings_path: Any
+
+
+def _read_side_replay(replay: dict[str, Any], keys: tuple[DetailKey, ...]) -> _SideReplay:
+    pipeline_key, params_key, mappings_key = keys
+    return _SideReplay(replay.get(pipeline_key), replay.get(params_key), replay.get(mappings_key))
+
+
+_SIDE_A_REPLAY_KEYS = (
+    DetailKey.SIDE_A_PIPELINE,
+    DetailKey.SIDE_A_PARAMS,
+    DetailKey.SIDE_A_USER_MAPPINGS_PATH,
+)
+_SIDE_B_REPLAY_KEYS = (
+    DetailKey.SIDE_B_PIPELINE,
+    DetailKey.SIDE_B_PARAMS,
+    DetailKey.SIDE_B_USER_MAPPINGS_PATH,
+)
+
+
+def _collect_compare_side(
+    container: Container, framework: str, pipelines: list[str], replay: _SideReplay
+) -> CompareSide | None:
+    """Pick the framework's results pipeline (when it has more than one), its source params,
+    and its user mappings file when the pipeline needs one."""
+    pipeline_name = _choose_results_pipeline(framework, pipelines, replay.pipeline)
+    if pipeline_name is None:
+        return None
     with container() as scope:
         catalog = scope.get(PipelineCatalogUseCase)
         structure = catalog.get_structure(pipeline_name)
     source_params = collect_node_params(
-        structure.source.params_schema, {}, framework, replay_params=replay_params
+        structure.source.params_schema, {}, framework, replay_params=replay.params
     )
-    return CompareSide(framework=framework, pipeline=pipeline_name, source_params=source_params)
+    user_mappings_path = _prompt_side_user_mappings(
+        framework, structure.needs_user_mappings, replay
+    )
+    if isinstance(user_mappings_path, _MappingsCancelled):
+        return None
+    return CompareSide(
+        framework=framework,
+        pipeline=pipeline_name,
+        source_params=source_params,
+        user_mappings_path=user_mappings_path,
+    )
+
+
+def _choose_results_pipeline(framework: str, pipelines: list[str], replay: Any) -> str | None:
+    if len(pipelines) == 1:
+        return pipelines[0]
+    answer: str | None = questionary.select(
+        f"Which {framework} results pipeline?",
+        choices=sorted(pipelines),
+        default=_select_default(replay, pipelines),
+    ).ask()
+    return answer
+
+
+def _prompt_side_user_mappings(
+    framework: str, needed: bool, replay: _SideReplay
+) -> Location | None | _MappingsCancelled:
+    side_replay: dict[str, Any] = (
+        {}
+        if replay.user_mappings_path is None
+        else {DetailKey.USER_MAPPINGS_PATH: replay.user_mappings_path}
+    )
+    prompt = _SIDE_USER_MAPPINGS_PROMPT.format(framework=framework)
+    return _prompt_user_mappings(needed, side_replay, {}, prompt)
+
+
+def _build_mappings_details(side: CompareSide, key: DetailKey) -> dict[str, str]:
+    """A side with no user mappings file records nothing, as translate does."""
+    return {} if side.user_mappings_path is None else {key: str(side.user_mappings_path)}
 
 
 def _run_compare(
@@ -881,8 +941,7 @@ def _run_compare(
         container,
         framework_a,
         pipelines_by_framework[framework_a],
-        replay.get(DetailKey.SIDE_A_PIPELINE),
-        replay.get(DetailKey.SIDE_A_PARAMS),
+        _read_side_replay(replay, _SIDE_A_REPLAY_KEYS),
     )
     if side_a is None:
         return None
@@ -890,8 +949,7 @@ def _run_compare(
         container,
         framework_b,
         pipelines_by_framework[framework_b],
-        replay.get(DetailKey.SIDE_B_PIPELINE),
-        replay.get(DetailKey.SIDE_B_PARAMS),
+        _read_side_replay(replay, _SIDE_B_REPLAY_KEYS),
     )
     if side_b is None:
         return None
@@ -912,6 +970,8 @@ def _run_compare(
         DetailKey.SIDE_B_PIPELINE: side_b.pipeline,
         DetailKey.SIDE_B_PARAMS: side_b.source_params,
         DetailKey.OUTPUT_PATH: str(output_path),
+        **_build_mappings_details(side_a, DetailKey.SIDE_A_USER_MAPPINGS_PATH),
+        **_build_mappings_details(side_b, DetailKey.SIDE_B_USER_MAPPINGS_PATH),
     }
 
     try:
