@@ -181,8 +181,9 @@ give the measured numbers.
 These entries come from the leg `sienna-to-power-systems-investments` and from
 PowerSystemsInvestments.jl at the pinned commit `8bfed9f`.
 [Running a capacity expansion](../developer_documentation/capacity-expansion.md) gives the
-detail. The rules for an existing plant are open. A later change can alter the entries that
-name them.
+detail.
+[The existing fleet of an OSeMOSYS plan](../developer_documentation/capacity-expansion.md#the-existing-fleet-of-an-osemosys-plan)
+gives the rules for an existing plant.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |

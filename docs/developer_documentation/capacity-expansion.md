@@ -238,13 +238,17 @@ the portfolio. So the leg adds such a plant as a technology of its own, as
 [The fleet that already runs](#the-fleet-that-already-runs) describes. Without the existing
 fleet, the plan builds the whole fleet again in the first period.
 
-Three parts of this are open, and can change:
+The leg applies these rules to an existing plant:
 
-- the financial data of a technology that the leg adds for an existing plant: the rate and the
-  recovery period;
-- what happens to an existing plant whose name a technology holds, when that technology does
-  not list the plant as a device;
-- how a `capacity_limits.min` adds to the capacity that the existing devices already hold.
+- **The finance of a technology that the leg adds.** It is all equity, and its recovery period
+  is one year. Its rate is the discount rate of the portfolio, else the highest rate of a
+  technology, else 0.05. The technology builds nothing, so the rate prices nothing.
+- **A plant whose name a technology holds, when that technology does not list the plant.** The
+  plant's own technology takes the name with `/existing`. When the plan also holds that name,
+  the plant is left out. The step records each plant and warns.
+- **A `capacity_limits.min` and the existing devices.** The model reads `min` as a floor on
+  the build of each period. So the step lowers `min` by the rating of the devices, down to 0.
+  The leg writes no minimum for an OSeMOSYS candidate, so this rule changes no OSeMOSYS limit.
 
 ### What an OSeMOSYS plan loses in the expansion
 
