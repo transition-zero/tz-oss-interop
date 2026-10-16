@@ -275,26 +275,26 @@ _ASSOCIATIONS_QUERY = (
 )
 
 
-def _rate_renewable(component: dict[str, Any]) -> float:
+def _convert_renewable_rating_to_megawatts(component: dict[str, Any]) -> float:
     return float(component["rating"] * component["power_factor"] * component["base_power"])
 
 
-def _rate_by_limits(component: dict[str, Any]) -> float:
+def _convert_limits_to_megawatts(component: dict[str, Any]) -> float:
     return float(component["active_power_limits"]["max"] * component["base_power"])
 
 
-def _rate_load(component: dict[str, Any]) -> float:
+def _convert_load_to_megawatts(component: dict[str, Any]) -> float:
     return float(component["max_active_power"] * component["base_power"])
 
 
 # PowerSystems get_max_active_power in MW for each type: the multiplier of a max_active_power
 # or hydro_budget series in PowerSimulations.
 _MEGAWATT_MULTIPLIERS: dict[str, Callable[[dict[str, Any]], float]] = {
-    "RenewableDispatch": _rate_renewable,
-    "RenewableNonDispatch": _rate_renewable,
-    "ThermalStandard": _rate_by_limits,
-    "HydroDispatch": _rate_by_limits,
-    "PowerLoad": _rate_load,
+    "RenewableDispatch": _convert_renewable_rating_to_megawatts,
+    "RenewableNonDispatch": _convert_renewable_rating_to_megawatts,
+    "ThermalStandard": _convert_limits_to_megawatts,
+    "HydroDispatch": _convert_limits_to_megawatts,
+    "PowerLoad": _convert_load_to_megawatts,
 }
 
 

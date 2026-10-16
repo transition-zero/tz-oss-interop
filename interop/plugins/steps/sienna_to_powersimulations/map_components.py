@@ -242,6 +242,13 @@ def _assign_line_arc_uuids(state: State, registry: _UuidRegistry, table_key: str
 # ---------------------------------------------------------------------------
 
 
+class _ScaledValue(NamedTuple):
+    """One power field before and after the leg divides it by its base."""
+
+    natural: Any
+    per_unit: Any
+
+
 class _PowerBase(NamedTuple):
     """The power fields of a component, the MVA they divide by, and the derivation that says so."""
 
@@ -255,15 +262,16 @@ def _record_per_unit_event(
     sienna_type: SiennaComponent,
     component_name: str,
     field: str,
-    values: tuple[Any, Any],
+    value: _ScaledValue,
     derivation: str,
 ) -> None:
-    natural_val, per_unit_val = values
     recorder.append(
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
             sources=[
-                SourceField(Framework.SIENNA, sienna_type.value, component_name, field, natural_val)
+                SourceField(
+                    Framework.SIENNA, sienna_type.value, component_name, field, value.natural
+                )
             ],
             destinations=[
                 DestinationField(
@@ -271,7 +279,7 @@ def _record_per_unit_event(
                     sienna_type.value,
                     component_name,
                     field,
-                    per_unit_val,
+                    value.per_unit,
                 )
             ],
             derivation=derivation,
@@ -285,19 +293,12 @@ def _normalise_power_fields_to_per_unit(
     component_name: str,
     recorder: ScopedRecorder,
 ) -> None:
-    """Divide the :mva-tagged power fields that SiennaSchemas states in MW by base_power.
-
-    PS.jl stores every field marked :mva in per-unit (divided by the component's own
-    base_power). SiennaSchemas carries those fields in natural units (MW/MVA), so we must
-    scale them here or PS.jl will multiply by base_power a second time on read, producing
-    values that are base_power× too large (e.g. 200 MW stored as 200 pu → read back as
-    200 × 200 = 40 000 MW).
-    """
+    """Divide the :mva-tagged power fields that SiennaSchemas states in MW by base_power."""
     if sienna_type not in _PER_UNIT_FIELDS:
         return
     base_power = float(dest_row.get(SiennaGeneratorCol.BASE_POWER) or 1.0)
     base = _PowerBase(_PER_UNIT_FIELDS[sienna_type], base_power, _PER_UNIT_SCALING_DERIVATION)
-    _divide_power_fields(dest_row, sienna_type, component_name, base, recorder)
+    _convert_power_fields_to_per_unit(dest_row, sienna_type, component_name, base, recorder)
 
 
 def _normalise_branch_power_fields_to_per_unit(
@@ -312,10 +313,10 @@ def _normalise_branch_power_fields_to_per_unit(
     base = _PowerBase(
         _SYSTEM_BASE_FIELDS[sienna_type], SYSTEM_BASE_MVA, _SYSTEM_BASE_SCALING_DERIVATION
     )
-    _divide_power_fields(dest_row, sienna_type, component_name, base, recorder)
+    _convert_power_fields_to_per_unit(dest_row, sienna_type, component_name, base, recorder)
 
 
-def _divide_power_fields(
+def _convert_power_fields_to_per_unit(
     dest_row: dict[str, Any],
     sienna_type: SiennaComponent,
     component_name: str,
@@ -335,7 +336,7 @@ def _divide_power_fields(
             sienna_type,
             component_name,
             field,
-            (natural_val, per_unit_val),
+            _ScaledValue(natural_val, per_unit_val),
             base.derivation,
         )
     for field in dicts:
@@ -350,7 +351,7 @@ def _divide_power_fields(
             sienna_type,
             component_name,
             field,
-            (natural_dict, per_unit_dict),
+            _ScaledValue(natural_dict, per_unit_dict),
             base.derivation,
         )
 

@@ -53,3 +53,14 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     Then the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_from" equal to {"min": 0.0, "max": 10.0}
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_to" equal to {"min": 0.0, "max": 5.0}
     And the file "decisions.md" contains "natural-unit MW / system base 100 MVA -> per-unit for PS.jl"
+
+  Scenario: A system base power other than the one the HVDC limits use stops the run
+    Given a Sienna system
+    And the system contains a bus "bus_a"
+    And the system contains a bus "bus_b"
+    And the system contains an HVDC line "link_1" from "bus_a" to "bus_b" with p_nom 1000.0 efficiency 0.5
+    And the system is saved as "inputs/hvdc_base.json"
+    When I run translate against Sienna system "inputs/hvdc_base.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5" with system base power 50.0
+    Then the printed output contains "The sink parameter base_power is 50 MVA, but sienna-to-power-simulations states each HVDC line per unit of a system base of 100 MVA"
+    And the file "outputs/system.json" does not exist
+    And the file "outputs/system_ts.h5" does not exist
