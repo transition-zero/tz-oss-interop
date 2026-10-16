@@ -25,6 +25,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
+    YEAR,
     AnnotationColumn,
     FlowParameter,
     TechnologyKind,
@@ -38,6 +39,12 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
     enrich_electricity_output_ratios,
     express_output_capacity,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    LIMIT_MWH,
+    LOWER_BOUND,
+    UPPER_BOUND,
+    enrich_activity_limits,
 )
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
@@ -271,6 +278,7 @@ def _enrich_generators(
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)
     table = enrich_emission_penalties(state, operations, table)
     table = enrich_other_modes(state, operations, table)
+    table = enrich_activity_limits(state, operations, table)
     return table.with_columns(_express_has_series().alias(HAS_SERIES))
 
 
@@ -291,6 +299,8 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=_build_emission_rates(row[EMISSION_TERMS]),
         other_mode_variable_costs_per_mwh=_build_other_mode_costs(row[OTHER_MODE_COSTS]),
+        annual_output_lower_limit_mwh=_build_yearly_limits(row[LOWER_BOUND.column]),
+        annual_output_upper_limit_mwh=_build_yearly_limits(row[UPPER_BOUND.column]),
     )
 
 
@@ -298,6 +308,12 @@ def _build_emission_rates(terms: list[dict[str, Any]] | None) -> dict[str, float
     if not terms:
         return None
     return {term[POLLUTANT]: term[RATE_T_PER_MWH] for term in terms}
+
+
+def _build_yearly_limits(bounds: list[dict[str, Any]] | None) -> dict[str, float] | None:
+    if not bounds:
+        return None
+    return {bound[YEAR]: bound[LIMIT_MWH] for bound in bounds}
 
 
 def _build_other_mode_costs(costs: list[dict[str, Any]] | None) -> dict[str, float] | None:

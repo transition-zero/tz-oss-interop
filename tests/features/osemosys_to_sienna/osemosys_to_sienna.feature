@@ -477,6 +477,48 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
 
+    Scenario: An annual activity bound reaches extensions.json in MWh of output for each year, and the report names it
+      The oil plant puts out half a unit of electricity for each unit of activity, so its
+      bound of 1 GWh of activity is 500 MWh of output. An upper limit of -1 binds nothing.
+      Given the otoole parameter "TotalTechnologyAnnualActivityLowerLimit" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 2     |
+        | R1     | ATOILCT    | 2030 | 1     |
+      And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 3     |
+        | R1     | ATGASCC    | 2035 | -1    |
+        | R1     | ATGASWELL  | 2030 | 5     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "annual_output_lower_limit_mwh" set to {"2030": 2000.0}
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "annual_output_upper_limit_mwh" set to {"2030": 3000.0}
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "annual_output_lower_limit_mwh" set to {"2030": 500.0}
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "annual_output_upper_limit_mwh"
+      And the log contains "osemosys-to-sienna: total_technology_annual_activity_lower_limit states 2 row(s) for 2030 that the operations system does not apply, for 2 technology(ies): R1/ATGASCC, R1/ATOILCT"
+      And the log contains "osemosys-to-sienna: total_technology_annual_activity_upper_limit states 2 row(s) for 2030 that the operations system does not apply, for 2 technology(ies): R1/ATGASCC, R1/ATGASWELL"
+      And the file "decisions.md" contains "`osemosys.total_technology_annual_activity_lower_limit.R1/ATGASCC` = 2.0 |  |  | 1 row(s) for 2030; an operations system has no field for a bound on the energy of a year"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.annual_output_lower_limit_mwh` = {'2030': 500.0}"
+
+    Scenario: Each other parameter that the operations system does not apply is reported, with the members that it states values for
+      A row at the default of its parameter states nothing beyond the default, so the report
+      leaves it out. A parameter with no member column gets one event that counts its rows.
+      Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 900   |
+        | R1     | ATSOLAR    | 2030 | 0     |
+        | R1     | ATSOLAR    | 2035 | 500   |
+      And the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
+        | REGION | YEAR | VALUE |
+        | R1     | 2030 | 1.15  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "osemosys-to-sienna: capital_cost states 1 row(s) for 2030 that the operations system does not apply, for 1 technology(ies): R1/ATGASCC"
+      And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that the operations system does not apply"
+      And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASCC` = 900.0 |  |  | 1 row(s) for 2030; no part of the operations step applies this parameter"
+      And the file "decisions.md" contains "`osemosys.reserve_margin.all` |  |  | 1 row(s) for 2030; no part of the operations step applies this parameter"
+      And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATSOLAR`"
+
     Scenario: Two producers at one price go to the first name
       Given the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |

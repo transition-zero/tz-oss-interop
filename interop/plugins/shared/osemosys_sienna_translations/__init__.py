@@ -75,6 +75,9 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 from interop.plugins.shared.osemosys_sienna_translations._transport_translations import (
     TRANSPORT_TRANSLATIONS,
 )
+from interop.plugins.shared.osemosys_sienna_translations._unapplied_parameters import (
+    report_unapplied_parameters,
+)
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
 
 __all__ = [
@@ -116,6 +119,7 @@ __all__ = [
     "read_transport_ends",
     "report_calendar",
     "report_left_out_technologies",
+    "report_unapplied_parameters",
     "report_unread_capacity_factors",
     "require_model_year",
     "warn_one_way_lines",

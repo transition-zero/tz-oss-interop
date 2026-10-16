@@ -178,6 +178,10 @@ class GeneratorExtension(ExpansionExtension):
     emission_rates_t_per_mwh: dict[str, float] | None = None
     # OSeMOSYS only: $/MWh of electricity output by operating mode, for each mode the system skips.
     other_mode_variable_costs_per_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the least MWh of electricity output in each year, keyed by year.
+    annual_output_lower_limit_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the most MWh of electricity output in each year, keyed by year.
+    annual_output_upper_limit_mwh: dict[str, float] | None = None
 
 
 class LoadExtension(ExtensionRecord):

@@ -27,6 +27,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
+    YEAR,
     AnnotationColumn,
     FlowParameter,
 )
@@ -36,6 +37,13 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    ACTIVITY_BOUNDS,
+    LIMIT,
+    LIMIT_MWH,
+    YEAR_OUTPUT_RATIO,
+    ActivityBound,
 )
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     AVAILABILITY_FACTOR,
@@ -136,6 +144,7 @@ _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
 _PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "
 _SERIES_ATTRIBUTE = f"{SiennaSeriesName.MAX_ACTIVE_POWER} time series"
 _BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
+_EXTENSIONS_PREFIX = "extensions."
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
 _EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
 _OTHER_MODE_COSTS_ATTRIBUTE = "extensions.other_mode_variable_costs_per_mwh"
@@ -207,6 +216,10 @@ _EMISSION_DERIVATION = (
     "(emission_rate at the operations mode, plus input_activity_ratio × the emission_rate of "
     "the producer of each fuel for each unit of that fuel) / the electricity "
     "output_activity_ratio, in t/MWh"
+)
+_BOUND_DERIVATION = (
+    "the {parameter} of each year, in MWh, × the electricity output_activity_ratio of that year "
+    "at the operations mode; a Sienna operations system has no field for an annual energy bound"
 )
 _CATEGORY_DERIVATION = "the category of the technology"
 _CARRIER_DERIVATION = "the category of the technology, which names its carriers: row"
@@ -382,6 +395,7 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(dest, old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_bound_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(dest, old)),
     ]
@@ -564,6 +578,38 @@ def _build_penalty_events(
         )
         for term in old[PENALTY_TERMS] or []
     ]
+
+
+def _build_bound_events(
+    dest: DestinationFieldFactory, old: dict[str, Any]
+) -> list[TranslationEvent]:
+    return [_build_bound_event(dest, old, bound) for bound in ACTIVITY_BOUNDS if old[bound.column]]
+
+
+def _build_bound_event(
+    dest: DestinationFieldFactory, old: dict[str, Any], bound: ActivityBound
+) -> TranslationEvent:
+    """One event for each generator and bound, which reads the bound and ratio of each year."""
+    years = old[bound.column]
+    sources = [
+        source
+        for year in years
+        for source in (
+            _build_source(bound.parameter, old, f"{YEAR} {year[YEAR]}", year[LIMIT]),
+            _build_source(
+                FlowParameter.OUTPUT_ACTIVITY_RATIO,
+                old,
+                f"{_OUTPUT_RATIO_ATTRIBUTE}, {YEAR} {year[YEAR]}",
+                year[YEAR_OUTPUT_RATIO],
+            ),
+        )
+    ]
+    limits = {year[YEAR]: year[LIMIT_MWH] for year in years}
+    return build_derived(
+        sources,
+        [dest(old[GENERATOR_NAME], f"{_EXTENSIONS_PREFIX}{bound.extension_field}", limits)],
+        _BOUND_DERIVATION.format(parameter=bound.parameter),
+    )[0]
 
 
 def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
