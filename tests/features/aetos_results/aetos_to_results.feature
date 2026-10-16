@@ -134,7 +134,40 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | variable   | component | category | timestamp           | value |
       | production | ATPHSS    |          | 2030-01-01T00:00:00 | 800   |
       | production | ATPHSS    |          | 2031-01-01T00:00:00 | 1600  |
-    And the file "decisions.md" contains "`aetos.technology.R1/ATPHS.technology_from_storage` = ATPHSS | `results.results.ATPHSS.component` | the Sienna system names a storage after the OSeMOSYS storage, so the technology that discharges it states its installed_capacity, new_capacity and production under the Sienna name of the storage"
+    And the file "decisions.md" contains "`aetos.technology.R1/ATPHS.technology_from_storage` = ATPHSS | `results.results.ATPHSS.component` | the Sienna system names a storage after the OSeMOSYS storage and rates it with the technology that discharges it, so that technology states its installed_capacity, new_capacity and production under the Sienna name of the storage"
+
+  Scenario: A technology that only charges a storage keeps its own name, and a technology whose rows are left out takes no storage name
+    The Sienna storage takes its rating from the technology that discharges it, so ATPUMP,
+    which only charges ATPHSS, keeps its own name. ATDRY discharges ATDRYS but puts out no
+    electricity, so its rows are left out and the report records no change of name for it.
+    Given the otoole set "TECHNOLOGY" holds "GASCC ATDE ATT GASX ATPHS ATPUMP ATDRY"
+    And the otoole set "STORAGE" holds "ATPHSS ATDRYS"
+    Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC  | 1                 | 2030 | 1     |
+      | R1     | GASCC      | ATELEC  | 1                 | 2031 | 1     |
+      | R1     | ATPHS      | ATELEC  | 2                 | 2030 | 0.8   |
+      | R1     | ATPHS      | ATELEC  | 2                 | 2031 | 0.8   |
+      | R1     | ATPUMP     | ATELEC  | 2                 | 2030 | 0.5   |
+      | R1     | ATPUMP     | ATELEC  | 2                 | 2031 | 0.5   |
+    And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+      | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+      | R1     | ATPUMP     | ATPHSS  | 1                 | 1     |
+    And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+      | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+      | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+      | R1     | ATDRY      | ATDRYS  | 2                 | 1     |
+    And the results CSV has the row "TotalCapacityAnnual" in "R1" for "ATPUMP" with the values "0.2 0.2"
+    And the results CSV has the row "TotalCapacityAnnual" in "R1" for "ATDRY" with the values "0.1 0.1"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | ATPUMP    |          | 2030-01-01T00:00:00 | 200   |
+      | installed_capacity | ATPUMP    |          | 2031-01-01T00:00:00 | 200   |
+    And the file "decisions.md" does not contain "`aetos.technology.R1/ATPUMP.technology_from_storage`"
+    And the file "decisions.md" does not contain "`aetos.technology.R1/ATDRY.technology_from_storage`"
+    And the log contains "3 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX, R1/ATT, R1/ATDRY"
 
   Scenario: The rows of a technology that the model does not hold are left out and reported
     Given the results CSV has the row "TotalCapacityAnnual" in "R1" for "GHOST" with the values "1 1"

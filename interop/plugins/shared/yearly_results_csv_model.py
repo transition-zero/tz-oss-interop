@@ -36,17 +36,12 @@ from interop.plugins.shared.osemosys_sienna_translations._names import express_c
 COMPONENT = "component"
 # The column that holds the output ratio of a technology onto all its electricity fuels.
 RATIO = "ratio"
-# The columns that name the storage a technology charges or discharges, its Sienna name, and the
-# parameter that links them.
+# The column that holds the Sienna name of the storage that a technology discharges.
 STORAGE_COMPONENT = "storage_component"
-LINK_PARAMETER = "link_parameter"
 
 _STATED_COUNT = "stated_count"
 _FUEL_COUNT = "fuel_count"
 _NO_DEFAULT = 0.0
-_LINK_PRIORITY = "link_priority"
-# A technology that discharges a storage gives the storage its rating, so that link comes first.
-_STORAGE_LINKS = (FlowParameter.TECHNOLOGY_FROM_STORAGE, FlowParameter.TECHNOLOGY_TO_STORAGE)
 
 
 class ElectricityRatios(NamedTuple):
@@ -61,9 +56,8 @@ class ElectricityRatios(NamedTuple):
 
 class ResultsModel(NamedTuple):
     """`technologies` holds region, technology, component, category and kind; `pollutants`
-    holds region, pollutant and component. `storages` holds, for each technology that charges
-    or discharges a storage, the region, the technology, the storage, its Sienna name and the
-    link parameter."""
+    holds region, pollutant and component. `storages` holds, for each technology that discharges
+    a storage, the region, the technology, the storage and its Sienna name."""
 
     technologies: pl.DataFrame
     pollutants: pl.DataFrame
@@ -115,31 +109,24 @@ def _read_technologies(state: State) -> pl.DataFrame:
 
 
 def _read_storage_links(state: State) -> pl.DataFrame:
-    """The storage that each technology discharges, else the one that it charges.
+    """The storage that each technology discharges, the first by name when it discharges two.
 
-    A technology that links two storages in one direction takes the first by name. The Sienna
-    name of a storage is built from every storage of the model, as the Sienna translation does.
+    The Sienna storage takes its rating from the technology that discharges it, so a technology
+    that only charges a storage keeps its own name. The Sienna name of a storage is built from
+    every storage of the model, as the Sienna translation does.
     """
-    links = [
-        table.filter(pl.col(VALUE_COL) > 0)
-        .select(
-            REGION,
-            TECHNOLOGY,
-            STORAGE,
-            pl.lit(str(parameter)).alias(LINK_PARAMETER),
-            pl.lit(priority).alias(_LINK_PRIORITY),
-        )
-        .collect()
-        for priority, parameter in enumerate(_STORAGE_LINKS)
-        if (table := state.source_time_series.get((TableKind.PARAMETER, parameter))) is not None
-    ]
-    if not links:
+    links = state.source_time_series.get(
+        (TableKind.PARAMETER, FlowParameter.TECHNOLOGY_FROM_STORAGE)
+    )
+    if links is None:
         return _build_empty_storage_links()
     chosen = (
-        pl.concat(links)
-        .sort(_LINK_PRIORITY, STORAGE)
+        links.filter(pl.col(VALUE_COL) > 0)
+        .select(REGION, TECHNOLOGY, STORAGE)
+        .collect()
+        .sort(STORAGE)
         .group_by(REGION, TECHNOLOGY, maintain_order=True)
-        .agg(pl.col(STORAGE).first(), pl.col(LINK_PARAMETER).first())
+        .agg(pl.col(STORAGE).first())
     )
     return chosen.join(_read_storage_names(state), on=[REGION, STORAGE])
 
@@ -156,7 +143,7 @@ def _read_storage_names(state: State) -> pl.DataFrame:
 
 
 def _build_empty_storage_links() -> pl.DataFrame:
-    columns = [REGION, TECHNOLOGY, STORAGE, LINK_PARAMETER, STORAGE_COMPONENT]
+    columns = [REGION, TECHNOLOGY, STORAGE, STORAGE_COMPONENT]
     return pl.DataFrame(schema=dict.fromkeys(columns, pl.Utf8))
 
 

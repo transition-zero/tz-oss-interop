@@ -48,7 +48,6 @@ from interop.plugins.shared.yearly_results_csv_constants import (
 )
 from interop.plugins.shared.yearly_results_csv_model import (
     COMPONENT,
-    LINK_PARAMETER,
     RATIO,
     STORAGE_COMPONENT,
     ResultsModel,
@@ -131,13 +130,10 @@ _CONVERSION = LeftOutReport(
     "left out: %s",
 )
 _STORAGE_NAME_DERIVATION = (
-    "the Sienna system names a storage after the OSeMOSYS storage, so the technology that "
-    "{link} it states its {variables} under the Sienna name of the storage"
+    "the Sienna system names a storage after the OSeMOSYS storage and rates it with the "
+    "technology that discharges it, so that technology states its {variables} under the "
+    "Sienna name of the storage"
 )
-_LINK_VERBS = {
-    FlowParameter.TECHNOLOGY_FROM_STORAGE: "discharges",
-    FlowParameter.TECHNOLOGY_TO_STORAGE: "charges",
-}
 
 
 class Derivation(NamedTuple):
@@ -201,63 +197,75 @@ class AetosResultsToResultsFormat(TranslationStep):
         inputs = MappingInputs(
             _reshape_variables(stated), read_results_model(state), parse_units(state)
         )
-        inputs = self._drop_conversions(inputs)
-        self._record_storage_names(inputs)
+        conversions = _build_electricity_conversions(inputs.model)
+        self._report_conversions(inputs.variables, conversions)
+        inputs = _drop_conversions(inputs, conversions)
         state.destination_tables[RESULTS_TABLE_KEY] = self._map_variables(inputs)
         return state
 
-    def _drop_conversions(self, inputs: MappingInputs) -> MappingInputs:
-        """The variables without the electricity conversions, each reported once."""
-        conversions = _list_electricity_conversions(inputs.model)
-        stated = _list_stated_technologies(inputs.variables)
+    def _report_conversions(
+        self, variables: dict[OsemosysResultVariable, pl.DataFrame], conversions: pl.DataFrame
+    ) -> None:
+        """Each electricity conversion that states rows, once for the three variables."""
+        stated = _build_stated_technologies(variables)
         names = _list_report_names(stated.join(conversions, on=[REGION, TECHNOLOGY], how="semi"))
         self._report_left_out(names, _CONVERSION, _TECHNOLOGY_VARIABLE_NAMES)
-        kept = {
-            derivation.source: _drop_members(
-                inputs.variables[derivation.source], conversions, TECHNOLOGY
-            )
-            for derivation in _TECHNOLOGY_VARIABLES
-        }
-        return inputs._replace(variables={**inputs.variables, **kept})
 
-    def _record_storage_names(self, inputs: MappingInputs) -> None:
-        """One event for each technology that states its rows under the name of a storage."""
-        stated = _list_stated_technologies(inputs.variables)
-        renamed = inputs.model.storages.join(stated, on=[REGION, TECHNOLOGY], how="semi")
+    def _record_storage_names(self, model: ResultsModel, kept: list[pl.DataFrame]) -> None:
+        """One event for each technology whose kept rows take the name of a storage."""
+        stated = pl.concat([rows.select(REGION, TECHNOLOGY) for rows in kept]).unique()
+        renamed = model.storages.join(stated, on=[REGION, TECHNOLOGY], how="semi")
         named = renamed.with_columns(express_report_name(TECHNOLOGY).alias(_REPORT_NAME))
         for row in named.sort(_REPORT_NAME).iter_rows(named=True):
             self._recorder.append(_build_storage_name_event(row))
 
     def _map_variables(self, inputs: MappingInputs) -> pl.DataFrame:
+        capacity = {
+            derivation: self._build_capacity_rows(inputs, derivation)
+            for derivation in (_INSTALLED_CAPACITY, _NEW_CAPACITY)
+        }
+        activity = self._build_activity_rows(inputs)
+        self._record_storage_names(inputs.model, [*capacity.values(), activity])
         pieces = [
-            self._map_capacity(inputs, _INSTALLED_CAPACITY),
-            self._map_capacity(inputs, _NEW_CAPACITY),
-            self._map_production(inputs),
+            *(
+                self._map_capacity(inputs, rows, derivation)
+                for derivation, rows in capacity.items()
+            ),
+            self._map_production(inputs, activity),
             self._map_emissions(inputs),
             self._map_objective(inputs),
         ]
         return _build_results_table(pieces)
 
-    def _map_capacity(self, inputs: MappingInputs, derivation: Derivation) -> pl.DataFrame:
+    def _build_capacity_rows(self, inputs: MappingInputs, derivation: Derivation) -> pl.DataFrame:
+        """The capacity rows of the technologies that put out electricity; it reports the rest."""
         rows = self._build_known_technology_rows(inputs, derivation)
-        rows = self._drop_left_out_members(
-            rows, build_electricity_producers(inputs.model), _NO_ELECTRICITY, derivation
-        )
+        producers = build_electricity_producers(inputs.model)
+        return self._drop_left_out_members(rows, producers, _NO_ELECTRICITY, derivation)
+
+    def _build_activity_rows(self, inputs: MappingInputs) -> pl.DataFrame:
+        """The activity rows of the technologies that put out electricity; it reports the rest."""
+        activity = self._build_known_technology_rows(inputs, _PRODUCTION)
+        if activity.is_empty():
+            return activity
+        producers = build_electricity_producers(inputs.model)
+        if producers.is_empty():
+            self._report_no_production()
+            return activity.clear()
+        return self._drop_left_out_members(activity, producers, _NO_ELECTRICITY, _PRODUCTION)
+
+    def _map_capacity(
+        self, inputs: MappingInputs, rows: pl.DataFrame, derivation: Derivation
+    ) -> pl.DataFrame:
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(derivation, inputs.units.capacity_unit)
         named = _rename_storage_technologies(rows, inputs.model)
         return _build_annual_results(named, derivation, inputs.units.convert_capacity_to_mw)
 
-    def _map_production(self, inputs: MappingInputs) -> pl.DataFrame:
-        activity = self._build_known_technology_rows(inputs, _PRODUCTION)
+    def _map_production(self, inputs: MappingInputs, activity: pl.DataFrame) -> pl.DataFrame:
         if activity.is_empty():
             return _build_empty_results()
-        if build_electricity_producers(inputs.model).is_empty():
-            self._report_no_production()
-            return _build_empty_results()
-        producers = build_electricity_producers(inputs.model)
-        activity = self._drop_left_out_members(activity, producers, _NO_ELECTRICITY, _PRODUCTION)
         self._record_derivation(
             _PRODUCTION, inputs.units.energy_unit, _OUTPUT_ACTIVITY_RATIO_SOURCE
         )
@@ -448,7 +456,7 @@ def _list_left_out_names(rows: pl.DataFrame, kept: pl.DataFrame, keys: list[str]
     return [str(name) for name in names.unique(maintain_order=True)[_REPORT_NAME].to_list()]
 
 
-def _list_electricity_conversions(model: ResultsModel) -> pl.DataFrame:
+def _build_electricity_conversions(model: ResultsModel) -> pl.DataFrame:
     """The conversions that put out electricity, which convert it at one location."""
     is_conversion = pl.col(AnnotationColumn.KIND) == TechnologyKind.CONVERSION
     return (
@@ -458,7 +466,7 @@ def _list_electricity_conversions(model: ResultsModel) -> pl.DataFrame:
     )
 
 
-def _list_stated_technologies(
+def _build_stated_technologies(
     variables: dict[OsemosysResultVariable, pl.DataFrame],
 ) -> pl.DataFrame:
     """The region and technology of each row of a technology variable."""
@@ -475,15 +483,26 @@ def _list_report_names(members: pl.DataFrame) -> list[str]:
     return [str(name) for name in names[_REPORT_NAME].to_list()]
 
 
+def _drop_conversions(inputs: MappingInputs, conversions: pl.DataFrame) -> MappingInputs:
+    """The inputs without the rows of the electricity conversions in the technology variables."""
+    kept = {
+        derivation.source: _drop_members(
+            inputs.variables[derivation.source], conversions, TECHNOLOGY
+        )
+        for derivation in _TECHNOLOGY_VARIABLES
+    }
+    return inputs._replace(variables={**inputs.variables, **kept})
+
+
 def _drop_members(rows: pl.DataFrame, dropped: pl.DataFrame, member: str) -> pl.DataFrame:
     keys = [REGION, member]
     return _enrich_with_member(rows, member).join(dropped, on=keys, how="anti").drop(member)
 
 
 def _rename_storage_technologies(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
-    """Each technology that charges or discharges a storage takes the name of the storage.
+    """Each technology that discharges a storage takes the name of the storage.
 
-    Two technologies of one storage give one row, which sums their values.
+    Two technologies that discharge one storage give one row, which sums their values.
     """
     links = model.storages.select(REGION, TECHNOLOGY, STORAGE_COMPONENT)
     named = rows.join(links, on=[REGION, TECHNOLOGY], how="left").with_columns(
@@ -495,7 +514,6 @@ def _rename_storage_technologies(rows: pl.DataFrame, model: ResultsModel) -> pl.
 
 
 def _build_storage_name_event(row: dict[str, Any]) -> TranslationEvent:
-    link = row[LINK_PARAMETER]
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=[
@@ -503,7 +521,7 @@ def _build_storage_name_event(row: dict[str, Any]) -> TranslationEvent:
                 framework=Framework.AETOS,
                 component=TECHNOLOGY,
                 name=row[_REPORT_NAME],
-                attribute=link,
+                attribute=FlowParameter.TECHNOLOGY_FROM_STORAGE,
                 value=row[STORAGE],
             )
         ],
@@ -515,9 +533,7 @@ def _build_storage_name_event(row: dict[str, Any]) -> TranslationEvent:
                 attribute=ResultsCol.COMPONENT,
             )
         ],
-        derivation=_STORAGE_NAME_DERIVATION.format(
-            link=_LINK_VERBS[link], variables=_TECHNOLOGY_VARIABLE_NAMES
-        ),
+        derivation=_STORAGE_NAME_DERIVATION.format(variables=_TECHNOLOGY_VARIABLE_NAMES),
     )
 
 
