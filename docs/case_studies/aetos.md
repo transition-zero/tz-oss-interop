@@ -424,9 +424,13 @@ import polars as pl
 
 for side in ("results_aetos", "results_sienna"):
     table = pl.read_parquet(f"outputs/{side}/results.parquet")
-    print(side, table.filter(pl.col("timestamp").dt.year() == 2021)
-          .group_by("variable", pl.col("category").is_null().alias("has_no_category"))
-          .agg(pl.col("value").sum()).sort("variable", "has_no_category"))
+    print(
+        side,
+        table.filter(pl.col("timestamp").dt.year() == 2021)
+        .group_by("variable", pl.col("category").is_null().alias("has_no_category"))
+        .agg(pl.col("value").sum())
+        .sort("variable", "has_no_category"),
+    )
 ```
 
 The values are in MW, MWh and t. These are the 2021 totals:
