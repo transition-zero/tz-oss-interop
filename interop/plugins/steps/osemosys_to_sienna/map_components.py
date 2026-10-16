@@ -17,6 +17,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     parse_units,
     read_operations_mode,
     report_calendar,
+    report_unread_defaults,
     require_model_year,
     set_operations_year,
 )
@@ -30,8 +31,9 @@ from interop.plugins.steps.osemosys_to_sienna.map_storage import OsemosysToSienn
 from interop.plugins.steps.osemosys_to_sienna.map_transport import OsemosysToSiennaMapTransport
 from interop.plugins.steps.osemosys_to_sienna.report_left_out import OsemosysToSiennaReportLeftOut
 
-# The calendar is a concern of the whole year, so its decisions name a step of their own.
+# The calendar and the unread defaults concern the whole model, so each names a step of its own.
 _BUILD_CALENDAR = "osemosys_to_sienna_build_calendar"
+_REPORT_DEFAULTS = "osemosys_to_sienna_report_defaults"
 
 
 class OsemosysToSiennaMapComponentsParams(BaseModel):
@@ -57,6 +59,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         osemosys_sienna_mappings: OsemosysSiennaCarrierMappings,
     ) -> None:
         self._calendar_recorder = ScopedRecorder(recorder, step=_BUILD_CALENDAR)
+        self._defaults_recorder = ScopedRecorder(recorder, step=_REPORT_DEFAULTS)
         self._mappings: tuple[OperationsMapping, ...] = (
             OsemosysToSiennaMapBuses(_scoped(recorder, OsemosysToSiennaMapBuses.step_name)),
             OsemosysToSiennaMapLoads(_scoped(recorder, OsemosysToSiennaMapLoads.step_name)),
@@ -82,6 +85,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
             )
         operations = self._build_operations_year(state, params)
         set_operations_year(state, operations.year)
+        report_unread_defaults(state, self._defaults_recorder)
         for mapping in self._mappings:
             mapping.map_components(state, operations)
         append_extensions(

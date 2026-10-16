@@ -21,6 +21,9 @@ from interop.plugins.shared.osemosys_sienna_translations._calendar import (
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_operations_mode,
 )
+from interop.plugins.shared.osemosys_sienna_translations._defaults import (
+    report_unread_defaults,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     GENERATOR_NAME,
     SIENNA_TYPE,
@@ -126,6 +129,7 @@ __all__ = [
     "report_left_out_technologies",
     "report_unapplied_parameters",
     "report_unread_capacity_factors",
+    "report_unread_defaults",
     "require_model_year",
     "set_operations_year",
     "warn_one_way_lines",

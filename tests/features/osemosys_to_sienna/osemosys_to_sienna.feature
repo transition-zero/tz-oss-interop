@@ -631,6 +631,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "emission_rate has the default 0.5, which the translation does not apply"
+      And the file "decisions.md" contains "| osemosys_to_sienna_report_defaults |"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
 
     Scenario: The cost of another mode that puts out no electricity is reported as lost

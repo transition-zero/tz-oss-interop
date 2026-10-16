@@ -32,7 +32,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
-    SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
@@ -52,7 +51,6 @@ from interop.plugins.shared.osemosys_sienna_translations._availability import (
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
 )
-from interop.plugins.shared.osemosys_sienna_translations._defaults import report_unread_defaults
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     build_fuel_supply,
     read_input_ratios,
@@ -110,13 +108,6 @@ from interop.plugins.shared.translation_runner import (
 GENERATOR_TYPES: tuple[SiennaComponent, ...] = tuple(
     mapping.sienna_type for mapping in GENERATOR_TYPE_MAPPINGS
 )
-# The parameters that the translation reads only where the model states a row.
-_STATED_ROWS_ONLY = (
-    FlowParameter.INPUT_ACTIVITY_RATIO,
-    FlowParameter.OUTPUT_ACTIVITY_RATIO,
-    SupplyParameter.EMISSION_RATE,
-)
-
 _COUNTED_NOUN = "supply technology(ies)"
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 
@@ -199,7 +190,6 @@ def build_generators_source(
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
 ) -> GeneratorSources:
-    report_unread_defaults(state, _STATED_ROWS_ONLY, recorder)
     generators = _read_generators(state, operations, mappings, recorder)
     if generators.height == 0:
         return GeneratorSources(generators, pl.DataFrame())

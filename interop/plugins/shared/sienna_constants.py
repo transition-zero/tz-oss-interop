@@ -125,6 +125,12 @@ class ACBusType(StrEnum):
     SLACK = "SLACK"
 
 
+class BusCarrier(StrEnum):
+    """The carrier of a bus in its extension record, because a Sienna ACBus has no field for it."""
+
+    AC = "AC"
+
+
 class SiennaAreaCol:
     """Sienna Area destination table column names."""
 

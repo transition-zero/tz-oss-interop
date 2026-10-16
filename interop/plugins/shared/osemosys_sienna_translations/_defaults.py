@@ -7,12 +7,15 @@ the translation reads only the rows that the model states, and records that it d
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS
-from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
+from interop.plugins.shared.osemosys_canonical.constants import FlowParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    OSEMOSYS_TO_SIENNA_PIPELINE,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
 )
@@ -22,16 +25,20 @@ from interop.ports.outbound.reporting import EventKind, TranslationEvent
 log = logging.getLogger(__name__)
 
 _DEFAULT_ATTRIBUTE = "default"
+# The parameters that the translation reads only where the model states a row.
+_STATED_ROWS_ONLY = (
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    SupplyParameter.EMISSION_RATE,
+)
 _NOTE = (
     "a default other than zero would give every technology this value for every fuel or "
     "pollutant and every mode, so the translation reads only the rows that the model states"
 )
 
 
-def report_unread_defaults(
-    state: State, parameters: Sequence[str], recorder: ScopedRecorder
-) -> None:
-    for parameter in parameters:
+def report_unread_defaults(state: State, recorder: ScopedRecorder) -> None:
+    for parameter in _STATED_ROWS_ONLY:
         default = find_parameter_default(state, parameter)
         if default:
             recorder.append(_build_event(parameter, default))
