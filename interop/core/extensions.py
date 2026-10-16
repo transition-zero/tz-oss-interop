@@ -53,6 +53,9 @@ class ExtensionKind(StrEnum):
     # survive a hop through it. Sienna has no equivalent either.
     CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
+    # A span of hours that stands for many days of a year. OSeMOSYS states it through its
+    # timeslices. SiennaSchemas has no field for it.
+    REPRESENTATIVE_PERIOD = "representative_period"
 
 
 class ReserveDirection(StrEnum):
@@ -306,6 +309,23 @@ class NetworkExtension(ExtensionRecord):
     objective: float | None = None
 
 
+class RepresentativePeriodExtension(ExtensionRecord):
+    """A span of consecutive hours of the series that stands for a number of days of the year.
+
+    OSeMOSYS only. Each field is optional, because a lookup of a name that no record holds
+    gives a record with no values.
+    """
+
+    # ISO 8601. The timestamp of the first hour of the span.
+    first_timestamp: str | None = None
+    hours: int | None = None
+    # d. The days of the year that the span stands for: the sum of its hour weights over 24.
+    weight_days: float | None = None
+    # OSeMOSYS SEASON and DAYTYPE. Absent when each timeslice is one hour.
+    season: str | None = None
+    day_type: str | None = None
+
+
 class Extensions(BaseModel):
     """The sidecar document. Each field name is a kind, and holds that kind's records."""
 
@@ -320,6 +340,7 @@ class Extensions(BaseModel):
     reserve: list[ReserveExtension] = []
     constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
+    representative_period: list[RepresentativePeriodExtension] = []
 
 
 EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
@@ -332,6 +353,7 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.RESERVE: ReserveExtension,
     ExtensionKind.CONSTRAINT: ConstraintExtension,
     ExtensionKind.NETWORK: NetworkExtension,
+    ExtensionKind.REPRESENTATIVE_PERIOD: RepresentativePeriodExtension,
 }
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
@@ -536,6 +558,10 @@ def record_for(
 def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD], name: str
+) -> RepresentativePeriodExtension | None: ...
 
 
 def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
@@ -629,6 +655,10 @@ class ExtensionReader:
     ) -> ExtensionLookup[ConstraintExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD]
+    ) -> ExtensionLookup[RepresentativePeriodExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
