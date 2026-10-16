@@ -15,6 +15,7 @@ import polars as pl
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
+    UNIT_DOLLARS_PER_TONNE,
     UNIT_MVA,
     UNIT_MW,
     UNIT_TONNES_PER_MWH,
@@ -75,13 +76,19 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     OTHER_MODE_VALUES,
     OWN_COST,
     PARAMETER,
-    VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
     FUEL_PRODUCERS,
     OWN_RATE,
     RATE_T_PER_MWH,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    OPERATION_COST_MWH,
+    PENALTY,
+    PENALTY_COST_MWH,
+    PENALTY_PER_TONNE,
+    PENALTY_TERMS,
 )
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -126,6 +133,7 @@ _UNITY_POWER_FACTOR = 1.0
 _PROPORTIONAL_TERM = f"{_Col.OPERATION_COST}.variable.value_curve.function_data.proportional_term"
 _FIXED_ATTRIBUTE = f"{_Col.OPERATION_COST}.fixed"
 _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
+_PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "
 _SERIES_ATTRIBUTE = f"{SiennaSeriesName.MAX_ACTIVE_POWER} time series"
 _BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
@@ -182,9 +190,14 @@ _FUEL_TERM_DERIVATION = (
     "the fuel at the operations mode, in $/MWh, / the electricity output_activity_ratio of the "
     "technology"
 )
+_PENALTY_DERIVATION = (
+    "the emission rate of the pollutant, in t/MWh, × emission_penalty of the pollutant in the "
+    "region of the technology, in $/tonne"
+)
 _VARIABLE_COST_DERIVATION = (
     "variable_operation_cost at the operations mode, in $/MWh, / the electricity "
-    "output_activity_ratio, plus the fuel term of each fuel that the technology takes in"
+    "output_activity_ratio, plus the fuel term of each fuel that the technology takes in, plus "
+    "the emission penalty of each pollutant that it emits"
 )
 _FIXED_COST_DERIVATION = (
     "fixed_cost of the operations year, in $/MW/yr, / the electricity output_activity_ratio at "
@@ -368,6 +381,7 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: _build_fuel_term_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(dest, old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(dest, old)),
     ]
@@ -433,7 +447,7 @@ def _build_fuel_term_event(
 
 
 def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
-    """The own cost of the technology, and the fuel term of each fuel that has a producer."""
+    """The own cost, the fuel term of each fuel that has a producer, and each penalty."""
     own = _build_source(SupplyParameter.VARIABLE_OPERATION_COST, old, None, old[OWN_COST])
     terms = [
         build_sienna_source(
@@ -446,7 +460,17 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
         for term in old[FUEL_TERMS] or []
         if term[PRODUCER] is not None
     ]
-    return [own, _build_output_ratio_source(old), *terms]
+    penalties = [
+        build_sienna_source(
+            old[SIENNA_TYPE],
+            old[GENERATOR_NAME],
+            f"{_PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
+            term[PENALTY_COST_MWH],
+            UNIT_DOLLARS_PER_MWH,
+        )
+        for term in old[PENALTY_TERMS] or []
+    ]
+    return [own, _build_output_ratio_source(old), *terms, *penalties]
 
 
 def _build_fixed_cost_events(
@@ -503,6 +527,43 @@ def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[S
         for producer in term[FUEL_PRODUCERS] or []
     ]
     return [own, *burned, _build_output_ratio_source(old)]
+
+
+def _build_penalty_events(
+    dest: DestinationFieldFactory, old: dict[str, Any]
+) -> list[TranslationEvent]:
+    """One event for each pollutant: the emission rate and the penalty give a cost per MWh."""
+    return [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
+                build_sienna_source(
+                    old[SIENNA_TYPE],
+                    old[GENERATOR_NAME],
+                    f"{_EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
+                    term[RATE_T_PER_MWH],
+                    UNIT_TONNES_PER_MWH,
+                ),
+                build_osemosys_field(
+                    SupplyParameter.EMISSION_PENALTY,
+                    _build_region_name(old, term[POLLUTANT]),
+                    None,
+                    term[PENALTY],
+                ),
+            ],
+            destinations=[
+                dest(
+                    old[GENERATOR_NAME],
+                    f"{_PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
+                    term[PENALTY_COST_MWH],
+                    UNIT_DOLLARS_PER_MWH,
+                )
+            ],
+            derivation=_PENALTY_DERIVATION,
+            note=f"the penalty is {term[PENALTY_PER_TONNE]:g} {UNIT_DOLLARS_PER_TONNE}",
+        )
+        for term in old[PENALTY_TERMS] or []
+    ]
 
 
 def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
@@ -564,7 +625,7 @@ def _build_operation_cost(
                     dest(
                         old[GENERATOR_NAME],
                         _PROPORTIONAL_TERM,
-                        old[VARIABLE_COST_MWH],
+                        old[OPERATION_COST_MWH],
                         UNIT_DOLLARS_PER_MWH,
                     )
                 ],
@@ -589,7 +650,7 @@ def _build_operation_cost(
 
 
 def _express_variable_curve() -> pl.Expr:
-    return variable_cost_curve(pl.col(VARIABLE_COST_MWH))
+    return variable_cost_curve(pl.col(OPERATION_COST_MWH))
 
 
 def _build_lost_cost() -> Translation:
@@ -604,7 +665,7 @@ def _build_lost_cost() -> Translation:
                     note=_LOST_COST_NOTE,
                 )
             ]
-            if old[VARIABLE_COST_MWH] != 0
+            if old[OPERATION_COST_MWH] != 0
             else []
         ),
     )

@@ -94,6 +94,9 @@ class ModelUnits:
     def convert_emissions_per_energy_to_tonnes_per_mwh(self, value: Quantity) -> Quantity:
         return self.convert_emissions_to_tonnes(value) / self.convert_energy_to_mwh(1.0)
 
+    def convert_cost_per_emissions_to_dollars_per_tonne(self, value: Quantity) -> Quantity:
+        return self.convert_currency_to_dollars(value) / self.convert_emissions_to_tonnes(1.0)
+
 
 def express_converted(
     table: pl.DataFrame, column: str, convert: Callable[[pl.Expr], pl.Expr]

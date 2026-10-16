@@ -100,7 +100,9 @@ class SupplyParameter(StrEnum):
     VARIABLE_OPERATION_COST = "variable_operation_cost"
     FIXED_COST = "fixed_cost"
     EMISSION_RATE = "emission_rate"
+    EMISSION_PENALTY = "emission_penalty"
     ACTIVITY_UPPER_LIMIT = "total_technology_annual_activity_upper_limit"
+    ACTIVITY_LOWER_LIMIT = "total_technology_annual_activity_lower_limit"
 
 
 class StorageParameter(StrEnum):

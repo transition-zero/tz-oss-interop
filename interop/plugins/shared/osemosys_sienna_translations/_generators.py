@@ -74,6 +74,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     RATE_T_PER_MWH,
     enrich_emission_rates,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    enrich_emission_penalties,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
     GENERATOR_TYPE_MAPPINGS,
 )
@@ -266,6 +269,7 @@ def _enrich_generators(
     table = enrich_variable_costs(state, operations, generators, inputs, fuel_supply)
     table = enrich_fixed_costs(state, operations, table)
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)
+    table = enrich_emission_penalties(state, operations, table)
     table = enrich_other_modes(state, operations, table)
     return table.with_columns(_express_has_series().alias(HAS_SERIES))
 
