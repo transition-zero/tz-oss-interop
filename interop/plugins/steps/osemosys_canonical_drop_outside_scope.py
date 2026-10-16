@@ -2,23 +2,32 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.scope import Scope, drop_outside_scope
 
+_TEXT_LIST_SEPARATOR = ","
+
+
+def _parse_text_list(value: object) -> object:
+    """Split a text answer such as `DE, FR` at each comma; any other value passes unchanged."""
+    if not isinstance(value, str):
+        return value
+    return [part.strip() for part in value.split(_TEXT_LIST_SEPARATOR) if part.strip()]
+
 
 class OsemosysCanonicalDropOutsideScopeParams(BaseModel):
-    locations: list[str] = Field(
+    locations: Annotated[list[str], BeforeValidator(_parse_text_list)] = Field(
         default_factory=list,
-        description="the locations to keep; an empty list keeps every location",
+        description="the locations to keep, separated by commas; empty keeps every location",
     )
-    years: list[int] = Field(
+    years: Annotated[list[int], BeforeValidator(_parse_text_list)] = Field(
         default_factory=list,
-        description="the years to keep; an empty list keeps every year",
+        description="the years to keep, separated by commas; empty keeps every year",
     )
 
 

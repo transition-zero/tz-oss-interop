@@ -60,26 +60,6 @@ sinks:
   - name: emit_sienna_files
 """
 
-_SCOPED_PIPELINE_YAML = """\
-source_framework: osemosys
-destination_framework: sienna
-source:
-  name: stage_osemosys_csv
-  params:
-    config_path: model/config.yaml
-    csv_dir: model/csv
-steps:
-  - name: osemosys_canonical_drop_outside_scope
-    params:
-      locations: [{location}]
-  - name: osemosys_to_sienna_map_components
-    params:
-      year: 2030
-  - name: sienna_relate_components
-sinks:
-  - name: emit_sienna_files
-"""
-
 
 @given(
     parsers.parse(
@@ -94,26 +74,39 @@ def given_move_bracket_pipeline(name: str, timeslice: str, bracket: str) -> None
     write_pipeline(name, _MOVE_BRACKET_PIPELINE_YAML)
 
 
-@given(
-    parsers.parse('a pipeline "{name}" that keeps the location "{location}" before the translation')
-)
-def given_scoped_pipeline(name: str, location: str) -> None:
-    """The steps of osemosys-csv-to-sienna, with a scope that a list of locations states."""
-    write_pipeline(name, _SCOPED_PIPELINE_YAML.format(location=location))
-
-
 @when(
     parsers.parse('I translate the otoole model to Sienna for the year "{year}"'),
     target_fixture="pipeline_exit_code",
 )
 def translate_the_otoole_model(otoole_model_builder: OtooleModelBuilder, year: str) -> int:
+    return translate_with_overrides(otoole_model_builder, [f"step[1].year={year}"])
+
+
+@when(
+    parsers.parse(
+        'I translate the otoole model to Sienna for the locations "{locations}" in the year '
+        '"{year}"'
+    ),
+    target_fixture="pipeline_exit_code",
+)
+def translate_the_otoole_model_in_scope(
+    otoole_model_builder: OtooleModelBuilder, locations: str, year: str
+) -> int:
+    """Give the scope step its locations as text, as a command line gives them."""
+    overrides = [f"step[0].locations={locations}", f"step[1].year={year}"]
+    return translate_with_overrides(otoole_model_builder, overrides)
+
+
+def translate_with_overrides(
+    otoole_model_builder: OtooleModelBuilder, step_overrides: list[str]
+) -> int:
     """Write the model to `model/config.yaml` and `model/csv`, then translate it with
     `user_mappings.yaml`."""
     otoole_model_builder.write(Path(_CONFIG_PATH), Path(_CSV_DIRECTORY))
     overrides = [
         f"source.config_path={_CONFIG_PATH}",
         f"source.csv_dir={_CSV_DIRECTORY}",
-        f"step[1].year={year}",
+        *step_overrides,
     ]
     return run_pipeline(_PIPELINE, overrides=overrides, user_mappings_path=_USER_MAPPINGS_PATH)
 
@@ -128,12 +121,19 @@ def run_the_otoole_model(otoole_model_builder: OtooleModelBuilder, pipeline: str
 
 
 @when(
-    parsers.parse('I translate the otoole model to Sienna in the REPL and answer the year "{year}"')
+    parsers.parse(
+        'I translate the otoole model to Sienna in the REPL and answer the year "{year}" '
+        'and the locations "{locations}"'
+    )
 )
 def translate_the_otoole_model_in_the_repl(
-    monkeypatch: pytest.MonkeyPatch, otoole_model_builder: OtooleModelBuilder, year: str
+    monkeypatch: pytest.MonkeyPatch,
+    otoole_model_builder: OtooleModelBuilder,
+    year: str,
+    locations: str,
 ) -> None:
-    """Answer the source paths and the year; every other prompt keeps its default."""
+    """Answer the source paths, the locations and the year; every other prompt keeps its
+    default."""
     otoole_model_builder.write(Path(_CONFIG_PATH), Path(_CSV_DIRECTORY))
     invoke_translate(
         monkeypatch,
@@ -143,5 +143,6 @@ def translate_the_otoole_model_in_the_repl(
         user_mappings_path=_USER_MAPPINGS_PATH,
         source_config_path=_CONFIG_PATH,
         source_csv_dir=_CSV_DIRECTORY,
+        step_0_locations=locations,
         step_1_year=year,
     )
