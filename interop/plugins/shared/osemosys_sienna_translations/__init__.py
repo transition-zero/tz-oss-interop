@@ -48,6 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import (
     OperationsMapping,
     OperationsYear,
     require_model_year,
+    set_operations_year,
 )
 from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
@@ -126,5 +127,6 @@ __all__ = [
     "report_unapplied_parameters",
     "report_unread_capacity_factors",
     "require_model_year",
+    "set_operations_year",
     "warn_one_way_lines",
 ]

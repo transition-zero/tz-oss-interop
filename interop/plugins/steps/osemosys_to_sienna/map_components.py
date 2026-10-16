@@ -18,6 +18,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     read_operations_mode,
     report_calendar,
     require_model_year,
+    set_operations_year,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.steps.osemosys_to_sienna.map_buses import OsemosysToSiennaMapBuses
@@ -80,6 +81,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
                 f"got {type(params).__name__}"
             )
         operations = self._build_operations_year(state, params)
+        set_operations_year(state, operations.year)
         for mapping in self._mappings:
             mapping.map_components(state, operations)
         append_extensions(

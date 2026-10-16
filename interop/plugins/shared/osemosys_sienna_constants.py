@@ -12,6 +12,9 @@ OSEMOSYS_TO_SIENNA_PIPELINE = "osemosys-to-sienna"
 OSEMOSYS_SIENNA_SERIES = "osemosys_sienna_series"
 # The character between the owner type and the attribute in the second part of that key.
 SERIES_KEY_SEPARATOR = "."
+# The `State.source_time_series` key of the one-row table that holds the operations year, which
+# the operations step writes for a later step of the pipeline. It is not a canonical table kind.
+OPERATIONS_YEAR_KEY = ("osemosys_sienna_operations", "year")
 
 HOURS_PER_YEAR = 8760.0
 HOURS_PER_DAY = 24

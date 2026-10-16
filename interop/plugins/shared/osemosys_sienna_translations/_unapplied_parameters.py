@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Set
-from datetime import datetime
 from typing import NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS
@@ -46,8 +44,10 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
+from interop.plugins.shared.osemosys_sienna_translations._operations import (
+    require_operations_year,
+)
 from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 log = logging.getLogger(__name__)
@@ -133,23 +133,6 @@ def report_unapplied_parameters(state: State, applied: Set[str], recorder: Scope
         rows = _read_stated_rows(state, parameter, year)
         if rows.height > 0:
             _report_rows(UnappliedRows(parameter, rows, year), recorder)
-
-
-def require_operations_year(state: State) -> int:
-    """The year of the representative periods that the operations step writes."""
-    periods = state.destination_extensions.get(ExtensionKind.REPRESENTATIVE_PERIOD, [])
-    years = [
-        datetime.fromisoformat(period.first_timestamp).year
-        for period in periods
-        if isinstance(period, RepresentativePeriodExtension) and period.first_timestamp
-    ]
-    if not years:
-        raise UserInputError(
-            "The report of the parameters that no step applies needs the operations year. Put "
-            "the step after osemosys_to_sienna_map_components, which writes the representative "
-            "periods of that year."
-        )
-    return min(years)
 
 
 def _list_unapplied_parameters(state: State, applied: Set[str]) -> list[str]:
