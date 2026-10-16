@@ -1,7 +1,8 @@
 """The base system components that a candidate stands for: ExistingDevices, RetirementPotential.
 
-A candidate adds to the components of the base system that share its category and its
-location. A component leaves service in the first year after the base year in which the
+OSeMOSYS gives each technology its own residual capacity, so the one base system component of
+a candidate is the component of the same name. A candidate with no such component has neither
+attribute. A component leaves service in the first year after the base year in which the
 residual capacity of its technology is zero. The model states no build year.
 """
 
@@ -44,7 +45,6 @@ from interop.plugins.shared.sienna_constants import SIENNA_NAME_COLUMN, SiennaCo
 # What the shared retirement rule calls the year that a device leaves service.
 _RETIREMENT_YEAR = "retirement_year"
 _RESIDUAL = SupplyParameter.RESIDUAL_CAPACITY.value
-_NO_CATEGORY = ""
 
 FLEET_SOURCE = InvestmentsSource(
     framework=Framework.OSEMOSYS,
@@ -66,34 +66,33 @@ FLEET_SOURCE = InvestmentsSource(
 
 @dataclass(frozen=True)
 class FleetFamily:
-    """The candidates of one type, and every member that a base system component of it names.
+    """The candidates of one type, and the base system types that a component of each can be.
 
-    Both tables hold `candidate_name`, `region`, `technology`, `category` and `location`. The
-    technology of a member is the one whose residual capacity the component holds.
+    `candidates` holds `candidate_name`, `region`, `technology` and `location`. The technology is
+    the one whose residual capacity the component holds.
     """
 
     component_type: str
     device_class: str
     candidates: pl.DataFrame
-    members: pl.DataFrame
     base_types: Sequence[SiennaComponent]
 
 
 def build_fleet_table(
     state: State, plan: InvestmentPlan, families: Sequence[FleetFamily]
 ) -> pl.DataFrame:
-    """One row for each candidate that has a fleet in the base system."""
+    """One row for each candidate that has a component of its own in the base system."""
     return pl.concat([_build_family_fleet(state, plan, family) for family in families])
 
 
 def _build_family_fleet(state: State, plan: InvestmentPlan, family: FleetFamily) -> pl.DataFrame:
-    devices = family.members.filter(
-        pl.col(CANDIDATE_NAME).is_in(sorted(_list_base_names(state, family.base_types)))
-    )
-    groups = _build_groups(devices)
-    retired = _read_retirement_years(state, plan, devices)
+    base_names = sorted(_list_base_names(state, family.base_types))
+    devices = family.candidates.filter(pl.col(CANDIDATE_NAME).is_in(base_names))
     return build_existing_fleet_source_table(
-        _list_candidates(family), groups, build_years={}, retirement_years=retired
+        _list_candidates(family),
+        _build_groups(devices),
+        build_years={},
+        retirement_years=_read_retirement_years(state, plan, devices),
     )
 
 
@@ -107,14 +106,11 @@ def _list_base_names(state: State, types: Collection[SiennaComponent]) -> set[st
 
 
 def _build_groups(devices: pl.DataFrame) -> dict[tuple[str, str | None], list[str]]:
-    groups: dict[tuple[str, str | None], list[str]] = {}
-    for name, category, location in (
-        devices.sort(CANDIDATE_NAME)
-        .select(CANDIDATE_NAME, AnnotationColumn.CATEGORY, AnnotationColumn.LOCATION)
-        .iter_rows()
-    ):
-        groups.setdefault((category or _NO_CATEGORY, location), []).append(name)
-    return groups
+    """Each device alone, keyed as `_list_candidates` keys the candidate of the same name."""
+    return {
+        (name, location): [name]
+        for name, location in devices.select(CANDIDATE_NAME, AnnotationColumn.LOCATION).iter_rows()
+    }
 
 
 def _read_retirement_years(
@@ -130,15 +126,16 @@ def _read_retirement_years(
 
 
 def _list_candidates(family: FleetFamily) -> list[CandidateTechnology]:
+    """The shared rule matches a fleet by carrier and region, here the name and the location."""
     return [
         CandidateTechnology(
             name=name,
             component_type=family.component_type,
             device_class=family.device_class,
-            carrier=category or _NO_CATEGORY,
+            carrier=name,
             region=location,
         )
-        for name, category, location in family.candidates.select(
-            CANDIDATE_NAME, AnnotationColumn.CATEGORY, AnnotationColumn.LOCATION
+        for name, location in family.candidates.select(
+            CANDIDATE_NAME, AnnotationColumn.LOCATION
         ).iter_rows()
     ]

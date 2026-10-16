@@ -51,7 +51,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._storage im
     StorageCandidates,
     build_storage_candidates,
     build_storage_translations,
-    read_discharged_storages,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._supply import (
     SUPPLY_SCHEMA,
@@ -61,7 +60,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._supply imp
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._technologies import (
     find_region_discount_rate,
-    read_kind_technologies,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._transport import (
     TRANSPORT_SCHEMA,
@@ -110,6 +108,4 @@ __all__ = [
     "build_transport_translations",
     "find_investment_plan",
     "find_region_discount_rate",
-    "read_discharged_storages",
-    "read_kind_technologies",
 ]

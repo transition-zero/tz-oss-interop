@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -26,6 +26,7 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
+    ELECTRICITY_CARRIER,
     REGION,
     STORAGE,
     TECHNOLOGY,
@@ -45,22 +46,33 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPACITY_LIMITS_BY_YEAR,
     CAPITAL_COST,
     CAPITAL_COST_MW,
+    CAPITAL_COST_YEAR,
+    DISCOUNT_RATE,
     ENERGY_CAPITAL_COST_MWH,
+    ENERGY_COST_YEAR,
     FIXED_COST,
     FIXED_COST_MW_YEAR,
+    LIFETIME,
+    LIFETIME_MEMBER,
+    LIFETIME_PARAMETER,
+    RATE_MEMBER,
+    RATE_PARAMETER,
     RATING_RATIO,
     REPORT_NAME,
     UNIT_SIZE,
     UNIT_SIZE_MW,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import (
+    BASE_YEAR,
     EACH_YEAR,
+    PRICED_YEAR,
     TECHNOLOGY_SOURCE,
     CandidateMember,
     Identity,
     build_derived_translation,
     build_identity_translations,
     build_lifetime_translations,
+    build_priced_field,
     build_technology_field,
     build_yearly_field,
 )
@@ -73,6 +85,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
+    build_first_priced_values,
     drop_non_candidates,
     enrich_yearly_units,
     read_technology_years,
@@ -149,16 +162,21 @@ STORAGE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 }
 
 # The columns of the charge side, which a storage holds only when another technology charges it.
+CHARGE_CAPITAL_COST = "charge_capital_cost"
 CHARGE_CAPITAL_COST_MW = "charge_capital_cost_mw"
+CHARGE_COST_YEAR = "charge_cost_year"
 CHARGE_LIMITS_BY_YEAR = "charge_limits_by_year"
 ENERGY_CAPITAL_COST = "energy_capital_cost"
 HAS_OWN_CHARGER = "has_own_charger"
 DURATION_HOURS = "duration_hours"
 
 _ONE_LINK = 1
+_ENERGY_COST_COLUMNS = {
+    ENERGY_CAPITAL_COST: ENERGY_CAPITAL_COST,
+    ENERGY_CAPITAL_COST_MWH: ENERGY_CAPITAL_COST_MWH,
+}
 _STORAGE_KEYS = [REGION, STORAGE]
 _LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
-_BASE_YEAR = "the earliest year in scope"
 _IDENTITY = Identity(
     kind_note="a storage whose discharging technology a plan may build is a candidate",
     member=CandidateMember(STORAGE, STORAGE_REPORT_NAME),
@@ -313,13 +331,79 @@ def _enrich_values(
     state: State, plan: InvestmentPlan, storages: pl.DataFrame, discharge: pl.DataFrame
 ) -> pl.DataFrame:
     table = enrich_base_year_values(storages, discharge, plan)
-    table = enrich_financial_values(state, plan, table)
+    table = _enrich_storage_finance(state, plan, enrich_financial_values(state, plan, table))
     table = _enrich_charge_side(state, plan, table)
     table = _enrich_durations(state, plan, table)
-    energy = discharge.filter(pl.col(YEAR) == plan.base_year).select(
-        *_STORAGE_KEYS, ENERGY_CAPITAL_COST, ENERGY_CAPITAL_COST_MWH
+    energy = build_first_priced_values(
+        discharge, ENERGY_CAPITAL_COST, _ENERGY_COST_COLUMNS, _STORAGE_KEYS
+    ).rename({YEAR: ENERGY_COST_YEAR})
+    return table.join(energy, on=_STORAGE_KEYS, how="left").with_columns(
+        pl.col(ENERGY_CAPITAL_COST_MWH).fill_null(0.0)
     )
-    return table.join(energy, on=_STORAGE_KEYS, how="left")
+
+
+class _StorageFinance(NamedTuple):
+    """A storage parameter that replaces a value of the discharging technology when stated."""
+
+    parameter: InvestmentParameter
+    value_col: str
+    parameter_col: str
+    member_col: str
+    keep: pl.Expr
+
+
+# A life of zero years recovers no cost, so only a positive storage life replaces the other.
+_STORAGE_FINANCE = (
+    _StorageFinance(
+        InvestmentParameter.STORAGE_LIFETIME,
+        LIFETIME,
+        LIFETIME_PARAMETER,
+        LIFETIME_MEMBER,
+        pl.col(VALUE_COL) > 0,
+    ),
+    _StorageFinance(
+        InvestmentParameter.STORAGE_DISCOUNT_RATE,
+        DISCOUNT_RATE,
+        RATE_PARAMETER,
+        RATE_MEMBER,
+        pl.col(VALUE_COL).is_not_null(),
+    ),
+)
+_STATED = "stated"
+
+
+def _enrich_storage_finance(
+    state: State, plan: InvestmentPlan, storages: pl.DataFrame
+) -> pl.DataFrame:
+    """`storage_lifetime` and `storage_discount_rate` where the model states them, else the
+    values of the discharging technology."""
+    for finance in _STORAGE_FINANCE:
+        stated = (
+            read_parameter(state, finance.parameter, plan.base_year)
+            .filter(finance.keep)
+            .select(*_STORAGE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_STATED))
+        )
+        storages = storages.join(stated, on=_STORAGE_KEYS, how="left")
+        storages = storages.with_columns(*_express_stated(finance)).drop(_STATED)
+    return storages
+
+
+def _express_stated(finance: _StorageFinance) -> list[pl.Expr]:
+    is_stated = pl.col(_STATED).is_not_null()
+    return [
+        pl.when(is_stated)
+        .then(pl.col(_STATED))
+        .otherwise(pl.col(finance.value_col))
+        .alias(finance.value_col),
+        pl.when(is_stated)
+        .then(pl.lit(finance.parameter.value))
+        .otherwise(pl.col(finance.parameter_col))
+        .alias(finance.parameter_col),
+        pl.when(is_stated)
+        .then(pl.col(STORAGE_REPORT_NAME))
+        .otherwise(pl.col(finance.member_col))
+        .alias(finance.member_col),
+    ]
 
 
 def _enrich_charge_side(state: State, plan: InvestmentPlan, storages: pl.DataFrame) -> pl.DataFrame:
@@ -333,7 +417,9 @@ def _enrich_charge_side(state: State, plan: InvestmentPlan, storages: pl.DataFra
     sides = enrich_base_year_values(chargers.unique(), yearly, plan).select(
         REGION,
         pl.col(TECHNOLOGY).alias(CHARGE_TECHNOLOGY),
+        pl.col(CAPITAL_COST).alias(CHARGE_CAPITAL_COST),
         pl.col(CAPITAL_COST_MW).alias(CHARGE_CAPITAL_COST_MW),
+        pl.col(CAPITAL_COST_YEAR).alias(CHARGE_COST_YEAR),
         pl.col(CAPACITY_LIMITS_BY_YEAR).alias(CHARGE_LIMITS_BY_YEAR),
     )
     return storages.join(sides, on=[REGION, CHARGE_TECHNOLOGY], how="left").with_columns(
@@ -404,14 +490,18 @@ def _category_sources(old: dict[str, Any]) -> list[SourceField]:
 
 def _capital_sources(old: dict[str, Any]) -> list[SourceField]:
     sources = [
-        build_technology_field(old, CAPITAL_COST, CAPITAL_COST, _BASE_YEAR),
-        build_osemosys_field(
-            ENERGY_CAPITAL_COST, old[STORAGE_REPORT_NAME], _BASE_YEAR, old[ENERGY_CAPITAL_COST]
+        build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
+        build_priced_field(
+            old, ENERGY_CAPITAL_COST, ENERGY_CAPITAL_COST, ENERGY_COST_YEAR, STORAGE_REPORT_NAME
         ),
         build_technology_field(old, FlowParameter.OUTPUT_ACTIVITY_RATIO, RATING_RATIO),
     ]
     if old[HAS_OWN_CHARGER]:
-        sources.append(build_osemosys_field(CAPITAL_COST, old[CHARGE_TECHNOLOGY_NAME], _BASE_YEAR))
+        sources.append(
+            build_priced_field(
+                old, CAPITAL_COST, CHARGE_CAPITAL_COST, CHARGE_COST_YEAR, CHARGE_TECHNOLOGY_NAME
+            )
+        )
     return sources
 
 
@@ -446,11 +536,11 @@ def _efficiency_sources(old: dict[str, Any]) -> list[SourceField]:
         build_osemosys_field(
             FlowParameter.INPUT_ACTIVITY_RATIO,
             old[CHARGE_TECHNOLOGY_NAME],
-            "electricity",
+            ELECTRICITY_CARRIER,
             old[CHARGE_RATIO],
         ),
         build_technology_field(
-            old, FlowParameter.OUTPUT_ACTIVITY_RATIO, DISCHARGE_RATIO, "electricity"
+            old, FlowParameter.OUTPUT_ACTIVITY_RATIO, DISCHARGE_RATIO, ELECTRICITY_CARRIER
         ),
         build_osemosys_field(
             FlowParameter.TECHNOLOGY_FROM_STORAGE,
@@ -502,14 +592,14 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _capital_sources,
         "capital_cost of the discharging technology in $/MW of electricity output, "
         "energy_capital_cost in $/MWh, and capital_cost of a charging technology of its own, "
-        "each of the earliest year in scope; extensions.json holds each year",
+        f"each of {PRICED_YEAR}; extensions.json holds each year",
         f"{UNIT_DOLLARS_PER_MW}, {UNIT_DOLLARS_PER_MWH}",
     ),
     build_derived_translation(
         _COMPONENT,
         S.OPERATION_COSTS,
         _OPERATION_COSTS,
-        lambda old: [build_technology_field(old, FIXED_COST, FIXED_COST, _BASE_YEAR)],
+        lambda old: [build_technology_field(old, FIXED_COST, FIXED_COST, BASE_YEAR)],
         "fixed_cost of the discharging technology in $/MW/yr of the earliest year in scope",
         UNIT_DOLLARS_PER_MW_YEAR,
     ),
@@ -517,7 +607,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.UNIT_SIZE_DISCHARGE,
         pl.col(UNIT_SIZE_MW),
-        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, _BASE_YEAR)],
+        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, BASE_YEAR)],
         "unit_size of the discharging technology in MW of electricity output",
         UNIT_MW,
     ),

@@ -23,7 +23,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     STORAGE,
     TECHNOLOGY,
-    TechnologyKind,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations import (
     FLEET_SOURCE,
@@ -58,8 +57,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     build_transport_translations,
     find_investment_plan,
     find_region_discount_rate,
-    read_discharged_storages,
-    read_kind_technologies,
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
@@ -180,7 +177,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._map_demand(state, numbering)
         self._map_carbon_caps(state, plan, numbering)
         self._map_series(state, plan_years, candidates)
-        self._map_supplemental_attributes(state, plan, plan_years, buses, candidates)
+        self._map_supplemental_attributes(state, plan, buses, candidates)
         self._map_extensions(state, candidates)
         self._map_financial_data(state, plan)
         return state
@@ -292,13 +289,11 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self,
         state: State,
         plan: InvestmentPlan,
-        plan_years: Mapping[int, OperationsYear],
         buses: pl.DataFrame,
         candidates: _Candidates,
     ) -> None:
         """The three attributes, numbered from the one counter that the flat array shares."""
-        families = self._list_fleet_families(state, plan_years[plan.base_year], candidates)
-        fleet = build_fleet_table(state, plan, families)
+        fleet = build_fleet_table(state, plan, _list_fleet_families(candidates))
         sources = {
             SiennaSupplementalAttribute.EXISTING_DEVICES: fleet,
             SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: fleet,
@@ -326,35 +321,6 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             if associations
             else pl.DataFrame(schema=SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA)
         )
-
-    def _list_fleet_families(
-        self, state: State, base: OperationsYear, candidates: _Candidates
-    ) -> list[FleetFamily]:
-        return [
-            FleetFamily(
-                component_type=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-                device_class=TECHNOLOGY,
-                candidates=candidates.supply.table,
-                members=read_kind_technologies(state, TechnologyKind.SUPPLY_TECHNOLOGY),
-                base_types=GENERATOR_TYPES,
-            ),
-            FleetFamily(
-                component_type=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-                device_class=STORAGE,
-                candidates=candidates.storage.table,
-                members=read_discharged_storages(state, base, self._mappings),
-                base_types=(SiennaComponent.ENERGY_RESERVOIR_STORAGE,),
-            ),
-            FleetFamily(
-                component_type=SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
-                device_class=TECHNOLOGY,
-                candidates=candidates.transport.table,
-                members=read_kind_technologies(
-                    state, TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY
-                ),
-                base_types=(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,),
-            ),
-        ]
 
     # --- the records of extensions.json and the portfolio financial data ----------------------
 
@@ -395,6 +361,29 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         )
         for event in build_osemosys_financial_events(plan, rate):
             self._recorder.append(event)
+
+
+def _list_fleet_families(candidates: _Candidates) -> list[FleetFamily]:
+    return [
+        FleetFamily(
+            component_type=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
+            device_class=TECHNOLOGY,
+            candidates=candidates.supply.table,
+            base_types=GENERATOR_TYPES,
+        ),
+        FleetFamily(
+            component_type=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+            device_class=STORAGE,
+            candidates=candidates.storage.table,
+            base_types=(SiennaComponent.ENERGY_RESERVOIR_STORAGE,),
+        ),
+        FleetFamily(
+            component_type=SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
+            device_class=TECHNOLOGY,
+            candidates=candidates.transport.table,
+            base_types=(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,),
+        ),
+    ]
 
 
 def _read_ids(state: State, component: str) -> dict[str, int]:

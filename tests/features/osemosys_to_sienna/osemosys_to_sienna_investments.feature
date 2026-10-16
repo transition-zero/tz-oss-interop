@@ -7,10 +7,14 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
   year.
 
   The invented model below has the years 2030 and 2035, and the locations AT and DE. The gas
-  plant ATGASCC exists in 2030 and retires in 2035. The new gas plant ATGASNEW and the solar
-  plant ATSOLAR have a capital cost and room to build, so each is a candidate. The biomass
-  plant ATBIO has a capital cost but no carriers: row. The interconnector ATDELINK has a capital
-  cost and no residual capacity. ATGASCC and ATGASNEW emit CO2. Only ATGASCC emits ATNOX.
+  plant ATGASCC exists in 2030, retires in 2035, and a plan may build more of it. The new gas
+  plant ATGASNEW and the solar plant ATSOLAR have a capital cost and room to build, so each is a
+  candidate. The solar plant ATLATESOLAR states a capital cost in 2035 only. The biomass plant
+  ATBIO has a capital cost but no carriers: row. The gas plant ATLOCKGASCC has a capital cost but
+  no investment is allowed in any year. The gas plant ATFULLGASCC has a capital cost but its
+  maximum capacity is its residual capacity in each year. The interconnector ATDELINK has a
+  capital cost and no residual capacity. ATGASCC and ATGASNEW emit CO2. Only ATGASCC emits
+  ATNOX.
 
   Background:
     Given an otoole model
@@ -21,7 +25,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the otoole set "SEASON" holds "S1 S2"
     And the otoole set "DAYTYPE" holds "1"
     And the otoole set "DAILYTIMEBRACKET" holds "B1 B2"
-    And the otoole set "TECHNOLOGY" holds "ATGASCC ATGASNEW ATSOLAR ATBIO ATDELINK ATGASWELL"
+    And the otoole set "TECHNOLOGY" holds "ATGASCC ATGASNEW ATSOLAR ATLATESOLAR ATBIO ATLOCKGASCC ATFULLGASCC ATDELINK ATGASWELL"
     And the otoole set "EMISSION" holds "CO2 ATNOX"
     And the otoole set "MODE_OF_OPERATION" holds "1"
     And the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
@@ -75,11 +79,15 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASCC    | 2030 | 0.5   |
+      | R1     | ATFULLGASCC  | 2030 | 0.3   |
+      | R1     | ATFULLGASCC  | 2035 | 0.3   |
     And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
       | R1     | ATGASCC    | ATGAS  | 1                 | 2030 | 2     |
       | R1     | ATGASNEW   | ATGAS  | 1                 | 2030 | 2     |
       | R1     | ATGASNEW   | ATGAS  | 1                 | 2035 | 1.5   |
+      | R1     | ATLOCKGASCC  | ATGAS  | 1                 | 2030 | 2     |
+      | R1     | ATFULLGASCC  | ATGAS  | 1                 | 2030 | 2     |
       | R1     | ATDELINK   | ATELEC | 1                 | 2030 | 1     |
     And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
@@ -87,7 +95,10 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | R1     | ATGASNEW   | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATGASNEW   | ATELEC | 1                 | 2035 | 1     |
       | R1     | ATSOLAR    | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATLATESOLAR | ATELEC | 1                | 2030 | 1     |
       | R1     | ATBIO      | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATLOCKGASCC  | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATFULLGASCC  | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATDELINK   | DEELEC | 1                 | 2030 | 0.75  |
       | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
       | R1     | ATGASWELL  | ATGAS  | 1                 | 2035 | 1     |
@@ -102,15 +113,27 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | R1     | ATGASNEW   | 2030 | 20000000 |
     And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE      |
+      | R1     | ATGASCC    | 2030 | 800000000  |
       | R1     | ATGASNEW   | 2030 | 1000000000 |
       | R1     | ATGASNEW   | 2035 | 900000000  |
       | R1     | ATSOLAR    | 2030 | 600000000  |
+      | R1     | ATLATESOLAR | 2035 | 500000000 |
       | R1     | ATBIO      | 2030 | 2000000000 |
+      | R1     | ATLOCKGASCC  | 2030 | 700000000  |
+      | R1     | ATLOCKGASCC  | 2035 | 700000000  |
+      | R1     | ATFULLGASCC  | 2030 | 700000000  |
+      | R1     | ATFULLGASCC  | 2035 | 700000000  |
       | R1     | ATDELINK   | 2030 | 200000000  |
     And the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2030 | 1     |
       | R1     | ATDELINK   | 2030 | 2     |
+      | R1     | ATFULLGASCC  | 2030 | 0.3   |
+      | R1     | ATFULLGASCC  | 2035 | 0.3   |
+    And the otoole parameter "TotalAnnualMaxCapacityInvestment" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATLOCKGASCC  | 2030 | 0     |
+      | R1     | ATLOCKGASCC  | 2035 | 0     |
     And the otoole parameter "TotalAnnualMinCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2035 | 0.2   |
@@ -160,7 +183,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
   Scenario: A candidate becomes a SupplyTechnology with its capacity limits of each year and the capital cost of the earliest year
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
-    And the file "outputs/portfolio.json" parses as JSON with 2 components of type "SupplyTechnology"
+    And the file "outputs/portfolio.json" parses as JSON with 4 components of type "SupplyTechnology"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "power_systems_type" set to "ThermalStandard"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "prime_mover_type" set to "CC"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "fuel" set to ["NATURAL_GAS"]
@@ -175,6 +198,20 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capital_cost_per_mw_by_year" set to {"2030": 1000000.0, "2035": 900000.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 7.0, "2035": 7.0}
 
+  Scenario: A candidate with no capital cost in the earliest year takes the cost of the first year in which a plan can build it at a cost
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATLATESOLAR" having "capital_costs.capital_cost.function_data.proportional_term" set to 500000.0
+    And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATLATESOLAR.year 2035` = 500000000.0"
+
+  Scenario: A technology with a capital cost but no room to build in any year is not a candidate, and the report says nothing of it
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as a portfolio with no component "SupplyTechnology" named "ATLOCKGASCC"
+    And the file "outputs/portfolio.json" parses as a portfolio with no component "SupplyTechnology" named "ATFULLGASCC"
+    And the file "decisions.md" does not contain "SupplyTechnology.ATLOCKGASCC"
+    And the file "decisions.md" does not contain "SupplyTechnology.ATFULLGASCC"
+
   Scenario: A candidate whose category has no carriers row is left out and reported
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
@@ -186,16 +223,19 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
   Scenario: The base system holds only the fleet that has residual capacity
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
-    And the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
+    And the file "outputs/system.json" parses as JSON with 2 components of type "ThermalStandard"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "base_power" set to 500.0
     And the file "outputs/system.json" parses as JSON with 0 components of type "TwoTerminalGenericHVDCLine"
 
-  Scenario: An existing plant of the category and location of a candidate becomes its ExistingDevices, and retires when its residual capacity ends
+  Scenario: An existing plant becomes the ExistingDevices of the candidate of the same name only, and retires when its residual capacity ends
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
-    And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "ATGASNEW" has "existing_devices" set to ["ATGASCC"]
-    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "ATGASNEW" has "planned_retirement_year" set to {"ATGASCC": 2035}
-    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "ATGASNEW" has "eligible_generators" set to ["ATGASCC"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "SupplyTechnology" "ATGASCC" has "existing_devices" set to ["ATGASCC"]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "ATGASCC" has "planned_retirement_year" set to {"ATGASCC": 2035}
+    And the file "outputs/portfolio.json" parses as a portfolio where the "RetirementPotential" of "SupplyTechnology" "ATGASCC" has "eligible_generators" set to ["ATGASCC"]
+    And the file "outputs/portfolio.json" parses as a portfolio where "SupplyTechnology" "ATGASNEW" has no "ExistingDevices"
+    And the file "outputs/portfolio.json" parses as a portfolio where "SupplyTechnology" "ATGASNEW" has no "RetirementPotential"
+    And the file "outputs/portfolio.json" parses as a portfolio where no device is in two "ExistingDevices" lists
 
   Scenario: A pollutant that every emitting technology emits becomes a CarbonCaps for each year with a limit
     When I translate the otoole model to a Sienna investments portfolio
@@ -270,6 +310,12 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the otoole parameter "StorageMaxHours" keyed by "REGION STORAGE" with default 0 has the rows:
         | REGION | STORAGE | VALUE |
         | R1     | ATPHSS  | 8     |
+      And the otoole parameter "OperationalLifeStorage" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 50    |
+      And the otoole parameter "DiscountRateStorage" keyed by "REGION STORAGE" with default 0.05 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 0.06  |
       And a file "user_mappings.yaml" containing the lines:
         | line                                                                                                             |
         | osemosys: {                                                                                                      |
@@ -291,5 +337,10 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "capital_costs.charge_capital_cost.function_data.proportional_term" set to 0.0
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "efficiency" set to {"in": 0.72, "out": 0.8}
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "duration_limits" set to {"max": 480.0}
+      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "lifetime" set to 50
+      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "financial_data.capital_recovery_period" set to 50
+      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "financial_data.return_on_equity" set to 0.06
+      And the file "decisions.md" contains "`osemosys.storage_lifetime.R1/ATPHSS` = 50.0 yr"
+      And the file "decisions.md" contains "`osemosys.storage_discount_rate.R1/ATPHSS` = 0.06"
       And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "StorageTechnology" "ATPHSS" has "existing_devices" set to ["ATPHSS"]
       And the file "outputs/extensions.json" parses as JSON technology extension record for "ATPHSS" having "energy_capital_cost_per_mwh_by_year" set to {"2030": 50000.0, "2035": 0.0}

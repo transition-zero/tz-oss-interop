@@ -19,6 +19,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
+    ELECTRICITY_CARRIER,
     TECHNOLOGY,
     AnnotationColumn,
     FlowParameter,
@@ -33,17 +34,21 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPACITY_LIMITS_MIN_MW,
     CAPITAL_COST,
     CAPITAL_COST_MW,
+    CAPITAL_COST_YEAR,
     RATING_RATIO,
     REPORT_NAME,
     UNIT_SIZE,
     UNIT_SIZE_MW,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import (
+    BASE_YEAR,
+    PRICED_YEAR,
     TECHNOLOGY_SOURCE,
     Identity,
     build_derived_translation,
     build_identity_translations,
     build_lifetime_translations,
+    build_priced_field,
     build_technology_field,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
@@ -56,10 +61,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
+    build_year_values,
     drop_non_candidates,
     enrich_yearly_units,
     read_technology_years,
-    read_year_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
@@ -72,7 +77,11 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATIONS,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import capital_cost_struct
-from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaStructField
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_NAME_COLUMN,
+    SiennaComponent,
+    SiennaStructField,
+)
 from interop.plugins.shared.sienna_investments_constants import (
     AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA,
     CAPACITY_LIMITS_DTYPE,
@@ -94,8 +103,7 @@ TRANSPORT_SCHEMA = AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA
 
 _ONE_LOCATION = 1
 _TRANSPORT_KIND = TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY.value
-_BASE_YEAR = "the earliest year in scope"
-_ELECTRICITY = "electricity at the operations mode"
+_ELECTRICITY = f"{ELECTRICITY_CARRIER} at the operations mode"
 _LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
 
 NO_ENDS_SKIP = TECHNOLOGY_SOURCE.skip(
@@ -103,6 +111,14 @@ NO_ENDS_SKIP = TECHNOLOGY_SOURCE.skip(
     reason="may be built but have no single location where they take in electricity and "
     "another where they put it out, at the operations mode",
     note="an AggregateTransportTechnology runs between two regions, one at each end",
+    listed=_LISTED,
+    attribute_col=AnnotationColumn.LOCATION,
+)
+
+NO_AREA_SKIP = TECHNOLOGY_SOURCE.skip(
+    name_col=REPORT_NAME,
+    reason="may be built but have an end at a location that holds no area of the base system",
+    note="each end of an AggregateTransportTechnology is an area of the base system",
     listed=_LISTED,
     attribute_col=AnnotationColumn.LOCATION,
 )
@@ -124,9 +140,12 @@ def build_transport_candidates(
     technologies = drop_non_candidates(technologies, yearly, [InvestmentParameter.CAPITAL_COST])
     technologies = _enrich_ends(state, plan, technologies)
     technologies, _ = filter_component(technologies, _express_has_ends(), NO_ENDS_SKIP, recorder)
+    technologies, _ = filter_component(
+        technologies, _express_has_areas(_list_area_names(state)), NO_AREA_SKIP, recorder
+    )
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     table = enrich_base_year_values(technologies, yearly, plan)
-    base = read_year_values(yearly, plan.base_year).select(
+    base = build_year_values(yearly, plan.base_year).select(
         *TECHNOLOGY_KEYS, CAPACITY_LIMITS_MIN_MW, CAPACITY_LIMITS_MAX_MW
     )
     table = enrich_financial_values(state, plan, table.join(base, on=TECHNOLOGY_KEYS, how="left"))
@@ -147,6 +166,15 @@ def _enrich_ends(state: State, plan: InvestmentPlan, technologies: pl.DataFrame)
     return technologies.join(ends, on=TECHNOLOGY_KEYS, how="left").with_columns(
         pl.col(INPUT_RATIO).fill_null(0.0).alias(RATING_RATIO)
     )
+
+
+def _list_area_names(state: State) -> list[str]:
+    areas = state.destination_tables.get(SiennaComponent.AREA)
+    return [] if areas is None else areas[SIENNA_NAME_COLUMN].to_list()
+
+
+def _express_has_areas(areas: list[str]) -> pl.Expr:
+    return pl.col(FROM_LOCATION).is_in(areas) & pl.col(TO_LOCATION).is_in(areas)
 
 
 def _express_has_ends() -> pl.Expr:
@@ -181,10 +209,10 @@ def _ratio_sources(old: dict[str, Any]) -> list[SourceField]:
 def _limit_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_technology_field(
-            old, InvestmentParameter.CAPACITY_LIMITS_MIN, CAPACITY_LIMITS_MIN_MW, _BASE_YEAR
+            old, InvestmentParameter.CAPACITY_LIMITS_MIN, CAPACITY_LIMITS_MIN_MW, BASE_YEAR
         ),
         build_technology_field(
-            old, InvestmentParameter.CAPACITY_LIMITS_MAX, CAPACITY_LIMITS_MAX_MW, _BASE_YEAR
+            old, InvestmentParameter.CAPACITY_LIMITS_MAX, CAPACITY_LIMITS_MAX_MW, BASE_YEAR
         ),
         build_technology_field(old, FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _ELECTRICITY),
     ]
@@ -235,13 +263,13 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
         T.CAPITAL_COSTS,
         capital_cost_struct(pl.col(CAPITAL_COST_MW)),
         lambda old: [
-            build_technology_field(old, CAPITAL_COST, CAPITAL_COST, _BASE_YEAR),
+            build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
             build_technology_field(
                 old, FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _ELECTRICITY
             ),
         ],
-        "capital_cost of the earliest year in scope, in $/MW of the electricity sent, as the "
-        "proportional term of a linear capital cost curve",
+        f"capital_cost of {PRICED_YEAR}, in $/MW of the electricity sent, as the proportional "
+        "term of a linear capital cost curve; extensions.json holds each year",
         UNIT_DOLLARS_PER_MW,
     ),
     build_derived_translation(
@@ -255,7 +283,7 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         T.UNIT_SIZE,
         pl.col(UNIT_SIZE_MW),
-        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, _BASE_YEAR)],
+        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, BASE_YEAR)],
         "unit_size in MW of the electricity sent; zero lets new capacity take any size",
         UNIT_MW,
     ),

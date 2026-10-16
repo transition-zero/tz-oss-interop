@@ -59,8 +59,7 @@ _COMPONENT_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
     SiennaInvestmentsComponent.CARBON_CAPS,
 )
 
-# Each column that holds an area name, and the field that states the id of that area. The
-# `region` field of a technology is a list of ids, and the two ends of a transport are one each.
+# Each column that holds an area name, and the field that states the id of that area.
 _AREA_REFERENCES: dict[str, str] = {
     SIENNA_REGION_NAME_COLUMN: SIENNA_REGION_COLUMN,
     SiennaAggregateTransportTechnologyCol.START_REGION_NAME: (

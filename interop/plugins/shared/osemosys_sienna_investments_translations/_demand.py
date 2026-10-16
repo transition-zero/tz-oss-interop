@@ -98,7 +98,7 @@ def build_demand_series(
             else _build_year_series(state, operations, recorder)
         )
         series.append(_build_kept_series(year, table, loads, recorder))
-    _report_series(loads, recorder)
+    _record_series(loads, recorder)
     return series
 
 
@@ -167,7 +167,7 @@ def _report_new_loads(year: int, names: list[str], recorder: ScopedRecorder) -> 
         )
 
 
-def _report_series(loads: Sequence[str], recorder: ScopedRecorder) -> None:
+def _record_series(loads: Sequence[str], recorder: ScopedRecorder) -> None:
     for name in loads:
         recorder.append(_build_series_event(name))
 

@@ -25,7 +25,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_YEARS, Framework
+from interop.plugins.shared.constants import UNIT_MEGATONNES, UNIT_TONNES, UNIT_YEARS, Framework
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
@@ -96,7 +96,6 @@ PERIOD_NET_LIMIT_T = "period_net_limit_t"
 MAX_MTONS = "max_mtons"
 _HAS_LIMIT = "has_limit"
 
-UNIT_TONNES = "t"
 _CAP_NAME_SEPARATOR = "/"
 
 POLLUTANT_SOURCE = InvestmentsSource(
@@ -297,8 +296,8 @@ def _build_limits(row: dict[str, Any], years: pl.DataFrame | None) -> list[Const
 
 
 _IDENTITY = Identity(
-    kind_note="a limit on a pollutant that each technology that emits emits holds the whole "
-    "model, which is what a CarbonCaps holds",
+    kind_note="every technology that emits a pollutant emits this one, so its limit holds the "
+    "whole model, as a CarbonCaps does",
     member=CandidateMember(POLLUTANT, REPORT_NAME),
     name_derivation="the pollutant, then the year of its limit",
     available_note="a limit that the model states is one that it applies",
@@ -329,6 +328,6 @@ _CAP_TRANSLATIONS: list[Translation] = [
         _limit_sources,
         "(annual_emission_limit - annual_exogenous_emission) in Mt, because OSeMOSYS adds the "
         "exogenous emission to the emissions that the limit holds",
-        "Mt",
+        UNIT_MEGATONNES,
     ),
 ]

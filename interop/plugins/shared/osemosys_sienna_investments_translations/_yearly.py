@@ -7,7 +7,7 @@ and when the model lets a plan add capacity to it in some year.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import polars as pl
 
@@ -29,6 +29,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPACITY_LIMITS_MIN_MW,
     CAPITAL_COST_MW,
     FIXED_COST_MW_YEAR,
+    IS_BUILDABLE,
     MAX_CAPACITY_INVESTMENT_MW,
     RATING_RATIO,
     RESIDUAL_CAPACITY_MW,
@@ -65,8 +66,6 @@ TECHNOLOGY_YEAR_PARAMETERS: tuple[str, ...] = (
 
 # A parameter that the model does not state, and that has no default, takes this value.
 _NO_DEFAULT = 0.0
-_HAS_PRICE = "has_price"
-_IS_OPEN = "is_open"
 
 
 def read_yearly_values(
@@ -97,7 +96,7 @@ def read_technology_years(
     for name in TECHNOLOGY_YEAR_PARAMETERS:
         values = read_yearly_values(state, name, keys, plan.years)
         table = table.join(values, on=[*TECHNOLOGY_KEYS, YEAR], how="left")
-    return table
+    return table.with_columns(_express_is_buildable().alias(IS_BUILDABLE))
 
 
 def drop_non_candidates(
@@ -106,19 +105,31 @@ def drop_non_candidates(
     price_columns: Sequence[str],
     keys: Sequence[str] = TECHNOLOGY_KEYS,
 ) -> pl.DataFrame:
-    """The candidates that have a price in some year, and room to build in some year.
+    """The candidates that state a price in some year in which a plan can build them.
 
-    A technology has no room when `total_annual_max_capacity_investment` is zero in every year,
-    or when `capacity_limits_max` holds it at or below its residual capacity in every year.
     `keys` name a candidate in both tables.
     """
-    has_price = pl.any_horizontal(pl.col(column) > 0 for column in price_columns).any()
-    open_keys = (
-        yearly.group_by(keys)
-        .agg(has_price.alias(_HAS_PRICE), _express_is_open().alias(_IS_OPEN))
-        .filter(pl.col(_HAS_PRICE) & pl.col(_IS_OPEN))
+    is_priced = pl.any_horizontal(pl.col(column) > 0 for column in price_columns)
+    open_keys = yearly.filter(pl.col(IS_BUILDABLE) & is_priced).select(keys).unique()
+    return candidates.join(open_keys, on=list(keys), how="semi")
+
+
+def build_first_priced_values(
+    yearly: pl.DataFrame,
+    price_col: str,
+    columns: Mapping[str, str],
+    keys: Sequence[str] = TECHNOLOGY_KEYS,
+) -> pl.DataFrame:
+    """The values of the earliest year in which a plan can build a candidate at a price > 0.
+
+    `columns` maps each yearly column to the name that it takes. The year is in `year`.
+    """
+    priced = yearly.filter(pl.col(IS_BUILDABLE) & (pl.col(price_col) > 0)).sort(YEAR)
+    return (
+        priced.group_by(keys, maintain_order=True)
+        .first()
+        .select(*keys, YEAR, *(pl.col(source).alias(target) for source, target in columns.items()))
     )
-    return candidates.join(open_keys.select(keys), on=list(keys), how="semi")
 
 
 def enrich_yearly_units(
@@ -168,7 +179,7 @@ def build_capacity_limits_by_year(yearly: pl.DataFrame) -> pl.DataFrame:
     return limits.with_columns(stated.cast(CAPACITY_LIMITS_BY_KEY_DTYPE))
 
 
-def read_year_values(yearly: pl.DataFrame, year: int) -> pl.DataFrame:
+def build_year_values(yearly: pl.DataFrame, year: int) -> pl.DataFrame:
     """The row of each technology at one year, without the year column."""
     return yearly.filter(pl.col(YEAR) == year).drop(YEAR)
 
@@ -177,11 +188,13 @@ def _build_year_grid(keys: pl.DataFrame, years: Sequence[int]) -> pl.DataFrame:
     return keys.join(pl.DataFrame({YEAR: list(years)}, schema={YEAR: pl.Int64}), how="cross")
 
 
-def _express_is_open() -> pl.Expr:
+def _express_is_buildable() -> pl.Expr:
+    """`total_annual_max_capacity_investment` is not 0, and `capacity_limits_max` is above the
+    residual capacity or states no limit."""
     investment = pl.col(InvestmentParameter.MAX_CAPACITY_INVESTMENT)
     ceiling = pl.col(InvestmentParameter.CAPACITY_LIMITS_MAX)
-    is_held = (ceiling != NO_LIMIT) & (ceiling <= pl.col(SupplyParameter.RESIDUAL_CAPACITY))
-    return ~((investment == 0).all() | is_held.all())
+    has_room = (ceiling == NO_LIMIT) | (ceiling > pl.col(SupplyParameter.RESIDUAL_CAPACITY))
+    return (investment != 0) & has_room
 
 
 def _express_limited(column: str) -> pl.Expr:

@@ -57,7 +57,7 @@ def build_availability_series(
         for year, operations in plan_years.items()
     }
     varying = _list_varying(tables.values())
-    _report_series(candidates.filter(pl.col(CANDIDATE_NAME).is_in(varying)), recorder)
+    _record_series(candidates.filter(pl.col(CANDIDATE_NAME).is_in(varying)), recorder)
     return [
         PortfolioSeries(
             str(_OWNER),
@@ -76,7 +76,7 @@ def _list_varying(tables: Iterable[pl.DataFrame]) -> list[str]:
     return sorted(names)
 
 
-def _report_series(candidates: pl.DataFrame, recorder: ScopedRecorder) -> None:
+def _record_series(candidates: pl.DataFrame, recorder: ScopedRecorder) -> None:
     for name, report_name in candidates.select(CANDIDATE_NAME, REPORT_NAME).iter_rows():
         recorder.append(
             TranslationEvent(

@@ -13,6 +13,11 @@ FIXED_COST = "fixed_cost"
 UNIT_SIZE = "unit_size"
 LIFETIME = "lifetime"
 DISCOUNT_RATE = "discount_rate"
+# The parameter that gave the life and the rate, and the member that states it.
+LIFETIME_PARAMETER = "lifetime_parameter"
+LIFETIME_MEMBER = "lifetime_member"
+RATE_PARAMETER = "rate_parameter"
+RATE_MEMBER = "rate_member"
 
 # The same values, in Sienna units.
 CAPITAL_COST_MW = "capital_cost_mw"
@@ -20,6 +25,12 @@ FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
 UNIT_SIZE_MW = "unit_size_mw"
 VARIABLE_COST_MWH = "variable_cost_mwh"
 ENERGY_CAPITAL_COST_MWH = "energy_capital_cost_mwh"
+
+# Whether a plan can add capacity to the technology in the year of the row.
+IS_BUILDABLE = "is_buildable"
+# The year whose capital cost a candidate states, and the same for the energy of a storage.
+CAPITAL_COST_YEAR = "capital_cost_year"
+ENERGY_COST_YEAR = "energy_cost_year"
 
 # The total capacity bounds of each year, as `MinMaxByKey` entries.
 CAPACITY_LIMITS_BY_YEAR = "capacity_limits_by_year"

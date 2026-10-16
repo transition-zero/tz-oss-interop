@@ -38,6 +38,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPACITY_LIMITS_BY_YEAR,
     CAPITAL_COST,
     CAPITAL_COST_MW,
+    CAPITAL_COST_YEAR,
     FIXED_COST,
     FIXED_COST_MW_YEAR,
     RATING_RATIO,
@@ -47,11 +48,14 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import (
+    BASE_YEAR,
+    PRICED_YEAR,
     TECHNOLOGY_SOURCE,
     Identity,
     build_derived_translation,
     build_identity_translations,
     build_lifetime_translations,
+    build_priced_field,
     build_technology_field,
     build_yearly_field,
 )
@@ -65,10 +69,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
+    build_year_values,
     drop_non_candidates,
     enrich_yearly_units,
     read_technology_years,
-    read_year_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
@@ -128,7 +132,6 @@ SUPPLY_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 
 _LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
 _ELECTRICITY_OUTPUT = f"{FlowParameter.OUTPUT_ACTIVITY_RATIO} of electricity"
-_BASE_YEAR = "the earliest year in scope"
 
 
 @dataclass(frozen=True)
@@ -154,7 +157,7 @@ def build_supply_candidates(
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     table = enrich_base_year_values(technologies, yearly, plan).join(
-        read_year_values(yearly, plan.base_year).select(*TECHNOLOGY_KEYS, VARIABLE_COST_MWH),
+        build_year_values(yearly, plan.base_year).select(*TECHNOLOGY_KEYS, VARIABLE_COST_MWH),
         on=TECHNOLOGY_KEYS,
         how="left",
     )
@@ -270,16 +273,16 @@ def _read_variable_costs(
 
 def _cost_sources(old: dict[str, Any]) -> list[Any]:
     return [
-        build_technology_field(old, CAPITAL_COST, CAPITAL_COST, _BASE_YEAR),
+        build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
         build_technology_field(old, _ELECTRICITY_OUTPUT, RATING_RATIO),
     ]
 
 
 def _operation_sources(old: dict[str, Any]) -> list[Any]:
     return [
-        build_technology_field(old, FIXED_COST, FIXED_COST, _BASE_YEAR),
+        build_technology_field(old, FIXED_COST, FIXED_COST, BASE_YEAR),
         build_technology_field(
-            old, SupplyParameter.VARIABLE_OPERATION_COST, VARIABLE_COST_MWH, _BASE_YEAR
+            old, SupplyParameter.VARIABLE_OPERATION_COST, VARIABLE_COST_MWH, BASE_YEAR
         ),
         build_technology_field(old, _ELECTRICITY_OUTPUT, RATING_RATIO),
     ]
@@ -341,8 +344,8 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
         S.CAPITAL_COSTS,
         capital_cost_struct(pl.col(CAPITAL_COST_MW)),
         _cost_sources,
-        "capital_cost of the earliest year in scope, in $/MW of electricity output, as the "
-        "proportional term of a linear capital cost curve; extensions.json holds each year",
+        f"capital_cost of {PRICED_YEAR}, in $/MW of electricity output, as the proportional "
+        "term of a linear capital cost curve; extensions.json holds each year",
         UNIT_DOLLARS_PER_MW,
     ),
     build_derived_translation(
@@ -362,7 +365,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.UNIT_SIZE,
         pl.col(UNIT_SIZE_MW),
-        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, _BASE_YEAR)],
+        lambda old: [build_technology_field(old, UNIT_SIZE, UNIT_SIZE, BASE_YEAR)],
         "unit_size in MW of electricity output; zero lets new capacity take any size",
         UNIT_MW,
     ),

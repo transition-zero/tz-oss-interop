@@ -69,14 +69,6 @@ def add_portfolio_series(
         _add_associations(state, _build_associations(one, owner_ids))
 
 
-def list_series_owners(series: Iterable[PortfolioSeries]) -> list[str]:
-    """Each owner that some series names, in name order."""
-    names: set[str] = set()
-    for one in series:
-        names |= set(one.table[StagedTimeSeriesCol.COMPONENT].unique().to_list())
-    return sorted(names)
-
-
 def _add_associations(state: State, rows: pl.DataFrame) -> None:
     existing = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
     state.destination_tables[PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE] = (

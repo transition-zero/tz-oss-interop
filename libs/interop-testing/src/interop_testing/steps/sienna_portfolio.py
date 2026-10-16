@@ -105,3 +105,42 @@ def assert_portfolio_series(
         values = list(hf[f"time_series/{matching[0]['time_series_uuid']}/data"][:])
     assert len(values) == length, f"expected {length} values, got {len(values)}"
     assert math.isclose(max(values), peak, rel_tol=1e-9), f"expected peak {peak}, got {max(values)}"
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as a portfolio where "{component_type}" "{component_name}"'
+        ' has no "{attribute_type}"'
+    )
+)
+def assert_portfolio_attribute_absent(
+    path: str, component_type: str, component_name: str, attribute_type: str
+) -> None:
+    document = read_json(path)
+    component_id = find_sienna_component(document, component_type, component_name)["id"]
+    matching = portfolio_attributes_for(document, attribute_type, component_type, component_id)
+    assert not matching, f"expected no {attribute_type} of {component_name!r}, got {matching!r}"
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as a portfolio where no device is in two "{attribute_type}" lists'
+    )
+)
+def assert_devices_listed_once(path: str, attribute_type: str) -> None:
+    """Each device of the base system belongs to one technology at most."""
+    document = read_json(path)
+    attribute_ids = {
+        row["attribute_id"]
+        for row in document["supplemental_attribute_associations"]
+        if row["attribute_type"] == attribute_type
+    }
+    devices = [
+        device
+        for attribute in document["supplemental_attributes"]
+        if attribute["id"] in attribute_ids
+        for device in attribute["existing_devices"]
+    ]
+    assert devices, f"expected some {attribute_type} in {path}"
+    repeated = sorted({device for device in devices if devices.count(device) > 1})
+    assert not repeated, f"expected each device in one {attribute_type} list, got {repeated!r}"

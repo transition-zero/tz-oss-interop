@@ -20,6 +20,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CANDIDATE_NAME,
     DISCOUNT_RATE,
     LIFETIME,
+    LIFETIME_MEMBER,
+    LIFETIME_PARAMETER,
+    RATE_MEMBER,
+    RATE_PARAMETER,
     REPORT_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -55,6 +59,13 @@ SourcesOf = Callable[[dict[str, Any]], Sequence[SourceField]]
 
 # The detail of a source field that the plan reads in each of its years.
 EACH_YEAR = "each year"
+# The detail of a source field read in the year of the base system.
+BASE_YEAR = "the earliest year in scope"
+# The year whose capital cost a candidate states.
+PRICED_YEAR = (
+    "the earliest year in scope in which a plan can build the candidate and the model states a "
+    "cost above zero"
+)
 
 # The technologies that a candidate filter drops, as a warning names them.
 TECHNOLOGY_SOURCE = InvestmentsSource(
@@ -72,14 +83,16 @@ _AVAILABLE = SiennaSupplyTechnologyCol.AVAILABLE
 _FINANCIAL_DATA = SiennaSupplyTechnologyCol.FINANCIAL_DATA
 
 _AVAILABLE_NOTE = "OSeMOSYS states no availability of a candidate; the plan may build it"
-_LIFETIME_DERIVATION = "the operational life of the technology, which new capacity has"
+_LIFETIME_DERIVATION = "the operational life, which new capacity has"
 _BASE_YEAR_NOTE = (
     "the year that the costs are quoted in: units: currency_year of the user mappings file, "
     "else the earliest year in scope"
 )
 _RECOVERY_DERIVATION = "the operational life, over which OSeMOSYS recovers a capital cost"
 _RATE_DERIVATION = (
-    f"technology_discount_rate, else the discount_rate of the region; {WACC_DERIVATION}"
+    "technology_discount_rate when the model states it, else the discount_rate of the region, "
+    "as OSeMOSYS applies them; a storage takes storage_discount_rate when the model states it; "
+    f"{WACC_DERIVATION}"
 )
 
 
@@ -106,6 +119,13 @@ def build_technology_field(
 ) -> SourceField:
     """One value that the model states for the technology of the row."""
     return build_osemosys_field(parameter, old[REPORT_NAME], detail, old[column], unit)
+
+
+def build_priced_field(
+    old: dict[str, Any], parameter: str, column: str, year_col: str, member_col: str = REPORT_NAME
+) -> SourceField:
+    """A cost of the member of the row, in the year whose cost the candidate states."""
+    return build_osemosys_field(parameter, old[member_col], f"year {old[year_col]}", old[column])
 
 
 def build_yearly_field(old: dict[str, Any], parameter: str) -> SourceField:
@@ -186,12 +206,18 @@ def build_lifetime_translations(component: str, cost_year: int) -> list[Translat
             component,
             SiennaSupplyTechnologyCol.LIFETIME,
             pl.col(LIFETIME).cast(pl.Int64),
-            lambda old: [build_technology_field(old, LIFETIME, LIFETIME, unit=UNIT_YEARS)],
+            lambda old: [_build_lifetime_field(old)],
             _LIFETIME_DERIVATION,
             UNIT_YEARS,
         ),
         _build_financial_translation(component, cost_year),
     ]
+
+
+def _build_lifetime_field(old: dict[str, Any]) -> SourceField:
+    return build_osemosys_field(
+        old[LIFETIME_PARAMETER], old[LIFETIME_MEMBER], None, old[LIFETIME], UNIT_YEARS
+    )
 
 
 def _build_type_translation(
@@ -238,7 +264,7 @@ def _build_financial_events(
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[build_technology_field(old, LIFETIME, LIFETIME, unit=UNIT_YEARS)],
+            sources=[_build_lifetime_field(old)],
             destinations=[
                 dest(
                     field.CAPITAL_RECOVERY_PERIOD,
@@ -250,7 +276,11 @@ def _build_financial_events(
         ),
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[build_technology_field(old, DISCOUNT_RATE, DISCOUNT_RATE)],
+            sources=[
+                build_osemosys_field(
+                    old[RATE_PARAMETER], old[RATE_MEMBER], None, old[DISCOUNT_RATE]
+                )
+            ],
             destinations=[dest(field.RETURN_ON_EQUITY, written[field.RETURN_ON_EQUITY])],
             derivation=_RATE_DERIVATION,
             note=ALL_EQUITY_NOTE,

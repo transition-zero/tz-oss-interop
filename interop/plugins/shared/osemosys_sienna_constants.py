@@ -145,6 +145,8 @@ class InvestmentParameter(StrEnum):
     TECHNOLOGY_DISCOUNT_RATE = "technology_discount_rate"
     ENERGY_CAPITAL_COST = "energy_capital_cost"
     DURATION_LIMITS_MAX = "duration_limits_max"
+    STORAGE_LIFETIME = "storage_lifetime"
+    STORAGE_DISCOUNT_RATE = "storage_discount_rate"
 
 
 class EmissionParameter(StrEnum):
