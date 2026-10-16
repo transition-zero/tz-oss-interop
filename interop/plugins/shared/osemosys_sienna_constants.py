@@ -89,8 +89,6 @@ class CalendarPeriodCol(StrEnum):
 
 # The operating mode whose values the operations system runs, when the model holds it.
 OPERATIONS_MODE = "1"
-# The character between the names of two or more input fuels of one generator.
-FUEL_LIST_SEPARATOR = "+"
 
 
 class SupplyParameter(StrEnum):
@@ -102,3 +100,4 @@ class SupplyParameter(StrEnum):
     VARIABLE_OPERATION_COST = "variable_operation_cost"
     FIXED_COST = "fixed_cost"
     EMISSION_RATE = "emission_rate"
+    ACTIVITY_UPPER_LIMIT = "total_technology_annual_activity_upper_limit"

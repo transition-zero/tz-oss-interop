@@ -31,7 +31,7 @@ def list_set_members(state: State, set_name: str) -> list[str]:
     return [str(member) for member in table.select(VALUE_COL).collect()[VALUE_COL].to_list()]
 
 
-def choose_operations_mode(state: State) -> str:
+def read_operations_mode(state: State) -> str:
     """Mode `1` when the model holds it, else the first member of the operating mode set."""
     modes = list_set_members(state, OPERATING_MODE)
     if OPERATIONS_MODE in modes or not modes:
@@ -57,6 +57,11 @@ def read_parameter(state: State, name: str, year: int) -> pl.DataFrame:
     if YEAR in table.collect_schema().names():
         table = table.filter(pl.col(YEAR) == str(year))
     return table.collect()
+
+
+def read_mode_parameter(state: State, name: str, year: int, mode: str) -> pl.DataFrame:
+    """The rows that the model states for a parameter keyed by operating mode, at one mode."""
+    return read_parameter(state, name, year).filter(pl.col(OPERATING_MODE) == mode)
 
 
 def read_parameter_with_defaults(

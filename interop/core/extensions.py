@@ -172,11 +172,9 @@ class GeneratorExtension(ExpansionExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
-    # t/MWh by pollutant. OSeMOSYS EmissionActivityRatio and the emissions of the fuel that
-    # the plant burns, which no Sienna generator field holds.
+    # OSeMOSYS only: t/MWh by pollutant, with the emissions of the fuel that the plant burns.
     emission_rates_t_per_mwh: dict[str, float] | None = None
-    # $/MWh by operating mode. OSeMOSYS VariableCost of each mode that the operations system
-    # does not run.
+    # OSeMOSYS only: $/MWh by operating mode, for each mode that the operations system skips.
     other_mode_variable_costs_per_mwh: dict[str, float] | None = None
 
 

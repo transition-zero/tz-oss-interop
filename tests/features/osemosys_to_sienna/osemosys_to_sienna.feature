@@ -221,24 +221,32 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     And the log contains "names the osemosys_category gas-cc more than once"
 
   Rule: A supply technology with residual capacity becomes the Sienna generator that its category names
-    The invented fleet below has a gas plant, a solar plant and an oil plant at AT, a biomass
-    plant whose category has no carriers: row, and a gas plant at DE with no residual capacity
-    in 2030. Two fuel_supply technologies make the gas ATGAS, at 3 and 5 $/MWh. A pipeline
-    carries DEGAS to ATGAS for less, but it is not a fuel_supply technology. No technology
-    makes the oil ATOIL.
+    The invented fleet below has a gas plant, a solar plant, a wind plant, a hydro plant and an
+    oil plant at AT. The oil plant puts out half a unit of electricity for each unit of its
+    activity. Some technologies are left out: a biomass plant whose category has no carriers:
+    row, a battery whose row names a storage type, a gas plant at DE with no residual capacity
+    in 2030, a gas plant on two locations, and a gas plant that makes electricity in mode 2
+    only. Two fuel_supply technologies make the gas ATGAS, at 3 and 5 $/MWh. A pipeline carries
+    DEGAS to ATGAS for less, but it is not a fuel_supply technology. No technology makes the
+    oil ATOIL.
 
     Background:
       Given the otoole set "FUEL" holds "ATELEC DEELEC GAS ATGAS DEGAS ATOIL"
-      And the otoole set "TECHNOLOGY" holds "ATGASCC ATSOLAR ATBIO ATOILCT DEGASCC ATGASWELL ATGASLNG DEGASWELL DEATPIPE"
+      And the otoole set "TECHNOLOGY" holds "ATGASCC ATSOLAR ATWIND ATHYDRO ATBIO ATBATT ATOILCT DEGASCC ATDEGASCC ATSPAREGASCC ATGASWELL ATGASLNG DEGASWELL DEATPIPE"
       And the otoole set "EMISSION" holds "CO2"
       And the otoole set "MODE_OF_OPERATION" holds "1 2"
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATGASCC    | 2030 | 0.5   |
         | R1     | ATSOLAR    | 2030 | 0.2   |
+        | R1     | ATWIND     | 2030 | 0.3   |
+        | R1     | ATHYDRO    | 2030 | 0.4   |
         | R1     | ATBIO      | 2030 | 0.1   |
+        | R1     | ATBATT     | 2030 | 0.1   |
         | R1     | ATOILCT    | 2030 | 0.05  |
         | R1     | DEGASCC    | 2035 | 0.3   |
+        | R1     | ATDEGASCC  | 2030 | 0.1   |
+        | R1     | ATSPAREGASCC | 2030 | 0.1 |
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL  | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATGASCC    | ATGAS | 1                 | 2030 | 2     |
@@ -246,14 +254,20 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | R1     | ATOILCT    | ATOIL | 1                 | 2030 | 2.5   |
         | R1     | DEGASCC    | DEGAS | 1                 | 2030 | 2     |
         | R1     | DEATPIPE   | DEGAS | 1                 | 2030 | 1     |
+        | R1     | ATDEGASCC  | ATGAS | 1                 | 2030 | 2     |
       And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
         | R1     | ATGASCC    | ATELEC | 2                 | 2030 | 1     |
         | R1     | ATSOLAR    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATWIND     | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATHYDRO    | ATELEC | 1                 | 2030 | 1     |
         | R1     | ATBIO      | ATELEC | 1                 | 2030 | 1     |
-        | R1     | ATOILCT    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATBATT     | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATOILCT    | ATELEC | 1                 | 2030 | 0.5   |
         | R1     | DEGASCC    | DEELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEGASCC  | DEELEC | 1                 | 2030 | 1     |
+        | R1     | ATSPAREGASCC | ATELEC | 2               | 2030 | 1     |
         | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
         | R1     | ATGASLNG   | ATGAS  | 1                 | 2030 | 1     |
         | R1     | DEGASWELL  | DEGAS  | 1                 | 2030 | 1     |
@@ -295,11 +309,15 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | {match: "^(?P<country>[A-Z]{2})OIL$", carrier: oil, location: "{country}"}],                                                 |
         | technologies: [                                                                                                              |
         | {match: "GASCC$", category: gas-cc}, {match: "SOLAR$", category: solar},                                                     |
-        | {match: "BIO$", category: biomass}, {match: "OILCT$", category: oil-ct}]}}                                                   |
+        | {match: "BIO$", category: biomass}, {match: "OILCT$", category: oil-ct},                                                     |
+        | {match: "WIND$", category: wind}, {match: "HYDRO$", category: hydro}, {match: "BATT$", category: battery}]}}                 |
         | carriers: [                                                                                                                  |
         | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
         | {osemosys_category: oil-ct, sienna_component_type: ThermalStandard, sienna_fuel_type: DISTILLATE_FUEL_OIL, sienna_prime_mover_type: CT}, |
-        | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]                          |
+        | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe},                          |
+        | {osemosys_category: wind, sienna_component_type: RenewableNonDispatch, sienna_prime_mover_type: WT},                         |
+        | {osemosys_category: hydro, sienna_component_type: HydroDispatch, sienna_prime_mover_type: HY},                               |
+        | {osemosys_category: battery, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: BA}]                    |
 
     Scenario: A gas plant becomes a ThermalStandard that pays for its fuel at the price of the cheapest producer
       When I translate the otoole model to Sienna for the year "2030"
@@ -356,11 +374,105 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.6}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "fom_charge_per_mw_year" set to 20.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "other_mode_variable_costs_per_mwh" set to {"2": 4.0}
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "carrier" set to "ATGAS"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "carrier" set to "gas"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "category" set to "gas-cc"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "fom_charge_per_mw_year"
 
     Scenario: A plant whose fuel no technology produces pays no fuel cost, and the report says so
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 2.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
       And the file "decisions.md" contains "no fuel_supply technology puts out the fuel R1/ATOIL"
+
+    Scenario: A plant that puts out half a unit of electricity for each unit of activity is rated and priced for its output
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "base_power" set to 25.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
+      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATOILCT.electricity at the operations mode` = 0.5"
+
+    Scenario: A technology that puts out no electricity at the operations mode is left out and reported
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "put out no electricity at the operations mode, so each is left out. Technologies: R1/ATSPAREGASCC"
+
+    Scenario: A wind plant becomes a RenewableNonDispatch with an hourly availability series
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "ATWIND" having "base_power" set to 300.0
+      And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "ATWIND" having "prime_mover_type" set to "WT"
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableNonDispatch" named "ATWIND" attribute "max_active_power" with length 48
+
+    Scenario: A hydro plant becomes a HydroDispatch limited to its residual capacity
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "ATHYDRO" having "base_power" set to 400.0
+      And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "ATHYDRO" having "active_power_limits.max" set to 400.0
+      And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "ATHYDRO" having "prime_mover_type" set to "HY"
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "ATHYDRO" attribute "max_active_power" with length 48
+
+    Scenario: A technology whose carriers row names a type that is not a generator is left out and reported
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "have a category whose carriers: row names a type that is not a generator, so each is left out. Technologies: R1/ATBATT"
+      And the file "decisions.md" contains "names EnergyReservoirStorage, which a supply technology cannot become"
+
+    Scenario: A technology on a location that holds no bus is left out and reported
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "have a location that holds no bus, so each is left out. Technologies: R1/ATDEGASCC"
+      And the file "decisions.md" contains "`osemosys.technology.R1/ATDEGASCC.location` = AT~DE"
+
+    Scenario: A plant with carbon capture keeps a negative emission rate
+      Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | CO2      | 1                 | 2030 | -600  |
+        | R1     | ATGASWELL  | CO2      | 1                 | 2030 | 250   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": -0.1}
+
+    Scenario: Two producers at one price go to the first name
+      Given the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | 1                 | 2030 | 1000  |
+        | R1     | ATGASWELL  | 1                 | 2030 | 3000  |
+        | R1     | ATGASLNG   | 1                 | 2030 | 3000  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASLNG` = 3000.0"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
+
+    Scenario: A producer that may not run in the year cannot be the cheapest
+      Given the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASWELL  | 2030 | 0     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
+
+    Scenario: The carrier of a plant with two input fuels is the carrier of the fuel it takes in most of
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL  | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATGAS | 1                 | 2030 | 2     |
+        | R1     | ATOILCT    | ATOIL | 1                 | 2030 | 2.5   |
+        | R1     | ATOILCT    | ATGAS | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "carrier" set to "oil"
+      And the file "decisions.md" contains "the carrier of the fuel that the technology takes in with the largest input_activity_ratio"
+
+    Scenario: A flow or emission default other than zero is not applied, and the report says so
+      Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0.5 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | CO2      | 1                 | 2030 | 100   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "emission_rate has the default 0.5, which the translation does not apply"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
+
+    Scenario: A thermal plant states no unit commitment data
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.ramp_limits` |  | OSeMOSYS states no unit commitment data"

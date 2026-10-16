@@ -33,6 +33,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    ELECTRICITY_OUTPUT_RATIO,
+)
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     AVAILABILITY_FACTOR,
     PEAK_FACTOR,
@@ -51,13 +54,26 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     PRODUCER_COUNT,
     PRODUCER_EMISSION_RATE,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
+    CAPACITY_UNIT,
+    FUEL_TYPE,
+    GENERATOR_NAME,
+    HAS_SERIES,
+    OUTPUT_CAPACITY_MW,
+    PRIME_MOVER,
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     DETAIL,
     FIXED_COST,
     FIXED_COST_MW_YEAR,
     FUEL_TERM_MWH,
     FUEL_TERMS,
-    INPUT_FUELS,
+    INPUT_CARRIER,
+    MAIN_FUEL,
+    MAIN_INPUT_RATIO,
     OTHER_MODE_VALUES,
     OWN_COST,
     PARAMETER,
@@ -68,17 +84,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     FUEL_PRODUCERS,
     OWN_RATE,
     RATE_T_PER_MWH,
-)
-from interop.plugins.shared.osemosys_sienna_translations._generators import (
-    CAPACITY_MW,
-    CAPACITY_UNIT,
-    FUEL_TYPE,
-    GENERATOR_NAME,
-    HAS_SERIES,
-    PRIME_MOVER,
-    RESIDUAL_CAPACITY,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -151,7 +156,10 @@ _FIXED_NOTE = (
 _COMMITMENT_NOTE = "OSeMOSYS states no unit commitment data"
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
 _BUS_DERIVATION = "the location of the technology -> bus"
-_BASE_POWER_DERIVATION = "residual_capacity of the operations year, in MW"
+_BASE_POWER_DERIVATION = (
+    "residual_capacity of the operations year, in MW, × the electricity output_activity_ratio at "
+    "the operations mode"
+)
 _AVAILABILITY_DERIVATION = (
     "capacity_factor of the timeslice of each hour × availability_factor, per unit of "
     "base_power; OSeMOSYS states availability_factor as a limit on the energy of the year, and "
@@ -168,19 +176,28 @@ _SERIES_LIMITS_DERIVATION = (
 )
 _FUEL_TERM_DERIVATION = (
     "input_activity_ratio × variable_operation_cost / output_activity_ratio of the producer of "
-    "the fuel at the operations mode, in $/MWh"
+    "the fuel at the operations mode, in $/MWh, / the electricity output_activity_ratio of the "
+    "technology"
 )
 _VARIABLE_COST_DERIVATION = (
-    "variable_operation_cost at the operations mode, in $/MWh, plus the fuel term of each "
-    "fuel that the technology takes in"
+    "variable_operation_cost at the operations mode, in $/MWh, / the electricity "
+    "output_activity_ratio, plus the fuel term of each fuel that the technology takes in"
 )
-_FIXED_COST_DERIVATION = "fixed_cost of the operations year, in $/MW/yr"
+_FIXED_COST_DERIVATION = (
+    "fixed_cost of the operations year, in $/MW/yr, / the electricity output_activity_ratio at "
+    "the operations mode"
+)
 _EMISSION_DERIVATION = (
-    "emission_rate at the operations mode, plus input_activity_ratio × the emission_rate of the "
-    "producer of each fuel for each unit of that fuel, in t/MWh"
+    "(emission_rate at the operations mode, plus input_activity_ratio × the emission_rate of "
+    "the producer of each fuel for each unit of that fuel) / the electricity "
+    "output_activity_ratio, in t/MWh"
 )
 _CATEGORY_DERIVATION = "the category of the technology"
-_CARRIER_DERIVATION = "the fuels that the technology takes in at the operations mode"
+_CARRIER_DERIVATION = (
+    "the carrier of the fuel that the technology takes in with the largest input_activity_ratio "
+    "at the operations mode; the fuel name breaks a tie"
+)
+_OUTPUT_RATIO_ATTRIBUTE = "electricity at the operations mode"
 _LOST_COST_NOTE = (
     "RenewableNonDispatch has no operation_cost field, so the variable cost is left out"
 )
@@ -211,6 +228,15 @@ def _build_other_mode_note(row: dict[str, Any]) -> str:
 
 def _build_region_name(old: dict[str, Any], member: str) -> str:
     return f"{old[REGION]}{REGION_NAME_SEPARATOR}{member}"
+
+
+def _build_output_ratio_source(old: dict[str, Any]) -> SourceField:
+    return _build_source(
+        FlowParameter.OUTPUT_ACTIVITY_RATIO,
+        old,
+        _OUTPUT_RATIO_ATTRIBUTE,
+        old[ELECTRICITY_OUTPUT_RATIO],
+    )
 
 
 def _build_source(
@@ -305,7 +331,7 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
     default = partial(default_translation, dest, name_col=GENERATOR_NAME)
     return [
         Translation(
-            exprs=[pl.col(CAPACITY_MW).alias(_Col.BASE_POWER)],
+            exprs=[pl.col(OUTPUT_CAPACITY_MW).alias(_Col.BASE_POWER)],
             make_events=lambda old, new: build_derived(
                 [
                     build_osemosys_field(
@@ -314,7 +340,8 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
                         None,
                         old[RESIDUAL_CAPACITY],
                         old[CAPACITY_UNIT],
-                    )
+                    ),
+                    _build_output_ratio_source(old),
                 ],
                 [dest(old[GENERATOR_NAME], _Col.BASE_POWER, new[_Col.BASE_POWER], UNIT_MVA)],
                 _BASE_POWER_DERIVATION,
@@ -386,6 +413,7 @@ def _build_fuel_term_event(
             build_osemosys_field(
                 FlowParameter.OUTPUT_ACTIVITY_RATIO, producer, term[FUEL], term[OUTPUT_RATIO]
             ),
+            _build_output_ratio_source(old),
         ],
         destinations=[
             dest(
@@ -414,14 +442,19 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
         for term in old[FUEL_TERMS] or []
         if term[PRODUCER] is not None
     ]
-    return [own, *terms]
+    return [own, _build_output_ratio_source(old), *terms]
 
 
 def _build_fixed_cost_events(
     dest: DestinationFieldFactory, old: dict[str, Any]
 ) -> list[TranslationEvent]:
+    if old[FIXED_COST] is None:
+        return []
     return build_derived(
-        [_build_source(SupplyParameter.FIXED_COST, old, None, old[FIXED_COST])],
+        [
+            _build_source(SupplyParameter.FIXED_COST, old, None, old[FIXED_COST]),
+            _build_output_ratio_source(old),
+        ],
         [
             dest(
                 old[GENERATOR_NAME],
@@ -465,7 +498,7 @@ def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[S
         )
         for producer in term[FUEL_PRODUCERS] or []
     ]
-    return [own, *burned]
+    return [own, *burned, _build_output_ratio_source(old)]
 
 
 def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
@@ -494,11 +527,21 @@ def _build_grouping_events(
         [dest(old[GENERATOR_NAME], _CATEGORY_ATTRIBUTE, old[AnnotationColumn.CATEGORY])],
         _CATEGORY_DERIVATION,
     )
-    if old[INPUT_FUELS] is None:
+    if old[INPUT_CARRIER] is None:
         return category
     carrier = build_derived(
-        [_build_source(FlowParameter.INPUT_ACTIVITY_RATIO, old, FUEL, old[INPUT_FUELS])],
-        [dest(old[GENERATOR_NAME], _CARRIER_ATTRIBUTE, old[INPUT_FUELS])],
+        [
+            _build_source(
+                FlowParameter.INPUT_ACTIVITY_RATIO, old, old[MAIN_FUEL], old[MAIN_INPUT_RATIO]
+            ),
+            build_osemosys_field(
+                FUEL,
+                _build_region_name(old, old[MAIN_FUEL]),
+                AnnotationColumn.CARRIER,
+                old[INPUT_CARRIER],
+            ),
+        ],
+        [dest(old[GENERATOR_NAME], _CARRIER_ATTRIBUTE, old[INPUT_CARRIER])],
         _CARRIER_DERIVATION,
     )
     return [*category, *carrier]
@@ -535,13 +578,17 @@ def _build_operation_cost(
         ),
         Translation(
             exprs=[],
-            make_events=lambda old, _new: [
-                TranslationEvent(
-                    kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                    destinations=[dest(old[GENERATOR_NAME], _FIXED_ATTRIBUTE, _NO_COST)],
-                    note=_FIXED_NOTE,
-                )
-            ],
+            make_events=lambda old, _new: (
+                []
+                if old[FIXED_COST] is None
+                else [
+                    TranslationEvent(
+                        kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+                        destinations=[dest(old[GENERATOR_NAME], _FIXED_ATTRIBUTE, _NO_COST)],
+                        note=_FIXED_NOTE,
+                    )
+                ]
+            ),
         ),
     ]
 
@@ -584,7 +631,7 @@ def _build_power_limits(dest: DestinationFieldFactory, maximum: pl.Expr) -> Tran
                     old[SIENNA_TYPE],
                     old[GENERATOR_NAME],
                     _Col.BASE_POWER,
-                    old[CAPACITY_MW],
+                    old[OUTPUT_CAPACITY_MW],
                     UNIT_MVA,
                 ),
                 *_build_availability_sources(old),
@@ -653,7 +700,7 @@ def _build_power_factor(dest: DestinationFieldFactory) -> Translation:
 
 def _build_thermal() -> list[Translation]:
     dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
-    limit = pl.when(pl.col(HAS_SERIES)).then(pl.col(CAPACITY_MW))
+    limit = pl.when(pl.col(HAS_SERIES)).then(pl.col(OUTPUT_CAPACITY_MW))
     cost = pl.struct(
         cost_type=pl.lit(SiennaCostType.THERMAL),
         fixed=pl.lit(_NO_COST),
@@ -670,7 +717,9 @@ def _build_thermal() -> list[Translation]:
             _FUEL_TYPE_NOTE,
             [pl.col(FUEL_TYPE).cast(THERMAL_FUELS_DTYPE).alias(_Col.FUEL_TYPE)],
         ),
-        _build_power_limits(dest, limit.otherwise(pl.col(CAPACITY_MW) * pl.col(PEAK_FACTOR))),
+        _build_power_limits(
+            dest, limit.otherwise(pl.col(OUTPUT_CAPACITY_MW) * pl.col(PEAK_FACTOR))
+        ),
         _build_reactive_limits(dest),
         *_build_operation_cost(dest, cost, THERMAL_GENERATION_COST_DTYPE),
         *_build_commitment(dest),
@@ -706,7 +755,7 @@ def _build_hydro_dispatch() -> list[Translation]:
     )
     return [
         *_build_shared(dest),
-        _build_power_limits(dest, pl.col(CAPACITY_MW)),
+        _build_power_limits(dest, pl.col(OUTPUT_CAPACITY_MW)),
         *_build_operation_cost(dest, cost, HYDRO_GENERATION_COST_DTYPE),
     ]
 

@@ -4,7 +4,8 @@ A technology pays for each fuel that it takes in at the price of the producer of
 producer is the cheapest `fuel_supply` technology that puts the fuel out in the region of the
 technology, at the operations mode. A fuel balances in one region and has one location, so
 that producer makes the fuel at the place where the technology takes it in. A technology of any
-other kind, for example a pipeline, is not a producer.
+other kind, for example a pipeline, is not a producer. A producer whose activity upper limit in
+the year is zero makes nothing, so it is not a producer either.
 
 Each value stays in the units of the model: currency and emissions per energy unit of the fuel.
 """
@@ -32,7 +33,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
-    read_parameter,
+    read_mode_parameter,
     read_parameter_with_defaults,
 )
 
@@ -44,6 +45,9 @@ OUTPUT_RATIO = "output_ratio"
 COST_PER_OUTPUT = "cost_per_output"
 PRODUCER_EMISSION_RATE = "producer_emission_rate"
 EMISSION_RATE_PER_OUTPUT = "emission_rate_per_output"
+
+# The activity upper limit that OSeMOSYS reads as no limit.
+_NO_LIMIT = -1.0
 
 _PRICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
@@ -100,24 +104,18 @@ def read_input_ratios(
 ) -> pl.DataFrame:
     """Each fuel that a technology of `technologies` takes in at the mode, with its ratio."""
     return (
-        _read_mode_rows(state, FlowParameter.INPUT_ACTIVITY_RATIO, year, mode)
+        read_mode_parameter(state, FlowParameter.INPUT_ACTIVITY_RATIO, year, mode)
         .filter(pl.col(VALUE_COL) > 0)
         .join(technologies.select(REGION, TECHNOLOGY), on=[REGION, TECHNOLOGY], how="semi")
         .select(REGION, TECHNOLOGY, FUEL, pl.col(VALUE_COL).alias(INPUT_RATIO))
     )
 
 
-def _read_mode_rows(state: State, parameter: str, year: int, mode: str) -> pl.DataFrame:
-    return read_parameter(state, parameter, year).filter(pl.col(OPERATING_MODE) == mode)
-
-
 def _read_candidates(state: State, year: int, mode: str) -> pl.DataFrame:
     """Each fuel that a `fuel_supply` technology puts out, with the cost of that technology."""
-    suppliers = read_annotations(state, TECHNOLOGY).filter(
-        pl.col(AnnotationColumn.KIND) == TechnologyKind.FUEL_SUPPLY
-    )
+    suppliers = _read_suppliers(state, year)
     outputs = (
-        _read_mode_rows(state, FlowParameter.OUTPUT_ACTIVITY_RATIO, year, mode)
+        read_mode_parameter(state, FlowParameter.OUTPUT_ACTIVITY_RATIO, year, mode)
         .filter(pl.col(VALUE_COL) > 0)
         .join(suppliers.select(REGION, TECHNOLOGY), on=[REGION, TECHNOLOGY], how="semi")
         .select(REGION, TECHNOLOGY, FUEL, pl.col(VALUE_COL).alias(OUTPUT_RATIO))
@@ -127,6 +125,17 @@ def _read_candidates(state: State, year: int, mode: str) -> pl.DataFrame:
         state, SupplyParameter.VARIABLE_OPERATION_COST, year, keys
     ).select(REGION, TECHNOLOGY, pl.col(VALUE_COL).fill_null(0.0).alias(PRODUCER_COST))
     return outputs.join(costs, on=[REGION, TECHNOLOGY])
+
+
+def _read_suppliers(state: State, year: int) -> pl.DataFrame:
+    """Each `fuel_supply` technology, except one whose activity limit of the year is zero."""
+    suppliers = read_annotations(state, TECHNOLOGY).filter(
+        pl.col(AnnotationColumn.KIND) == TechnologyKind.FUEL_SUPPLY
+    )
+    limits = read_parameter_with_defaults(
+        state, SupplyParameter.ACTIVITY_UPPER_LIMIT, year, suppliers.select(REGION, TECHNOLOGY)
+    )
+    return limits.filter(pl.col(VALUE_COL).fill_null(_NO_LIMIT) != 0).select(REGION, TECHNOLOGY)
 
 
 def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:
@@ -161,7 +170,7 @@ def _build_price_row(
 def _read_emission_rates(state: State, year: int, mode: str, prices: pl.DataFrame) -> pl.DataFrame:
     """What each chosen producer emits for each unit of the fuel that it puts out."""
     rates = (
-        _read_mode_rows(state, SupplyParameter.EMISSION_RATE, year, mode)
+        read_mode_parameter(state, SupplyParameter.EMISSION_RATE, year, mode)
         .filter(pl.col(VALUE_COL) != 0)
         .select(
             REGION,

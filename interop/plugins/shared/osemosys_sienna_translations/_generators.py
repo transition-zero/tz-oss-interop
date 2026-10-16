@@ -2,9 +2,10 @@
 
 The fleet of the operations year is the `residual_capacity` of that year. A supply technology
 becomes a ThermalStandard, a RenewableDispatch, a RenewableNonDispatch or a HydroDispatch on
-the bus of its location. Its base power is its residual capacity in MW, and it rates at all of
-it. Its availability in each hour is a series per unit of the base power, or the maximum of
-its active power limits when that is the same in every hour.
+the bus of its location. Its base power is its residual capacity in MW × its electricity output
+ratio at the operations mode, and it rates at all of it. Its availability in each hour is a
+series per unit of the base power, or the maximum of its active power limits when that is the
+same in every hour.
 """
 
 from __future__ import annotations
@@ -26,11 +27,17 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     VALUE_COL,
     AnnotationColumn,
+    FlowParameter,
     TechnologyKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
     SupplyParameter,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    ELECTRICITY_OUTPUT_RATIO,
+    enrich_electricity_output_ratios,
+    express_output_capacity,
 )
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
@@ -40,14 +47,27 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._defaults import report_unread_defaults
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     build_fuel_supply,
     read_input_ratios,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
+    CAPACITY_MW,
+    CAPACITY_UNIT,
+    FUEL_TYPE,
+    GENERATOR_NAME,
+    HAS_SERIES,
+    OUTPUT_CAPACITY_MW,
+    PRIME_MOVER,
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     COST_MWH,
     FIXED_COST_MW_YEAR,
-    INPUT_FUELS,
+    INPUT_CARRIER,
     OTHER_MODE_COSTS,
     enrich_fixed_costs,
     enrich_other_modes,
@@ -57,6 +77,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     EMISSION_TERMS,
     RATE_T_PER_MWH,
     enrich_emission_rates,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
+    GENERATOR_TYPE_MAPPINGS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
@@ -80,23 +103,15 @@ from interop.plugins.shared.translation_runner import (
     filter_component,
 )
 
-# One row for each generator, in OSeMOSYS words, before any Sienna column exists.
-GENERATOR_NAME = "generator_name"
-TECHNOLOGY_NAME = "technology_name"
-SIENNA_TYPE = "sienna_type"
-PRIME_MOVER = "prime_mover"
-FUEL_TYPE = "fuel_type"
-RESIDUAL_CAPACITY = "residual_capacity"
-CAPACITY_UNIT = "capacity_unit"
-CAPACITY_MW = "capacity_mw"
-HAS_SERIES = "has_series"
-
-# The Sienna types that a supply technology can become.
-GENERATOR_TYPES: tuple[SiennaComponent, ...] = (
-    SiennaComponent.THERMAL_STANDARD,
-    SiennaComponent.RENEWABLE_DISPATCH,
-    SiennaComponent.RENEWABLE_NON_DISPATCH,
-    SiennaComponent.HYDRO_DISPATCH,
+# The Sienna types that a supply technology can become, which are the types that have a mapping.
+GENERATOR_TYPES: tuple[SiennaComponent, ...] = tuple(
+    mapping.sienna_type for mapping in GENERATOR_TYPE_MAPPINGS
+)
+# The parameters that the translation reads only where the model states a row.
+_STATED_ROWS_ONLY = (
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    SupplyParameter.EMISSION_RATE,
 )
 
 _KEYS = [REGION, TECHNOLOGY]
@@ -164,6 +179,21 @@ NO_BUS_SKIP = SkipReport(
     listed=_LISTED,
     attribute_col=AnnotationColumn.LOCATION,
 )
+NO_ELECTRICITY_OUTPUT_SKIP = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=TECHNOLOGY,
+    name_col=TECHNOLOGY_NAME,
+    reason="put out no electricity at the operations mode",
+    counted_noun=_COUNTED_NOUN,
+    note=(
+        "the technology puts out no electricity at the operations mode, so it has no output "
+        "for the operations system to dispatch"
+    ),
+    listed=_LISTED,
+    attribute_col=ELECTRICITY_OUTPUT_RATIO,
+    attribute_name=FlowParameter.OUTPUT_ACTIVITY_RATIO,
+)
 
 
 @dataclass(frozen=True)
@@ -180,6 +210,7 @@ def build_generators_source(
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
 ) -> GeneratorSources:
+    report_unread_defaults(state, _STATED_ROWS_ONLY, recorder)
     generators = _read_generators(state, operations, mappings, recorder)
     if generators.height == 0:
         return GeneratorSources(generators, pl.DataFrame())
@@ -208,6 +239,9 @@ def _read_generators(
     technologies = _read_supply_technologies(state)
     technologies = _enrich_residual_capacity(state, operations, technologies)
     technologies = _enrich_targets(technologies, mappings)
+    technologies = enrich_electricity_output_ratios(
+        state, operations.year, operations.mode, technologies
+    )
     for rule in _build_skip_rules(_list_bus_names(state)):
         technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
     return technologies
@@ -217,7 +251,7 @@ def _enrich_capacity(operations: OperationsYear, generators: pl.DataFrame) -> pl
     return generators.with_columns(
         operations.units.convert_capacity_to_mw(pl.col(RESIDUAL_CAPACITY)).alias(CAPACITY_MW),
         pl.lit(operations.units.capacity_unit, dtype=pl.Utf8).alias(CAPACITY_UNIT),
-    )
+    ).with_columns(express_output_capacity(pl.col(CAPACITY_MW)).alias(OUTPUT_CAPACITY_MW))
 
 
 def _read_supply_technologies(state: State) -> pl.DataFrame:
@@ -280,6 +314,7 @@ def _build_skip_rules(bus_names: list[str]) -> list[SkipRule]:
         SkipRule(pl.col(SIENNA_TYPE).is_not_null(), NO_CARRIERS_ROW_SKIP),
         SkipRule(pl.col(SIENNA_TYPE).is_in(list(GENERATOR_TYPES)), NOT_A_GENERATOR_SKIP),
         SkipRule(pl.col(AnnotationColumn.LOCATION).is_in(bus_names), NO_BUS_SKIP),
+        SkipRule(pl.col(ELECTRICITY_OUTPUT_RATIO) > 0, NO_ELECTRICITY_OUTPUT_SKIP),
     ]
 
 
@@ -307,7 +342,7 @@ def _express_has_series() -> pl.Expr:
 def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
     return GeneratorExtension(
         name=row[GENERATOR_NAME],
-        carrier=row[INPUT_FUELS],
+        carrier=row[INPUT_CARRIER],
         category=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=_build_emission_rates(row[EMISSION_TERMS]),

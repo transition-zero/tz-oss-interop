@@ -19,15 +19,17 @@ from interop.plugins.shared.osemosys_sienna_translations._calendar import (
     report_calendar,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    choose_operations_mode,
+    read_operations_mode,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
+    GENERATOR_NAME,
+    SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
     GENERATOR_TYPE_MAPPINGS,
     GeneratorTypeMapping,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import (
-    GENERATOR_NAME,
-    SIENNA_TYPE,
     GeneratorSources,
     build_generator_extensions,
     build_generators_source,
@@ -74,7 +76,7 @@ __all__ = [
     "build_generators_source",
     "build_loads_source",
     "build_representative_periods",
-    "choose_operations_mode",
+    "read_operations_mode",
     "parse_units",
     "read_electricity_fuels",
     "report_calendar",

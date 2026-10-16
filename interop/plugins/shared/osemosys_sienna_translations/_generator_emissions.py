@@ -2,7 +2,8 @@
 
 The rate of a pollutant is the `emission_rate` of the technology at the operations mode, plus
 `input_activity_ratio` × the rate of the producer of each fuel that it takes in, for each unit
-of that fuel. A negative rate, for example of a plant with carbon capture, stays negative.
+of that fuel. The sum is for a unit of activity, so it divides by the electricity output ratio.
+A negative rate, for example of a plant with carbon capture, stays negative.
 """
 
 from __future__ import annotations
@@ -12,14 +13,17 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OPERATING_MODE,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
 )
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    ELECTRICITY_OUTPUT_RATIO,
+    express_per_output,
+)
+from interop.plugins.shared.osemosys_sienna_translations._canonical import read_mode_parameter
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     EMISSION_RATE_PER_OUTPUT,
     INPUT_RATIO,
@@ -54,11 +58,14 @@ def enrich_emission_rates(
     rates = own.join(burned, on=_POLLUTANT_KEYS, how="full", coalesce=True).with_columns(
         pl.col(OWN_RATE).fill_null(0.0), pl.col(FUEL_RATE).fill_null(0.0)
     )
-    rates = rates.with_columns((pl.col(OWN_RATE) + pl.col(FUEL_RATE)).alias(_RATE)).filter(
-        pl.col(_RATE) != 0
+    rates = (
+        rates.with_columns((pl.col(OWN_RATE) + pl.col(FUEL_RATE)).alias(_RATE))
+        .filter(pl.col(_RATE) != 0)
+        .join(generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO), on=_KEYS)
     )
     convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
-    rates = rates.with_columns(express_converted(rates, _RATE, convert).alias(RATE_T_PER_MWH))
+    rate = express_per_output(express_converted(rates, _RATE, convert))
+    rates = rates.with_columns(rate.alias(RATE_T_PER_MWH))
     listed = (
         rates.sort(POLLUTANT)
         .group_by(_KEYS)
@@ -75,8 +82,8 @@ def _read_own_rates(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:
     return (
-        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .filter((pl.col(OPERATING_MODE) == operations.mode) & (pl.col(VALUE_COL) != 0))
+        read_mode_parameter(state, SupplyParameter.EMISSION_RATE, operations.year, operations.mode)
+        .filter(pl.col(VALUE_COL) != 0)
         .join(generators.select(_KEYS), on=_KEYS, how="semi")
         .select(*_POLLUTANT_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(OWN_RATE))
     )

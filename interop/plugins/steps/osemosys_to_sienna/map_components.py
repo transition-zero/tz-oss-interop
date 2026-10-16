@@ -14,8 +14,8 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
     build_calendar,
     build_representative_periods,
-    choose_operations_mode,
     parse_units,
+    read_operations_mode,
     report_calendar,
     require_model_year,
 )
@@ -85,7 +85,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         units = parse_units(state)
         calendar = build_calendar(state, year)
         report_calendar(calendar, self._calendar_recorder)
-        return OperationsYear(year, units, calendar, choose_operations_mode(state))
+        return OperationsYear(year, units, calendar, read_operations_mode(state))
 
 
 def _scoped(recorder: ScopedRecorder, step_name: str) -> ScopedRecorder:
