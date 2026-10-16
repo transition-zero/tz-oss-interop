@@ -557,6 +557,25 @@ def assert_extension_record_field(path: str, kind: str, name: str, field: str, v
 
 
 @then(
+    parsers.parse(
+        'the file "{path}" parses as JSON {kind} extension record for "{name}"'
+        ' having "{field}" close to {value:g}'
+    )
+)
+def assert_extension_record_field_close(
+    path: str, kind: str, name: str, field: str, value: float
+) -> None:
+    """A number that a translation computes, equal to `value` within a relative 1e-6."""
+    matching = _find_extension_records(path, kind, name)
+    assert len(matching) == 1, (
+        f"expected 1 {kind} record for {name!r} in {path}, got {len(matching)}"
+    )
+    actual = matching[0].get(field)
+    assert isinstance(actual, int | float), f"expected a number in {field!r}, got {actual!r}"
+    assert math.isclose(actual, value, rel_tol=1e-6), f"expected {field}≈{value}, got {actual}"
+
+
+@then(
     parsers.parse('the file "{path}" parses as JSON with no {kind} extension record for "{name}"')
 )
 def assert_no_extension_record(path: str, kind: str, name: str) -> None:
