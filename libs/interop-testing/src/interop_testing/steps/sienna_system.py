@@ -358,6 +358,37 @@ def given_component_has_ext_carrier(
     sienna_system_builder.add_ext(sienna_type, name, {"carrier": carrier})
 
 
+@given(
+    parsers.parse(
+        'the {sienna_type} "{name}" has ext emission rate {rate:g} t/MWh of "{pollutant}"'
+    )
+)
+def given_component_has_ext_emission_rate(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    rate: float,
+    pollutant: str,
+) -> None:
+    sienna_system_builder.add_emission_rate(sienna_type, name, pollutant, rate)
+
+
+@given(
+    parsers.parse(
+        'the system has a representative period "{name}" from "{first_timestamp}" '
+        "of {hours:d} hours with weight {weight:g}"
+    )
+)
+def given_system_has_representative_period(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    first_timestamp: str,
+    hours: int,
+    weight: float,
+) -> None:
+    sienna_system_builder.add_representative_period(name, first_timestamp, hours, weight)
+
+
 @given(parsers.parse('the {sienna_type} "{name}" is committable in ext'))
 def given_component_committable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str

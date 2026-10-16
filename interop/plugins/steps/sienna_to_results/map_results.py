@@ -8,6 +8,9 @@ the bus, load positive for consumption, flow positive from bus0 to bus1, storage
 output minus input, and HVDC flow rescaled from per-unit. It builds one row per
 observation and keeps the work lazy until a single collect of the finished table.
 
+When the extensions sidecar holds representative periods, the step also writes annual
+production, installed capacity and emissions rows (see ``map_annual``).
+
 This step only adds the ``results`` table; it leaves the tables the earlier mapping
 step produced untouched. The results sink writes just the ``results`` table, so the
 output is ``results.parquet`` regardless of what else is staged.
@@ -44,11 +47,16 @@ from interop.plugins.shared.sienna_results_constants import (
     LINK_FLOW_KEY,
     LOAD_KEY,
     OBJECTIVE_VALUE_FIELD,
+    RENEWABLE_DISPATCH_KEY,
     RESULTS_OBJECTIVE_KEY,
     STORAGE_INPUT_KEY,
     STORAGE_OUTPUT_KEY,
     THERMAL_DISPATCH_KEY,
     ResultSeriesKey,
+)
+from interop.plugins.steps.sienna_to_results.map_annual import (
+    AnnualResultsMapper,
+    HourlyResults,
 )
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -85,19 +93,29 @@ class SiennaResultsToResultsFormat(TranslationStep):
 
     def run(self, state: State, params: BaseModel | None) -> State:
         carrier_lookup = _build_carrier_lookup(state)
-        frames: list[pl.LazyFrame] = []
-        frames += self._map_dispatch(state, THERMAL_DISPATCH_KEY, carrier_lookup)
-        frames += self._map_dispatch(state, HYDRO_DISPATCH_KEY, carrier_lookup)
-        frames += self._map_storage_dispatch(state, carrier_lookup)
-        frames += self._map_flow(state, LINE_FLOW_KEY, scale=1.0, derivation=_FLOW_FROM_FLOW)
-        frames += self._map_flow(
-            state, LINK_FLOW_KEY, scale=1.0 / HVDC_WIDE_SCALE, derivation=_FLOW_FROM_SCALED_FLOW
-        )
-        frames += self._map_load(state)
-        frames += self._map_objective(state)
-
+        hourly = self._map_hourly(state, carrier_lookup)
+        annual = AnnualResultsMapper(self._recorder).map_annual(state, hourly, carrier_lookup)
+        frames = [*hourly.list_frames(), *self._map_objective(state), *annual]
         state.destination_tables[RESULTS_TABLE_KEY] = _assemble_results_table(frames)
         return state
+
+    def _map_hourly(self, state: State, carrier_lookup: pl.LazyFrame | None) -> HourlyResults:
+        return HourlyResults(
+            generator_dispatch=[
+                *self._map_dispatch(state, THERMAL_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, HYDRO_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, RENEWABLE_DISPATCH_KEY, carrier_lookup),
+            ],
+            storage_dispatch=self._map_storage_dispatch(state, carrier_lookup),
+            line_flow=self._map_flow(state, LINE_FLOW_KEY, scale=1.0, derivation=_FLOW_FROM_FLOW),
+            link_flow=self._map_flow(
+                state,
+                LINK_FLOW_KEY,
+                scale=1.0 / HVDC_WIDE_SCALE,
+                derivation=_FLOW_FROM_SCALED_FLOW,
+            ),
+            load=self._map_load(state),
+        )
 
     def _map_dispatch(
         self,

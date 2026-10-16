@@ -51,6 +51,9 @@ THERMAL_DISPATCH_KEY = ResultSeriesKey(
 HYDRO_DISPATCH_KEY = ResultSeriesKey(
     SiennaComponent.HYDRO_DISPATCH, SiennaResultSeries.ACTIVE_POWER
 )
+RENEWABLE_DISPATCH_KEY = ResultSeriesKey(
+    SiennaComponent.RENEWABLE_DISPATCH, SiennaResultSeries.ACTIVE_POWER
+)
 STORAGE_OUTPUT_KEY = ResultSeriesKey(
     SiennaComponent.ENERGY_RESERVOIR_STORAGE, SiennaResultSeries.ACTIVE_POWER_OUT
 )
@@ -80,6 +83,9 @@ THERMAL_DISPATCH_CSVS = (
 )
 HYDRO_DISPATCH_CSVS = (
     _build_variable_csv(SiennaResultSeries.ACTIVE_POWER, SiennaComponent.HYDRO_DISPATCH),
+)
+RENEWABLE_DISPATCH_CSVS = (
+    _build_variable_csv(SiennaResultSeries.ACTIVE_POWER, SiennaComponent.RENEWABLE_DISPATCH),
 )
 STORAGE_OUTPUT_CSVS = (
     _build_variable_csv(
@@ -118,6 +124,7 @@ class StagedSeriesSource(NamedTuple):
 WIDE_RESULT_SERIES: tuple[StagedSeriesSource, ...] = (
     StagedSeriesSource(THERMAL_DISPATCH_KEY, THERMAL_DISPATCH_CSVS),
     StagedSeriesSource(HYDRO_DISPATCH_KEY, HYDRO_DISPATCH_CSVS),
+    StagedSeriesSource(RENEWABLE_DISPATCH_KEY, RENEWABLE_DISPATCH_CSVS),
     StagedSeriesSource(STORAGE_OUTPUT_KEY, STORAGE_OUTPUT_CSVS),
     StagedSeriesSource(STORAGE_INPUT_KEY, STORAGE_INPUT_CSVS),
     StagedSeriesSource(LINE_FLOW_KEY, LINE_FLOW_CSVS),
@@ -129,3 +136,6 @@ HVDC_WIDE_SCALE = 100.0
 """TwoTerminalGenericHVDCLine flows are solved in natural MW but written to the WIDE table
 scaled by the system base, so the reverse divides by this to recover MW. See compare's
 ``_load_sienna_data``, which applies the same factor."""
+
+SNAPSHOT_HOURS = 1.0
+"""Hours one row of a solve result covers: the solve runs at an hourly resolution."""

@@ -41,6 +41,13 @@ def given_hydro_dispatch(
     sienna_results_builder.add_hydro_dispatch(component, _series(values))
 
 
+@given(parsers.parse('the results have RenewableDispatch dispatch for "{component}" of {values}'))
+def given_renewable_dispatch(
+    sienna_results_builder: SiennaResultsBuilder, component: str, values: str
+) -> None:
+    sienna_results_builder.add_renewable_dispatch(component, _series(values))
+
+
 @given(
     parsers.parse('the results have EnergyReservoirStorage output for "{component}" of {values}')
 )

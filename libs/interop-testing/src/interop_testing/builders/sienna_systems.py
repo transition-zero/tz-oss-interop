@@ -40,6 +40,7 @@ class SiennaSystemBuilder:
         self._links: list[dict[str, Any]] = []
         self._time_series: list[dict[str, Any]] = []
         self._ext: dict[tuple[str, str], dict[str, Any]] = {}
+        self._period_records: list[dict[str, Any]] = []
         self._area_ids: dict[str, int] = {}
         self._bus_ids: dict[str, int] = {}
         self._arc_by_endpoints: dict[tuple[int, int], int] = {}
@@ -388,6 +389,27 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"ext for {owner_name!r}")
         self._ext.setdefault((owner_type, owner_name), {}).update(ext)
 
+    def add_emission_rate(
+        self, owner_type: str, owner_name: str, pollutant: str, rate: float
+    ) -> None:
+        """Add one pollutant to the generator's ``emission_rates_t_per_mwh`` record field."""
+        self._check_not_saved(f"emission rate for {owner_name!r}")
+        ext = self._ext.setdefault((owner_type, owner_name), {})
+        ext.setdefault("emission_rates_t_per_mwh", {})[pollutant] = rate
+
+    def add_representative_period(
+        self, name: str, first_timestamp: str, hours: int, weight: float
+    ) -> None:
+        """Add a ``representative_period`` record, which no component owns."""
+        self._check_not_saved(f"representative period {name!r}")
+        self._period_records.append(
+            {
+                "kind": "representative_period",
+                "owner_name": name,
+                "ext": {"first_timestamp": first_timestamp, "hours": hours, "weight": weight},
+            }
+        )
+
     def save(self, path: Path) -> None:
         if self._saved:
             raise RuntimeError("System already saved. Cannot call save() twice.")
@@ -409,10 +431,10 @@ class SiennaSystemBuilder:
             sections["links"] = self._links
         if self._time_series:
             sections["time_series"] = self._time_series
-        if self._ext:
+        if self._ext or self._period_records:
             sections["ext"] = [
                 {"owner_type": owner_type, "owner_name": owner_name, "ext": ext}
                 for (owner_type, owner_name), ext in self._ext.items()
-            ]
+            ] + self._period_records
         write_sienna_system(path, sections)
         self._saved = True

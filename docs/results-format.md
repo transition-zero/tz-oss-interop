@@ -81,6 +81,25 @@ reports these variables, and an hourly dispatch does not.
   two locations is the `production` of the transport technology between them. That is the
   energy that it delivers at its far end. The format has no `trade` variable.
 
+A Sienna solve over representative periods also gives annual rows. The `extensions.json`
+sidecar of the system must hold `representative_period` records. Each record gives the first
+hour of a period, its number of hours and its weight. The weight is the number of times that
+the period occurs in the year. The `sienna-to-results` pipeline then writes these rows:
+
+- `production` of a generator or a storage is the sum over the hours of the positive part of
+  `dispatch`, multiplied by 1 h and by the weight of the period of the hour.
+- `production` of a `TwoTerminalGenericHVDCLine` is the same sum of the absolute `flow`. The
+  solve models the line as lossless, so the energy that it delivers equals the energy that it
+  sends.
+- `installed_capacity` is `base_power` × `rating` of a generator or a storage, and
+  `active_power_limits_from.max` of a `TwoTerminalGenericHVDCLine`.
+- `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
+  rate in `emission_rates_t_per_mwh` of the generator record.
+
+An hour of the solve that is in no period has no weight. The pipeline leaves it out of the
+sum, records it in `decisions.md` and writes a warning. A solve with no `representative_period`
+records gives no annual rows.
+
 ## How a comparison meets at a shared granularity
 
 Compare joins the two tables per variable at the finest granularity both sides share.

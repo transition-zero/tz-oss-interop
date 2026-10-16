@@ -25,6 +25,7 @@ _RESULTS = "results"
 
 _THERMAL_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__ThermalStandard.csv"
 _HYDRO_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__HydroDispatch.csv"
+_RENEWABLE_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__RenewableDispatch.csv"
 _STORAGE_OUT = f"{_VARIABLES}/ActivePowerOutVariable__EnergyReservoirStorage.csv"
 _STORAGE_IN = f"{_VARIABLES}/ActivePowerInVariable__EnergyReservoirStorage.csv"
 _LINE_FLOW = f"{_VARIABLES}/FlowActivePowerVariable__Line.csv"
@@ -60,6 +61,9 @@ class SiennaResultsBuilder:
 
     def add_hydro_dispatch(self, component: str, values: list[float]) -> None:
         self._add(_HYDRO_DISPATCH, component, values)
+
+    def add_renewable_dispatch(self, component: str, values: list[float]) -> None:
+        self._add(_RENEWABLE_DISPATCH, component, values)
 
     def add_storage_output(self, component: str, values: list[float]) -> None:
         self._add(_STORAGE_OUT, component, values)
