@@ -27,6 +27,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
     BUS_VOLTAGE_LIMIT_MAX,
@@ -50,8 +51,6 @@ from interop.plugins.shared.translation_runner import (
     row_position_id_translation,
 )
 
-# The name of a fuel in an event and a warning: its region, this separator and the fuel.
-_FUEL_NAME_SEPARATOR = "/"
 FUEL_NAME = "fuel_name"
 
 _ID_NOTE = "assigned by 1-based row position in the ACBus table"
@@ -85,14 +84,9 @@ def read_electricity_fuels(state: State) -> pl.DataFrame:
     return fuels.filter(pl.col(AnnotationColumn.CARRIER) == ELECTRICITY_CARRIER).select(
         REGION,
         FUEL,
-        express_fuel_name().alias(FUEL_NAME),
+        express_report_name(FUEL).alias(FUEL_NAME),
         AnnotationColumn.LOCATION,
     )
-
-
-def express_fuel_name() -> pl.Expr:
-    """The name of a fuel in an event and a warning, because one fuel name can be in two regions."""
-    return pl.concat_str(REGION, pl.lit(_FUEL_NAME_SEPARATOR), FUEL)
 
 
 def build_buses_source_table(state: State, recorder: ScopedRecorder) -> pl.DataFrame:

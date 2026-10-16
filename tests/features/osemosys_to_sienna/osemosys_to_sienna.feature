@@ -3,8 +3,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
   The operations step reads the canonical stage of an otoole model for one year. Each location
   of an electricity fuel becomes a bus and an area. The demand of an electricity fuel becomes a
   load with an hourly series. The timeslices become representative days of 24 hours, which
-  follow each other from 1 January of the year. Each day stands for a number of days of the
-  year, and extensions.json records that weight.
+  follow each other from 1 January of the year. Each period has a weight, which is how many
+  times it occurs in the year, and extensions.json records it.
 
   The invented model below has two electricity fuels at the locations AT and DE. Two seasons
   and one day type give two days. Each day has a bracket of 6 h and a bracket of 18 h.
@@ -85,13 +85,13 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "DEELEC/accumulated" having "max_active_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "DEELEC/accumulated" having "bus" set to 2
 
-  Scenario: Each representative day reaches extensions.json with its weight
+  Scenario: Each representative day reaches extensions.json with its weight in days
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "first_timestamp" set to "2030-01-01T00:00:00"
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2/1" having "first_timestamp" set to "2030-01-02T00:00:00"
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2/1" having "hours" set to 24
-    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight_days" close to 182.4817518
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight" close to 182.4817518
     And the file "decisions.md" contains "day_split × 8760 h, rounded to a whole hour"
 
   Scenario: A model with no seasons for its timeslices gets one hour for each timeslice
@@ -100,8 +100,83 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     Then the pipeline exit code is 0
     And the log contains "so each timeslice becomes one hour"
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with values 0.5 0.5 1 0.333333333333
-    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "timeslices" having "hours" set to 4
-    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "timeslices" having "weight_days" close to 365
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1B1" having "hours" set to 1
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1B1" having "weight" close to 1095
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B2" having "weight" close to 3285
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B1" having "first_timestamp" set to "2030-01-01T02:00:00"
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B1" without field "season"
+
+  Scenario: A day whose timeslices give different weights takes their mean
+    Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
+      | TIMESLICE | YEAR | VALUE |
+      | S1B1      | 2030 | 0.13  |
+      | S1B2      | 2030 | 0.375 |
+      | S2B1      | 2030 | 0.125 |
+      | S2B2      | 2030 | 0.375 |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight" close to 186.1313869
+    And the file "decisions.md" contains "so the day takes their mean"
+
+  Scenario: A membership that names a daily time bracket outside its set gives one hour for each timeslice
+    Given a pipeline "osemosys-stray-bracket" that puts the timeslice "S2B2" in the daily time bracket "B3" before the translation
+    When I run the otoole model through the pipeline "osemosys-stray-bracket"
+    Then the pipeline exit code is 0
+    And the log contains "names the daily_time_bracket B3, which the daily_time_bracket set does not hold"
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B2" having "hours" set to 1
+
+  Scenario: Demand in a timeslice with no share of the year is left out and reported
+    Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
+      | TIMESLICE | YEAR | VALUE |
+      | S1B1      | 2030 | 0.125 |
+      | S1B2      | 2030 | 0.375 |
+      | S2B1      | 2030 | 0.125 |
+      | S2B2      | 2030 | 0     |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the log contains "fall in a timeslice whose year_split is zero"
+    And the log contains "ATELEC/S2B2"
+    And the file "decisions.md" contains "has a year_split of zero"
+
+  Scenario: Demand for a fuel that is not electricity is left out and reported
+    Given the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | 876   |
+      | R1     | GAS    | 2030 | 50    |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with 2 components of type "PowerLoad"
+    And the log contains "state specified_annual_demand but are not electricity fuels with a location"
+    And the file "decisions.md" contains "`osemosys.fuel.R1/GAS.specified_annual_demand`"
+
+  Scenario: A negative demand is left out and reported
+    Given the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | -876  |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
+    And the log contains "state a negative specified_annual_demand"
+
+  Scenario: A demand with no hour above zero is left out and reported
+    Given the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | 876   |
+      | R1     | DEELEC | 2030 | 876   |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with 2 components of type "PowerLoad"
+    And the log contains "have an annual demand but no demand in any hour of the calendar, so each is left out. Loads: DEELEC"
+
+  Scenario: An electricity fuel with no location gets no bus and is reported
+    Given the otoole set "FUEL" holds "ATELEC DEELEC GAS XXELEC"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                                                                  |
+      | osemosys: {units: {energy: GWh}, objects: {fuels: [{match: "^XX(?P<tag>Q)?ELEC$", carrier: electricity, location: "{tag}"}, {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with 2 components of type "ACBus"
+    And the log contains "fuel(s) of electricity have no location, so each is left out. Fuels: R1/XXELEC"
 
   Scenario: The earliest model year is the year of the system
     When I translate the otoole model to Sienna for the year "earliest"
@@ -120,3 +195,27 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 1
     And the log contains "states no `units: energy`"
+
+  Scenario: An energy unit that the translation does not know stops the run
+    Given a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                 |
+      | osemosys: {units: {energy: furlong}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 1
+    And the log contains "`units: energy` in the user mappings file is 'furlong'"
+
+  Scenario: A currency year that is not a whole year stops the run
+    Given a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                                   |
+      | osemosys: {units: {energy: GWh, currency_year: next}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 1
+    And the log contains "currency_year"
+
+  Scenario: Two carriers rows for one category stop the run
+    Given a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                                                                                                                                                  |
+      | carriers: [{osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}] |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 1
+    And the log contains "names the osemosys_category gas-cc more than once"

@@ -14,7 +14,6 @@ OSEMOSYS_SIENNA_SERIES = "osemosys_sienna_series"
 SERIES_KEY_SEPARATOR = "."
 
 HOURS_PER_YEAR = 8760.0
-UNIT_DAYS = "d"
 HOURS_PER_DAY = 24
 # A daily time bracket this close to a whole number of hours takes that number of hours.
 WHOLE_HOUR_TOLERANCE = 0.05
@@ -26,11 +25,11 @@ MEMBERSHIP_FLAG = 1.0
 # The parameter that the operations step takes when it is to use the earliest model year.
 EARLIEST_YEAR = "earliest"
 
-# The name of the one period of a calendar with one hour per timeslice.
-TIMESLICE_PERIOD_NAME = "timeslices"
 # The character between the season and the day type in the name of a representative day.
 PERIOD_NAME_SEPARATOR = "/"
 
+# The character between a region and a member, in a name that needs both.
+REGION_NAME_SEPARATOR = "/"
 # A load of accumulated annual demand takes the name of its fuel, this separator and suffix.
 LOAD_NAME_SEPARATOR = "/"
 ACCUMULATED_LOAD_SUFFIX = "accumulated"
@@ -72,17 +71,17 @@ class CalendarHourCol(StrEnum):
 
     TIMESTAMP = "timestamp"
     TIMESLICE = "timeslice"
-    DAY = "day"
+    PERIOD = "period"
     WEIGHT_HOURS = "weight_hours"
 
 
-class CalendarDayCol(StrEnum):
-    """A column of the days table of a calendar."""
+class CalendarPeriodCol(StrEnum):
+    """A column of the periods table of a calendar."""
 
-    DAY = "day"
+    PERIOD = "period"
     NAME = "name"
     SEASON = "season"
     DAY_TYPE = "day_type"
-    WEIGHT_DAYS = "weight_days"
+    WEIGHT = "weight"
     FIRST_TIMESTAMP = "first_timestamp"
     HOURS = "hours"

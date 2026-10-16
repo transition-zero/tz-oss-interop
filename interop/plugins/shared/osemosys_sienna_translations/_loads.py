@@ -11,6 +11,7 @@ that peak.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -39,7 +40,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
     FUEL_NAME,
-    express_fuel_name,
     read_electricity_fuels,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
@@ -51,6 +51,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
     build_sienna_source,
+)
+from interop.plugins.shared.osemosys_sienna_translations._names import (
+    express_component_name,
+    express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._series import (
@@ -64,12 +68,17 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
 )
 from interop.plugins.shared.translation_runner import (
+    SkippedNames,
     SkipReport,
     Translation,
     default_translation,
     filter_component,
     row_position_id_translation,
 )
+from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 # One row for each load, in OSeMOSYS words, before any Sienna column exists.
 LOAD_NAME = "load_name"
@@ -104,6 +113,10 @@ _PEAK_DERIVATION = "the highest hour of the max_active_power series"
 _FIRST_DERIVATION = "the first hour of the max_active_power series"
 _BASE_POWER_DERIVATION = f"max(max_active_power, {MIN_LOAD_BASE_POWER_MVA}) MVA"
 _SERIES_ATTRIBUTE = f"{SiennaLoadCol.MAX_ACTIVE_POWER} time series"
+_LOST_DEMAND_NOTE = (
+    "the timeslice has a year_split of zero, so it holds no hour of the calendar and this share "
+    "of the demand is left out"
+)
 
 _SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
@@ -123,13 +136,14 @@ NO_HOURLY_DEMAND_SKIP = SkipReport(
     pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
     framework=OSEMOSYS_FRAMEWORK,
     component=FUEL,
-    name_col=LOAD_NAME,
+    name_col=FUEL_NAME,
     reason="have an annual demand but no demand in any hour of the calendar",
     counted_noun="load(s)",
     note=(
         "the demand profile or the timeslices of the year give the demand no hour, so the "
         "load is left out"
     ),
+    listed=SkippedNames(column=LOAD_NAME, label="Loads"),
     attribute_col=ANNUAL_DEMAND,
 )
 
@@ -145,19 +159,14 @@ class LoadSources:
 def build_loads_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> LoadSources:
-    demands = _name_loads(_read_demands(state, operations.year, recorder))
+    demands = _enrich_load_names(_read_demands(state, operations.year, recorder))
     if demands.height == 0:
         return LoadSources(demands, pl.DataFrame(schema=_SERIES_SCHEMA))
     demands = demands.with_columns(
         operations.units.convert_energy_to_mwh(pl.col(ANNUAL_DEMAND)).alias(ANNUAL_DEMAND_MWH),
         pl.lit(operations.units.energy_unit, dtype=pl.Utf8).alias(ENERGY_UNIT),
     )
-    series = pl.concat(
-        [
-            _build_specified_series(state, operations, demands),
-            _build_accumulated_series(operations, demands),
-        ]
-    )
+    series = _build_series(state, operations, demands, recorder)
     table = _enrich_series_values(demands, series)
     table, _ = filter_component(table, pl.col(PEAK_MW) > 0, NO_HOURLY_DEMAND_SKIP, recorder)
     kept = series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(table[LOAD_NAME].implode()))
@@ -186,21 +195,38 @@ def _read_demand(
     fuels: pl.DataFrame,
     recorder: ScopedRecorder,
 ) -> pl.DataFrame:
-    stated = read_parameter(state, parameter, year).filter(pl.col(VALUE_COL) > 0)
+    stated = read_parameter(state, parameter, year).filter(pl.col(VALUE_COL) != 0)
     rows = stated.select(
         REGION,
         FUEL,
-        express_fuel_name().alias(FUEL_NAME),
+        express_report_name(FUEL).alias(FUEL_NAME),
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
     ).join(fuels.select(REGION, FUEL, AnnotationColumn.LOCATION), on=[REGION, FUEL], how="left")
+    positive, _ = filter_component(
+        rows, pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter), recorder
+    )
     electricity, _ = filter_component(
-        rows,
+        positive,
         pl.col(AnnotationColumn.LOCATION).is_not_null(),
         _build_not_electricity_skip(parameter),
         recorder,
     )
     return electricity.cast(pl.Schema(_SOURCE_SCHEMA))
+
+
+def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:
+    return SkipReport(
+        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+        framework=OSEMOSYS_FRAMEWORK,
+        component=FUEL,
+        name_col=FUEL_NAME,
+        reason=f"state a negative {parameter}",
+        counted_noun="fuel(s)",
+        note="a demand below zero is not a load, so the demand is left out",
+        attribute_col=ANNUAL_DEMAND,
+        attribute_name=parameter,
+    )
 
 
 def _build_not_electricity_skip(parameter: DemandParameter) -> SkipReport:
@@ -220,16 +246,11 @@ def _build_not_electricity_skip(parameter: DemandParameter) -> SkipReport:
     )
 
 
-def _name_loads(demands: pl.DataFrame) -> pl.DataFrame:
-    """A load takes the name of its fuel, and its region first when two regions share the fuel."""
-    region_count = pl.col(REGION).n_unique().over(FUEL)
-    base = (
-        pl.when(region_count > 1)
-        .then(pl.concat_str(REGION, pl.lit(LOAD_NAME_SEPARATOR), FUEL))
-        .otherwise(pl.col(FUEL))
-    )
+def _enrich_load_names(demands: pl.DataFrame) -> pl.DataFrame:
+    """A load takes the Sienna name of its fuel, and a suffix for accumulated demand."""
     accumulated = pl.col(DEMAND_PARAMETER) == DemandParameter.ACCUMULATED_ANNUAL_DEMAND
     suffix = f"{LOAD_NAME_SEPARATOR}{ACCUMULATED_LOAD_SUFFIX}"
+    base = express_component_name(FUEL)
     return demands.with_columns(
         pl.when(accumulated)
         .then(pl.concat_str(base, pl.lit(suffix)))
@@ -241,23 +262,73 @@ def _name_loads(demands: pl.DataFrame) -> pl.DataFrame:
 # --- the hourly series ----------------------------------------------------------------
 
 
-def _build_specified_series(
+def _build_series(
+    state: State, operations: OperationsYear, demands: pl.DataFrame, recorder: ScopedRecorder
+) -> pl.DataFrame:
+    specified = _build_specified_demand(state, operations, demands)
+    _report_demand_without_hours(specified, recorder)
+    hourly = specified.select(LOAD_NAME, TIMESLICE, _HOURLY_MW)
+    return pl.concat(
+        [_reshape_to_series(operations, hourly), _build_accumulated_series(operations, demands)]
+    )
+
+
+def _build_specified_demand(
     state: State, operations: OperationsYear, demands: pl.DataFrame
 ) -> pl.DataFrame:
+    """One row for each load of specified demand and each timeslice, with its MW."""
     specified = demands.filter(
         pl.col(DEMAND_PARAMETER) == DemandParameter.SPECIFIED_ANNUAL_DEMAND
-    ).select(LOAD_NAME, REGION, FUEL, ANNUAL_DEMAND_MWH)
+    ).select(LOAD_NAME, REGION, FUEL, FUEL_NAME, ANNUAL_DEMAND_MWH)
     timeslices = _build_year_split_table(operations)
     keys = specified.select(REGION, FUEL).join(timeslices.select(TIMESLICE), how="cross")
     profile = read_parameter_with_defaults(
         state, DemandParameter.SPECIFIED_DEMAND_PROFILE, operations.year, keys
     ).rename({VALUE_COL: _PROFILE})
-    hourly = (
+    return (
         specified.join(profile, on=[REGION, FUEL])
         .join(timeslices, on=TIMESLICE)
         .with_columns(_express_specified_mw().alias(_HOURLY_MW))
     )
-    return _reshape_to_series(operations, hourly.select(LOAD_NAME, TIMESLICE, _HOURLY_MW))
+
+
+def _report_demand_without_hours(specified: pl.DataFrame, recorder: ScopedRecorder) -> None:
+    """A profile above zero in a timeslice with no share of the year reaches no hour."""
+    lost = specified.filter((pl.col(_YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0))
+    for row in lost.iter_rows(named=True):
+        recorder.append(_build_lost_demand_event(row))
+    _warn_lost_demand(lost)
+
+
+def _warn_lost_demand(lost: pl.DataFrame) -> None:
+    if lost.is_empty():
+        return
+    names = sorted(
+        f"{load}{LOAD_NAME_SEPARATOR}{timeslice}"
+        for load, timeslice in lost.select(LOAD_NAME, TIMESLICE).iter_rows()
+    )
+    log.warning(
+        "%s: %d demand profile value(s) above zero fall in a timeslice whose year_split is "
+        "zero, so that demand reaches no hour and is left out. Each one: %s",
+        OSEMOSYS_TO_SIENNA_PIPELINE,
+        lost.height,
+        name_a_few(names),
+    )
+
+
+def _build_lost_demand_event(row: dict[str, Any]) -> TranslationEvent:
+    return TranslationEvent(
+        kind=EventKind.NOT_MAPPED,
+        sources=[
+            build_osemosys_field(
+                DemandParameter.SPECIFIED_DEMAND_PROFILE,
+                row[FUEL_NAME],
+                row[TIMESLICE],
+                row[_PROFILE],
+            )
+        ],
+        note=_LOST_DEMAND_NOTE,
+    )
 
 
 def _build_year_split_table(operations: OperationsYear) -> pl.DataFrame:

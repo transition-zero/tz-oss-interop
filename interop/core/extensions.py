@@ -53,8 +53,7 @@ class ExtensionKind(StrEnum):
     # survive a hop through it. Sienna has no equivalent either.
     CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
-    # A span of hours that stands for many days of a year. OSeMOSYS states it through its
-    # timeslices. SiennaSchemas has no field for it.
+    # OSeMOSYS only: a span of hours that occurs a number of times in a year.
     REPRESENTATIVE_PERIOD = "representative_period"
 
 
@@ -310,18 +309,14 @@ class NetworkExtension(ExtensionRecord):
 
 
 class RepresentativePeriodExtension(ExtensionRecord):
-    """A span of consecutive hours of the series that stands for a number of days of the year.
-
-    OSeMOSYS only. Each field is optional, because a lookup of a name that no record holds
-    gives a record with no values.
-    """
+    """A span of consecutive hours of the series, and how many times it occurs in the year."""
 
     # ISO 8601. The timestamp of the first hour of the span.
     first_timestamp: str | None = None
     hours: int | None = None
-    # d. The days of the year that the span stands for: the sum of its hour weights over 24.
-    weight_days: float | None = None
-    # OSeMOSYS SEASON and DAYTYPE. Absent when each timeslice is one hour.
+    # How many times the span occurs in the year.
+    weight: float | None = None
+    # OSeMOSYS SEASON and DAYTYPE, absent for a span of one timeslice hour.
     season: str | None = None
     day_type: str | None = None
 

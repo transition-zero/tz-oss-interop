@@ -99,7 +99,7 @@ def parse_units(state: State) -> ModelUnits:
         tonnes_per_emission=_parse_unit(stated, UnitQuantity.EMISSIONS, _TONNES_PER_EMISSION_UNIT),
         dollars_per_currency=None if currency is None else _parse_currency_scale(currency),
         currency_code=None if currency is None else _parse_currency_code(currency),
-        currency_year=None if currency_year is None else int(currency_year),
+        currency_year=None if currency_year is None else _parse_currency_year(currency_year),
     )
 
 
@@ -121,6 +121,16 @@ def _parse_unit(
     if factor is None:
         raise _build_unknown_unit_error(quantity, unit, sorted(factors))
     return factor
+
+
+def _parse_currency_year(currency_year: str) -> int:
+    try:
+        return int(currency_year)
+    except ValueError:
+        raise UserInputError(
+            f"`units: {UnitQuantity.CURRENCY_YEAR}` in the user mappings file is "
+            f"{currency_year!r}, which is not a whole year such as 2021."
+        ) from None
 
 
 def _parse_currency_scale(currency: str) -> float:
