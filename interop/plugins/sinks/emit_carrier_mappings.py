@@ -44,11 +44,11 @@ class EmitCarrierMappings(Sink):
                 f"got {type(params).__name__}"
             )
         derived = state.destination_tables[CARRIER_MAPPINGS_TABLE]
-        rows = [_without_nulls(row) for row in derived.to_dicts()]
+        rows = [_drop_null_fields(row) for row in derived.to_dicts()]
         document = yaml.safe_dump({CARRIERS_KEY: rows}, sort_keys=False)
         self._fs.write_bytes(params.output_path, document.encode("utf-8"))
 
 
-def _without_nulls(row: dict[str, Any]) -> dict[str, Any]:
+def _drop_null_fields(row: dict[str, Any]) -> dict[str, Any]:
     """A row naming no fuel leaves the field out, rather than writing it as null."""
     return {field: value for field, value in row.items() if value is not None}

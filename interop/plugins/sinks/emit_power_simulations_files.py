@@ -30,7 +30,7 @@ class EmitPowerSimulationsFiles(Sink):
     def __init__(self, fs: FilesystemPort) -> None:
         self._fs = fs
 
-    def _location_name(self, loc: Location) -> str:
+    def _get_location_name(self, loc: Location) -> str:
         return location_name(loc)
 
     def write(self, state: State, params: BaseModel | None) -> None:
@@ -46,7 +46,7 @@ class EmitPowerSimulationsFiles(Sink):
 
         document = EmitPowerSimulationsSystemJson.build_document(
             state,
-            h5_basename=self._location_name(params.h5_output_path),
+            h5_basename=self._get_location_name(params.h5_output_path),
             system_name=params.system_name,
             base_power=params.base_power,
             frequency=params.frequency,

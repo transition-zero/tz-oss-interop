@@ -30,7 +30,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaRetirementPotentialCol,
     SiennaSupplementalAttributeAssociationCol,
 )
-from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
+from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, reject_unknown_references
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -87,7 +87,7 @@ class EmitSiennaPortfolio(Sink):
     def build_payload(
         state: State, base_system_file: str, time_series_storage_file: str
     ) -> dict[str, Any]:
-        area_ids = _name_to_id(state.destination_tables.get(SiennaComponent.AREA))
+        area_ids = _build_id_by_name(state.destination_tables.get(SiennaComponent.AREA))
         components: dict[str, Any] = {}
         component_ids: dict[str, dict[str, int]] = {}
         for component in _COMPONENT_TYPES:
@@ -95,7 +95,7 @@ class EmitSiennaPortfolio(Sink):
             objects = _build_components(table, area_ids)
             if objects:
                 components[str(component)] = objects
-            component_ids[str(component)] = _name_to_id(table)
+            component_ids[str(component)] = _build_id_by_name(table)
         component_ids[str(SiennaComponent.AREA)] = area_ids
 
         attributes, attribute_ids = _build_attributes(state)
@@ -114,13 +114,13 @@ class EmitSiennaPortfolio(Sink):
         }
         financial_data = state.destination_tables.get(PORTFOLIO_FINANCIAL_DATA_TABLE)
         if financial_data is not None and not financial_data.is_empty():
-            payload[PortfolioDocument.FINANCIAL_DATA] = _stated(
+            payload[PortfolioDocument.FINANCIAL_DATA] = _build_stated_fields(
                 next(financial_data.iter_rows(named=True))
             )
         return payload
 
 
-def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
+def _build_id_by_name(table: pl.DataFrame | None) -> dict[str, int]:
     if table is None or table.is_empty():
         return {}
     return dict(
@@ -134,7 +134,7 @@ def _build_components(table: pl.DataFrame | None, area_ids: dict[str, int]) -> l
         return []
     holds_region = SIENNA_REGION_NAME_COLUMN in table.columns
     if holds_region:
-        validate_refs(
+        reject_unknown_references(
             SIENNA_REGION_NAME_COLUMN,
             table[SIENNA_REGION_NAME_COLUMN].drop_nulls().unique().to_list(),
             set(area_ids),
@@ -142,7 +142,9 @@ def _build_components(table: pl.DataFrame | None, area_ids: dict[str, int]) -> l
         )
     objects: list[dict[str, Any]] = []
     for row in table.iter_rows(named=True):
-        component = _stated({k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN})
+        component = _build_stated_fields(
+            {k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN}
+        )
         area_name = row.get(SIENNA_REGION_NAME_COLUMN) if holds_region else None
         if area_name is not None:
             component[SIENNA_REGION_COLUMN] = [area_ids[area_name]]
@@ -160,11 +162,13 @@ def _build_attributes(state: State) -> tuple[list[dict[str, Any]], set[int]]:
             continue
         for row in table.iter_rows(named=True):
             ids.add(row[SIENNA_ID_COLUMN])
-            attributes.append(_stated({k: _named_years(k, v) for k, v in row.items()}))
+            attributes.append(
+                _build_stated_fields({k: _build_named_years(k, v) for k, v in row.items()})
+            )
     return attributes, ids
 
 
-def _named_years(field: str, value: Any) -> Any:
+def _build_named_years(field: str, value: Any) -> Any:
     """A list of name/year pairs, as the object keyed by name that the schema states."""
     if field not in _NAMED_YEAR_FIELDS or value is None:
         return value
@@ -186,7 +190,9 @@ def _build_associations(
         component_type = row[A.COMPONENT_TYPE]
         name = row[A.COMPONENT_NAME]
         by_name = component_ids.get(component_type, {})
-        validate_refs(A.COMPONENT_NAME, [name], set(by_name), f"attributes -> {component_type}")
+        reject_unknown_references(
+            A.COMPONENT_NAME, [name], set(by_name), f"attributes -> {component_type}"
+        )
         if row[A.ATTRIBUTE_ID] not in attribute_ids:
             raise ValueError(
                 f"attributes -> supplemental_attributes: no attribute with id {row[A.ATTRIBUTE_ID]}"
@@ -202,7 +208,7 @@ def _build_associations(
     return rows
 
 
-def _stated(row: dict[str, Any]) -> dict[str, Any]:
+def _build_stated_fields(row: dict[str, Any]) -> dict[str, Any]:
     """The fields a row actually holds, at every depth of a nested struct.
 
     A field no table wrote is absent rather than null, so the schema's own default applies
@@ -211,7 +217,7 @@ def _stated(row: dict[str, Any]) -> dict[str, Any]:
     without the two a thermal one alone states.
     """
     return {
-        key: _stated(value) if isinstance(value, dict) else value
+        key: _build_stated_fields(value) if isinstance(value, dict) else value
         for key, value in row.items()
         if value is not None
     }

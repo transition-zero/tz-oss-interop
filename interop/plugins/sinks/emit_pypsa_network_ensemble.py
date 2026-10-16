@@ -47,7 +47,7 @@ class EmitPypsaNetworkEnsemble(Sink):
         manifest = EnsembleManifest()
         for sample in samples_to_write(state):
             manifest.replications.append(self._write_one(state, params, sample, series_cache))
-            _evict_sample(series_cache, sample)
+            _drop_cached_sample(series_cache, sample)
         self._write_manifest(params, manifest)
 
     def _write_one(
@@ -76,7 +76,7 @@ class EmitPypsaNetworkEnsemble(Sink):
         )
 
 
-def _evict_sample(
+def _drop_cached_sample(
     series_cache: dict[tuple[str, str, str | None], dict[str, FloatArray]], sample: str
 ) -> None:
     """Drop every entry a just-written sample's network read, once nothing needs it again.

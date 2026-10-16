@@ -33,6 +33,7 @@ class EmitSiennaFilesParams(BaseModel):
     )
     indent: int = Field(default=2, description="JSON indent width")
 
+    @property
     def file_paths(self) -> SiennaFilePaths:
         """The system and the two companions, in the order the shared write expects them."""
         return SiennaFilePaths(
@@ -56,5 +57,5 @@ class EmitSiennaFiles(WritesSiennaFiles, Sink):
                 f"got {type(params).__name__}"
             )
         self._write_sienna_files(
-            params.file_paths(), state, EmitSiennaSystemJson.build_payload(state), params.indent
+            params.file_paths, state, EmitSiennaSystemJson.build_payload(state), params.indent
         )

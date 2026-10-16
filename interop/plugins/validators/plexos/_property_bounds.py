@@ -39,7 +39,7 @@ class PropertyBoundCheck:
     message: str
 
 
-def check_property_bounds(
+def report_property_bounds(
     validator: Validator,
     state: State,
     plexos_class: PlexosClass,
@@ -51,7 +51,7 @@ def check_property_bounds(
     source's business rather than this validator's.
     """
     properties = state.source_topology.get(PlexosResolvedTable.PROPERTIES)
-    if properties is None or not _states_values(properties):
+    if properties is None or not _has_stated_values(properties):
         return
     rows = properties.filter(
         (pl.col(PlexosPropertyCol.CHILD_CLASS) == str(plexos_class))
@@ -71,7 +71,7 @@ def check_property_bounds(
             )
 
 
-def _states_values(properties: pl.LazyFrame) -> bool:
+def _has_stated_values(properties: pl.LazyFrame) -> bool:
     """Whether the resolved table holds the columns a bound reads.
 
     A model stating no property at all leaves the table without them, and a bound on a
@@ -86,7 +86,7 @@ def _states_values(properties: pl.LazyFrame) -> bool:
     } <= held
 
 
-def negative(plexos_property: str, quantity: str) -> PropertyBoundCheck:
+def build_non_negative_check(plexos_property: str, quantity: str) -> PropertyBoundCheck:
     """A property that states a quantity no object can have less than none of."""
     return PropertyBoundCheck(
         plexos_property,
@@ -95,7 +95,7 @@ def negative(plexos_property: str, quantity: str) -> PropertyBoundCheck:
     )
 
 
-def outside_percent(plexos_property: str, quantity: str) -> PropertyBoundCheck:
+def build_percent_range_check(plexos_property: str, quantity: str) -> PropertyBoundCheck:
     """A property PLEXOS states as a percentage, so a value outside 0 to 100 is unreadable."""
     return PropertyBoundCheck(
         plexos_property,
