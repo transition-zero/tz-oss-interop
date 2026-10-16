@@ -188,10 +188,11 @@ class AnnualResultsMapper:
         if weights.is_empty():
             return []
         production = _build_all_production(hourly, weights)
+        produced = production.build_table()
         capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
         return [
-            *self._map_production(production.build_table()),
-            *self._map_installed_capacity(capacity, production.build_table()),
+            *self._map_production(produced),
+            *self._map_installed_capacity(capacity, produced),
             *self._map_emissions(production.generators, reader.read(ExtensionKind.GENERATOR)),
         ]
 

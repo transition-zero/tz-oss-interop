@@ -129,6 +129,15 @@ def assert_select_offered_default(message: str, value: str) -> None:
     assert value in defaults, f"select {message!r} defaults were {defaults}, expected {value!r}"
 
 
+@then(parsers.parse('the select prompt "{message}" offered no default'))
+def assert_select_offered_no_default(message: str) -> None:
+    defaults = [record["default"] for record in _recorded_selects if record["message"] == message]
+    assert defaults, f"select {message!r} was never asked; asked: {_recorded_selects}"
+    assert all(default is None for default in defaults), (
+        f"select {message!r} defaults were {defaults}, expected none"
+    )
+
+
 @then(parsers.parse('the select prompt "{message}" offered exactly "{choices}"'))
 def assert_select_offered_exactly(message: str, choices: str) -> None:
     expected = [choice.strip() for choice in choices.split(",")]

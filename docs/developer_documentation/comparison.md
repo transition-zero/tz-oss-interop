@@ -142,6 +142,8 @@ The pipeline writes two files:
 
 > The sidecar filename is derived automatically from the JSON output stem (`{stem}_time_series_storage.h5`). Do not rename or move the `.h5` file independently — PowerSystems.jl looks it up by stem at load time.
 
+The sink parameter `base_power` must be 100 MVA, the system base of each HVDC line limit, and another value stops the run.
+
 ---
 
 ## Step 6: Solve with PowerSimulations

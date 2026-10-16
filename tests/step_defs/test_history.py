@@ -158,6 +158,25 @@ def given_recorded_solve(isolated_history: Path, path: str, model: str) -> dict[
     return invocation
 
 
+@given(
+    parsers.parse(
+        'a recorded solve of "{path}" with network model "{model}" and no unserved energy '
+        "answer in my history"
+    ),
+    target_fixture="recorded_invocation",
+)
+def given_recorded_solve_without_unserved_energy(
+    isolated_history: Path, path: str, model: str
+) -> dict[str, Any]:
+    invocation: dict[str, Any] = {
+        "command": "solve",
+        "timestamp": "2026-05-20T12:00:00+00:00",
+        "details": {"sienna_json_path": path, "network_model": model, "output_dir": "solved"},
+    }
+    _write_history(isolated_history, [invocation])
+    return invocation
+
+
 _COMPARE_PYPSA_PATH = "inputs/network.nc"
 _COMPARE_SYSTEM_PATH = "inputs/system.json"
 _COMPARE_EXTENSIONS_PATH = "inputs/system_extensions.json"
