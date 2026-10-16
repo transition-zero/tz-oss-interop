@@ -64,7 +64,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     COST_MWH,
     FIXED_COST_MW_YEAR,
-    INPUT_CARRIER,
     OTHER_MODE_COSTS,
     enrich_fixed_costs,
     enrich_other_modes,
@@ -283,7 +282,7 @@ def _express_has_series() -> pl.Expr:
 def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
     return GeneratorExtension(
         name=row[GENERATOR_NAME],
-        carrier=row[INPUT_CARRIER],
+        carrier=row[AnnotationColumn.CATEGORY],
         category=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=_build_emission_rates(row[EMISSION_TERMS]),

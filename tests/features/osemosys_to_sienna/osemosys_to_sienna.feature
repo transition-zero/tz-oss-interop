@@ -394,7 +394,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.6}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "fom_charge_per_mw_year" set to 20.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "other_mode_variable_costs_per_mwh" set to {"2": 8.0}
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "carrier" set to "gas"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "carrier" set to "gas-cc"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "category" set to "gas-cc"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "fom_charge_per_mw_year"
 
@@ -483,7 +483,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
       And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
 
-    Scenario: The carrier of a plant with two input fuels is the carrier of the fuel it takes in most of
+    Scenario: The carrier of a generator is its category, which names its carriers row
+      A plant with two input fuels and a plant with no input fuel each take the category.
       Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL  | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATGASCC    | ATGAS | 1                 | 2030 | 2     |
@@ -491,8 +492,9 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | R1     | ATOILCT    | ATGAS | 1                 | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "carrier" set to "oil"
-      And the file "decisions.md" contains "the carrier of the fuel that the technology takes in with the largest input_activity_ratio"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "carrier" set to "oil-ct"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATSOLAR" having "carrier" set to "solar"
+      And the file "decisions.md" contains "the category of the technology, which names its carriers: row"
 
     Scenario: A flow or emission default other than zero is not applied, and the report says so
       Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0.5 has the rows:

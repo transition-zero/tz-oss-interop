@@ -71,9 +71,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     FIXED_COST_MW_YEAR,
     FUEL_TERM_MWH,
     FUEL_TERMS,
-    INPUT_CARRIER,
-    MAIN_FUEL,
-    MAIN_INPUT_RATIO,
     OTHER_MODE_COSTS,
     OTHER_MODE_VALUES,
     OWN_COST,
@@ -199,10 +196,7 @@ _EMISSION_DERIVATION = (
     "output_activity_ratio, in t/MWh"
 )
 _CATEGORY_DERIVATION = "the category of the technology"
-_CARRIER_DERIVATION = (
-    "the carrier of the fuel that the technology takes in with the largest input_activity_ratio "
-    "at the operations mode; the fuel name breaks a tie"
-)
+_CARRIER_DERIVATION = "the category of the technology, which names its carriers: row"
 _OUTPUT_RATIO_ATTRIBUTE = "electricity at the operations mode"
 _LOST_COST_NOTE = (
     "RenewableNonDispatch has no operation_cost field, so the variable cost is left out"
@@ -533,29 +527,19 @@ def _build_other_mode_attribute(row: dict[str, Any]) -> str:
 def _build_grouping_events(
     dest: DestinationFieldFactory, old: dict[str, Any]
 ) -> list[TranslationEvent]:
-    category = build_derived(
-        [_build_category_source(old)],
-        [dest(old[GENERATOR_NAME], _CATEGORY_ATTRIBUTE, old[AnnotationColumn.CATEGORY])],
-        _CATEGORY_DERIVATION,
-    )
-    if old[INPUT_CARRIER] is None:
-        return category
-    carrier = build_derived(
-        [
-            _build_source(
-                FlowParameter.INPUT_ACTIVITY_RATIO, old, old[MAIN_FUEL], old[MAIN_INPUT_RATIO]
-            ),
-            build_osemosys_field(
-                FUEL,
-                _build_region_name(old, old[MAIN_FUEL]),
-                AnnotationColumn.CARRIER,
-                old[INPUT_CARRIER],
-            ),
-        ],
-        [dest(old[GENERATOR_NAME], _CARRIER_ATTRIBUTE, old[INPUT_CARRIER])],
-        _CARRIER_DERIVATION,
-    )
-    return [*category, *carrier]
+    category = old[AnnotationColumn.CATEGORY]
+    return [
+        *build_derived(
+            [_build_category_source(old)],
+            [dest(old[GENERATOR_NAME], _CATEGORY_ATTRIBUTE, category)],
+            _CATEGORY_DERIVATION,
+        ),
+        *build_derived(
+            [_build_category_source(old)],
+            [dest(old[GENERATOR_NAME], _CARRIER_ATTRIBUTE, category)],
+            _CARRIER_DERIVATION,
+        ),
+    ]
 
 
 def _build_category_source(old: dict[str, Any]) -> SourceField:

@@ -19,7 +19,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
-    AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
@@ -31,7 +30,6 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
-    read_annotations,
     read_parameter,
     read_parameter_with_defaults,
 )
@@ -53,9 +51,6 @@ FUEL_TERMS = "fuel_terms"
 FUEL_TERM_MWH = "fuel_term_mwh"
 FUEL_COST_MWH = "fuel_cost_mwh"
 VARIABLE_COST_MWH = "variable_cost_mwh"
-INPUT_CARRIER = "input_carrier"
-MAIN_FUEL = "main_fuel"
-MAIN_INPUT_RATIO = "main_input_ratio"
 FIXED_COST = "fixed_cost"
 FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
 OTHER_MODE_VALUES = "other_mode_values"
@@ -66,9 +61,6 @@ COST_MWH = "cost_mwh"
 
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_TERM = "fuel_term"
-_CARRIER = "carrier"
-# The fuel with the largest input ratio comes first, and the fuel name breaks a tie.
-_MAIN_FUEL_ORDER = ([INPUT_RATIO, FUEL], [True, False])
 # The parameters whose rows at another operating mode the operations system leaves out, each
 # with the key column that its rows add to the technology.
 _MODE_PARAMETERS: dict[str, str | None] = {
@@ -152,17 +144,12 @@ def _read_own_costs(
 def _build_fuel_terms(
     state: State, operations: OperationsYear, inputs: pl.DataFrame, fuel_supply: FuelSupply
 ) -> pl.DataFrame:
-    """One list of fuel terms for each generator, with their sum and its main input fuel.
+    """One list of fuel terms for each generator, with their sum.
 
     A fuel with no producer keeps a null term, so that its event can say so.
     """
-    carriers = read_annotations(state, FUEL).select(
-        REGION, FUEL, pl.col(AnnotationColumn.CARRIER).alias(_CARRIER)
-    )
-    priced = (
-        inputs.join(fuel_supply.prices, on=[REGION, FUEL], how="left")
-        .join(carriers, on=[REGION, FUEL], how="left")
-        .with_columns((pl.col(INPUT_RATIO) * pl.col(COST_PER_OUTPUT)).alias(_FUEL_TERM))
+    priced = inputs.join(fuel_supply.prices, on=[REGION, FUEL], how="left").with_columns(
+        (pl.col(INPUT_RATIO) * pl.col(COST_PER_OUTPUT)).alias(_FUEL_TERM)
     )
     convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
     term = express_per_output(express_converted(priced, _FUEL_TERM, convert))
@@ -181,17 +168,8 @@ def _build_fuel_terms(
                 FUEL_TERM_MWH,
             ).alias(FUEL_TERMS),
             pl.col(FUEL_TERM_MWH).sum().alias(FUEL_COST_MWH),
-            _express_main_input(_CARRIER).alias(INPUT_CARRIER),
-            _express_main_input(FUEL).alias(MAIN_FUEL),
-            _express_main_input(INPUT_RATIO).alias(MAIN_INPUT_RATIO),
         )
     )
-
-
-def _express_main_input(column: str) -> pl.Expr:
-    """The value of `column` for the fuel that the generator takes in most of."""
-    order, descending = _MAIN_FUEL_ORDER
-    return pl.col(column).sort_by(order, descending=descending).first()
 
 
 def _read_other_mode_rows(
