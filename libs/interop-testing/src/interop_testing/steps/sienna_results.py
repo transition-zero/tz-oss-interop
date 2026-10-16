@@ -90,6 +90,13 @@ def given_load(sienna_results_builder: SiennaResultsBuilder, component: str, val
     sienna_results_builder.add_load(component, _series(values))
 
 
+@given(parsers.parse('the results have the PowerLoad parameter for "{component}" of {values}'))
+def given_load_parameter(
+    sienna_results_builder: SiennaResultsBuilder, component: str, values: str
+) -> None:
+    sienna_results_builder.add_load_parameter(component, _series(values))
+
+
 @given(parsers.parse("the results objective is {value:g}"))
 def given_objective(sienna_results_builder: SiennaResultsBuilder, value: float) -> None:
     sienna_results_builder.set_objective(value)

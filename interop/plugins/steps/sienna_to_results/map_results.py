@@ -71,7 +71,12 @@ _STORAGE_IN_COL = "_storage_in"
 _DISPATCH_FROM_SERIES = "{series} -> dispatch"
 _DISPATCH_FROM_STORAGE = "ActivePowerOutVariable - ActivePowerInVariable -> dispatch"
 _FLOW_FROM_FLOW = "FlowActivePowerVariable -> flow"
-_LOAD_FROM_PARAMETER = "ActivePowerTimeSeriesParameter -> load (positive = consumption)"
+_LOAD_FROM_PARAMETER = (
+    "-1 × ActivePowerTimeSeriesParameter -> load (positive = consumption); PowerSimulations "
+    "writes the load parameter as -1 × max_active_power"
+)
+# PowerSimulations writes the load parameter of a StaticPowerLoad as -1 × max_active_power.
+_LOAD_PARAMETER_SIGN = -1.0
 _OBJECTIVE_FROM_STATS = "optimizer_stats.objective_value -> objective"
 
 _RESULT_COLUMNS = [
@@ -197,7 +202,9 @@ class SiennaResultsToResultsFormat(TranslationStep):
         )
         return [
             _build_frame_without_category(
-                frame, ResultsVariable.LOAD, pl.col(StagedTimeSeriesCol.VALUE)
+                frame,
+                ResultsVariable.LOAD,
+                _LOAD_PARAMETER_SIGN * pl.col(StagedTimeSeriesCol.VALUE),
             )
         ]
 

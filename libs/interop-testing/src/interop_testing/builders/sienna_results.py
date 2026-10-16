@@ -83,7 +83,12 @@ class SiennaResultsBuilder:
     def add_link_flow(self, component: str, values: list[float]) -> None:
         self._add(_LINK_FLOW, component, values)
 
-    def add_load(self, component: str, values: list[float]) -> None:
+    def add_load(self, component: str, demand: list[float]) -> None:
+        """PowerSimulations writes the load parameter as -1 × the demand, so the file does too."""
+        self._add(_LOAD, component, [-value for value in demand])
+
+    def add_load_parameter(self, component: str, values: list[float]) -> None:
+        """The load parameter as the file states it, with no change of sign."""
         self._add(_LOAD, component, values)
 
     def set_objective(self, value: float) -> None:
