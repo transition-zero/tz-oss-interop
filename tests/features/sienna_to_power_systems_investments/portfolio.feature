@@ -73,3 +73,7 @@ Feature: a Sienna portfolio becomes the document PowerSystemsInvestments reads
   Scenario: a demand profile reaches the companion in MW, and states the period it falls in
     Then the series document "psi/portfolio_series.json" record for "DemandRequirement" named "North_load" holds series "ops_demand" for year "2020" representative day 1
     And the series document "psi/portfolio_series.json" states one period from "2020-01-01" to "2020-12-31"
+
+  Scenario: A technology that holds an existing plant names it, so its capacity reaches the model
+    Then the series document "psi/portfolio_series.json" gives "SupplyTechnology" "REZ_Solar" the existing devices "REZ_Solar"
+    And the log contains "holds the existing capacity of 1 technology(ies) constant over every period and reads no retirement: REZ_Solar"

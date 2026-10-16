@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
@@ -121,7 +122,7 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
         self,
         results_dir: Path,
         csvs: tuple[ResultCsvs, ...],
-        read: Any,
+        read: Callable[[pl.DataFrame, str, str], pl.DataFrame],
     ) -> list[pl.DataFrame]:
         """Every result file that the solve wrote, each tagged with its result and technology."""
         frames: list[pl.DataFrame] = []

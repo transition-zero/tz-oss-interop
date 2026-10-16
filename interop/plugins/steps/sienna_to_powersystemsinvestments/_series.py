@@ -28,12 +28,18 @@ from interop.plugins.shared.power_systems_investments_schema import (
 from interop.plugins.shared.sienna_constants import (
     SIENNA_NAME_COLUMN,
     SiennaLoadCol,
+    SiennaSeriesName,
     SiennaTable,
 )
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import record_translation
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
+from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
+    PROFILED_SUPPLY_TYPES,
+    read_supply_types,
+    report_unprofiled,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_days import (
     derive_representative_day_series,
     has_portfolio_series,
@@ -42,7 +48,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_day
 log = logging.getLogger(__name__)
 
 # The series a SiennaSchemas system states a component's profile under.
-_SOURCE_SERIES = "max_active_power"
+_SOURCE_SERIES = SiennaSeriesName.MAX_ACTIVE_POWER.value
 
 # How long one representative day is, and how many days of a year it stands for.
 _SLICE_LENGTH = 24
@@ -122,8 +128,15 @@ def _list_technology_records(
         return []
     records: list[dict[str, Any]] = []
     without: list[str] = []
+    unprofiled: list[str] = []
+    supply_types = read_supply_types(state)
     for name in table[SIENNA_NAME_COLUMN].to_list():
         key = owners.get(name)
+        is_read = name not in supply_types or supply_types[name] in PROFILED_SUPPLY_TYPES
+        if not is_read:
+            if key is not None:
+                unprofiled.append(name)
+            continue
         if key is None:
             without.append(name)
             continue
@@ -132,6 +145,7 @@ def _list_technology_records(
         if record is not None:
             records.append(record)
     _warn_without_profile(component, without)
+    report_unprofiled(unprofiled, recorder)
     return records
 
 

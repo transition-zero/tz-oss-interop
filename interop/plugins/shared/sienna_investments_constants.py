@@ -481,6 +481,16 @@ SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
     SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
 )
 
+STAGED_EXISTING_DEVICES_TABLE = "staged_existing_devices"
+"""``State.source_topology`` key of each ExistingDevices attribute of a portfolio read back, with
+the type and the id of the technology that it describes."""
+
+STAGED_EXISTING_DEVICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaSupplementalAttributeAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaSupplementalAttributeAssociationCol.COMPONENT_ID: pl.Int64,
+    SiennaExistingDevicesCol.EXISTING_DEVICES: pl.List(pl.Utf8),
+}
+
 # Keys for the destination tables that are not components of the document: the association
 # rows and the portfolio-wide financial data.
 SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"

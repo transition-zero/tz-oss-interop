@@ -211,3 +211,32 @@ def assert_series_periods(path: str, years: str) -> None:
     periods = read_series_document(path).get("periods", [])
     expected = [{"start": f"{year}-01-01", "end": f"{year}-12-31"} for year in years.split()]
     assert periods == expected, f"expected periods {expected!r} in {path}, got {periods!r}"
+
+
+@then(
+    parsers.parse(
+        'the series document "{path}" gives "{component}" "{name}" the existing devices "{devices}"'
+    )
+)
+def assert_existing_devices(path: str, component: str, name: str, devices: str) -> None:
+    matching = [
+        record.get("devices")
+        for record in read_series_document(path).get("existing_devices", [])
+        if (record.get("component_type"), record.get("component_name")) == (component, name)
+    ]
+    assert matching == [devices.split()], (
+        f"expected {component}:{name} to hold the existing devices {devices.split()!r}, "
+        f"got {matching!r}"
+    )
+
+
+@then(
+    parsers.parse('the series document "{path}" holds no record for "{component}" named "{name}"')
+)
+def assert_no_series_record(path: str, component: str, name: str) -> None:
+    matching = [
+        record
+        for record in read_series_document(path).get("records", [])
+        if (record.get("component_type"), record.get("component_name")) == (component, name)
+    ]
+    assert not matching, f"expected no series record for {component}:{name}, got {len(matching)}"

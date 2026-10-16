@@ -12,10 +12,13 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
 
   The invented model below has the years 2030 and 2035, the locations AT and DE, and two
   seasons of one day each. A day has a bracket of 6 hours and a bracket of 18 hours. The gas
-  plant ATGASNEW may hold 1 GW in 2030 and 2 GW in 2035, and must hold 0.2 GW in 2035. The
-  solar plant ATSOLAR has a capacity factor below 1. The wind plant ATWIND has a capacity factor
-  of 1 in every hour, so the portfolio states no series for it. The interconnector ATDELINK
-  loses 5 % of what it carries. ATGASNEW is the only plant that emits CO2.
+  plant ATGASNEW may hold 1 GW in 2030 and 2 GW in 2035, and must hold 0.2 GW in 2035. Its
+  capacity factor is 0.9. The solar plant ATSOLAR has a capacity factor below 1. The wind plant
+  ATWIND has a capacity factor of 1 in every hour, so the portfolio states no series for it.
+  The interconnector ATDELINK loses 5 % of what it carries. ATGASNEW is the only plant that
+  emits CO2. The gas plant ATGASCC holds 0.5 GW in 2030, and a plan may build it up to 0.4 GW in
+  2030 and 0.3 GW in 2035. The gas plant ATGASOLD and the solar plant ATSOLAROLD exist, and a
+  plan cannot build either of them.
 
   Background:
     Given an otoole model
@@ -26,7 +29,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     And the otoole set "SEASON" holds "S1 S2"
     And the otoole set "DAYTYPE" holds "1"
     And the otoole set "DAILYTIMEBRACKET" holds "B1 B2"
-    And the otoole set "TECHNOLOGY" holds "ATGASNEW ATSOLAR ATWIND ATDELINK ATGASWELL"
+    And the otoole set "TECHNOLOGY" holds "ATGASNEW ATSOLAR ATWIND ATDELINK ATGASWELL ATGASCC ATGASOLD ATSOLAROLD"
     And the otoole set "EMISSION" holds "CO2"
     And the otoole set "MODE_OF_OPERATION" holds "1"
     And the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
@@ -82,6 +85,10 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATGASNEW   | ATGAS  | 1                 | 2030 | 2     |
       | R1     | ATGASNEW   | ATGAS  | 1                 | 2035 | 2     |
       | R1     | ATDELINK   | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATGASCC    | ATGAS  | 1                 | 2030 | 2     |
+      | R1     | ATGASCC    | ATGAS  | 1                 | 2035 | 2     |
+      | R1     | ATGASOLD   | ATGAS  | 1                 | 2030 | 2     |
+      | R1     | ATGASOLD   | ATGAS  | 1                 | 2035 | 2     |
     And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
       | R1     | ATGASNEW   | ATELEC | 1                 | 2030 | 1     |
@@ -91,16 +98,33 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATDELINK   | DEELEC | 1                 | 2030 | 0.95  |
       | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
       | R1     | ATGASWELL  | ATGAS  | 1                 | 2035 | 1     |
+      | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATGASCC    | ATELEC | 1                 | 2035 | 1     |
+      | R1     | ATGASOLD   | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATGASOLD   | ATELEC | 1                 | 2035 | 1     |
+      | R1     | ATSOLAROLD | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATSOLAROLD | ATELEC | 1                 | 2035 | 1     |
+    And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASCC    | 2030 | 0.5   |
+      | R1     | ATGASOLD   | 2030 | 0.2   |
+      | R1     | ATGASOLD   | 2035 | 0.2   |
+      | R1     | ATSOLAROLD | 2030 | 0.1   |
+      | R1     | ATSOLAROLD | 2035 | 0.1   |
     And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE      |
       | R1     | ATGASNEW   | 2030 | 1000000000 |
       | R1     | ATSOLAR    | 2030 | 600000000  |
       | R1     | ATWIND     | 2030 | 900000000  |
       | R1     | ATDELINK   | 2030 | 200000000  |
+      | R1     | ATGASCC    | 2030 | 800000000  |
+      | R1     | ATGASCC    | 2035 | 800000000  |
     And the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2030 | 1     |
       | R1     | ATGASNEW   | 2035 | 2     |
+      | R1     | ATGASCC    | 2030 | 0.4   |
+      | R1     | ATGASCC    | 2035 | 0.3   |
     And the otoole parameter "TotalAnnualMinCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2035 | 0.2   |
@@ -120,6 +144,14 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATSOLAR    | S1B2      | 2035 | 0.6   |
       | R1     | ATSOLAR    | S2B1      | 2035 | 0.25  |
       | R1     | ATSOLAR    | S2B2      | 2035 | 0.9   |
+      | R1     | ATSOLAROLD | S1B1      | 2030 | 0     |
+      | R1     | ATSOLAROLD | S1B2      | 2030 | 0.4   |
+      | R1     | ATSOLAROLD | S2B1      | 2030 | 0.2   |
+      | R1     | ATSOLAROLD | S2B2      | 2030 | 0.7   |
+      | R1     | ATGASNEW   | S1B1      | 2030 | 0.9   |
+      | R1     | ATGASNEW   | S1B2      | 2030 | 0.9   |
+      | R1     | ATGASNEW   | S2B1      | 2030 | 0.9   |
+      | R1     | ATGASNEW   | S2B2      | 2030 | 0.9   |
     And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
       | R1     | ATGASNEW   | CO2      | 1                 | 2030 | 350   |
@@ -137,7 +169,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},                                         |
       | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"}],                                                 |
       | technologies: [                                                                                                              |
-      | {match: "GASNEW$", category: gas-cc}, {match: "SOLAR$", category: solar}, {match: "WIND$", category: wind}]}}                |
+      | {match: "GAS(NEW\|CC\|OLD)$", category: gas-cc}, {match: "SOLAR(OLD)?$", category: solar}, {match: "WIND$", category: wind}]}}                |
       | carriers: [                                                                                                                  |
       | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
       | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe},                          |
@@ -162,6 +194,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     And the portfolio "psi/portfolio.json" component "Zone" named "AT" has field "id" equal to 1
     And the portfolio "psi/portfolio.json" component "Zone" named "DE" has field "id" equal to 2
     And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "__metadata__.parameters" equal to "['ACBranch']"
+    And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "power_systems_type" equal to "ACBranch"
     And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "start_region" equal to 1
     And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "end_region" equal to 2
     And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "line_loss" equal to 0.0
@@ -170,6 +203,8 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "capital_costs.function_data.proportional_term" equal to "200000.0"
     And the file "decisions.md" contains "a flow from the end to the start would make energy"
     And the log contains "so each is lossless: ATDELINK"
+    And the file "decisions.md" contains "so the direction that the source states does not bound the flow"
+    And the log contains "flows 1 transport technology(ies) both ways, whatever direction the source states: ATDELINK"
 
   Scenario: The series of each year splits into its representative days, numbered across the years
     Then the pipeline exit code is 0
@@ -190,3 +225,36 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "target_year" equal to 2035
     And the portfolio "psi/portfolio.json" component "CarbonCaps" named "CO2/2035" has field "max_mtons" equal to 0.25
     And the log contains "PowerSystemsInvestments builds no constraint from a CarbonCaps, so none limits the plan: CO2/2030, CO2/2035"
+
+  Scenario: A candidate that holds an existing plant names it, and its limit holds at least the plant
+    Then the pipeline exit code is 0
+    And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASCC" the existing devices "ATGASCC"
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASCC" has field "capacity_limits" equal to {"min": 0.0, "max": 500.0}
+    And the file "decisions.md" contains "so max is at least the rating of the existing devices"
+    And the log contains "holds the existing capacity of 3 technology(ies) constant over every period and reads no retirement"
+
+  Scenario: An existing plant that is no candidate becomes a technology that the plan cannot add to
+    Then the pipeline exit code is 0
+    And the series document "psi/portfolio_series.json" gives "SupplyTechnology" "ATGASOLD" the existing devices "ATGASOLD"
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "capacity_limits" equal to {"min": 0.0, "max": 200.0}
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "capital_costs.function_data.proportional_term" equal to "0.0"
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "operation_costs.__metadata__.type" equal to "ThermalGenerationCost"
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "region" equal to [1]
+    And the file "decisions.md" contains "a technology of its own that holds its rating"
+
+  Scenario: An existing renewable plant takes its base system profile in every year
+    Then the pipeline exit code is 0
+    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 3 of the year "2035" starts at "2035-01-01T00:00:00" with weight 182.482 and holds 24 values that peak at 0.4
+    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "ATSOLAROLD" in the representative day 2 of the year "2030" starts at "2030-01-02T00:00:00" with weight 182.482 and holds 24 values that peak at 0.7
+    And the file "decisions.md" contains "so its base system profile splits into the representative days of every year"
+
+  Scenario: The profile of a thermal candidate does not reach the model, and the log names it
+    Then the pipeline exit code is 0
+    And the series document "psi/portfolio_series.json" holds no record for "SupplyTechnology" named "ATGASNEW"
+    And the file "decisions.md" contains "so a technology of this type runs up to its capacity in every hour"
+    And the log contains "so each runs up to its capacity in every hour: ATGASNEW"
+
+  Scenario: The years between the investment periods carry no operations, and the log says so
+    Then the pipeline exit code is 0
+    And the file "decisions.md" contains "so the years 2031, 2032, 2033, 2034 between the periods carry no operating cost"
+    And the log contains "the 4 year(s) between the periods carry no operating cost: 2031, 2032, 2033 and 1 more"

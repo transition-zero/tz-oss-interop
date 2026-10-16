@@ -106,17 +106,28 @@ class LimitsByYear:
 
 
 def _build_limit(entries: list[dict[str, Any]], years: frozenset[str]) -> dict[str, float] | None:
-    """The largest yearly max when every year states one, with no minimum; else no limit."""
-    maxima = [entry[MinMaxField.MAX] for entry in entries if entry[MinMaxField.MAX] is not None]
-    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in entries}
-    if not maxima or len(maxima) < len(entries) or not years <= stated_years:
+    """The largest max of the plan's years when each states one, with no minimum; else none."""
+    in_plan = _list_plan_entries(entries, years)
+    maxima = [entry[MinMaxField.MAX] for entry in in_plan if entry[MinMaxField.MAX] is not None]
+    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
+    if not maxima or len(maxima) < len(in_plan) or not years <= stated_years:
         return None
     return {MinMaxField.MIN: _NO_MINIMUM, MinMaxField.MAX: max(maxima)}
 
 
+def _list_plan_entries(
+    entries: list[dict[str, Any]], years: frozenset[str]
+) -> list[dict[str, Any]]:
+    """The entries of the plan's years; every entry when the plan states no years."""
+    if not years:
+        return entries
+    return [entry for entry in entries if normalise_year(entry[MinMaxByKeyField.KEY]) in years]
+
+
 def _has_changing_max(entries: list[dict[str, Any]], years: frozenset[str]) -> bool:
-    maxima = {entry[MinMaxField.MAX] for entry in entries}
-    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in entries}
+    in_plan = _list_plan_entries(entries, years)
+    maxima = {entry[MinMaxField.MAX] for entry in in_plan}
+    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
     return len(maxima) > 1 or not years <= stated_years
 
 

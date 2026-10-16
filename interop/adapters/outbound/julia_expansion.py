@@ -254,6 +254,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
 
     log.info("=== 2. Attaching the time series the portfolio cannot carry ===")
     _attach_series(jl, request.document)
+    _attach_existing_devices(jl, request.document)
 
     log.info("=== 3. Building the investment model template ===")
     _build_template(jl, request)
@@ -313,6 +314,31 @@ def _attach_series(jl: Any, document: dict[str, Any]) -> None:
             record[SeriesDocument.VALUES],
         )
     log.info("attached %d time series", len(document[SeriesDocument.RECORDS]))
+
+
+def _attach_existing_devices(jl: Any, document: dict[str, Any]) -> None:
+    """Give each technology the base system components that it already holds."""
+    attach = jl.seval("""
+        function (portfolio, type_name, component_name, attribute_id, devices)
+            technology_type = getproperty(PSIP, Symbol(type_name))
+            component = first(IS.get_components(
+                x -> PSIP.get_name(x) == component_name, technology_type, portfolio.data))
+            PSIP.add_supplemental_attribute!(portfolio, component,
+                PSIP.ExistingDevices(; id = Int(attribute_id),
+                                     existing_devices = String[String(d) for d in devices]))
+            return nothing
+        end
+    """)
+    records = document.get(SeriesDocument.EXISTING_DEVICES, [])
+    for attribute_id, record in enumerate(records, start=1):
+        attach(
+            jl.portfolio,
+            record[SeriesDocument.COMPONENT_TYPE],
+            record[SeriesDocument.COMPONENT_NAME],
+            attribute_id,
+            record[SeriesDocument.DEVICES],
+        )
+    log.info("attached the existing devices of %d technologies", len(records))
 
 
 def _build_template(jl: Any, request: _ExpansionRequest) -> None:

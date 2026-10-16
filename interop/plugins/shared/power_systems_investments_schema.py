@@ -121,7 +121,9 @@ class PortfolioColumn:
 
 PORTFOLIO_SERIES_TABLE = "PortfolioSeries"
 PORTFOLIO_PERIODS_TABLE = "PortfolioPeriods"
-"""Destination tables holding the series the envelope drops, and the periods they fall in."""
+PORTFOLIO_EXISTING_DEVICES_TABLE = "PortfolioExistingDevices"
+"""Destination tables holding the series and the existing devices the envelope drops, and the
+periods the series fall in."""
 
 
 class InvestmentsSeriesName(StrEnum):
@@ -147,6 +149,8 @@ class SeriesDocument:
 
     PERIODS = "periods"
     RECORDS = "records"
+    EXISTING_DEVICES = "existing_devices"
+    DEVICES = "devices"
 
     START = "start"
     END = "end"
@@ -170,8 +174,6 @@ def build_component_metadata(
         PortfolioEnvelope.MODULE: PSIP_MODULE,
         PortfolioEnvelope.TYPE: str(component),
     }
-    if component is PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY:
-        power_systems_type = AGGREGATE_TRANSPORT_PARAMETER
     if component in PARAMETRIC_COMPONENTS and power_systems_type is not None:
         metadata[PortfolioEnvelope.PARAMETERS] = [power_systems_type]
         metadata[PortfolioEnvelope.CONSTRUCT_WITH_PARAMETERS] = True

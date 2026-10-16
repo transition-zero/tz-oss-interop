@@ -20,6 +20,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_simulations_schema import PSInputOutputCurve
 from interop.plugins.shared.power_systems_investments_schema import (
+    PORTFOLIO_EXISTING_DEVICES_TABLE,
     PSIP_MODULE,
     TECHNOLOGY_FINANCIAL_DATA_TYPE,
     PortfolioColumn,
@@ -32,6 +33,7 @@ from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaACBusCol,
     SiennaComponent,
+    SiennaGeneratorCol,
     SiennaStructField,
     SiennaTable,
 )
@@ -55,6 +57,9 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_not_mapped,
     record_translation,
 )
+from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_fleet import (
+    ExistingFleetMapper,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._limits import (
     LimitRow,
     LimitsByYear,
@@ -63,7 +68,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_day
     list_portfolio_years,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._series import derive_series
-from interop.plugins.steps.sienna_to_powersystemsinvestments._transport import TransportLosses
+from interop.plugins.steps.sienna_to_powersystemsinvestments._transport import TransportLinks
 
 # The types the step carries over, in the order the document lists them.
 _TECHNOLOGY_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
@@ -176,15 +181,37 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
         context = _PlanContext(
             frozenset(list_portfolio_years(state)),
             LimitsByYear(self._recorder),
-            TransportLosses(self._recorder),
+            TransportLinks(self._recorder),
         )
-        for sienna_type in _TECHNOLOGY_TYPES:
-            _map_technologies(state, sienna_type, context, self._recorder)
+        rows_by_type = {
+            str(sienna_type): _map_rows(state, sienna_type, context, self._recorder)
+            for sienna_type in _TECHNOLOGY_TYPES
+            if sienna_type in state.source_topology
+        }
+        self._map_existing_fleet(state, rows_by_type)
+        for sienna_type, rows in rows_by_type.items():
+            state.destination_tables[sienna_type] = pl.DataFrame(rows)
         context.limits.warn_lost()
-        context.losses.warn_lost()
+        context.links.warn_lost()
         report_carbon_caps(state, self._recorder)
         derive_series(state, self._recorder)
         return state
+
+    def _map_existing_fleet(
+        self, state: State, rows_by_type: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        """Give the plan the fleet that already runs, and the devices the adapter attaches."""
+        mapper = ExistingFleetMapper(self._recorder)
+        fleet = mapper.build_fleet(state)
+        supply = rows_by_type.setdefault(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value, [])
+        all_rows = [row for rows in rows_by_type.values() for row in rows]
+        for row, operation_cost in mapper.list_plants(fleet, all_rows, state):
+            supply.append(_map_existing_plant(row, operation_cost, self._recorder))
+        if not supply:
+            del rows_by_type[SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value]
+        mapper.set_floors(fleet, rows_by_type)
+        state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = mapper.build_table(fleet)
+        mapper.report(fleet)
 
 
 class _PlanContext(NamedTuple):
@@ -192,7 +219,7 @@ class _PlanContext(NamedTuple):
 
     years: frozenset[str]
     limits: LimitsByYear
-    losses: TransportLosses
+    links: TransportLinks
 
 
 def _map_zones(state: State, recorder: ScopedRecorder) -> None:
@@ -230,26 +257,42 @@ def _map_financial_data(state: State) -> None:
     state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = source.collect()
 
 
-def _map_technologies(
+def _map_rows(
     state: State,
     sienna_type: SiennaInvestmentsComponent,
     context: _PlanContext,
     recorder: ScopedRecorder,
-) -> None:
+) -> list[dict[str, Any]]:
     """Carry one type over, reshaping the fields whose shape or meaning differs."""
-    source = state.source_topology.get(sienna_type)
-    if source is None:
-        return
     rows = []
-    for row in source.collect().iter_rows(named=True):
+    for row in state.source_topology[sienna_type].collect().iter_rows(named=True):
         mapped = dict(row)
         context.limits.set_limits(
             mapped, LimitRow(sienna_type, mapped[SIENNA_NAME_COLUMN], context.years)
         )
         if sienna_type is SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY:
-            context.losses.set_lossless(mapped)
+            context.links.set_links(mapped)
         rows.append(_map_one(mapped, sienna_type, recorder))
-    state.destination_tables[str(sienna_type)] = pl.DataFrame(rows)
+    return rows
+
+
+def _map_existing_plant(
+    row: dict[str, Any], operation_cost: dict[str, Any], recorder: ScopedRecorder
+) -> dict[str, Any]:
+    """A technology for one existing plant, running at the cost the base system states."""
+    mapped = _map_one(row, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY, recorder)
+    mapped[SiennaSupplyTechnologyCol.OPERATION_COSTS] = operation_cost
+    record_translation(
+        recorder,
+        component=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value,
+        name=mapped[SIENNA_NAME_COLUMN],
+        source_field=SiennaGeneratorCol.OPERATION_COST,
+        source_value=mapped[PortfolioColumn.POWER_SYSTEMS_TYPE],
+        destination_field=SiennaSupplyTechnologyCol.OPERATION_COSTS,
+        destination_value=mapped[PortfolioColumn.POWER_SYSTEMS_TYPE],
+        derivation="the operation cost of the existing plant in the base system, unchanged",
+    )
+    return mapped
 
 
 def _map_one(

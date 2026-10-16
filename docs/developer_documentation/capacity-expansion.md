@@ -84,13 +84,14 @@ from the schema:
   reader rejects a null, and indexes both bounds of a limit by name. So an absent capacity limit
   states `{"min": 0.0, "max": 1e8}`, a limit with one bound gets the other from that default,
   and an absent transport `unit_size` states `1.0`.
-- **A transport technology is lossless.** An `AggregateTransportTechnology` names its start and
+- **A transport technology is lossless and flows both ways.** An `AggregateTransportTechnology` names its start and
   end regions by id, and the package resolves each against the Zones. It flows both ways, and
   the package takes the loss from the energy that reaches the end region. A flow from the end
   to the start therefore delivers more energy than it takes. So the step writes `line_loss`
-  `0.0`, records the stated loss as not mapped, and warns. Every transport technology is
-  built as `AggregateTransportTechnology{ACBranch}`, which is the type the adapter sets a model
-  for.
+  `0.0`, records the stated loss as not mapped, and warns. The direction that the source
+  states does not bound the flow, and the step records and warns that too. Every transport
+  technology is built as `AggregateTransportTechnology{ACBranch}`, which is the type the adapter
+  sets a model for, and its `power_systems_type` states `ACBranch`.
 
 ### What the reader derives, and never reads from a field
 
@@ -113,11 +114,40 @@ the component that came off disk. Each record names:
 |---|---|
 | `series_name` | `ops_variable_cap_factor` on a supply technology, `ops_demand` on a demand requirement |
 | `year` | the calendar year of the slice, which the model looks the series up by |
-| `rep_day` | the index of the slice within that year, which the model looks the series up by |
+| `rep_day` | the index of the slice among the slices of every year, in order from 1, which the model looks the series up by |
 | `weight` | how many days of the year the slice stands for |
 
 The names are the package's own, one per technology type, so a document stating any other
-name reaches a model that finds nothing.
+name reaches a model that finds nothing. The model reads `ops_variable_cap_factor` for a
+`RenewableDispatch` and a `HydroDispatch` only, so the step writes no record for a supply
+technology of another type. It records the profile as not mapped and warns.
+
+The companion also holds `existing_devices`: one entry for each technology that already holds
+capacity, with `component_type`, `component_name` and `devices`. The adapter attaches each as
+an `ExistingDevices` attribute after the read, because the envelope cannot carry an attribute.
+
+### The fleet that already runs
+
+The model counts the capacity that a technology already holds through its `ExistingDevices`:
+the names of base system components of the technology's PowerSystems type, at their rating
+in MW. The step reads the `ExistingDevices` attributes of the portfolio and settles four things:
+
+- **A name the base system does not hold under the type is left out.** The model stops on a
+  name that it cannot find. The step records each such name as not mapped, and warns.
+- **A limit holds at least the existing devices.** The model bounds existing plus built
+  capacity by `max`, so the step lifts a `max` below the rating of the devices to that rating.
+- **An existing plant that no technology names becomes a technology of its own.** It has the
+  plant's name, type, Zone and operation cost, `capacity_limits` of `{min: 0, max: rating}`,
+  no capital cost, and the plant as its one existing device. A `RenewableDispatch` or a
+  `HydroDispatch` of this kind takes its base system profile, split into the representative
+  days of every year. An existing component of another type, such as a storage or a
+  `RenewableNonDispatch`, is left out, recorded and warned.
+- **An existing link cannot attach.** The model looks the existing device of a transport
+  technology up as an `ACBranch`, and the base system holds a `TwoTerminalGenericHVDCLine`. The
+  step records and warns each one.
+
+The model holds existing capacity constant over every investment period and reads no
+retirement. The step records that once and warns.
 
 ### A portfolio that states its own series by year
 
@@ -145,13 +175,18 @@ each year.
 
 Two kinds of technology need a series in every slice, and the portfolio can state none:
 
-- A `RenewableDispatch` or `HydroDispatch` candidate that is available in every hour has no
-  series. Each of its slices states `1.0`.
+- A `RenewableDispatch` or `HydroDispatch` technology with no series takes its base system
+  profile, split into the representative days of every year. With no base system profile,
+  each of its slices states `1.0`, and the step warns.
 - A `DemandRequirement` with no series in a year has no demand in that year. Each slice of
   that year states `0.0`, and the step warns.
 
 With no `representative_period` records, the series of each year is one slice, weighted so
 that its hours stand for the whole year. The step warns.
+
+The model reads a series for every technology in every slice. So a day that one series does
+not reach is left out of the plan for every technology. The step records the short series and
+the day, and warns.
 
 ### One representative day
 
@@ -215,11 +250,10 @@ rows with those of the model that the portfolio came from. The solve states no c
   technology states none. A candidate that holds no capacity today is dropped from the
   operations system as retired, so its profile never reaches either document. Give the
   candidate the capacity it already holds, or its profile will not be there.
-- **Existing capacity does not reach the model.** The package counts the capacity that a
-  technology already holds through an `ExistingDevices` attribute. The envelope gives each
-  component a fresh UUID, so the attribute associations of the portfolio name nothing, and the
-  leg does not attach the attributes after the read. Every technology starts from zero, and a
-  technology that a plan cannot build is not in the portfolio at all.
+- **Existing capacity never retires.** See "The fleet that already runs".
+- **The years between the periods have no operations.** The model counts the operations of
+  each period's own year only, while it amortises capital over the whole recovery period. The
+  step records and warns the years between the periods, and does not change the weights.
 - **A carbon cap limits nothing.** At the pinned commit the model builds a constraint from an
   `EnergyShareRequirements` only. A `CarbonCaps` reaches the portfolio with its `target_year`,
   and the step warns.
@@ -228,7 +262,8 @@ rows with those of the model that the portfolio came from. The solve states no c
   every hour.
 - **A type with no model is left out.** The adapter sets a model for the types in the table
   above only. A `SupplyTechnology{RenewableNonDispatch}`, for example, is not in the plan, and
-  the adapter warns with its name.
+  the adapter warns with its name. The adapter cannot reach the decisions report, so the report
+  does not name it.
 - **`ColocatedSupplyStorageTechnology` cannot be read at all.** Its generated struct declares
   three fields as a plain map where the real struct wants a pair of numbers, so the read stops
   with a `convert` error. This translation writes no such component.
