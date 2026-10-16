@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from interop_testing import run_pipeline, write_pipeline, write_project_plugin
 from interop_testing.builders.otoole_models import OtooleModelBuilder
 from pytest_bdd import given, parsers, scenarios, when
 
+from tests.step_defs.conftest import invoke_translate
+
 scenarios("osemosys_to_sienna/osemosys_to_sienna.feature")
 
 _PIPELINE = "osemosys-csv-to-sienna"
+_SOURCE_FRAMEWORK = "osemosys"
+_DESTINATION_FRAMEWORK = "sienna"
 _USER_MAPPINGS_PATH = "user_mappings.yaml"
 _CONFIG_PATH = "model/config.yaml"
 _CSV_DIRECTORY = "model/csv"
@@ -55,6 +60,26 @@ sinks:
   - name: emit_sienna_files
 """
 
+_SCOPED_PIPELINE_YAML = """\
+source_framework: osemosys
+destination_framework: sienna
+source:
+  name: stage_osemosys_csv
+  params:
+    config_path: model/config.yaml
+    csv_dir: model/csv
+steps:
+  - name: osemosys_canonical_drop_outside_scope
+    params:
+      locations: [{location}]
+  - name: osemosys_to_sienna_map_components
+    params:
+      year: 2030
+  - name: sienna_relate_components
+sinks:
+  - name: emit_sienna_files
+"""
+
 
 @given(
     parsers.parse(
@@ -69,6 +94,14 @@ def given_move_bracket_pipeline(name: str, timeslice: str, bracket: str) -> None
     write_pipeline(name, _MOVE_BRACKET_PIPELINE_YAML)
 
 
+@given(
+    parsers.parse('a pipeline "{name}" that keeps the location "{location}" before the translation')
+)
+def given_scoped_pipeline(name: str, location: str) -> None:
+    """The steps of osemosys-csv-to-sienna, with a scope that a list of locations states."""
+    write_pipeline(name, _SCOPED_PIPELINE_YAML.format(location=location))
+
+
 @when(
     parsers.parse('I translate the otoole model to Sienna for the year "{year}"'),
     target_fixture="pipeline_exit_code",
@@ -80,7 +113,7 @@ def translate_the_otoole_model(otoole_model_builder: OtooleModelBuilder, year: s
     overrides = [
         f"source.config_path={_CONFIG_PATH}",
         f"source.csv_dir={_CSV_DIRECTORY}",
-        f"step[0].year={year}",
+        f"step[1].year={year}",
     ]
     return run_pipeline(_PIPELINE, overrides=overrides, user_mappings_path=_USER_MAPPINGS_PATH)
 
@@ -92,3 +125,23 @@ def translate_the_otoole_model(otoole_model_builder: OtooleModelBuilder, year: s
 def run_the_otoole_model(otoole_model_builder: OtooleModelBuilder, pipeline: str) -> int:
     otoole_model_builder.write(Path(_CONFIG_PATH), Path(_CSV_DIRECTORY))
     return run_pipeline(pipeline, user_mappings_path=_USER_MAPPINGS_PATH)
+
+
+@when(
+    parsers.parse('I translate the otoole model to Sienna in the REPL and answer the year "{year}"')
+)
+def translate_the_otoole_model_in_the_repl(
+    monkeypatch: pytest.MonkeyPatch, otoole_model_builder: OtooleModelBuilder, year: str
+) -> None:
+    """Answer the source paths and the year; every other prompt keeps its default."""
+    otoole_model_builder.write(Path(_CONFIG_PATH), Path(_CSV_DIRECTORY))
+    invoke_translate(
+        monkeypatch,
+        _SOURCE_FRAMEWORK,
+        _DESTINATION_FRAMEWORK,
+        _PIPELINE,
+        user_mappings_path=_USER_MAPPINGS_PATH,
+        source_config_path=_CONFIG_PATH,
+        source_csv_dir=_CSV_DIRECTORY,
+        step_1_year=year,
+    )

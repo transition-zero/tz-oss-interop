@@ -188,6 +188,19 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     Then the pipeline exit code is 1
     And the log contains "The model years are: 2030, 2035."
 
+  Scenario: The REPL asks for the model year, because the pipeline states none
+    When I translate the otoole model to Sienna in the REPL and answer the year "2030"
+    Then the prompt "step[1].year" was asked
+    And the file "outputs/system.json" parses as JSON with 2 components of type "ACBus"
+
+  Scenario: A scope of one location gives a system with the bus of that location only
+    Given a pipeline "osemosys-at-to-sienna" that keeps the location "AT" before the translation
+    When I run the otoole model through the pipeline "osemosys-at-to-sienna"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
+
   Scenario: A demand with no energy unit stops the run
     Given a file "user_mappings.yaml" containing the lines:
       | line                                                                                                         |
@@ -496,6 +509,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.ramp_limits` |  | OSeMOSYS states no unit commitment data"
+
+    Scenario: The validation run reads the three files that the pipeline writes
+      The product of the pipeline is the Sienna system. A person proves that the system
+      dispatches with a separate run of sienna-to-power-simulations over it, and a solve.
+      When I translate the otoole model to Sienna for the year "2030"
+      And I run the validation chain over "outputs/system.json" writing "outputs/power_simulations_system.json"
+      Then the file "outputs/power_simulations_system.json" parses as valid JSON
+      And the PS.jl system "outputs/power_simulations_system.json" contains 2 components of type "ThermalStandard"
+      And the PS.jl system "outputs/power_simulations_system.json" contains 1 component of type "RenewableDispatch"
+      And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "PowerLoad" component "ATELEC"
+      And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "RenewableDispatch" component "ATSOLAR"
 
   Rule: A storage with energy becomes an EnergyReservoirStorage that the technology linked to it rates
     The invented storages below are at AT. The pumped-storage plant ATPHS charges the storage

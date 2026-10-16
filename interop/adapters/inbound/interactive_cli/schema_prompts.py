@@ -10,6 +10,7 @@ import questionary
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from pydantic.types import PathType
+from pydantic_core import PydanticUndefined
 
 from interop.ports.outbound.filesystem import (
     InputDirectoryMarker,
@@ -173,7 +174,7 @@ def _prompt_for_field(prompt: str, field_info: FieldInfo, default_value: Any) ->
     default_str = ""
     if default_value is not None:
         default_str = str(default_value)
-    elif not field_info.is_required() and field_info.default is not None:
+    elif _has_stated_default(field_info):
         default_str = str(field_info.default)
 
     if _annotation_includes_path(field_info.annotation):
@@ -187,3 +188,8 @@ def _prompt_for_field(prompt: str, field_info: FieldInfo, default_value: Any) ->
     if _does_user_want_default(answer):
         return None
     return answer
+
+
+def _has_stated_default(field_info: FieldInfo) -> bool:
+    """A default that a factory builds has no text to prefill, so an empty answer keeps it."""
+    return field_info.default is not None and field_info.default is not PydanticUndefined

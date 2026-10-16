@@ -199,6 +199,14 @@ def assert_prompt_offered_default(message: str, value: str) -> None:
     assert value in defaults, f"prompt {message!r} defaults were {defaults}, expected {value!r}"
 
 
+@then(parsers.parse('the prompt "{message}" was asked'))
+def assert_prompt_asked(message: str) -> None:
+    asked = [prompt for prompt, _default in _recorded_prompt_defaults]
+    assert any(prompt.startswith(message) for prompt in asked), (
+        f"no prompt starts with {message!r}; asked: {asked}"
+    )
+
+
 def _stub_questionary_text_by_prompt(
     monkeypatch: pytest.MonkeyPatch, answers_by_prompt: Mapping[str, str | list[str]]
 ) -> None:

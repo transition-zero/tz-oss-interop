@@ -2,12 +2,12 @@
 Feature: the scaffolded osemosys example runs through the OSeMOSYS pipelines
   The osemosys example that `interop init` scaffolds is the base model of the OSeMOSYS mappings
   tutorial. Each pipeline reads it from its default paths. The Sienna pipeline also needs the
-  model year of its operations step, so its run gives `step[0].year`.
+  model year of its operations step, so its run gives `step[1].year`.
 
   Scenario: the OSeMOSYS to Sienna pipeline writes a Sienna system with no components
     Given I have scaffolded the osemosys example at "my-model"
     And I cd into "my-model"
-    When I run the pipeline "osemosys-csv-to-sienna" with overrides "step[0].year=2030" with user mappings "inputs/osemosys_mappings.yaml"
+    When I run the pipeline "osemosys-csv-to-sienna" with overrides "step[1].year=2030" with user mappings "inputs/osemosys_mappings.yaml"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with "components" set to {}
     And the file "decisions.md" contains "matched by name and key"
