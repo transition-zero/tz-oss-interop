@@ -21,7 +21,7 @@ class JuliaPackage:
     url: str | None = None
     rev: str | None = None
 
-    def state_location(self) -> dict[str, str]:
+    def build_location(self) -> dict[str, str]:
         """Where juliapkg finds it: a registry version, or a git URL and revision."""
         if self.url is not None and self.rev is not None:
             return {"url": self.url, "rev": self.rev}
@@ -71,14 +71,14 @@ def declare_julia_packages(dev_checkout_paths: Mapping[str, Path | None]) -> Non
     for package in JULIA_PACKAGES:
         checkout = dev_checkout_paths.get(package.name)
         if checkout is None:
-            juliapkg.add(package.name, package.uuid, **package.state_location())
+            juliapkg.add(package.name, package.uuid, **package.build_location())
         else:
             juliapkg.add(
-                package.name, package.uuid, dev=True, path=_read_checkout(checkout, package.name)
+                package.name, package.uuid, dev=True, path=_require_checkout(checkout, package.name)
             )
 
 
-def _read_checkout(checkout: Path, name: str) -> str:
+def _require_checkout(checkout: Path, name: str) -> str:
     if not checkout.is_dir():
         raise UserInputError(
             f"{name} checkout not found at {checkout}. Fix the "

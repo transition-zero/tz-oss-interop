@@ -395,7 +395,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if model_type == ModelType.SIENNA_INVESTMENTS:
         return _run_solve_expansion(container, replay, model_type)
 
-    if not _confirm_download(container, _POWER_SIMULATIONS_PACKAGES, dispatch=True):
+    if not _prompt_download_consent(container, _POWER_SIMULATIONS_PACKAGES, dispatch=True):
         return None
 
     raw_path = questionary.path(
@@ -426,7 +426,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if unit_commitment is None:
         return None
 
-    highs = _ask_highs_options(replay)
+    highs = _prompt_highs_options(replay)
     if highs is None:
         return None
     solver = highs.solver
@@ -490,7 +490,7 @@ class _HiGHSAnswers:
     time_limit_seconds: float | None
 
 
-def _ask_highs_options(replay: dict[str, Any]) -> _HiGHSAnswers | None:
+def _prompt_highs_options(replay: dict[str, Any]) -> _HiGHSAnswers | None:
     """The four HiGHS answers, or None where the user cancelled or typed an unreadable limit."""
     solver = questionary.select(
         "HiGHS solver algorithm?",
@@ -537,7 +537,7 @@ _POWER_SIMULATIONS_PACKAGES = "the PowerSimulations.jl solver packages"
 _POWER_SYSTEMS_INVESTMENTS_PACKAGES = "the PowerSystemsInvestments.jl packages"
 
 
-def _confirm_download(container: Container, packages: str, *, dispatch: bool) -> bool:
+def _prompt_download_consent(container: Container, packages: str, *, dispatch: bool) -> bool:
     """Warn before a first run downloads Julia, and ask whether to go on.
 
     A run whose packages are already installed asks nothing.
@@ -567,12 +567,12 @@ def _run_solve_expansion(
     container: Container, replay: dict[str, Any], model_type: str
 ) -> dict[str, Any] | None:
     """Expand a Sienna portfolio, asking only what the portfolio itself does not state."""
-    if not _confirm_download(container, _POWER_SYSTEMS_INVESTMENTS_PACKAGES, dispatch=False):
+    if not _prompt_download_consent(container, _POWER_SYSTEMS_INVESTMENTS_PACKAGES, dispatch=False):
         return None
-    answers = _ask_expansion_answers(replay)
+    answers = _prompt_expansion_answers(replay)
     if answers is None:
         return None
-    details = _expansion_details(model_type, answers)
+    details = _build_expansion_details(model_type, answers)
     try:
         with container() as scope:
             result = scope.get(SolveUseCase)(_build_expansion_request(answers))
@@ -595,8 +595,8 @@ class _ExpansionAnswers:
     output_dir: Path
 
 
-def _ask_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
-    portfolio_json_path = _ask_portfolio_path(replay)
+def _prompt_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
+    portfolio_json_path = _prompt_portfolio_path(replay)
     if portfolio_json_path is None:
         return None
     balance_model = questionary.select(
@@ -618,10 +618,10 @@ def _ask_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
     discount_rate = _parse_discount_rate(raw_discount_rate)
     if discount_rate is _UNREADABLE:
         return None
-    highs = _ask_highs_options(replay)
+    highs = _prompt_highs_options(replay)
     if highs is None:
         return None
-    output_dir = _ask_output_dir(replay, portfolio_json_path.parent / "expanded")
+    output_dir = _prompt_output_dir(replay, portfolio_json_path.parent / "expanded")
     if output_dir is None:
         return None
     return _ExpansionAnswers(
@@ -629,7 +629,7 @@ def _ask_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
     )
 
 
-def _ask_portfolio_path(replay: dict[str, Any]) -> Path | None:
+def _prompt_portfolio_path(replay: dict[str, Any]) -> Path | None:
     raw_path = questionary.path(
         f"Path to the PowerSystemsInvestments portfolio JSON?  {PATH_PROMPT_HINT}",
         default=str(replay.get(DetailKey.PORTFOLIO_JSON_PATH, "")),
@@ -643,7 +643,7 @@ def _ask_portfolio_path(replay: dict[str, Any]) -> Path | None:
     return portfolio_json_path
 
 
-def _ask_output_dir(replay: dict[str, Any], fallback: Path) -> Path | None:
+def _prompt_output_dir(replay: dict[str, Any], fallback: Path) -> Path | None:
     default_output = str(replay.get(DetailKey.OUTPUT_DIR) or fallback)
     raw_output = questionary.path(
         f"Output directory?  {PATH_PROMPT_HINT}", default=default_output
@@ -675,22 +675,22 @@ def _build_expansion_request(answers: _ExpansionAnswers) -> SolveExpansionReques
     )
 
 
-def _expansion_details(model_type: str, answers: _ExpansionAnswers) -> dict[str, Any]:
+def _build_expansion_details(model_type: str, answers: _ExpansionAnswers) -> dict[str, Any]:
     return {
         DetailKey.MODEL_TYPE: model_type,
         DetailKey.PORTFOLIO_JSON_PATH: str(answers.portfolio_json_path),
         DetailKey.BALANCE_MODEL: answers.balance_model,
         DetailKey.INVESTMENT_TREATMENT: answers.investment_treatment,
-        DetailKey.DISCOUNT_RATE: _as_text(answers.discount_rate),
+        DetailKey.DISCOUNT_RATE: _serialise_optional_number(answers.discount_rate),
         DetailKey.SOLVER: answers.highs.solver,
         DetailKey.PRESOLVE: answers.highs.presolve,
         DetailKey.RUN_CROSSOVER: answers.highs.run_crossover,
-        DetailKey.TIME_LIMIT_SECONDS: _as_text(answers.highs.time_limit_seconds),
+        DetailKey.TIME_LIMIT_SECONDS: _serialise_optional_number(answers.highs.time_limit_seconds),
         DetailKey.OUTPUT_DIR: str(answers.output_dir),
     }
 
 
-def _as_text(value: float | None) -> str:
+def _serialise_optional_number(value: float | None) -> str:
     return "" if value is None else str(value)
 
 

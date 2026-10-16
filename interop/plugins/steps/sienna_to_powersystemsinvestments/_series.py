@@ -62,12 +62,12 @@ _LAST_DAY = 31
 
 def derive_series(state: State, recorder: ScopedRecorder) -> None:
     """One slice per technology that states a profile, and one period per year they fall in."""
-    owners = _index_series_owners(state)
+    owners = _build_series_owners(state)
     peak_by_load = _read_load_peaks(state)
     records: list[dict[str, Any]] = []
     for component, series_name in _SERIES_BY_COMPONENT:
         records.extend(
-            _slice_technologies(state, component, series_name, owners, peak_by_load, recorder)
+            _list_technology_records(state, component, series_name, owners, peak_by_load, recorder)
         )
     if not records:
         return
@@ -75,7 +75,7 @@ def derive_series(state: State, recorder: ScopedRecorder) -> None:
     state.destination_tables[PORTFOLIO_PERIODS_TABLE] = _build_periods(records)
 
 
-def _index_series_owners(state: State) -> dict[str, tuple[str, str]]:
+def _build_series_owners(state: State) -> dict[str, tuple[str, str]]:
     """Which staged frame holds each component's profile, keyed by the component's name."""
     index: dict[str, tuple[str, str]] = {}
     for key, frame in state.source_time_series.items():
@@ -102,7 +102,7 @@ def _read_load_peaks(state: State) -> dict[str, float]:
     )
 
 
-def _slice_technologies(
+def _list_technology_records(
     state: State,
     component: SiennaInvestmentsComponent,
     series_name: InvestmentsSeriesName,
@@ -122,14 +122,14 @@ def _slice_technologies(
             without.append(name)
             continue
         scale = peak_by_load.get(name, 1.0) if series_name is InvestmentsSeriesName.DEMAND else 1.0
-        record = _slice_one(state, key, name, component, series_name, scale, recorder)
+        record = _find_first_day_record(state, key, name, component, series_name, scale, recorder)
         if record is not None:
             records.append(record)
     _warn_without_profile(component, without)
     return records
 
 
-def _slice_one(
+def _find_first_day_record(
     state: State,
     key: tuple[str, str],
     name: str,
@@ -171,12 +171,12 @@ def _slice_one(
         SeriesDocument.REPRESENTATIVE_DAY: _FIRST_SLICE,
         SeriesDocument.WEIGHT: _DAYS_IN_YEAR,
         SeriesDocument.INITIAL_TIMESTAMP: snapshots[0].isoformat(),
-        SeriesDocument.RESOLUTION_SECONDS: _read_resolution_seconds(snapshots),
+        SeriesDocument.RESOLUTION_SECONDS: _build_resolution_seconds(snapshots),
         SeriesDocument.VALUES: values,
     }
 
 
-def _read_resolution_seconds(snapshots: list[datetime]) -> float:
+def _build_resolution_seconds(snapshots: list[datetime]) -> float:
     """How far apart two snapshots sit, in seconds, from the first pair the slice holds."""
     if len(snapshots) < 2:
         return float(60 * 60)

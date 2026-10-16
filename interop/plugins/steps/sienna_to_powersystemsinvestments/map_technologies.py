@@ -193,9 +193,9 @@ def _map_one(
 ) -> dict[str, Any]:
     name = row[SIENNA_NAME_COLUMN]
     if sienna_type is SiennaInvestmentsComponent.STORAGE_TECHNOLOGY:
-        _split_storage_capital_costs(row, name, recorder)
+        _map_storage_capital_costs(row, name, recorder)
     elif SiennaSupplyTechnologyCol.CAPITAL_COSTS in row:
-        _unwrap_capital_costs(row, sienna_type, name, recorder)
+        _map_capital_costs(row, sienna_type, name, recorder)
     _fill_required(row, sienna_type, name, recorder)
     _tag_financial_data(row, sienna_type, name, recorder)
     if row.get(SiennaSupplyTechnologyCol.OPERATION_COSTS) is not None:
@@ -257,7 +257,7 @@ def _fill_required(
         )
 
 
-def _unwrap_capital_costs(
+def _map_capital_costs(
     row: dict[str, Any],
     sienna_type: SiennaInvestmentsComponent,
     name: str,
@@ -282,7 +282,7 @@ def _unwrap_capital_costs(
     _report_interconnection_cost(wrapper, str(sienna_type), name, recorder)
 
 
-def _split_storage_capital_costs(row: dict[str, Any], name: str, recorder: ScopedRecorder) -> None:
+def _map_storage_capital_costs(row: dict[str, Any], name: str, recorder: ScopedRecorder) -> None:
     """One struct becomes three value curves, one per thing a plan may add to a store."""
     wrapper = row.pop(SiennaStorageTechnologyCol.CAPITAL_COSTS, None) or {}
     for source_field, destination_field in _STORAGE_CAPITAL_COST_FIELDS:

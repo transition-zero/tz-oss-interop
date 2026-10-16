@@ -31,8 +31,8 @@ def read_series_document(path: str) -> dict[str, Any]:
     return result
 
 
-def find_series_record(document: dict[str, Any], component: str, name: str) -> dict[str, Any]:
-    matching = [
+def get_series_record(document: dict[str, Any], component: str, name: str) -> dict[str, Any]:
+    matching: list[dict[str, Any]] = [
         record
         for record in document.get("records", [])
         if record.get("component_type") == component and record.get("component_name") == name
@@ -131,7 +131,7 @@ def assert_series_record_count(path: str, count: str) -> None:
 def assert_series_record_features(
     path: str, component: str, name: str, series_name: str, year: str, rep_day: int
 ) -> None:
-    record = find_series_record(read_series_document(path), component, name)
+    record = get_series_record(read_series_document(path), component, name)
     actual = (record.get("series_name"), record.get("year"), record.get("rep_day"))
     assert actual == (series_name, year, rep_day), (
         f"expected {component}:{name} series {series_name!r} year {year!r} "
@@ -149,7 +149,7 @@ def assert_series_record_field(
     path: str, component: str, name: str, field: str, value: str
 ) -> None:
     expected = json.loads(value)
-    record = find_series_record(read_series_document(path), component, name)
+    record = get_series_record(read_series_document(path), component, name)
     assert record.get(field) == expected, (
         f"expected {component}:{name}.{field} = {expected!r}, got {record.get(field)!r}"
     )

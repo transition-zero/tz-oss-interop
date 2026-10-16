@@ -116,7 +116,7 @@ class JuliaExpansionAdapter(ExpansionPort):
     ) -> tuple[str, float]:
         if not portfolio_json_path.is_file():
             raise UserInputError(f"file not found: {portfolio_json_path}")
-        series_path = _series_path(portfolio_json_path)
+        series_path = _build_series_path(portfolio_json_path)
         document = _read_series_document(series_path)
         resolved_output_dir = output_dir or (portfolio_json_path.parent / "expanded")
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
@@ -164,7 +164,7 @@ class _ExpansionRequest:
     highs_args: str
 
 
-def _series_path(portfolio_json_path: Path) -> Path:
+def _build_series_path(portfolio_json_path: Path) -> Path:
     """The companion beside the portfolio, named the way the sink wrote it."""
     stem = portfolio_json_path.name
     if stem.endswith(_JSON_SUFFIX):
@@ -278,7 +278,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
     """)
 
     log.info("=== 6. Exporting the decisions ===")
-    _export_variables(jl, request.output_dir)
+    _write_variables(jl, request.output_dir)
     log.info("Results written to %s", request.output_dir)
     return str(run_status), float(objective)
 
@@ -316,7 +316,7 @@ def _attach_series(jl: Any, document: dict[str, Any]) -> None:
 def _build_template(jl: Any, request: _ExpansionRequest) -> None:
     """The periods a plan builds over, the days it is run over, and the network it respects."""
     slices = _build_slices(request.document)
-    discount_rate = _read_discount_rate(jl, request.discount_rate)
+    discount_rate = _set_discount_rate(jl, request.discount_rate)
     periods = ", ".join(
         f'(Date("{period[SeriesDocument.START]}"), Date("{period[SeriesDocument.END]}"))'
         for period in request.document[SeriesDocument.PERIODS]
@@ -337,7 +337,7 @@ def _build_template(jl: Any, request: _ExpansionRequest) -> None:
     """)
 
 
-def _read_discount_rate(jl: Any, stated: float | None) -> float:
+def _set_discount_rate(jl: Any, stated: float | None) -> float:
     """The rate the plan discounts by, put on the portfolio because the model reads it there.
 
     The model builds its own container from the portfolio rather than from the template, so a
@@ -361,7 +361,7 @@ def _set_technology_models(jl: Any, investment_treatment: InvestmentTreatment) -
     investment = _INVESTMENT_FORMULATIONS[investment_treatment]
     set_models: list[str] = []
     for technology_type, operations in _TECHNOLOGY_MODELS:
-        if not _holds_any(jl, technology_type):
+        if not _has_any(jl, technology_type):
             continue
         formulation = _DEMAND_INVESTMENT if "DemandRequirement" in technology_type else investment
         jl.seval(f"""
@@ -372,13 +372,13 @@ def _set_technology_models(jl: Any, investment_treatment: InvestmentTreatment) -
     return set_models
 
 
-def _holds_any(jl: Any, technology_type: str) -> bool:
+def _has_any(jl: Any, technology_type: str) -> bool:
     return bool(
         jl.seval(f"length(collect(IS.get_components({technology_type}, portfolio.data))) > 0")
     )
 
 
-def _export_variables(jl: Any, output_dir: Path) -> None:
+def _write_variables(jl: Any, output_dir: Path) -> None:
     """One CSV per decision the run took, in the layout the dispatch path already writes."""
     jl.seval(f"""
         let

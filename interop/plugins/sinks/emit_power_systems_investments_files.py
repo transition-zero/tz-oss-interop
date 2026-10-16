@@ -86,12 +86,12 @@ class EmitPowerSystemsInvestmentsFiles(Sink):
             params.portfolio_path, build_portfolio(state, params.portfolio_name), params.indent
         )
         self._write_json(
-            self._sibling(params.portfolio_path, BASE_SYSTEM_SUFFIX),
+            self._build_sibling(params.portfolio_path, BASE_SYSTEM_SUFFIX),
             self._build_base_system(state, params),
             params.indent,
         )
         self._write_json(
-            self._sibling(params.portfolio_path, SERIES_JSON_SUFFIX),
+            self._build_sibling(params.portfolio_path, SERIES_JSON_SUFFIX),
             build_series(state),
             params.indent,
         )
@@ -110,7 +110,7 @@ class EmitPowerSystemsInvestmentsFiles(Sink):
     def _location_name(self, location: Location) -> str:
         return location_name(location)
 
-    def _sibling(self, portfolio_path: Location, suffix: str) -> Location:
+    def _build_sibling(self, portfolio_path: Location, suffix: str) -> Location:
         """A file beside the portfolio, named the way the reader expects to find it."""
         text = str(portfolio_path)
         stem = text[: -len(_JSON_SUFFIX)] if text.endswith(_JSON_SUFFIX) else text
@@ -132,7 +132,7 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
     portfolio: dict[str, Any] = {
         PortfolioEnvelope.AGGREGATION: str(PORTFOLIO_AGGREGATION),
         PortfolioEnvelope.DATA_FORMAT_VERSION: PORTFOLIO_DATA_FORMAT_VERSION,
-        PortfolioEnvelope.INTERNAL: _new_internal(),
+        PortfolioEnvelope.INTERNAL: _build_internal(),
         PortfolioEnvelope.METADATA: _build_metadata(portfolio_name),
         PortfolioEnvelope.DATA: {
             PortfolioEnvelope.COMPONENTS: _build_components(state),
@@ -142,7 +142,7 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
                 "attributes": [],
                 "associations": [],
             },
-            PortfolioEnvelope.INTERNAL: _new_internal(),
+            PortfolioEnvelope.INTERNAL: _build_internal(),
             PortfolioEnvelope.TIME_SERIES_STORAGE_TYPE: TIME_SERIES_STORAGE_TYPE,
             PortfolioEnvelope.VERSION_INFO: {},
         },
@@ -157,8 +157,8 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
 def build_series(state: State) -> dict[str, Any]:
     """The companion the adapter attaches after the read, and the periods the slices fall in."""
     return {
-        SeriesDocument.PERIODS: _rows_of(state.destination_tables.get(PORTFOLIO_PERIODS_TABLE)),
-        SeriesDocument.RECORDS: _rows_of(state.destination_tables.get(PORTFOLIO_SERIES_TABLE)),
+        SeriesDocument.PERIODS: _list_rows(state.destination_tables.get(PORTFOLIO_PERIODS_TABLE)),
+        SeriesDocument.RECORDS: _list_rows(state.destination_tables.get(PORTFOLIO_SERIES_TABLE)),
     }
 
 
@@ -204,11 +204,11 @@ def _build_metadata(portfolio_name: str) -> dict[str, Any]:
     }
 
 
-def _new_internal() -> dict[str, Any]:
+def _build_internal() -> dict[str, Any]:
     return _PSInternal(uuid=_PSUuidRef(value=get_new_uuid())).model_dump()
 
 
-def _rows_of(table: pl.DataFrame | None) -> list[dict[str, Any]]:
+def _list_rows(table: pl.DataFrame | None) -> list[dict[str, Any]]:
     if table is None or table.is_empty():
         return []
     return [drop_absent_fields(row) for row in table.iter_rows(named=True)]

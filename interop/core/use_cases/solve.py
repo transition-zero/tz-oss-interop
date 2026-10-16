@@ -62,7 +62,7 @@ class SolveUsingPort(SolveUseCase):
             request.run_crossover,
             request.time_limit_seconds,
         )
-        _check_time_limit(request.time_limit_seconds)
+        _reject_non_positive_time_limit(request.time_limit_seconds)
         status, objective = self._expansion.solve_expansion(
             request.portfolio_json_path,
             request.balance_model,
@@ -89,7 +89,7 @@ class SolveUsingPort(SolveUseCase):
             request.run_crossover,
             request.time_limit_seconds,
         )
-        _check_time_limit(request.time_limit_seconds)
+        _reject_non_positive_time_limit(request.time_limit_seconds)
         status, objective = self._solver.solve(
             request.sienna_json_path,
             request.network_model,
@@ -103,6 +103,6 @@ class SolveUsingPort(SolveUseCase):
         return SolveResult(status=status, objective=objective)
 
 
-def _check_time_limit(time_limit_seconds: float | None) -> None:
+def _reject_non_positive_time_limit(time_limit_seconds: float | None) -> None:
     if time_limit_seconds is not None and not (time_limit_seconds > 0):
         raise UserInputError(f"time limit must be a positive number, got {time_limit_seconds}")

@@ -443,7 +443,7 @@ SIENNA_REGION_COLUMN_LIST_DTYPE: pl.DataType = pl.List(pl.Int64)
 """How a written portfolio states a region: the ids of the areas the technology sits in."""
 
 
-def _read_back(
+def _build_read_back_schema(
     schema: dict[str, pl.DataType | type[pl.DataType]],
 ) -> dict[str, pl.DataType | type[pl.DataType]]:
     """The same schema as the document states it, with region ids where the writer held a name."""
@@ -457,12 +457,14 @@ def _read_back(
 
 # What each type looks like in a portfolio document on disk, for a source reading one back.
 PORTFOLIO_DOCUMENT_SCHEMAS: dict[str, dict[str, pl.DataType | type[pl.DataType]]] = {
-    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: _read_back(SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA),
-    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: _read_back(
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: _build_read_back_schema(
+        SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA
+    ),
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: _build_read_back_schema(
         STORAGE_TECHNOLOGY_DESTINATION_SCHEMA
     ),
-    SiennaInvestmentsComponent.DEMAND_REQUIREMENT: _read_back(
+    SiennaInvestmentsComponent.DEMAND_REQUIREMENT: _build_read_back_schema(
         DEMAND_REQUIREMENT_DESTINATION_SCHEMA
     ),
-    SiennaInvestmentsComponent.CARBON_CAPS: _read_back(CARBON_CAPS_DESTINATION_SCHEMA),
+    SiennaInvestmentsComponent.CARBON_CAPS: _build_read_back_schema(CARBON_CAPS_DESTINATION_SCHEMA),
 }
