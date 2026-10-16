@@ -295,7 +295,7 @@ def stage_portfolio_series(
                 unowned.append(owner)
                 continue
             key = (owner[0], association[SiennaTimeSeriesAssociationCol.NAME])
-            writer.add(key, _read_association(association, values, name_by_owner[owner]))
+            writer.write_frame(key, _read_association(association, values, name_by_owner[owner]))
     writer.write_all()
     return StagedPortfolioSeries(writer.build_frames(), unowned)
 
@@ -308,7 +308,7 @@ class _SeriesWriter:
         self._pending: dict[tuple[str, str], list[pl.DataFrame]] = {}
         self._file_counts: dict[tuple[str, str], int] = {}
 
-    def add(self, key: tuple[str, str], frame: pl.DataFrame) -> None:
+    def write_frame(self, key: tuple[str, str], frame: pl.DataFrame) -> None:
         pending = self._pending.setdefault(key, [])
         pending.append(frame)
         if sum(part.height for part in pending) >= _SERIES_BATCH_ROWS:

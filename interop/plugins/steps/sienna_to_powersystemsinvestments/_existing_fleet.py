@@ -262,7 +262,7 @@ class ExistingFleetMapper:
         technologies = _build_technologies(state)
         fleet = ExistingFleet()
         for row in _list_staged_devices(state):
-            self._assign_row(fleet, row, technologies, base)
+            self._add_row(fleet, row, technologies, base)
         fleet.unnamed = [device for key, device in base.items() if key not in fleet.mentioned]
         return fleet
 
@@ -332,7 +332,7 @@ class ExistingFleetMapper:
         )
         log.warning(_CONSTANT_WARNING, len(held), name_a_few(held))
 
-    def _assign_row(
+    def _add_row(
         self,
         fleet: ExistingFleet,
         row: dict[str, Any],
@@ -348,11 +348,11 @@ class ExistingFleetMapper:
         if technology is None:
             self._record_unknown_technology(key, names)
         elif technology.component_type == _TRANSPORT:
-            self._assign_transport(fleet, technology, names)
+            self._add_transport(fleet, technology, names)
         else:
-            self._assign(fleet, technology, names, base)
+            self._add_devices(fleet, technology, names, base)
 
-    def _assign(
+    def _add_devices(
         self,
         fleet: ExistingFleet,
         technology: Technology,
@@ -370,7 +370,7 @@ class ExistingFleetMapper:
         if kept:
             self._record_attached(technology, names, kept)
 
-    def _assign_transport(
+    def _add_transport(
         self, fleet: ExistingFleet, technology: Technology, names: list[str]
     ) -> None:
         fleet.mentioned.update((technology.power_systems_type, name) for name in names)

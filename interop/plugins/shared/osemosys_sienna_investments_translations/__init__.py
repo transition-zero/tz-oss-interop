@@ -44,7 +44,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._plan impor
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._series import (
     PortfolioSeries,
-    add_portfolio_series,
+    set_portfolio_series,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._storage import (
     STORAGE_SCHEMA,
@@ -90,7 +90,7 @@ __all__ = [
     "SupplyCandidates",
     "TransportCandidates",
     "YearlyField",
-    "add_portfolio_series",
+    "set_portfolio_series",
     "build_availability_series",
     "build_carbon_cap_translations",
     "build_demand_series",

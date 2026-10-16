@@ -53,15 +53,13 @@ class Scope(NamedTuple):
         return bool(self.years)
 
 
-def drop_outside_scope(state: State, scope: Scope, recorder: EventRecorder) -> None:
-    dropped = _build_dropped_members(state, scope)
+def set_scoped_tables(state: State, dropped: Mapping[str, list[str]]) -> None:
+    """Replace each canonical table with the table that holds no dropped member."""
     for canonical in list_canonical_tables(state):
-        table = _drop_from_table(canonical, scope, dropped)
-        set_canonical_table(state, canonical._replace(table=table))
-    _report_dropped(dropped, recorder)
+        set_canonical_table(state, canonical._replace(table=_drop_from_table(canonical, dropped)))
 
 
-def _build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
+def build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
     """The members to leave out, by the set that holds them. A year is a member of `year`."""
     dropped = {
         set_name: _list_members_outside_locations(state, set_name, scope)
@@ -104,9 +102,7 @@ def _list_year_names(scope: Scope) -> list[str]:
     return [str(year) for year in scope.years]
 
 
-def _drop_from_table(
-    canonical: CanonicalTable, scope: Scope, dropped: Mapping[str, list[str]]
-) -> pl.LazyFrame:
+def _drop_from_table(canonical: CanonicalTable, dropped: Mapping[str, list[str]]) -> pl.LazyFrame:
     columns = canonical.table.collect_schema().names()
     table = canonical.table
     for set_name, members in dropped.items():
@@ -123,7 +119,7 @@ def _find_set_column(canonical: CanonicalTable, set_name: str, columns: list[str
     return set_name if set_name in columns else None
 
 
-def _report_dropped(dropped: Mapping[str, list[str]], recorder: EventRecorder) -> None:
+def report_dropped(dropped: Mapping[str, list[str]], recorder: EventRecorder) -> None:
     for set_name, members in dropped.items():
         note = f"{len(members)} {set_name} member(s) outside the scope, so each is left out"
         record_source_event(

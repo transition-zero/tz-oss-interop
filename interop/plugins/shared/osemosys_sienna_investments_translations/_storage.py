@@ -446,17 +446,21 @@ def _enrich_energy_costs(yearly: pl.DataFrame, plan: InvestmentPlan) -> pl.DataF
 # --- the translations ------------------------------------------------------------------------
 
 
-def _linear(column: str) -> pl.Expr:
+def _express_linear_curve(column: str) -> pl.Expr:
     return linear_value_curve(pl.col(column), input_at_zero=pl.lit(None, dtype=pl.Float64))
 
 
 _CAPITAL_COSTS = pl.struct(
     pl.when(pl.col(HAS_OWN_CHARGER))
-    .then(_linear(CHARGE_CAPITAL_COST_MW))
+    .then(_express_linear_curve(CHARGE_CAPITAL_COST_MW))
     .otherwise(ZERO_IO_CURVE)
     .alias(SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST),
-    _linear(CAPITAL_COST_MW).alias(SiennaStorageCapitalCostField.DISCHARGE_CAPITAL_COST),
-    _linear(ENERGY_CAPITAL_COST_MWH).alias(SiennaStorageCapitalCostField.ENERGY_CAPITAL_COST),
+    _express_linear_curve(CAPITAL_COST_MW).alias(
+        SiennaStorageCapitalCostField.DISCHARGE_CAPITAL_COST
+    ),
+    _express_linear_curve(ENERGY_CAPITAL_COST_MWH).alias(
+        SiennaStorageCapitalCostField.ENERGY_CAPITAL_COST
+    ),
     pl.lit(0.0).alias(SiennaStorageCapitalCostField.INTERCONNECTION_COST),
 ).cast(STORAGE_CAPITAL_COST_DTYPE)
 
@@ -484,11 +488,11 @@ _DURATION_LIMITS = (
 )
 
 
-def _category_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_category_sources(old: dict[str, Any]) -> list[SourceField]:
     return [build_technology_field(old, AnnotationColumn.CATEGORY, AnnotationColumn.CATEGORY)]
 
 
-def _capital_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_capital_sources(old: dict[str, Any]) -> list[SourceField]:
     sources = [
         build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
         build_priced_field(
@@ -505,7 +509,7 @@ def _capital_sources(old: dict[str, Any]) -> list[SourceField]:
     return sources
 
 
-def _discharge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_discharge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MIN),
         build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MAX),
@@ -513,7 +517,7 @@ def _discharge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _charge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_charge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     if not old[HAS_OWN_CHARGER]:
         return [build_osemosys_field(TECHNOLOGY, old[CHARGE_TECHNOLOGY_NAME])]
     return [
@@ -525,7 +529,7 @@ def _charge_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _efficiency_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_efficiency_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_osemosys_field(
             FlowParameter.TECHNOLOGY_TO_STORAGE,
@@ -558,7 +562,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.POWER_SYSTEMS_TYPE,
         pl.col(SIENNA_TYPE),
-        _category_sources,
+        _build_category_sources,
         "the category of the discharging technology -> the base system type, from the "
         "carriers: row",
     ),
@@ -575,7 +579,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.PRIME_MOVER_TYPE,
         pl.col(PRIME_MOVER).cast(PRIME_MOVERS_DTYPE),
-        _category_sources,
+        _build_category_sources,
         "the category of the discharging technology -> PrimeMovers, from the carriers: row",
     ),
     default_translation(
@@ -589,7 +593,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.CAPITAL_COSTS,
         _CAPITAL_COSTS,
-        _capital_sources,
+        _build_capital_sources,
         "capital_cost of the discharging technology in $/MW of electricity output, "
         "energy_capital_cost in $/MWh, and capital_cost of a charging technology of its own, "
         f"each of {PRICED_YEAR}; extensions.json holds each year",
@@ -615,7 +619,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.CAPACITY_LIMITS_DISCHARGE,
         pl.col(CAPACITY_LIMITS_BY_YEAR),
-        _discharge_limit_sources,
+        _build_discharge_limit_sources,
         "capacity_limits_min and capacity_limits_max of the discharging technology in each "
         "year, in MW, keyed by the year",
         UNIT_MW,
@@ -624,7 +628,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.CAPACITY_LIMITS_CHARGE,
         pl.when(pl.col(HAS_OWN_CHARGER)).then(pl.col(CHARGE_LIMITS_BY_YEAR)),
-        _charge_limit_sources,
+        _build_charge_limit_sources,
         "the capacity limits of a charging technology of its own; a technology that also "
         "discharges the storage has one capacity, which the discharge side bounds",
         UNIT_MW,
@@ -649,7 +653,7 @@ _STORAGE_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.EFFICIENCY,
         _EFFICIENCY,
-        _efficiency_sources,
+        _build_efficiency_sources,
         "in = technology_to_storage / electricity input ratio of the charging technology; "
         "out = electricity output ratio of the discharging technology / "
         "technology_from_storage, as the operations step has them",

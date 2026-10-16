@@ -298,14 +298,14 @@ def _read_variable_costs(
 # --- the translations ------------------------------------------------------------------------
 
 
-def _cost_sources(old: dict[str, Any]) -> list[Any]:
+def _build_cost_sources(old: dict[str, Any]) -> list[Any]:
     return [
         build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
         build_technology_field(old, _ELECTRICITY_OUTPUT, RATING_RATIO),
     ]
 
 
-def _operation_sources(old: dict[str, Any]) -> list[Any]:
+def _build_operation_sources(old: dict[str, Any]) -> list[Any]:
     """The fixed cost, the variable cost with the fuel cost, and the emission penalty."""
     return [
         build_technology_field(old, FIXED_COST, FIXED_COST, BASE_YEAR),
@@ -360,7 +360,7 @@ def _build_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
     ]
 
 
-def _limit_sources(old: dict[str, Any]) -> list[Any]:
+def _build_limit_sources(old: dict[str, Any]) -> list[Any]:
     return [
         build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MIN),
         build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MAX),
@@ -422,7 +422,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.CAPITAL_COSTS,
         capital_cost_struct(pl.col(CAPITAL_COST_MW)),
-        _cost_sources,
+        _build_cost_sources,
         f"capital_cost of {PRICED_YEAR}, in $/MW of electricity output, as the proportional "
         "term of a linear capital cost curve; extensions.json holds each year",
         UNIT_DOLLARS_PER_MW,
@@ -436,7 +436,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
             express_cost_type(SIENNA_TYPE),
             pl.col(VARIABLE_COST_MWH),
         ),
-        _operation_sources,
+        _build_operation_sources,
         "fixed_cost in $/MW/yr as the fixed term, and the variable cost with the fuel cost and "
         "the emission penalty in $/MWh, as the operations step derives it, of the earliest year "
         "in scope",
@@ -454,7 +454,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         S.CAPACITY_LIMITS,
         pl.col(CAPACITY_LIMITS_BY_YEAR),
-        _limit_sources,
+        _build_limit_sources,
         "capacity_limits_min and capacity_limits_max of each year in MW, keyed by the year; "
         "a year with no upper limit states its lower limit only",
         UNIT_MW,

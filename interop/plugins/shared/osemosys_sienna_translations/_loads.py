@@ -449,7 +449,7 @@ def _build_demand_source(old: dict[str, Any]) -> Any:
     )
 
 
-def _choose_series_derivation(old: dict[str, Any]) -> str:
+def _build_series_derivation(old: dict[str, Any]) -> str:
     if old[DEMAND_PARAMETER] == DemandParameter.ACCUMULATED_ANNUAL_DEMAND:
         return _ACCUMULATED_DERIVATION
     return _SPECIFIED_DERIVATION
@@ -485,7 +485,7 @@ LOAD_SERIES = Translation(
     make_events=lambda old, new: build_derived(
         [_build_demand_source(old)],
         [_load_field(old[LOAD_NAME], _SERIES_ATTRIBUTE, None, UNIT_MW)],
-        _choose_series_derivation(old),
+        _build_series_derivation(old),
     ),
 )
 

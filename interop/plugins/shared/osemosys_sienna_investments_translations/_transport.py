@@ -200,7 +200,7 @@ def _express_has_ends() -> pl.Expr:
 # --- the translations ------------------------------------------------------------------------
 
 
-def _end_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_technology_field(
             old, FlowParameter.INPUT_ACTIVITY_RATIO, FROM_LOCATION, _ELECTRICITY
@@ -209,7 +209,7 @@ def _end_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _ratio_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_ratio_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_technology_field(old, FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _ELECTRICITY),
         build_technology_field(
@@ -218,7 +218,7 @@ def _ratio_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _limit_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         build_technology_field(
             old, InvestmentParameter.CAPACITY_LIMITS_MIN, CAPACITY_LIMITS_MIN_MW, BASE_YEAR
@@ -250,21 +250,21 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         T.START_REGION_NAME,
         pl.col(FROM_LOCATION),
-        _end_sources,
+        _build_end_sources,
         "the area of the location where the technology takes in electricity",
     ),
     build_derived_translation(
         _COMPONENT,
         T.END_REGION_NAME,
         pl.col(TO_LOCATION),
-        _end_sources,
+        _build_end_sources,
         "the area of the location where the technology puts electricity out",
     ),
     build_derived_translation(
         _COMPONENT,
         T.CAPACITY_LIMITS,
         _CAPACITY_LIMITS,
-        _limit_sources,
+        _build_limit_sources,
         "capacity_limits_min and capacity_limits_max of the earliest year in scope, in MW of the "
         "electricity sent; extensions.json holds each year",
         UNIT_MW,
@@ -287,7 +287,7 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         T.LINE_LOSS,
         1.0 - pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO),
-        _ratio_sources,
+        _build_ratio_sources,
         "1 - the electricity output ratio / the electricity input ratio, at the operations mode",
     ),
     build_derived_translation(

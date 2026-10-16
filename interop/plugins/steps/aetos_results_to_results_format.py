@@ -263,7 +263,7 @@ class AetosResultsToResultsFormat(TranslationStep):
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(derivation, inputs.units.capacity_unit)
-        named = _rename_storage_technologies(rows, inputs.model)
+        named = _build_storage_named_rows(rows, inputs.model)
         return _build_annual_results(named, derivation, inputs.units.convert_capacity_to_mw)
 
     def _map_production(self, inputs: MappingInputs, activity: pl.DataFrame) -> pl.DataFrame:
@@ -272,7 +272,7 @@ class AetosResultsToResultsFormat(TranslationStep):
         self._record_derivation(
             _PRODUCTION, inputs.units.energy_unit, _OUTPUT_ACTIVITY_RATIO_SOURCE
         )
-        production = _rename_storage_technologies(
+        production = _build_storage_named_rows(
             _build_production(activity, inputs.model), inputs.model
         )
         return _build_annual_results(production, _PRODUCTION, inputs.units.convert_energy_to_mwh)
@@ -500,7 +500,7 @@ def _drop_members(rows: pl.DataFrame, dropped: pl.DataFrame, member: str) -> pl.
     return _enrich_with_member(rows, member).join(dropped, on=keys, how="anti").drop(member)
 
 
-def _rename_storage_technologies(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
+def _build_storage_named_rows(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
     """Each technology that discharges a storage takes the name of the storage.
 
     Two technologies that discharge one storage give one row, which sums their values.

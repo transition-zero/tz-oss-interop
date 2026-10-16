@@ -60,7 +60,7 @@ class PortfolioSeries:
         )
 
 
-def add_portfolio_series(
+def set_portfolio_series(
     state: State, series: Iterable[PortfolioSeries], owner_ids: Mapping[str, int]
 ) -> None:
     """Stage each series and add one association row for each owner that it names."""

@@ -8,7 +8,12 @@ from pydantic import BaseModel, BeforeValidator, Field
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.osemosys_canonical.scope import Scope, drop_outside_scope
+from interop.plugins.shared.osemosys_canonical.scope import (
+    Scope,
+    build_dropped_members,
+    report_dropped,
+    set_scoped_tables,
+)
 
 _TEXT_LIST_SEPARATOR = ","
 
@@ -48,5 +53,7 @@ class OsemosysCanonicalDropOutsideScope(TranslationStep):
                 f"{OsemosysCanonicalDropOutsideScopeParams.__name__}, got {type(params).__name__}"
             )
         scope = Scope(tuple(params.locations), tuple(params.years))
-        drop_outside_scope(state, scope, self._recorder)
+        dropped = build_dropped_members(state, scope)
+        set_scoped_tables(state, dropped)
+        report_dropped(dropped, self._recorder)
         return state

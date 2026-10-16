@@ -858,7 +858,7 @@ class _SideReplay:
     user_mappings_path: Any
 
 
-def _read_side_replay(replay: dict[str, Any], keys: tuple[DetailKey, ...]) -> _SideReplay:
+def _build_side_replay(replay: dict[str, Any], keys: tuple[DetailKey, ...]) -> _SideReplay:
     pipeline_key, params_key, mappings_key = keys
     return _SideReplay(replay.get(pipeline_key), replay.get(params_key), replay.get(mappings_key))
 
@@ -875,7 +875,7 @@ _SIDE_B_REPLAY_KEYS = (
 )
 
 
-def _collect_compare_side(
+def _build_compare_side(
     container: Container, framework: str, pipelines: list[str], replay: _SideReplay
 ) -> CompareSide | None:
     """Pick the framework's results pipeline (when it has more than one), its source params,
@@ -959,19 +959,19 @@ def _run_compare(
     if framework_b is None:
         return None
 
-    side_a = _collect_compare_side(
+    side_a = _build_compare_side(
         container,
         framework_a,
         pipelines_by_framework[framework_a],
-        _read_side_replay(replay, _SIDE_A_REPLAY_KEYS),
+        _build_side_replay(replay, _SIDE_A_REPLAY_KEYS),
     )
     if side_a is None:
         return None
-    side_b = _collect_compare_side(
+    side_b = _build_compare_side(
         container,
         framework_b,
         pipelines_by_framework[framework_b],
-        _read_side_replay(replay, _SIDE_B_REPLAY_KEYS),
+        _build_side_replay(replay, _SIDE_B_REPLAY_KEYS),
     )
     if side_b is None:
         return None

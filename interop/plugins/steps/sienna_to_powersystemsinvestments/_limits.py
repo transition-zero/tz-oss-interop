@@ -109,7 +109,7 @@ def _build_limit(entries: list[dict[str, Any]], years: frozenset[str]) -> dict[s
     """The largest max of the plan's years when each states one, with no minimum; else none."""
     in_plan = _list_plan_entries(entries, years)
     maxima = [entry[MinMaxField.MAX] for entry in in_plan if entry[MinMaxField.MAX] is not None]
-    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
+    stated_years = {convert_year_key(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
     if not maxima or len(maxima) < len(in_plan) or not years <= stated_years:
         return None
     return {MinMaxField.MIN: _NO_MINIMUM, MinMaxField.MAX: max(maxima)}
@@ -121,13 +121,13 @@ def _list_plan_entries(
     """The entries of the plan's years; every entry when the plan states no years."""
     if not years:
         return entries
-    return [entry for entry in entries if normalise_year(entry[MinMaxByKeyField.KEY]) in years]
+    return [entry for entry in entries if convert_year_key(entry[MinMaxByKeyField.KEY]) in years]
 
 
 def _has_changing_max(entries: list[dict[str, Any]], years: frozenset[str]) -> bool:
     in_plan = _list_plan_entries(entries, years)
     maxima = {entry[MinMaxField.MAX] for entry in in_plan}
-    stated_years = {normalise_year(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
+    stated_years = {convert_year_key(entry[MinMaxByKeyField.KEY]) for entry in in_plan}
     return len(maxima) > 1 or not years <= stated_years
 
 
@@ -143,7 +143,7 @@ def _drop_nulls(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def normalise_year(key: str) -> str:
+def convert_year_key(key: str) -> str:
     """A year key as the series features state it, so ``"2030.0"`` and ``"2030"`` match."""
     try:
         return str(int(float(key)))

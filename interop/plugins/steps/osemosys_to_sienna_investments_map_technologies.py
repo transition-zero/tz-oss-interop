@@ -40,7 +40,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     StorageCandidates,
     SupplyCandidates,
     TransportCandidates,
-    add_portfolio_series,
     build_availability_series,
     build_carbon_cap_translations,
     build_demand_series,
@@ -58,6 +57,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     build_transport_translations,
     find_investment_plan,
     find_region_discount_rate,
+    set_portfolio_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
@@ -228,13 +228,13 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             ),
         )
         for table, build, schema, component in tables:
-            self._write_table(state, table, build, schema, component, numbering)
+            self._map_table(state, table, build, schema, component, numbering)
         return candidates
 
     def _map_demand(self, state: State, numbering: _Numbering) -> None:
         """One requirement for each load that the base system holds."""
         table = build_demand_table(state, read_area_by_bus(state))
-        self._write_table(
+        self._map_table(
             state,
             table,
             partial(build_demand_translations, LOADS_SOURCE),
@@ -246,7 +246,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
     def _map_carbon_caps(self, state: State, plan: InvestmentPlan, numbering: _Numbering) -> None:
         limits = build_pollutant_limits(state, plan, self._recorder)
         append_extensions(state.destination_extensions, ExtensionKind.CONSTRAINT, limits.records)
-        self._write_table(
+        self._map_table(
             state,
             limits.caps,
             build_carbon_cap_translations,
@@ -255,7 +255,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             numbering,
         )
 
-    def _write_table(
+    def _map_table(
         self,
         state: State,
         table: pl.DataFrame,
@@ -264,7 +264,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         component: str,
         numbering: _Numbering,
     ) -> pl.DataFrame | None:
-        """Translate one source table, and take its share of the ids. An empty table writes none."""
+        """Translate one source table, and take its share of the ids. An empty table maps none."""
         if table.is_empty():
             return None
         out = finalise(
@@ -286,12 +286,12 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         supply = _read_ids(state, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY)
         if demand:
             series = build_demand_series(state, plan_years, sorted(demand), self._recorder)
-            add_portfolio_series(state, series, demand)
+            set_portfolio_series(state, series, demand)
         if supply:
             series = build_availability_series(
                 state, plan_years, candidates.supply.table, self._recorder
             )
-            add_portfolio_series(state, series, supply)
+            set_portfolio_series(state, series, supply)
 
     # --- the supplemental attributes -----------------------------------------------------------
 
@@ -314,9 +314,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         for kind in SUPPLEMENTAL_ATTRIBUTE_ORDER:
             attribute = _ATTRIBUTES[kind]
             source = sources[kind]
-            out = self._write_table(
-                state, source, attribute.build, attribute.schema, kind, numbering
-            )
+            out = self._map_table(state, source, attribute.build, attribute.schema, kind, numbering)
             if out is not None:
                 associations.append(
                     build_association_rows(
