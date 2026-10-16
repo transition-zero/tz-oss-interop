@@ -31,6 +31,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
+    TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
@@ -83,6 +84,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    build_no_carriers_row_note,
     enrich_residual_capacity,
     enrich_targets,
     list_bus_names,
@@ -109,14 +111,7 @@ _STATED_ROWS_ONLY = (
 
 _KEYS = [REGION, TECHNOLOGY]
 _COUNTED_NOUN = "supply technology(ies)"
-_LISTED = SkippedNames(column=TECHNOLOGY_NAME, label="Technologies")
-
-
-def _build_no_carriers_row_note(row: dict[str, Any]) -> str:
-    category = row[AnnotationColumn.CATEGORY]
-    if category is None:
-        return "the technology has no category, so no carriers: row gives it a Sienna type"
-    return f"no carriers: row names the category {category!r}, so it has no Sienna type"
+_LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 
 
 NO_CAPACITY_SKIP = SkipReport(
@@ -137,7 +132,7 @@ NO_CARRIERS_ROW_SKIP = SkipReport(
     name_col=TECHNOLOGY_NAME,
     reason="have a category that no carriers: row of the user mappings file names",
     counted_noun=_COUNTED_NOUN,
-    note=_build_no_carriers_row_note,
+    note=lambda row: build_no_carriers_row_note(row[AnnotationColumn.CATEGORY]),
     listed=_LISTED,
     attribute_col=AnnotationColumn.CATEGORY,
 )

@@ -2,24 +2,35 @@
 
 from __future__ import annotations
 
+import logging
+
 import polars as pl
 
 from interop.core.pipeline import State
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
     AnnotationColumn,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    OSEMOSYS_TO_SIENNA_PIPELINE,
+    TECHNOLOGIES_LABEL,
+    TECHNOLOGY_COUNTED_NOUN,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     FUEL_TYPE,
     PRIME_MOVER,
     RESIDUAL_CAPACITY,
     SIENNA_TYPE,
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_carrier_targets import (
@@ -28,8 +39,18 @@ from interop.plugins.shared.sienna_carrier_targets import (
     ThermalTarget,
 )
 from interop.plugins.shared.sienna_constants import SIENNA_NAME_COLUMN, SiennaComponent
+from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 _KEYS = [REGION, TECHNOLOGY]
+_WHOLE_CAPACITY = 1.0
+_EACH_TIMESLICE = "each timeslice"
+_CAPACITY_FACTOR_NOTE = (
+    "the operations system applies no capacity_factor to a storage or a line, so the share of "
+    "the capacity that the technology can use in each timeslice is lost"
+)
 _TARGET_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     AnnotationColumn.CATEGORY: pl.Utf8,
     SIENNA_TYPE: pl.Utf8,
@@ -54,6 +75,50 @@ def enrich_targets(
     rows = [_build_target_row(category, mappings.find_mapping(category)) for category in categories]
     targets = pl.DataFrame(rows, schema=_TARGET_SCHEMA)
     return technologies.join(targets, on=AnnotationColumn.CATEGORY, how="left")
+
+
+def build_no_carriers_row_note(category: str | None) -> str:
+    """Why a technology with no carriers: row for its category has no Sienna type."""
+    if category is None:
+        return "the technology has no category, so no carriers: row gives it a Sienna type"
+    return f"no carriers: row names the category {category!r}, so it has no Sienna type"
+
+
+def report_unread_capacity_factors(
+    state: State, year: int, technologies: pl.DataFrame, recorder: ScopedRecorder
+) -> None:
+    """Record NOT_MAPPED for each technology that states a capacity_factor below 1, and warn.
+
+    `technologies` holds `region`, `technology` and the name of each in a report.
+    """
+    names = (
+        read_parameter(state, SupplyParameter.CAPACITY_FACTOR, year)
+        .filter(pl.col(VALUE_COL) != _WHOLE_CAPACITY)
+        .join(technologies.select(*_KEYS, TECHNOLOGY_NAME), on=_KEYS)[TECHNOLOGY_NAME]
+        .unique()
+        .sort()
+        .to_list()
+    )
+    for name in names:
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[
+                    build_osemosys_field(SupplyParameter.CAPACITY_FACTOR, name, _EACH_TIMESLICE)
+                ],
+                note=_CAPACITY_FACTOR_NOTE,
+            )
+        )
+    if names:
+        log.warning(
+            "%s: %d %s state a capacity_factor, which the operations system does not apply to a "
+            "storage or a line. %s: %s",
+            OSEMOSYS_TO_SIENNA_PIPELINE,
+            len(names),
+            TECHNOLOGY_COUNTED_NOUN,
+            TECHNOLOGIES_LABEL,
+            name_a_few(names),
+        )
 
 
 def list_bus_names(state: State) -> list[str]:

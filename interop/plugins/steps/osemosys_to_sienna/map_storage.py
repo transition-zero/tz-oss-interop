@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
     STORAGE_TRANSLATIONS,
     OperationsMapping,
     OperationsYear,
+    build_storage_extensions,
+    build_storage_technologies,
     build_storages_source,
+    report_unread_capacity_factors,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -39,4 +43,10 @@ class OsemosysToSiennaMapStorage(OperationsMapping):
             ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
             self._recorder,
             SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+        )
+        append_extensions(
+            state.destination_extensions, ExtensionKind.STORAGE, build_storage_extensions(source)
+        )
+        report_unread_capacity_factors(
+            state, operations.year, build_storage_technologies(source), self._recorder
         )

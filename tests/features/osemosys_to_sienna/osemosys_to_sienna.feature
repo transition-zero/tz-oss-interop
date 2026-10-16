@@ -483,6 +483,15 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log contains "emission_rate has the default 0.5, which the translation does not apply"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
 
+    Scenario: The cost of another mode that puts out no electricity is reported as lost
+      Given the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATSOLAR    | 2                 | 2030 | 3000  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATSOLAR.operating_mode 2` = 3000.0 |  |  | the operations system runs one operating mode, so this value of another mode is lost"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATSOLAR" without field "other_mode_variable_costs_per_mwh"
+
     Scenario: A thermal plant states no unit commitment data
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
@@ -491,47 +500,88 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
   Rule: A storage with energy becomes an EnergyReservoirStorage that the technology linked to it rates
     The invented storages below are at AT. The pumped-storage plant ATPHS charges the storage
     ATPHSS in mode 1 and discharges it in mode 2. It takes in 1.25 units of electricity for each
-    unit of its activity when it charges, and puts out 0.8 when it discharges. Some storages are
-    left out: the battery storage ATBATS has no residual storage capacity in 2030, the
-    flywheel ATFLY has a category that no carriers: row names, and no technology charges or
-    discharges the storage ATLONES.
+    unit of its activity when it charges, and puts 0.9 of a unit into the storage. It puts out
+    0.8 when it discharges. Each other storage is left out for one reason:
+
+    - ATBATS has no residual storage capacity in 2030.
+    - ATFLYS has a discharging technology whose category no carriers: row names.
+    - ATLONES has no technology that charges or discharges it.
+    - ATTWOS has two technologies that charge it.
+    - ATIDLES has a discharging technology with no residual capacity.
+    - ATSUNS has a discharging technology whose carriers: row names a generator.
+    - HTHEATS has a discharging technology at the location HT, which holds no bus.
+    - ATNOOUTS has a discharging technology that puts out no electricity.
+    - ATNOINS has a charging technology that takes in no electricity.
 
     Background:
-      Given the otoole set "FUEL" holds "ATELEC DEELEC ATWATER"
-      And the otoole set "TECHNOLOGY" holds "ATPHS ATBATT ATFLY"
-      And the otoole set "STORAGE" holds "ATPHSS ATBATS ATFLYS ATLONES"
+      Given the otoole set "FUEL" holds "ATELEC DEELEC ATWATER HTHEATF"
+      And the otoole set "TECHNOLOGY" holds "ATPHS ATBATT ATFLY ATIDLE ATSUN HTHEAT ATNOOUT ATNOIN"
+      And the otoole set "STORAGE" holds "ATPHSS ATBATS ATFLYS ATLONES ATTWOS ATIDLES ATSUNS HTHEATS ATNOOUTS ATNOINS"
       And the otoole set "MODE_OF_OPERATION" holds "1 2"
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATPHS      | 2030 | 0.1   |
         | R1     | ATBATT     | 2030 | 0.05  |
         | R1     | ATFLY      | 2030 | 0.01  |
+        | R1     | ATSUN      | 2030 | 0.01  |
+        | R1     | HTHEAT     | 2030 | 0.01  |
+        | R1     | ATNOOUT    | 2030 | 0.01  |
+        | R1     | ATNOIN     | 2030 | 0.01  |
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
-        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
-        | R1     | ATPHS      | ATELEC | 1                 | 2030 | 1.25  |
-        | R1     | ATBATT     | ATELEC | 1                 | 2030 | 1     |
-        | R1     | ATFLY      | ATELEC | 1                 | 2030 | 1     |
+        | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | ATELEC  | 1                 | 2030 | 1.25  |
+        | R1     | ATBATT     | ATELEC  | 1                 | 2030 | 1     |
+        | R1     | ATFLY      | ATELEC  | 1                 | 2030 | 1     |
+        | R1     | ATIDLE     | ATELEC  | 1                 | 2030 | 1     |
+        | R1     | ATSUN      | ATELEC  | 1                 | 2030 | 1     |
+        | R1     | HTHEAT     | HTHEATF | 1                 | 2030 | 1     |
+        | R1     | ATNOOUT    | ATELEC  | 1                 | 2030 | 1     |
+        | R1     | ATNOIN     | ATWATER | 1                 | 2030 | 1     |
       And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATPHS      | ATWATER | 1                 | 2030 | 1     |
         | R1     | ATPHS      | ATELEC  | 2                 | 2030 | 0.8   |
         | R1     | ATBATT     | ATELEC  | 2                 | 2030 | 0.9   |
         | R1     | ATFLY      | ATELEC  | 2                 | 2030 | 0.9   |
+        | R1     | ATIDLE     | ATELEC  | 2                 | 2030 | 0.9   |
+        | R1     | ATSUN      | ATELEC  | 2                 | 2030 | 0.9   |
+        | R1     | HTHEAT     | HTHEATF | 2                 | 2030 | 0.9   |
+        | R1     | ATNOOUT    | ATWATER | 2                 | 2030 | 0.9   |
+        | R1     | ATNOIN     | ATELEC  | 2                 | 2030 | 0.9   |
       And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
-        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
-        | R1     | ATPHS      | ATPHSS  | 1                 | 1     |
-        | R1     | ATBATT     | ATBATS  | 1                 | 1     |
-        | R1     | ATFLY      | ATFLYS  | 1                 | 1     |
+        | REGION | TECHNOLOGY | STORAGE  | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS   | 1                 | 0.9   |
+        | R1     | ATBATT     | ATBATS   | 1                 | 1     |
+        | R1     | ATFLY      | ATFLYS   | 1                 | 1     |
+        | R1     | ATPHS      | ATTWOS   | 1                 | 1     |
+        | R1     | ATBATT     | ATTWOS   | 1                 | 1     |
+        | R1     | ATIDLE     | ATIDLES  | 1                 | 1     |
+        | R1     | ATSUN      | ATSUNS   | 1                 | 1     |
+        | R1     | HTHEAT     | HTHEATS  | 1                 | 1     |
+        | R1     | ATNOOUT    | ATNOOUTS | 1                 | 1     |
+        | R1     | ATNOIN     | ATNOINS  | 1                 | 1     |
       And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
-        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
-        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
-        | R1     | ATBATT     | ATBATS  | 2                 | 1     |
-        | R1     | ATFLY      | ATFLYS  | 2                 | 1     |
+        | REGION | TECHNOLOGY | STORAGE  | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS   | 2                 | 1     |
+        | R1     | ATBATT     | ATBATS   | 2                 | 1     |
+        | R1     | ATFLY      | ATFLYS   | 2                 | 1     |
+        | R1     | ATPHS      | ATTWOS   | 2                 | 1     |
+        | R1     | ATIDLE     | ATIDLES  | 2                 | 1     |
+        | R1     | ATSUN      | ATSUNS   | 2                 | 1     |
+        | R1     | HTHEAT     | HTHEATS  | 2                 | 1     |
+        | R1     | ATNOOUT    | ATNOOUTS | 2                 | 1     |
+        | R1     | ATNOIN     | ATNOINS  | 2                 | 1     |
       And the otoole parameter "ResidualStorageCapacity" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
-        | REGION | STORAGE | YEAR | VALUE |
-        | R1     | ATPHSS  | 2030 | 0.8   |
-        | R1     | ATFLYS  | 2030 | 0.01  |
-        | R1     | ATLONES | 2030 | 0.5   |
+        | REGION | STORAGE  | YEAR | VALUE |
+        | R1     | ATPHSS   | 2030 | 0.8   |
+        | R1     | ATFLYS   | 2030 | 0.01  |
+        | R1     | ATLONES  | 2030 | 0.5   |
+        | R1     | ATTWOS   | 2030 | 0.01  |
+        | R1     | ATIDLES  | 2030 | 0.01  |
+        | R1     | ATSUNS   | 2030 | 0.01  |
+        | R1     | HTHEATS  | 2030 | 0.01  |
+        | R1     | ATNOOUTS | 2030 | 0.01  |
+        | R1     | ATNOINS  | 2030 | 0.01  |
       And the otoole parameter "StorageLevelStart" keyed by "REGION STORAGE" with default 0 has the rows:
         | REGION | STORAGE | VALUE |
         | R1     | ATPHSS  | 0.2   |
@@ -540,6 +590,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | R1     | ATPHSS  | 2030 | 0.125 |
       And the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | 1                 | 2030 | 500   |
         | R1     | ATPHS      | 2                 | 2030 | 2000  |
       And a file "user_mappings.yaml" containing the lines:
         | line                                                                                                       |
@@ -547,12 +598,15 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | units: {capacity: GW, energy: GWh, currency: USD},                                                         |
         | objects: {                                                                                                 |
         | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},               |
-        | {match: "^ATWATER$", carrier: water, location: AT}],                                                       |
+        | {match: "^ATWATER$", carrier: water, location: AT}, {match: "^HTHEATF$", carrier: heat, location: HT}],   |
         | technologies: [{match: "PHS$", category: pumped-storage}, {match: "BATT$", category: battery},             |
-        | {match: "FLY$", category: flywheel}]}}                                                                     |
+        | {match: "IDLE$", category: battery}, {match: "HEAT$", category: battery},                                  |
+        | {match: "NOOUT$", category: battery}, {match: "NOIN$", category: battery},                                 |
+        | {match: "FLY$", category: flywheel}, {match: "SUN$", category: solar}]}}                                   |
         | carriers: [                                                                                                |
         | {osemosys_category: pumped-storage, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: PS}, |
-        | {osemosys_category: battery, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: BA}]  |
+        | {osemosys_category: battery, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: BA},  |
+        | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]        |
 
     Scenario: A pumped-storage plant becomes an EnergyReservoirStorage rated for its electricity
       When I translate the otoole model to Sienna for the year "2030"
@@ -562,70 +616,105 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "bus" set to 1
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "prime_mover_type" set to "PS"
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "storage_capacity" set to 10.0
-      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "efficiency.in" set to 0.8
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "efficiency.in" set to 0.72
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "efficiency.out" set to 0.8
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 1.5625
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "output_active_power_limits.max" set to 1.0
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "initial_storage_capacity_level" set to 0.25
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "storage_level_limits.min" set to 0.125
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.charge_variable_cost.value_curve.function_data.proportional_term" set to 0.4
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 2.5
-      And the file "decisions.md" contains "in = 1 / the electricity input_activity_ratio at the charge mode"
+      And the file "decisions.md" contains "in = technology_to_storage / the electricity input_activity_ratio at the charge mode"
+      And the file "decisions.md" contains "`osemosys.technology_to_storage.R1/ATPHS.ATPHSS` = 0.9"
 
-    Scenario: A storage with no residual storage capacity in the year is left out and reported
+    Scenario: The availability, the charge and discharge rates and the fixed cost of a storage are applied
+      Given the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.5   |
+      And the otoole parameter "StorageMaxChargeRate" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 438   |
+      And the otoole parameter "StorageMaxDischargeRate" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 175.2 |
+      And the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 40000 |
+      And the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
+        | R1     | ATPHS      | S1B1      | 2030 | 0.5   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 0.625
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "output_active_power_limits.max" set to 0.25
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "fom_charge_per_mw_year" set to 50.0
+      And the log contains "state a capacity_factor, which the operations system does not apply to a storage or a line. Technologies: R1/ATPHS"
+      And the file "decisions.md" contains "`osemosys.capacity_factor.R1/ATPHS.each timeslice`"
+
+    Scenario: Each storage that the operations system cannot hold is left out, and the report names its reason
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "have no residual storage capacity in the operations year, so each is left out. Storages: R1/ATBATS"
-      And the file "decisions.md" contains "`osemosys.storage.R1/ATBATS.residual_storage_capacity` = 0.0"
-
-    Scenario: A storage whose discharging technology has no carriers row is left out and reported
-      When I translate the otoole model to Sienna for the year "2030"
-      Then the pipeline exit code is 0
       And the log contains "whose category no carriers: row of the user mappings file names, so each is left out. Storages: R1/ATFLYS"
-      And the file "decisions.md" contains "no carriers: row names the category 'flywheel' of R1/ATFLY"
-
-    Scenario: A storage that no technology charges or discharges is left out and reported
-      When I translate the otoole model to Sienna for the year "2030"
-      Then the pipeline exit code is 0
-      And the log contains "have no technology that charges them and no technology that discharges them, so each is left out. Storages: R1/ATLONES"
-      And the file "decisions.md" contains "no technology names the storage in technology_to_storage or technology_from_storage"
+      And the log contains "lack a technology that charges them or a technology that discharges them, so each is left out. Storages: R1/ATLONES"
+      And the log contains "have more than one technology or mode that charges or discharges them, so each is left out. Storages: R1/ATTWOS"
+      And the log contains "have a discharging technology with no residual capacity in the operations year, so each is left out. Storages: R1/ATIDLES"
+      And the log contains "have a discharging technology whose carriers: row names a type that is not a storage, so each is left out. Storages: R1/ATSUNS"
+      And the log contains "have a discharging technology on a location that holds no bus, so each is left out. Storages: R1/HTHEATS"
+      And the log contains "put out no electricity at the discharge mode, so each is left out. Storages: R1/ATNOOUTS"
+      And the log contains "take in no electricity at the charge mode, so each is left out. Storages: R1/ATNOINS"
+      And the file "decisions.md" contains "`osemosys.storage.R1/ATBATS.residual_storage_capacity` = 0.0"
+      And the file "decisions.md" contains "the discharging technology R1/ATFLY: no carriers: row names the category 'flywheel'"
+      And the file "decisions.md" contains "no technology names the storage in technology_to_storage, so nothing charges it; no technology names the storage in technology_from_storage, so nothing discharges it"
+      And the file "decisions.md" contains "`osemosys.storage.R1/ATIDLES.residual_capacity` = 0.0"
+      And the file "decisions.md" contains "the residual_capacity of R1/ATIDLE, which discharges the storage, holds none"
 
   Rule: A transport technology becomes a line, and the report names each technology that the system leaves out
-    The invented interconnector ATDELINK takes in electricity at AT and puts out three quarters
-    of it at DE in mode 1, and runs the other way in mode 2. ATDEIDLE has no residual capacity.
-    ATDESPARE moves electricity in mode 2 only. The other technologies have no component in an
-    operations system: the gas well ATGASWELL, the export ATEXPORT, the transformer ATSTEPDOWN
-    between two electricity fuels at AT, the electrolyser ATELECTROLYSER, and the gas pipeline
-    DEATPIPE.
+    The invented interconnector ATDELINK takes in 1.25 units of electricity at AT and puts out
+    0.75 of a unit at DE in mode 1. In mode 2 it takes in 1 unit at DE and puts out 0.75 at AT,
+    which is the flow back. ATDEODD runs from AT to DE in both of its modes. ATDEIDLE has no
+    residual capacity. ATDESPARE moves electricity in mode 2 only. The other technologies have
+    no component in an operations system: the gas well ATGASWELL, the export ATEXPORT, the
+    transformers ATSTEPDOWN and ATSTEPUP between two electricity fuels at AT, of which
+    ATSTEPUP runs in 2035 only, the electrolyser
+    ATELECTROLYSER, and the gas pipeline DEATPIPE.
 
     Background:
       Given the otoole set "FUEL" holds "ATELEC ATELECLV DEELEC ATGAS DEGAS ATH2"
-      And the otoole set "TECHNOLOGY" holds "ATDELINK ATDEIDLE ATDESPARE ATGASWELL ATEXPORT ATSTEPDOWN ATELECTROLYSER DEATPIPE"
+      And the otoole set "TECHNOLOGY" holds "ATDELINK ATDEODD ATDEIDLE ATDESPARE ATGASWELL ATEXPORT ATSTEPDOWN ATSTEPUP ATELECTROLYSER DEATPIPE"
       And the otoole set "MODE_OF_OPERATION" holds "1 2"
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDELINK   | 2030 | 2     |
+        | R1     | ATDEODD    | 2030 | 1     |
         | R1     | ATDESPARE  | 2030 | 1     |
       And the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDELINK   | 2030 | 0.9   |
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY     | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
-        | R1     | ATDELINK       | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDELINK       | ATELEC | 1                 | 2030 | 1.25  |
         | R1     | ATDELINK       | DEELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 2                 | 2030 | 1     |
         | R1     | ATDEIDLE       | ATELEC | 1                 | 2030 | 1     |
         | R1     | ATDESPARE      | ATELEC | 2                 | 2030 | 1     |
         | R1     | ATEXPORT       | ATELEC | 1                 | 2030 | 1     |
         | R1     | ATSTEPDOWN     | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATSTEPUP       | ATELECLV | 1               | 2035 | 1     |
         | R1     | ATELECTROLYSER | ATELEC | 1                 | 2030 | 1.5   |
         | R1     | DEATPIPE       | DEGAS  | 1                 | 2030 | 1     |
       And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY     | FUEL     | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATDELINK       | DEELEC   | 1                 | 2030 | 0.75  |
         | R1     | ATDELINK       | ATELEC   | 2                 | 2030 | 0.75  |
+        | R1     | ATDEODD        | DEELEC   | 1                 | 2030 | 1     |
+        | R1     | ATDEODD        | DEELEC   | 2                 | 2030 | 0.5   |
         | R1     | ATDEIDLE       | DEELEC   | 1                 | 2030 | 1     |
         | R1     | ATDESPARE      | DEELEC   | 2                 | 2030 | 1     |
         | R1     | ATGASWELL      | ATGAS    | 1                 | 2030 | 1     |
         | R1     | ATSTEPDOWN     | ATELECLV | 1                 | 2030 | 0.99  |
+        | R1     | ATSTEPUP       | ATELEC   | 1                 | 2035 | 0.99  |
         | R1     | ATELECTROLYSER | ATH2     | 1                 | 2030 | 1     |
         | R1     | DEATPIPE       | ATGAS    | 1                 | 2030 | 1     |
       And the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
@@ -641,19 +730,32 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"},                             |
         | {match: "^(?P<country>[A-Z]{2})H2$", carrier: hydrogen, location: "{country}"}]}}                       |
 
-    Scenario: An interconnector becomes a line from the bus where it takes electricity in to the bus where it puts it out
+    Scenario: An interconnector becomes a line that flows both ways within the limits of each mode
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with 1 component of type "TwoTerminalGenericHVDCLine"
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": 0.0, "max": 1800.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": 0.0, "max": 1350.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.25
+      And the file "outputs/system.json" parses as JSON with 2 components of type "TwoTerminalGenericHVDCLine"
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": -1350.0, "max": 2250.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": -1800.0, "max": 1350.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.4
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "arc" set to 1
       And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1
       And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 2
-      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "marginal_cost" set to 1.0
-      And the file "decisions.md" contains "this value of another mode, for example the flow back, is lost"
-      And the log contains "and each line runs at the operations mode only. Technologies: R1/ATDELINK"
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "marginal_cost" set to 0.8
+      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDELINK.electricity at the operating mode 2` = 0.75"
+      And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATDELINK.ATELEC at the operations mode` = 1.25"
+      And the file "decisions.md" contains "the loss of the flow back is lost"
+      And the file "decisions.md" does not contain "`osemosys.variable_operation_cost.R1/ATDELINK.operating_mode 2`"
+
+    Scenario: A technology whose other mode is not the flow back runs one way, and the report names what it loses
+      Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
+        | R1     | ATDEODD    | S1B1      | 2030 | 0.5   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEODD" having "active_power_limits_from" set to {"min": 0.0, "max": 1000.0}
+      And the log contains "state values at an operating mode that is not the flow back, and the line does not hold them. Technologies: R1/ATDEODD"
+      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDEODD.operating_mode 2, DEELEC` = 0.5"
+      And the log contains "state a capacity_factor, which the operations system does not apply to a storage or a line. Technologies: R1/ATDEODD"
 
     Scenario: A transport technology with no residual capacity is left out and reported
       When I translate the otoole model to Sienna for the year "2030"
@@ -670,7 +772,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       Then the pipeline exit code is 0
       And the log contains "supply a fuel that is not electricity, so each is left out. Technologies: R1/ATGASWELL"
       And the log contains "take in a fuel and put out nothing, so each is left out. Technologies: R1/ATEXPORT"
-      And the log contains "convert one electricity fuel into another at one location, so each is left out. Technologies: R1/ATSTEPDOWN"
+      And the log contains "convert one electricity fuel into another at one location, so each is left out. Technologies: R1/ATSTEPDOWN, R1/ATSTEPUP"
       And the log contains "convert a fuel that is not electricity at one location, so each is left out. Technologies: R1/ATELECTROLYSER"
       And the log contains "have no kind, for example because they move a fuel that is not electricity, so each is left out. Technologies: R1/DEATPIPE"
       And the file "decisions.md" contains "`osemosys.technology.R1/ATGASWELL.kind` = fuel_supply"

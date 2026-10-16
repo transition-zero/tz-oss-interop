@@ -21,9 +21,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
     AnnotationColumn,
     FlowParameter,
+    TableKind,
     TechnologyKind,
 )
-from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
+from interop.plugins.shared.osemosys_sienna_constants import (
+    OSEMOSYS_TO_SIENNA_PIPELINE,
+    TECHNOLOGIES_LABEL,
+    TECHNOLOGY_COUNTED_NOUN,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
@@ -56,9 +61,9 @@ def _build_skip(reason: str, note: str) -> SkipReport:
         component=TECHNOLOGY,
         name_col=TECHNOLOGY_NAME,
         reason=reason,
-        counted_noun="technology(ies)",
+        counted_noun=TECHNOLOGY_COUNTED_NOUN,
         note=note,
-        listed=SkippedNames(column=TECHNOLOGY_NAME, label="Technologies"),
+        listed=SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL),
         attribute_col=AnnotationColumn.KIND,
     )
 
@@ -116,27 +121,54 @@ def _read_left_out_technologies(state: State, operations: OperationsYear) -> pl.
         .filter(_KIND.is_null() | _KIND.is_in(_LEFT_OUT_KINDS))
         .with_columns(express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME))
     )
-    flows = _read_flow_carriers(state, operations)
-    return technologies.join(flows, on=_KEYS, how="left").with_columns(
-        pl.col(IS_ALL_ELECTRICITY).fill_null(False),  # noqa: FBT003
-        pl.col(HAS_FLOWS).fill_null(False),  # noqa: FBT003
+    carriers = _read_fuel_carriers(state)
+    flows = _read_year_flows(state, operations)
+    return (
+        technologies.join(carriers, on=_KEYS, how="left")
+        .join(flows, on=_KEYS, how="left")
+        .with_columns(
+            pl.col(IS_ALL_ELECTRICITY).fill_null(False),  # noqa: FBT003
+            pl.col(HAS_FLOWS).fill_null(False),  # noqa: FBT003
+        )
     )
 
 
-def _read_flow_carriers(state: State, operations: OperationsYear) -> pl.DataFrame:
-    """Whether each technology has a flow in the year, and whether each of its fuels is power."""
+def _read_fuel_carriers(state: State) -> pl.DataFrame:
+    """Whether each fuel that a technology takes in or puts out, in any year, is electricity.
+
+    These are the flows that gave the technology its kind, so a year without flows does not
+    change the answer.
+    """
     carriers = read_annotations(state, FUEL).select(REGION, FUEL, AnnotationColumn.CARRIER)
+    is_electricity = pl.col(AnnotationColumn.CARRIER).eq_missing(ELECTRICITY_CARRIER)
+    return (
+        _read_flow_fuels(state)
+        .join(carriers, on=[REGION, FUEL], how="left")
+        .group_by(_KEYS)
+        .agg(is_electricity.all().alias(IS_ALL_ELECTRICITY))
+    )
+
+
+def _read_flow_fuels(state: State) -> pl.DataFrame:
+    """A flow table can hold millions of rows, so collect only the distinct key columns."""
+    tables = [
+        table.filter(pl.col(VALUE_COL) > 0).select(*_KEYS, FUEL).unique().collect()
+        for parameter in _FLOWS
+        if (table := state.source_time_series.get((TableKind.PARAMETER, parameter))) is not None
+    ]
+    if not tables:
+        return pl.DataFrame(schema=dict.fromkeys([*_KEYS, FUEL], pl.Utf8))
+    return pl.concat(tables).unique()
+
+
+def _read_year_flows(state: State, operations: OperationsYear) -> pl.DataFrame:
+    """The technologies that take in or put out a fuel in the operations year."""
     flows = pl.concat(
         [
             read_parameter(state, parameter, operations.year)
             .filter(pl.col(VALUE_COL) > 0)
-            .select(*_KEYS, FUEL)
+            .select(_KEYS)
             for parameter in _FLOWS
         ]
     )
-    is_electricity = pl.col(AnnotationColumn.CARRIER).eq_missing(ELECTRICITY_CARRIER)
-    return (
-        flows.join(carriers, on=[REGION, FUEL], how="left")
-        .group_by(_KEYS)
-        .agg(is_electricity.all().alias(IS_ALL_ELECTRICITY), pl.lit(True).alias(HAS_FLOWS))  # noqa: FBT003
-    )
+    return flows.unique().with_columns(pl.lit(True).alias(HAS_FLOWS))  # noqa: FBT003

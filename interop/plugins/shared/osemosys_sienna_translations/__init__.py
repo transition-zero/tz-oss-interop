@@ -54,11 +54,16 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     add_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    build_storage_extensions,
+    build_storage_technologies,
     build_storages_source,
     read_storage_links,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
     STORAGE_TRANSLATIONS,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    report_unread_capacity_factors,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport import (
     build_line_extensions,
@@ -98,6 +103,8 @@ __all__ = [
     "build_line_extensions",
     "build_loads_source",
     "build_representative_periods",
+    "build_storage_extensions",
+    "build_storage_technologies",
     "build_storages_source",
     "build_transport_source",
     "read_operations_mode",
@@ -107,6 +114,7 @@ __all__ = [
     "read_transport_ends",
     "report_calendar",
     "report_left_out_technologies",
+    "report_unread_capacity_factors",
     "require_model_year",
     "warn_one_way_lines",
 ]

@@ -74,6 +74,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     INPUT_CARRIER,
     MAIN_FUEL,
     MAIN_INPUT_RATIO,
+    OTHER_MODE_COSTS,
     OTHER_MODE_VALUES,
     OWN_COST,
     PARAMETER,
@@ -222,8 +223,11 @@ def _build_no_producer_note(old: dict[str, Any], term: dict[str, Any]) -> str:
     )
 
 
-def _build_other_mode_note(row: dict[str, Any]) -> str:
-    if row[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST:
+def _build_other_mode_note(row: dict[str, Any], priced_modes: set[str]) -> str:
+    if (
+        row[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST
+        and row[OPERATING_MODE] in priced_modes
+    ):
         return (
             "the operations system runs one operating mode, so the cost of another mode that "
             f"puts out electricity goes to {_OTHER_MODE_COSTS_ATTRIBUTE}, for each MWh of that "
@@ -508,13 +512,14 @@ def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[S
 
 
 def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    priced_modes = {cost[OPERATING_MODE] for cost in old[OTHER_MODE_COSTS] or []}
     return [
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,
             sources=[
                 _build_source(row[PARAMETER], old, _build_other_mode_attribute(row), row[VALUE_COL])
             ],
-            note=_build_other_mode_note(row),
+            note=_build_other_mode_note(row, priced_modes),
         )
         for row in old[OTHER_MODE_VALUES] or []
     ]

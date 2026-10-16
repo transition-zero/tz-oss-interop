@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -10,13 +11,18 @@ import polars as pl
 
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
+    FUEL,
     OPERATING_MODE,
+    REGION,
     TECHNOLOGY,
     VALUE_COL,
     AnnotationColumn,
     FlowParameter,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    REGION_NAME_SEPARATOR,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
@@ -28,20 +34,28 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     DETAIL,
-    OTHER_MODE_VALUES,
     PARAMETER,
 )
+from interop.plugins.shared.osemosys_sienna_translations._transport import list_lost_values
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
     COST,
     COST_MWH,
+    FROM_FUEL,
     FROM_LOCATION,
     INPUT_RATIO,
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
     RECEIVED_MW,
+    REVERSE_INPUT_RATIO,
+    REVERSE_LOSS,
+    REVERSE_MODE,
+    REVERSE_OUTPUT_RATIO,
+    REVERSE_RECEIVED_MW,
+    REVERSE_SENT_MW,
     SENT_MW,
+    TO_FUEL,
     TO_LOCATION,
 )
 from interop.plugins.shared.sienna_constants import (
@@ -72,21 +86,28 @@ _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
 _OTHER_MODE_NOTE = (
-    "the operations system runs one operating mode, so this value of another mode, for "
-    "example the flow back, is lost"
+    "the line holds the operations mode and its flow back, so this value of another mode is lost"
+)
+_REVERSE_LOSS_NOTE = (
+    "a Sienna line states one loss, the loss of the operations mode, so the loss of the flow "
+    "back is lost"
 )
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
 _ENDS_DERIVATION = (
-    "the location of the electricity that the technology takes in at the operations mode -> "
-    "bus0; the location of the electricity that it puts out -> bus1"
+    "the location of the electricity fuel that the technology takes in at the operations mode "
+    "-> bus0; the location of the electricity fuel that it puts out -> bus1"
 )
 _FROM_DERIVATION = (
-    "min = 0, as the line runs one way; max = residual_capacity, in MW, × availability_factor "
-    "× the electricity input_activity_ratio at the operations mode"
+    "min = - residual_capacity, in MW, × availability_factor × the electricity "
+    "output_activity_ratio of the flow back, or 0 when no mode flows back; max = "
+    "residual_capacity, in MW, × availability_factor × the electricity input_activity_ratio at "
+    "the operations mode"
 )
 _TO_DERIVATION = (
-    "min = 0, as the line runs one way; max = residual_capacity, in MW, × availability_factor "
-    "× the electricity output_activity_ratio at the operations mode"
+    "min = - residual_capacity, in MW, × availability_factor × the electricity "
+    "input_activity_ratio of the flow back, or 0 when no mode flows back; max = "
+    "residual_capacity, in MW, × availability_factor × the electricity output_activity_ratio at "
+    "the operations mode"
 )
 _LOSS_DERIVATION = (
     "a linear curve with the proportional term 1 - the electricity output_activity_ratio / the "
@@ -115,11 +136,25 @@ def _build_ratio_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
+def _build_reverse_sources(old: dict[str, Any]) -> list[SourceField]:
+    """The ratios of the flow back, which no line without one has."""
+    if old[REVERSE_MODE] is None:
+        return []
+    attribute = f"electricity at the operating mode {old[REVERSE_MODE]}"
+    return [
+        _build_source(FlowParameter.INPUT_ACTIVITY_RATIO, old, attribute, old[REVERSE_INPUT_RATIO]),
+        _build_source(
+            FlowParameter.OUTPUT_ACTIVITY_RATIO, old, attribute, old[REVERSE_OUTPUT_RATIO]
+        ),
+    ]
+
+
 def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
         _build_source(SupplyParameter.RESIDUAL_CAPACITY, old, None, old[RESIDUAL_CAPACITY]),
         _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
         *_build_ratio_sources(old),
+        *_build_reverse_sources(old),
     ]
 
 
@@ -139,9 +174,11 @@ def _build_value(
     )
 
 
-def _express_one_way(maximum: str) -> pl.Expr:
+def _express_limits(back: str, forward: str) -> pl.Expr:
+    """A flow back is negative, so its limit is the minimum of the line."""
     return pl.struct(
-        pl.lit(_NO_POWER).alias(MinMaxField.MIN), pl.col(maximum).alias(MinMaxField.MAX)
+        (pl.lit(_NO_POWER) - pl.col(back)).alias(MinMaxField.MIN),
+        pl.col(forward).alias(MinMaxField.MAX),
     ).cast(MIN_MAX_DTYPE)
 
 
@@ -152,11 +189,7 @@ def _build_ends() -> Translation:
             pl.col(TO_LOCATION).alias(SiennaLinkCol.BUS1),
         ],
         make_events=lambda old, new: build_derived(
-            [
-                _build_source(
-                    TECHNOLOGY, old, AnnotationColumn.LOCATION, old[AnnotationColumn.LOCATION]
-                )
-            ],
+            _build_end_sources(old),
             [
                 _dest(old[LINE_NAME], SiennaLinkCol.BUS0, new[SiennaLinkCol.BUS0]),
                 _dest(old[LINE_NAME], SiennaLinkCol.BUS1, new[SiennaLinkCol.BUS1]),
@@ -166,10 +199,36 @@ def _build_ends() -> Translation:
     )
 
 
+def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
+    """The fuel flows at the operations mode, and the location of each fuel."""
+    sources = []
+    for parameter, fuel, ratio, location in (
+        (FlowParameter.INPUT_ACTIVITY_RATIO, old[FROM_FUEL], old[INPUT_RATIO], old[FROM_LOCATION]),
+        (FlowParameter.OUTPUT_ACTIVITY_RATIO, old[TO_FUEL], old[OUTPUT_RATIO], old[TO_LOCATION]),
+    ):
+        sources.append(_build_source(parameter, old, f"{fuel} at the operations mode", ratio))
+        fuel_name = f"{old[REGION]}{REGION_NAME_SEPARATOR}{fuel}"
+        sources.append(build_osemosys_field(FUEL, fuel_name, AnnotationColumn.LOCATION, location))
+    return sources
+
+
 def _build_reports() -> list[Translation]:
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_reverse_loss_events(old)),
+    ]
+
+
+def _build_reverse_loss_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    if old[REVERSE_MODE] is None or math.isclose(old[REVERSE_LOSS], old[LOSS]):
+        return []
+    return [
+        TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=_build_reverse_sources(old),
+            note=_REVERSE_LOSS_NOTE,
+        )
     ]
 
 
@@ -195,7 +254,7 @@ def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
             ],
             note=_OTHER_MODE_NOTE,
         )
-        for row in old[OTHER_MODE_VALUES] or []
+        for row in list_lost_values(old)
     ]
 
 
@@ -221,14 +280,14 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
     _build_ends(),
     _build_value(
         SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
-        _express_one_way(SENT_MW),
+        _express_limits(REVERSE_RECEIVED_MW, SENT_MW),
         _build_capacity_sources,
         _FROM_DERIVATION,
         UNIT_MW,
     ),
     _build_value(
         SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
-        _express_one_way(RECEIVED_MW),
+        _express_limits(REVERSE_SENT_MW, RECEIVED_MW),
         _build_capacity_sources,
         _TO_DERIVATION,
         UNIT_MW,

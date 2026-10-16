@@ -13,6 +13,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
     build_line_extensions,
     build_transport_source,
+    report_unread_capacity_factors,
     warn_one_way_lines,
 )
 from interop.plugins.shared.sienna_constants import HVDC_DESTINATION_SCHEMA, SiennaComponent
@@ -33,6 +34,7 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
             return
         destination = apply_translations(source, TRANSPORT_TRANSLATIONS, self._recorder)
         warn_one_way_lines(source)
+        report_unread_capacity_factors(state, operations.year, source, self._recorder)
         state.destination_tables[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = finalise(
             destination,
             HVDC_DESTINATION_SCHEMA,

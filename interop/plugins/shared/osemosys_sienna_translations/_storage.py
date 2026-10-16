@@ -14,6 +14,7 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import StorageExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -27,12 +28,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    HOURS_PER_YEAR,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
     StorageParameter,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    ELECTRICITY_OUTPUT_RATIO,
     ELECTRICITY_RATIO,
     read_electricity_ratios,
 )
@@ -45,6 +48,12 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     PRIME_MOVER,
     RESIDUAL_CAPACITY,
     SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
+    FIXED_COST,
+    FIXED_COST_MW_YEAR,
+    enrich_fixed_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
@@ -52,22 +61,32 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
+    CHARGE_AVAILABILITY,
     CHARGE_CAPACITY,
     CHARGE_COST,
     CHARGE_COST_MWH,
+    CHARGE_LINK_VALUE,
     CHARGE_LINKS,
     CHARGE_MODE,
+    CHARGE_RATE,
+    CHARGE_RATE_MW,
     CHARGE_RATIO,
     CHARGE_TECHNOLOGY,
     CHARGE_TECHNOLOGY_NAME,
+    DISCHARGE_AVAILABILITY,
     DISCHARGE_CAPACITY,
     DISCHARGE_COST,
     DISCHARGE_COST_MWH,
+    DISCHARGE_LINK_VALUE,
     DISCHARGE_LINKS,
     DISCHARGE_MODE,
+    DISCHARGE_RATE,
+    DISCHARGE_RATE_MW,
     DISCHARGE_RATIO,
     DISCHARGE_TECHNOLOGY,
     DISCHARGE_TECHNOLOGY_NAME,
+    EFFICIENCY_IN,
+    EFFICIENCY_OUT,
     ENERGY,
     ENERGY_MWH,
     INITIAL_LEVEL,
@@ -75,12 +94,14 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     LEVEL_MWH,
     LEVEL_START,
     MIN_LEVEL,
+    OUTPUT_LIMIT,
     POWER_MW,
     STORAGE_HOURS,
     STORAGE_NAME,
     STORAGE_REPORT_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    build_no_carriers_row_note,
     enrich_residual_capacity,
     enrich_targets,
     list_bus_names,
@@ -100,6 +121,7 @@ _TECHNOLOGY_KEYS = [REGION, TECHNOLOGY]
 _COUNTED_NOUN = "storage(s)"
 _LISTED = SkippedNames(column=STORAGE_REPORT_NAME, label="Storages")
 _ONE_LINK = 1
+_AVAILABILITY = "availability"
 _EMPTY = 0.0
 _FULL = 1.0
 
@@ -110,10 +132,13 @@ class _LinkColumns(NamedTuple):
     technology: str
     mode: str
     links: str
+    value: str
 
 
-_CHARGE = _LinkColumns(CHARGE_TECHNOLOGY, CHARGE_MODE, CHARGE_LINKS)
-_DISCHARGE = _LinkColumns(DISCHARGE_TECHNOLOGY, DISCHARGE_MODE, DISCHARGE_LINKS)
+_CHARGE = _LinkColumns(CHARGE_TECHNOLOGY, CHARGE_MODE, CHARGE_LINKS, CHARGE_LINK_VALUE)
+_DISCHARGE = _LinkColumns(
+    DISCHARGE_TECHNOLOGY, DISCHARGE_MODE, DISCHARGE_LINKS, DISCHARGE_LINK_VALUE
+)
 
 
 def _build_skip(
@@ -138,21 +163,18 @@ def _build_skip(
 
 def _build_no_link_note(row: dict[str, Any]) -> str:
     missing = [
-        parameter
-        for parameter, links in (
-            (FlowParameter.TECHNOLOGY_TO_STORAGE, row[CHARGE_LINKS]),
-            (FlowParameter.TECHNOLOGY_FROM_STORAGE, row[DISCHARGE_LINKS]),
+        f"no technology names the storage in {parameter}, so nothing {action} it"
+        for parameter, links, action in (
+            (FlowParameter.TECHNOLOGY_TO_STORAGE, row[CHARGE_LINKS], "charges"),
+            (FlowParameter.TECHNOLOGY_FROM_STORAGE, row[DISCHARGE_LINKS], "discharges"),
         )
         if not links
     ]
-    return (
-        f"no technology names the storage in {' or '.join(missing)}, so nothing can charge "
-        "and discharge it"
-    )
+    return "; ".join(missing)
 
 
 NO_LINK_SKIP = _build_skip(
-    "have no technology that charges them and no technology that discharges them",
+    "lack a technology that charges them or a technology that discharges them",
     _build_no_link_note,
 )
 SEVERAL_LINKS_SKIP = _build_skip(
@@ -170,21 +192,29 @@ NO_ENERGY_SKIP = _build_skip(
     ENERGY,
     StorageParameter.RESIDUAL_STORAGE_CAPACITY,
 )
-NO_POWER_SKIP = _build_skip(
-    "have no residual capacity of a technology that charges or discharges them",
+NO_DISCHARGE_POWER_SKIP = _build_skip(
+    "have a discharging technology with no residual capacity in the operations year",
     lambda row: (
-        f"the residual_capacity of {row[CHARGE_TECHNOLOGY_NAME]} is {row[CHARGE_CAPACITY]} and "
-        f"of {row[DISCHARGE_TECHNOLOGY_NAME]} is {row[DISCHARGE_CAPACITY]}, so the storage "
-        "cannot both charge and discharge"
+        f"the residual_capacity of {row[DISCHARGE_TECHNOLOGY_NAME]}, which discharges the "
+        "storage, holds none, so the storage cannot discharge"
     ),
     DISCHARGE_CAPACITY,
+    SupplyParameter.RESIDUAL_CAPACITY,
+)
+NO_CHARGE_POWER_SKIP = _build_skip(
+    "have a charging technology with no residual capacity in the operations year",
+    lambda row: (
+        f"the residual_capacity of {row[CHARGE_TECHNOLOGY_NAME]}, which charges the storage, "
+        "holds none, so the storage cannot charge"
+    ),
+    CHARGE_CAPACITY,
     SupplyParameter.RESIDUAL_CAPACITY,
 )
 NO_CARRIERS_ROW_SKIP = _build_skip(
     "have a discharging technology whose category no carriers: row of the user mappings file names",
     lambda row: (
-        f"no carriers: row names the category {row[AnnotationColumn.CATEGORY]!r} of "
-        f"{row[DISCHARGE_TECHNOLOGY_NAME]}, so the storage has no prime mover"
+        f"the discharging technology {row[DISCHARGE_TECHNOLOGY_NAME]}: "
+        f"{build_no_carriers_row_note(row[AnnotationColumn.CATEGORY])}"
     ),
     AnnotationColumn.CATEGORY,
 )
@@ -236,14 +266,40 @@ def build_storages_source(
 ) -> pl.DataFrame:
     """One row for each storage that the operations system holds, with its ratings."""
     storages = _read_storages(state, operations)
-    storages = _filter(storages, _build_link_rules(), recorder)
+    storages = _drop_skipped(storages, _build_link_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
-    storages = _filter(storages, _build_technology_rules(list_bus_names(state)), recorder)
+    storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
     if storages.height == 0:
         return storages
-    storages = _enrich_ratings(operations, storages)
+    storages = _enrich_ratings(state, operations, storages)
     storages = _enrich_levels(state, operations, storages)
-    return _enrich_costs(state, operations, storages).sort(STORAGE_NAME)
+    storages = _enrich_costs(state, operations, storages)
+    return _enrich_fixed_costs(state, operations, storages).sort(STORAGE_NAME)
+
+
+def build_storage_technologies(storages: pl.DataFrame) -> pl.DataFrame:
+    """The technologies that charge or discharge the storages: region, technology and name."""
+    return pl.concat(
+        [
+            storages.select(
+                REGION,
+                pl.col(technology).alias(TECHNOLOGY),
+                pl.col(name).alias(TECHNOLOGY_NAME),
+            )
+            for technology, name in (
+                (CHARGE_TECHNOLOGY, CHARGE_TECHNOLOGY_NAME),
+                (DISCHARGE_TECHNOLOGY, DISCHARGE_TECHNOLOGY_NAME),
+            )
+        ]
+    ).unique()
+
+
+def build_storage_extensions(storages: pl.DataFrame) -> list[StorageExtension]:
+    """The fixed cost of each storage that states one, which Sienna has no field for."""
+    return [
+        StorageExtension(name=row[STORAGE_NAME], fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR])
+        for row in storages.filter(pl.col(FIXED_COST).is_not_null()).iter_rows(named=True)
+    ]
 
 
 # --- the storages and their links -------------------------------------------------------------
@@ -259,6 +315,7 @@ def _read_links(state: State, year: int, parameter: str, columns: _LinkColumns) 
             pl.col(TECHNOLOGY).first().alias(columns.technology),
             pl.col(OPERATING_MODE).first().alias(columns.mode),
             pl.len().alias(columns.links),
+            pl.col(VALUE_COL).cast(pl.Float64).first().alias(columns.value),
         )
     )
 
@@ -287,7 +344,10 @@ def _read_storages(state: State, operations: OperationsYear) -> pl.DataFrame:
     )
 
 
-def _filter(table: pl.DataFrame, rules: list[SkipRule], recorder: ScopedRecorder) -> pl.DataFrame:
+def _drop_skipped(
+    table: pl.DataFrame, rules: list[SkipRule], recorder: ScopedRecorder
+) -> pl.DataFrame:
+    """Take out the rows that each rule drops, and report each one."""
     for rule in rules:
         table, _ = filter_component(table, rule.keep, rule.report, recorder)
     return table
@@ -306,7 +366,8 @@ def _build_link_rules() -> list[SkipRule]:
 
 def _build_technology_rules(bus_names: list[str]) -> list[SkipRule]:
     return [
-        SkipRule((pl.col(CHARGE_CAPACITY) > 0) & (pl.col(DISCHARGE_CAPACITY) > 0), NO_POWER_SKIP),
+        SkipRule(pl.col(DISCHARGE_CAPACITY) > 0, NO_DISCHARGE_POWER_SKIP),
+        SkipRule(pl.col(CHARGE_CAPACITY) > 0, NO_CHARGE_POWER_SKIP),
         SkipRule(pl.col(SIENNA_TYPE).is_not_null(), NO_CARRIERS_ROW_SKIP),
         SkipRule(
             pl.col(SIENNA_TYPE) == SiennaComponent.ENERGY_RESERVOIR_STORAGE, NOT_A_STORAGE_SKIP
@@ -335,11 +396,13 @@ def _enrich_technologies(
         SIENNA_TYPE,
         PRIME_MOVER,
         pl.col(RESIDUAL_CAPACITY).alias(DISCHARGE_CAPACITY),
+        pl.col(_AVAILABILITY).alias(DISCHARGE_AVAILABILITY),
     )
     charging = technologies.select(
         REGION,
         pl.col(TECHNOLOGY).alias(CHARGE_TECHNOLOGY),
         pl.col(RESIDUAL_CAPACITY).alias(CHARGE_CAPACITY),
+        pl.col(_AVAILABILITY).alias(CHARGE_AVAILABILITY),
     )
     table = storages.join(discharging, on=[REGION, DISCHARGE_TECHNOLOGY], how="left").join(
         charging, on=[REGION, CHARGE_TECHNOLOGY], how="left"
@@ -364,6 +427,13 @@ def _read_linked_technologies(
         .select(*_TECHNOLOGY_KEYS, AnnotationColumn.CATEGORY, AnnotationColumn.LOCATION)
         .join(linked, on=_TECHNOLOGY_KEYS, how="semi")
     )
+    availability = read_parameter_with_defaults(
+        state,
+        SupplyParameter.AVAILABILITY_FACTOR,
+        operations.year,
+        technologies.select(_TECHNOLOGY_KEYS),
+    ).select(*_TECHNOLOGY_KEYS, pl.col(VALUE_COL).fill_null(_FULL).alias(_AVAILABILITY))
+    technologies = technologies.join(availability, on=_TECHNOLOGY_KEYS, how="left")
     return enrich_residual_capacity(state, operations.year, technologies)
 
 
@@ -406,20 +476,57 @@ def _express_technology_name(technology_col: str) -> pl.Expr:
 # --- ratings, levels and costs ---------------------------------------------------------------
 
 
-def _enrich_ratings(operations: OperationsYear, storages: pl.DataFrame) -> pl.DataFrame:
-    """Power in MW of electricity, energy in MWh, and each in terms of the base power."""
+def _enrich_ratings(
+    state: State, operations: OperationsYear, storages: pl.DataFrame
+) -> pl.DataFrame:
+    """Power in MW of electricity, energy in MWh, and each limit in terms of the base power.
+
+    The availability factor of a technology derates its power, and a stated rate of charge or
+    discharge caps it.
+    """
     units = operations.units
-    rated = storages.with_columns(
+    table = _enrich_rates(state, operations, storages).with_columns(
         (units.convert_capacity_to_mw(pl.col(DISCHARGE_CAPACITY)) * pl.col(DISCHARGE_RATIO)).alias(
             POWER_MW
         ),
         units.convert_energy_to_mwh(pl.col(ENERGY)).alias(ENERGY_MWH),
     )
     drawn = units.convert_capacity_to_mw(pl.col(CHARGE_CAPACITY)) * pl.col(CHARGE_RATIO)
-    return rated.with_columns(
-        (drawn / pl.col(POWER_MW)).alias(INPUT_LIMIT),
+    given = pl.col(POWER_MW) * pl.col(DISCHARGE_AVAILABILITY)
+    return table.with_columns(
+        (
+            pl.min_horizontal(drawn * pl.col(CHARGE_AVAILABILITY), CHARGE_RATE_MW)
+            / pl.col(POWER_MW)
+        ).alias(INPUT_LIMIT),
+        (pl.min_horizontal(given, DISCHARGE_RATE_MW) / pl.col(POWER_MW)).alias(OUTPUT_LIMIT),
         (pl.col(ENERGY_MWH) / pl.col(POWER_MW)).alias(STORAGE_HOURS),
+        (pl.col(CHARGE_LINK_VALUE) / pl.col(CHARGE_RATIO)).alias(EFFICIENCY_IN),
+        (pl.col(DISCHARGE_RATIO) / pl.col(DISCHARGE_LINK_VALUE)).alias(EFFICIENCY_OUT),
     )
+
+
+def _enrich_rates(state: State, operations: OperationsYear, storages: pl.DataFrame) -> pl.DataFrame:
+    """Each rate in MW, from energy in a year; a rate of zero states no limit, so it is null."""
+    rates = {
+        CHARGE_RATE: StorageParameter.MAX_CHARGE_RATE,
+        DISCHARGE_RATE: StorageParameter.MAX_DISCHARGE_RATE,
+    }
+    table = storages
+    for column, parameter in rates.items():
+        values = _read_storage_values(state, operations, storages, parameter)
+        table = table.join(values.rename({VALUE_COL: column}), on=_STORAGE_KEYS)
+    convert = operations.units.convert_energy_to_mwh
+    return table.with_columns(
+        _express_rate_mw(table, CHARGE_RATE, convert).alias(CHARGE_RATE_MW),
+        _express_rate_mw(table, DISCHARGE_RATE, convert).alias(DISCHARGE_RATE_MW),
+    )
+
+
+def _express_rate_mw(
+    table: pl.DataFrame, column: str, convert: Callable[[pl.Expr], pl.Expr]
+) -> pl.Expr:
+    rate = express_converted(table, column, convert) / HOURS_PER_YEAR
+    return pl.when(pl.col(column) > 0).then(rate)
 
 
 def _enrich_levels(
@@ -484,4 +591,19 @@ def _read_mode_costs(
         pl.col(TECHNOLOGY).alias(columns.technology),
         pl.col(OPERATING_MODE).alias(columns.mode),
         pl.col(VALUE_COL).cast(pl.Float64).fill_null(_EMPTY).alias(cost_col),
+    )
+
+
+def _enrich_fixed_costs(
+    state: State, operations: OperationsYear, storages: pl.DataFrame
+) -> pl.DataFrame:
+    """The fixed cost of the discharging technology, in $ for each MW of output and year."""
+    technologies = storages.select(
+        *_STORAGE_KEYS,
+        pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY),
+        pl.col(DISCHARGE_RATIO).alias(ELECTRICITY_OUTPUT_RATIO),
+    )
+    costs = enrich_fixed_costs(state, operations, technologies)
+    return storages.join(
+        costs.select(*_STORAGE_KEYS, FIXED_COST, FIXED_COST_MW_YEAR), on=_STORAGE_KEYS
     )

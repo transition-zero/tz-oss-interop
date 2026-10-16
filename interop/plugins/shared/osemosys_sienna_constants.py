@@ -109,3 +109,10 @@ class StorageParameter(StrEnum):
     RESIDUAL_STORAGE_CAPACITY = "residual_storage_capacity"
     STORAGE_LEVEL_START = "storage_level_start"
     MIN_STORAGE_CHARGE = "min_storage_charge"
+    MAX_CHARGE_RATE = "storage_max_charge_rate"
+    MAX_DISCHARGE_RATE = "storage_max_discharge_rate"
+
+
+# The word that counts technologies in a warning, and the label of the names that it lists.
+TECHNOLOGY_COUNTED_NOUN = "technology(ies)"
+TECHNOLOGIES_LABEL = "Technologies"

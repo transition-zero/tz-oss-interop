@@ -2,15 +2,18 @@
 
 At the operations mode, a transport technology takes in electricity at one location and puts
 it out at another. The line runs from the bus of the first to the bus of the second, in that
-direction only. It sends at most its residual capacity in MW × its availability factor × its
+direction. It sends at most its residual capacity in MW × its availability factor × its
 electricity input ratio, and it loses the share `1 - output ratio / input ratio` of what it
-sends. The values of the other modes, for example the flow back, are reported and left out.
+sends. When another mode takes electricity in at the second location and puts it out at the
+first, the line also flows back, within the limits of that mode. The values of any other mode
+are reported and left out.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import NamedTuple
+import math
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -30,12 +33,13 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
+    TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
-    read_mode_parameter,
+    read_parameter,
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
@@ -44,6 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     OTHER_MODE_VALUES,
+    PARAMETER,
     enrich_other_modes,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
@@ -53,13 +58,13 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_residual_capacity,
-    list_bus_names,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
     CAPACITY_MW,
     COST,
     COST_MWH,
+    FROM_FUEL,
     FROM_LOCATION,
     FROM_LOCATIONS,
     INPUT_RATIO,
@@ -67,7 +72,14 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     LOSS,
     OUTPUT_RATIO,
     RECEIVED_MW,
+    REVERSE_INPUT_RATIO,
+    REVERSE_LOSS,
+    REVERSE_MODE,
+    REVERSE_OUTPUT_RATIO,
+    REVERSE_RECEIVED_MW,
+    REVERSE_SENT_MW,
     SENT_MW,
+    TO_FUEL,
     TO_LOCATION,
     TO_LOCATIONS,
 )
@@ -83,11 +95,14 @@ from interop.plugins.shared.warning_text import name_a_few
 log = logging.getLogger(__name__)
 
 _KEYS = [REGION, TECHNOLOGY]
+_MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
+_FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
 _COUNTED_NOUN = "transport technology(ies)"
-_LISTED = SkippedNames(column=TECHNOLOGY_NAME, label="Technologies")
+_LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 _ONE_LOCATION = 1
 _WHOLE_CAPACITY = 1.0
 _NO_COST = 0.0
+_NO_FLOW = 0.0
 
 
 class _EndColumns(NamedTuple):
@@ -95,11 +110,12 @@ class _EndColumns(NamedTuple):
 
     location: str
     locations: str
+    fuel: str
     ratio: str
 
 
-_FROM = _EndColumns(FROM_LOCATION, FROM_LOCATIONS, INPUT_RATIO)
-_TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, OUTPUT_RATIO)
+_FROM = _EndColumns(FROM_LOCATION, FROM_LOCATIONS, FROM_FUEL, INPUT_RATIO)
+_TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, TO_FUEL, OUTPUT_RATIO)
 
 
 def _build_skip(
@@ -130,11 +146,6 @@ NO_ENDS_SKIP = _build_skip(
     "puts electricity out, at the operations mode",
     AnnotationColumn.LOCATION,
 )
-NO_BUS_SKIP = _build_skip(
-    "have an end that holds no bus",
-    "no bus is at one end of the technology, so no line can join the two",
-    AnnotationColumn.LOCATION,
-)
 
 
 def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
@@ -142,26 +153,23 @@ def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
 
     `from_locations` and `to_locations` count the locations of each end; a line needs one each.
     """
-    fuels = read_electricity_fuels(state).select(REGION, FUEL, AnnotationColumn.LOCATION)
-    ends = [
-        _read_end(state, year, mode, parameter, fuels, columns)
-        for parameter, columns in (
-            (FlowParameter.INPUT_ACTIVITY_RATIO, _FROM),
-            (FlowParameter.OUTPUT_ACTIVITY_RATIO, _TO),
-        )
-    ]
-    return ends[0].join(ends[1], on=_KEYS, how="full", coalesce=True)
+    ends = _read_mode_ends(state, year)
+    return ends.filter(pl.col(OPERATING_MODE) == mode).drop(OPERATING_MODE)
 
 
 def build_transport_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> pl.DataFrame:
-    """One row for each transport technology that the operations system holds as a line."""
+    """One row for each transport technology that the operations system holds as a line.
+
+    Each end of a line is the location of an electricity fuel, which always has a bus.
+    """
     lines = _read_lines(state, operations)
-    for rule in _build_skip_rules(list_bus_names(state)):
+    for rule in _SKIP_RULES:
         lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
     if lines.height == 0:
         return lines
+    lines = _enrich_reverse_modes(state, operations, lines)
     lines = _enrich_ratings(state, operations, lines)
     lines = _enrich_costs(state, operations, lines)
     return enrich_other_modes(state, operations, lines).sort(LINE_NAME)
@@ -175,37 +183,67 @@ def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension
     ]
 
 
+def list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
+    """The values of the other modes that the line does not hold.
+
+    The flows of the reverse mode are the flow back, and a cost of the reverse mode that is
+    the cost of the operations mode is the one cost of the line.
+    """
+    return [
+        value
+        for value in line[OTHER_MODE_VALUES] or []
+        if not _is_held_by_reverse_mode(line, value)
+    ]
+
+
 def warn_one_way_lines(lines: pl.DataFrame) -> None:
-    """Name the lines whose technology states flows at another mode, which the line drops."""
-    named = lines.filter(pl.col(OTHER_MODE_VALUES).list.len() > 0)[TECHNOLOGY_NAME].to_list()
+    """Name the lines whose technology states values at a mode that is not the flow back."""
+    named = [
+        line[TECHNOLOGY_NAME] for line in lines.iter_rows(named=True) if list_lost_values(line)
+    ]
     if named:
         log.warning(
-            "%s: %d transport technology(ies) state values at another operating mode, for "
-            "example a flow back, and each line runs at the operations mode only. "
-            "Technologies: %s",
+            "%s: %d transport technology(ies) state values at an operating mode that is not the "
+            "flow back, and the line does not hold them. Technologies: %s",
             OSEMOSYS_TO_SIENNA_PIPELINE,
             len(named),
             name_a_few(named),
         )
 
 
+def _is_held_by_reverse_mode(line: dict[str, Any], value: dict[str, Any]) -> bool:
+    if value[OPERATING_MODE] != line[REVERSE_MODE]:
+        return False
+    if value[PARAMETER] in _FLOWS:
+        return True
+    return value[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST and math.isclose(
+        value[VALUE_COL], line[COST]
+    )
+
+
+def _read_mode_ends(state: State, year: int) -> pl.DataFrame:
+    """The ends of each technology at each operating mode."""
+    fuels = read_electricity_fuels(state).select(REGION, FUEL, AnnotationColumn.LOCATION)
+    ends = [
+        _read_end(state, year, parameter, fuels, columns)
+        for parameter, columns in ((_FLOWS[0], _FROM), (_FLOWS[1], _TO))
+    ]
+    return ends[0].join(ends[1], on=_MODE_KEYS, how="full", coalesce=True)
+
+
 def _read_end(
-    state: State,
-    year: int,
-    mode: str,
-    parameter: str,
-    fuels: pl.DataFrame,
-    columns: _EndColumns,
+    state: State, year: int, parameter: str, fuels: pl.DataFrame, columns: _EndColumns
 ) -> pl.DataFrame:
     location = pl.col(AnnotationColumn.LOCATION)
     return (
-        read_mode_parameter(state, parameter, year, mode)
+        read_parameter(state, parameter, year)
         .filter(pl.col(VALUE_COL) > 0)
         .join(fuels.filter(location.is_not_null()), on=[REGION, FUEL])
-        .group_by(_KEYS)
+        .group_by(_MODE_KEYS)
         .agg(
             location.min().alias(columns.location),
             location.n_unique().alias(columns.locations),
+            pl.col(FUEL).min().alias(columns.fuel),
             pl.col(VALUE_COL).cast(pl.Float64).sum().alias(columns.ratio),
         )
     )
@@ -226,18 +264,43 @@ def _read_lines(state: State, operations: OperationsYear) -> pl.DataFrame:
     return lines.join(ends, on=_KEYS, how="left")
 
 
-def _build_skip_rules(bus_names: list[str]) -> list[SkipRule]:
-    has_ends = (
+def _express_has_ends() -> pl.Expr:
+    return (
         (pl.col(FROM_LOCATIONS) == _ONE_LOCATION)
         & (pl.col(TO_LOCATIONS) == _ONE_LOCATION)
         & (pl.col(FROM_LOCATION) != pl.col(TO_LOCATION))
     )
-    has_buses = pl.col(FROM_LOCATION).is_in(bus_names) & pl.col(TO_LOCATION).is_in(bus_names)
-    return [
-        SkipRule(pl.col(RESIDUAL_CAPACITY) > 0, NO_CAPACITY_SKIP),
-        SkipRule(has_ends, NO_ENDS_SKIP),
-        SkipRule(has_buses, NO_BUS_SKIP),
-    ]
+
+
+_SKIP_RULES = (
+    SkipRule(pl.col(RESIDUAL_CAPACITY) > 0, NO_CAPACITY_SKIP),
+    SkipRule(_express_has_ends(), NO_ENDS_SKIP),
+)
+
+
+def _enrich_reverse_modes(
+    state: State, operations: OperationsYear, lines: pl.DataFrame
+) -> pl.DataFrame:
+    """The flow back: the first other mode that takes electricity in at the to end, and puts it
+    out at the from end.
+    """
+    reverse = (
+        _read_mode_ends(state, operations.year)
+        .filter((pl.col(OPERATING_MODE) != operations.mode) & _express_has_ends())
+        .join(
+            lines.select(*_KEYS, FROM_LOCATION, TO_LOCATION),
+            left_on=[*_KEYS, FROM_LOCATION, TO_LOCATION],
+            right_on=[*_KEYS, TO_LOCATION, FROM_LOCATION],
+        )
+        .sort(pl.col(OPERATING_MODE).cast(pl.Int64, strict=False), OPERATING_MODE)
+        .group_by(_KEYS)
+        .agg(
+            pl.col(OPERATING_MODE).first().alias(REVERSE_MODE),
+            pl.col(INPUT_RATIO).first().alias(REVERSE_INPUT_RATIO),
+            pl.col(OUTPUT_RATIO).first().alias(REVERSE_OUTPUT_RATIO),
+        )
+    )
+    return lines.join(reverse, on=_KEYS, how="left")
 
 
 def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
@@ -250,10 +313,14 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
             * pl.col(AVAILABILITY)
         ).alias(CAPACITY_MW)
     )
+    capacity = pl.col(CAPACITY_MW)
     return rated.with_columns(
-        (pl.col(CAPACITY_MW) * pl.col(INPUT_RATIO)).alias(SENT_MW),
-        (pl.col(CAPACITY_MW) * pl.col(OUTPUT_RATIO)).alias(RECEIVED_MW),
+        (capacity * pl.col(INPUT_RATIO)).alias(SENT_MW),
+        (capacity * pl.col(OUTPUT_RATIO)).alias(RECEIVED_MW),
         (1.0 - pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(LOSS),
+        (capacity * pl.col(REVERSE_INPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_SENT_MW),
+        (capacity * pl.col(REVERSE_OUTPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_RECEIVED_MW),
+        (1.0 - pl.col(REVERSE_OUTPUT_RATIO) / pl.col(REVERSE_INPUT_RATIO)).alias(REVERSE_LOSS),
     )
 
 

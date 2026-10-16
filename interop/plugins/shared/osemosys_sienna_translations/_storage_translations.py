@@ -8,7 +8,13 @@ from typing import Any
 
 import polars as pl
 
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_HOURS, UNIT_MVA, UNIT_MW
+from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MW_YEAR,
+    UNIT_DOLLARS_PER_MWH,
+    UNIT_HOURS,
+    UNIT_MVA,
+    UNIT_MW,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     STORAGE,
     TECHNOLOGY,
@@ -26,24 +32,37 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     PRIME_MOVER,
     SIENNA_TYPE,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
+    FIXED_COST,
+    FIXED_COST_MW_YEAR,
+)
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
+    CHARGE_AVAILABILITY,
     CHARGE_CAPACITY,
     CHARGE_COST,
     CHARGE_COST_MWH,
+    CHARGE_LINK_VALUE,
     CHARGE_MODE,
+    CHARGE_RATE,
     CHARGE_RATIO,
     CHARGE_TECHNOLOGY_NAME,
+    DISCHARGE_AVAILABILITY,
     DISCHARGE_CAPACITY,
     DISCHARGE_COST,
     DISCHARGE_COST_MWH,
+    DISCHARGE_LINK_VALUE,
     DISCHARGE_MODE,
+    DISCHARGE_RATE,
     DISCHARGE_RATIO,
     DISCHARGE_TECHNOLOGY_NAME,
+    EFFICIENCY_IN,
+    EFFICIENCY_OUT,
     ENERGY,
     INITIAL_LEVEL,
     INPUT_LIMIT,
     LEVEL_START,
     MIN_LEVEL,
+    OUTPUT_LIMIT,
     POWER_MW,
     STORAGE_HOURS,
     STORAGE_NAME,
@@ -92,7 +111,9 @@ _TECHNOLOGY_NOTE = "OSeMOSYS states no storage technology, so OTHER_MECH stands 
 _RATING_NOTE = "the storage rates at its whole base power"
 _ACTIVE_POWER_NOTE = "OSeMOSYS states no initial dispatch; active_power defaults to 0.0"
 _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaults to 0.0"
-_OUTPUT_LIMITS_NOTE = "the storage discharges at up to its base power"
+_CHARGE_DIRECTION = "charge"
+_DISCHARGE_DIRECTION = "discharge"
+_FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
 _CONVERSION_NOTE = "the energy and the level are both in MWh, so no conversion applies"
 _TARGET_NOTE = "OSeMOSYS states no level at the end of the operations horizon"
 _CYCLE_LIMITS_NOTE = "OSeMOSYS states no limit on the cycles of a storage"
@@ -103,12 +124,21 @@ _BASE_POWER_DERIVATION = (
     "electricity output_activity_ratio at the discharge mode"
 )
 _INPUT_LIMITS_DERIVATION = (
-    "min = 0; max = residual_capacity of the charging technology, in MW, × its electricity "
-    "input_activity_ratio at the charge mode, per unit of base_power"
+    "min = 0; max = the lower of residual_capacity of the charging technology, in MW, × its "
+    "electricity input_activity_ratio at the charge mode × its availability_factor, and "
+    "storage_max_charge_rate, in MWh / 8760 h when it is above 0; per unit of base_power"
+)
+_OUTPUT_LIMITS_DERIVATION = (
+    "min = 0; max = the lower of base_power × availability_factor of the discharging technology, "
+    "and storage_max_discharge_rate, in MWh / 8760 h when it is above 0; per unit of base_power"
 )
 _EFFICIENCY_DERIVATION = (
-    "in = 1 / the electricity input_activity_ratio at the charge mode; out = the electricity "
-    "output_activity_ratio at the discharge mode"
+    "in = technology_to_storage / the electricity input_activity_ratio at the charge mode; out = "
+    "the electricity output_activity_ratio at the discharge mode / technology_from_storage"
+)
+_FIXED_COST_DERIVATION = (
+    "fixed_cost of the discharging technology in the operations year, in $/MW/yr, / its "
+    "electricity output_activity_ratio at the discharge mode"
 )
 _CAPACITY_DERIVATION = "residual_storage_capacity of the operations year, in MWh, / base_power"
 _LEVEL_LIMITS_DERIVATION = "min = min_storage_charge, a share of the energy; max = 1"
@@ -137,7 +167,7 @@ def _build_output_ratio_source(old: dict[str, Any]) -> SourceField:
     return _build_source(
         FlowParameter.OUTPUT_ACTIVITY_RATIO,
         old[DISCHARGE_TECHNOLOGY_NAME],
-        _build_mode_attribute("discharge", old[DISCHARGE_MODE]),
+        _build_mode_attribute(_DISCHARGE_DIRECTION, old[DISCHARGE_MODE]),
         old[DISCHARGE_RATIO],
     )
 
@@ -146,7 +176,7 @@ def _build_input_ratio_source(old: dict[str, Any]) -> SourceField:
     return _build_source(
         FlowParameter.INPUT_ACTIVITY_RATIO,
         old[CHARGE_TECHNOLOGY_NAME],
-        _build_mode_attribute("charge", old[CHARGE_MODE]),
+        _build_mode_attribute(_CHARGE_DIRECTION, old[CHARGE_MODE]),
         old[CHARGE_RATIO],
     )
 
@@ -269,17 +299,29 @@ def _build_power() -> list[Translation]:
         _default(
             dest_col=_Col.REACTIVE_POWER, value=_NO_POWER, note=_REACTIVE_POWER_NOTE, unit=UNIT_MW
         ),
-        _default(
-            dest_col=_Col.OUTPUT_ACTIVE_POWER_LIMITS,
-            value={MinMaxField.MIN: _NO_POWER, MinMaxField.MAX: _FULL},
-            note=_OUTPUT_LIMITS_NOTE,
-            dtype=MIN_MAX_DTYPE,
+        _build_value(
+            _Col.OUTPUT_ACTIVE_POWER_LIMITS,
+            _express_limits(OUTPUT_LIMIT),
+            lambda old: [
+                _build_source(
+                    SupplyParameter.AVAILABILITY_FACTOR,
+                    old[DISCHARGE_TECHNOLOGY_NAME],
+                    None,
+                    old[DISCHARGE_AVAILABILITY],
+                ),
+                _build_source(
+                    StorageParameter.MAX_DISCHARGE_RATE,
+                    old[STORAGE_REPORT_NAME],
+                    None,
+                    old[DISCHARGE_RATE],
+                ),
+                _build_base_power_source(old),
+            ],
+            _OUTPUT_LIMITS_DERIVATION,
         ),
         _build_value(
             _Col.INPUT_ACTIVE_POWER_LIMITS,
-            pl.struct(
-                pl.lit(_NO_POWER).alias(MinMaxField.MIN), pl.col(INPUT_LIMIT).alias(MinMaxField.MAX)
-            ).cast(MIN_MAX_DTYPE),
+            _express_limits(INPUT_LIMIT),
             lambda old: [
                 _build_source(
                     SupplyParameter.RESIDUAL_CAPACITY,
@@ -288,6 +330,18 @@ def _build_power() -> list[Translation]:
                     old[CHARGE_CAPACITY],
                 ),
                 _build_input_ratio_source(old),
+                _build_source(
+                    SupplyParameter.AVAILABILITY_FACTOR,
+                    old[CHARGE_TECHNOLOGY_NAME],
+                    None,
+                    old[CHARGE_AVAILABILITY],
+                ),
+                _build_source(
+                    StorageParameter.MAX_CHARGE_RATE,
+                    old[STORAGE_REPORT_NAME],
+                    None,
+                    old[CHARGE_RATE],
+                ),
                 _build_base_power_source(old),
             ],
             _INPUT_LIMITS_DERIVATION,
@@ -295,13 +349,41 @@ def _build_power() -> list[Translation]:
         _build_value(
             _Col.EFFICIENCY,
             pl.struct(
-                (_FULL / pl.col(CHARGE_RATIO)).alias(SiennaStructField.IN),
-                pl.col(DISCHARGE_RATIO).alias(SiennaStructField.OUT),
+                pl.col(EFFICIENCY_IN).alias(SiennaStructField.IN),
+                pl.col(EFFICIENCY_OUT).alias(SiennaStructField.OUT),
             ).cast(EFFICIENCY_DTYPE),
-            lambda old: [_build_input_ratio_source(old), _build_output_ratio_source(old)],
+            lambda old: [
+                _build_link_source(
+                    old,
+                    FlowParameter.TECHNOLOGY_TO_STORAGE,
+                    CHARGE_TECHNOLOGY_NAME,
+                    CHARGE_LINK_VALUE,
+                ),
+                _build_input_ratio_source(old),
+                _build_output_ratio_source(old),
+                _build_link_source(
+                    old,
+                    FlowParameter.TECHNOLOGY_FROM_STORAGE,
+                    DISCHARGE_TECHNOLOGY_NAME,
+                    DISCHARGE_LINK_VALUE,
+                ),
+            ],
             _EFFICIENCY_DERIVATION,
         ),
     ]
+
+
+def _express_limits(maximum: str) -> pl.Expr:
+    return pl.struct(
+        pl.lit(_NO_POWER).alias(MinMaxField.MIN), pl.col(maximum).alias(MinMaxField.MAX)
+    ).cast(MIN_MAX_DTYPE)
+
+
+def _build_link_source(
+    old: dict[str, Any], parameter: str, technology_col: str, value_col: str
+) -> SourceField:
+    """The value of the row that links the technology to the storage."""
+    return _build_source(parameter, old[technology_col], old[STORAGE], old[value_col])
 
 
 def _build_energy() -> list[Translation]:
@@ -388,9 +470,32 @@ def _build_cost() -> Translation:
     )
 
 
+def _build_fixed_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    if old[FIXED_COST] is None:
+        return []
+    return build_derived(
+        [
+            _build_source(
+                SupplyParameter.FIXED_COST, old[DISCHARGE_TECHNOLOGY_NAME], None, old[FIXED_COST]
+            ),
+            _build_output_ratio_source(old),
+        ],
+        [
+            _dest(
+                old[STORAGE_NAME],
+                _FOM_ATTRIBUTE,
+                old[FIXED_COST_MW_YEAR],
+                UNIT_DOLLARS_PER_MW_YEAR,
+            )
+        ],
+        _FIXED_COST_DERIVATION,
+    )
+
+
 STORAGE_TRANSLATIONS: list[Translation] = [
     *_build_identity(),
     *_build_power(),
     *_build_energy(),
     _build_cost(),
+    Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(old)),
 ]
