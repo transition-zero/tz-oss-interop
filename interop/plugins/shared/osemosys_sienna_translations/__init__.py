@@ -76,6 +76,8 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_translations
     TRANSPORT_TRANSLATIONS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._unapplied_parameters import (
+    INVESTMENTS_PARAMETERS,
+    OPERATIONS_PARAMETERS,
     report_unapplied_parameters,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
@@ -84,8 +86,10 @@ __all__ = [
     "BUS_TRANSLATIONS",
     "GENERATOR_NAME",
     "GENERATOR_TYPE_MAPPINGS",
+    "INVESTMENTS_PARAMETERS",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
+    "OPERATIONS_PARAMETERS",
     "SIENNA_TYPE",
     "STORAGE_TRANSLATIONS",
     "TRANSPORT_TRANSLATIONS",

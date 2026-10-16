@@ -9,6 +9,9 @@ steps:
       year: earliest
   - name: sienna_relate_components
   - name: osemosys_to_sienna_investments_map_technologies
+  - name: osemosys_to_sienna_report_unapplied_parameters
+    params:
+      documents: investments
 sinks:
   - name: emit_sienna_files
     params:

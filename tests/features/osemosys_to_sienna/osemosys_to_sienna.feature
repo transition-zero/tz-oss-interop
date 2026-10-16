@@ -495,14 +495,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "annual_output_upper_limit_mwh" set to {"2030": 3000.0}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "annual_output_lower_limit_mwh" set to {"2030": 500.0}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "annual_output_upper_limit_mwh"
-      And the log contains "osemosys-to-sienna: total_technology_annual_activity_lower_limit states 2 row(s) for 2030 that the operations system does not apply, for 2 technology(ies): R1/ATGASCC, R1/ATOILCT"
-      And the log contains "osemosys-to-sienna: total_technology_annual_activity_upper_limit states 2 row(s) for 2030 that the operations system does not apply, for 2 technology(ies): R1/ATGASCC, R1/ATGASWELL"
-      And the file "decisions.md" contains "`osemosys.total_technology_annual_activity_lower_limit.R1/ATGASCC` = 2.0 |  |  | 1 row(s) for 2030; an operations system has no field for a bound on the energy of a year"
+      And the log contains "osemosys-to-sienna: total_technology_annual_activity_lower_limit states 2 row(s) for 2030 that no step of the pipeline applies, for 2 technology(ies): R1/ATGASCC, R1/ATOILCT"
+      And the log contains "osemosys-to-sienna: total_technology_annual_activity_upper_limit states 2 row(s) for 2030 that no step of the pipeline applies, for 2 technology(ies): R1/ATGASCC, R1/ATGASWELL"
+      And the file "decisions.md" contains "`osemosys.total_technology_annual_activity_lower_limit.R1/ATGASCC` = 2.0 |  |  | 1 row(s) for 2030; a Sienna system has no field for a bound on the energy of a year, so no step applies it; when the technology becomes a generator, its extension record holds its bound of each year in MWh"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.annual_output_lower_limit_mwh` = {'2030': 500.0} MWh"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.annual_output_lower_limit_mwh` = {'2030': 500.0}"
 
-    Scenario: Each other parameter that the operations system does not apply is reported, with the members that it states values for
+    Scenario: Each other parameter that no step of the pipeline applies is reported, with the members or the regions that it states values for
       A row at the default of its parameter states nothing beyond the default, so the report
-      leaves it out. A parameter with no member column gets one event that counts its rows.
+      leaves it out. A parameter with no member column gets one event for each region, and a
+      parameter with no region column gets one event that counts its rows. A parameter with no
+      year column holds in every year.
       Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATGASCC    | 2030 | 900   |
@@ -511,12 +514,23 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
         | REGION | YEAR | VALUE |
         | R1     | 2030 | 1.15  |
+      And the otoole parameter "DiscountRate" keyed by "REGION" with default 0.05 has the rows:
+        | REGION | VALUE |
+        | R1     | 0.07  |
+      And the otoole parameter "DaysInDayType" keyed by "SEASON DAYTYPE YEAR" with default 7 has the rows:
+        | SEASON | DAYTYPE | YEAR | VALUE |
+        | S1     | 1       | 2030 | 91    |
+        | S2     | 1       | 2030 | 91    |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "osemosys-to-sienna: capital_cost states 1 row(s) for 2030 that the operations system does not apply, for 1 technology(ies): R1/ATGASCC"
-      And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that the operations system does not apply"
-      And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASCC` = 900.0 |  |  | 1 row(s) for 2030; no part of the operations step applies this parameter"
-      And the file "decisions.md" contains "`osemosys.reserve_margin.all` |  |  | 1 row(s) for 2030; no part of the operations step applies this parameter"
+      And the log contains "osemosys-to-sienna: capital_cost states 1 row(s) for 2030 that no step of the pipeline applies, for 1 technology(ies): R1/ATGASCC"
+      And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies, for 1 region(s): R1"
+      And the log contains "osemosys-to-sienna: discount_rate states 1 row(s) for every year that no step of the pipeline applies, for 1 region(s): R1"
+      And the log contains "osemosys-to-sienna: days_in_day_type states 2 row(s) for 2030 that no step of the pipeline applies"
+      And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASCC` = 900.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
+      And the file "decisions.md" contains "`osemosys.reserve_margin.R1` = 1.15 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
+      And the file "decisions.md" contains "`osemosys.discount_rate.R1` = 0.07 |  |  | 1 row(s) for every year; no step of the pipeline applies this parameter"
+      And the file "decisions.md" contains "`osemosys.days_in_day_type.all` |  |  | 2 row(s) for 2030; no step of the pipeline applies this parameter"
       And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATSOLAR`"
 
     Scenario: Two producers at one price go to the first name

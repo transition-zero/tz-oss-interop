@@ -18,6 +18,7 @@ from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_TONNE,
     UNIT_MVA,
     UNIT_MW,
+    UNIT_MWH,
     UNIT_TONNES_PER_MWH,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -607,7 +608,14 @@ def _build_bound_event(
     limits = {year[YEAR]: year[LIMIT_MWH] for year in years}
     return build_derived(
         sources,
-        [dest(old[GENERATOR_NAME], f"{_EXTENSIONS_PREFIX}{bound.extension_field}", limits)],
+        [
+            dest(
+                old[GENERATOR_NAME],
+                f"{_EXTENSIONS_PREFIX}{bound.extension_field}",
+                limits,
+                UNIT_MWH,
+            )
+        ],
         _BOUND_DERIVATION.format(parameter=bound.parameter),
     )[0]
 

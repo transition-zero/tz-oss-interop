@@ -198,6 +198,19 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capital_cost_per_mw_by_year" set to {"2030": 1000000.0, "2035": 900000.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 7.0, "2035": 7.0}
 
+  Scenario: The report of the parameters that no step applies leaves out the parameters of the portfolio
+    The portfolio step applies the capital cost, the lifetime and the emission limits, so the
+    report names none of them. It still names a parameter that no step applies.
+    Given the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
+      | REGION | YEAR | VALUE |
+      | R1     | 2030 | 1.15  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the log does not contain "capital_cost states"
+    And the log does not contain "annual_emission_limit states"
+    And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASNEW` = 1000000000.0 |  |  |"
+    And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies, for 1 region(s): R1"
+
   Scenario: The emission penalty of each year adds to the variable cost of a candidate
     ATGASNEW emits 0.35 t of CO2 for each MWh in 2030 and none in 2035. At 100 USD/t, the
     penalty adds 35 $/MWh in 2030 to its cost of 7 $/MWh.

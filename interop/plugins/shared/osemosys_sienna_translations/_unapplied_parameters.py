@@ -1,18 +1,22 @@
-"""The parameters that state rows for the operations year and that no part of the step applies.
+"""The parameters that state values for the operations year and that no step of the pipeline
+applies.
 
-A parameter of the canonical stage that the operations system has no field for still holds
-data of the model, so each one is reported: one event for each member that it states rows
-for, or one event with a count when it has no member column, and one warning.
+A parameter of the canonical stage that the Sienna documents have no field for still holds
+data of the model, so each one is reported: one event for each member that it states values
+for, else one event for each region, else one event with a count, and one warning.
 A row that holds the default of the parameter states nothing beyond it, so it is not counted.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Set
+from datetime import datetime
 from typing import NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS
@@ -23,6 +27,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     STORAGE,
     TECHNOLOGY,
     VALUE_COL,
+    YEAR,
     FlowParameter,
     TableKind,
 )
@@ -30,6 +35,8 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
     CalendarParameter,
     DemandParameter,
+    EmissionParameter,
+    InvestmentParameter,
     StorageParameter,
     SupplyParameter,
 )
@@ -39,14 +46,14 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
-from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 log = logging.getLogger(__name__)
 
 # Each parameter that a part of the operations step applies to the system.
-APPLIED_PARAMETERS: frozenset[str] = frozenset(
+OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
     {
         *CalendarParameter,
         *DemandParameter,
@@ -64,12 +71,16 @@ APPLIED_PARAMETERS: frozenset[str] = frozenset(
         SupplyParameter.EMISSION_PENALTY,
     }
 )
+# Each parameter that the operations step or the investments portfolio step applies.
+INVESTMENTS_PARAMETERS: frozenset[str] = frozenset(
+    {*OPERATIONS_PARAMETERS, *InvestmentParameter, *EmissionParameter}
+)
 
-_UNAPPLIED_NOTE = "no part of the operations step applies this parameter"
+_UNAPPLIED_NOTE = "no step of the pipeline applies this parameter"
 _BOUND_NOTE = (
-    "an operations system has no field for a bound on the energy of a year, so the operations "
-    "step does not apply it; the extension record of each generator holds its bound of each "
-    "year in MWh"
+    "a Sienna system has no field for a bound on the energy of a year, so no step applies it; "
+    "when the technology becomes a generator, its extension record holds its bound of each year "
+    "in MWh"
 )
 _NOTES: dict[str, str] = {
     SupplyParameter.ACTIVITY_LOWER_LIMIT: _BOUND_NOTE,
@@ -82,6 +93,7 @@ _MEMBER_COLUMNS: dict[str, str] = {
     FUEL: "fuel(s)",
     POLLUTANT: "pollutant(s)",
 }
+_REGIONS_LABEL = "region(s)"
 _NAME = "name"
 _ROW_COUNT = "row_count"
 _FIRST_VALUE = "first_value"
@@ -98,22 +110,53 @@ class UnappliedRows(NamedTuple):
     def note(self) -> str:
         return _NOTES.get(self.parameter, _UNAPPLIED_NOTE)
 
+    @property
+    def scope(self) -> str:
+        """The years that the rows hold in: the operations year, or each year."""
+        if YEAR in self.rows.columns:
+            return f"for {self.year}"
+        return "for every year"
 
-def report_unapplied_parameters(
-    state: State, operations: OperationsYear, recorder: ScopedRecorder
-) -> None:
-    """Record NOT_MAPPED and warn for each parameter that the step does not apply."""
-    for parameter in _list_unapplied_parameters(state):
-        rows = _read_stated_rows(state, parameter, operations.year)
+
+class Grouping(NamedTuple):
+    """The columns that one event of the report covers, and the word that counts them."""
+
+    columns: list[str]
+    name: pl.Expr
+    label: str
+
+
+def report_unapplied_parameters(state: State, applied: Set[str], recorder: ScopedRecorder) -> None:
+    """Record NOT_MAPPED and warn for each parameter that `applied` does not hold."""
+    year = require_operations_year(state)
+    for parameter in _list_unapplied_parameters(state, applied):
+        rows = _read_stated_rows(state, parameter, year)
         if rows.height > 0:
-            _report_rows(UnappliedRows(parameter, rows, operations.year), recorder)
+            _report_rows(UnappliedRows(parameter, rows, year), recorder)
 
 
-def _list_unapplied_parameters(state: State) -> list[str]:
+def require_operations_year(state: State) -> int:
+    """The year of the representative periods that the operations step writes."""
+    periods = state.destination_extensions.get(ExtensionKind.REPRESENTATIVE_PERIOD, [])
+    years = [
+        datetime.fromisoformat(period.first_timestamp).year
+        for period in periods
+        if isinstance(period, RepresentativePeriodExtension) and period.first_timestamp
+    ]
+    if not years:
+        raise UserInputError(
+            "The report of the parameters that no step applies needs the operations year. Put "
+            "the step after osemosys_to_sienna_map_components, which writes the representative "
+            "periods of that year."
+        )
+    return min(years)
+
+
+def _list_unapplied_parameters(state: State, applied: Set[str]) -> list[str]:
     return sorted(
         name
         for kind, name in state.source_time_series
-        if kind == TableKind.PARAMETER and name not in APPLIED_PARAMETERS
+        if kind == TableKind.PARAMETER and name not in applied
     )
 
 
@@ -126,42 +169,42 @@ def _read_stated_rows(state: State, parameter: str, year: int) -> pl.DataFrame:
 
 
 def _report_rows(unapplied: UnappliedRows, recorder: ScopedRecorder) -> None:
-    member = _find_member_column(unapplied.rows)
-    if member is None:
+    grouping = _choose_grouping(unapplied.rows)
+    if grouping is None:
         _report_parameter(unapplied, recorder)
     else:
-        _report_members(unapplied, member, recorder)
+        _report_groups(unapplied, grouping, recorder)
 
 
-def _find_member_column(rows: pl.DataFrame) -> str | None:
-    """The first member column of the rows, when they are keyed by region too."""
+def _choose_grouping(rows: pl.DataFrame) -> Grouping | None:
+    """The member of each row with its region, else the region, else none."""
     if REGION not in rows.columns:
         return None
-    return next((column for column in _MEMBER_COLUMNS if column in rows.columns), None)
+    member = next((column for column in _MEMBER_COLUMNS if column in rows.columns), None)
+    if member is None:
+        return Grouping([REGION], pl.col(REGION), _REGIONS_LABEL)
+    return Grouping([REGION, member], express_report_name(member), _MEMBER_COLUMNS[member])
 
 
-def _report_members(unapplied: UnappliedRows, member: str, recorder: ScopedRecorder) -> None:
-    members = (
-        unapplied.rows.group_by(REGION, member)
+def _report_groups(unapplied: UnappliedRows, grouping: Grouping, recorder: ScopedRecorder) -> None:
+    groups = (
+        unapplied.rows.group_by(grouping.columns)
         .agg(pl.len().alias(_ROW_COUNT), pl.col(VALUE_COL).first().alias(_FIRST_VALUE))
-        .with_columns(express_report_name(member).alias(_NAME))
+        .with_columns(grouping.name.alias(_NAME))
         .sort(_NAME)
     )
-    for row in members.iter_rows(named=True):
-        is_one_row = row[_ROW_COUNT] == 1
-        value = row[_FIRST_VALUE] if is_one_row else None
-        recorder.append(
-            _build_event(unapplied, row[_NAME], value, row[_ROW_COUNT]),
-        )
-    names = members[_NAME].to_list()
+    for row in groups.iter_rows(named=True):
+        value = row[_FIRST_VALUE] if row[_ROW_COUNT] == 1 else None
+        recorder.append(_build_event(unapplied, row[_NAME], value, row[_ROW_COUNT]))
+    names = groups[_NAME].to_list()
     log.warning(
-        "%s: %s states %d row(s) for %d that the operations system does not apply, for %d %s: %s",
+        "%s: %s states %d row(s) %s that no step of the pipeline applies, for %d %s: %s",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         unapplied.parameter,
         unapplied.rows.height,
-        unapplied.year,
+        unapplied.scope,
         len(names),
-        _MEMBER_COLUMNS[member],
+        grouping.label,
         name_a_few(names),
     )
 
@@ -169,11 +212,11 @@ def _report_members(unapplied: UnappliedRows, member: str, recorder: ScopedRecor
 def _report_parameter(unapplied: UnappliedRows, recorder: ScopedRecorder) -> None:
     recorder.append(_build_event(unapplied, ALL_COMPONENTS, None, unapplied.rows.height))
     log.warning(
-        "%s: %s states %d row(s) for %d that the operations system does not apply",
+        "%s: %s states %d row(s) %s that no step of the pipeline applies",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         unapplied.parameter,
         unapplied.rows.height,
-        unapplied.year,
+        unapplied.scope,
     )
 
 
@@ -183,5 +226,5 @@ def _build_event(
     return TranslationEvent(
         kind=EventKind.NOT_MAPPED,
         sources=[build_osemosys_field(unapplied.parameter, name, None, value)],
-        note=f"{row_count} row(s) for {unapplied.year}; {unapplied.note}",
+        note=f"{row_count} row(s) {unapplied.scope}; {unapplied.note}",
     )
