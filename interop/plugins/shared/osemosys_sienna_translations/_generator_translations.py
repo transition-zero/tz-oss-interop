@@ -170,6 +170,7 @@ _FIXED_NOTE = (
     "OSeMOSYS charges its fixed cost on the capacity and not on the hours online, so the "
     f"fixed cost goes to {_FOM_ATTRIBUTE}"
 )
+_NO_FIXED_COST_NOTE = "OSeMOSYS states no fixed cost of the technology, so the fixed cost is 0"
 _COMMITMENT_NOTE = "OSeMOSYS states no unit commitment data"
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
 _BUS_DERIVATION = "the location of the technology -> bus"
@@ -227,6 +228,13 @@ _CARRIER_DERIVATION = "the category of the technology, which names its carriers:
 _OUTPUT_RATIO_ATTRIBUTE = "electricity at the operations mode"
 _LOST_COST_NOTE = (
     "RenewableNonDispatch has no operation_cost field, so the variable cost is left out"
+)
+_LOST_FUEL_TERM_NOTE = (
+    "RenewableNonDispatch has no operation_cost field, so the fuel term of {fuel} is left out"
+)
+_LOST_PENALTY_NOTE = (
+    "RenewableNonDispatch has no operation_cost field, so the emission penalty of {pollutant} "
+    "is left out"
 )
 
 
@@ -392,13 +400,27 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
 def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_series_events(dest, old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_fuel_term_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(dest, old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_bound_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(dest, old)),
+    ]
+
+
+def _build_cost_term_reports(dest: DestinationFieldFactory) -> list[Translation]:
+    """The fuel terms and the penalties that add to the operation cost of the type."""
+    return [
+        Translation(exprs=[], make_events=lambda old, _new: _build_fuel_term_events(dest, old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(dest, old)),
+    ]
+
+
+def _build_lost_cost_term_reports() -> list[Translation]:
+    """The fuel terms and the penalties of a type that has no operation cost."""
+    return [
+        Translation(exprs=[], make_events=lambda old, _new: _build_lost_fuel_term_events(old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_lost_penalty_events(old)),
     ]
 
 
@@ -430,24 +452,11 @@ def _build_fuel_term_events(
 def _build_fuel_term_event(
     dest: DestinationFieldFactory, old: dict[str, Any], term: dict[str, Any]
 ) -> TranslationEvent:
-    ratio = _build_source(FlowParameter.INPUT_ACTIVITY_RATIO, old, term[FUEL], term[INPUT_RATIO])
     if term[PRODUCER] is None:
-        return TranslationEvent(
-            kind=EventKind.NOT_MAPPED, sources=[ratio], note=_build_no_producer_note(old, term)
-        )
-    producer = _build_region_name(old, term[PRODUCER])
+        return _build_no_producer_event(old, term)
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
-        sources=[
-            ratio,
-            build_osemosys_field(
-                SupplyParameter.VARIABLE_OPERATION_COST, producer, None, term[PRODUCER_COST]
-            ),
-            build_osemosys_field(
-                FlowParameter.OUTPUT_ACTIVITY_RATIO, producer, term[FUEL], term[OUTPUT_RATIO]
-            ),
-            _build_output_ratio_source(old),
-        ],
+        sources=_build_fuel_term_sources(old, term),
         destinations=[
             dest(
                 old[GENERATOR_NAME],
@@ -461,9 +470,48 @@ def _build_fuel_term_event(
     )
 
 
+def _build_lost_fuel_term_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    return [
+        _build_no_producer_event(old, term)
+        if term[PRODUCER] is None
+        else TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=_build_fuel_term_sources(old, term),
+            note=_LOST_FUEL_TERM_NOTE.format(fuel=term[FUEL]),
+        )
+        for term in old[FUEL_TERMS] or []
+    ]
+
+
+def _build_no_producer_event(old: dict[str, Any], term: dict[str, Any]) -> TranslationEvent:
+    return TranslationEvent(
+        kind=EventKind.NOT_MAPPED,
+        sources=[_build_input_ratio_source(old, term)],
+        note=_build_no_producer_note(old, term),
+    )
+
+
+def _build_input_ratio_source(old: dict[str, Any], term: dict[str, Any]) -> SourceField:
+    return _build_source(FlowParameter.INPUT_ACTIVITY_RATIO, old, term[FUEL], term[INPUT_RATIO])
+
+
+def _build_fuel_term_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
+    """The input ratio of the fuel, the cost and output ratio of its producer, and own output."""
+    producer = _build_region_name(old, term[PRODUCER])
+    return [
+        _build_input_ratio_source(old, term),
+        build_osemosys_field(
+            SupplyParameter.VARIABLE_OPERATION_COST, producer, None, term[PRODUCER_COST]
+        ),
+        build_osemosys_field(
+            FlowParameter.OUTPUT_ACTIVITY_RATIO, producer, term[FUEL], term[OUTPUT_RATIO]
+        ),
+        _build_output_ratio_source(old),
+    ]
+
+
 def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
     """The own cost, the fuel term of each fuel that has a producer, and each penalty."""
-    own = _build_source(SupplyParameter.VARIABLE_OPERATION_COST, old, None, old[OWN_COST])
     terms = [
         build_sienna_source(
             old[SIENNA_TYPE],
@@ -485,7 +533,12 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
         )
         for term in old[PENALTY_TERMS] or []
     ]
-    return [own, _build_output_ratio_source(old), *terms, *penalties]
+    return [*_build_own_cost_sources(old), *terms, *penalties]
+
+
+def _build_own_cost_sources(old: dict[str, Any]) -> list[SourceField]:
+    own = _build_source(SupplyParameter.VARIABLE_OPERATION_COST, old, None, old[OWN_COST])
+    return [own, _build_output_ratio_source(old)]
 
 
 def _build_fixed_cost_events(
@@ -551,21 +604,7 @@ def _build_penalty_events(
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[
-                build_sienna_source(
-                    old[SIENNA_TYPE],
-                    old[GENERATOR_NAME],
-                    f"{_EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
-                    term[RATE_T_PER_MWH],
-                    UNIT_TONNES_PER_MWH,
-                ),
-                build_osemosys_field(
-                    SupplyParameter.EMISSION_PENALTY,
-                    _build_region_name(old, term[POLLUTANT]),
-                    None,
-                    term[PENALTY],
-                ),
-            ],
+            sources=_build_penalty_sources(old, term),
             destinations=[
                 dest(
                     old[GENERATOR_NAME],
@@ -578,6 +617,35 @@ def _build_penalty_events(
             note=f"the penalty is {term[PENALTY_PER_TONNE]:g} {UNIT_DOLLARS_PER_TONNE}",
         )
         for term in old[PENALTY_TERMS] or []
+    ]
+
+
+def _build_lost_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    return [
+        TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=_build_penalty_sources(old, term),
+            note=_LOST_PENALTY_NOTE.format(pollutant=term[POLLUTANT]),
+        )
+        for term in old[PENALTY_TERMS] or []
+    ]
+
+
+def _build_penalty_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
+    return [
+        build_sienna_source(
+            old[SIENNA_TYPE],
+            old[GENERATOR_NAME],
+            f"{_EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
+            term[RATE_T_PER_MWH],
+            UNIT_TONNES_PER_MWH,
+        ),
+        build_osemosys_field(
+            SupplyParameter.EMISSION_PENALTY,
+            _build_region_name(old, term[POLLUTANT]),
+            None,
+            term[PENALTY],
+        ),
     ]
 
 
@@ -688,17 +756,13 @@ def _build_operation_cost(
         ),
         Translation(
             exprs=[],
-            make_events=lambda old, _new: (
-                []
-                if old[FIXED_COST] is None
-                else [
-                    TranslationEvent(
-                        kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                        destinations=[dest(old[GENERATOR_NAME], _FIXED_ATTRIBUTE, _NO_COST)],
-                        note=_FIXED_NOTE,
-                    )
-                ]
-            ),
+            make_events=lambda old, _new: [
+                TranslationEvent(
+                    kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+                    destinations=[dest(old[GENERATOR_NAME], _FIXED_ATTRIBUTE, _NO_COST)],
+                    note=_NO_FIXED_COST_NOTE if old[FIXED_COST] is None else _FIXED_NOTE,
+                )
+            ],
         ),
     ]
 
@@ -715,7 +779,7 @@ def _build_lost_cost() -> Translation:
             [
                 TranslationEvent(
                     kind=EventKind.NOT_MAPPED,
-                    sources=_build_cost_sources(old),
+                    sources=_build_own_cost_sources(old),
                     note=_LOST_COST_NOTE,
                 )
             ]
@@ -831,6 +895,7 @@ def _build_thermal() -> list[Translation]:
             dest, limit.otherwise(pl.col(OUTPUT_CAPACITY_MW) * pl.col(PEAK_FACTOR))
         ),
         _build_reactive_limits(dest),
+        *_build_cost_term_reports(dest),
         *_build_operation_cost(dest, cost, THERMAL_GENERATION_COST_DTYPE),
         *_build_commitment(dest),
     ]
@@ -847,13 +912,19 @@ def _build_renewable_dispatch() -> list[Translation]:
         *_build_shared(dest),
         _build_reactive_limits(dest),
         _build_power_factor(dest),
+        *_build_cost_term_reports(dest),
         *_build_operation_cost(dest, cost, RENEWABLE_GENERATION_COST_DTYPE),
     ]
 
 
 def _build_renewable_non_dispatch() -> list[Translation]:
     dest = partial(build_sienna_field, SiennaComponent.RENEWABLE_NON_DISPATCH)
-    return [*_build_shared(dest), _build_power_factor(dest), _build_lost_cost()]
+    return [
+        *_build_shared(dest),
+        _build_power_factor(dest),
+        *_build_lost_cost_term_reports(),
+        _build_lost_cost(),
+    ]
 
 
 def _build_hydro_dispatch() -> list[Translation]:
@@ -866,6 +937,7 @@ def _build_hydro_dispatch() -> list[Translation]:
     return [
         *_build_shared(dest),
         _build_power_limits(dest, pl.col(OUTPUT_CAPACITY_MW)),
+        *_build_cost_term_reports(dest),
         *_build_operation_cost(dest, cost, HYDRO_GENERATION_COST_DTYPE),
         Translation(
             exprs=[],

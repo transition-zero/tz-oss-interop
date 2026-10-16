@@ -168,8 +168,12 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     And the file "outputs/system.json" parses as JSON with 2 components of type "PowerLoad"
     And the log contains "have an annual demand but no demand in any hour of the calendar, so each is left out. Loads: DEELEC"
 
-  Scenario: An electricity fuel with no location gets no bus and is reported
+  Scenario: An electricity fuel with no location gets no bus and is reported once
     Given the otoole set "FUEL" holds "ATELEC DEELEC GAS XXELEC"
+    And the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | 876   |
+      | R1     | XXELEC | 2030 | 50    |
     And a file "user_mappings.yaml" containing the lines:
       | line                                                                                                                                                                                  |
       | osemosys: {units: {energy: GWh}, objects: {fuels: [{match: "^XX(?P<tag>Q)?ELEC$", carrier: electricity, location: "{tag}"}, {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
@@ -177,6 +181,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 2 components of type "ACBus"
     And the log contains "fuel(s) of electricity have no location, so each is left out. Fuels: R1/XXELEC"
+    And the log does not contain "are not electricity fuels with a location"
 
   Scenario: The earliest model year is the year of the system
     When I translate the otoole model to Sienna for the year "earliest"
@@ -397,6 +402,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "carrier" set to "gas-cc"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "category" set to "gas-cc"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "fom_charge_per_mw_year"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.operation_cost.fixed` = 0.0 |  | OSeMOSYS states no fixed cost of the technology, so the fixed cost is 0"
 
     Scenario: A plant whose fuel no technology produces pays no fuel cost, and the report says so
       When I translate the otoole model to Sienna for the year "2030"
@@ -422,6 +428,24 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "ATWIND" having "base_power" set to 300.0
       And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "ATWIND" having "prime_mover_type" set to "WT"
       And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableNonDispatch" named "ATWIND" attribute "max_active_power" with length 48
+
+    Scenario: A RenewableNonDispatch that burns a fuel and pays a penalty records each cost term as left out
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL  | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATGAS | 1                 | 2030 | 2     |
+        | R1     | ATWIND     | ATGAS | 1                 | 2030 | 0.1   |
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATWIND     | CO2      | 1                 | 2030 | 10    |
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 50    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "RenewableNonDispatch has no operation_cost field, so the fuel term of ATGAS is left out"
+      And the file "decisions.md" contains "RenewableNonDispatch has no operation_cost field, so the emission penalty of CO2 is left out"
+      And the file "decisions.md" does not contain "`sienna.RenewableNonDispatch.ATWIND.operation_cost fuel term of ATGAS`"
+      And the file "decisions.md" does not contain "`sienna.RenewableNonDispatch.ATWIND.operation_cost emission penalty of CO2`"
 
     Scenario: A hydro plant becomes a HydroDispatch limited to its residual capacity
       When I translate the otoole model to Sienna for the year "2030"
@@ -532,6 +556,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log contains "osemosys-to-sienna: total_technology_annual_activity_upper_limit states 2 row(s) for 2030 that no step of the pipeline applies, for 2 technology(ies): R1/ATGASCC, R1/ATGASWELL"
       And the file "decisions.md" contains "`osemosys.total_technology_annual_activity_lower_limit.R1/ATGASCC` = 2.0 |  |  | 1 row(s) for 2030; a Sienna system has no field for a bound on the energy of a year, so no step applies it; when the technology becomes a generator, its extension record holds its bound of each year in MWh"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.annual_output_lower_limit_mwh` = {'2030': 500.0} MWh"
+      And the file "decisions.md" contains "`osemosys.total_technology_annual_activity_upper_limit.R1/ATGASWELL` = 5.0 |  |  | 1 row(s) for 2030; a Sienna system has no field for a bound on the energy of a year, so no step applies it; when the technology becomes a generator, its extension record holds its bound of each year in MWh; a fuel_supply technology whose bound in the year is 0 is not a fuel producer"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.annual_output_lower_limit_mwh` = {'2030': 500.0}"
 
     Scenario: Each other parameter that no step of the pipeline applies is reported, with the members or the regions that it states values for

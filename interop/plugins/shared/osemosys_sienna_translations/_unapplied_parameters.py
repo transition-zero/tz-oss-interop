@@ -82,9 +82,12 @@ _BOUND_NOTE = (
     "when the technology becomes a generator, its extension record holds its bound of each year "
     "in MWh"
 )
+_UPPER_BOUND_NOTE = (
+    f"{_BOUND_NOTE}; a fuel_supply technology whose bound in the year is 0 is not a fuel producer"
+)
 _NOTES: dict[str, str] = {
     SupplyParameter.ACTIVITY_LOWER_LIMIT: _BOUND_NOTE,
-    SupplyParameter.ACTIVITY_UPPER_LIMIT: _BOUND_NOTE,
+    SupplyParameter.ACTIVITY_UPPER_LIMIT: _UPPER_BOUND_NOTE,
 }
 # The columns that name the member a row is about, in the order that the report prefers them.
 _MEMBER_COLUMNS: dict[str, str] = {

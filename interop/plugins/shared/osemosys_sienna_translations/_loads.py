@@ -94,6 +94,7 @@ FIRST_MW = "first_mw"
 _PROFILE = "profile"
 _YEAR_SPLIT = "year_split"
 _HOURLY_MW = "hourly_mw"
+_IS_ELECTRICITY = "is_electricity"
 _NO_REACTIVE_POWER = 0.0
 
 _ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
@@ -211,7 +212,7 @@ def _drop_silently(table: pl.DataFrame, rule: SkipRule) -> pl.DataFrame:
 
 
 def _read_demands(state: State, year: int, drop: _DropRows) -> pl.DataFrame:
-    fuels = read_electricity_fuels(state).filter(pl.col(AnnotationColumn.LOCATION).is_not_null())
+    fuels = read_electricity_fuels(state).with_columns(pl.lit(value=True).alias(_IS_ELECTRICITY))
     tables = [
         _read_demand(state, year, parameter, fuels, drop)
         for parameter in (
@@ -236,18 +237,30 @@ def _read_demand(
         express_report_name(FUEL).alias(FUEL_NAME),
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
-    ).join(fuels.select(REGION, FUEL, AnnotationColumn.LOCATION), on=[REGION, FUEL], how="left")
+    ).join(
+        fuels.select(REGION, FUEL, AnnotationColumn.LOCATION, _IS_ELECTRICITY),
+        on=[REGION, FUEL],
+        how="left",
+    )
     positive = drop(
         rows, SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter))
     )
     electricity = drop(
-        positive,
+        _drop_unlocated_electricity(positive),
         SkipRule(
             pl.col(AnnotationColumn.LOCATION).is_not_null(),
             _build_not_electricity_skip(parameter),
         ),
     )
-    return electricity.cast(pl.Schema(_SOURCE_SCHEMA))
+    return electricity.drop(_IS_ELECTRICITY).cast(pl.Schema(_SOURCE_SCHEMA))
+
+
+def _drop_unlocated_electricity(demands: pl.DataFrame) -> pl.DataFrame:
+    """The bus group reports an electricity fuel with no location, so this drop is silent."""
+    is_unlocated = (
+        pl.col(_IS_ELECTRICITY).is_not_null() & pl.col(AnnotationColumn.LOCATION).is_null()
+    )
+    return demands.filter(~is_unlocated)
 
 
 def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:

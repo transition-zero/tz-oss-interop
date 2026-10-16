@@ -701,7 +701,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | Fuels that are not electricity, and their technologies | No component. The fuel cost and the emission rate of a plant still read them. |
 | A `conversion` between two electricity fuels at one location | Its loss is lost. The demand stays at the value that the model states. |
 | The capacity that a plan builds, and the years other than the operations year | The system holds the residual capacity of one year. |
-| `TotalTechnologyAnnualActivityLowerLimit`, `TotalTechnologyAnnualActivityUpperLimit` | They go to the generator record of `extensions.json`. No step applies them. |
+| `TotalTechnologyAnnualActivityLowerLimit`, `TotalTechnologyAnnualActivityUpperLimit` | They go to the generator record of `extensions.json`. No step applies them to a generator. An upper limit of 0 in the year keeps a `fuel_supply` technology from being a fuel producer. |
 | `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | No step applies them. |
 | `AnnualEmissionLimit`, `ModelPeriodEmissionLimit` and the region group limits | No step applies them to the system. The portfolio holds some of them. |
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | No step applies them. |
