@@ -14,6 +14,7 @@ class Framework(StrEnum):
     POWER_SIMULATIONS = "power-simulations"
     POWER_SYSTEMS_INVESTMENTS = "power-systems-investments"
     CAISO_PLEXOS = "caiso-plexos"
+    AETOS = "aetos"
     RESULTS = RESULTS_FRAMEWORK
 
 

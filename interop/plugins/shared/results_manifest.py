@@ -21,6 +21,7 @@ class ResultsFramework(StrEnum):
     PYPSA = "pypsa"
     SIENNA = "sienna"
     CAISO_PLEXOS = "caiso-plexos"
+    AETOS = "aetos"
 
 
 class ResultsManifest(BaseModel):

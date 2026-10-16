@@ -130,7 +130,7 @@ zone for the table's naive timestamps.
 
 | Field | Meaning |
 | --- | --- |
-| `framework` | The source the table was normalised from (`pypsa`, `sienna`, `caiso-plexos`). |
+| `framework` | The source the table was normalised from (`pypsa`, `sienna`, `caiso-plexos`, `aetos`). |
 | `label` | A human-readable name for the run. |
 | `timezone` | IANA zone name for the table's naive timestamps. |
 | `translator_version` | The translator version the table was built with. |
