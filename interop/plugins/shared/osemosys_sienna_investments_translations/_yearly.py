@@ -64,9 +64,6 @@ TECHNOLOGY_YEAR_PARAMETERS: tuple[str, ...] = (
     InvestmentParameter.UNIT_SIZE,
 )
 
-# A parameter that the model does not state, and that has no default, takes this value.
-_NO_DEFAULT = 0.0
-
 
 def read_yearly_values(
     state: State, name: str, keys: pl.DataFrame, years: Sequence[int]
@@ -74,17 +71,20 @@ def read_yearly_values(
     """One row for each row of `keys` and each year, with the stated value or the default.
 
     `keys` holds the key columns of the parameter other than `year`. The `year` column is an
-    integer, and the value column takes the name of the parameter.
+    integer, and the value column takes the name of the parameter. A parameter with no default
+    keeps a null where the model states no row, so the caller chooses what the null means.
     """
     stated = read_parameter_for_years(state, name, years).select(
         *keys.columns,
         pl.col(YEAR).cast(pl.Int64),
         pl.col(VALUE_COL).cast(pl.Float64).alias(name),
     )
-    default = find_parameter_default(state, name)
-    filled = pl.col(name).fill_null(_NO_DEFAULT if default is None else default)
     grid = _build_year_grid(keys, years)
-    return grid.join(stated, on=[*keys.columns, YEAR], how="left").with_columns(filled)
+    table = grid.join(stated, on=[*keys.columns, YEAR], how="left")
+    default = find_parameter_default(state, name)
+    if default is None:
+        return table
+    return table.with_columns(pl.col(name).fill_null(default))
 
 
 def read_technology_years(

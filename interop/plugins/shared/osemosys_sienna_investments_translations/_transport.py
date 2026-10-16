@@ -116,6 +116,14 @@ NO_ENDS_SKIP = TECHNOLOGY_SOURCE.skip(
     attribute_col=AnnotationColumn.LOCATION,
 )
 
+NO_RATING_SKIP = TECHNOLOGY_SOURCE.skip(
+    name_col=REPORT_NAME,
+    reason="may be built and take in no electricity at the operations mode",
+    note="the technology takes in no electricity, so its capacity has no MW rating",
+    listed=_LISTED,
+    attribute_col=RATING_RATIO,
+)
+
 NO_AREA_SKIP = TECHNOLOGY_SOURCE.skip(
     name_col=REPORT_NAME,
     reason="may be built but have an end at a location that holds no area of the base system",
@@ -141,6 +149,9 @@ def build_transport_candidates(
     technologies = drop_non_candidates(technologies, yearly, [InvestmentParameter.CAPITAL_COST])
     technologies = _enrich_ends(state, plan, technologies)
     technologies, _ = filter_component(technologies, _express_has_ends(), NO_ENDS_SKIP, recorder)
+    technologies, _ = filter_component(
+        technologies, pl.col(RATING_RATIO) > 0, NO_RATING_SKIP, recorder
+    )
     technologies, _ = filter_component(
         technologies, _express_has_areas(_list_area_names(state)), NO_AREA_SKIP, recorder
     )

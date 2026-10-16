@@ -266,7 +266,9 @@ for.
 
 `CarbonCaps` names no region and no pollutant. So one cap limits the emissions of the whole
 portfolio. A pollutant **covers the whole model** when each technology that emits any pollutant
-emits it. The step reads every year in scope and every mode.
+emits it. The step reads every year in scope and every mode. The step counts the technologies
+of every region, so in a model of two regions a limit of one region covers the whole model only
+if each emitting technology of the model is in that region.
 
 A pollutant that covers the whole model gets one `CarbonCaps` for each year whose
 `AnnualEmissionLimit` (`annual_emission_limit`) is not -1:
@@ -352,6 +354,10 @@ Each candidate gets one `technology` record. Each field is keyed by the year, as
 | `variable_cost_per_mwh_by_year` | $/MWh | The variable cost with the fuel cost and the emission penalty (supply only) |
 | `energy_capital_cost_per_mwh_by_year` | $/MWh | `energy_capital_cost` (storage only) |
 | `capacity_limits_min_mw_by_year`, `capacity_limits_max_mw_by_year` | MW | The capacity limits (transport only) |
+
+A year with no limit is not in a `_by_year` field of a limit. So a year that is not in
+`capacity_limits_max_mw_by_year` or `total_annual_max_capacity_investment_mw_by_year` has no
+limit.
 
 ---
 

@@ -8,6 +8,7 @@ that tie each technology to the fleet of the base system.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
@@ -62,6 +63,7 @@ from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     AREA_NAME,
+    OSEMOSYS_TO_SIENNA_INVESTMENTS,
     TECHNOLOGY_NAME,
     TECHNOLOGY_TYPE,
     build_association_rows,
@@ -149,6 +151,11 @@ _ATTRIBUTES: dict[SiennaSupplementalAttribute, _Attribute] = {
 }
 
 
+log = logging.getLogger(__name__)
+
+_NO_YEAR_WARNING = "%s: the model states no year in scope, so the portfolio holds no technology"
+
+
 class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
     """Writes the portfolio of every year in scope beside the base system of the earliest.
 
@@ -169,7 +176,10 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         buses = state.destination_tables.get(SiennaComponent.AC_BUS)
         plan = find_investment_plan(state)
-        if buses is None or plan is None:
+        if plan is None:
+            log.warning(_NO_YEAR_WARNING, OSEMOSYS_TO_SIENNA_INVESTMENTS)
+            return state
+        if buses is None:
             return state
         plan_years = {year: build_plan_year(state, plan, year) for year in plan.years}
         numbering = _Numbering()
