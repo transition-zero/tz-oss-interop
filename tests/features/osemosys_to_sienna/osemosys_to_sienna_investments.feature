@@ -273,6 +273,17 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2030" with 48 values that peak at 0.8
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2035" with 48 values that peak at 0.9
 
+  Scenario: An output path in another directory takes the companions of the system and of the portfolio with it
+    When I translate the otoole model to a Sienna investments portfolio, with only the system at "plans/system.json" and the portfolio at "plans/portfolio.json"
+    Then the pipeline exit code is 0
+    And the file "plans/system_time_series_storage.h5" exists
+    And the file "plans/extensions.json" exists
+    And the file "plans/portfolio_time_series_storage.h5" exists
+    And the file "plans/system.json" parses as JSON with "time_series_storage_filename" set to "system_time_series_storage.h5"
+    And the file "plans/portfolio.json" parses as JSON with "time_series_storage_file" set to "portfolio_time_series_storage.h5"
+    And the file "outputs/system_time_series_storage.h5" does not exist
+    And the file "outputs/portfolio_time_series_storage.h5" does not exist
+
   Rule: A storage whose discharging technology a plan may build becomes a StorageTechnology
     The pumped-storage plant ATPHS charges the storage ATPHSS in mode 1 and discharges it in
     mode 2. It takes in 1.25 units of electricity for each unit of its activity when it charges,

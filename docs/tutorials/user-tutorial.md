@@ -131,8 +131,8 @@ Answer the prompts:
 - **Pipeline?** `pypsa-to-sienna`
 - **source.path?** `inputs/pypsa_network.nc`
 - **sink[0].output_system_json_file_path?** `outputs/system.json`
-- **sink[0].output_h5_file_path?**  `outputs/system_time_series_storage.h5`
-- **sink[0].output_extensions_file_path?** `outputs/extensions.json`
+- **sink[0].output_h5_file_path?** (empty, so `outputs/system_time_series_storage.h5`)
+- **sink[0].output_extensions_file_path?** (empty, so `outputs/extensions.json`)
 - **sink[0].indent?** `2`
 - **User mappings file?** `inputs/user_mappings.yaml`
 

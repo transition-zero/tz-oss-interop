@@ -42,7 +42,12 @@ from interop.plugins.sinks._sienna_files import (
     validate_refs,
 )
 from interop.plugins.sinks.emit_sienna_h5_sidecar import EmitSiennaH5Sidecar
-from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
+from interop.ports.outbound.filesystem import (
+    FilesystemPort,
+    Location,
+    build_sibling_location,
+    location_name,
+)
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
 
@@ -97,11 +102,21 @@ class EmitSiennaPortfolioParams(BaseModel):
             "portfolio names when it holds no time series of its own"
         ),
     )
-    output_time_series_path: Location = Field(
-        default=_DEFAULT_OUTPUT_DIR / PORTFOLIO_TIME_SERIES_FILENAME,
-        description="the HDF5 companion holding the time series of the portfolio, when it has any",
+    output_time_series_path: Location | None = Field(
+        default=None,
+        description=(
+            "the HDF5 companion holding the time series of the portfolio, when it has any; "
+            "empty writes it beside the portfolio"
+        ),
     )
     indent: int = Field(default=2, description="JSON indent width")
+
+    @property
+    def time_series_path(self) -> Location:
+        """The HDF5 companion of the portfolio, which is beside it unless a path is given."""
+        if self.output_time_series_path is not None:
+            return self.output_time_series_path
+        return build_sibling_location(self.output_path, PORTFOLIO_TIME_SERIES_FILENAME)
 
 
 class EmitSiennaPortfolio(Sink):
@@ -122,7 +137,7 @@ class EmitSiennaPortfolio(Sink):
         )
         associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
         if associations is not None and not associations.is_empty():
-            self._write_series_companion(params.output_time_series_path, state, payload)
+            self._write_series_companion(params.time_series_path, state, payload)
         serialised = json.dumps(payload, indent=params.indent, default=str).encode("utf-8")
         self._fs.write_bytes(params.output_path, serialised)
 
