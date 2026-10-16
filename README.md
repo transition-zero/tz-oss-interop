@@ -330,6 +330,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/tutorials/solve.md` covers the `solve` command (Julia and PowerSimulations.jl install automatically on first run).
 - `docs/case_studies/` holds one page per published model interop has been run against: where to download it, what to answer at the prompts, and what the run measured.
 - `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three case study models and over synthetic PyPSA networks.
+- `docs/developer_documentation/capacity-expansion.md` covers running a Sienna portfolio as a capacity expansion in PowerSystemsInvestments.jl.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
 - `docs/developer_documentation/osemosys-canonical-format.md` describes how an OSeMOSYS model stages into the canonical OSeMOSYS stage, and the user mappings file that controls it.
