@@ -23,6 +23,8 @@ TIME_SERIES_INITIAL_TIME = "2020-01-01T00:00:00"
 
 _TIME_SERIES_UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_OID, "transitionzero.interop")
 
+SCHEMA_VERSION = "0.2.0"
+
 _AREAS = "areas"
 _BUSES = "buses"
 _GENERATORS = "generators"
@@ -46,16 +48,22 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
-    document: dict[str, Any] = {"components": components}
-
     storage_file = sienna_h5_filename(path)
-    document["time_series_associations"] = _build_associations(
-        sections.get(_TIME_SERIES, []), id_by_owner, path.parent / storage_file
-    )
-    document["time_series_storage_filename"] = storage_file
+    document: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "components": dict(sorted(components.items())),
+        "supplemental_attributes": [],
+        "supplemental_attribute_associations": [],
+        "plant_associations": [],
+        "combined_cycle_associations": [],
+        "service_associations": [],
+        "time_series_associations": _build_associations(
+            sections.get(_TIME_SERIES, []), id_by_owner, path.parent / storage_file
+        ),
+        "time_series_storage_file": storage_file,
+    }
 
     extensions_file = sienna_extensions_filename(path)
-    document["extensions_filename"] = extensions_file
     (path.parent / extensions_file).write_text(
         json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
     )
@@ -180,7 +188,7 @@ def _build_associations(
             )
             associations.append(
                 {
-                    "id": index,
+                    "association_id": index,
                     "owner_type": series["owner_type"],
                     "owner_id": id_by_owner[(series["owner_type"], series["owner_name"])],
                     "name": series["name"],

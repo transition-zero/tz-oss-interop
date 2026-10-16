@@ -40,6 +40,7 @@ dependencies = [
     "juliacall>=0.9",
     "pandas>=3.0.5",
     "pypsa>=1.3.0",
+    "power-openapi-models==0.2.0",
 ]
 
 [project.urls]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any, ClassVar
 
 import polars as pl
@@ -17,10 +16,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLineCol,
     SiennaLoadCol,
     SiennaRenewableGeneratorCol,
+    SiennaSchemasSystem,
     SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
 )
-from interop.plugins.sinks._sienna_files import validate_refs
+from interop.plugins.sinks._sienna_files import serialise_system_document, validate_refs
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 # Internal-only columns in TIME_SERIES_ASSOCIATION that are not part of the JSON schema.
@@ -53,7 +53,7 @@ class EmitSiennaSystemJson(Sink):
                 f"got {type(params).__name__}"
             )
         payload = self.build_payload(state)
-        serialised = json.dumps(payload, indent=params.indent, default=str).encode("utf-8")
+        serialised = serialise_system_document(payload, None, params.indent)
         self._fs.write_bytes(params.output_path, serialised)
 
     @staticmethod
@@ -155,8 +155,8 @@ class EmitSiennaSystemJson(Sink):
             components[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = hvdc_components
 
         return {
-            "components": components,
-            "time_series_associations": ts_associations,
+            SiennaSchemasSystem.COMPONENTS: components,
+            SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS: ts_associations,
         }
 
     @staticmethod
@@ -171,15 +171,7 @@ class EmitSiennaSystemJson(Sink):
             name: str = row[SiennaAreaCol.NAME]
             area_id: int = row[SiennaAreaCol.ID]
             area_ids[name] = area_id
-            components.append(
-                {
-                    "id": area_id,
-                    "name": name,
-                    "peak_active_power": 0.0,
-                    "peak_reactive_power": 0.0,
-                    "load_response": 0.0,
-                }
-            )
+            components.append({SiennaAreaCol.ID: area_id, SiennaAreaCol.NAME: name})
         return components, area_ids
 
     @staticmethod
@@ -288,8 +280,4 @@ class EmitSiennaSystemJson(Sink):
         if ts_df is None:
             return []
         emit_cols = [c for c in ts_df.columns if c not in _TS_ASSOC_INTERNAL_COLS]
-        return list(
-            ts_df.select(emit_cols)
-            .with_row_index(name=SiennaTimeSeriesAssociationCol.ID, offset=1)
-            .iter_rows(named=True)
-        )
+        return list(ts_df.select(emit_cols).iter_rows(named=True))

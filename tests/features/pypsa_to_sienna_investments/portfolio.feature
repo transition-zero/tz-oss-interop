@@ -35,6 +35,8 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     When I run the pypsa investments translation with sidecar "inputs/extensions.json" against "inputs/candidate.nc" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "id" set to 1
+    And the written Sienna system has a valid SiennaSchemas 0.2 envelope
+    And the written Sienna portfolio is a valid SiennaSchemas 0.2 document
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "available" set to true
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
