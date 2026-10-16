@@ -61,8 +61,8 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | R1     | ATE1 | 2030 | 1     |
       | R1     | DEE1 | 2030 | 2     |
       | R1     | FRE1 | 2030 | 3     |
-    And the file "decisions.md" contains "1 year members are outside the scope, so each is left out"
-    And the log contains "Left out 1 year members that are outside the scope: 2031"
+    And the file "decisions.md" contains "1 year member(s) outside the scope, so each is left out"
+    And the log contains "Left out 1 year member(s) that are outside the scope: 2031"
 
   Scenario: A list of locations leaves out a technology and a fuel at another location, and a link with one end outside
     Given a pipeline "scoped" that stages an otoole model and keeps the locations "AT DE" and the years ""
@@ -92,9 +92,9 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | region | fuel | year | value |
       | R1     | ATE1 | 2030 | 1     |
       | R1     | DEE1 | 2030 | 2     |
-    And the file "decisions.md" contains "2 technology members are outside the scope, so each is left out"
-    And the file "decisions.md" contains "1 fuel members are outside the scope, so each is left out"
-    And the log contains "Left out 2 technology, 1 fuel members that are outside the scope: ATFRLINK, FRGAS, FRE1"
+    And the file "decisions.md" contains "2 technology member(s) outside the scope, so each is left out"
+    And the file "decisions.md" contains "1 fuel member(s) outside the scope, so each is left out"
+    And the log contains "Left out 2 technology, 1 fuel member(s) that are outside the scope: ATFRLINK, FRGAS, FRE1"
 
   Scenario: Empty lists keep the whole stage
     Given a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years ""

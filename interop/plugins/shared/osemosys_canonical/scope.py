@@ -54,14 +54,14 @@ class Scope(NamedTuple):
 
 
 def drop_outside_scope(state: State, scope: Scope, recorder: EventRecorder) -> None:
-    dropped = _list_dropped_members(state, scope)
+    dropped = _build_dropped_members(state, scope)
     for canonical in list_canonical_tables(state):
         table = _drop_from_table(canonical, scope, dropped)
         set_canonical_table(state, canonical._replace(table=table))
     _report_dropped(dropped, recorder)
 
 
-def _list_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
+def _build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
     """The members to leave out, by the set that holds them. A year is a member of `year`."""
     dropped = {
         set_name: _list_members_outside_locations(state, set_name, scope)
@@ -96,7 +96,8 @@ def _list_years_outside_scope(state: State, scope: Scope) -> list[str]:
     if years is None or not scope.has_years:
         return []
     members = years.select(pl.col(VALUE_COL).cast(pl.String)).collect().to_series().to_list()
-    return [member for member in members if member not in _list_year_names(scope)]
+    kept = _list_year_names(scope)
+    return [member for member in members if member not in kept]
 
 
 def _list_year_names(scope: Scope) -> list[str]:
@@ -111,7 +112,7 @@ def _drop_from_table(
     for set_name, members in dropped.items():
         column = _find_set_column(canonical, set_name, columns)
         if column is not None:
-            table = table.filter(~pl.col(column).cast(pl.String).is_in(members))
+            table = table.filter(~pl.col(column).cast(pl.String).is_in(members).fill_null(False))
     return table
 
 
@@ -124,11 +125,11 @@ def _find_set_column(canonical: CanonicalTable, set_name: str, columns: list[str
 
 def _report_dropped(dropped: Mapping[str, list[str]], recorder: EventRecorder) -> None:
     for set_name, members in dropped.items():
-        note = f"{len(members)} {set_name} members are outside the scope, so each is left out"
+        note = f"{len(members)} {set_name} member(s) outside the scope, so each is left out"
         record_source_event(
             recorder, EventKind.COMPONENT_SKIPPED, SourceName(set_name, name_a_few(members)), note
         )
     if dropped:
         counted = ", ".join(f"{len(members)} {set_name}" for set_name, members in dropped.items())
         names = name_a_few(member for members in dropped.values() for member in members)
-        log.warning("Left out %s members that are outside the scope: %s", counted, names)
+        log.warning("Left out %s member(s) that are outside the scope: %s", counted, names)
