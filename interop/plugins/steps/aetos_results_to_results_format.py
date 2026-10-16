@@ -89,7 +89,10 @@ _PRODUCTION_DERIVATION = (
     "whose carrier is electricity (a fuel with no row takes the default of "
     "output_activity_ratio), × the MWh in one {unit} → production at 1 January of the year"
 )
-_EMISSIONS_DERIVATION = "AnnualEmissions × the t in one {unit} → emissions at 1 January of the year"
+_EMISSIONS_DERIVATION = (
+    "Σ over regions of AnnualEmissions × the t in one {unit} → emissions of the pollutant at "
+    "1 January of the year, because the Sienna system keys an emission rate by the pollutant alone"
+)
 _OBJECTIVE_DERIVATION = (
     "Σ ModelPeriodCostByRegion × the scale of the model currency → objective in {unit}"
 )
@@ -282,9 +285,7 @@ class AetosResultsToResultsFormat(TranslationStep):
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(_EMISSIONS, inputs.units.emissions_unit)
-        named = rows.join(inputs.model.pollutants, on=[REGION, POLLUTANT]).with_columns(
-            pl.lit(None, dtype=pl.Utf8).alias(AnnotationColumn.CATEGORY)
-        )
+        named = _build_emissions(rows, inputs.model)
         return _build_annual_results(named, _EMISSIONS, inputs.units.convert_emissions_to_tonnes)
 
     def _map_objective(self, inputs: MappingInputs) -> pl.DataFrame:
@@ -553,6 +554,16 @@ def _build_production(activity: pl.DataFrame, model: ResultsModel) -> pl.DataFra
             maintain_order=True,
         )
         .agg(output)
+    )
+
+
+def _build_emissions(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
+    """One row for each pollutant and year, the sum over the regions that state it."""
+    return (
+        rows.join(model.pollutants, on=[REGION, POLLUTANT])
+        .group_by(COMPONENT, YearlyResultsCol.YEAR, maintain_order=True)
+        .agg(pl.col(YearlyResultsCol.VALUE).sum())
+        .with_columns(pl.lit(None, dtype=pl.Utf8).alias(AnnotationColumn.CATEGORY))
     )
 
 

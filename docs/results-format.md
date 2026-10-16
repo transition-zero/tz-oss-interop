@@ -123,7 +123,8 @@ Two more results pipelines write annual rows:
   The pipeline leaves out a technology that puts out no electricity, and a conversion between
   two electricity fuels at one location, because the Sienna translation has no component for
   either. A technology that discharges a storage takes the name of the storage, as the Sienna
-  system names it.
+  system names it. The `emissions` of a pollutant are the sum over the regions, under the plain
+  name of the pollutant, because the Sienna system keys an emission rate by the pollutant alone.
 - `power-systems-investments-to-results` reads an expansion solve. Its rows are in
   [Running a capacity expansion](developer_documentation/capacity-expansion.md#reading-the-results).
   It writes no `emissions` rows, and its rows state no category.

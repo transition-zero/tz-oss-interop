@@ -205,6 +205,7 @@ A comparison of a solve against published results differs for these reasons too:
 | Difference | Cause | Effect |
 | --- | --- | --- |
 | The published emissions count the pollutant of each fuel that enters a region: extraction, imports, and pipelines that move a pollutant between two regions. | translation: the scope is electricity only, so the Sienna emissions are those of the power plants. | On a large published model, about 560 Mt of the published emissions are not from electricity, and two transit countries state negative emissions. |
+| The published emissions of a pollutant in two or more regions | translation: the Sienna system keys an emission rate by the pollutant alone, so `aetos-to-results` sums `AnnualEmissions` over the regions. | A comparison of emissions gives one row for each pollutant, and no row for each region. |
 | The objective | mathematics: the published objective is the discounted cost of the whole model period. The dispatch objective is the cost of its hours, with no weight. | The two objectives do not compare. |
 | Plants with the same cost | optimum: the solver can give the whole output to one plant of a set of plants with one cost. | On a large published model, the output of 19 gas plants at one cost goes to one of them. The total is the same. |
 | The flow on lines with no cost and no loss | optimum: many flows give the same objective. | The trade of one line can differ from one solve to the next. The total of the system is the same. |

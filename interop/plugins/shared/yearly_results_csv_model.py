@@ -1,7 +1,7 @@
 """The members of the model that an OSeMOSYS results CSV names, read from the canonical stage.
 
-The name of each member is built once from the whole set, so that one member has one name in
-every variable, as in the Sienna translation of the same model.
+The name of each technology and storage is built once from the whole set, so that one member
+has one name in every variable, as in the Sienna translation of the same model.
 """
 
 from __future__ import annotations
@@ -148,14 +148,16 @@ def _build_empty_storage_links() -> pl.DataFrame:
 
 
 def _build_pollutants(state: State) -> pl.DataFrame:
-    """OSeMOSYS sets hold no region, so each region holds every pollutant."""
+    """OSeMOSYS sets hold no region, so each region holds every pollutant.
+
+    A pollutant takes its plain name in every region, because the Sienna system keys an
+    emission rate by the pollutant alone.
+    """
     regions = pl.DataFrame({REGION: list_set_members(state, REGION)}, schema={REGION: pl.Utf8})
     pollutants = pl.DataFrame(
         {POLLUTANT: list_set_members(state, POLLUTANT)}, schema={POLLUTANT: pl.Utf8}
     )
-    return regions.join(pollutants, how="cross").with_columns(
-        express_component_name(POLLUTANT).alias(COMPONENT)
-    )
+    return regions.join(pollutants, how="cross").with_columns(pl.col(POLLUTANT).alias(COMPONENT))
 
 
 def _read_electricity_ratios(state: State) -> ElectricityRatios:

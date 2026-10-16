@@ -189,6 +189,18 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | installed_capacity | R1/GASCC  | gas-combined-cycle | 2031-01-01T00:00:00 | 3000  |
     And the log contains "2 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX, R2/GASCC"
 
+  Scenario: In a model of two regions, the emissions of a pollutant sum over the regions under its plain name
+    # The Sienna system keys an emission rate by the pollutant alone, so both sides name it CO2.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the results CSV has the row "AnnualEmissions" in "R2" for "CO2" with the values "2 1"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "emissions" rows:
+      | variable  | component | category | timestamp           | value |
+      | emissions | CO2       |          | 2030-01-01T00:00:00 | 3500  |
+      | emissions | CO2       |          | 2031-01-01T00:00:00 | 500   |
+    And the file "decisions.md" contains "Σ over regions of AnnualEmissions"
+
   Scenario: An electricity fuel with no output ratio row takes the default of the parameter
     # With a default of 0.5, each electricity fuel with no row adds 0.5 to the ratio of a
     # technology. GASCC mode 1 has 1 + 0.5 + 0.5 = 2, and mode 2 has 0.5 + 0.5 + 0.5 = 1.5.
