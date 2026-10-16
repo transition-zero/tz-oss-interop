@@ -25,6 +25,13 @@ class HiGHSCrossover(StrEnum):
     CHOOSE = "choose"  # HiGHS decides automatically based on problem characteristics
 
 
+class UnservedEnergy(StrEnum):
+    """What a dispatch does with an hour in which a location cannot meet its load."""
+
+    REFUSED = "refused"  # every load is met, so one short hour makes the solve infeasible
+    PENALISED = "penalised"  # a network balance slack covers the shortfall at a penalty cost
+
+
 @runtime_checkable
 class SolverPort(Protocol):
     name: ClassVar[str]
@@ -48,6 +55,7 @@ class SolverPort(Protocol):
         presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
         run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
         time_limit_seconds: float | None = None,
+        unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
     ) -> tuple[str, float]:
         """Run the solver on the Sienna JSON at sienna_json_path.
 

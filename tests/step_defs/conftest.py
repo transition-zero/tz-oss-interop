@@ -419,6 +419,7 @@ def invoke_solve(
     output_dir: str = "solved",
     model_type: str = "sienna",
     download_consent: bool = True,
+    unserved_energy: str = "refused",
     unit_commitment: str = "exact",
     solver: str = "simplex",
     presolve: str = "choose",
@@ -430,7 +431,17 @@ def invoke_solve(
     stub_questionary_attr(
         monkeypatch,
         "select",
-        iter([model_type, network_model, unit_commitment, solver, presolve, run_crossover]),
+        iter(
+            [
+                model_type,
+                network_model,
+                unserved_energy,
+                unit_commitment,
+                solver,
+                presolve,
+                run_crossover,
+            ]
+        ),
     )
     stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
     stub_questionary_attr(monkeypatch, "text", iter([time_limit_seconds]))

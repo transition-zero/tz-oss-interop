@@ -150,6 +150,7 @@ def given_recorded_solve(isolated_history: Path, path: str, model: str) -> dict[
         "details": {
             "sienna_json_path": path,
             "network_model": model,
+            "unserved_energy": "penalised",
             "output_dir": "solved",
         },
     }
@@ -219,7 +220,7 @@ def given_recorded_compare(isolated_history: Path) -> dict[str, Any]:
 def when_run_solve_from_menu(monkeypatch: pytest.MonkeyPatch, path: str, model: str) -> None:
     invoke_run(
         monkeypatch,
-        ["solve", "sienna", model, "exact", "simplex", "choose", "choose", "quit"],
+        ["solve", "sienna", model, "penalised", "exact", "simplex", "choose", "choose", "quit"],
         extra_path_answers={
             "Path to PowerSimulations.jl system JSON?": path,
             "Output directory?": "solved",
@@ -238,6 +239,7 @@ def when_replay_recorded_solve(
             recorded_invocation,
             "sienna",
             "dcp",
+            "penalised",
             "exact",
             "simplex",
             "choose",

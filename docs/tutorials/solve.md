@@ -45,14 +45,17 @@ Select **solve** from the menu. The first prompt, **Model type?**, chooses betwe
    - `dcp` (default): DC power flow with voltage-angle variables and KVL constraints; closest to PyPSA's Kirchhoff formulation.
    - `ptdf`: PTDF approximation of AC flows; faster than DCP on large networks.
    - `copperplate`: single-bus per AC subnetwork; fastest, ignores line flows.
-3. **Unit commitment treatment?** Choose one of:
+3. **Unserved energy?** Choose one of:
+   - `refused` (default): every load is met in every hour. If one location cannot meet its load in one hour, the whole solve is infeasible.
+   - `penalised`: the network model gets the PowerSimulations network balance slacks (`NetworkModel(<model>; use_slacks = true)`), so a shortfall goes unserved at a penalty. See [Unserved energy](#unserved-energy).
+4. **Unit commitment treatment?** Choose one of:
    - `exact` (default): each thermal generator's on/off state is a true binary decision, so the solve is a mixed-integer program. It applies the start-up cost and the minimum up and down times that the translation carries. It stops at a relative gap of 1%.
    - `linearised`: economic dispatch. It has no on/off variable, so it applies neither the start-up cost nor the time limits, and it solves much faster. PowerSimulations has no relaxed unit commitment formulation, so this answer means something different from the same answer on the PyPSA path.
-4. **HiGHS solver algorithm?** `simplex` (default), `ipm`, or `pdlp`.
-5. **Presolve?** `on`, `off`, or `choose` (default; lets HiGHS decide).
-6. **Run crossover after IPM?** `on`, `off`, or `choose` (default); only applies to `ipm`.
-7. **Time limit in seconds?** Leave blank for no limit.
-8. **Output directory?** Where results will be written. Defaults to `solved/` alongside the input JSON.
+5. **HiGHS solver algorithm?** `simplex` (default), `ipm`, or `pdlp`.
+6. **Presolve?** `on`, `off`, or `choose` (default; lets HiGHS decide).
+7. **Run crossover after IPM?** `on`, `off`, or `choose` (default); only applies to `ipm`.
+8. **Time limit in seconds?** Leave blank for no limit.
+9. **Output directory?** Where results will be written. Defaults to `solved/` alongside the input JSON.
 
 If Julia or the solver packages are not installed yet, a notice and a
 **Download and continue?** confirmation appear right after the model type prompt;
@@ -71,6 +74,36 @@ The command prints the solve status and objective value on completion:
 ```
 
 A non-`SUCCESSFULLY` status is printed in red and indicates the solver did not converge.
+
+#### Unserved energy
+
+A system can hold less capacity at one location than the peak load at that location. With
+`refused`, that one shortfall makes the whole dispatch infeasible, and the solve gives no
+results.
+
+With `penalised`, PowerSimulations adds two slack variables to the power balance:
+
+- `SystemBalanceSlackUp` serves the load that no generator can serve. This is the unserved energy.
+- `SystemBalanceSlackDown` takes the generation that no load can take.
+
+The location of a slack depends on the network model:
+
+- `dcp` has one slack for each bus.
+- `copperplate` and `ptdf` have one slack for each AC subnetwork. The reference bus of the subnetwork names it.
+
+PowerSimulations adds `1e6` to the objective for each per-unit of slack power in each time
+step. The constant is `BALANCE_SLACK_COST` in PowerSimulations.jl. One per-unit is the system
+base power, usually 100 MW. Thus, for hourly steps on a 100 MW base, the penalty is 10,000
+for each MWh of slack. The objective that `solve` prints includes this penalty.
+
+After the solve, `solve` writes a warning for each slack that takes energy. The warning gives
+the total in MWh and the three locations with the most:
+
+```
+solve: 1234.5 MWh of load goes unserved at a penalty, the most at bus_a (900 MWh), bus_b (300 MWh), bus_c (34.5 MWh)
+```
+
+The values of each slack in each time step are in `results_wide/variables/`.
 
 For a worked end-to-end example (translate, solve, compare) see the
 [user tutorial](user-tutorial.md).

@@ -78,11 +78,12 @@ class SolveUsingPort(SolveUseCase):
 
     def _solve_sienna(self, request: SolveSiennaRequest) -> SolveResult:
         log.debug(
-            "solve path=%s network_model=%s output_dir=%s unit_commitment=%s solver=%s"
-            " presolve=%s run_crossover=%s time_limit_seconds=%s",
+            "solve path=%s network_model=%s output_dir=%s unserved_energy=%s"
+            " unit_commitment=%s solver=%s presolve=%s run_crossover=%s time_limit_seconds=%s",
             request.sienna_json_path,
             request.network_model,
             request.output_dir,
+            request.unserved_energy,
             request.unit_commitment,
             request.solver,
             request.presolve,
@@ -99,6 +100,7 @@ class SolveUsingPort(SolveUseCase):
             presolve=request.presolve,
             run_crossover=request.run_crossover,
             time_limit_seconds=request.time_limit_seconds,
+            unserved_energy=request.unserved_energy,
         )
         return SolveResult(status=status, objective=objective)
 

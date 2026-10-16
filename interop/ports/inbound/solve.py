@@ -8,7 +8,12 @@ from typing import Protocol, runtime_checkable
 
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 # Sienna's SolverPort reports a run status containing this marker on success.
@@ -49,6 +54,7 @@ class SolveSiennaRequest:
     sienna_json_path: Path
     network_model: str = "dcp"
     output_dir: Path | None = None
+    unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
     solver: HiGHSSolver = HiGHSSolver.SIMPLEX
     presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE

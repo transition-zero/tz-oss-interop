@@ -34,7 +34,12 @@ from interop.ports.inbound.validate import ValidateUseCase
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.filesystem import Location, to_location
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 from interop.ports.outbound.validation_report import DEFAULT_VALIDATION_REPORT_PATH
@@ -364,6 +369,7 @@ _SOLVER_ALGORITHMS = [s.value for s in HiGHSSolver]
 _PRESOLVE_OPTIONS = [s.value for s in HiGHSPresolve]
 _CROSSOVER_OPTIONS = [s.value for s in HiGHSCrossover]
 _UNIT_COMMITMENT_TREATMENTS = [t.value for t in UnitCommitmentTreatment]
+_UNSERVED_ENERGY_OPTIONS = [u.value for u in UnservedEnergy]
 _SOLVE_WINDOWS = [w.value for w in SolveWindowLength]
 _BALANCE_MODELS = [b.value for b in BalanceModel]
 _INVESTMENT_TREATMENTS = [t.value for t in InvestmentTreatment]
@@ -385,6 +391,12 @@ _SIENNA_UNIT_COMMITMENT_PROMPT = (
     "Unit commitment treatment? (exact = on/off as true binary decisions, applying the "
     "start-up cost and the minimum up and down times; linearised = economic dispatch, "
     "which is faster and applies neither)"
+)
+
+
+_UNSERVED_ENERGY_PROMPT = (
+    "Unserved energy? (refused = every load is met, so one short hour makes the solve "
+    "infeasible; penalised = a shortfall goes unserved at a high penalty cost)"
 )
 
 
@@ -425,6 +437,14 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if network_model is None:
         return None
 
+    unserved_energy = questionary.select(
+        _UNSERVED_ENERGY_PROMPT,
+        choices=_UNSERVED_ENERGY_OPTIONS,
+        default=_select_default(replay.get(DetailKey.UNSERVED_ENERGY), _UNSERVED_ENERGY_OPTIONS),
+    ).ask()
+    if unserved_energy is None:
+        return None
+
     unit_commitment = questionary.select(
         _SIENNA_UNIT_COMMITMENT_PROMPT,
         choices=_UNIT_COMMITMENT_TREATMENTS,
@@ -453,6 +473,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
         DetailKey.MODEL_TYPE: model_type,
         DetailKey.SIENNA_JSON_PATH: str(sienna_json_path),
         DetailKey.NETWORK_MODEL: network_model,
+        DetailKey.UNSERVED_ENERGY: unserved_energy,
         DetailKey.UNIT_COMMITMENT: unit_commitment,
         DetailKey.SOLVER: solver,
         DetailKey.PRESOLVE: presolve,
@@ -471,6 +492,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
                     sienna_json_path=sienna_json_path,
                     network_model=network_model,
                     output_dir=output_dir,
+                    unserved_energy=UnservedEnergy(unserved_energy),
                     unit_commitment=UnitCommitmentTreatment(unit_commitment),
                     solver=HiGHSSolver(solver),
                     presolve=HiGHSPresolve(presolve),

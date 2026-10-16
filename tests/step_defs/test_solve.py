@@ -14,7 +14,8 @@ def when_dispatch_solve(monkeypatch: pytest.MonkeyPatch, path: str, model: str) 
 @when(
     parsers.parse(
         'I dispatch the solve command for "{path}" with network model "{model}" '
-        'output directory "{output_dir}" unit commitment "{unit_commitment}" '
+        'output directory "{output_dir}" unserved energy "{unserved_energy}" '
+        'unit commitment "{unit_commitment}" '
         'solver "{solver}" presolve "{presolve}" '
         'crossover "{crossover}" time limit "{time_limit}"'
     )
@@ -24,6 +25,7 @@ def when_dispatch_solve_with_every_answer(
     path: str,
     model: str,
     output_dir: str,
+    unserved_energy: str,
     unit_commitment: str,
     solver: str,
     presolve: str,
@@ -35,6 +37,7 @@ def when_dispatch_solve_with_every_answer(
         path,
         model,
         output_dir=output_dir,
+        unserved_energy=unserved_energy,
         unit_commitment=unit_commitment,
         solver=solver,
         presolve=presolve,

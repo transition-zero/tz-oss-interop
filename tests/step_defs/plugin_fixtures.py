@@ -255,7 +255,13 @@ from pathlib import Path
 from typing import ClassVar
 
 from interop.ports.outbound.network_solver import UnitCommitmentTreatment
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver, SolverPort
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    SolverPort,
+    UnservedEnergy,
+)
 
 
 class FakeSolverAdapter(SolverPort):
@@ -276,6 +282,7 @@ class FakeSolverAdapter(SolverPort):
         presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
         run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
         time_limit_seconds: float | None = None,
+        unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
     ) -> tuple[str, float]:
         Path("outputs").mkdir(parents=True, exist_ok=True)
         # Posix form, so a scenario can name a path the same way on every platform.
@@ -292,6 +299,7 @@ class FakeSolverAdapter(SolverPort):
                     f"presolve={{presolve}}",
                     f"run_crossover={{run_crossover}}",
                     f"time_limit_seconds={{time_limit_seconds}}",
+                    f"unserved_energy={{unserved_energy}}",
                 ]
             ),
             encoding="utf-8",

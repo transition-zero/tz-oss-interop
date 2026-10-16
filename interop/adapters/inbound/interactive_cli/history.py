@@ -29,6 +29,7 @@ class DetailKey(StrEnum):
     INVESTMENT_TREATMENT = "investment_treatment"
     DISCOUNT_RATE = "discount_rate"
     NETWORK_MODEL = "network_model"
+    UNSERVED_ENERGY = "unserved_energy"
     OUTPUT_DIR = "output_dir"
     SOLVER = "solver"
     PRESOLVE = "presolve"
