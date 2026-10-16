@@ -117,24 +117,45 @@ def _build_results_frame(fixture: ResultsFixture) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=_RESULTS_SCHEMA, orient="row")
 
 
-def _stage_results_rows(fixture: ResultsFixture) -> Path:
-    rows_path = Path.cwd() / "fixtures" / f"{fixture.plugin_name}.parquet"
+def _stage_results_rows(plugin_name: str, frame: pl.DataFrame) -> Path:
+    rows_path = Path.cwd() / "fixtures" / f"{plugin_name}.parquet"
     rows_path.parent.mkdir(parents=True, exist_ok=True)
-    _build_results_frame(fixture).write_parquet(rows_path)
+    frame.write_parquet(rows_path)
     return rows_path
 
 
-def _write_results_source(fixture: ResultsFixture) -> None:
+def _write_results_source(plugin_name: str, frame: pl.DataFrame) -> None:
     """Write a source plugin that reads its results table back from a staged parquet."""
-    rows_path = _stage_results_rows(fixture)
+    rows_path = _stage_results_rows(plugin_name, frame)
     write_project_plugin(
         "sources",
-        fixture.plugin_name,
+        plugin_name,
         _RESULTS_SOURCE_TEMPLATE.format(
-            class_name=fixture.plugin_name.title().replace("_", ""),
-            plugin_name=fixture.plugin_name,
+            class_name=plugin_name.title().replace("_", ""),
+            plugin_name=plugin_name,
             rows_path=rows_path.as_posix(),
         ),
+    )
+
+
+def _parse_results_table(datatable: list[list[str]]) -> pl.DataFrame:
+    """A `| variable | component | category | timestamp | value |` table; an empty cell is a
+    null."""
+    header, *rows = datatable
+    assert header == list(_RESULTS_SCHEMA), header
+    return pl.DataFrame(
+        [
+            (
+                variable,
+                component or None,
+                category or None,
+                datetime.fromisoformat(timestamp) if timestamp else None,
+                float(value),
+            )
+            for variable, component, category, timestamp, value in rows
+        ],
+        schema=_RESULTS_SCHEMA,
+        orient="row",
     )
 
 
@@ -151,7 +172,13 @@ def given_results_sink_plugin(name: str) -> None:
 
 @given(parsers.parse('a results source plugin "{name}" costing {objective:f} dispatching:'))
 def given_results_source_plugin(name: str, objective: float, datatable: list[list[str]]) -> None:
-    _write_results_source(ResultsFixture(name, _read_dispatch_table(datatable), objective))
+    fixture = ResultsFixture(name, _read_dispatch_table(datatable), objective)
+    _write_results_source(name, _build_results_frame(fixture))
+
+
+@given(parsers.parse('a results source plugin "{name}" stating the rows:'))
+def given_results_source_plugin_rows(name: str, datatable: list[list[str]]) -> None:
+    _write_results_source(name, _parse_results_table(datatable))
 
 
 @given(

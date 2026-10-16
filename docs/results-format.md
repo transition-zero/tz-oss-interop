@@ -50,6 +50,10 @@ null dimensions; there is no wide variant and no second table.
 | `price` | cost/MWh | positive = cost of one more MWh | component, timestamp |
 | `snapshot_weight` | h | positive = hours represented | timestamp only |
 | `objective` | cost | as reported by the solve | none (scalar) |
+| `installed_capacity` | MW | positive = capacity in service in the year | component, category, timestamp |
+| `new_capacity` | MW | positive = capacity built in the year | component, category, timestamp |
+| `production` | MWh in the year | positive = electricity put out | component, category, timestamp |
+| `emissions` | t in the year | negative = removed from the air | component, timestamp |
 
 The "dimensions typically set" column is the finest granularity a variable
 uses; an aggregate row drops the finer dimensions to null, which is how the two
@@ -64,6 +68,18 @@ system-level headroom: total available capacity, summed across categories,
 minus `load` at the same timestamp. A reference dataset may state it directly
 instead of deriving it.
 `objective` is the solve's objective value, carried as a single scalar row.
+
+### Annual variables
+
+`installed_capacity`, `new_capacity`, `production` and `emissions` are annual. An annual row
+takes the timestamp of 1 January of its year, at midnight. A capacity expansion model
+reports these variables, and an hourly dispatch does not.
+
+- The `component` of a capacity or a `production` row is a technology. The `component` of an
+  `emissions` row is a pollutant, and its `category` is null.
+- `production` is the electricity that a technology puts out in the year. The trade between
+  two locations is the `production` of the transport technology between them. That is the
+  energy that it delivers at its far end. The format has no `trade` variable.
 
 ## How a comparison meets at a shared granularity
 
@@ -88,6 +104,11 @@ Compare joins the two tables per variable at the finest granularity both sides s
 
 → each side summed to `(variable, category, timestamp)` (both 46,844); the diff is 0.
 
+An annual variable has its own name, so it never joins with an hourly variable. When both
+sides state `production` for a technology, compare joins the rows on
+`(variable, component, timestamp)`, and the timestamp is 1 January of the year. When only
+one side states an annual variable, the coverage table shows the gap and no diff is made.
+
 ## Units and signs
 
 Units and signs are fixed by this document. Each side's pipeline is responsible
@@ -95,8 +116,9 @@ for emitting values already in these units and signs; nothing downstream infers
 them, and the run manifest never restates them. Two consequences follow:
 
 - Power quantities (`dispatch`, `load`, `flow`, `available_capacity`,
-  `surplus`) are in MW. Energy is not stored directly: it is a power quantity
-  multiplied by the `snapshot_weight` at the same timestamp.
+  `surplus`) are in MW. An hourly energy is not stored directly: it is a power
+  quantity multiplied by the `snapshot_weight` at the same timestamp. The annual
+  `production` is the one energy in the format, in MWh in the year.
 - A framework that solves with a different sign convention (for example, load as
   negative consumption) normalises to the convention above in its own pipeline,
   so no sign has to be guessed at comparison time.

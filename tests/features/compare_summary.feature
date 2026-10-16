@@ -33,3 +33,42 @@ Feature: compare joins two results tables and reports what differs
     Then the file "outputs/summary.md" contains "- `alpha`: 3 rows"
     And the file "outputs/summary.md" contains "- `beta`: 5 rows"
     And the file "outputs/summary.md" contains "| dispatch | 1 | 2 | 1 | - | gen_b |"
+
+  Scenario: annual rows are compared at the annual grain when both sides state them
+    # Each annual row has the timestamp of 1 January of its year, so the hourly dispatch at
+    # that same timestamp stays a variable of its own.
+    Given a results source plugin "gamma_results" stating the rows:
+      | variable   | component | category | timestamp           | value  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0  |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 1000.0 |
+      | production | gen_a     | coal     | 2031-01-01T00:00:00 | 1200.0 |
+      | emissions  | CO2       |          | 2030-01-01T00:00:00 | 50.0   |
+    And a results source plugin "delta_results" stating the rows:
+      | variable   | component | category | timestamp           | value |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0 |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 900.0 |
+      | production | gen_a     | coal     | 2031-01-01T00:00:00 | 900.0 |
+      | emissions  | CO2       |          | 2030-01-01T00:00:00 | 20.0  |
+    And a results pipeline "gamma-to-results" for framework "gamma" with source "gamma_results"
+    And a results pipeline "delta-to-results" for framework "delta" with source "delta_results"
+    When I run from the menu a compare of gamma against delta writing "outputs/summary.md"
+    Then the file "outputs/summary.md" contains "| production | coal | 2 | 200 | 223.6 |"
+    And the file "outputs/summary.md" contains "| emissions | - | 1 | 30 | 30 |"
+    And the file "outputs/summary.md" contains "| dispatch | coal | 1 | 0 | 0 |"
+
+  Scenario: a side that states only hourly rows compares its hourly rows as before
+    Given a results source plugin "gamma_results" stating the rows:
+      | variable   | component | category | timestamp           | value  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T01:00:00 | 110.0  |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 1000.0 |
+    And a results source plugin "delta_results" stating the rows:
+      | variable | component | category | timestamp           | value |
+      | dispatch | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0 |
+      | dispatch | gen_a     | coal     | 2030-01-01T01:00:00 | 130.0 |
+    And a results pipeline "gamma-to-results" for framework "gamma" with source "gamma_results"
+    And a results pipeline "delta-to-results" for framework "delta" with source "delta_results"
+    When I run from the menu a compare of gamma against delta writing "outputs/summary.md"
+    Then the file "outputs/summary.md" contains "| dispatch | coal | 2 | 10 | 14.14 |"
+    And the file "outputs/summary.md" contains "| production | 1 | 0 | 0 | gen_a | - |"
+    And the file "outputs/summary.md" does not contain "| production | coal |"
