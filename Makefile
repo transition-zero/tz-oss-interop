@@ -7,7 +7,7 @@ test:
 	uv run pytest
 
 skills-test:
-	bash .claude/skills/run-tests.sh .claude/skills/*/
+	bash .claude/skills/run-tests.sh .claude/skills/*/ .claude/routines/
 
 coverage:
 	uv run pytest --cov=interop --cov-report=term-missing

@@ -146,8 +146,8 @@ marker (step 1) has no footer either: its body is exactly two lines.
    The preflight creates them with `bash .claude/routines/labels.sh ensure`. On another
    run, a missing one goes under "Problems", and the steps that would add it skip that
    write.
-4. Install the Python environment only when a step needs to run tests:
-   `uv sync --locked --all-groups`. A failure skips the steps that run tests.
+4. Install the toolchains only when a step needs to run tests:
+   `bash .claude/routines/install-tools.sh`. A failure skips the steps that run tests.
 
 ## The run
 
