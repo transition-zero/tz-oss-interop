@@ -40,3 +40,16 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.__metadata__.type" equal to "InputOutputCurve"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.__metadata__.type" equal to "LinearFunctionData"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
+
+  Scenario: HVDC line limits in MW are stored per-unit relative to the system base
+    PowerSystems reads the limits of a TwoTerminalGenericHVDCLine per unit of the system base of
+    100 MVA, so a limit of 1000 MW is stored as 10.
+    Given a Sienna system
+    And the system contains a bus "bus_a"
+    And the system contains a bus "bus_b"
+    And the system contains an HVDC line "link_1" from "bus_a" to "bus_b" with p_nom 1000.0 efficiency 0.5
+    And the system is saved as "inputs/hvdc_limits.json"
+    When I run translate against Sienna system "inputs/hvdc_limits.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_from" equal to {"min": 0.0, "max": 10.0}
+    And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_to" equal to {"min": 0.0, "max": 5.0}
+    And the file "decisions.md" contains "natural-unit MW / system base 100 MVA -> per-unit for PS.jl"

@@ -528,6 +528,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "PowerLoad" component "ATELEC"
       And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "RenewableDispatch" component "ATSOLAR"
 
+    Scenario: The validation run gives each generator its residual capacity times its availability in MW in each hour
+      PowerSimulations multiplies each availability series by the MW that the generator can
+      give. The solar plant of 200 MW gives 0, 80, 40 and 160 MW in the four hours.
+      Given the otoole parameter "Conversionls" keyed by "TIMESLICE SEASON" with default 0 has no file
+      When I translate the otoole model to Sienna for the year "2030"
+      And I run the validation chain over "outputs/system.json" writing "outputs/power_simulations_system.json"
+      Then the PS.jl system "outputs/power_simulations_system.json" and its H5 sidecar "outputs/power_simulations_system_time_series.h5" give "RenewableDispatch" component "ATSOLAR" a "max_active_power" of 0 80 40 160 MW
+      And the PS.jl system "outputs/power_simulations_system.json" and its H5 sidecar "outputs/power_simulations_system_time_series.h5" give "RenewableNonDispatch" component "ATWIND" a "max_active_power" of 300 300 300 300 MW
+      And the PS.jl system "outputs/power_simulations_system.json" and its H5 sidecar "outputs/power_simulations_system_time_series.h5" give "HydroDispatch" component "ATHYDRO" a "max_active_power" of 400 400 400 400 MW
+      And the PS.jl system "outputs/power_simulations_system.json" and its H5 sidecar "outputs/power_simulations_system_time_series.h5" give "HydroDispatch" component "ATHYDRO" a "hydro_budget" of 400 400 400 400 MW
+
   Rule: A storage with energy becomes an EnergyReservoirStorage that the technology linked to it rates
     The invented storages below are at AT. The pumped-storage plant ATPHS charges the storage
     ATPHSS in mode 1 and discharges it in mode 2. It takes in 1.25 units of electricity for each
