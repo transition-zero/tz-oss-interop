@@ -1,3 +1,4 @@
+import gzip
 import importlib.util
 import io
 import shlex
@@ -73,21 +74,37 @@ def stub_questionary_attr(
     monkeypatch.setattr(questionary, attribute, stub)
 
 
-def stub_requests(monkeypatch: pytest.MonkeyPatch, store: dict[str, bytes]) -> None:
+def stub_requests(
+    monkeypatch: pytest.MonkeyPatch, store: dict[str, bytes], gzip_encoded_urls: set[str]
+) -> None:
     """In-memory GET/PUT stub for requests, keyed by URL. Mirrors the
     questionary stubs above: intercept the exact boundary the adapter
-    calls, rather than pulling in a mocking library."""
+    calls, rather than pulling in a mocking library.
+
+    As in requests, ``content`` and ``iter_content`` are decoded and ``raw`` is the body as
+    the server sent it, so a URL in ``gzip_encoded_urls`` has a compressed ``raw``.
+    """
 
     class _StubResponse:
-        def __init__(self, content: bytes = b"") -> None:
+        def __init__(self, content: bytes = b"", is_gzip_encoded: bool = False) -> None:
             self.content = content
-            self.raw = io.BytesIO(content)
+            self.raw = io.BytesIO(gzip.compress(content) if is_gzip_encoded else content)
 
         def raise_for_status(self) -> None:
             pass
 
+        def iter_content(self, chunk_size: int) -> Iterator[bytes]:
+            for start in range(0, len(self.content), chunk_size):
+                yield self.content[start : start + chunk_size]
+
+        def __enter__(self) -> "_StubResponse":
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            pass
+
     def stub_get(url: str, **kwargs: Any) -> _StubResponse:
-        return _StubResponse(store[url])
+        return _StubResponse(store[url], url in gzip_encoded_urls)
 
     def stub_put(url: str, data: Any = b"", **kwargs: Any) -> _StubResponse:
         store[url] = data.read() if hasattr(data, "read") else data
@@ -98,9 +115,16 @@ def stub_requests(monkeypatch: pytest.MonkeyPatch, store: dict[str, bytes]) -> N
 
 
 @pytest.fixture
-def http_store(monkeypatch: pytest.MonkeyPatch) -> dict[str, bytes]:
+def http_gzip_encoded_urls() -> set[str]:
+    return set()
+
+
+@pytest.fixture
+def http_store(
+    monkeypatch: pytest.MonkeyPatch, http_gzip_encoded_urls: set[str]
+) -> dict[str, bytes]:
     store: dict[str, bytes] = {}
-    stub_requests(monkeypatch, store)
+    stub_requests(monkeypatch, store, http_gzip_encoded_urls)
     return store
 
 
@@ -112,6 +136,11 @@ def given_filesystem_binding(name: str) -> None:
 @given(parsers.parse('an http source at "{url}" containing "{content}"'))
 def given_http_source_content(http_store: dict[str, bytes], url: str, content: str) -> None:
     http_store[url] = content.encode("utf-8")
+
+
+@given(parsers.parse('the server sends "{url}" gzip-encoded'))
+def given_http_source_gzip_encoded(http_gzip_encoded_urls: set[str], url: str) -> None:
+    http_gzip_encoded_urls.add(url)
 
 
 @then(parsers.parse('the http destination "{url}" reads back as "{expected}"'))
