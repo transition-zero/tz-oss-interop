@@ -6,7 +6,8 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
   installed capacity and emissions, each at 1 January of the year of the solve.
 
   The invented system below has a gas plant, a solar plant, a rooftop solar plant with a fixed
-  output, a battery and an HVDC line. The solve covers four hours. The gas plant emits 0.5 t of
+  output, a battery and an HVDC line. The solve covers four hours. The solve states the flow of
+the HVDC line in MW. The gas plant emits 0.5 t of
   CO2 and 0.01 t of NOX for each MWh.
 
   Background:
@@ -30,7 +31,7 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
     And the results have RenewableNonDispatch output for "rooftop" of 1 2 2 1
     And the results have EnergyReservoirStorage output for "battery" of 0 0 8 0
     And the results have EnergyReservoirStorage input for "battery" of 4 0 0 0
-    And the results have HVDC flow for "link" of 500 -300 0 200
+    And the results have HVDC flow for "link" of 5 -3 0 2
     And the results are saved in "results"
 
   Scenario: Production weights each hour by its period, and an HVDC line delivers its flow in either direction
@@ -56,6 +57,17 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
       | variable | component | category      | timestamp           | value |
       | dispatch | solar     | solar         | 2030-01-01T01:00:00 | 5     |
       | dispatch | rooftop   | solar-rooftop | 2030-01-01T02:00:00 | 2     |
+
+  Scenario: The hourly flow of an HVDC line is the MW that the solve states
+    Given the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "flow" rows:
+      | variable | component | category | timestamp           | value |
+      | flow     | link      |          | 2030-01-01T00:00:00 | 5     |
+      | flow     | link      |          | 2030-01-01T01:00:00 | -3    |
+      | flow     | link      |          | 2030-01-01T02:00:00 | 0     |
+      | flow     | link      |          | 2030-01-01T03:00:00 | 2     |
 
   Scenario: Installed capacity is the rating of each generator, storage and HVDC line
     Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100

@@ -142,11 +142,6 @@ WIDE_RESULT_SERIES: tuple[StagedSeriesSource, ...] = (
     StagedSeriesSource(LOAD_KEY, LOAD_CSVS),
 )
 
-HVDC_WIDE_SCALE = 100.0
-"""TwoTerminalGenericHVDCLine flows are solved in natural MW but written to the WIDE table
-scaled by the system base, so the reverse divides by this to recover MW. See compare's
-``_load_sienna_data``, which applies the same factor."""
-
 SNAPSHOT_HOURS = 1.0
 """Hours one row of a solve result covers: the solve runs at an hourly resolution."""
 

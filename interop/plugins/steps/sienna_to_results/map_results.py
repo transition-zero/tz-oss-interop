@@ -5,7 +5,7 @@ names and carriers into the ``generators`` and ``storage_units`` tables. This st
 reads the staged solve series, looks up each dispatch row's carrier from those tables,
 and normalises every value to the results-format conventions: dispatch positive into
 the bus, load positive for consumption, flow positive from bus0 to bus1, storage as
-output minus input, and HVDC flow rescaled from per-unit. It builds one row per
+output minus input. It builds one row per
 observation and keeps the work lazy until a single collect of the finished table.
 
 When the extensions sidecar holds representative periods, the step also writes annual
@@ -41,7 +41,6 @@ from interop.plugins.shared.results_constants import (
     ResultsVariable,
 )
 from interop.plugins.shared.sienna_results_constants import (
-    HVDC_WIDE_SCALE,
     HYDRO_DISPATCH_KEY,
     LINE_FLOW_KEY,
     LINK_FLOW_KEY,
@@ -72,7 +71,6 @@ _STORAGE_IN_COL = "_storage_in"
 _DISPATCH_FROM_SERIES = "{series} -> dispatch"
 _DISPATCH_FROM_STORAGE = "ActivePowerOutVariable - ActivePowerInVariable -> dispatch"
 _FLOW_FROM_FLOW = "FlowActivePowerVariable -> flow"
-_FLOW_FROM_SCALED_FLOW = "FlowActivePowerVariable / system base -> flow"
 _LOAD_FROM_PARAMETER = "ActivePowerTimeSeriesParameter -> load (positive = consumption)"
 _OBJECTIVE_FROM_STATS = "optimizer_stats.objective_value -> objective"
 
@@ -109,13 +107,8 @@ class SiennaResultsToResultsFormat(TranslationStep):
                 *self._map_dispatch(state, RENEWABLE_NON_DISPATCH_KEY, carrier_lookup),
             ],
             storage_dispatch=self._map_storage_dispatch(state, carrier_lookup),
-            line_flow=self._map_flow(state, LINE_FLOW_KEY, scale=1.0, derivation=_FLOW_FROM_FLOW),
-            link_flow=self._map_flow(
-                state,
-                LINK_FLOW_KEY,
-                scale=1.0 / HVDC_WIDE_SCALE,
-                derivation=_FLOW_FROM_SCALED_FLOW,
-            ),
+            line_flow=self._map_flow(state, LINE_FLOW_KEY),
+            link_flow=self._map_flow(state, LINK_FLOW_KEY),
             load=self._map_load(state),
         )
 
@@ -174,9 +167,7 @@ class SiennaResultsToResultsFormat(TranslationStep):
         )
         return [_build_dispatch_frame(net, carrier_lookup, value_expr)]
 
-    def _map_flow(
-        self, state: State, key: ResultSeriesKey, *, scale: float, derivation: str
-    ) -> list[pl.LazyFrame]:
+    def _map_flow(self, state: State, key: ResultSeriesKey) -> list[pl.LazyFrame]:
         frame = state.source_time_series.get(key)
         if frame is None:
             return []
@@ -185,11 +176,11 @@ class SiennaResultsToResultsFormat(TranslationStep):
             sienna_type=key.owner_type,
             series=key.series_name,
             variable=ResultsVariable.FLOW,
-            derivation=derivation,
+            derivation=_FLOW_FROM_FLOW,
         )
         return [
             _build_frame_without_category(
-                frame, ResultsVariable.FLOW, pl.col(StagedTimeSeriesCol.VALUE) * scale
+                frame, ResultsVariable.FLOW, pl.col(StagedTimeSeriesCol.VALUE)
             )
         ]
 
