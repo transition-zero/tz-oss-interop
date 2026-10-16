@@ -16,13 +16,19 @@ for dir in "$@"; do
 	skill=$(cd "$dir" && pwd)
 	for t in "$skill"/tests/test_*.sh; do
 		[ -e "$t" ] || continue
-		# A subshell keeps one file's helpers out of the next file.
+		# A subshell keeps one file's helpers out of the next file. It must not sit in a condition,
+		# where bash ignores errexit inside it.
+		set +e
 		(
+			set -e
 			failures=0
 			# shellcheck source=/dev/null
 			. "$t"
 			exit "$failures"
-		) || total=$((total + $?))
+		)
+		status=$?
+		set -e
+		total=$((total + status))
 	done
 done
 

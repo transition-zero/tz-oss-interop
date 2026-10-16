@@ -13,7 +13,9 @@ def events:
 	[.reviews[] | select(cr) | select((.body // "") != "") | t(.submitted_at)] as $reviews
 	| [.comments[] | select(cr) | select(.body | test("Review finished")) | t(.created_at // .updated_at)] as $finished
 	| [.comments[] | select(cr) | select(summary)] as $summaries
-	| [$summaries[] | select(.created_at) | t(.created_at)] as $summaries_at
+	# One review can post a review object and create the summary; the summary then adds no review.
+	| [$summaries[] | select(.created_at) | t(.created_at)
+	   | select(. as $at | ($reviews + $finished) | any(. - $at | fabs < 600) | not)] as $summaries_at
 	| [.comments[] | select(cr) | select(summary | not) | (.body | capture("available in (?<m>[0-9]+) minute")?) as $c
 	   | select($c != null) | {at: t(.updated_at), until: (t(.updated_at) + (($c.m | tonumber) * 60))}] as $limits
 	| [.comments[] | select(.user.login == $ARGS.named.owner) | select(.body | contains("@coderabbitai review")) | t(.created_at)] as $asks
@@ -31,7 +33,10 @@ def allowance:
 
 # Only a reply after the owner's newest pause request counts: the summary also says
 # "Reviews paused" when CodeRabbit pauses itself, and it keeps that text after a resume.
+# A resume from anyone after that request ends the pause.
 def paused:
 	([.comments[] | select(.user.login == $ARGS.named.owner and (.body | contains("@coderabbitai pause")))
 	  | t(.created_at)] | max) as $asked
-	| $asked != null and any(.comments[]; cr and (.body | contains("Reviews paused")) and t(.created_at) > $asked);
+	| ([.comments[] | select(cr | not) | select(.body | contains("@coderabbitai resume")) | t(.created_at)] | max) as $resumed
+	| $asked != null and ($resumed == null or $resumed < $asked)
+	  and any(.comments[]; cr and (.body | contains("Reviews paused")) and t(.created_at) > $asked);

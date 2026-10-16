@@ -10,17 +10,13 @@ assert_eq free "$(comments '[{id:1,body:"not a marker <!-- pr-steward:working --
 assert_eq 7 "$(comments '[{id:7,body:$m,created_at:"2026-09-30T10:00:00Z"},{id:8,body:$m,created_at:"2026-09-30T11:50:00Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: stale lists only expired markers"
 assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-30T12:00:30Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a marker posted after now holds"
 assert_eq "" "$(comments '[{id:1,body:$m,created_at:"2026-09-30T12:00:30Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: a marker posted after now is not stale"
-released=$'<!-- pr-steward:released -->\nrun ended'
-assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a marker taken again is dated by its last edit"
-assert_eq "" "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: a marker taken again is not stale"
-assert_eq free "$(jq -n --arg r "$released" '[{id:1,body:$r,created_at:"2026-09-30T11:59:00Z",updated_at:"2026-09-30T11:59:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a released marker does not hold"
-assert_eq 4 "$(jq -n --arg r "$released" --arg m "$marker" '[{id:3,body:$r,created_at:"2026-09-28T09:00:00Z"},{id:4,body:$r,created_at:"2026-09-29T09:00:00Z"},{id:5,body:$m,created_at:"2026-09-30T09:00:00Z"}]' | bash "$skill/lock.sh" reuse)" "lock: reuse names the newest released marker"
-assert_eq "" "$(comments '[{id:5,body:$m,created_at:"2026-09-30T09:00:00Z"}]' | bash "$skill/lock.sh" reuse)" "lock: reuse names nothing when no marker is released"
+assert_eq held "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" state "$now")" "lock: a marker is dated by its last edit"
+assert_eq "" "$(comments '[{id:1,body:$m,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:30:00Z"}]' | bash "$skill/lock.sh" stale "$now")" "lock: a recently edited marker is not stale"
 
 mine_for() { jq -n --arg a $'<!-- pr-steward:working -->\nrun-a' --arg b $'<!-- pr-steward:working -->\nrun-b' "$1" | bash "$skill/lock.sh" mine "$now" "$2" "$3"; }
 assert_eq yes "$(mine_for '[{id:5,body:$a,created_at:"2026-09-30T11:59:00Z"}]' 5 run-a)" "lock: mine when the only live marker is this run's"
 assert_eq no "$(mine_for '[{id:5,body:$a,created_at:"2026-09-30T11:59:00Z"},{id:6,body:$b,created_at:"2026-09-30T11:59:10Z"}]' 6 run-b)" "lock: two new markers, the newer one gives way"
 assert_eq yes "$(mine_for '[{id:5,body:$a,created_at:"2026-09-30T11:59:00Z"},{id:6,body:$b,created_at:"2026-09-30T11:59:10Z"}]' 5 run-a)" "lock: two new markers, the older one holds"
-assert_eq no "$(mine_for '[{id:5,body:$b,created_at:"2026-09-29T09:00:00Z",updated_at:"2026-09-30T11:59:30Z"}]' 5 run-a)" "lock: a reused marker another run wrote last is not mine"
 assert_eq yes "$(mine_for '[{id:4,body:$b,created_at:"2026-09-30T10:00:00Z"},{id:5,body:$a,created_at:"2026-09-30T11:59:00Z"}]' 5 run-a)" "lock: an expired older marker does not block"
 assert_eq no "$(mine_for '[]' 5 run-a)" "lock: no marker at all is not mine"
+assert_eq no "$(mine_for '[{id:5,body:$b,created_at:"2026-09-30T11:59:00Z"}]' 5 run-a)" "lock: a marker that holds another run's id is not mine"

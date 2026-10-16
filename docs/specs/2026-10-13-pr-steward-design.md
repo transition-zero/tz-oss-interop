@@ -58,10 +58,12 @@ The other lanes are `foreign`, `held`, `owner-work` and `dependabot`. `merge-rea
 
 The steps follow the source design. The changes are:
 
-1. **Lock.** The same comment marker on the tracker, with a 55-minute expiry. After a run
-   writes its marker, it reads the comments again. It continues only when the oldest live
-   marker is its own and holds its run id (`lock.sh mine`), so two runs that start together
-   cannot both hold the lock.
+1. **Lock.** A comment marker on the tracker, with a 55-minute expiry. The source steward
+   reused one marker comment by editing it. GitHub has no conditional edit, so two runs
+   that edit one comment can both believe they hold it. Here each run posts a marker of its
+   own, reads the comments again, and continues only when the oldest live marker is its own
+   (`lock.sh mine`). GitHub gives comment ids in order, so exactly one run wins. A run
+   deletes its marker when it ends.
 2. **Dependabot.** The organisation ruleset for public repositories has
    `dismiss_stale_reviews_on_push` and `require_last_push_approval`. When the steward pushes
    a fix to a red Dependabot PR, the owner becomes the last pusher. The owner's approval

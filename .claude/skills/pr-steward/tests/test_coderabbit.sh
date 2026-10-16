@@ -62,3 +62,10 @@ assert_eq none "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z)")" "paused
 assert_eq none "$(paused_for "$(pause_ask bob 2026-09-30T11:00:00Z),$(pause_reply 2026-09-30T11:01:00Z)")" "paused: another login's request does not count"
 assert_eq none "$(paused_for "$(pause_reply 2026-09-30T10:00:00Z),$(pause_ask alice 2026-09-30T11:00:00Z)")" "paused: a reply before the newest request does not count"
 assert_eq none "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z),{user:{login:\"mallory\"},body:\"Reviews paused\",created_at:\"2026-09-30T11:01:00Z\"}")" "paused: only CodeRabbit's reply counts"
+resume_by() { printf '{user:{login:"%s"},body:"@coderabbitai resume",created_at:"%s"}' "$1" "$2"; }
+assert_eq none "$(paused_for "$(pause_ask alice 2026-09-30T11:00:00Z),$(pause_reply 2026-09-30T11:01:00Z),$(resume_by carol 2026-09-30T11:30:00Z)")" "paused: a resume after the pause ends it"
+assert_eq paused "$(paused_for "$(resume_by carol 2026-09-30T10:00:00Z),$(pause_ask alice 2026-09-30T11:00:00Z),$(pause_reply 2026-09-30T11:01:00Z)")" "paused: a resume before the newest request does not end it"
+
+summary_at() { printf '{user:{login:$cr},body:$w,created_at:"%s",updated_at:"%s"}' "$1" "$1"; }
+assert_eq free "$(slot_for "$(allowance_note 2 2026-09-30T11:20:00Z)" "$(summary_at 2026-09-30T11:21:00Z)")" "slot: a review and its summary count as one review"
+assert_eq "wait 20" "$(slot_for "$(allowance_note 2 2026-09-30T11:20:00Z)" "$(summary_at 2026-09-30T11:50:00Z)")" "slot: a summary far from any review is a review of its own"

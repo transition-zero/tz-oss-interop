@@ -15,7 +15,8 @@ assert_eq "add merge-risk:moderate" "$(risk "$(walkthrough "$(rated '🟡 Modera
 assert_eq "" "$(risk "$(walkthrough "$(rated '⚪ Minimal' "$head")")" '[{"name":"merge-risk:minimal"}]')" "merge-risk: a label already set is left alone"
 assert_eq $'add merge-risk:high\nremove merge-risk:low' "$(risk "$(walkthrough "$(rated '🟠 High' "$head")")" '[{"name":"merge-risk:low"}]')" "merge-risk: a changed rating replaces the old label"
 assert_eq "add merge-risk:critical" "$(risk "$(walkthrough "$(rated '🔴 Critical' "$head")")" '[]')" "merge-risk: a level not seen before still names its label"
-assert_eq $'add merge-risk:low\nstale 4076962' "$(risk "$(walkthrough "$(rated '🔵 Low' "$older")")" '[]')" "merge-risk: a rating of an older commit is reported stale"
+assert_eq "stale 4076962" "$(risk "$(walkthrough "$(rated '🔵 Low' "$older")")" '[]')" "merge-risk: a rating of an older commit is reported stale"
+assert_eq "stale 4076962" "$(risk "$(walkthrough "$(rated '🔵 Low' "$older")")" '[{"name":"merge-risk:high"}]')" "merge-risk: a rating of an older commit changes no label"
 assert_eq "" "$(risk "$(walkthrough $'<!-- walkthrough_start -->\n## Walkthrough\nNo rating')" '[{"name":"merge-risk:low"}]')" "merge-risk: no rating changes nothing"
 assert_eq "" "$(risk "$(jq -n --arg b "$(rated '🟠 High' "$head")" '[{user:{login:"jed72"},body:$b,updated_at:"2026-10-05T10:00:00Z"}]')" '[]')" "merge-risk: only CodeRabbit's rating counts"
 two=$(jq -n --arg cr "$cr" --arg a "$(rated '🟠 High' "$older")" --arg b "$(rated '🔵 Low' "$head")" '[{user:{login:$cr},body:$b,updated_at:"2026-10-05T11:00:00Z"},{user:{login:$cr},body:$a,updated_at:"2026-10-05T09:00:00Z"}]')

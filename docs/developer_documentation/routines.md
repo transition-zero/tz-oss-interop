@@ -15,7 +15,9 @@ after the merge uses it.
 ## What you can do
 
 - **Send your draft through review:** add `PR Ready` to it.
-- **Keep the agents off an issue or a PR:** add `hold`.
+- **Keep the steward off a PR:** add `hold`.
+- **Keep the nightly from building an issue:** add `hold`. The nightly still gives the issue
+  its `type:` and `size:` labels.
 - **Ask for an overnight build:** add `agent:build` to the issue.
 - **Stop the nightly:** add `nightly:paused` to the `Nightly triage` issue.
 - **See what a run did:** read its comment on the tracker issue. Each run archives its own

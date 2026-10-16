@@ -123,8 +123,14 @@ Signed-off-by: Jane Developer <jane@example.com>
 ```
 
 Use a real name and an address you read. CI checks every commit in a pull
-request and fails if one is missing a sign-off. To fix a branch you have already
-written, `git rebase --signoff main` adds it to each commit.
+request and fails if one is missing a sign-off. No later commit can add the
+trailer to an earlier one, so a missing sign-off is the one reason to rewrite
+commits that a reviewer has read. Add it without moving the branch onto newer
+`main`, then push with `--force-with-lease`:
+
+```
+git rebase --signoff "$(git merge-base HEAD origin/main)"
+```
 
 ### Commit messages
 

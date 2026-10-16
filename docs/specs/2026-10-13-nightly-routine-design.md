@@ -30,7 +30,8 @@ GitHub. `2026-10-13-pr-steward-design.md` is the design of the second routine.
 - **Draft PRs** with the `nightly:generated` label. The owner is the author. The run never
   marks a draft ready, never merges it and never asks for a reviewer.
 - **The pinned issue,** with one digest comment each night and one `### Needs you` checklist.
-- **To keep the run off an issue:** assign it to a person, or add `hold` or `type:design`.
+- **To keep the run from building an issue:** assign it to a person, or add `hold` or
+  `type:design`. The run still gives the issue its labels.
 - **To ask for a build:** add `agent:build`.
 
 ## One night

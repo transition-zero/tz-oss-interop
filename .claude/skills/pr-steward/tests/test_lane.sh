@@ -28,11 +28,12 @@ cat >"$fake_bin/gh" <<FAKE
 #!/usr/bin/env bash
 count=\$(cat "$fake_bin/count" 2>/dev/null || echo 0)
 echo \$((count + 1)) >"$fake_bin/count"
-if [ "\$count" -lt 2 ]; then echo '{"number":7,"mergeable_state":"unknown"}'; else echo '{"number":7,"mergeable_state":"clean"}'; fi
+if [ "\$count" -lt "\$(cat "$fake_bin/unknown_reads")" ]; then echo '{"number":7,"mergeable_state":"unknown"}'; else echo '{"number":7,"mergeable_state":"clean"}'; fi
 FAKE
 chmod +x "$fake_bin/gh"
+echo 2 >"$fake_bin/unknown_reads"
 assert_eq "clean 3" "$(PATH="$fake_bin:$PATH" PULL_RETRY_SECONDS=0 bash "$skill/pull.sh" 7 | jq -r .mergeable_state) $(cat "$fake_bin/count")" "pull: reads again until mergeable_state is known"
 echo 0 >"$fake_bin/count"
-sed -i 's/-lt 2/-lt 9/' "$fake_bin/gh"
+echo 9 >"$fake_bin/unknown_reads"
 assert_eq "unknown 4" "$(PATH="$fake_bin:$PATH" PULL_RETRY_SECONDS=0 bash "$skill/pull.sh" 7 | jq -r .mergeable_state) $(cat "$fake_bin/count")" "pull: stops after four reads and returns the last"
 rm -rf "$fake_bin"

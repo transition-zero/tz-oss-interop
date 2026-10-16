@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # merge-risk.sh   label changes for one PR, from {comments, labels, head}, one per line:
-#                 "add merge-risk:<level>", "remove merge-risk:<old>", and
-#                 "stale <sha>" when the rating covers a commit older than head
+#                 "add merge-risk:<level>" and "remove merge-risk:<old>", or only "stale <sha>"
+#                 when the rating covers a commit older than head
 set -euo pipefail
 
 # CodeRabbit's walkthrough carries its rating between `final_review_risk` markers, as
@@ -17,9 +17,10 @@ jq -r '
 	| ($walkthrough.body // "" | capture("\"coveredCommitId\":\"(?<sha>[0-9a-f]{7,40})\"")?) as $covered
 	| [$pr.labels[].name | select(startswith("merge-risk:"))] as $held
 	| $pr.head as $head
-	| if $rating == null then empty else
+	| if $rating == null then empty
+	  elif $covered != null and ($head | startswith($covered.sha) | not) then "stale \($covered.sha[0:7])"
+	  else
 		("merge-risk:" + ($rating.level | ascii_downcase)) as $label
 		| (if ($held | index($label)) then empty else "add \($label)" end),
-		  ($held[] | select(. != $label) | "remove \(.)"),
-		  (if $covered != null and ($head | startswith($covered.sha) | not) then "stale \($covered.sha[0:7])" else empty end)
+		  ($held[] | select(. != $label) | "remove \(.)")
 	end'
