@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-import shutil
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
 from http import HTTPStatus
 from typing import IO, ClassVar
+from urllib.parse import urljoin
 
 import requests
 from pydantic import BaseModel
 
 from interop.ports.outbound.filesystem import FilesystemPort, Location
+
+CHUNK_BYTES = 1024 * 1024
 
 
 class HttpFilesystemConfig(BaseModel):
@@ -57,10 +59,13 @@ class HttpFilesystem(FilesystemPort):
     def open_read(self, path: Location) -> Generator[IO[bytes], None, None]:
         # h5py needs a seekable handle; a raw HTTP response stream isn't
         # seekable, so spool the full body to a temp file first.
-        response = requests.get(str(path), stream=True, timeout=self._timeout)
-        response.raise_for_status()
-        with tempfile.TemporaryFile() as tmp:
-            shutil.copyfileobj(response.raw, tmp)
+        with (
+            requests.get(str(path), stream=True, timeout=self._timeout) as response,
+            tempfile.TemporaryFile() as tmp,
+        ):
+            response.raise_for_status()
+            for chunk in response.iter_content(CHUNK_BYTES):
+                tmp.write(chunk)
             tmp.seek(0)
             yield tmp
 
@@ -82,7 +87,7 @@ class HttpFilesystem(FilesystemPort):
     def resolve(self, base: Location, relative: str) -> Location:
         # Join the relative reference onto the base URL's directory.
         normalised = relative.replace("\\", "/")
-        return f"{str(base).rsplit('/', 1)[0]}/{normalised}"
+        return urljoin(str(base), normalised)
 
     def locate(self, path: Location) -> Location:
         return path
