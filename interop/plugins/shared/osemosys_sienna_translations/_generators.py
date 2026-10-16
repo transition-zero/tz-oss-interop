@@ -23,7 +23,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     OPERATING_MODE,
     OSEMOSYS_FRAMEWORK,
     POLLUTANT,
-    REGION,
     TECHNOLOGY,
     YEAR,
     AnnotationColumn,
@@ -118,7 +117,6 @@ _STATED_ROWS_ONLY = (
     SupplyParameter.EMISSION_RATE,
 )
 
-_KEYS = [REGION, TECHNOLOGY]
 _COUNTED_NOUN = "supply technology(ies)"
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 

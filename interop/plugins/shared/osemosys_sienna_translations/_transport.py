@@ -40,7 +40,6 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import read_elec
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
-    read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     RESIDUAL_CAPACITY,
@@ -49,7 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     OTHER_MODE_VALUES,
     PARAMETER,
-    enrich_other_modes,
+    enrich_other_mode_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
@@ -57,7 +56,11 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    AVAILABILITY_FACTOR,
+    VARIABLE_COST,
     enrich_residual_capacity,
+    read_availability_factors,
+    read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
@@ -100,7 +103,6 @@ _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATI
 _COUNTED_NOUN = "transport technology(ies)"
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 _ONE_LOCATION = 1
-_WHOLE_CAPACITY = 1.0
 _NO_COST = 0.0
 _NO_FLOW = 0.0
 
@@ -172,7 +174,7 @@ def build_transport_source(
     lines = _enrich_reverse_modes(state, operations, lines)
     lines = _enrich_ratings(state, operations, lines)
     lines = _enrich_costs(state, operations, lines)
-    return enrich_other_modes(state, operations, lines).sort(LINE_NAME)
+    return enrich_other_mode_values(state, operations, lines).sort(LINE_NAME)
 
 
 def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension]:
@@ -304,9 +306,9 @@ def _enrich_reverse_modes(
 
 
 def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
-    stated = read_parameter_with_defaults(
-        state, SupplyParameter.AVAILABILITY_FACTOR, operations.year, lines.select(_KEYS)
-    ).select(*_KEYS, pl.col(VALUE_COL).fill_null(_WHOLE_CAPACITY).alias(AVAILABILITY))
+    stated = read_availability_factors(state, operations.year, lines.select(_KEYS)).rename(
+        {AVAILABILITY_FACTOR: AVAILABILITY}
+    )
     rated = lines.join(stated, on=_KEYS).with_columns(
         (
             operations.units.convert_capacity_to_mw(pl.col(RESIDUAL_CAPACITY))
@@ -327,9 +329,9 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
 def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
     """The cost of each MWh that the line sends, from the cost of each unit of activity."""
     keys = lines.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
-    stated = read_parameter_with_defaults(
-        state, SupplyParameter.VARIABLE_OPERATION_COST, operations.year, keys
-    ).select(*_KEYS, pl.col(VALUE_COL).cast(pl.Float64).fill_null(_NO_COST).alias(COST))
+    stated = read_variable_costs(state, operations.year, keys).select(
+        *_KEYS, pl.col(VARIABLE_COST).alias(COST)
+    )
     table = lines.join(stated, on=_KEYS)
     convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
     per_sent = express_converted(table, COST, convert) / pl.col(INPUT_RATIO)

@@ -9,6 +9,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
+    OPERATING_MODE,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -18,6 +19,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     TECHNOLOGY_COUNTED_NOUN,
+    WHOLE_CAPACITY,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
@@ -44,8 +46,12 @@ from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 log = logging.getLogger(__name__)
 
+# The column of the availability factor, and of the variable cost, of each technology.
+AVAILABILITY_FACTOR = "availability_factor"
+VARIABLE_COST = "variable_cost"
+
 _KEYS = [REGION, TECHNOLOGY]
-_WHOLE_CAPACITY = 1.0
+_NO_COST = 0.0
 _EACH_TIMESLICE = "each timeslice"
 _CAPACITY_FACTOR_NOTE = (
     "the operations system applies no capacity_factor to a storage or a line, so the share of "
@@ -65,6 +71,22 @@ def enrich_residual_capacity(state: State, year: int, technologies: pl.DataFrame
         state, SupplyParameter.RESIDUAL_CAPACITY, year, technologies.select(_KEYS)
     ).select(*_KEYS, pl.col(VALUE_COL).fill_null(0.0).alias(RESIDUAL_CAPACITY))
     return technologies.join(stated, on=_KEYS, how="left")
+
+
+def read_availability_factors(state: State, year: int, keys: pl.DataFrame) -> pl.DataFrame:
+    """`keys` holds region and technology; a technology that states no factor takes 1."""
+    stated = read_parameter_with_defaults(state, SupplyParameter.AVAILABILITY_FACTOR, year, keys)
+    factor = pl.col(VALUE_COL).cast(pl.Float64).fill_null(WHOLE_CAPACITY)
+    return stated.select(*_KEYS, factor.alias(AVAILABILITY_FACTOR))
+
+
+def read_variable_costs(state: State, year: int, keys: pl.DataFrame) -> pl.DataFrame:
+    """`keys` holds region, technology and mode; a mode that states no cost takes 0."""
+    stated = read_parameter_with_defaults(
+        state, SupplyParameter.VARIABLE_OPERATION_COST, year, keys
+    )
+    cost = pl.col(VALUE_COL).cast(pl.Float64).fill_null(_NO_COST)
+    return stated.select(*_KEYS, OPERATING_MODE, cost.alias(VARIABLE_COST))
 
 
 def enrich_targets(
@@ -93,7 +115,7 @@ def report_unread_capacity_factors(
     """
     names = (
         read_parameter(state, SupplyParameter.CAPACITY_FACTOR, year)
-        .filter(pl.col(VALUE_COL) != _WHOLE_CAPACITY)
+        .filter(pl.col(VALUE_COL) != WHOLE_CAPACITY)
         .join(technologies.select(*_KEYS, TECHNOLOGY_NAME), on=_KEYS)[TECHNOLOGY_NAME]
         .unique()
         .sort()

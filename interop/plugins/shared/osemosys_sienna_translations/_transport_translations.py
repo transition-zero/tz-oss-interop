@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from functools import partial
 from typing import Any
 
@@ -12,7 +11,6 @@ import polars as pl
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OPERATING_MODE,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -24,6 +22,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
+    ComputedValues,
     build_derived,
     build_osemosys_field,
     build_sienna_field,
@@ -33,8 +32,8 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    DETAIL,
     PARAMETER,
+    build_other_mode_attribute,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport import list_lost_values
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
@@ -74,6 +73,7 @@ from interop.plugins.shared.translation_runner import (
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _dest = partial(build_sienna_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE)
+_build_value = ComputedValues(_dest, LINE_NAME).build_translation
 _default = partial(default_translation, _dest, name_col=LINE_NAME)
 
 _NO_POWER = 0.0
@@ -158,22 +158,6 @@ def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _build_value(
-    dest_col: str,
-    expr: pl.Expr,
-    sources: Callable[[dict[str, Any]], list[SourceField]],
-    derivation: str,
-    unit: str | None = None,
-) -> Translation:
-    """A value that the expression computes, and the event that names its sources."""
-    return Translation(
-        exprs=[expr.alias(dest_col)],
-        make_events=lambda old, new: build_derived(
-            sources(old), [_dest(old[LINE_NAME], dest_col, new[dest_col], unit)], derivation
-        ),
-    )
-
-
 def _express_limits(back: str, forward: str) -> pl.Expr:
     """A flow back is negative, so its limit is the minimum of the line."""
     return pl.struct(
@@ -250,17 +234,12 @@ def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,
             sources=[
-                _build_source(row[PARAMETER], old, _build_other_mode_attribute(row), row[VALUE_COL])
+                _build_source(row[PARAMETER], old, build_other_mode_attribute(row), row[VALUE_COL])
             ],
             note=_OTHER_MODE_NOTE,
         )
         for row in list_lost_values(old)
     ]
-
-
-def _build_other_mode_attribute(row: dict[str, Any]) -> str:
-    mode = f"{OPERATING_MODE} {row[OPERATING_MODE]}"
-    return mode if row[DETAIL] is None else f"{mode}, {row[DETAIL]}"
 
 
 TRANSPORT_TRANSLATIONS: list[Translation] = [

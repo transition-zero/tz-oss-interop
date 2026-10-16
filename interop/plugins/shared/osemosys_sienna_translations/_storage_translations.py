@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import partial
 from typing import Any
 
@@ -23,6 +22,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import StorageParameter, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._events import (
+    ComputedValues,
     build_derived,
     build_osemosys_field,
     build_sienna_field,
@@ -92,6 +92,7 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 
 _Col = SiennaEnergyReservoirStorageCol
 _dest = partial(build_sienna_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
+_build_value = ComputedValues(_dest, STORAGE_NAME).build_translation
 _default = partial(default_translation, _dest, name_col=STORAGE_NAME)
 
 _FULL_RATING = 1.0
@@ -194,22 +195,6 @@ def _build_base_power_source(old: dict[str, Any]) -> SourceField:
         _Col.BASE_POWER,
         old[POWER_MW],
         UNIT_MVA,
-    )
-
-
-def _build_value(
-    dest_col: str,
-    expr: pl.Expr,
-    sources: Callable[[dict[str, Any]], list[SourceField]],
-    derivation: str,
-    unit: str | None = None,
-) -> Translation:
-    """A value that the expression computes, and the event that names its sources."""
-    return Translation(
-        exprs=[expr.alias(dest_col)],
-        make_events=lambda old, new: build_derived(
-            sources(old), [_dest(old[STORAGE_NAME], dest_col, new[dest_col], unit)], derivation
-        ),
     )
 
 

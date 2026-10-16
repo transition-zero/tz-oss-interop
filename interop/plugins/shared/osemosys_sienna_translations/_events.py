@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
+
+import polars as pl
 
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
+from interop.plugins.shared.translation_runner import DestinationFieldFactory, Translation
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -82,3 +86,29 @@ def build_defaulted(destinations: Sequence[DestinationField], note: str) -> list
             note=note,
         )
     ]
+
+
+@dataclass(frozen=True)
+class ComputedValues:
+    """The Sienna field of each computed value, and the column that names the component."""
+
+    dest: DestinationFieldFactory
+    name_col: str
+
+    def build_translation(
+        self,
+        dest_col: str,
+        expr: pl.Expr,
+        sources: Callable[[dict[str, Any]], list[SourceField]],
+        derivation: str,
+        unit: str | None = None,
+    ) -> Translation:
+        """A value that the expression computes, and the event that names its sources."""
+        return Translation(
+            exprs=[expr.alias(dest_col)],
+            make_events=lambda old, new: build_derived(
+                sources(old),
+                [self.dest(old[self.name_col], dest_col, new[dest_col], unit)],
+                derivation,
+            ),
+        )

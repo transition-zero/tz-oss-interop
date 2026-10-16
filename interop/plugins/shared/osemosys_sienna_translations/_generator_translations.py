@@ -47,7 +47,6 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
     ActivityBound,
 )
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
-    AVAILABILITY_FACTOR,
     PEAK_FACTOR,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -76,7 +75,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    DETAIL,
     FIXED_COST,
     FIXED_COST_MW_YEAR,
     FUEL_TERM_MWH,
@@ -85,6 +83,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     OTHER_MODE_VALUES,
     OWN_COST,
     PARAMETER,
+    build_other_mode_attribute,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
@@ -98,6 +97,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
     PENALTY_COST_MWH,
     PENALTY_PER_TONNE,
     PENALTY_TERMS,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    AVAILABILITY_FACTOR,
 )
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -694,17 +696,12 @@ def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
         TranslationEvent(
             kind=EventKind.NOT_MAPPED,
             sources=[
-                _build_source(row[PARAMETER], old, _build_other_mode_attribute(row), row[VALUE_COL])
+                _build_source(row[PARAMETER], old, build_other_mode_attribute(row), row[VALUE_COL])
             ],
             note=_build_other_mode_note(row, priced_modes),
         )
         for row in old[OTHER_MODE_VALUES] or []
     ]
-
-
-def _build_other_mode_attribute(row: dict[str, Any]) -> str:
-    mode = f"{OPERATING_MODE} {row[OPERATING_MODE]}"
-    return mode if row[DETAIL] is None else f"{mode}, {row[DETAIL]}"
 
 
 def _build_grouping_events(

@@ -30,11 +30,15 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
     TechnologyKind,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import NO_LIMIT, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_mode_parameter,
     read_parameter_with_defaults,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    VARIABLE_COST,
+    read_variable_costs,
 )
 
 INPUT_RATIO = "input_ratio"
@@ -47,7 +51,6 @@ PRODUCER_EMISSION_RATE = "producer_emission_rate"
 EMISSION_RATE_PER_OUTPUT = "emission_rate_per_output"
 
 # The activity upper limit that OSeMOSYS reads as no limit.
-_NO_LIMIT = -1.0
 
 _PRICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
@@ -121,9 +124,9 @@ def _read_candidates(state: State, year: int, mode: str) -> pl.DataFrame:
         .select(REGION, TECHNOLOGY, FUEL, pl.col(VALUE_COL).alias(OUTPUT_RATIO))
     )
     keys = outputs.select(REGION, TECHNOLOGY, pl.lit(mode).alias(OPERATING_MODE)).unique()
-    costs = read_parameter_with_defaults(
-        state, SupplyParameter.VARIABLE_OPERATION_COST, year, keys
-    ).select(REGION, TECHNOLOGY, pl.col(VALUE_COL).fill_null(0.0).alias(PRODUCER_COST))
+    costs = read_variable_costs(state, year, keys).select(
+        REGION, TECHNOLOGY, pl.col(VARIABLE_COST).alias(PRODUCER_COST)
+    )
     return outputs.join(costs, on=[REGION, TECHNOLOGY])
 
 
@@ -135,7 +138,7 @@ def _read_suppliers(state: State, year: int) -> pl.DataFrame:
     limits = read_parameter_with_defaults(
         state, SupplyParameter.ACTIVITY_UPPER_LIMIT, year, suppliers.select(REGION, TECHNOLOGY)
     )
-    return limits.filter(pl.col(VALUE_COL).fill_null(_NO_LIMIT) != 0).select(REGION, TECHNOLOGY)
+    return limits.filter(pl.col(VALUE_COL).fill_null(NO_LIMIT) != 0).select(REGION, TECHNOLOGY)
 
 
 def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:

@@ -60,7 +60,6 @@ _HOURS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     CalendarHourCol.TIMESTAMP: pl.Datetime("us"),
     CalendarHourCol.TIMESLICE: pl.Utf8,
     CalendarHourCol.PERIOD: pl.Int64,
-    CalendarHourCol.WEIGHT_HOURS: pl.Float64,
 }
 _PERIODS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     CalendarPeriodCol.PERIOD: pl.Int64,
@@ -487,7 +486,6 @@ def _build_hours_table(start: datetime, rows: list[_HourRow]) -> pl.DataFrame:
             CalendarHourCol.TIMESTAMP: timestamps,
             CalendarHourCol.TIMESLICE: [row.timeslice for row in rows],
             CalendarHourCol.PERIOD: [row.period for row in rows],
-            CalendarHourCol.WEIGHT_HOURS: [row.weight_hours for row in rows],
         },
         schema=_HOURS_SCHEMA,
     )

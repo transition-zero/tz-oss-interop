@@ -75,7 +75,6 @@ class CalendarHourCol(StrEnum):
     TIMESTAMP = "timestamp"
     TIMESLICE = "timeslice"
     PERIOD = "period"
-    WEIGHT_HOURS = "weight_hours"
 
 
 class CalendarPeriodCol(StrEnum):
@@ -121,6 +120,8 @@ class StorageParameter(StrEnum):
 # The word that counts technologies in a warning, and the label of the names that it lists.
 TECHNOLOGY_COUNTED_NOUN = "technology(ies)"
 TECHNOLOGIES_LABEL = "Technologies"
+# The share of its capacity that a technology can use where the model states no factor.
+WHOLE_CAPACITY = 1.0
 
 
 # --- The investments portfolio ---------------------------------------------------------

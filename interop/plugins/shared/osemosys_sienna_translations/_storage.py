@@ -31,6 +31,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     HOURS_PER_YEAR,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
+    WHOLE_CAPACITY,
     StorageParameter,
     SupplyParameter,
 )
@@ -101,10 +102,14 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_REPORT_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    AVAILABILITY_FACTOR,
+    VARIABLE_COST,
     build_no_carriers_row_note,
     enrich_residual_capacity,
     enrich_targets,
     list_bus_names,
+    read_availability_factors,
+    read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
@@ -123,7 +128,6 @@ _LISTED = SkippedNames(column=STORAGE_REPORT_NAME, label="Storages")
 _ONE_LINK = 1
 _AVAILABILITY = "availability"
 _EMPTY = 0.0
-_FULL = 1.0
 
 
 class _LinkColumns(NamedTuple):
@@ -434,12 +438,9 @@ def _read_linked_technologies(
         .select(*_TECHNOLOGY_KEYS, AnnotationColumn.CATEGORY, AnnotationColumn.LOCATION)
         .join(linked, on=_TECHNOLOGY_KEYS, how="semi")
     )
-    availability = read_parameter_with_defaults(
-        state,
-        SupplyParameter.AVAILABILITY_FACTOR,
-        operations.year,
-        technologies.select(_TECHNOLOGY_KEYS),
-    ).select(*_TECHNOLOGY_KEYS, pl.col(VALUE_COL).fill_null(_FULL).alias(_AVAILABILITY))
+    availability = read_availability_factors(
+        state, operations.year, technologies.select(_TECHNOLOGY_KEYS)
+    ).rename({AVAILABILITY_FACTOR: _AVAILABILITY})
     technologies = technologies.join(availability, on=_TECHNOLOGY_KEYS, how="left")
     return enrich_residual_capacity(state, operations.year, technologies)
 
@@ -547,8 +548,8 @@ def _enrich_levels(
     )
     level = express_converted(table, LEVEL_START, operations.units.convert_energy_to_mwh)
     return table.with_columns(level.alias(LEVEL_MWH)).with_columns(
-        (pl.col(LEVEL_MWH) / pl.col(ENERGY_MWH)).clip(_EMPTY, _FULL).alias(INITIAL_LEVEL),
-        pl.col(MIN_LEVEL).clip(_EMPTY, _FULL),
+        (pl.col(LEVEL_MWH) / pl.col(ENERGY_MWH)).clip(_EMPTY, WHOLE_CAPACITY).alias(INITIAL_LEVEL),
+        pl.col(MIN_LEVEL).clip(_EMPTY, WHOLE_CAPACITY),
     )
 
 
@@ -590,14 +591,11 @@ def _read_mode_costs(
         pl.col(columns.technology).alias(TECHNOLOGY),
         pl.col(columns.mode).alias(OPERATING_MODE),
     ).unique()
-    stated = read_parameter_with_defaults(
-        state, SupplyParameter.VARIABLE_OPERATION_COST, operations.year, keys
-    )
-    return stated.select(
+    return read_variable_costs(state, operations.year, keys).select(
         REGION,
         pl.col(TECHNOLOGY).alias(columns.technology),
         pl.col(OPERATING_MODE).alias(columns.mode),
-        pl.col(VALUE_COL).cast(pl.Float64).fill_null(_EMPTY).alias(cost_col),
+        pl.col(VARIABLE_COST).alias(cost_col),
     )
 
 

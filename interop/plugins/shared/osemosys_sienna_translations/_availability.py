@@ -20,21 +20,27 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TIMESLICE,
     VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import CalendarHourCol, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    WHOLE_CAPACITY,
+    CalendarHourCol,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    AVAILABILITY_FACTOR,
+    read_availability_factors,
+)
 from interop.plugins.shared.sienna_constants import FLAT_TIME_SERIES_EPSILON
 
-AVAILABILITY_FACTOR = "availability_factor"
 PEAK_FACTOR = "peak_factor"
 IS_VARYING = "is_varying"
 
 _FACTOR = "factor"
 _TROUGH_FACTOR = "trough_factor"
 # A factor that the model does not state, and that has no default, keeps the whole capacity.
-_WHOLE_CAPACITY = 1.0
 
 _SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
@@ -59,27 +65,15 @@ def build_availability(
     state: State, operations: OperationsYear, technologies: pl.DataFrame, name_col: str
 ) -> Availability:
     """`technologies` holds `region`, `technology` and the Sienna name in `name_col`."""
-    annual = _read_availability_factors(state, operations, technologies)
+    annual = read_availability_factors(
+        state, operations.year, technologies.select(REGION, TECHNOLOGY)
+    )
     factors = _read_timeslice_factors(state, operations, technologies, annual)
     series = _reshape_to_hours(operations, factors, technologies, name_col)
     table = _enrich_factor_range(
         technologies.join(annual, on=[REGION, TECHNOLOGY]), series, name_col
     )
     return Availability(table, series)
-
-
-def _read_availability_factors(
-    state: State, operations: OperationsYear, technologies: pl.DataFrame
-) -> pl.DataFrame:
-    keys = technologies.select(REGION, TECHNOLOGY)
-    stated = read_parameter_with_defaults(
-        state, SupplyParameter.AVAILABILITY_FACTOR, operations.year, keys
-    )
-    return stated.select(
-        REGION,
-        TECHNOLOGY,
-        pl.col(VALUE_COL).fill_null(_WHOLE_CAPACITY).alias(AVAILABILITY_FACTOR),
-    )
 
 
 def _read_timeslice_factors(
@@ -97,7 +91,7 @@ def _read_timeslice_factors(
         REGION,
         TECHNOLOGY,
         TIMESLICE,
-        (pl.col(VALUE_COL).fill_null(_WHOLE_CAPACITY) * pl.col(AVAILABILITY_FACTOR)).alias(_FACTOR),
+        (pl.col(VALUE_COL).fill_null(WHOLE_CAPACITY) * pl.col(AVAILABILITY_FACTOR)).alias(_FACTOR),
     )
 
 
