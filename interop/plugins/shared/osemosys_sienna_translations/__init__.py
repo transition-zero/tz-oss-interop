@@ -18,6 +18,20 @@ from interop.plugins.shared.osemosys_sienna_translations._calendar import (
     build_representative_periods,
     report_calendar,
 )
+from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    choose_operations_mode,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
+    GENERATOR_TYPE_MAPPINGS,
+    GeneratorTypeMapping,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generators import (
+    GENERATOR_NAME,
+    SIENNA_TYPE,
+    GeneratorSources,
+    build_generator_extensions,
+    build_generators_source,
+)
 from interop.plugins.shared.osemosys_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
     LOAD_TRANSLATIONS,
@@ -31,26 +45,36 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
+    add_per_unit_series,
     add_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
 
 __all__ = [
     "BUS_TRANSLATIONS",
+    "GENERATOR_NAME",
+    "GENERATOR_TYPE_MAPPINGS",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
+    "SIENNA_TYPE",
     "Calendar",
+    "GeneratorSources",
+    "GeneratorTypeMapping",
     "LoadSources",
     "ModelUnits",
     "OperationsMapping",
     "OperationsYear",
     "StagedSeries",
+    "add_per_unit_series",
     "add_series",
     "build_bus_extensions",
     "build_buses_source_table",
     "build_calendar",
+    "build_generator_extensions",
+    "build_generators_source",
     "build_loads_source",
     "build_representative_periods",
+    "choose_operations_mode",
     "parse_units",
     "read_electricity_fuels",
     "report_calendar",

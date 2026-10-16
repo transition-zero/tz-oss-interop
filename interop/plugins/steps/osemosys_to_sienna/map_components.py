@@ -14,12 +14,16 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
     build_calendar,
     build_representative_periods,
+    choose_operations_mode,
     parse_units,
     report_calendar,
     require_model_year,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.steps.osemosys_to_sienna.map_buses import OsemosysToSiennaMapBuses
+from interop.plugins.steps.osemosys_to_sienna.map_generators import (
+    OsemosysToSiennaMapGenerators,
+)
 from interop.plugins.steps.osemosys_to_sienna.map_loads import OsemosysToSiennaMapLoads
 
 # The calendar is a concern of the whole year, so its decisions name a step of their own.
@@ -48,11 +52,14 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         recorder: ScopedRecorder,
         osemosys_sienna_mappings: OsemosysSiennaCarrierMappings,
     ) -> None:
-        self._carrier_mappings = osemosys_sienna_mappings
         self._calendar_recorder = ScopedRecorder(recorder, step=_BUILD_CALENDAR)
         self._mappings: tuple[OperationsMapping, ...] = (
             OsemosysToSiennaMapBuses(_scoped(recorder, OsemosysToSiennaMapBuses.step_name)),
             OsemosysToSiennaMapLoads(_scoped(recorder, OsemosysToSiennaMapLoads.step_name)),
+            OsemosysToSiennaMapGenerators(
+                _scoped(recorder, OsemosysToSiennaMapGenerators.step_name),
+                osemosys_sienna_mappings,
+            ),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:
@@ -78,7 +85,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         units = parse_units(state)
         calendar = build_calendar(state, year)
         report_calendar(calendar, self._calendar_recorder)
-        return OperationsYear(year, units, calendar)
+        return OperationsYear(year, units, calendar, choose_operations_mode(state))
 
 
 def _scoped(recorder: ScopedRecorder, step_name: str) -> ScopedRecorder:

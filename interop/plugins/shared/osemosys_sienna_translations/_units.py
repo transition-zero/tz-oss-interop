@@ -8,6 +8,7 @@ state stops the run, because it is a missing parameter and not model data.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
@@ -83,6 +84,24 @@ class ModelUnits:
 
     def convert_currency_to_dollars(self, value: Quantity) -> Quantity:
         return value * _require_factor(self.dollars_per_currency, UnitQuantity.CURRENCY)
+
+    def convert_cost_per_energy_to_dollars_per_mwh(self, value: Quantity) -> Quantity:
+        return self.convert_currency_to_dollars(value) / self.convert_energy_to_mwh(1.0)
+
+    def convert_cost_per_capacity_to_dollars_per_mw(self, value: Quantity) -> Quantity:
+        return self.convert_currency_to_dollars(value) / self.convert_capacity_to_mw(1.0)
+
+    def convert_emissions_per_energy_to_tonnes_per_mwh(self, value: Quantity) -> Quantity:
+        return self.convert_emissions_to_tonnes(value) / self.convert_energy_to_mwh(1.0)
+
+
+def express_converted(
+    table: pl.DataFrame, column: str, convert: Callable[[pl.Expr], pl.Expr]
+) -> pl.Expr:
+    """A column in Sienna units. A column that holds no value but zero or null needs no unit."""
+    if not table.select((pl.col(column).fill_null(0.0) != 0).any()).item():
+        return pl.col(column)
+    return convert(pl.col(column))
 
 
 def parse_units(state: State) -> ModelUnits:

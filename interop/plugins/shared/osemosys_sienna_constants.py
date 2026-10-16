@@ -85,3 +85,20 @@ class CalendarPeriodCol(StrEnum):
     WEIGHT = "weight"
     FIRST_TIMESTAMP = "first_timestamp"
     HOURS = "hours"
+
+
+# The operating mode whose values the operations system runs, when the model holds it.
+OPERATIONS_MODE = "1"
+# The character between the names of two or more input fuels of one generator.
+FUEL_LIST_SEPARATOR = "+"
+
+
+class SupplyParameter(StrEnum):
+    """A canonical parameter that states what a technology can make, and what it costs or emits."""
+
+    RESIDUAL_CAPACITY = "residual_capacity"
+    CAPACITY_FACTOR = "capacity_factor"
+    AVAILABILITY_FACTOR = "availability_factor"
+    VARIABLE_OPERATION_COST = "variable_operation_cost"
+    FIXED_COST = "fixed_cost"
+    EMISSION_RATE = "emission_rate"

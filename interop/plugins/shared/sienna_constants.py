@@ -650,6 +650,10 @@ SYSTEM_BASE_MVA: float = 100.0
 # series is emitted. Matches the np.ptp < 1e-9 test in the translation doc.
 FLAT_TIME_SERIES_EPSILON: float = 1e-9
 
+# Sienna reads a unit that has never run as having run for this long, which is the schema's
+# own way of saying the commitment history is unknown.
+TIME_AT_STATUS_SENTINEL: float = 10000.0
+
 # Polars Enum dtypes
 BUSTYPE_DTYPE: pl.DataType = pl.Enum([t.value for t in ACBusType])
 LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])

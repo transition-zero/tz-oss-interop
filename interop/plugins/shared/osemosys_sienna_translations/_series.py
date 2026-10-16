@@ -1,8 +1,9 @@
 """The hourly series that the translation stages for the HDF5 sink.
 
-A series is a long table `(snapshot, component, value)` in Sienna units. The sink finds it by
-the `source_table` and `source_attribute` of each association row, and divides each value by
-the `scaling_factor` of the row.
+A series is a long table `(snapshot, component, value)`. The sink finds it by the
+`source_table` and `source_attribute` of each association row, and divides each value by the
+`scaling_factor` of the row. A series in MW takes its peak as that factor. A series per unit
+of the base power of its owner takes 1.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.sienna_time_series import collect_ts_info, ts_association_row
 
-# The divisor of a series whose peak is zero, which keeps its stored zeros.
-_ZERO_PEAK_SCALE = 1.0
+# The divisor of a series per unit, and of a series whose peak is zero, which keeps its values.
+_UNSCALED = 1.0
 
 
 @dataclass(frozen=True)
@@ -65,23 +66,38 @@ def build_series_firsts(table: pl.DataFrame) -> dict[str, float]:
 
 
 def add_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
-    """Stage a series and add one association row for each owner that it names.
+    """Stage a series in MW and add one association row for each owner that it names.
 
     `owners` is the destination table of the owner type, with its `name` and `id`.
     """
+    peaks = build_series_peaks(series.table)
+    scales = {name: peak or _UNSCALED for name, peak in peaks.items()}
+    _add_scaled_series(state, series, owners, scales)
+
+
+def add_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
+    """Stage a series per unit of the base power of each owner, and its association rows."""
+    names = series.table[StagedTimeSeriesCol.COMPONENT].unique().to_list()
+    _add_scaled_series(state, series, owners, dict.fromkeys(names, _UNSCALED))
+
+
+def _add_scaled_series(
+    state: State, series: StagedSeries, owners: pl.DataFrame, scales: dict[str, float]
+) -> None:
     if series.key in state.source_time_series:
         raise ValueError(f"the series {series.key} is already staged")
     state.source_time_series[series.key] = series.table.lazy()
-    associations = _build_associations(series, owners)
+    associations = _build_associations(series, owners, scales)
     existing = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
     state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = (
         associations if existing is None else pl.concat([existing, associations])
     )
 
 
-def _build_associations(series: StagedSeries, owners: pl.DataFrame) -> pl.DataFrame:
+def _build_associations(
+    series: StagedSeries, owners: pl.DataFrame, scales: dict[str, float]
+) -> pl.DataFrame:
     ts_info = collect_ts_info(series.table.lazy())
-    peaks = build_series_peaks(series.table)
     source_table, source_attribute = series.key
     rows = [
         ts_association_row(
@@ -92,9 +108,9 @@ def _build_associations(series: StagedSeries, owners: pl.DataFrame) -> pl.DataFr
             ts_info=ts_info,
             source_table=source_table,
             source_attribute=source_attribute,
-            scaling_factor=peaks[name] or _ZERO_PEAK_SCALE,
+            scaling_factor=scales[name],
         )
         for name, owner_id in owners.select(SIENNA_NAME_COLUMN, SIENNA_ID_COLUMN).iter_rows()
-        if name in peaks
+        if name in scales
     ]
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)

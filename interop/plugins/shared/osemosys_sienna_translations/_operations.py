@@ -14,9 +14,12 @@ from interop.ports.errors import UserInputError
 
 @dataclass(frozen=True)
 class OperationsYear:
+    """`mode` is the operating mode whose values the operations system runs."""
+
     year: int
     units: ModelUnits
     calendar: Calendar
+    mode: str
 
 
 class OperationsMapping(Protocol):

@@ -12,6 +12,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.canonical_stage import build_table_key
 from interop.plugins.shared.osemosys_canonical.constants import (
+    OPERATING_MODE,
     VALUE_COL,
     YEAR,
     MetadataColumn,
@@ -19,6 +20,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.schema import load_canonical_schema
+from interop.plugins.shared.osemosys_sienna_constants import OPERATIONS_MODE
 
 
 def list_set_members(state: State, set_name: str) -> list[str]:
@@ -27,6 +29,14 @@ def list_set_members(state: State, set_name: str) -> list[str]:
     if table is None:
         return []
     return [str(member) for member in table.select(VALUE_COL).collect()[VALUE_COL].to_list()]
+
+
+def choose_operations_mode(state: State) -> str:
+    """Mode `1` when the model holds it, else the first member of the operating mode set."""
+    modes = list_set_members(state, OPERATING_MODE)
+    if OPERATIONS_MODE in modes or not modes:
+        return OPERATIONS_MODE
+    return modes[0]
 
 
 def list_model_years(state: State) -> list[int]:
