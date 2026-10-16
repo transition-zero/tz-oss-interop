@@ -22,6 +22,7 @@ from interop.plugins.shared.power_systems_investments_schema import (
     SERIES_JSON_SUFFIX,
     SeriesDocument,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.expansion import BalanceModel, ExpansionPort, InvestmentTreatment
 from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
@@ -258,6 +259,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
     _build_template(jl, request)
     models = _set_technology_models(jl, request.investment_treatment)
     log.info("technology models set: %s", ", ".join(models) or "none")
+    _warn_unmodelled(jl, models)
 
     log.info("=== 4. Building the model ===")
     jl.seval(f"""
@@ -278,7 +280,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
     """)
 
     log.info("=== 6. Exporting the decisions ===")
-    _write_variables(jl, request.output_dir)
+    _write_results(jl, request.output_dir)
     log.info("Results written to %s", request.output_dir)
     return str(run_status), float(objective)
 
@@ -372,25 +374,53 @@ def _set_technology_models(jl: Any, investment_treatment: InvestmentTreatment) -
     return set_models
 
 
+def _warn_unmodelled(jl: Any, models: list[str]) -> None:
+    """Name the technologies of a type that no model covers, which the plan leaves out."""
+    names = list(
+        jl.seval(f"""
+            let modelled = Set{{Type}}([{", ".join(models)}])
+                [PSIP.get_name(x) for x in IS.get_components(PSIP.Technology, portfolio.data)
+                 if !(typeof(x) in modelled)]
+            end
+        """)
+    )
+    if names:
+        log.warning(
+            "%d technology(ies) are of a type that no PowerSystemsInvestments model covers, "
+            "so the plan leaves each out: %s",
+            len(names),
+            name_a_few(str(name) for name in names),
+        )
+
+
 def _has_any(jl: Any, technology_type: str) -> bool:
     return bool(
         jl.seval(f"length(collect(IS.get_components({technology_type}, portfolio.data))) > 0")
     )
 
 
-def _write_variables(jl: Any, output_dir: Path) -> None:
-    """One CSV per decision the run took, in the layout the dispatch path already writes."""
+def _write_results(jl: Any, output_dir: Path) -> None:
+    """One CSV per decision and per stored expression, and the optimizer's statistics."""
     jl.seval(f"""
         let
-            root = joinpath("{_julia_str(output_dir)}", "results_wide", "variables")
-            mkpath(root)
-            for name in IS.Optimization.list_variable_names(results)
-                try
-                    CSV.write(joinpath(root, string(name, ".csv")),
-                              PSIN.read_variable(results, name))
-                catch err
-                    @warn "variable export failed" name=name exception=err
+            out = "{_julia_str(output_dir)}"
+            for (folder, names, read) in (
+                    ("variables", IS.Optimization.list_variable_names(results),
+                     PSIN.read_variable),
+                    ("expressions", IS.Optimization.list_expression_names(results),
+                     IS.Optimization.read_expression))
+                root = joinpath(out, "results_wide", folder)
+                mkpath(root)
+                for name in names
+                    try
+                        CSV.write(joinpath(root, string(name, ".csv")), read(results, name))
+                    catch err
+                        @warn "result export failed" name=name exception=err
+                    end
                 end
             end
+            mkpath(joinpath(out, "results"))
+            CSV.write(joinpath(out, "results", "optimizer_stats.csv"),
+                      IS.Optimization.read_optimizer_stats(results))
         end
     """)

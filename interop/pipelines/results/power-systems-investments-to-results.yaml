@@ -1,0 +1,17 @@
+source_framework: power-systems-investments
+destination_framework: results
+source:
+  name: stage_power_systems_investments_results
+  params:
+    results_dir: expanded
+    series_json_path: psi/portfolio_series.json
+steps:
+  - name: power_systems_investments_results_to_results_format
+sinks:
+  - name: emit_results_parquet
+    params:
+      output_dir: outputs
+      framework: power-systems-investments
+      label: PowerSystemsInvestments expansion results
+      timezone: UTC
+      source_artifact: the PowerSystemsInvestments solve output

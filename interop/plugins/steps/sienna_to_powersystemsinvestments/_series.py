@@ -1,16 +1,17 @@
 """The operational slice each technology is sized against, and the period it belongs to.
 
 PowerSystemsInvestments reads a technology's profile by a name it fixes per type, plus two
-features: the calendar year of the slice and the index of the slice within that year. A
-SiennaSchemas system states neither. It states one profile per component over the whole
-snapshot window, so this derives one representative day from it and weights that day to a
-year.
+features: the calendar year of the slice and the index of the slice among every slice of the
+plan. A portfolio that states its own series by year splits into representative days in
+``_representative_days``. Otherwise the profile comes from the SiennaSchemas system, which
+states one profile per component over the whole snapshot window, so this derives one
+representative day from it and weights that day to a year.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 import polars as pl
@@ -32,6 +33,11 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import record_translation
+from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
+from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_days import (
+    derive_representative_day_series,
+    has_portfolio_series,
+)
 
 log = logging.getLogger(__name__)
 
@@ -54,14 +60,12 @@ _SERIES_BY_COMPONENT: tuple[tuple[SiennaInvestmentsComponent, InvestmentsSeriesN
     (SiennaInvestmentsComponent.DEMAND_REQUIREMENT, InvestmentsSeriesName.DEMAND),
 )
 
-_FIRST_MONTH = 1
-_FIRST_DAY = 1
-_LAST_MONTH = 12
-_LAST_DAY = 31
-
 
 def derive_series(state: State, recorder: ScopedRecorder) -> None:
     """One slice per technology that states a profile, and one period per year they fall in."""
+    if has_portfolio_series(state):
+        derive_representative_day_series(state, recorder)
+        return
     owners = _build_series_owners(state)
     peak_by_load = _read_load_peaks(state)
     records: list[dict[str, Any]] = []
@@ -72,7 +76,9 @@ def derive_series(state: State, recorder: ScopedRecorder) -> None:
     if not records:
         return
     state.destination_tables[PORTFOLIO_SERIES_TABLE] = pl.DataFrame(records)
-    state.destination_tables[PORTFOLIO_PERIODS_TABLE] = _build_periods(records)
+    state.destination_tables[PORTFOLIO_PERIODS_TABLE] = build_periods(
+        [int(record[SeriesDocument.YEAR]) for record in records]
+    )
 
 
 def _build_series_owners(state: State) -> dict[str, tuple[str, str]]:
@@ -181,20 +187,6 @@ def _build_resolution_seconds(snapshots: list[datetime]) -> float:
     if len(snapshots) < 2:
         return float(60 * 60)
     return (snapshots[1] - snapshots[0]).total_seconds()
-
-
-def _build_periods(records: list[dict[str, Any]]) -> pl.DataFrame:
-    """One investment period per year the slices fall in, each running that whole year."""
-    years = sorted({int(record[SeriesDocument.YEAR]) for record in records})
-    return pl.DataFrame(
-        [
-            {
-                SeriesDocument.START: date(year, _FIRST_MONTH, _FIRST_DAY).isoformat(),
-                SeriesDocument.END: date(year, _LAST_MONTH, _LAST_DAY).isoformat(),
-            }
-            for year in years
-        ]
-    )
 
 
 def _warn_without_profile(component: SiennaInvestmentsComponent, without: list[str]) -> None:

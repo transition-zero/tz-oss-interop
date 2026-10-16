@@ -157,6 +157,7 @@ class SiennaAggregateTransportTechnologyCol:
     LINE_LOSS = "line_loss"
     UNIT_SIZE = "unit_size"
     FINANCIAL_DATA = "financial_data"
+    REQUIREMENTS = "requirements"
 
 
 class SiennaDemandRequirementCol:
@@ -526,13 +527,56 @@ def _build_read_back_schema(
     return read_back
 
 
+BY_KEY_SUFFIX = "_by_key"
+"""Ends the read-back column that holds a limit a document states in the ``MinMaxByKey`` form."""
+
+# The limits SiennaSchemas lets a document state once for each key, such as a year.
+LIMITS_BY_KEY: dict[str, tuple[str, ...]] = {
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: (SiennaSupplyTechnologyCol.CAPACITY_LIMITS,),
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: (
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_CHARGE,
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_DISCHARGE,
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_ENERGY,
+    ),
+}
+
+
+def _build_limits_by_key_schema(
+    sienna_type: SiennaInvestmentsComponent,
+) -> dict[str, pl.DataType | type[pl.DataType]]:
+    return {
+        f"{field}{BY_KEY_SUFFIX}": CAPACITY_LIMITS_BY_KEY_DTYPE
+        for field in LIMITS_BY_KEY.get(sienna_type, ())
+    }
+
+
+# A transport technology states each end as the integer id of an area.
+_AGGREGATE_TRANSPORT_TECHNOLOGY_READ_BACK_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **{
+        column: dtype
+        for column, dtype in AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA.items()
+        if column
+        not in (
+            SiennaAggregateTransportTechnologyCol.START_REGION_NAME,
+            SiennaAggregateTransportTechnologyCol.END_REGION_NAME,
+        )
+    },
+    SiennaAggregateTransportTechnologyCol.START_REGION: pl.Int64,
+    SiennaAggregateTransportTechnologyCol.END_REGION: pl.Int64,
+}
+
 # What each type looks like in a portfolio document on disk, for a source reading one back.
 PORTFOLIO_DOCUMENT_SCHEMAS: dict[str, dict[str, pl.DataType | type[pl.DataType]]] = {
-    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: _build_read_back_schema(
-        SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA
-    ),
-    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: _build_read_back_schema(
-        STORAGE_TECHNOLOGY_DESTINATION_SCHEMA
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: {
+        **_build_read_back_schema(SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA),
+        **_build_limits_by_key_schema(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY),
+    },
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: {
+        **_build_read_back_schema(STORAGE_TECHNOLOGY_DESTINATION_SCHEMA),
+        **_build_limits_by_key_schema(SiennaInvestmentsComponent.STORAGE_TECHNOLOGY),
+    },
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY: (
+        _AGGREGATE_TRANSPORT_TECHNOLOGY_READ_BACK_SCHEMA
     ),
     SiennaInvestmentsComponent.DEMAND_REQUIREMENT: _build_read_back_schema(
         DEMAND_REQUIREMENT_DESTINATION_SCHEMA

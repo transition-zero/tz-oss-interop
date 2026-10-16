@@ -66,6 +66,7 @@ class PortfolioComponent(StrEnum):
     ZONE = "Zone"
     SUPPLY_TECHNOLOGY = "SupplyTechnology"
     STORAGE_TECHNOLOGY = "StorageTechnology"
+    AGGREGATE_TRANSPORT_TECHNOLOGY = "AggregateTransportTechnology"
     DEMAND_REQUIREMENT = "DemandRequirement"
     CARBON_CAPS = "CarbonCaps"
 
@@ -74,10 +75,18 @@ PARAMETRIC_COMPONENTS: frozenset[PortfolioComponent] = frozenset(
     {
         PortfolioComponent.SUPPLY_TECHNOLOGY,
         PortfolioComponent.STORAGE_TECHNOLOGY,
+        PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
         PortfolioComponent.DEMAND_REQUIREMENT,
     }
 )
 """The types the package builds as ``Type{Parameter}``, naming a PowerSystems type."""
+
+AGGREGATE_TRANSPORT_PARAMETER = "ACBranch"
+"""The parameter of every transport technology, because the model treats each branch type alike.
+
+The adapter sets one model for ``AggregateTransportTechnology{ACBranch}``, and a technology
+built on any other parameter is a different type that no model covers.
+"""
 
 # The order the flat list states its types in. A technology names its region by id, and the
 # package resolves that id against the regions it has already built, so the zones come first.
@@ -85,6 +94,7 @@ COMPONENT_ORDER: tuple[PortfolioComponent, ...] = (
     PortfolioComponent.ZONE,
     PortfolioComponent.SUPPLY_TECHNOLOGY,
     PortfolioComponent.STORAGE_TECHNOLOGY,
+    PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
     PortfolioComponent.DEMAND_REQUIREMENT,
     PortfolioComponent.CARBON_CAPS,
 )
@@ -125,6 +135,13 @@ class InvestmentsSeriesName(StrEnum):
     DEMAND = "ops_demand"
 
 
+HOURS_PER_YEAR = 8760.0
+"""The hours that the slices of one year stand for, together."""
+
+PORTFOLIO_SERIES_YEAR = "year"
+"""The feature a portfolio series states its year under, and the staged column that holds it."""
+
+
 class SeriesDocument:
     """Keys of the companion document holding the series the envelope drops."""
 
@@ -153,6 +170,8 @@ def build_component_metadata(
         PortfolioEnvelope.MODULE: PSIP_MODULE,
         PortfolioEnvelope.TYPE: str(component),
     }
+    if component is PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY:
+        power_systems_type = AGGREGATE_TRANSPORT_PARAMETER
     if component in PARAMETRIC_COMPONENTS and power_systems_type is not None:
         metadata[PortfolioEnvelope.PARAMETERS] = [power_systems_type]
         metadata[PortfolioEnvelope.CONSTRUCT_WITH_PARAMETERS] = True

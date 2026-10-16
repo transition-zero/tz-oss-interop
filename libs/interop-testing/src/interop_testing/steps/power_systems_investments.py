@@ -12,6 +12,7 @@ Nothing builds a portfolio as pipeline *input*, so there are no Given steps.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ from interop_testing.steps.power_simulations import (
 )
 
 _TIME_SERIES_STORAGE_FILE = "time_series_storage_file"
+# A weight is the days of a year divided by the share of one day, so it is rarely a round number.
+_WEIGHT_TOLERANCE = 1e-5
 
 
 def read_series_document(path: str) -> dict[str, Any]:
@@ -161,3 +164,50 @@ def assert_series_period(path: str, start: str, end: str) -> None:
     assert periods == [{"start": start, "end": end}], (
         f"expected one period {start} to {end} in {path}, got {periods!r}"
     )
+
+
+@then(
+    parsers.parse(
+        'the series document "{path}" record for "{component}" named "{name}" in the '
+        'representative day {rep_day:d} of the year "{year}" starts at "{first_hour}" with '
+        "weight {weight:g} and holds {count:d} values that peak at {peak:g}"
+    )
+)
+def assert_series_day_record(
+    path: str,
+    component: str,
+    name: str,
+    rep_day: int,
+    year: str,
+    first_hour: str,
+    weight: float,
+    count: int,
+    peak: float,
+) -> None:
+    matching = [
+        record
+        for record in read_series_document(path).get("records", [])
+        if (record.get("component_type"), record.get("component_name")) == (component, name)
+        and (record.get("year"), record.get("rep_day")) == (year, rep_day)
+    ]
+    assert len(matching) == 1, (
+        f"expected 1 record for {component}:{name} day {rep_day} of {year}, got {len(matching)}"
+    )
+    record = matching[0]
+    values = record.get("values", [])
+    actual = (record.get("initial_timestamp"), len(values), max(values, default=None))
+    assert actual == (first_hour, count, peak), (
+        f"expected start {first_hour}, {count} values, peak {peak}; got {actual!r}"
+    )
+    assert math.isclose(record.get("weight", 0.0), weight, rel_tol=_WEIGHT_TOLERANCE), (
+        f"expected weight {weight}, got {record.get('weight')!r}"
+    )
+
+
+@then(
+    parsers.parse('the series document "{path}" states one period for each of the years "{years}"')
+)
+def assert_series_periods(path: str, years: str) -> None:
+    periods = read_series_document(path).get("periods", [])
+    expected = [{"start": f"{year}-01-01", "end": f"{year}-12-31"} for year in years.split()]
+    assert periods == expected, f"expected periods {expected!r} in {path}, got {periods!r}"
