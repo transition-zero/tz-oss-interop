@@ -43,11 +43,13 @@ JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
     # Neither investments package has a registry release that runs: PowerSystemsInvestments is
     # not in the General registry, and its only branch that calls nothing
     # PowerSystemsInvestmentsPortfolios lacks needs that package ahead of its 0.1.0 release.
+    # The solver pin is commit 8bfed9f of al/storage_integer; an upstream rewrite of that branch
+    # removed the earlier pin, f68d202.
     JuliaPackage(
         "PowerSystemsInvestments",
         "bed98974-b02a-5e2f-9ee0-a103f5c450dd",
         url=f"{_SIENNA_GITHUB}/PowerSystemsInvestments.jl",
-        rev="f68d202694e17e7a0a0156490d2b7c2e9167bdb7",
+        rev="8bfed9f2e8cb254ac0121c5dec8d7804dace2c8d",
     ),
     JuliaPackage(
         "PowerSystemsInvestmentsPortfolios",

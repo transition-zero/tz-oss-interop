@@ -29,13 +29,17 @@ pair. `interop/adapters/outbound/julia_packages.py` therefore pins a URL and a c
 
 | Package | Branch | Commit |
 |---|---|---|
-| PowerSystemsInvestments.jl | `al/storage_integer` | `f68d202` |
+| PowerSystemsInvestments.jl | `al/storage_integer` | `8bfed9f` |
 | PowerSystemsInvestmentsPortfolios.jl | `main` | `d72d61c` |
 
 `al/storage_integer` is the only branch of the solver package that calls nothing the data
 package's `main` defines. The two newer branches, `jp/capex` and `cb/inv_compat`, each need a
 data package that nobody has published. Both pins resolve beside the dispatch solver, so one
 Julia environment serves dispatch and expansion.
+
+The pin of the solver package was `f68d202`. An upstream rewrite of `al/storage_integer`
+removed that commit, so the pin is now `8bfed9f`, the head of the rewritten branch. Both
+commits have the author date 3 August 2026.
 
 ## The envelope
 
