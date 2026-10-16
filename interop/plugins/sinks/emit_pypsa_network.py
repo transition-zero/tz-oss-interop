@@ -368,7 +368,7 @@ def _add_time_series(
         metadata, state, sample, series_cache
     ).items():
         target: dict[str, Any] = accessor[table]
-        target[attribute] = _build_frame_with_columns(
+        target[attribute] = _build_table_with_columns(
             target[attribute], by_component, network.snapshots, attribute
         )
 
@@ -408,7 +408,7 @@ def _build_columns_by_attribute(
     return columns
 
 
-def _build_frame_with_columns(
+def _build_table_with_columns(
     frame: pd.DataFrame,
     by_component: dict[str, FloatArray],
     snapshots: pd.Index,
