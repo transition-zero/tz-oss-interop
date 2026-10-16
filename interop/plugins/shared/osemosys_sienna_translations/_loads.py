@@ -12,6 +12,7 @@ that peak.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -70,6 +71,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
+    SkipRule,
     Translation,
     default_translation,
     filter_component,
@@ -148,6 +150,10 @@ NO_HOURLY_DEMAND_SKIP = SkipReport(
 )
 
 
+# Takes out the rows that a rule does not keep, and reports them or not.
+_DropRows = Callable[[pl.DataFrame, SkipRule], pl.DataFrame]
+
+
 @dataclass(frozen=True)
 class LoadSources:
     """One row for each load, and the hourly series in MW of each load."""
@@ -159,7 +165,24 @@ class LoadSources:
 def build_loads_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> LoadSources:
-    demands = _enrich_load_names(_read_demands(state, operations.year, recorder))
+    return _build_loads(state, operations, _build_reported_drop(recorder), recorder)
+
+
+def build_load_series(
+    state: State, operations: OperationsYear, recorder: ScopedRecorder
+) -> pl.DataFrame:
+    """The hourly MW of each load of the year, for a caller that reports the loads it needs.
+
+    A demand that is not a load leaves no report here, so a caller that reads many years does
+    not repeat one report for each year.
+    """
+    return _build_loads(state, operations, _drop_silently, recorder).series
+
+
+def _build_loads(
+    state: State, operations: OperationsYear, drop: _DropRows, recorder: ScopedRecorder
+) -> LoadSources:
+    demands = _enrich_load_names(_read_demands(state, operations.year, drop))
     if demands.height == 0:
         return LoadSources(demands, pl.DataFrame(schema=_SERIES_SCHEMA))
     demands = demands.with_columns(
@@ -168,7 +191,7 @@ def build_loads_source(
     )
     series = _build_series(state, operations, demands, recorder)
     table = _enrich_series_values(demands, series)
-    table, _ = filter_component(table, pl.col(PEAK_MW) > 0, NO_HOURLY_DEMAND_SKIP, recorder)
+    table = drop(table, SkipRule(pl.col(PEAK_MW) > 0, NO_HOURLY_DEMAND_SKIP))
     kept = series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(table[LOAD_NAME].implode()))
     return LoadSources(table.sort(LOAD_NAME), kept)
 
@@ -176,10 +199,21 @@ def build_loads_source(
 # --- the demands of the year ---------------------------------------------------
 
 
-def _read_demands(state: State, year: int, recorder: ScopedRecorder) -> pl.DataFrame:
+def _build_reported_drop(recorder: ScopedRecorder) -> _DropRows:
+    def drop(table: pl.DataFrame, rule: SkipRule) -> pl.DataFrame:
+        return filter_component(table, rule.keep, rule.report, recorder)[0]
+
+    return drop
+
+
+def _drop_silently(table: pl.DataFrame, rule: SkipRule) -> pl.DataFrame:
+    return table.filter(rule.keep.fill_null(False))  # noqa: FBT003
+
+
+def _read_demands(state: State, year: int, drop: _DropRows) -> pl.DataFrame:
     fuels = read_electricity_fuels(state).filter(pl.col(AnnotationColumn.LOCATION).is_not_null())
     tables = [
-        _read_demand(state, year, parameter, fuels, recorder)
+        _read_demand(state, year, parameter, fuels, drop)
         for parameter in (
             DemandParameter.SPECIFIED_ANNUAL_DEMAND,
             DemandParameter.ACCUMULATED_ANNUAL_DEMAND,
@@ -193,7 +227,7 @@ def _read_demand(
     year: int,
     parameter: DemandParameter,
     fuels: pl.DataFrame,
-    recorder: ScopedRecorder,
+    drop: _DropRows,
 ) -> pl.DataFrame:
     stated = read_parameter(state, parameter, year).filter(pl.col(VALUE_COL) != 0)
     rows = stated.select(
@@ -203,14 +237,15 @@ def _read_demand(
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
     ).join(fuels.select(REGION, FUEL, AnnotationColumn.LOCATION), on=[REGION, FUEL], how="left")
-    positive, _ = filter_component(
-        rows, pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter), recorder
+    positive = drop(
+        rows, SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter))
     )
-    electricity, _ = filter_component(
+    electricity = drop(
         positive,
-        pl.col(AnnotationColumn.LOCATION).is_not_null(),
-        _build_not_electricity_skip(parameter),
-        recorder,
+        SkipRule(
+            pl.col(AnnotationColumn.LOCATION).is_not_null(),
+            _build_not_electricity_skip(parameter),
+        ),
     )
     return electricity.cast(pl.Schema(_SOURCE_SCHEMA))
 

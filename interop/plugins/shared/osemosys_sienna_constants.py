@@ -116,3 +116,41 @@ class StorageParameter(StrEnum):
 # The word that counts technologies in a warning, and the label of the names that it lists.
 TECHNOLOGY_COUNTED_NOUN = "technology(ies)"
 TECHNOLOGIES_LABEL = "Technologies"
+
+
+# --- The investments portfolio ---------------------------------------------------------
+
+# The value of a limit parameter that states no limit.
+NO_LIMIT = -1.0
+# The key of the feature that names the year of a series of the portfolio.
+YEAR_FEATURE = "year"
+# The first part of the `State.source_time_series` key of each series of the portfolio.
+OSEMOSYS_PORTFOLIO_SERIES = "osemosys_sienna_portfolio_series"
+# The character between the attribute and the year in the second part of that key.
+SERIES_YEAR_SEPARATOR = "/"
+MINUTES_PER_HOUR = 60.0
+TONNES_PER_MEGATONNE = 1e6
+
+
+class InvestmentParameter(StrEnum):
+    """A canonical parameter that states what new capacity costs and how much a plan may build."""
+
+    CAPITAL_COST = "capital_cost"
+    CAPACITY_LIMITS_MIN = "capacity_limits_min"
+    CAPACITY_LIMITS_MAX = "capacity_limits_max"
+    MAX_CAPACITY_INVESTMENT = "total_annual_max_capacity_investment"
+    LIFETIME = "lifetime"
+    UNIT_SIZE = "unit_size"
+    DISCOUNT_RATE = "discount_rate"
+    TECHNOLOGY_DISCOUNT_RATE = "technology_discount_rate"
+    ENERGY_CAPITAL_COST = "energy_capital_cost"
+    DURATION_LIMITS_MAX = "duration_limits_max"
+
+
+class EmissionParameter(StrEnum):
+    """A canonical parameter that states a limit on a pollutant."""
+
+    ANNUAL_EMISSION_LIMIT = "annual_emission_limit"
+    ANNUAL_EXOGENOUS_EMISSION = "annual_exogenous_emission"
+    MODEL_PERIOD_EMISSION_LIMIT = "model_period_emission_limit"
+    MODEL_PERIOD_EXOGENOUS_EMISSION = "model_period_exogenous_emission"

@@ -41,6 +41,7 @@ from interop.plugins.shared.osemosys_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
     LOAD_TRANSLATIONS,
     LoadSources,
+    build_load_series,
     build_loads_source,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import (
@@ -101,6 +102,7 @@ __all__ = [
     "build_generator_extensions",
     "build_generators_source",
     "build_line_extensions",
+    "build_load_series",
     "build_loads_source",
     "build_representative_periods",
     "build_storage_extensions",

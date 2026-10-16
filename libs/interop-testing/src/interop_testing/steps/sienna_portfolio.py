@@ -7,7 +7,10 @@ flat array of supplemental attributes linked to those components by an associati
 from __future__ import annotations
 
 import json
+import math
+from pathlib import Path
 
+import h5py
 from pytest_bdd import parsers, then
 
 from interop_testing.builders.sienna_documents import (
@@ -75,3 +78,30 @@ def assert_base_system_attribute_field(
     assert len(matching) == 1, f"expected 1 {context}, got {len(matching)}: {matching!r}"
     actual = navigate_json(matching[0], field_path, context)
     assert actual == expected, f"expected {context}.{field_path!r} = {expected!r}, got {actual!r}"
+
+
+@then(
+    parsers.parse(
+        'the portfolio "{path}" has a series of "{component_type}" "{name}" for the year'
+        ' "{year}" with {length:d} values that peak at {peak:g}'
+    )
+)
+def assert_portfolio_series(
+    path: str, component_type: str, name: str, year: str, length: int, peak: float
+) -> None:
+    """A series of the portfolio, found by its feature `year` in the HDF5 companion it names."""
+    document = read_json(path)
+    owner_id = find_sienna_component(document, component_type, name)["id"]
+    matching = [
+        association
+        for association in document["time_series_associations"]
+        if association["owner_type"] == component_type
+        and association["owner_id"] == owner_id
+        and association["features"].get("year") == year
+    ]
+    assert len(matching) == 1, f"expected 1 series of {name!r} for {year}, got {matching!r}"
+    storage = Path(path).parent / document["time_series_storage_file"]
+    with h5py.File(storage, "r") as hf:
+        values = list(hf[f"time_series/{matching[0]['time_series_uuid']}/data"][:])
+    assert len(values) == length, f"expected {length} values, got {len(values)}"
+    assert math.isclose(max(values), peak, rel_tol=1e-9), f"expected peak {peak}, got {max(values)}"

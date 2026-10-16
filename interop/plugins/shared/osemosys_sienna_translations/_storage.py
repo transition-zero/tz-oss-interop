@@ -277,6 +277,13 @@ def build_storages_source(
     return _enrich_fixed_costs(state, operations, storages).sort(STORAGE_NAME)
 
 
+def read_linked_storages(
+    state: State, operations: OperationsYear, mappings: OsemosysSiennaCarrierMappings
+) -> pl.DataFrame:
+    """Every storage, with its links and the technologies that charge and discharge it."""
+    return _enrich_technologies(state, operations, _read_storages(state, operations), mappings)
+
+
 def build_storage_technologies(storages: pl.DataFrame) -> pl.DataFrame:
     """The technologies that charge or discharge the storages: region, technology and name."""
     return pl.concat(

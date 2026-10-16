@@ -37,6 +37,7 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 
 PYPSA_TO_SIENNA_INVESTMENTS = "pypsa-to-sienna-investments"
 PLEXOS_TO_SIENNA_INVESTMENTS = "plexos-to-sienna-investments"
+OSEMOSYS_TO_SIENNA_INVESTMENTS = "osemosys-to-sienna-investments"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,12 @@ class InvestmentsSource:
     # The name this source gives a column the rules read under another name. A rule names a
     # column once; two sources can call the value behind it two different things.
     attribute_names: Mapping[str, str] = field(default_factory=dict)
+    # How this source states the year that a device leaves service, and what retiring costs.
+    retirement_derivation: str = "the retirement year the extensions sidecar carries, per device"
+    retirement_cost_note: str = (
+        "RetirementPotential requires a retirement cost and PyPSA prices no retirement, so "
+        "retiring a device costs nothing"
+    )
 
     def attribute(self, column: str | None) -> str | None:
         """What this source calls one column, which is the column itself unless stated."""

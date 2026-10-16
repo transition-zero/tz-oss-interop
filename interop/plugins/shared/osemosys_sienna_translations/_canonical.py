@@ -7,6 +7,8 @@ read stays small on a model with millions of parameter rows.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import polars as pl
 
 from interop.core.pipeline import State
@@ -57,6 +59,14 @@ def read_parameter(state: State, name: str, year: int) -> pl.DataFrame:
     if YEAR in table.collect_schema().names():
         table = table.filter(pl.col(YEAR) == str(year))
     return table.collect()
+
+
+def read_parameter_for_years(state: State, name: str, years: Sequence[int]) -> pl.DataFrame:
+    """The rows that the model states for a parameter keyed by year, in the given years."""
+    table = state.source_time_series.get((TableKind.PARAMETER, name))
+    if table is None:
+        return _build_empty_parameter(name)
+    return table.filter(pl.col(YEAR).is_in([str(year) for year in years])).collect()
 
 
 def read_mode_parameter(state: State, name: str, year: int, mode: str) -> pl.DataFrame:

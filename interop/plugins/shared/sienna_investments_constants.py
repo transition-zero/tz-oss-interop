@@ -21,6 +21,9 @@ from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
     SIENNA_REGION_COLUMN,
     SIENNA_REGION_NAME_COLUMN,
+    TIME_SERIES_ASSOCIATION_SCHEMA,
+    MinMaxField,
+    SiennaTimeSeriesAssociationCol,
 )
 
 
@@ -29,6 +32,7 @@ class SiennaInvestmentsComponent(StrEnum):
 
     SUPPLY_TECHNOLOGY = "SupplyTechnology"
     STORAGE_TECHNOLOGY = "StorageTechnology"
+    AGGREGATE_TRANSPORT_TECHNOLOGY = "AggregateTransportTechnology"
     DEMAND_REQUIREMENT = "DemandRequirement"
     CARBON_CAPS = "CarbonCaps"
 
@@ -60,6 +64,9 @@ class PortfolioDocument:
 
 PORTFOLIO_JSON_FILENAME = "portfolio.json"
 """Default basename of the portfolio document written beside the base system."""
+
+PORTFOLIO_TIME_SERIES_FILENAME = "portfolio_time_series_storage.h5"
+"""Default basename of the HDF5 companion that holds the time series of the portfolio itself."""
 
 PORTFOLIO_AGGREGATION = "Area"
 """The base system type a portfolio's regions are grouped by.
@@ -130,6 +137,28 @@ class SiennaStorageTechnologyCol:
     FINANCIAL_DATA = "financial_data"
 
 
+class SiennaAggregateTransportTechnologyCol:
+    """SiennaSchemas ``AggregateTransportTechnology`` field names.
+
+    ``start_region_name`` and ``end_region_name`` are not schema fields: each holds an area name
+    until the sink resolves it to the integer id in ``start_region`` or ``end_region``.
+    """
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    POWER_SYSTEMS_TYPE = "power_systems_type"
+    START_REGION = "start_region"
+    END_REGION = "end_region"
+    START_REGION_NAME = "start_region_name"
+    END_REGION_NAME = "end_region_name"
+    CAPACITY_LIMITS = "capacity_limits"
+    CAPITAL_COSTS = "capital_costs"
+    LINE_LOSS = "line_loss"
+    UNIT_SIZE = "unit_size"
+    FINANCIAL_DATA = "financial_data"
+
+
 class SiennaDemandRequirementCol:
     ID = "id"
     NAME = "name"
@@ -177,6 +206,15 @@ class SiennaRetirementPotentialCol:
     PLANNED_RETIREMENT_YEAR = "planned_retirement_year"
     BUILD_YEAR = "build_year"
     RETIREMENT_COST = "retirement_cost"
+
+
+class MinMaxByKeyField:
+    """Field names of one entry of a ``MinMaxByKey`` object, which the sink writes keyed by
+    ``key``."""
+
+    KEY = "key"
+    MIN = MinMaxField.MIN
+    MAX = MinMaxField.MAX
 
 
 class NamedYearField:
@@ -300,6 +338,17 @@ NAMED_YEAR_DTYPE: pl.DataType = pl.List(
 
 CAPACITY_LIMITS_DTYPE: pl.DataType = MIN_MAX_DTYPE
 
+# A ``MinMaxByKey`` as a list of entries, because a Polars struct has fixed field names.
+CAPACITY_LIMITS_BY_KEY_DTYPE: pl.DataType = pl.List(
+    pl.Struct(
+        {
+            MinMaxByKeyField.KEY: pl.Utf8,
+            MinMaxByKeyField.MIN: pl.Float64,
+            MinMaxByKeyField.MAX: pl.Float64,
+        }
+    )
+)
+
 
 # --- Destination table schemas ---
 
@@ -350,6 +399,20 @@ STORAGE_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaStorageTechnologyCol.LIFETIME: pl.Int64,
     SiennaStorageTechnologyCol.REQUIREMENTS: pl.List(pl.Int64),
     SiennaStorageTechnologyCol.FINANCIAL_DATA: TECHNOLOGY_FINANCIAL_DATA_DTYPE,
+}
+
+AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaAggregateTransportTechnologyCol.ID: pl.Int64,
+    SiennaAggregateTransportTechnologyCol.NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.AVAILABLE: pl.Boolean,
+    SiennaAggregateTransportTechnologyCol.POWER_SYSTEMS_TYPE: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.START_REGION_NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.END_REGION_NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.CAPACITY_LIMITS: CAPACITY_LIMITS_DTYPE,
+    SiennaAggregateTransportTechnologyCol.CAPITAL_COSTS: CAPITAL_COST_DTYPE,
+    SiennaAggregateTransportTechnologyCol.LINE_LOSS: pl.Float64,
+    SiennaAggregateTransportTechnologyCol.UNIT_SIZE: pl.Float64,
+    SiennaAggregateTransportTechnologyCol.FINANCIAL_DATA: TECHNOLOGY_FINANCIAL_DATA_DTYPE,
 }
 
 DEMAND_REQUIREMENT_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -421,6 +484,14 @@ SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
 # rows and the portfolio-wide financial data.
 SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"
 PORTFOLIO_FINANCIAL_DATA_TABLE = "PortfolioFinancialData"
+# The time series associations of the portfolio, kept apart from those of the base system.
+PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE = "portfolio_time_series_associations"
+
+# A portfolio series belongs to a technology type that the base system enumeration does not hold.
+PORTFOLIO_TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **TIME_SERIES_ASSOCIATION_SCHEMA,
+    SiennaTimeSeriesAssociationCol.OWNER_TYPE: pl.Utf8,
+}
 
 # A cost of capital PyPSA states as one discount rate, written as all-equity financing.
 # TechnologyFinancialData requires all six of its fields and has none for a weighted average
