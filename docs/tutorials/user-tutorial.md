@@ -427,7 +427,8 @@ INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline osemosys-csv-to-sienna
   --user-mappings-path inputs/osemosys_mappings.yaml
 ```
 
-The investments pipelines give `step[1].year` the value `earliest`, so they do not ask for it.
+The investments pipelines give `step[1].year` the value `earliest`, so the prompt shows
+`earliest` as its default. Keep it.
 
 To solve the system, run `sienna-to-power-simulations` and then `solve`, as for a PyPSA network.
 At the `Network model?` prompt, answer `copperplate`: a system from OSeMOSYS has no AC line, and
