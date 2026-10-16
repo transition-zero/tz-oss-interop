@@ -42,7 +42,7 @@ class StageSiennaResults(StagesExtensionsSidecar, StagedSource):
     recover PyPSA names and carriers. The wide solve CSVs are unpivoted to the long
     ``(snapshot, component, value)`` contract and staged lazily, so the normalisation step
     reads them the same way it reads any staged series. The source makes no decisions: sign
-    normalisation, the storage out-minus-in, and the HVDC scaling are the step's job.
+    normalisation and the storage out-minus-in are the step's job.
     """
 
     name: ClassVar[str] = "stage_sienna_results"

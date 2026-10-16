@@ -255,7 +255,17 @@ from pathlib import Path
 from typing import ClassVar
 
 from interop.ports.outbound.network_solver import UnitCommitmentTreatment
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver, SolverPort
+from interop.ports.outbound.solver import (
+    DispatchOutcome,
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    SolverPort,
+    UnservedEnergy,
+)
+
+# The energy the fake reports as unserved when a solve allows it.
+FAKE_UNSERVED_ENERGY_MWH = 42.5
 
 
 class FakeSolverAdapter(SolverPort):
@@ -276,7 +286,8 @@ class FakeSolverAdapter(SolverPort):
         presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
         run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
         time_limit_seconds: float | None = None,
-    ) -> tuple[str, float]:
+        unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
+    ) -> DispatchOutcome:
         Path("outputs").mkdir(parents=True, exist_ok=True)
         # Posix form, so a scenario can name a path the same way on every platform.
         recorded_json_path = sienna_json_path.as_posix()
@@ -292,11 +303,15 @@ class FakeSolverAdapter(SolverPort):
                     f"presolve={{presolve}}",
                     f"run_crossover={{run_crossover}}",
                     f"time_limit_seconds={{time_limit_seconds}}",
+                    f"unserved_energy={{unserved_energy}}",
                 ]
             ),
             encoding="utf-8",
         )
-        return ("SUCCESSFULLY_FINALIZED", 123.456)
+        unserved_mwh = (
+            FAKE_UNSERVED_ENERGY_MWH if unserved_energy is UnservedEnergy.PENALISED else None
+        )
+        return DispatchOutcome("SUCCESSFULLY_FINALIZED", 123.456, unserved_mwh)
 """
 
 

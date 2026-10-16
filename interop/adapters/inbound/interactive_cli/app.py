@@ -34,7 +34,12 @@ from interop.ports.inbound.validate import ValidateUseCase
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.filesystem import Location, to_location
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 from interop.ports.outbound.validation_report import DEFAULT_VALIDATION_REPORT_PATH
@@ -167,8 +172,15 @@ class _MappingsCancelled:
 _MAPPINGS_CANCELLED = _MappingsCancelled()
 
 
+_USER_MAPPINGS_PROMPT = "User mappings file?"
+_SIDE_USER_MAPPINGS_PROMPT = "User mappings file for {framework}?"
+
+
 def _prompt_user_mappings(
-    needed: bool, replay: dict[str, Any], details: dict[str, Any]
+    needed: bool,
+    replay: dict[str, Any],
+    details: dict[str, Any],
+    prompt: str = _USER_MAPPINGS_PROMPT,
 ) -> Location | None | _MappingsCancelled:
     """Prompt for a user-mappings file when the pipeline needs one.
 
@@ -180,7 +192,7 @@ def _prompt_user_mappings(
     if not needed:
         return None
     mapping_path_str = questionary.path(
-        f"User mappings file?  {PATH_PROMPT_HINT}",
+        f"{prompt}  {PATH_PROMPT_HINT}",
         default=replay.get(DetailKey.USER_MAPPINGS_PATH, "inputs/user_mappings.yaml"),
     ).ask()
     if mapping_path_str is None:
@@ -357,6 +369,7 @@ _SOLVER_ALGORITHMS = [s.value for s in HiGHSSolver]
 _PRESOLVE_OPTIONS = [s.value for s in HiGHSPresolve]
 _CROSSOVER_OPTIONS = [s.value for s in HiGHSCrossover]
 _UNIT_COMMITMENT_TREATMENTS = [t.value for t in UnitCommitmentTreatment]
+_UNSERVED_ENERGY_OPTIONS = [u.value for u in UnservedEnergy]
 _SOLVE_WINDOWS = [w.value for w in SolveWindowLength]
 _BALANCE_MODELS = [b.value for b in BalanceModel]
 _INVESTMENT_TREATMENTS = [t.value for t in InvestmentTreatment]
@@ -378,6 +391,12 @@ _SIENNA_UNIT_COMMITMENT_PROMPT = (
     "Unit commitment treatment? (exact = on/off as true binary decisions, applying the "
     "start-up cost and the minimum up and down times; linearised = economic dispatch, "
     "which is faster and applies neither)"
+)
+
+
+_UNSERVED_ENERGY_PROMPT = (
+    "Unserved energy? (refused = every load is met, so one short hour makes the solve "
+    "infeasible; penalised = a shortfall goes unserved at a high penalty cost)"
 )
 
 
@@ -418,6 +437,14 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if network_model is None:
         return None
 
+    unserved_energy = questionary.select(
+        _UNSERVED_ENERGY_PROMPT,
+        choices=_UNSERVED_ENERGY_OPTIONS,
+        default=_select_default(replay.get(DetailKey.UNSERVED_ENERGY), _UNSERVED_ENERGY_OPTIONS),
+    ).ask()
+    if unserved_energy is None:
+        return None
+
     unit_commitment = questionary.select(
         _SIENNA_UNIT_COMMITMENT_PROMPT,
         choices=_UNIT_COMMITMENT_TREATMENTS,
@@ -446,6 +473,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
         DetailKey.MODEL_TYPE: model_type,
         DetailKey.SIENNA_JSON_PATH: str(sienna_json_path),
         DetailKey.NETWORK_MODEL: network_model,
+        DetailKey.UNSERVED_ENERGY: unserved_energy,
         DetailKey.UNIT_COMMITMENT: unit_commitment,
         DetailKey.SOLVER: solver,
         DetailKey.PRESOLVE: presolve,
@@ -464,6 +492,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
                     sienna_json_path=sienna_json_path,
                     network_model=network_model,
                     output_dir=output_dir,
+                    unserved_energy=UnservedEnergy(unserved_energy),
                     unit_commitment=UnitCommitmentTreatment(unit_commitment),
                     solver=HiGHSSolver(solver),
                     presolve=HiGHSPresolve(presolve),
@@ -820,32 +849,85 @@ def _run_solve_pypsa(
     return details
 
 
-def _collect_compare_side(
-    container: Container,
-    framework: str,
-    pipelines: list[str],
-    replay_pipeline: Any,
-    replay_params: dict[str, Any] | None,
-) -> CompareSide | None:
-    """Pick the framework's results pipeline (when it has more than one) and its source params."""
-    if len(pipelines) == 1:
-        pipeline_name = pipelines[0]
-    else:
-        pipeline_name = questionary.select(
-            f"Which {framework} results pipeline?",
-            choices=sorted(pipelines),
-            default=_select_default(replay_pipeline, pipelines),
-        ).ask()
-        if pipeline_name is None:
-            return None
+@dataclass(frozen=True)
+class _SideReplay:
+    """What a history replay gives one side of a comparison."""
 
+    pipeline: Any
+    params: dict[str, Any] | None
+    user_mappings_path: Any
+
+
+def _build_side_replay(replay: dict[str, Any], keys: tuple[DetailKey, ...]) -> _SideReplay:
+    pipeline_key, params_key, mappings_key = keys
+    return _SideReplay(replay.get(pipeline_key), replay.get(params_key), replay.get(mappings_key))
+
+
+_SIDE_A_REPLAY_KEYS = (
+    DetailKey.SIDE_A_PIPELINE,
+    DetailKey.SIDE_A_PARAMS,
+    DetailKey.SIDE_A_USER_MAPPINGS_PATH,
+)
+_SIDE_B_REPLAY_KEYS = (
+    DetailKey.SIDE_B_PIPELINE,
+    DetailKey.SIDE_B_PARAMS,
+    DetailKey.SIDE_B_USER_MAPPINGS_PATH,
+)
+
+
+def _build_compare_side(
+    container: Container, framework: str, pipelines: list[str], replay: _SideReplay
+) -> CompareSide | None:
+    """Pick the framework's results pipeline (when it has more than one), its source params,
+    and its user mappings file when the pipeline needs one."""
+    pipeline_name = _choose_results_pipeline(framework, pipelines, replay.pipeline)
+    if pipeline_name is None:
+        return None
     with container() as scope:
         catalog = scope.get(PipelineCatalogUseCase)
         structure = catalog.get_structure(pipeline_name)
     source_params = collect_node_params(
-        structure.source.params_schema, {}, framework, replay_params=replay_params
+        structure.source.params_schema, {}, framework, replay_params=replay.params
     )
-    return CompareSide(framework=framework, pipeline=pipeline_name, source_params=source_params)
+    user_mappings_path = _prompt_side_user_mappings(
+        framework, structure.needs_user_mappings, replay
+    )
+    if isinstance(user_mappings_path, _MappingsCancelled):
+        return None
+    return CompareSide(
+        framework=framework,
+        pipeline=pipeline_name,
+        source_params=source_params,
+        user_mappings_path=user_mappings_path,
+    )
+
+
+def _choose_results_pipeline(framework: str, pipelines: list[str], replay: Any) -> str | None:
+    if len(pipelines) == 1:
+        return pipelines[0]
+    answer: str | None = questionary.select(
+        f"Which {framework} results pipeline?",
+        choices=sorted(pipelines),
+        default=_select_default(replay, pipelines),
+    ).ask()
+    return answer
+
+
+def _prompt_side_user_mappings(
+    framework: str, needed: bool, replay: _SideReplay
+) -> Location | None | _MappingsCancelled:
+    side_replay: dict[str, Any] = (
+        {}
+        if replay.user_mappings_path is None
+        else {DetailKey.USER_MAPPINGS_PATH: replay.user_mappings_path}
+    )
+    prompt = _SIDE_USER_MAPPINGS_PROMPT.format(framework=framework)
+    return _prompt_user_mappings(needed, side_replay, {}, prompt)
+
+
+def _build_mappings_details(side: CompareSide, key: DetailKey) -> dict[str, str]:
+    """A side with no user mappings file records nothing, as translate does."""
+    return {} if side.user_mappings_path is None else {key: str(side.user_mappings_path)}
 
 
 def _run_compare(
@@ -877,21 +959,19 @@ def _run_compare(
     if framework_b is None:
         return None
 
-    side_a = _collect_compare_side(
+    side_a = _build_compare_side(
         container,
         framework_a,
         pipelines_by_framework[framework_a],
-        replay.get(DetailKey.SIDE_A_PIPELINE),
-        replay.get(DetailKey.SIDE_A_PARAMS),
+        _build_side_replay(replay, _SIDE_A_REPLAY_KEYS),
     )
     if side_a is None:
         return None
-    side_b = _collect_compare_side(
+    side_b = _build_compare_side(
         container,
         framework_b,
         pipelines_by_framework[framework_b],
-        replay.get(DetailKey.SIDE_B_PIPELINE),
-        replay.get(DetailKey.SIDE_B_PARAMS),
+        _build_side_replay(replay, _SIDE_B_REPLAY_KEYS),
     )
     if side_b is None:
         return None
@@ -912,6 +992,8 @@ def _run_compare(
         DetailKey.SIDE_B_PIPELINE: side_b.pipeline,
         DetailKey.SIDE_B_PARAMS: side_b.source_params,
         DetailKey.OUTPUT_PATH: str(output_path),
+        **_build_mappings_details(side_a, DetailKey.SIDE_A_USER_MAPPINGS_PATH),
+        **_build_mappings_details(side_b, DetailKey.SIDE_B_USER_MAPPINGS_PATH),
     }
 
     try:

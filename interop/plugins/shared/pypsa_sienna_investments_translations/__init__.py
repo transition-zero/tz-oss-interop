@@ -19,6 +19,7 @@ from ._shared import (
     FOM_CHARGE_COL,
     FOM_CHARGE_DERIVATION,
     FUEL_COL,
+    OSEMOSYS_TO_SIENNA_INVESTMENTS,
     PLEXOS_TO_SIENNA_INVESTMENTS,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
@@ -29,6 +30,7 @@ from ._shared import (
     InvestmentsSource,
     build_expansion_skips,
     build_scope_skips,
+    financial_data_struct,
     yearly_fixed_charge,
 )
 from ._storage import (
@@ -41,12 +43,16 @@ from ._supply import (
     GENERATOR_SOURCE,
     build_supply_skips,
     build_supply_translations,
+    capital_cost_struct,
+    express_cost_type,
     fill_supply_defaults,
+    operation_cost_struct,
 )
 from ._topology import AREA_NAME, build_topology_mapping_translations, build_topology_source_table
 
 __all__ = [
     "GENERATOR_SOURCE",
+    "OSEMOSYS_TO_SIENNA_INVESTMENTS",
     "PLEXOS_TO_SIENNA_INVESTMENTS",
     "PYPSA_TO_SIENNA_INVESTMENTS",
     "STORAGE_UNIT_SOURCE",
@@ -80,6 +86,10 @@ __all__ = [
     "build_portfolio_financial_data",
     "build_retirement_potential_translations",
     "build_scope_skips",
+    "capital_cost_struct",
+    "express_cost_type",
+    "financial_data_struct",
+    "operation_cost_struct",
     "build_storage_technology_translations",
     "build_supply_translations",
     "build_topology_mapping_translations",

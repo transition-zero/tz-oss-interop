@@ -10,4 +10,4 @@ Feature: results pipelines are kept separate from regular translations
 
   Scenario: compare offers the frameworks that have a results pipeline
     When I start compare
-    Then the select prompt "First result's framework?" offered exactly "caiso-plexos, pypsa, sienna"
+    Then the select prompt "First result's framework?" offered exactly "aetos, caiso-plexos, power-systems-investments, pypsa, sienna"

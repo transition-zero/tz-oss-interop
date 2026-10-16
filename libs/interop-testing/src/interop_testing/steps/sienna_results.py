@@ -41,6 +41,20 @@ def given_hydro_dispatch(
     sienna_results_builder.add_hydro_dispatch(component, _series(values))
 
 
+@given(parsers.parse('the results have RenewableDispatch dispatch for "{component}" of {values}'))
+def given_renewable_dispatch(
+    sienna_results_builder: SiennaResultsBuilder, component: str, values: str
+) -> None:
+    sienna_results_builder.add_renewable_dispatch(component, _series(values))
+
+
+@given(parsers.parse('the results have RenewableNonDispatch output for "{component}" of {values}'))
+def given_renewable_non_dispatch_output(
+    sienna_results_builder: SiennaResultsBuilder, component: str, values: str
+) -> None:
+    sienna_results_builder.add_renewable_non_dispatch_output(component, _series(values))
+
+
 @given(
     parsers.parse('the results have EnergyReservoirStorage output for "{component}" of {values}')
 )
@@ -74,6 +88,13 @@ def given_link_flow(
 @given(parsers.parse('the results have PowerLoad demand for "{component}" of {values}'))
 def given_load(sienna_results_builder: SiennaResultsBuilder, component: str, values: str) -> None:
     sienna_results_builder.add_load(component, _series(values))
+
+
+@given(parsers.parse('the results have the PowerLoad parameter for "{component}" of {values}'))
+def given_load_parameter(
+    sienna_results_builder: SiennaResultsBuilder, component: str, values: str
+) -> None:
+    sienna_results_builder.add_load_parameter(component, _series(values))
 
 
 @given(parsers.parse("the results objective is {value:g}"))

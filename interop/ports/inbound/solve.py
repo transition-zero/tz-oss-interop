@@ -8,7 +8,12 @@ from typing import Protocol, runtime_checkable
 
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 # Sienna's SolverPort reports a run status containing this marker on success.
@@ -29,6 +34,7 @@ class ModelType(StrEnum):
 class SolveResult:
     status: str
     objective: float
+    unserved_energy_mwh: float | None = None
 
     def is_success(self) -> bool:
         normalized = self.status.strip()
@@ -39,7 +45,10 @@ class SolveResult:
 
     def summary(self) -> str:
         icon = "OK" if self.is_success() else "FAILED"
-        return f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        text = f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        if self.unserved_energy_mwh is None:
+            return text
+        return f"{text}  unserved_energy={self.unserved_energy_mwh:.6g} MWh"
 
 
 @dataclass
@@ -49,6 +58,7 @@ class SolveSiennaRequest:
     sienna_json_path: Path
     network_model: str = "dcp"
     output_dir: Path | None = None
+    unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
     solver: HiGHSSolver = HiGHSSolver.SIMPLEX
     presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE

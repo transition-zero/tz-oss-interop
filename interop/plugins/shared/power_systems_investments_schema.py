@@ -14,7 +14,7 @@ travel in a companion document instead, and the adapter attaches them after the 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop.plugins.shared.sienna_constants import SiennaComponent
 
@@ -66,6 +66,7 @@ class PortfolioComponent(StrEnum):
     ZONE = "Zone"
     SUPPLY_TECHNOLOGY = "SupplyTechnology"
     STORAGE_TECHNOLOGY = "StorageTechnology"
+    AGGREGATE_TRANSPORT_TECHNOLOGY = "AggregateTransportTechnology"
     DEMAND_REQUIREMENT = "DemandRequirement"
     CARBON_CAPS = "CarbonCaps"
 
@@ -74,10 +75,18 @@ PARAMETRIC_COMPONENTS: frozenset[PortfolioComponent] = frozenset(
     {
         PortfolioComponent.SUPPLY_TECHNOLOGY,
         PortfolioComponent.STORAGE_TECHNOLOGY,
+        PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
         PortfolioComponent.DEMAND_REQUIREMENT,
     }
 )
 """The types the package builds as ``Type{Parameter}``, naming a PowerSystems type."""
+
+AGGREGATE_TRANSPORT_PARAMETER = "ACBranch"
+"""The parameter of every transport technology, because the model treats each branch type alike.
+
+The adapter sets one model for ``AggregateTransportTechnology{ACBranch}``, and a technology
+built on any other parameter is a different type that no model covers.
+"""
 
 # The order the flat list states its types in. A technology names its region by id, and the
 # package resolves that id against the regions it has already built, so the zones come first.
@@ -85,9 +94,37 @@ COMPONENT_ORDER: tuple[PortfolioComponent, ...] = (
     PortfolioComponent.ZONE,
     PortfolioComponent.SUPPLY_TECHNOLOGY,
     PortfolioComponent.STORAGE_TECHNOLOGY,
+    PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
     PortfolioComponent.DEMAND_REQUIREMENT,
     PortfolioComponent.CARBON_CAPS,
 )
+
+
+class ModelledTechnology(NamedTuple):
+    """A technology type that the adapter sets a model for, and how that type runs."""
+
+    component: PortfolioComponent
+    parameter: str
+    operations: str
+
+
+_BASIC_DISPATCH = "BasicDispatch"
+
+MODELLED_TECHNOLOGIES: tuple[ModelledTechnology, ...] = (
+    ModelledTechnology(PortfolioComponent.DEMAND_REQUIREMENT, "PowerLoad", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "RenewableDispatch", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "ThermalStandard", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "HydroDispatch", _BASIC_DISPATCH),
+    ModelledTechnology(
+        PortfolioComponent.STORAGE_TECHNOLOGY, "EnergyReservoirStorage", "CyclicalStorageDispatch"
+    ),
+    ModelledTechnology(
+        PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
+        AGGREGATE_TRANSPORT_PARAMETER,
+        _BASIC_DISPATCH,
+    ),
+)
+"""Every type that a plan holds a technology of; a technology of any other type is left out."""
 
 PORTFOLIO_FINANCIAL_DATA_TYPE = "PortfolioFinancialData"
 PORTFOLIO_METADATA_TYPE = "PortfolioMetadata"
@@ -111,7 +148,9 @@ class PortfolioColumn:
 
 PORTFOLIO_SERIES_TABLE = "PortfolioSeries"
 PORTFOLIO_PERIODS_TABLE = "PortfolioPeriods"
-"""Destination tables holding the series the envelope drops, and the periods they fall in."""
+PORTFOLIO_EXISTING_DEVICES_TABLE = "PortfolioExistingDevices"
+"""Destination tables holding the series and the existing devices the envelope drops, and the
+periods the series fall in."""
 
 
 class InvestmentsSeriesName(StrEnum):
@@ -125,11 +164,20 @@ class InvestmentsSeriesName(StrEnum):
     DEMAND = "ops_demand"
 
 
+HOURS_PER_YEAR = 8760.0
+"""The hours that the slices of one year stand for, together."""
+
+PORTFOLIO_SERIES_YEAR = "year"
+"""The feature a portfolio series states its year under, and the staged column that holds it."""
+
+
 class SeriesDocument:
     """Keys of the companion document holding the series the envelope drops."""
 
     PERIODS = "periods"
     RECORDS = "records"
+    EXISTING_DEVICES = "existing_devices"
+    DEVICES = "devices"
 
     START = "start"
     END = "end"

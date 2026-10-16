@@ -79,10 +79,13 @@ _KIND_BY_SIENNA_TYPE = {
 
 
 def _build_extensions(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """The kind-keyed sidecar document: each record is its name and the fields beside it."""
+    """The kind-keyed sidecar document: each record is its name and the fields beside it.
+
+    A record that no component owns states its kind instead of an owner type.
+    """
     document: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        kind = _KIND_BY_SIENNA_TYPE[record["owner_type"]]
+        kind = record.get("kind") or _KIND_BY_SIENNA_TYPE[record["owner_type"]]
         document.setdefault(kind, []).append({"name": record["owner_name"], **record["ext"]})
     return document
 

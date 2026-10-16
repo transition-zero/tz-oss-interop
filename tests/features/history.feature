@@ -48,6 +48,7 @@ Feature: REPL history records and re-runs past invocations
     And a file "outputs/system.json" exists
     When I run solve from the menu for "outputs/system.json" with network model "dcp"
     Then the history file records a "solve" invocation with detail "network_model" set to "dcp"
+    And the history file records a "solve" invocation with detail "unserved_energy" set to "penalised"
     And the history file records a "solve" invocation with detail "sienna_json_path" set to "outputs/system.json"
 
   Scenario: the history menu shows solve invocation details
@@ -65,6 +66,16 @@ Feature: REPL history records and re-runs past invocations
     When I replay the recorded solve invocation
     Then the prompt "Path to PowerSimulations.jl system JSON?" offered default "outputs/system.json"
     And the select prompt "Network model?" offered default "dcp"
+    And the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered default "penalised"
+
+  Scenario: replaying a solve entry recorded before the unserved energy prompt asks it with no default
+    Given a fake solver adapter in project plugins
+    And adapters.yaml binds solver to "fake_solver"
+    And a file "outputs/system.json" exists
+    And a recorded solve of "outputs/system.json" with network model "dcp" and no unserved energy answer in my history
+    When I replay the recorded solve invocation
+    Then the select prompt "Network model?" offered default "dcp"
+    And the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered no default
 
   Scenario: a compare run records its answers in the history file
     Given a compare-ready working directory

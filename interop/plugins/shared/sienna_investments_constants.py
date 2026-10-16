@@ -21,6 +21,9 @@ from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
     SIENNA_REGION_COLUMN,
     SIENNA_REGION_NAME_COLUMN,
+    TIME_SERIES_ASSOCIATION_SCHEMA,
+    MinMaxField,
+    SiennaTimeSeriesAssociationCol,
 )
 
 
@@ -29,6 +32,7 @@ class SiennaInvestmentsComponent(StrEnum):
 
     SUPPLY_TECHNOLOGY = "SupplyTechnology"
     STORAGE_TECHNOLOGY = "StorageTechnology"
+    AGGREGATE_TRANSPORT_TECHNOLOGY = "AggregateTransportTechnology"
     DEMAND_REQUIREMENT = "DemandRequirement"
     CARBON_CAPS = "CarbonCaps"
 
@@ -60,6 +64,9 @@ class PortfolioDocument:
 
 PORTFOLIO_JSON_FILENAME = "portfolio.json"
 """Default basename of the portfolio document written beside the base system."""
+
+PORTFOLIO_TIME_SERIES_FILENAME = "portfolio_time_series_storage.h5"
+"""Default basename of the HDF5 companion that holds the time series of the portfolio itself."""
 
 PORTFOLIO_AGGREGATION = "Area"
 """The base system type a portfolio's regions are grouped by.
@@ -130,6 +137,29 @@ class SiennaStorageTechnologyCol:
     FINANCIAL_DATA = "financial_data"
 
 
+class SiennaAggregateTransportTechnologyCol:
+    """SiennaSchemas ``AggregateTransportTechnology`` field names.
+
+    ``start_region_name`` and ``end_region_name`` are not schema fields: each holds an area name
+    until the sink resolves it to the integer id in ``start_region`` or ``end_region``.
+    """
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    POWER_SYSTEMS_TYPE = "power_systems_type"
+    START_REGION = "start_region"
+    END_REGION = "end_region"
+    START_REGION_NAME = "start_region_name"
+    END_REGION_NAME = "end_region_name"
+    CAPACITY_LIMITS = "capacity_limits"
+    CAPITAL_COSTS = "capital_costs"
+    LINE_LOSS = "line_loss"
+    UNIT_SIZE = "unit_size"
+    FINANCIAL_DATA = "financial_data"
+    REQUIREMENTS = "requirements"
+
+
 class SiennaDemandRequirementCol:
     ID = "id"
     NAME = "name"
@@ -177,6 +207,15 @@ class SiennaRetirementPotentialCol:
     PLANNED_RETIREMENT_YEAR = "planned_retirement_year"
     BUILD_YEAR = "build_year"
     RETIREMENT_COST = "retirement_cost"
+
+
+class MinMaxByKeyField:
+    """Field names of one entry of a ``MinMaxByKey`` object, which the sink writes keyed by
+    ``key``."""
+
+    KEY = "key"
+    MIN = MinMaxField.MIN
+    MAX = MinMaxField.MAX
 
 
 class NamedYearField:
@@ -300,6 +339,17 @@ NAMED_YEAR_DTYPE: pl.DataType = pl.List(
 
 CAPACITY_LIMITS_DTYPE: pl.DataType = MIN_MAX_DTYPE
 
+# A ``MinMaxByKey`` as a list of entries, because a Polars struct has fixed field names.
+CAPACITY_LIMITS_BY_KEY_DTYPE: pl.DataType = pl.List(
+    pl.Struct(
+        {
+            MinMaxByKeyField.KEY: pl.Utf8,
+            MinMaxByKeyField.MIN: pl.Float64,
+            MinMaxByKeyField.MAX: pl.Float64,
+        }
+    )
+)
+
 
 # --- Destination table schemas ---
 
@@ -350,6 +400,20 @@ STORAGE_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaStorageTechnologyCol.LIFETIME: pl.Int64,
     SiennaStorageTechnologyCol.REQUIREMENTS: pl.List(pl.Int64),
     SiennaStorageTechnologyCol.FINANCIAL_DATA: TECHNOLOGY_FINANCIAL_DATA_DTYPE,
+}
+
+AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaAggregateTransportTechnologyCol.ID: pl.Int64,
+    SiennaAggregateTransportTechnologyCol.NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.AVAILABLE: pl.Boolean,
+    SiennaAggregateTransportTechnologyCol.POWER_SYSTEMS_TYPE: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.START_REGION_NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.END_REGION_NAME: pl.Utf8,
+    SiennaAggregateTransportTechnologyCol.CAPACITY_LIMITS: CAPACITY_LIMITS_DTYPE,
+    SiennaAggregateTransportTechnologyCol.CAPITAL_COSTS: CAPITAL_COST_DTYPE,
+    SiennaAggregateTransportTechnologyCol.LINE_LOSS: pl.Float64,
+    SiennaAggregateTransportTechnologyCol.UNIT_SIZE: pl.Float64,
+    SiennaAggregateTransportTechnologyCol.FINANCIAL_DATA: TECHNOLOGY_FINANCIAL_DATA_DTYPE,
 }
 
 DEMAND_REQUIREMENT_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -417,10 +481,28 @@ SUPPLEMENTAL_ATTRIBUTE_ORDER: tuple[SiennaSupplementalAttribute, ...] = (
     SiennaSupplementalAttribute.TOPOLOGY_MAPPING,
 )
 
+STAGED_EXISTING_DEVICES_TABLE = "staged_existing_devices"
+"""``State.source_topology`` key of each ExistingDevices attribute of a portfolio read back, with
+the type and the id of the technology that it describes."""
+
+STAGED_EXISTING_DEVICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaSupplementalAttributeAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaSupplementalAttributeAssociationCol.COMPONENT_ID: pl.Int64,
+    SiennaExistingDevicesCol.EXISTING_DEVICES: pl.List(pl.Utf8),
+}
+
 # Keys for the destination tables that are not components of the document: the association
 # rows and the portfolio-wide financial data.
 SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE = "supplemental_attribute_associations"
 PORTFOLIO_FINANCIAL_DATA_TABLE = "PortfolioFinancialData"
+# The time series associations of the portfolio, kept apart from those of the base system.
+PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE = "portfolio_time_series_associations"
+
+# A portfolio series belongs to a technology type that the base system enumeration does not hold.
+PORTFOLIO_TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **TIME_SERIES_ASSOCIATION_SCHEMA,
+    SiennaTimeSeriesAssociationCol.OWNER_TYPE: pl.Utf8,
+}
 
 # A cost of capital PyPSA states as one discount rate, written as all-equity financing.
 # TechnologyFinancialData requires all six of its fields and has none for a weighted average
@@ -455,13 +537,56 @@ def _build_read_back_schema(
     return read_back
 
 
+BY_KEY_SUFFIX = "_by_key"
+"""Ends the read-back column that holds a limit a document states in the ``MinMaxByKey`` form."""
+
+# The limits SiennaSchemas lets a document state once for each key, such as a year.
+LIMITS_BY_KEY: dict[str, tuple[str, ...]] = {
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: (SiennaSupplyTechnologyCol.CAPACITY_LIMITS,),
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: (
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_CHARGE,
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_DISCHARGE,
+        SiennaStorageTechnologyCol.CAPACITY_LIMITS_ENERGY,
+    ),
+}
+
+
+def _build_limits_by_key_schema(
+    sienna_type: SiennaInvestmentsComponent,
+) -> dict[str, pl.DataType | type[pl.DataType]]:
+    return {
+        f"{field}{BY_KEY_SUFFIX}": CAPACITY_LIMITS_BY_KEY_DTYPE
+        for field in LIMITS_BY_KEY.get(sienna_type, ())
+    }
+
+
+# A transport technology states each end as the integer id of an area.
+_AGGREGATE_TRANSPORT_TECHNOLOGY_READ_BACK_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **{
+        column: dtype
+        for column, dtype in AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA.items()
+        if column
+        not in (
+            SiennaAggregateTransportTechnologyCol.START_REGION_NAME,
+            SiennaAggregateTransportTechnologyCol.END_REGION_NAME,
+        )
+    },
+    SiennaAggregateTransportTechnologyCol.START_REGION: pl.Int64,
+    SiennaAggregateTransportTechnologyCol.END_REGION: pl.Int64,
+}
+
 # What each type looks like in a portfolio document on disk, for a source reading one back.
 PORTFOLIO_DOCUMENT_SCHEMAS: dict[str, dict[str, pl.DataType | type[pl.DataType]]] = {
-    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: _build_read_back_schema(
-        SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA
-    ),
-    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: _build_read_back_schema(
-        STORAGE_TECHNOLOGY_DESTINATION_SCHEMA
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: {
+        **_build_read_back_schema(SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA),
+        **_build_limits_by_key_schema(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY),
+    },
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: {
+        **_build_read_back_schema(STORAGE_TECHNOLOGY_DESTINATION_SCHEMA),
+        **_build_limits_by_key_schema(SiennaInvestmentsComponent.STORAGE_TECHNOLOGY),
+    },
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY: (
+        _AGGREGATE_TRANSPORT_TECHNOLOGY_READ_BACK_SCHEMA
     ),
     SiennaInvestmentsComponent.DEMAND_REQUIREMENT: _build_read_back_schema(
         DEMAND_REQUIREMENT_DESTINATION_SCHEMA

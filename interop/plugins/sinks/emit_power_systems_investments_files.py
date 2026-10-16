@@ -25,6 +25,7 @@ from interop.plugins.shared.power_systems_investments_schema import (
     COMPONENT_ORDER,
     PORTFOLIO_AGGREGATION,
     PORTFOLIO_DATA_FORMAT_VERSION,
+    PORTFOLIO_EXISTING_DEVICES_TABLE,
     PORTFOLIO_FINANCIAL_DATA_TYPE,
     PORTFOLIO_JSON_FILENAME,
     PORTFOLIO_METADATA_TYPE,
@@ -155,10 +156,14 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
 
 
 def build_series(state: State) -> dict[str, Any]:
-    """The companion the adapter attaches after the read, and the periods the slices fall in."""
+    """The series and the existing devices the adapter attaches after the read, and the periods
+    the slices fall in."""
     return {
         SeriesDocument.PERIODS: _list_rows(state.destination_tables.get(PORTFOLIO_PERIODS_TABLE)),
         SeriesDocument.RECORDS: _list_rows(state.destination_tables.get(PORTFOLIO_SERIES_TABLE)),
+        SeriesDocument.EXISTING_DEVICES: _list_rows(
+            state.destination_tables.get(PORTFOLIO_EXISTING_DEVICES_TABLE)
+        ),
     }
 
 

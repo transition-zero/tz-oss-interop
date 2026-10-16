@@ -53,6 +53,10 @@ class ExtensionKind(StrEnum):
     # survive a hop through it. Sienna has no equivalent either.
     CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
+    # OSeMOSYS only: a span of hours that occurs a number of times in a year.
+    REPRESENTATIVE_PERIOD = "representative_period"
+    # OSeMOSYS only: the values of a portfolio technology that change from year to year.
+    TECHNOLOGY = "technology"
 
 
 class ReserveDirection(StrEnum):
@@ -170,6 +174,14 @@ class GeneratorExtension(ExpansionExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
+    # OSeMOSYS only: t/MWh by pollutant, with the emissions of the fuel that the plant burns.
+    emission_rates_t_per_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: $/MWh of electricity output by operating mode, for each mode the system skips.
+    other_mode_variable_costs_per_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the least MWh of electricity output in each year, keyed by year.
+    annual_output_lower_limit_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the most MWh of electricity output in each year, keyed by year.
+    annual_output_upper_limit_mwh: dict[str, float] | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -285,6 +297,8 @@ class ConstraintLimit(BaseModel):
     period: ConstraintPeriod
     value: float
     unit: str | None = None  # the unit the source stated the limit in
+    # The year that a yearly limit applies in, where the source states one limit for each year.
+    year: int | None = None
 
 
 class ConstraintExtension(ExtensionRecord):
@@ -306,6 +320,34 @@ class NetworkExtension(ExtensionRecord):
     objective: float | None = None
 
 
+class RepresentativePeriodExtension(ExtensionRecord):
+    """A span of consecutive hours of the series, and how many times it occurs in the year."""
+
+    # ISO 8601. The timestamp of the first hour of the span.
+    first_timestamp: str | None = None
+    hours: int | None = None
+    # How many times the span occurs in the year.
+    weight: float | None = None
+    # OSeMOSYS SEASON and DAYTYPE, absent for a span of one timeslice hour.
+    season: str | None = None
+    day_type: str | None = None
+
+
+class TechnologyExtension(ExtensionRecord):
+    """The yearly values of a portfolio technology, each keyed by the year as a string."""
+
+    capital_cost_per_mw_by_year: dict[str, float] | None = None
+    # The storage energy that a build adds, priced for each MWh.
+    energy_capital_cost_per_mwh_by_year: dict[str, float] | None = None
+    fixed_cost_per_mw_year_by_year: dict[str, float] | None = None
+    variable_cost_per_mwh_by_year: dict[str, float] | None = None
+    residual_capacity_mw_by_year: dict[str, float] | None = None
+    total_annual_max_capacity_investment_mw_by_year: dict[str, float] | None = None
+    # Total capacity bounds of a type whose capacity_limits holds one bound for every year.
+    capacity_limits_min_mw_by_year: dict[str, float] | None = None
+    capacity_limits_max_mw_by_year: dict[str, float] | None = None
+
+
 class Extensions(BaseModel):
     """The sidecar document. Each field name is a kind, and holds that kind's records."""
 
@@ -320,6 +362,8 @@ class Extensions(BaseModel):
     reserve: list[ReserveExtension] = []
     constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
+    representative_period: list[RepresentativePeriodExtension] = []
+    technology: list[TechnologyExtension] = []
 
 
 EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
@@ -332,6 +376,8 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.RESERVE: ReserveExtension,
     ExtensionKind.CONSTRAINT: ConstraintExtension,
     ExtensionKind.NETWORK: NetworkExtension,
+    ExtensionKind.REPRESENTATIVE_PERIOD: RepresentativePeriodExtension,
+    ExtensionKind.TECHNOLOGY: TechnologyExtension,
 }
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
@@ -536,6 +582,14 @@ def record_for(
 def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD], name: str
+) -> RepresentativePeriodExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.TECHNOLOGY], name: str
+) -> TechnologyExtension | None: ...
 
 
 def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
@@ -629,6 +683,14 @@ class ExtensionReader:
     ) -> ExtensionLookup[ConstraintExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD]
+    ) -> ExtensionLookup[RepresentativePeriodExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.TECHNOLOGY]
+    ) -> ExtensionLookup[TechnologyExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""

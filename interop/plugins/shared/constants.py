@@ -5,15 +5,18 @@ from __future__ import annotations
 from enum import StrEnum
 
 from interop.core.results_format import RESULTS_FRAMEWORK
+from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
 
 
 class Framework(StrEnum):
     PYPSA = "pypsa"
     SIENNA = "sienna"
     PLEXOS = "plexos"
+    OSEMOSYS = OSEMOSYS_FRAMEWORK
     POWER_SIMULATIONS = "power-simulations"
     POWER_SYSTEMS_INVESTMENTS = "power-systems-investments"
     CAISO_PLEXOS = "caiso-plexos"
+    AETOS = "aetos"
     RESULTS = RESULTS_FRAMEWORK
 
 
@@ -50,6 +53,7 @@ UNIT_KM = "km"
 UNIT_MW_PER_MINUTE = "MW/min"
 UNIT_PER_UNIT_PER_HOUR = "pu/h"
 UNIT_HOURS = "h"
+UNIT_MINUTES = "min"
 UNIT_PERCENT = "%"
 UNIT_SNAPSHOTS = "snapshots"
 UNIT_DOLLARS = "$"
@@ -59,6 +63,9 @@ UNIT_DOLLARS_PER_MW_YEAR = "$/MW/yr"
 UNIT_YEARS = "yr"
 UNIT_DOLLARS_PER_GJ = "$/GJ"
 UNIT_DOLLARS_PER_TONNE = "$/tonne"
+UNIT_TONNES_PER_MWH = "t/MWh"
+UNIT_TONNES = "t"
+UNIT_MEGATONNES = "Mt"
 UNIT_GJ = "GJ"
 UNIT_GJ_PER_MWH = "GJ/MWh"
 UNIT_GJ_PER_HOUR = "GJ/h"

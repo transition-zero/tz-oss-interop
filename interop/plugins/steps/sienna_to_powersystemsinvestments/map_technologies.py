@@ -1,16 +1,17 @@
 """Step: shape a SiennaSchemas portfolio into what PowerSystemsInvestmentsPortfolios reads.
 
-Three things differ between the two documents, and this step settles all three. A region the
+Four things differ between the two documents, and this step settles all four. A region the
 portfolio names by id becomes a Zone the package resolves that id against. A capital cost the
 schema wraps in a struct becomes the value curve the package's field holds. A cost structure
-gains the ``__metadata__`` block the package picks a concrete type by, at every depth.
+gains the ``__metadata__`` block the package picks a concrete type by, at every depth. A
+capacity limit stated once for each year becomes the one limit the package holds.
 
 The flat component list and the per-component ``__metadata__`` block are sink formatting.
 """
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -19,6 +20,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_simulations_schema import PSInputOutputCurve
 from interop.plugins.shared.power_systems_investments_schema import (
+    PORTFOLIO_EXISTING_DEVICES_TABLE,
     PSIP_MODULE,
     TECHNOLOGY_FINANCIAL_DATA_TYPE,
     PortfolioColumn,
@@ -28,6 +30,7 @@ from interop.plugins.shared.power_systems_investments_schema import (
 from interop.plugins.shared.sienna_constants import (
     SIENNA_NAME_COLUMN,
     SIENNA_REGION_COLUMN,
+    MinMaxField,
     SiennaACBusCol,
     SiennaComponent,
     SiennaStructField,
@@ -35,6 +38,7 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.sienna_investments_constants import (
     PORTFOLIO_FINANCIAL_DATA_TABLE,
+    SiennaAggregateTransportTechnologyCol,
     SiennaCapitalCostField,
     SiennaDemandRequirementCol,
     SiennaInvestmentsComponent,
@@ -44,17 +48,33 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplyTechnologyCol,
 )
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
+from interop.plugins.steps.sienna_to_powersystemsinvestments._carbon_caps import (
+    report_carbon_caps,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_default,
     record_not_mapped,
     record_translation,
 )
+from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_fleet import (
+    ExistingFleetMapper,
+)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._limits import (
+    LimitRow,
+    LimitsByYear,
+)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_days import (
+    list_portfolio_years,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._series import derive_series
+from interop.plugins.steps.sienna_to_powersystemsinvestments._transport import TransportLinks
+from interop.plugins.steps.sienna_to_powersystemsinvestments._unmodelled import report_unmodelled
 
 # The types the step carries over, in the order the document lists them.
 _TECHNOLOGY_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
     SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
     SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
     SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
     SiennaInvestmentsComponent.CARBON_CAPS,
 )
@@ -111,12 +131,39 @@ _REQUIRED_EMPTY: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] =
             {SiennaStructField.IN: _NO_LOSS, SiennaStructField.OUT: _NO_LOSS},
         ),
     ),
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY: (
+        (SiennaAggregateTransportTechnologyCol.REQUIREMENTS, []),
+    ),
     SiennaInvestmentsComponent.DEMAND_REQUIREMENT: (
         (SIENNA_REGION_COLUMN, []),
         (SiennaDemandRequirementCol.REQUIREMENTS, []),
         # The model at the pinned revision reads neither, so neither enters a result.
         (SiennaDemandRequirementCol.VALUE_OF_LOST_LOAD, _NO_COST),
         (SiennaDemandRequirementCol.UNSERVED_DEMAND_CURVE, _zero_value_curve()),
+    ),
+}
+
+# The package's own defaults for a limit, which bound nothing a plan builds.
+_NO_CAPACITY_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1e8}
+_NO_DURATION_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1000.0}
+_TRANSPORT_UNIT_SIZE = 1.0
+
+# SiennaSchemas states a storage duration in minutes, and the package reads hours.
+_MINUTES_PER_HOUR = 60.0
+
+# The fields the reader rejects as null where a source may state none, with the package's default.
+_PACKAGE_DEFAULTS: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] = {
+    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY: (
+        (SiennaSupplyTechnologyCol.CAPACITY_LIMITS, _NO_CAPACITY_LIMIT),
+    ),
+    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY: (
+        (SiennaStorageTechnologyCol.CAPACITY_LIMITS_DISCHARGE, _NO_CAPACITY_LIMIT),
+        (SiennaStorageTechnologyCol.CAPACITY_LIMITS_ENERGY, _NO_CAPACITY_LIMIT),
+        (SiennaStorageTechnologyCol.DURATION_LIMITS, _NO_DURATION_LIMIT),
+    ),
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY: (
+        (SiennaAggregateTransportTechnologyCol.CAPACITY_LIMITS, _NO_CAPACITY_LIMIT),
+        (SiennaAggregateTransportTechnologyCol.UNIT_SIZE, _TRANSPORT_UNIT_SIZE),
     ),
 }
 
@@ -134,10 +181,49 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         _map_zones(state, self._recorder)
         _map_financial_data(state)
-        for sienna_type in _TECHNOLOGY_TYPES:
-            _map_technologies(state, sienna_type, self._recorder)
+        context = _PlanContext(
+            frozenset(list_portfolio_years(state)),
+            LimitsByYear(self._recorder),
+            TransportLinks(self._recorder),
+        )
+        rows_by_type = {
+            str(sienna_type): _map_rows(state, sienna_type, context, self._recorder)
+            for sienna_type in _TECHNOLOGY_TYPES
+            if sienna_type in state.source_topology
+        }
+        self._map_existing_fleet(state, rows_by_type)
+        report_unmodelled(rows_by_type, self._recorder)
+        for sienna_type, rows in rows_by_type.items():
+            state.destination_tables[sienna_type] = pl.DataFrame(rows)
+        context.limits.warn_lost()
+        context.links.warn_lost()
+        report_carbon_caps(state, self._recorder)
         derive_series(state, self._recorder)
         return state
+
+    def _map_existing_fleet(
+        self, state: State, rows_by_type: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        """Give the plan the fleet that already runs, and the devices the adapter attaches."""
+        mapper = ExistingFleetMapper(self._recorder)
+        fleet = mapper.build_fleet(state)
+        supply = rows_by_type.setdefault(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value, [])
+        all_rows = [row for rows in rows_by_type.values() for row in rows]
+        for plant in mapper.list_plants(fleet, all_rows, state):
+            supply.append(_map_existing_plant(plant.row, plant.operation_cost, self._recorder))
+        if not supply:
+            del rows_by_type[SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value]
+        mapper.set_floors(fleet, rows_by_type)
+        state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = mapper.build_table(fleet)
+        mapper.report(fleet)
+
+
+class _PlanContext(NamedTuple):
+    """The years of the plan, and what settles the fields whose meaning the model changes."""
+
+    years: frozenset[str]
+    limits: LimitsByYear
+    links: TransportLinks
 
 
 def _map_zones(state: State, recorder: ScopedRecorder) -> None:
@@ -175,17 +261,32 @@ def _map_financial_data(state: State) -> None:
     state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = source.collect()
 
 
-def _map_technologies(
-    state: State, sienna_type: SiennaInvestmentsComponent, recorder: ScopedRecorder
-) -> None:
-    """Carry one type over, reshaping the two fields whose shape differs."""
-    source = state.source_topology.get(sienna_type)
-    if source is None:
-        return
-    rows = [
-        _map_one(dict(row), sienna_type, recorder) for row in source.collect().iter_rows(named=True)
-    ]
-    state.destination_tables[str(sienna_type)] = pl.DataFrame(rows)
+def _map_rows(
+    state: State,
+    sienna_type: SiennaInvestmentsComponent,
+    context: _PlanContext,
+    recorder: ScopedRecorder,
+) -> list[dict[str, Any]]:
+    """Carry one type over, reshaping the fields whose shape or meaning differs."""
+    rows = []
+    for row in state.source_topology[sienna_type].collect().iter_rows(named=True):
+        mapped = dict(row)
+        context.limits.set_limits(
+            mapped, LimitRow(sienna_type, mapped[SIENNA_NAME_COLUMN], context.years)
+        )
+        if sienna_type is SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY:
+            context.links.set_links(mapped)
+        rows.append(_map_one(mapped, sienna_type, recorder))
+    return rows
+
+
+def _map_existing_plant(
+    row: dict[str, Any], operation_cost: dict[str, Any], recorder: ScopedRecorder
+) -> dict[str, Any]:
+    """A technology for one existing plant, running at the cost the base system states."""
+    mapped = _map_one(row, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY, recorder)
+    mapped[SiennaSupplyTechnologyCol.OPERATION_COSTS] = operation_cost
+    return mapped
 
 
 def _map_one(
@@ -194,6 +295,7 @@ def _map_one(
     name = row[SIENNA_NAME_COLUMN]
     if sienna_type is SiennaInvestmentsComponent.STORAGE_TECHNOLOGY:
         _map_storage_capital_costs(row, name, recorder)
+        _convert_duration_limits(row, name, recorder)
     elif SiennaSupplyTechnologyCol.CAPITAL_COSTS in row:
         _map_capital_costs(row, sienna_type, name, recorder)
     _fill_required(row, sienna_type, name, recorder)
@@ -255,6 +357,35 @@ def _fill_required(
             value=empty,
             derivation="the destination rejects a null here, so nothing states an empty value",
         )
+    for field, default in _PACKAGE_DEFAULTS.get(sienna_type, ()):
+        stated = row.get(field)
+        if stated is not None and not _is_partial_limit(stated, default):
+            continue
+        row[field] = _fill_bounds(stated, default)
+        record_default(
+            recorder,
+            component=str(sienna_type),
+            name=name,
+            field=field,
+            value=row[field],
+            derivation="the destination rejects a null here, so it takes the package's default",
+        )
+
+
+def _is_partial_limit(stated: Any, default: Any) -> bool:
+    """Whether a limit states one bound only, where the reader indexes both by name."""
+    return (
+        isinstance(stated, dict)
+        and isinstance(default, dict)
+        and not default.keys() <= {key for key, value in stated.items() if value is not None}
+    )
+
+
+def _fill_bounds(stated: Any, default: Any) -> Any:
+    """The stated bounds of a limit, and the package's default for each bound it leaves out."""
+    if not isinstance(stated, dict):
+        return default
+    return {**default, **{key: value for key, value in stated.items() if value is not None}}
 
 
 def _map_capital_costs(
@@ -299,6 +430,28 @@ def _map_storage_capital_costs(row: dict[str, Any], name: str, recorder: ScopedR
         )
     _report_interconnection_cost(
         wrapper, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY.value, name, recorder
+    )
+
+
+def _convert_duration_limits(row: dict[str, Any], name: str, recorder: ScopedRecorder) -> None:
+    """The duration bounds of a store in hours, where SiennaSchemas states them in minutes."""
+    minutes = row.get(SiennaStorageTechnologyCol.DURATION_LIMITS)
+    if minutes is None:
+        return
+    hours = {
+        bound: None if value is None else value / _MINUTES_PER_HOUR
+        for bound, value in minutes.items()
+    }
+    row[SiennaStorageTechnologyCol.DURATION_LIMITS] = hours
+    record_translation(
+        recorder,
+        component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY.value,
+        name=name,
+        source_field=f"{SiennaStorageTechnologyCol.DURATION_LIMITS} (min)",
+        source_value=minutes,
+        destination_field=f"{SiennaStorageTechnologyCol.DURATION_LIMITS} (h)",
+        destination_value=hours,
+        derivation="duration_limits in minutes ÷ 60 min/h, because the package reads hours",
     )
 
 

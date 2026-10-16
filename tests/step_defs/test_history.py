@@ -150,8 +150,28 @@ def given_recorded_solve(isolated_history: Path, path: str, model: str) -> dict[
         "details": {
             "sienna_json_path": path,
             "network_model": model,
+            "unserved_energy": "penalised",
             "output_dir": "solved",
         },
+    }
+    _write_history(isolated_history, [invocation])
+    return invocation
+
+
+@given(
+    parsers.parse(
+        'a recorded solve of "{path}" with network model "{model}" and no unserved energy '
+        "answer in my history"
+    ),
+    target_fixture="recorded_invocation",
+)
+def given_recorded_solve_without_unserved_energy(
+    isolated_history: Path, path: str, model: str
+) -> dict[str, Any]:
+    invocation: dict[str, Any] = {
+        "command": "solve",
+        "timestamp": "2026-05-20T12:00:00+00:00",
+        "details": {"sienna_json_path": path, "network_model": model, "output_dir": "solved"},
     }
     _write_history(isolated_history, [invocation])
     return invocation
@@ -219,7 +239,7 @@ def given_recorded_compare(isolated_history: Path) -> dict[str, Any]:
 def when_run_solve_from_menu(monkeypatch: pytest.MonkeyPatch, path: str, model: str) -> None:
     invoke_run(
         monkeypatch,
-        ["solve", "sienna", model, "exact", "simplex", "choose", "choose", "quit"],
+        ["solve", "sienna", model, "penalised", "exact", "simplex", "choose", "choose", "quit"],
         extra_path_answers={
             "Path to PowerSimulations.jl system JSON?": path,
             "Output directory?": "solved",
@@ -238,6 +258,7 @@ def when_replay_recorded_solve(
             recorded_invocation,
             "sienna",
             "dcp",
+            "penalised",
             "exact",
             "simplex",
             "choose",

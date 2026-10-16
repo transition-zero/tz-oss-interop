@@ -125,6 +125,12 @@ class ACBusType(StrEnum):
     SLACK = "SLACK"
 
 
+class BusCarrier(StrEnum):
+    """The carrier of a bus in its extension record, because a Sienna ACBus has no field for it."""
+
+    AC = "AC"
+
+
 class SiennaAreaCol:
     """Sienna Area destination table column names."""
 
@@ -650,12 +656,23 @@ SYSTEM_BASE_MVA: float = 100.0
 # series is emitted. Matches the np.ptp < 1e-9 test in the translation doc.
 FLAT_TIME_SERIES_EPSILON: float = 1e-9
 
+# Sienna reads a unit that has never run as having run for this long, which is the schema's
+# own way of saying the commitment history is unknown.
+TIME_AT_STATUS_SENTINEL: float = 10000.0
+
 # Polars Enum dtypes
 BUSTYPE_DTYPE: pl.DataType = pl.Enum([t.value for t in ACBusType])
 LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])
 PRIME_MOVERS_DTYPE: pl.DataType = pl.Enum([p.value for p in SiennaPrimeMovers])
 THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels])
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
+
+# The bus values that a Sienna consumer assumes when a source states no voltage, in per unit.
+DEFAULT_BUS_BASE_VOLTAGE: float = 1.0
+DEFAULT_BUS_MAGNITUDE: float = 1.0
+DEFAULT_BUS_ANGLE: float = 0.0
+BUS_VOLTAGE_LIMIT_MIN: float = 0.9
+BUS_VOLTAGE_LIMIT_MAX: float = 1.1
 FROM_TO_DTYPE: pl.DataType = pl.Struct({FromToField.FROM: pl.Float64, FromToField.TO: pl.Float64})
 MIN_MAX_DTYPE: pl.DataType = pl.Struct({MinMaxField.MIN: pl.Float64, MinMaxField.MAX: pl.Float64})
 

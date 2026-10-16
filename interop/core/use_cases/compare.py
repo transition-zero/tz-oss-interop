@@ -123,6 +123,7 @@ class CompareUsingPort(CompareUseCase):
                 overrides=NodeOverrides(
                     source=side.source_params, sinks={0: {_OUTPUT_DIR_PARAM: str(scratch)}}
                 ),
+                user_mappings_path=side.user_mappings_path,
             )
             raw = self._fs.read_bytes(scratch / _RESULTS_PARQUET)
             return _naming_every_variable(pl.read_parquet(io.BytesIO(raw)))

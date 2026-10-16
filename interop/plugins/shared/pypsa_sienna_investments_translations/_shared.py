@@ -8,7 +8,7 @@ names the class it belongs to.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any
@@ -37,6 +37,7 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 
 PYPSA_TO_SIENNA_INVESTMENTS = "pypsa-to-sienna-investments"
 PLEXOS_TO_SIENNA_INVESTMENTS = "plexos-to-sienna-investments"
+OSEMOSYS_TO_SIENNA_INVESTMENTS = "osemosys-to-sienna-investments"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,12 @@ class InvestmentsSource:
     # The name this source gives a column the rules read under another name. A rule names a
     # column once; two sources can call the value behind it two different things.
     attribute_names: Mapping[str, str] = field(default_factory=dict)
+    # How this source states the year that a device leaves service, and what retiring costs.
+    retirement_derivation: str = "the retirement year the extensions sidecar carries, per device"
+    retirement_cost_note: str = (
+        "RetirementPotential requires a retirement cost and PyPSA prices no retirement, so "
+        "retiring a device costs nothing"
+    )
 
     def attribute(self, column: str | None) -> str | None:
         """What this source calls one column, which is the column itself unless stated."""
@@ -343,6 +350,32 @@ def financial_data_struct(
     ).cast(TECHNOLOGY_FINANCIAL_DATA_DTYPE)
 
 
+@dataclass(frozen=True)
+class FinancialDataSources:
+    """The two source columns that ``TechnologyFinancialData`` reads, and the text of each event.
+
+    `lifetime` and `discount_rate` build the source field of each column from a row.
+    """
+
+    lifetime_col: str
+    discount_rate_col: str
+    lifetime: Callable[[dict[str, Any]], SourceField]
+    discount_rate: Callable[[dict[str, Any]], SourceField]
+    recovery_derivation: str
+    rate_derivation: str
+    base_year_note: str
+
+
+@dataclass(frozen=True)
+class FinancialDataTarget:
+    """The field that holds ``TechnologyFinancialData``, and the year its costs are quoted in."""
+
+    dest_field: DestinationFieldFactory
+    name_col: str
+    dest_col: str
+    base_year: int
+
+
 def build_financial_data_translation(
     source_field: SourceFieldFactory,
     dest_field: DestinationFieldFactory,
@@ -359,62 +392,85 @@ def build_financial_data_translation(
     capital recovery period, and the discount rate becomes the return on equity. The other
     four are the translator's own, and each gets its own event.
     """
+    sources = FinancialDataSources(
+        lifetime_col=lifetime_col,
+        discount_rate_col=discount_rate_col,
+        lifetime=lambda old: source_field(
+            old[name_col], lifetime_col, old[lifetime_col], UNIT_YEARS
+        ),
+        discount_rate=lambda old: source_field(
+            old[name_col], discount_rate_col, old[discount_rate_col]
+        ),
+        recovery_derivation="the period PyPSA annuitises an overnight cost across",
+        rate_derivation=WACC_DERIVATION,
+        base_year_note=(
+            "no PyPSA field states the year a cost is quoted in; taken from the "
+            "step's base_year parameter"
+        ),
+    )
+    return build_stated_financial_data_translation(
+        sources, FinancialDataTarget(dest_field, name_col, dest_col, base_year)
+    )
+
+
+def build_stated_financial_data_translation(
+    sources: FinancialDataSources, target: FinancialDataTarget
+) -> Translation:
+    """The six fields of ``TechnologyFinancialData``, as all-equity financing at the rate."""
+    expr = financial_data_struct(
+        pl.col(sources.lifetime_col), pl.col(sources.discount_rate_col), target.base_year
+    )
 
     def make_events(old: dict[str, Any], new: dict[str, Any]) -> Sequence[TranslationEvent]:
-        name = old[name_col]
-        written = new[dest_col]
-        field = SiennaTechnologyFinancialDataField
-        return [
-            TranslationEvent(
-                kind=EventKind.VALUE_DERIVED,
-                sources=[source_field(name, lifetime_col, old[lifetime_col], UNIT_YEARS)],
-                destinations=[
-                    dest_field(
-                        name,
-                        f"{dest_col}.{field.CAPITAL_RECOVERY_PERIOD}",
-                        written[field.CAPITAL_RECOVERY_PERIOD],
-                        UNIT_YEARS,
-                    )
-                ],
-                derivation="the period PyPSA annuitises an overnight cost across",
-            ),
-            TranslationEvent(
-                kind=EventKind.VALUE_DERIVED,
-                sources=[source_field(name, discount_rate_col, old[discount_rate_col])],
-                destinations=[
-                    dest_field(
-                        name,
-                        f"{dest_col}.{field.RETURN_ON_EQUITY}",
-                        written[field.RETURN_ON_EQUITY],
-                    )
-                ],
-                derivation=WACC_DERIVATION,
-                note=ALL_EQUITY_NOTE,
-            ),
-            TranslationEvent(
-                kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                destinations=[
-                    dest_field(name, f"{dest_col}.{field.DEBT_FRACTION}", ALL_EQUITY_DEBT_FRACTION),
-                    dest_field(name, f"{dest_col}.{field.DEBT_RATE}", ALL_EQUITY_DEBT_RATE),
-                    dest_field(name, f"{dest_col}.{field.TAX_RATE}", ALL_EQUITY_TAX_RATE),
-                ],
-                note=ALL_EQUITY_NOTE,
-            ),
-            TranslationEvent(
-                kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                destinations=[
-                    dest_field(name, f"{dest_col}.{field.TECHNOLOGY_BASE_YEAR}", base_year)
-                ],
-                note="no PyPSA field states the year a cost is quoted in; taken from the "
-                "step's base_year parameter",
-            ),
-        ]
+        return _build_financial_data_events(sources, target, old, new[target.dest_col])
 
-    return Translation(
-        exprs=[
-            financial_data_struct(pl.col(lifetime_col), pl.col(discount_rate_col), base_year).alias(
-                dest_col
-            )
-        ],
-        make_events=make_events,
-    )
+    return Translation(exprs=[expr.alias(target.dest_col)], make_events=make_events)
+
+
+def _build_financial_data_events(
+    sources: FinancialDataSources,
+    target: FinancialDataTarget,
+    old: dict[str, Any],
+    written: dict[str, Any],
+) -> list[TranslationEvent]:
+    field = SiennaTechnologyFinancialDataField
+
+    def dest(attribute: str, value: object, unit: str | None = None) -> Any:
+        name = old[target.name_col]
+        return target.dest_field(name, f"{target.dest_col}.{attribute}", value, unit)
+
+    return [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[sources.lifetime(old)],
+            destinations=[
+                dest(
+                    field.CAPITAL_RECOVERY_PERIOD,
+                    written[field.CAPITAL_RECOVERY_PERIOD],
+                    UNIT_YEARS,
+                )
+            ],
+            derivation=sources.recovery_derivation,
+        ),
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[sources.discount_rate(old)],
+            destinations=[dest(field.RETURN_ON_EQUITY, written[field.RETURN_ON_EQUITY])],
+            derivation=sources.rate_derivation,
+            note=ALL_EQUITY_NOTE,
+        ),
+        TranslationEvent(
+            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+            destinations=[
+                dest(field.DEBT_FRACTION, ALL_EQUITY_DEBT_FRACTION),
+                dest(field.DEBT_RATE, ALL_EQUITY_DEBT_RATE),
+                dest(field.TAX_RATE, ALL_EQUITY_TAX_RATE),
+            ],
+            note=ALL_EQUITY_NOTE,
+        ),
+        TranslationEvent(
+            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+            destinations=[dest(field.TECHNOLOGY_BASE_YEAR, target.base_year)],
+            note=sources.base_year_note,
+        ),
+    ]

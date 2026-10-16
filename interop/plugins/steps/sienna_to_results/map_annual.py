@@ -1,0 +1,388 @@
+"""The annual rows of a solve over representative periods.
+
+A solve over representative periods states each hour of a period once, and the period occurs
+`weight` times in the year. The `representative_period` records of the extensions sidecar give
+each period's hours and weight, so the hourly rows of the solve sum to the energy of the year.
+With no such records, the solve covers the hours it states and nothing more, so no annual row
+is written.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import NamedTuple
+
+import polars as pl
+
+from interop.core.extensions import (
+    ExtensionKind,
+    ExtensionLookup,
+    ExtensionReader,
+    GeneratorExtension,
+)
+from interop.core.pipeline import State
+from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
+from interop.plugins.shared.results_constants import (
+    RESULTS_SCHEMA,
+    RESULTS_TABLE_KEY,
+    VARIABLE_UNIT,
+    ResultsCol,
+    ResultsVariable,
+)
+from interop.plugins.shared.sienna_constants import (
+    MinMaxField,
+    SiennaGeneratorCol,
+    SiennaLinkCol,
+    SiennaTable,
+)
+from interop.plugins.shared.sienna_results_constants import (
+    SNAPSHOT_HOURS,
+    AnnualCol,
+    SiennaResultSeries,
+)
+from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.steps.sienna_to_results.hour_weights import HourWeighter
+from interop.ports.outbound.reporting import (
+    DestinationField,
+    EventKind,
+    SourceField,
+    TranslationEvent,
+)
+
+log = logging.getLogger(__name__)
+
+_FIRST_MONTH = 1
+_FIRST_DAY = 1
+_EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
+
+_Schema = dict[str, pl.DataType | type[pl.DataType]]
+_PRODUCTION_SCHEMA: _Schema = {
+    ResultsCol.COMPONENT: pl.Utf8,
+    ResultsCol.CATEGORY: pl.Utf8,
+    AnnualCol.YEAR: pl.Int32,
+    ResultsCol.VALUE: pl.Float64,
+}
+_RATES_SCHEMA: _Schema = {
+    ResultsCol.COMPONENT: pl.Utf8,
+    AnnualCol.POLLUTANT: pl.Utf8,
+    AnnualCol.RATE: pl.Float64,
+}
+
+_PRODUCTION_DERIVATION = (
+    "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
+    "|flow| for a TwoTerminalGenericHVDCLine, × 1 h × the weight of the representative "
+    "period that holds the hour → production at 1 January of the year. The dispatch of a "
+    "RenewableNonDispatch is its ActivePowerTimeSeriesParameter. The solve models the HVDC "
+    "line as lossless, so the energy that it delivers equals the energy that it sends."
+)
+_INSTALLED_CAPACITY_DERIVATION = (
+    "base_power × rating for a generator or a storage, active_power_limits_from.max for a "
+    "TwoTerminalGenericHVDCLine → installed_capacity at 1 January of the year"
+)
+_EMISSIONS_DERIVATION = (
+    "Σ over generators of production × emission_rates_t_per_mwh of the pollutant → emissions "
+    "at 1 January of the year"
+)
+_UNPRODUCED_NOTE = (
+    "the solve states no output for the component, so it has installed_capacity and no production"
+)
+_UNPRODUCED_WARNING = (
+    "%d component(s) have a rating, but the solve states no output for them, so they have no "
+    "production: %s"
+)
+
+_PRODUCTION_SOURCES = [
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaResultSeries.ACTIVE_POWER,
+        name=ResultsVariable.DISPATCH,
+    ),
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaResultSeries.ACTIVE_POWER_PARAMETER,
+        name=ResultsVariable.DISPATCH,
+    ),
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaResultSeries.FLOW_ACTIVE_POWER,
+        name=ResultsVariable.FLOW,
+    ),
+    SourceField(
+        framework=Framework.SIENNA,
+        component=ExtensionKind.REPRESENTATIVE_PERIOD,
+        name=AnnualCol.WEIGHT,
+    ),
+]
+_INSTALLED_CAPACITY_SOURCES = [
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaTable.GENERATORS,
+        name=SiennaGeneratorCol.RATING,
+    ),
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaTable.STORAGE,
+        name=SiennaGeneratorCol.RATING,
+    ),
+    SourceField(
+        framework=Framework.SIENNA,
+        component=SiennaTable.LINKS,
+        name=SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
+    ),
+]
+_EMISSIONS_SOURCES = [
+    SourceField(
+        framework=Framework.SIENNA,
+        component=ExtensionKind.GENERATOR,
+        name=_EMISSION_RATES_FIELD,
+    ),
+]
+
+
+class HourlyResults(NamedTuple):
+    """The hourly rows of the solve, in the results format, by the kind of component."""
+
+    generator_dispatch: list[pl.LazyFrame]
+    storage_dispatch: list[pl.LazyFrame]
+    line_flow: list[pl.LazyFrame]
+    link_flow: list[pl.LazyFrame]
+    load: list[pl.LazyFrame]
+
+    def list_frames(self) -> list[pl.LazyFrame]:
+        return [
+            *self.generator_dispatch,
+            *self.storage_dispatch,
+            *self.line_flow,
+            *self.link_flow,
+            *self.load,
+        ]
+
+    def list_production_frames(self) -> list[pl.LazyFrame]:
+        return [*self.generator_dispatch, *self.storage_dispatch, *self.link_flow]
+
+
+class Production(NamedTuple):
+    """MWh in each year, by component, for each kind of component that produces."""
+
+    generators: pl.DataFrame
+    storage: pl.DataFrame
+    links: pl.DataFrame
+
+    def build_table(self) -> pl.DataFrame:
+        return pl.concat([self.generators, self.storage, self.links])
+
+
+class AnnualResultsMapper:
+    """Writes `production`, `installed_capacity` and `emissions` for a solve over
+    representative periods."""
+
+    def __init__(self, recorder: ScopedRecorder) -> None:
+        self._recorder = recorder
+
+    def map_annual(
+        self, state: State, hourly: HourlyResults, carrier_lookup: pl.LazyFrame | None
+    ) -> list[pl.LazyFrame]:
+        reader = state.extension_reader(self._recorder)
+        weights = self._build_weights(reader, hourly)
+        if weights.is_empty():
+            return []
+        production = _build_all_production(hourly, weights)
+        produced = production.build_table()
+        capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
+        return [
+            *self._map_production(produced),
+            *self._map_installed_capacity(capacity, produced),
+            *self._map_emissions(production.generators, reader.read(ExtensionKind.GENERATOR)),
+        ]
+
+    def _build_weights(self, reader: ExtensionReader, hourly: HourlyResults) -> pl.DataFrame:
+        records = reader.read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
+        if not records:
+            return pl.DataFrame()
+        weighter = HourWeighter(self._recorder)
+        return weighter.build_hour_weights(records, hourly.list_production_frames())
+
+    def _map_production(self, production: pl.DataFrame) -> list[pl.LazyFrame]:
+        if production.is_empty():
+            return []
+        self._record_derivation(
+            ResultsVariable.PRODUCTION, _PRODUCTION_SOURCES, _PRODUCTION_DERIVATION
+        )
+        return [_build_annual_rows(production, ResultsVariable.PRODUCTION)]
+
+    def _map_installed_capacity(
+        self, capacity: pl.DataFrame, production: pl.DataFrame
+    ) -> list[pl.LazyFrame]:
+        if capacity.is_empty():
+            return []
+        self._record_derivation(
+            ResultsVariable.INSTALLED_CAPACITY,
+            _INSTALLED_CAPACITY_SOURCES,
+            _INSTALLED_CAPACITY_DERIVATION,
+        )
+        self._report_unproduced(capacity.join(production, on=ResultsCol.COMPONENT, how="anti"))
+        return [_build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
+
+    def _map_emissions(
+        self, production: pl.DataFrame, generators: ExtensionLookup[GeneratorExtension]
+    ) -> list[pl.LazyFrame]:
+        rates = _build_emission_rates(production, generators)
+        if rates.is_empty():
+            return []
+        self._record_derivation(
+            ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, _EMISSIONS_DERIVATION
+        )
+        return [_build_annual_rows(_build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+
+    def _record_derivation(
+        self, variable: ResultsVariable, sources: list[SourceField], derivation: str
+    ) -> None:
+        self._recorder.append(
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=list(sources),
+                destinations=[_build_results_destination(variable)],
+                derivation=derivation,
+            )
+        )
+
+    def _report_unproduced(self, capacity: pl.DataFrame) -> None:
+        """Report each component that has a rating and no output in the solve."""
+        rows = capacity.unique(ResultsCol.COMPONENT, maintain_order=True).iter_rows(named=True)
+        names = []
+        for row in rows:
+            names.append(row[ResultsCol.COMPONENT])
+            self._recorder.append(
+                TranslationEvent(
+                    kind=EventKind.NOT_MAPPED,
+                    sources=[
+                        SourceField(
+                            framework=Framework.SIENNA,
+                            component=row[AnnualCol.SIENNA_TYPE],
+                            name=row[ResultsCol.COMPONENT],
+                        )
+                    ],
+                    destinations=[_build_results_destination(ResultsVariable.PRODUCTION)],
+                    note=_UNPRODUCED_NOTE,
+                )
+            )
+        if names:
+            log.warning(_UNPRODUCED_WARNING, len(names), name_a_few(names))
+
+
+def _build_results_destination(variable: ResultsVariable) -> DestinationField:
+    return DestinationField(
+        framework=Framework.RESULTS,
+        component=RESULTS_TABLE_KEY,
+        name=str(variable),
+        attribute=ResultsCol.VARIABLE,
+        unit=VARIABLE_UNIT[variable],
+    )
+
+
+def _build_all_production(hourly: HourlyResults, weights: pl.DataFrame) -> Production:
+    positive_part = pl.col(ResultsCol.VALUE).clip(lower_bound=0.0)
+    return Production(
+        generators=_build_production(hourly.generator_dispatch, weights, positive_part),
+        storage=_build_production(hourly.storage_dispatch, weights, positive_part),
+        links=_build_production(hourly.link_flow, weights, pl.col(ResultsCol.VALUE).abs()),
+    )
+
+
+def _build_years(weights: pl.DataFrame) -> pl.DataFrame:
+    year = pl.col(ResultsCol.TIMESTAMP).dt.year().alias(AnnualCol.YEAR)
+    return weights.select(year).unique().sort(AnnualCol.YEAR)
+
+
+def _build_production(
+    frames: list[pl.LazyFrame], weights: pl.DataFrame, power: pl.Expr
+) -> pl.DataFrame:
+    """MWh in each year, by component: power × 1 h × the weight of the hour, summed."""
+    if not frames:
+        return pl.DataFrame(schema=_PRODUCTION_SCHEMA)
+    energy = (power * SNAPSHOT_HOURS * pl.col(AnnualCol.WEIGHT)).sum().alias(ResultsCol.VALUE)
+    year = pl.col(ResultsCol.TIMESTAMP).dt.year().alias(AnnualCol.YEAR)
+    return (
+        pl.concat(frames)
+        .join(weights.lazy(), on=ResultsCol.TIMESTAMP, how="inner")
+        .with_columns(year)
+        .group_by(ResultsCol.COMPONENT, ResultsCol.CATEGORY, AnnualCol.YEAR, maintain_order=True)
+        .agg(energy)
+        .collect()
+        .cast(pl.Schema(_PRODUCTION_SCHEMA))
+    )
+
+
+def _build_capacity(
+    state: State, carrier_lookup: pl.LazyFrame | None, years: pl.DataFrame
+) -> pl.DataFrame:
+    """The MW rating of each generator, storage and HVDC line, for each year of the solve."""
+    rated = pl.col(SiennaGeneratorCol.BASE_POWER) * pl.col(SiennaGeneratorCol.RATING)
+    limit = pl.col(SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM).struct.field(MinMaxField.MAX)
+    ratings = [
+        _build_rating(state.source_topology.get(SiennaTable.GENERATORS), rated, carrier_lookup),
+        _build_rating(state.source_topology.get(SiennaTable.STORAGE), rated, carrier_lookup),
+        _build_rating(state.source_topology.get(SiennaTable.LINKS), limit, None),
+    ]
+    stated = [rating for rating in ratings if rating is not None]
+    if not stated:
+        return pl.DataFrame()
+    return pl.concat(stated).collect().join(years, how="cross")
+
+
+def _build_rating(
+    table: pl.LazyFrame | None, rating: pl.Expr, carrier_lookup: pl.LazyFrame | None
+) -> pl.LazyFrame | None:
+    if table is None:
+        return None
+    rows = table.select(
+        pl.col(SiennaGeneratorCol.NAME).alias(ResultsCol.COMPONENT),
+        pl.col(SiennaGeneratorCol.SIENNA_TYPE).alias(AnnualCol.SIENNA_TYPE),
+        rating.cast(pl.Float64).alias(ResultsCol.VALUE),
+    )
+    if carrier_lookup is None:
+        return rows.with_columns(pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY))
+    categories = carrier_lookup.rename({StagedTimeSeriesCol.COMPONENT: ResultsCol.COMPONENT})
+    return rows.join(categories, on=ResultsCol.COMPONENT, how="left").unique(
+        subset=ResultsCol.COMPONENT, keep="first", maintain_order=True
+    )
+
+
+def _build_emission_rates(
+    production: pl.DataFrame, generators: ExtensionLookup[GeneratorExtension]
+) -> pl.DataFrame:
+    """The t/MWh of each pollutant, for each generator of the solve that states a rate."""
+    rows = [
+        (name, pollutant, rate)
+        for name in production[ResultsCol.COMPONENT].unique().sort().to_list()
+        for pollutant, rate in (generators.get(name).emission_rates_t_per_mwh or {}).items()
+    ]
+    return pl.DataFrame(rows, schema=_RATES_SCHEMA, orient="row")
+
+
+def _build_emissions(production: pl.DataFrame, rates: pl.DataFrame) -> pl.DataFrame:
+    """t in each year, by pollutant: the production of each generator × its rate, summed."""
+    emitted = (pl.col(ResultsCol.VALUE) * pl.col(AnnualCol.RATE)).sum().alias(ResultsCol.VALUE)
+    return (
+        production.join(rates, on=ResultsCol.COMPONENT, how="inner")
+        .group_by(AnnualCol.POLLUTANT, AnnualCol.YEAR, maintain_order=True)
+        .agg(emitted)
+        .select(
+            pl.col(AnnualCol.POLLUTANT).alias(ResultsCol.COMPONENT),
+            pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY),
+            AnnualCol.YEAR,
+            ResultsCol.VALUE,
+        )
+    )
+
+
+def _build_annual_rows(rows: pl.DataFrame, variable: ResultsVariable) -> pl.LazyFrame:
+    january_first = pl.datetime(pl.col(AnnualCol.YEAR), _FIRST_MONTH, _FIRST_DAY)
+    return rows.lazy().select(
+        pl.lit(variable.value).alias(ResultsCol.VARIABLE),
+        pl.col(ResultsCol.COMPONENT),
+        pl.col(ResultsCol.CATEGORY),
+        january_first.cast(RESULTS_SCHEMA[ResultsCol.TIMESTAMP]).alias(ResultsCol.TIMESTAMP),
+        pl.col(ResultsCol.VALUE).cast(pl.Float64),
+    )

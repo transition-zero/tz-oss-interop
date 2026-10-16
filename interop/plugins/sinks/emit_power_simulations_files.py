@@ -6,8 +6,12 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
+from interop.plugins.shared.sienna_constants import SYSTEM_BASE_MVA
 from interop.plugins.sinks.emit_power_simulations_h5_sidecar import EmitPowerSimulationsH5Sidecar
-from interop.plugins.sinks.emit_power_simulations_system_json import EmitPowerSimulationsSystemJson
+from interop.plugins.sinks.emit_power_simulations_system_json import (
+    EmitPowerSimulationsSystemJson,
+    reject_other_base_power,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
 
 
@@ -19,7 +23,7 @@ class EmitPowerSimulationsFilesParams(BaseModel):
         description="the HDF5 time-series sidecar the system.json references by UUID"
     )
     system_name: str = Field(default="SiennaSystem", description="name recorded on the system")
-    base_power: float = Field(default=100.0, description="system base power in MVA")
+    base_power: float = Field(default=SYSTEM_BASE_MVA, description="system base power in MVA")
     frequency: float = Field(default=50.0, description="system frequency in Hz")
 
 
@@ -39,6 +43,7 @@ class EmitPowerSimulationsFiles(Sink):
                 f"{type(self).__name__} requires {EmitPowerSimulationsFilesParams.__name__}, "
                 f"got {type(params).__name__}"
             )
+        reject_other_base_power(params.base_power)
 
         h5_path = params.h5_output_path
         with self._fs.open_write(h5_path) as fh:

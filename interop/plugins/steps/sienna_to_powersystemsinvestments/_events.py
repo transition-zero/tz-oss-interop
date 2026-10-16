@@ -13,6 +13,9 @@ from interop.ports.outbound.reporting import (
     TranslationEvent,
 )
 
+PLAN = "plan"
+"""The name an event gives the whole plan, where no one component holds the value."""
+
 
 def record_translation(
     recorder: ScopedRecorder,
