@@ -39,6 +39,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
+    PLAN,
     record_default,
     record_not_mapped,
     record_translation,
@@ -46,7 +47,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
 from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
     PROFILED_SUPPLY_TYPES,
-    read_supply_types,
+    build_supply_types,
     report_unprofiled,
 )
 
@@ -56,7 +57,8 @@ _SOURCE_SERIES = SiennaSeriesName.MAX_ACTIVE_POWER.value
 _OWNER_TYPE = SiennaTimeSeriesAssociationCol.OWNER_TYPE
 _ONE_HOUR = timedelta(hours=1)
 _FIRST_SLICE = 1
-_PLAN = "plan"
+_INVESTMENT_PERIODS = "InvestmentPeriods"
+_FIRST_TIMESTAMP_FIELD = "first_timestamp"
 _SUPPLY = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value
 _DEMAND = SiennaInvestmentsComponent.DEMAND_REQUIREMENT.value
 
@@ -190,7 +192,7 @@ def list_portfolio_years(state: State) -> list[str]:
 def derive_representative_day_series(state: State, recorder: ScopedRecorder) -> None:
     """One record for each technology, year and representative day, and one period a year."""
     _report_other_series(state, recorder)
-    profiles = _drop_unprofiled(_read_profiles(state), read_supply_types(state), recorder)
+    profiles = _drop_unprofiled(_build_profiles(state), build_supply_types(state), recorder)
     years = list_portfolio_years(state)
     days = _list_days(state, recorder)
     slicer = _Slicer(recorder, profiles)
@@ -232,7 +234,7 @@ def _report_other_series(state: State, recorder: ScopedRecorder) -> None:
         log.warning(_OTHER_SERIES_WARNING, len(names), name_a_few(names))
 
 
-def _read_profiles(state: State) -> pl.DataFrame:
+def _build_profiles(state: State) -> pl.DataFrame:
     """One row for each owner type, component and year, holding its hours and values in order."""
     frames = [
         frame.select(
@@ -281,7 +283,7 @@ def _list_days(state: State, recorder: ScopedRecorder) -> list[Day]:
             recorder,
             component=ExtensionKind.REPRESENTATIVE_PERIOD.value,
             name=name,
-            field="first_timestamp",
+            field=_FIRST_TIMESTAMP_FIELD,
             value=None,
             derivation=_FAULTY_DAY_NOTE,
         )
@@ -313,8 +315,8 @@ def _report_gap_years(years: list[str], recorder: ScopedRecorder) -> None:
         return
     record_not_mapped(
         recorder,
-        component="InvestmentPeriods",
-        name=_PLAN,
+        component=_INVESTMENT_PERIODS,
+        name=PLAN,
         field=SeriesDocument.PERIODS,
         value=years,
         derivation=_GAP_NOTE.format(years=", ".join(gaps)),
@@ -438,7 +440,7 @@ class _SeriesSplitter:
         for owner_type, name, power_systems_type in _list_profiled_technologies(state):
             missing = sorted(years - stated.get((owner_type, name), set()))
             if missing:
-                base = _read_base_profile(state, power_systems_type, name)
+                base = _find_base_profile(state, power_systems_type, name)
                 records.extend(self._build_missing(owner_type, name, missing, base))
         return records
 
@@ -531,7 +533,7 @@ def _list_profiled_technologies(state: State) -> list[tuple[str, str, str | None
     type."""
     found: list[tuple[str, str, str | None]] = [
         (_SUPPLY, name, power_systems_type)
-        for name, power_systems_type in read_supply_types(state).items()
+        for name, power_systems_type in build_supply_types(state).items()
         if power_systems_type in PROFILED_SUPPLY_TYPES
     ]
     demand = state.destination_tables.get(_DEMAND)
@@ -540,7 +542,7 @@ def _list_profiled_technologies(state: State) -> list[tuple[str, str, str | None
     return found
 
 
-def _read_base_profile(
+def _find_base_profile(
     state: State, power_systems_type: str | None, name: str
 ) -> list[float] | None:
     """The base system profile of one component from the first hour of its year, if any."""

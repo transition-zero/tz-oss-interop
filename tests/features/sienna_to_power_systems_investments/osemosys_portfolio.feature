@@ -18,7 +18,8 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
   The interconnector ATDELINK loses 5 % of what it carries. ATGASNEW is the only plant that
   emits CO2. The gas plant ATGASCC holds 0.5 GW in 2030, and a plan may build it up to 0.4 GW in
   2030 and 0.3 GW in 2035. The gas plant ATGASOLD and the solar plant ATSOLAROLD exist, and a
-  plan cannot build either of them.
+  plan cannot build either of them. The rooftop solar candidate ATROOF is a RenewableNonDispatch,
+  which no PowerSystemsInvestments model covers.
 
   Background:
     Given an otoole model
@@ -29,7 +30,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     And the otoole set "SEASON" holds "S1 S2"
     And the otoole set "DAYTYPE" holds "1"
     And the otoole set "DAILYTIMEBRACKET" holds "B1 B2"
-    And the otoole set "TECHNOLOGY" holds "ATGASNEW ATSOLAR ATWIND ATDELINK ATGASWELL ATGASCC ATGASOLD ATSOLAROLD"
+    And the otoole set "TECHNOLOGY" holds "ATGASNEW ATSOLAR ATWIND ATDELINK ATGASWELL ATGASCC ATGASOLD ATSOLAROLD ATROOF"
     And the otoole set "EMISSION" holds "CO2"
     And the otoole set "MODE_OF_OPERATION" holds "1"
     And the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
@@ -103,6 +104,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATGASOLD   | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATGASOLD   | ATELEC | 1                 | 2035 | 1     |
       | R1     | ATSOLAROLD | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATROOF     | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATSOLAROLD | ATELEC | 1                 | 2035 | 1     |
     And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
@@ -119,6 +121,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATDELINK   | 2030 | 200000000  |
       | R1     | ATGASCC    | 2030 | 800000000  |
       | R1     | ATGASCC    | 2035 | 800000000  |
+      | R1     | ATROOF     | 2030 | 700000000  |
     And the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2030 | 1     |
@@ -169,11 +172,12 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},                                         |
       | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"}],                                                 |
       | technologies: [                                                                                                              |
-      | {match: "GAS(NEW\|CC\|OLD)$", category: gas-cc}, {match: "SOLAR(OLD)?$", category: solar}, {match: "WIND$", category: wind}]}}                |
+      | {match: "GAS(NEW\|CC\|OLD)$", category: gas-cc}, {match: "SOLAR(OLD)?$", category: solar}, {match: "WIND$", category: wind}, {match: "ROOF$", category: rooftop}]}}                |
       | carriers: [                                                                                                                  |
       | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
       | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe},                          |
-      | {osemosys_category: wind, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: WT}]                            |
+      | {osemosys_category: wind, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: WT},                            |
+      | {osemosys_category: rooftop, sienna_component_type: RenewableNonDispatch, sienna_prime_mover_type: PVe}]                     |
     When I run the pipeline "osemosys-csv-to-sienna-investments" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv" with user mappings "user_mappings.yaml"
     And I run the pipeline "sienna-to-power-systems-investments" with overrides "source.portfolio_json_path=outputs/portfolio.json source.system_json_path=outputs/system.json source.time_series_h5_path=outputs/system_time_series_storage.h5 source.extensions_json_path=outputs/extensions.json sink[0].portfolio_path=psi/portfolio.json sink[0].h5_output_path=psi/portfolio_base_system_time_series.h5"
 
@@ -258,3 +262,8 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     Then the pipeline exit code is 0
     And the file "decisions.md" contains "so the years 2031, 2032, 2033, 2034 between the periods carry no operating cost"
     And the log contains "the 4 year(s) between the periods carry no operating cost: 2031, 2032, 2033 and 1 more"
+
+  Scenario: A candidate of a type that no model covers is recorded as left out of the plan
+    Then the pipeline exit code is 0
+    And the file "decisions.md" contains "so a technology of this type is left out of the plan"
+    And the log contains "no PowerSystemsInvestments model covers, so the plan leaves each out: ATROOF"

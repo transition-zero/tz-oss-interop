@@ -33,7 +33,6 @@ from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaACBusCol,
     SiennaComponent,
-    SiennaGeneratorCol,
     SiennaStructField,
     SiennaTable,
 )
@@ -69,6 +68,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_day
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._series import derive_series
 from interop.plugins.steps.sienna_to_powersystemsinvestments._transport import TransportLinks
+from interop.plugins.steps.sienna_to_powersystemsinvestments._unmodelled import report_unmodelled
 
 # The types the step carries over, in the order the document lists them.
 _TECHNOLOGY_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
@@ -189,6 +189,7 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
             if sienna_type in state.source_topology
         }
         self._map_existing_fleet(state, rows_by_type)
+        report_unmodelled(rows_by_type, self._recorder)
         for sienna_type, rows in rows_by_type.items():
             state.destination_tables[sienna_type] = pl.DataFrame(rows)
         context.limits.warn_lost()
@@ -205,8 +206,8 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
         fleet = mapper.build_fleet(state)
         supply = rows_by_type.setdefault(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value, [])
         all_rows = [row for rows in rows_by_type.values() for row in rows]
-        for row, operation_cost in mapper.list_plants(fleet, all_rows, state):
-            supply.append(_map_existing_plant(row, operation_cost, self._recorder))
+        for plant in mapper.list_plants(fleet, all_rows, state):
+            supply.append(_map_existing_plant(plant.row, plant.operation_cost, self._recorder))
         if not supply:
             del rows_by_type[SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value]
         mapper.set_floors(fleet, rows_by_type)
@@ -282,16 +283,6 @@ def _map_existing_plant(
     """A technology for one existing plant, running at the cost the base system states."""
     mapped = _map_one(row, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY, recorder)
     mapped[SiennaSupplyTechnologyCol.OPERATION_COSTS] = operation_cost
-    record_translation(
-        recorder,
-        component=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value,
-        name=mapped[SIENNA_NAME_COLUMN],
-        source_field=SiennaGeneratorCol.OPERATION_COST,
-        source_value=mapped[PortfolioColumn.POWER_SYSTEMS_TYPE],
-        destination_field=SiennaSupplyTechnologyCol.OPERATION_COSTS,
-        destination_value=mapped[PortfolioColumn.POWER_SYSTEMS_TYPE],
-        derivation="the operation cost of the existing plant in the base system, unchanged",
-    )
     return mapped
 
 

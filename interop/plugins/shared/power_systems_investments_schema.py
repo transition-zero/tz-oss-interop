@@ -14,7 +14,7 @@ travel in a companion document instead, and the adapter attaches them after the 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop.plugins.shared.sienna_constants import SiennaComponent
 
@@ -98,6 +98,33 @@ COMPONENT_ORDER: tuple[PortfolioComponent, ...] = (
     PortfolioComponent.DEMAND_REQUIREMENT,
     PortfolioComponent.CARBON_CAPS,
 )
+
+
+class ModelledTechnology(NamedTuple):
+    """A technology type that the adapter sets a model for, and how that type runs."""
+
+    component: PortfolioComponent
+    parameter: str
+    operations: str
+
+
+_BASIC_DISPATCH = "BasicDispatch"
+
+MODELLED_TECHNOLOGIES: tuple[ModelledTechnology, ...] = (
+    ModelledTechnology(PortfolioComponent.DEMAND_REQUIREMENT, "PowerLoad", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "RenewableDispatch", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "ThermalStandard", _BASIC_DISPATCH),
+    ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "HydroDispatch", _BASIC_DISPATCH),
+    ModelledTechnology(
+        PortfolioComponent.STORAGE_TECHNOLOGY, "EnergyReservoirStorage", "CyclicalStorageDispatch"
+    ),
+    ModelledTechnology(
+        PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
+        AGGREGATE_TRANSPORT_PARAMETER,
+        _BASIC_DISPATCH,
+    ),
+)
+"""Every type that a plan holds a technology of; a technology of any other type is left out."""
 
 PORTFOLIO_FINANCIAL_DATA_TYPE = "PortfolioFinancialData"
 PORTFOLIO_METADATA_TYPE = "PortfolioMetadata"

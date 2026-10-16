@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from interop.adapters.outbound.julia_packages import declare_julia_packages
 from interop.plugins.shared.power_systems_investments_schema import (
+    MODELLED_TECHNOLOGIES,
     SERIES_JSON_SUFFIX,
     SeriesDocument,
 )
@@ -47,13 +48,9 @@ _INVESTMENT_FORMULATIONS: dict[InvestmentTreatment, str] = {
 # its investment formulation is the one that states so.
 _DEMAND_INVESTMENT = "StaticLoadInvestment"
 _FEASIBILITY_FORMULATION = "BasicDispatchFeasibility"
-_TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = (
-    ("PSIP.DemandRequirement{PSY.PowerLoad}", "BasicDispatch"),
-    ("PSIP.SupplyTechnology{PSY.RenewableDispatch}", "BasicDispatch"),
-    ("PSIP.SupplyTechnology{PSY.ThermalStandard}", "BasicDispatch"),
-    ("PSIP.SupplyTechnology{PSY.HydroDispatch}", "BasicDispatch"),
-    ("PSIP.StorageTechnology{PSY.EnergyReservoirStorage}", "CyclicalStorageDispatch"),
-    ("PSIP.AggregateTransportTechnology{PSY.ACBranch}", "BasicDispatch"),
+_TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = tuple(
+    (f"PSIP.{model.component}{{PSY.{model.parameter}}}", model.operations)
+    for model in MODELLED_TECHNOLOGIES
 )
 
 # How far from proven optimality a mixed-integer run may stop, matching the dispatch path.

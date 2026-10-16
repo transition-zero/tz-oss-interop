@@ -136,12 +136,19 @@ in MW. The step reads the `ExistingDevices` attributes of the portfolio and sett
   name that it cannot find. The step records each such name as not mapped, and warns.
 - **A limit holds at least the existing devices.** The model bounds existing plus built
   capacity by `max`, so the step lifts a `max` below the rating of the devices to that rating.
+- **A minimum loses the existing devices.** The model bounds the capacity that each period
+  builds by `min`, and a source minimum, such as PyPSA `p_nom_min`, bounds the total. So the step
+  lowers `min` by the rating of the devices, down to 0.
 - **An existing plant that no technology names becomes a technology of its own.** It has the
   plant's name, type, Zone and operation cost, `capacity_limits` of `{min: 0, max: rating}`,
   no capital cost, and the plant as its one existing device. A `RenewableDispatch` or a
   `HydroDispatch` of this kind takes its base system profile, split into the representative
-  days of every year. An existing component of another type, such as a storage or a
-  `RenewableNonDispatch`, is left out, recorded and warned.
+  days of every year. A `HydroDispatch` of this kind loses its `hydro_budget`, and the step
+  records and warns that. When a technology already has the plant's name, the plant's own
+  technology takes the name with `/existing`. Its finance is all equity over one year, at the
+  portfolio's rate, else the highest rate of a technology, else a fixed rate of 0.05, so the
+  capital recovery factor stays defined. An existing component of another type, such as a
+  storage or a `RenewableNonDispatch`, is left out, recorded and warned.
 - **An existing link cannot attach.** The model looks the existing device of a transport
   technology up as an `ACBranch`, and the base system holds a `TwoTerminalGenericHVDCLine`. The
   step records and warns each one.
@@ -191,7 +198,9 @@ the day, and warns.
 ### One representative day
 
 This applies to a portfolio that states no series of its own. A SiennaSchemas system states one
-profile per component over the whole snapshot window, and no representative days at all. The step therefore takes **the first 24 snapshots** as
+profile per component over the whole snapshot window, and no representative days at all. A
+`RenewableDispatch` or `HydroDispatch` technology that the system states no profile for gets
+1.0 for every hour of the slice, and the step warns. The step therefore takes **the first 24 snapshots** as
 representative day 1 and weights it 365 days, and derives one investment period per year the
 slices fall in, running that whole year. Clustering a real year into several representative
 days is not done here.
@@ -262,8 +271,9 @@ rows with those of the model that the portfolio came from. The solve states no c
   every hour.
 - **A type with no model is left out.** The adapter sets a model for the types in the table
   above only. A `SupplyTechnology{RenewableNonDispatch}`, for example, is not in the plan, and
-  the adapter warns with its name. The adapter cannot reach the decisions report, so the report
-  does not name it.
+  the adapter warns with its name. The leg step records the same technologies as not mapped, so
+  the decisions report names them too. Both read the one list of modelled types,
+  `MODELLED_TECHNOLOGIES`.
 - **`ColocatedSupplyStorageTechnology` cannot be read at all.** Its generated struct declares
   three fields as a plain map where the real struct wants a pair of numbers, so the read stops
   with a `convert` error. This translation writes no such component.

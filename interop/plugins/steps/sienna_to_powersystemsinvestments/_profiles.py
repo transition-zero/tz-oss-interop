@@ -33,7 +33,7 @@ _UNPROFILED_WARNING = (
 )
 
 
-def read_supply_types(state: State) -> dict[str, str]:
+def build_supply_types(state: State) -> dict[str, str]:
     """The PowerSystems type of each supply technology of the plan, by its name."""
     table = state.destination_tables.get(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value)
     if table is None:
