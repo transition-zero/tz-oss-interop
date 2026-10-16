@@ -5,8 +5,7 @@
 file_include_globs = [".env*", ".claude/settings.local.json"]
 
 [scripts]
-# The cloud image has neither make nor uv; CI also takes the latest uv release.
-setup = "{ command -v make >/dev/null || sudo dnf install -y -q make; } && { command -v uv >/dev/null || python3 -m pip install --user --quiet uv; } && uv sync --locked --all-groups"
+setup = "bash .claude/routines/install-tools.sh"
 # Nothing here binds a port or shares a database, so workspaces can run at once.
 run_mode = "concurrent"
 

@@ -14,3 +14,5 @@ comment lists every line below, with what the check found.
   with them, and the DCO check compares them with the commit author.
 - `CONDUCTOR_WORKSPACE_ID` is set, and `command -v conductor` prints a path. The archive
   at the end of the run needs both.
+- `bash .claude/routines/install-tools.sh` exits 0, and `make --version` and `uv --version`
+  each print a version. Without them, no step can run `make lint` or `make test`.

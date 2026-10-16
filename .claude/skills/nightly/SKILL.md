@@ -108,8 +108,9 @@ one line, and the run stops.
    `LAST_RUN` is empty. Also find the checklist comment, the one whose first line is
    `### Needs you`, and keep its id; Phase 4 creates it when there is none.
 7. Install the toolchains once, for the phases that run tests:
-   `uv sync --locked --all-groups`. A failure here is reported and skips the phases that
-   run tests.
+   `bash .claude/routines/install-tools.sh`. It installs `make` and `uv` when they are
+   absent, then runs `uv sync`. A failure here is reported and skips the phases that run
+   tests.
 
 With the argument `preflight`, also run the checks in
 `.claude/routines/preflight-checks.md`. Then post one comment headed
