@@ -12,6 +12,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import NamedTuple
 
+from interop.plugins.shared.power_systems_investments_schema import (
+    MODELLED_TECHNOLOGIES,
+    PortfolioComponent,
+)
+
 
 class InvestmentsResult(StrEnum):
     """The results that the results step reads, by their PowerSystemsInvestments names."""
@@ -53,14 +58,22 @@ EXPRESSIONS_FOLDER = "results_wide/expressions"
 OPTIMIZER_STATS_CSV = "results/optimizer_stats.csv"
 OBJECTIVE_VALUE_COLUMN = "objective_value"
 
-# The technology part of a file name: the technology type and its PowerSystems parameter.
-SUPPLY_TECHNOLOGIES = (
-    "SupplyTechnology__ThermalStandard",
-    "SupplyTechnology__RenewableDispatch",
-    "SupplyTechnology__HydroDispatch",
-)
-STORAGE_TECHNOLOGIES = ("StorageTechnology__EnergyReservoirStorage",)
-TRANSPORT_TECHNOLOGIES = ("AggregateTransportTechnology__ACBranch",)
+# The character between the parts of a file name.
+_FILE_NAME_SEPARATOR = "__"
+
+
+def _list_file_technologies(component: PortfolioComponent) -> tuple[str, ...]:
+    """The technology part of a file name: the technology type and its PowerSystems parameter."""
+    return tuple(
+        f"{modelled.component}{_FILE_NAME_SEPARATOR}{modelled.parameter}"
+        for modelled in MODELLED_TECHNOLOGIES
+        if modelled.component is component
+    )
+
+
+SUPPLY_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.SUPPLY_TECHNOLOGY)
+STORAGE_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.STORAGE_TECHNOLOGY)
+TRANSPORT_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY)
 
 INVESTMENT_FORMULATIONS = ("ContinuousInvestment", "IntegerInvestment")
 OPERATIONS_FORMULATIONS = ("BasicDispatch", "CyclicalStorageDispatch")
@@ -77,7 +90,11 @@ class ResultCsvs(NamedTuple):
     def list_paths(self) -> list[tuple[str, str]]:
         """Each technology, and the path of each file that may hold its rows."""
         return [
-            (technology, f"{self.folder}/{self.result}__{technology}__{formulation}.csv")
+            (
+                technology,
+                f"{self.folder}/{self.result}{_FILE_NAME_SEPARATOR}{technology}"
+                f"{_FILE_NAME_SEPARATOR}{formulation}.csv",
+            )
             for technology in self.technologies
             for formulation in self.formulations
         ]
