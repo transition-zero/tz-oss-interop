@@ -1,4 +1,4 @@
-"""Parse the published AETOS results CSV into one row for each row of the file.
+"""Parse an OSeMOSYS results CSV with one column for each year: one row for each CSV row.
 
 The CSV has no header. A row holds a variable name, a region, the index fields of the
 variable, then one value for each model year. The row length gives the number of index
@@ -14,15 +14,14 @@ from typing import NamedTuple
 import polars as pl
 
 from interop.core.reporting import EventRecorder
-from interop.plugins.shared.aetos_results_constants import (
-    AETOS_RESULTS_CSV,
+from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.yearly_results_csv_constants import (
     FIELD_SEPARATOR,
     LEADING_FIELD_COUNT,
+    RESULTS_CSV_COMPONENT,
     SCALAR_FIELD_COUNT,
-    AetosResultsCol,
+    YearlyResultsCol,
 )
-from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 log = logging.getLogger(__name__)
@@ -51,11 +50,11 @@ _UNREADABLE_VALUE_WARNING = (
 )
 
 _RESULTS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    AetosResultsCol.VARIABLE: pl.Utf8,
-    AetosResultsCol.REGION: pl.Utf8,
-    AetosResultsCol.INDEX: pl.List(pl.Utf8),
-    AetosResultsCol.YEAR: pl.List(pl.Int64),
-    AetosResultsCol.VALUE: pl.List(pl.Float64),
+    YearlyResultsCol.VARIABLE: pl.Utf8,
+    YearlyResultsCol.REGION: pl.Utf8,
+    YearlyResultsCol.INDEX: pl.List(pl.Utf8),
+    YearlyResultsCol.YEAR: pl.List(pl.Int64),
+    YearlyResultsCol.VALUE: pl.List(pl.Float64),
 }
 
 
@@ -78,30 +77,46 @@ class ParsedResults(NamedTuple):
     unreadable_values: list[LeftOutRows]
 
 
+class ReportedSource(NamedTuple):
+    """The framework that each event names, and the recorder that takes it."""
+
+    framework: str
+    recorder: EventRecorder
+
+
+_IS_SCALAR = pl.col(_FIELD_COUNT) == SCALAR_FIELD_COUNT
+_IS_LONG_ENOUGH = pl.col(_INDEX_COUNT) >= 0
+
+
 def parse_results_rows(raw: bytes, years: list[int]) -> ParsedResults:
     """`years` are the years of the value fields, in order."""
-    fields = _parse_fields(raw).with_columns(
-        (pl.col(_FIELD_COUNT) - LEADING_FIELD_COUNT - len(years)).alias(_INDEX_COUNT)
-    )
-    is_scalar = pl.col(_FIELD_COUNT) == SCALAR_FIELD_COUNT
-    is_long_enough = pl.col(_INDEX_COUNT) >= 0
-    stated = pl.concat(
-        [
-            _reshape_scalar_rows(fields.filter(is_scalar)),
-            _reshape_yearly_rows(fields.filter(~is_scalar & is_long_enough), years),
-        ]
-    )
-    rows = _parse_values(stated)
+    fields = _enrich_with_index_count(_parse_fields(raw), years)
+    rows = _parse_values(_reshape_kept_rows(fields, years))
     return ParsedResults(
         rows=rows,
-        short_rows=_list_short_rows(fields.filter(~is_scalar & ~is_long_enough), years),
+        short_rows=_list_short_rows(fields.filter(~_IS_SCALAR & ~_IS_LONG_ENOUGH), years),
         unreadable_values=_list_unreadable_values(rows),
     )
 
 
-def report_left_out_rows(parsed: ParsedResults, recorder: EventRecorder) -> None:
-    _report_left_out_rows(parsed.short_rows, _SHORT_ROW_WARNING, recorder)
-    _report_left_out_rows(parsed.unreadable_values, _UNREADABLE_VALUE_WARNING, recorder)
+def report_left_out_rows(parsed: ParsedResults, source: ReportedSource) -> None:
+    _report_left_out_rows(parsed.short_rows, _SHORT_ROW_WARNING, source)
+    _report_left_out_rows(parsed.unreadable_values, _UNREADABLE_VALUE_WARNING, source)
+
+
+def _enrich_with_index_count(fields: pl.DataFrame, years: list[int]) -> pl.DataFrame:
+    return fields.with_columns(
+        (pl.col(_FIELD_COUNT) - LEADING_FIELD_COUNT - len(years)).alias(_INDEX_COUNT)
+    )
+
+
+def _reshape_kept_rows(fields: pl.DataFrame, years: list[int]) -> pl.DataFrame:
+    return pl.concat(
+        [
+            _reshape_scalar_rows(fields.filter(_IS_SCALAR)),
+            _reshape_yearly_rows(fields.filter(~_IS_SCALAR & _IS_LONG_ENOUGH), years),
+        ]
+    )
 
 
 def _parse_fields(raw: bytes) -> pl.DataFrame:
@@ -122,10 +137,10 @@ def _parse_fields(raw: bytes) -> pl.DataFrame:
 
 def _reshape_scalar_rows(rows: pl.DataFrame) -> pl.DataFrame:
     return rows.select(
-        pl.col(_FIELDS).list.get(0).alias(AetosResultsCol.VARIABLE),
-        pl.lit(None, dtype=pl.Utf8).alias(AetosResultsCol.REGION),
-        pl.lit([], dtype=pl.List(pl.Utf8)).alias(AetosResultsCol.INDEX),
-        pl.lit([None], dtype=pl.List(pl.Int64)).alias(AetosResultsCol.YEAR),
+        pl.col(_FIELDS).list.get(0).alias(YearlyResultsCol.VARIABLE),
+        pl.lit(None, dtype=pl.Utf8).alias(YearlyResultsCol.REGION),
+        pl.lit([], dtype=pl.List(pl.Utf8)).alias(YearlyResultsCol.INDEX),
+        pl.lit([None], dtype=pl.List(pl.Int64)).alias(YearlyResultsCol.YEAR),
         pl.col(_FIELDS).list.slice(1, 1).alias(_STATED_VALUE),
     )
 
@@ -133,12 +148,12 @@ def _reshape_scalar_rows(rows: pl.DataFrame) -> pl.DataFrame:
 def _reshape_yearly_rows(rows: pl.DataFrame, years: list[int]) -> pl.DataFrame:
     first_value = pl.col(_INDEX_COUNT) + LEADING_FIELD_COUNT
     return rows.select(
-        pl.col(_FIELDS).list.get(0).alias(AetosResultsCol.VARIABLE),
-        pl.col(_FIELDS).list.get(1).alias(AetosResultsCol.REGION),
+        pl.col(_FIELDS).list.get(0).alias(YearlyResultsCol.VARIABLE),
+        pl.col(_FIELDS).list.get(1).alias(YearlyResultsCol.REGION),
         pl.col(_FIELDS)
         .list.slice(LEADING_FIELD_COUNT, pl.col(_INDEX_COUNT))
-        .alias(AetosResultsCol.INDEX),
-        pl.lit(years, dtype=pl.List(pl.Int64)).alias(AetosResultsCol.YEAR),
+        .alias(YearlyResultsCol.INDEX),
+        pl.lit(years, dtype=pl.List(pl.Int64)).alias(YearlyResultsCol.YEAR),
         pl.col(_FIELDS).list.slice(first_value, len(years)).alias(_STATED_VALUE),
     )
 
@@ -147,15 +162,15 @@ def _parse_values(stated: pl.DataFrame) -> pl.DataFrame:
     parsed = stated.with_columns(
         pl.col(_STATED_VALUE)
         .list.eval(pl.element().cast(pl.Float64, strict=False))
-        .alias(AetosResultsCol.VALUE)
+        .alias(YearlyResultsCol.VALUE)
     )
     return parsed.select([pl.col(name).cast(dtype) for name, dtype in _RESULTS_SCHEMA.items()])
 
 
 def _list_short_rows(rows: pl.DataFrame, years: list[int]) -> list[LeftOutRows]:
     counts = (
-        rows.select(pl.col(_FIELDS).list.get(0).alias(AetosResultsCol.VARIABLE))
-        .group_by(AetosResultsCol.VARIABLE, maintain_order=True)
+        rows.select(pl.col(_FIELDS).list.get(0).alias(YearlyResultsCol.VARIABLE))
+        .group_by(YearlyResultsCol.VARIABLE, maintain_order=True)
         .agg(pl.len().alias(_ROW_COUNT))
     )
     return [
@@ -166,9 +181,9 @@ def _list_short_rows(rows: pl.DataFrame, years: list[int]) -> list[LeftOutRows]:
 
 def _list_unreadable_values(rows: pl.DataFrame) -> list[LeftOutRows]:
     """A null in `value` is a value that is not a number, because the CSV states every value."""
-    null_count = pl.col(AetosResultsCol.VALUE).list.eval(pl.element().is_null().sum()).list.first()
+    null_count = pl.col(YearlyResultsCol.VALUE).list.eval(pl.element().is_null().sum()).list.first()
     counts = (
-        rows.group_by(AetosResultsCol.VARIABLE, maintain_order=True)
+        rows.group_by(YearlyResultsCol.VARIABLE, maintain_order=True)
         .agg(null_count.sum().alias(_ROW_COUNT))
         .filter(pl.col(_ROW_COUNT) > 0)
     )
@@ -179,15 +194,17 @@ def _list_unreadable_values(rows: pl.DataFrame) -> list[LeftOutRows]:
 
 
 def _report_left_out_rows(
-    left_out: list[LeftOutRows], warning: str, recorder: EventRecorder
+    left_out: list[LeftOutRows], warning: str, source: ReportedSource
 ) -> None:
     for rows in left_out:
-        recorder.append(
+        source.recorder.append(
             TranslationEvent(
                 kind=EventKind.COMPONENT_SKIPPED,
                 sources=[
                     SourceField(
-                        framework=Framework.AETOS, component=AETOS_RESULTS_CSV, name=rows.variable
+                        framework=source.framework,
+                        component=RESULTS_CSV_COMPONENT,
+                        name=rows.variable,
                     )
                 ],
                 note=rows.note,

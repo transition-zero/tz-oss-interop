@@ -2,8 +2,8 @@ source_framework: aetos
 destination_framework: results
 source:
   name: stage_aetos_results_csv
-  # Defaults only: the prompts offer these and the user edits them. The model is not
-  # shipped with interop. docs/case_studies/aetos.md says where to download it.
+  # Defaults only: the prompts offer these and the user edits them. tz-oss-interop does not
+  # ship the model. docs/case_studies/aetos.md says where to download it.
   params:
     config_path: case_study_inputs/aetos/AETOS_Runner/config_otoole_AETOS.yaml
     csv_dir: case_study_inputs/aetos/AETOS_Runner/CSVFiles

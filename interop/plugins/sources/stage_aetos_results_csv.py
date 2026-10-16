@@ -13,12 +13,17 @@ import polars as pl
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import StagedSource, State
-from interop.plugins.shared.aetos_results_constants import (
-    AETOS_RESULTS_KEY,
-    AETOS_RESULTS_STAGING_PARQUET,
-)
-from interop.plugins.shared.aetos_results_rows import parse_results_rows, report_left_out_rows
+from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_sienna_translations._canonical import list_model_years
+from interop.plugins.shared.yearly_results_csv_constants import (
+    YEARLY_RESULTS_KEY,
+    YEARLY_RESULTS_STAGING_PARQUET,
+)
+from interop.plugins.shared.yearly_results_csv_rows import (
+    ReportedSource,
+    parse_results_rows,
+    report_left_out_rows,
+)
 from interop.plugins.sources.stage_osemosys_csv import StageOsemosysCsv, StageOsemosysCsvParams
 from interop.ports.errors import MissingInputError, UserInputError
 from interop.ports.outbound.filesystem import InputFile
@@ -48,8 +53,8 @@ class StageAetosResultsCsv(StageOsemosysCsv, StagedSource):
             self._read_results_csv(results_params.results_csv_path),
             _list_value_years(model_years, results_params.first_year),
         )
-        report_left_out_rows(parsed, self._recorder)
-        state.source_time_series[AETOS_RESULTS_KEY] = _write_rows(parsed.rows, staging_dir)
+        report_left_out_rows(parsed, ReportedSource(Framework.AETOS, self._recorder))
+        state.source_time_series[YEARLY_RESULTS_KEY] = _write_rows(parsed.rows, staging_dir)
         return state
 
     def _read_results_csv(self, results_csv_path: Path | str) -> bytes:
@@ -82,7 +87,7 @@ def _list_value_years(model_years: list[int], first_year: int) -> list[int]:
 
 
 def _write_rows(rows: pl.DataFrame, staging_dir: Path) -> pl.LazyFrame:
-    path = staging_dir / AETOS_RESULTS_STAGING_PARQUET
+    path = staging_dir / YEARLY_RESULTS_STAGING_PARQUET
     path.parent.mkdir(parents=True, exist_ok=True)
     rows.write_parquet(path)
     return pl.scan_parquet(path)

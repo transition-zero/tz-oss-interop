@@ -5,32 +5,40 @@ Feature: aetos-to-results reads a published results CSV into the results format
   step needs the output activity ratios, the carrier of each fuel and the units of the model.
   Each annual row takes the timestamp of 1 January of its year.
 
-  The invented model below has one region, two model years and three technologies. GASCC
+  The invented model below has one region, two model years and four technologies. GASCC
   makes electricity at AT in two modes. ATDE takes electricity from AT to DE and loses a
-  tenth of it. GASX makes gas. The units are GW, GWh, kt and million USD.
+  tenth of it. ATT converts the electricity fuel ATELEC into ATELEC2 at AT. GASX makes gas.
+  The units are GW, GWh, kt and million USD.
 
   Background:
     Given an otoole model
     And the otoole set "REGION" holds "R1"
-    And the otoole set "TECHNOLOGY" holds "GASCC ATDE GASX"
-    And the otoole set "FUEL" holds "ATELEC DEELEC GAS"
-    And the otoole set "EMISSION" holds "CO2"
+    And the otoole set "TECHNOLOGY" holds "GASCC ATDE ATT GASX"
+    And the otoole set "FUEL" holds "ATELEC ATELEC2 DEELEC GAS"
+    And the otoole set "EMISSION" holds "CO2 SO2"
     And the otoole set "MODE_OF_OPERATION" holds "1 2"
     And the otoole set "YEAR" holds "2030 2031"
     And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC  | 1                 | 2030 | 1     |
+      | R1     | GASCC      | ATELEC  | 1                 | 2031 | 1     |
+      | R1     | GASCC      | ATELEC  | 2                 | 2030 | 0.5   |
+      | R1     | GASCC      | ATELEC  | 2                 | 2031 | 0.5   |
+      | R1     | ATDE       | DEELEC  | 1                 | 2030 | 0.9   |
+      | R1     | ATDE       | DEELEC  | 1                 | 2031 | 0.9   |
+      | R1     | GASX       | GAS     | 1                 | 2030 | 1     |
+      | R1     | GASX       | GAS     | 1                 | 2031 | 1     |
+      | R1     | ATT        | ATELEC2 | 1                 | 2030 | 0.95  |
+      | R1     | ATT        | ATELEC2 | 1                 | 2031 | 0.95  |
+    And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
-      | R1     | GASCC      | ATELEC | 1                 | 2030 | 1     |
-      | R1     | GASCC      | ATELEC | 1                 | 2031 | 1     |
-      | R1     | GASCC      | ATELEC | 2                 | 2030 | 0.5   |
-      | R1     | GASCC      | ATELEC | 2                 | 2031 | 0.5   |
-      | R1     | ATDE       | DEELEC | 1                 | 2030 | 0.9   |
-      | R1     | ATDE       | DEELEC | 1                 | 2031 | 0.9   |
-      | R1     | GASX       | GAS    | 1                 | 2030 | 1     |
-      | R1     | GASX       | GAS    | 1                 | 2031 | 1     |
-    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+      | R1     | ATDE       | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATDE       | ATELEC | 1                 | 2031 | 1     |
+      | R1     | ATT        | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATT        | ATELEC | 1                 | 2031 | 1     |
     And a file "user_mappings.yaml" containing the lines:
       | line                                                                                                                                                                                                                                  |
-      | osemosys: {units: {capacity: GW, energy: GWh, currency: million USD, emissions: kt}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}], technologies: [{match: "^GASCC$", category: gas-combined-cycle}]}} |
+      | osemosys: {units: {capacity: GW, energy: GWh, currency: million USD, emissions: kt}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC[0-9]?$", carrier: electricity, location: "{country}"}], technologies: [{match: "^GASCC$", category: gas-combined-cycle}]}} |
     And a results CSV with one column for each year
     And the results CSV has the row "TotalCapacityAnnual" in "R1" for "GASCC" with the values "2 3"
     And the results CSV has the row "TotalCapacityAnnual" in "R1" for "GASX" with the values "10 10"
@@ -39,6 +47,7 @@ Feature: aetos-to-results reads a published results CSV into the results format
     And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "GASCC 2" with the values "4 4"
     And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "ATDE 1" with the values "5 5"
     And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "GASX 1" with the values "7 7"
+    And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "ATT 1" with the values "8 8"
     And the results CSV has the row "AnnualEmissions" in "R1" for "CO2" with the values "1.5 -0.5"
     And the results CSV has the row "ModelPeriodCostByRegion" with the one value "123.5"
 
@@ -77,11 +86,70 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | variable  | component | category | timestamp | value     |
       | objective |           |          |           | 123500000 |
 
-  Scenario: The capacity of a technology that puts out no electricity is left out and reported
+  Scenario: The rows of a technology that puts out no electricity are left out and reported
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "1 technology(ies) put out no electricity, so their installed and new capacity are left out: R1/GASX"
+    And the log contains "1 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX"
+    And the log contains "1 technology(ies) put out no electricity, so their production rows are left out: R1/GASX"
     And the file "decisions.md" contains "`aetos.technology.R1/GASX`"
+
+  Scenario: The production of a technology that converts electricity at one location is left out and reported
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the log contains "1 technology(ies) convert electricity at one location, so their production rows are left out: R1/ATT"
+    And the file "decisions.md" contains "the technology converts one electricity fuel into another at one location"
+
+  Scenario: The rows of a technology that the model does not hold are left out and reported
+    Given the results CSV has the row "TotalCapacityAnnual" in "R1" for "GHOST" with the values "1 1"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the log contains "1 technology(ies) of the results CSV are not technologies of the model, so their installed_capacity rows are left out: R1/GHOST"
+    And the log does not contain "put out no electricity, so their installed_capacity rows are left out: R1/GASX, R1/GHOST"
+
+  Scenario: In a model of two regions, each technology takes one name from the whole model
+    # GASCC puts out electricity in R1 only, so its R2 capacity is left out. Its R1 name keeps
+    # the region, because the model holds GASCC in both regions.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the results CSV has the row "TotalCapacityAnnual" in "R2" for "GASCC" with the values "4 5"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
+      | variable           | component | category           | timestamp           | value |
+      | installed_capacity | R1/GASCC  | gas-combined-cycle | 2030-01-01T00:00:00 | 2000  |
+      | installed_capacity | R1/GASCC  | gas-combined-cycle | 2031-01-01T00:00:00 | 3000  |
+    And the log contains "2 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX, R2/GASCC"
+
+  Scenario: An electricity fuel with no output ratio row takes the default of the parameter
+    # With a default of 0.5, each electricity fuel with no row adds 0.5 to the ratio of a
+    # technology. GASCC mode 1 has 1 + 0.5 + 0.5 = 2, and mode 2 has 0.5 + 0.5 + 0.5 = 1.5.
+    # ATDE and GASX state no electricity row, so each has 3 × 0.5 = 1.5.
+    Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0.5 has the rows:
+      | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC  | 1                 | 2030 | 1     |
+      | R1     | GASCC      | ATELEC  | 1                 | 2031 | 1     |
+      | R1     | GASCC      | ATELEC  | 2                 | 2030 | 0.5   |
+      | R1     | GASCC      | ATELEC  | 2                 | 2031 | 0.5   |
+      | R1     | ATT        | ATELEC2 | 1                 | 2030 | 0.95  |
+      | R1     | ATT        | ATELEC2 | 1                 | 2031 | 0.95  |
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "production" rows:
+      | variable   | component | category           | timestamp           | value |
+      | production | GASCC     | gas-combined-cycle | 2030-01-01T00:00:00 | 26000 |
+      | production | GASCC     | gas-combined-cycle | 2031-01-01T00:00:00 | 46000 |
+      | production | ATDE      |                    | 2030-01-01T00:00:00 | 7500  |
+      | production | ATDE      |                    | 2031-01-01T00:00:00 | 7500  |
+      | production | GASX      |                    | 2030-01-01T00:00:00 | 10500 |
+      | production | GASX      |                    | 2031-01-01T00:00:00 | 10500 |
+
+  Scenario: A model with no electricity fuel gives no production, and the step reports it
+    Given a file "user_mappings.yaml" containing the lines:
+      | line                                                                                         |
+      | osemosys: {units: {capacity: GW, energy: GWh, currency: million USD, emissions: kt}}          |
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the log contains "The results CSV gives activity, but no technology puts out a fuel whose carrier is electricity"
+    And the parquet file "outputs/results.parquet" has 3 rows
 
   Scenario: A row with too few values for the model years is left out and reported
     Given the results CSV has the row "SalvageValueStorage" in "R1" with no index and the values "0"
