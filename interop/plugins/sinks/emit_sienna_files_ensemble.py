@@ -53,7 +53,7 @@ class EmitSiennaFilesEnsembleParams(BaseModel):
     )
     indent: int = Field(default=2, description="JSON indent width")
 
-    def replication_paths(self, sample: str) -> SiennaFilePaths:
+    def build_replication_paths(self, sample: str) -> SiennaFilePaths:
         """The three files one replication's own directory holds."""
         directory = self.output_dir / self.subdirectory_template.format(sample=sample)
         return SiennaFilePaths(
@@ -62,7 +62,7 @@ class EmitSiennaFilesEnsembleParams(BaseModel):
             extensions=directory / SiennaCompanionFilename.EXTENSIONS_JSON,
         )
 
-    def system_filename(self, sample: str) -> str:
+    def build_system_filename(self, sample: str) -> str:
         """The system one replication holds, relative to the directory holding the manifest."""
         return f"{self.subdirectory_template.format(sample=sample)}/{SYSTEM_JSON_FILENAME}"
 
@@ -90,10 +90,10 @@ class EmitSiennaFilesEnsemble(WritesSiennaFiles, Sink):
         manifest = EnsembleManifest()
         for sample in samples:
             self._write_sienna_files(
-                params.replication_paths(sample), state, payload, params.indent, sample
+                params.build_replication_paths(sample), state, payload, params.indent, sample
             )
             manifest.replications.append(
-                EnsembleReplication(sample=sample, filename=params.system_filename(sample))
+                EnsembleReplication(sample=sample, filename=params.build_system_filename(sample))
             )
         self._write_manifest(params, manifest)
 

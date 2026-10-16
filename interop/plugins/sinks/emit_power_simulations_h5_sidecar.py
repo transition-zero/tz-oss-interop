@@ -50,7 +50,7 @@ _GENERATOR_OWNER_TYPES: dict[str, SiennaComponent] = {
 }
 
 
-def _resolution_to_iso(resolution_seconds: float) -> str:
+def _convert_resolution_to_iso(resolution_seconds: float) -> str:
     return f"P0DT{resolution_seconds:.3f}S"
 
 
@@ -105,7 +105,7 @@ class _TimeSeriesAssociation:
         "INSERT INTO time_series_associations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
     )
 
-    def to_row(self) -> tuple[Any, ...]:
+    def serialise_row(self) -> tuple[Any, ...]:
         return (
             None,  # id (autoincrement)
             self.time_series_uuid,
@@ -146,7 +146,7 @@ def _build_metadata_blob(associations: list[_TimeSeriesAssociation]) -> bytes:
         )
         cur.executemany(
             _TimeSeriesAssociation.INSERT_SQL,
-            [assoc.to_row() for assoc in associations],
+            [assoc.serialise_row() for assoc in associations],
         )
         conn.commit()
         return conn.serialize()
@@ -219,7 +219,7 @@ class EmitPowerSimulationsH5Sidecar(Sink):
                     _TimeSeriesAssociation(
                         time_series_uuid=ts_uuid_str,
                         initial_timestamp=initial_timestamp,
-                        resolution=_resolution_to_iso(resolution_seconds),
+                        resolution=_convert_resolution_to_iso(resolution_seconds),
                         length=len(values),
                         name=series_name,
                         owner_uuid=owner_uuid,

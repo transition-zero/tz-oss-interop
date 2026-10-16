@@ -10,20 +10,20 @@ from interop.core.pipeline import State, Validator
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.validators.plexos._property_bounds import (
     PropertyBoundCheck,
-    check_property_bounds,
-    negative,
-    outside_percent,
+    build_non_negative_check,
+    build_percent_range_check,
+    report_property_bounds,
 )
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(PlexosProperty.MAX_CAPACITY, "it is a capacity"),
-    negative(PlexosProperty.UNITS, "it counts machines"),
-    negative(PlexosProperty.HEAT_RATE, "it is a rate of use"),
-    negative(PlexosProperty.MAX_RAMP_UP, "it is a rate"),
-    negative(PlexosProperty.MAX_RAMP_DOWN, "it is a rate"),
-    negative(PlexosProperty.START_COST, "it is a price"),
-    negative(PlexosProperty.VOM_CHARGE, "it is a price"),
-    outside_percent(PlexosProperty.MIN_STABLE_FACTOR, "it is a share of the capacity"),
+    build_non_negative_check(PlexosProperty.MAX_CAPACITY, "it is a capacity"),
+    build_non_negative_check(PlexosProperty.UNITS, "it counts machines"),
+    build_non_negative_check(PlexosProperty.HEAT_RATE, "it is a rate of use"),
+    build_non_negative_check(PlexosProperty.MAX_RAMP_UP, "it is a rate"),
+    build_non_negative_check(PlexosProperty.MAX_RAMP_DOWN, "it is a rate"),
+    build_non_negative_check(PlexosProperty.START_COST, "it is a price"),
+    build_non_negative_check(PlexosProperty.VOM_CHARGE, "it is a price"),
+    build_percent_range_check(PlexosProperty.MIN_STABLE_FACTOR, "it is a share of the capacity"),
 )
 
 
@@ -40,4 +40,4 @@ class PlexosGenerators(Validator):
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def validate(self, state: State, params: BaseModel | None) -> None:
-        check_property_bounds(self, state, PlexosClass.GENERATOR, _CHECKS)
+        report_property_bounds(self, state, PlexosClass.GENERATOR, _CHECKS)

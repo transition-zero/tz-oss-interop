@@ -15,16 +15,16 @@ from interop.plugins.shared.plexos_constants import (
 )
 from interop.plugins.validators.plexos._property_bounds import (
     PropertyBoundCheck,
-    check_property_bounds,
-    negative,
+    build_non_negative_check,
+    report_property_bounds,
 )
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(PlexosProperty.RESISTANCE, "it is an impedance"),
-    negative(PlexosProperty.REACTANCE, "it is an impedance"),
-    negative(PlexosProperty.MAX_RATING, "it is a rating"),
-    negative(PlexosProperty.LENGTH, "it is a distance"),
-    negative(PlexosProperty.CIRCUITS, "it counts circuits"),
+    build_non_negative_check(PlexosProperty.RESISTANCE, "it is an impedance"),
+    build_non_negative_check(PlexosProperty.REACTANCE, "it is an impedance"),
+    build_non_negative_check(PlexosProperty.MAX_RATING, "it is a rating"),
+    build_non_negative_check(PlexosProperty.LENGTH, "it is a distance"),
+    build_non_negative_check(PlexosProperty.CIRCUITS, "it counts circuits"),
     PropertyBoundCheck(
         PlexosProperty.MAX_FLOW,
         pl.col(PlexosPropertyCol.VALUE) < 0,
@@ -45,4 +45,4 @@ class PlexosLines(Validator):
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def validate(self, state: State, params: BaseModel | None) -> None:
-        check_property_bounds(self, state, PlexosClass.LINE, _CHECKS)
+        report_property_bounds(self, state, PlexosClass.LINE, _CHECKS)

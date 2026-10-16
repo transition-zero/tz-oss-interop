@@ -47,7 +47,9 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         self._fs.write_bytes(paths.system_json, _serialise(paths, payload, indent))
 
 
-def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
+def reject_unknown_references(
+    ref_col: str, needed: list[str], available: set[str], context: str
+) -> None:
     missing = set(needed) - available
     if missing:
         raise ValueError(

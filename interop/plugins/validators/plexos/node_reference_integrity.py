@@ -43,7 +43,7 @@ class PlexosNodeReferenceIntegrity(Validator):
             return
         rows = memberships.collect()
         for plexos_class in _REFERENCED_CLASSES:
-            known = self._names_of(state, plexos_class)
+            known = self._find_object_names(state, plexos_class)
             if known is None:
                 continue
             dangling = rows.filter(
@@ -53,7 +53,7 @@ class PlexosNodeReferenceIntegrity(Validator):
             for row in dangling.iter_rows(named=True):
                 self._report(state, plexos_class, row)
 
-    def _names_of(self, state: State, plexos_class: PlexosClass) -> set[str] | None:
+    def _find_object_names(self, state: State, plexos_class: PlexosClass) -> set[str] | None:
         table = state.source_topology.get(plexos_class)
         if table is None:
             return None

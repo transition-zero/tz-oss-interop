@@ -46,10 +46,10 @@ class PypsaLoads(Validator):
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def validate(self, state: State, params: BaseModel | None) -> None:
-        self._check_static(state)
-        self._check_time_series(state)
+        self._report_static_bounds(state)
+        self._report_negative_time_series(state)
 
-    def _check_static(self, state: State) -> None:
+    def _report_static_bounds(self, state: State) -> None:
         table = state.source_topology.get(PyPSATable.LOADS)
         if table is None:
             return
@@ -63,7 +63,7 @@ class PypsaLoads(Validator):
             checks=_STATIC_CHECKS,
         )
 
-    def _check_time_series(self, state: State) -> None:
+    def _report_negative_time_series(self, state: State) -> None:
         time_series = state.source_time_series.get((PyPSATable.LOADS, PyPSALoadCol.P_SET))
         if time_series is None:
             return
