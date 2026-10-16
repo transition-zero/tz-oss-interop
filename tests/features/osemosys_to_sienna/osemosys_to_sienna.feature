@@ -477,6 +477,39 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
 
+    Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
+      The model states currency in million USD and emissions in kt. The gas plant emits 600
+      kt of CO2 for each GWh, which is 600 t for each MWh. A penalty of 0.05 million USD for
+      each kt is 50 $/t, so the penalty adds 30000 $/MWh.
+      Given a file "user_mappings.yaml" containing the lines:
+        | line                                                                                                                         |
+        | osemosys: {                                                                                                                  |
+        | units: {capacity: GW, energy: GWh, currency: million USD, emissions: kt},                                                    |
+        | objects: {                                                                                                                   |
+        | fuels: [                                                                                                                     |
+        | {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},                                         |
+        | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"},                                                  |
+        | {match: "^(?P<country>[A-Z]{2})OIL$", carrier: oil, location: "{country}"}],                                                 |
+        | technologies: [                                                                                                              |
+        | {match: "GASCC$", category: gas-cc}, {match: "SOLAR$", category: solar},                                                     |
+        | {match: "BIO$", category: biomass}, {match: "OILCT$", category: oil-ct},                                                     |
+        | {match: "WIND$", category: wind}, {match: "HYDRO$", category: hydro}, {match: "BATT$", category: battery}]}}                 |
+        | carriers: [                                                                                                                  |
+        | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
+        | {osemosys_category: oil-ct, sienna_component_type: ThermalStandard, sienna_fuel_type: DISTILLATE_FUEL_OIL, sienna_prime_mover_type: CT}, |
+        | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe},                          |
+        | {osemosys_category: wind, sienna_component_type: RenewableNonDispatch, sienna_prime_mover_type: WT},                         |
+        | {osemosys_category: hydro, sienna_component_type: HydroDispatch, sienna_prime_mover_type: HY},                               |
+        | {osemosys_category: battery, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: BA}]                    |
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 0.05  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30000.0 \$/MWh"
+      And the file "decisions.md" contains "the penalty is 50 \$/tonne"
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 7030000.0
+
     Scenario: An annual activity bound reaches extensions.json in MWh of output for each year, and the report names it
       The oil plant puts out half a unit of electricity for each unit of activity, so its
       bound of 1 GWh of activity is 500 MWh of output. An upper limit of -1 binds nothing.
