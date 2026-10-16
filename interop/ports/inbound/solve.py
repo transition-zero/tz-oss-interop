@@ -34,6 +34,7 @@ class ModelType(StrEnum):
 class SolveResult:
     status: str
     objective: float
+    unserved_energy_mwh: float | None = None
 
     def is_success(self) -> bool:
         normalized = self.status.strip()
@@ -44,7 +45,10 @@ class SolveResult:
 
     def summary(self) -> str:
         icon = "OK" if self.is_success() else "FAILED"
-        return f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        text = f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        if self.unserved_energy_mwh is None:
+            return text
+        return f"{text}  unserved_energy={self.unserved_energy_mwh:.6g} MWh"
 
 
 @dataclass

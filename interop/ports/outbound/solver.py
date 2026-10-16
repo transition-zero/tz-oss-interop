@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import ClassVar, NamedTuple, Protocol, runtime_checkable
 
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
@@ -32,6 +32,18 @@ class UnservedEnergy(StrEnum):
     PENALISED = "penalised"  # a network balance slack covers the shortfall at a penalty cost
 
 
+class DispatchOutcome(NamedTuple):
+    """What one dispatch solve reports.
+
+    ``unserved_energy_mwh`` is None where the solve allows no unserved energy, or where the
+    adapter cannot read it.
+    """
+
+    status: str
+    objective: float
+    unserved_energy_mwh: float | None = None
+
+
 @runtime_checkable
 class SolverPort(Protocol):
     name: ClassVar[str]
@@ -56,9 +68,9 @@ class SolverPort(Protocol):
         run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
         time_limit_seconds: float | None = None,
         unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
-    ) -> tuple[str, float]:
+    ) -> DispatchOutcome:
         """Run the solver on the Sienna JSON at sienna_json_path.
 
-        Returns (run_status_string, objective_value).  The caller interprets
-        a status containing "SUCCESSFULLY" as success.
+        ``unserved_energy`` chooses whether a load can go unserved at a penalty, or must be met.
+        The caller interprets a status containing "SUCCESSFULLY" as success.
         """

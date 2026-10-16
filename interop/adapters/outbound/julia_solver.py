@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from interop.adapters.outbound.julia_packages import declare_julia_packages
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import (
+    DispatchOutcome,
     HiGHSCrossover,
     HiGHSPresolve,
     HiGHSSolver,
@@ -113,7 +114,7 @@ class JuliaSolveAdapter(SolverPort):
         run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
         time_limit_seconds: float | None = None,
         unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
-    ) -> tuple[str, float]:
+    ) -> DispatchOutcome:
         if not sienna_json_path.is_file():
             raise UserInputError(f"file not found: {sienna_json_path}")
         julia_model = _NETWORK_MODEL_MAP.get(network_model)
@@ -348,7 +349,7 @@ def _run_pipeline(
     presolve: str,
     run_crossover: str,
     time_limit_seconds: float | None,
-) -> tuple[str, float]:
+) -> DispatchOutcome:
     """Build and solve the Sienna system in Julia, re-raising Julia errors as user errors."""
     from juliacall import JuliaError  # noqa: PLC0415
 
@@ -380,7 +381,7 @@ def _run_pipeline_inner(
     presolve: str,
     run_crossover: str,
     time_limit_seconds: float | None,
-) -> tuple[str, float]:
+) -> DispatchOutcome:
 
     log.info("=== 1. Loading Sienna system from JSON ===")
     jl.seval(f"""
@@ -489,7 +490,8 @@ def _run_pipeline_inner(
         get_objective_value(results)
     """)
 
-    _warn_balance_slacks(jl)
+    unserved = _read_slack_energy(jl, _UNSERVED_SLACK)
+    _warn_balance_slacks(unserved, _read_slack_energy(jl, _SURPLUS_SLACK))
 
     log.info("=== 5. Exporting results ===")
     wide_dir_str = _julia_str(output_dir / "results_wide")
@@ -529,7 +531,8 @@ def _run_pipeline_inner(
     """)
 
     log.info("Results written to %s", output_dir)
-    return str(run_status), float(obj_value)
+    unserved_mwh = unserved.total_mwh if unserved is not None else None
+    return DispatchOutcome(str(run_status), float(obj_value), unserved_mwh)
 
 
 class _LocationEnergy(NamedTuple):
@@ -539,21 +542,29 @@ class _LocationEnergy(NamedTuple):
     energy_mwh: float
 
 
-def _warn_balance_slacks(jl: Any) -> None:
-    """Warn of the energy each balance slack takes, where the network model has slacks."""
-    unserved = _read_slack_energy(jl, _UNSERVED_SLACK)
-    surplus = _read_slack_energy(jl, _SURPLUS_SLACK)
-    if unserved is None or surplus is None:
-        return
-    _warn_slack_energy(unserved, "of load goes unserved")
-    _warn_slack_energy(surplus, "of generation finds no load")
+class _SlackEnergy(NamedTuple):
+    """The energy one balance slack takes at each location, most first."""
+
+    locations: list[_LocationEnergy]
+
+    @property
+    def total_mwh(self) -> float:
+        return sum(entry.energy_mwh for entry in self.locations)
 
 
-def _read_slack_energy(jl: Any, slack: str) -> list[_LocationEnergy] | None:
-    """Read the MWh a slack takes at each location, most first; None where no slack can be read.
+def _warn_balance_slacks(unserved: _SlackEnergy | None, surplus: _SlackEnergy | None) -> None:
+    """Warn of the energy each balance slack takes, and skip a slack that has no reading."""
+    if unserved is not None:
+        _warn_slack_energy(unserved, "of load goes unserved")
+    if surplus is not None:
+        _warn_slack_energy(surplus, "of generation finds no load")
+
+
+def _read_slack_energy(jl: Any, slack: str) -> _SlackEnergy | None:
+    """Read the MWh a slack takes at each location; None where the model has no such slack.
 
     Copperplate and PTDF hold one slack for each AC subnetwork, named by its reference bus;
-    DCP holds one for each bus.
+    DCP holds one for each bus. A read that fails gives a warning and None.
     """
     totals = jl.seval(f"""
         try
@@ -578,26 +589,34 @@ def _read_slack_energy(jl: Any, slack: str) -> list[_LocationEnergy] | None:
                 [(location, energy) for (location, energy) in totals]
             end
         catch err
-            @warn "Could not read the balance slack" slack="{slack}" exception=err
-            nothing
+            sprint(showerror, err)
         end
     """)
     if totals is None:
         return None
+    if isinstance(totals, str):
+        log.warning("solve: could not read %s, so its energy is not reported: %s", slack, totals)
+        return None
     locations = [_LocationEnergy(str(pair[0]), float(pair[1])) for pair in totals]
     kept = [entry for entry in locations if entry.energy_mwh > _SLACK_TOLERANCE_MWH]
-    return sorted(kept, key=lambda entry: entry.energy_mwh, reverse=True)
+    return _SlackEnergy(sorted(kept, key=lambda entry: entry.energy_mwh, reverse=True))
 
 
-def _warn_slack_energy(locations: list[_LocationEnergy], outcome: str) -> None:
+def _warn_slack_energy(slack: _SlackEnergy, outcome: str) -> None:
     """Write the total and the locations with the most, or say that the slack took nothing."""
-    if not locations:
+    if not slack.locations:
         log.info("solve: no energy %s", outcome)
         return
-    total = sum(entry.energy_mwh for entry in locations)
     named = ", ".join(
-        f"{entry.location} ({entry.energy_mwh:.6g} MWh)" for entry in locations[:_NAMED_LOCATIONS]
+        f"{entry.location} ({entry.energy_mwh:.6g} MWh)"
+        for entry in slack.locations[:_NAMED_LOCATIONS]
     )
-    rest = len(locations) - _NAMED_LOCATIONS
+    rest = len(slack.locations) - _NAMED_LOCATIONS
     counted = f" and {rest} more location(s)" if rest > 0 else ""
-    log.warning("solve: %.6g MWh %s at a penalty, the most at %s%s", total, outcome, named, counted)
+    log.warning(
+        "solve: %.6g MWh %s at a penalty, the most at %s%s",
+        slack.total_mwh,
+        outcome,
+        named,
+        counted,
+    )

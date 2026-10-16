@@ -91,7 +91,7 @@ class SolveUsingPort(SolveUseCase):
             request.time_limit_seconds,
         )
         _reject_non_positive_time_limit(request.time_limit_seconds)
-        status, objective = self._solver.solve(
+        outcome = self._solver.solve(
             request.sienna_json_path,
             request.network_model,
             request.output_dir,
@@ -102,7 +102,11 @@ class SolveUsingPort(SolveUseCase):
             time_limit_seconds=request.time_limit_seconds,
             unserved_energy=request.unserved_energy,
         )
-        return SolveResult(status=status, objective=objective)
+        return SolveResult(
+            status=outcome.status,
+            objective=outcome.objective,
+            unserved_energy_mwh=outcome.unserved_energy_mwh,
+        )
 
 
 def _reject_non_positive_time_limit(time_limit_seconds: float | None) -> None:

@@ -35,6 +35,15 @@ Feature: solve command runs the Sienna solver on a translated model
     And a file "outputs/system.json" exists
     When I dispatch the solve command for "outputs/system.json" with network model "dcp"
     Then the file "outputs/solver-call.txt" contains "unserved_energy=refused"
+    And the printed output does not contain "unserved_energy="
+
+  Scenario: a penalised solve reports its unserved energy in the result
+    Given a fake solver adapter in project plugins
+    And adapters.yaml binds solver to "fake_solver"
+    And a file "outputs/system.json" exists
+    When I dispatch the solve command for "outputs/system.json" with network model "copperplate" output directory "solved" unserved energy "penalised" unit commitment "linearised" solver "simplex" presolve "choose" crossover "choose" time limit "60"
+    Then the printed output contains "SUCCESSFULLY_FINALIZED"
+    And the printed output contains "unserved_energy=42.5 MWh"
 
   Scenario: a time limit of zero is refused before the solver is reached
     Given a fake solver adapter in project plugins
