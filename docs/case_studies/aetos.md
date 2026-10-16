@@ -647,22 +647,23 @@ The time of a solve does not include the download and the compilation of the Jul
 
 | Run | Status | Objective | Time | Peak memory |
 | --- | --- | --- | --- | --- |
-| `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 2.5 s | 0.40 GB |
-| `osemosys-csv-to-sienna`, year 2021 | exit 0, 27 warnings | none | 3.5 s | 0.42 GB |
-| `osemosys-csv-to-sienna-investments`, every year | exit 0, 21 warnings | none | 18.8 s | 0.55 GB |
-| `sienna-to-power-simulations` | exit 0 | none | 3.4 s | 0.26 GB |
-| Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.53357 × 10⁹ USD | 3 min 1 s | 2.23 GB |
-| `sienna-to-results` | exit 0 | none | 1.6 s | 0.28 GB |
-| `aetos-to-results` | exit 0, 7 warnings | none | 3.3 s | 0.69 GB |
-| Compare of the dispatch | exit 0, 1,931 differences | none | 4.6 s | 0.78 GB |
-| `sienna-to-power-systems-investments`, full model | exit 0, 8 warnings | none | 47.6 s | 1.59 GB |
+| `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 3.0 s | 0.39 GB |
+| `osemosys-csv-to-sienna`, year 2021 | exit 0, 27 warnings | none | 4.8 s | 0.41 GB |
+| `osemosys-csv-to-sienna-investments`, every year | exit 0, 21 warnings | none | 20.4 s | 0.54 GB |
+| `sienna-to-power-simulations` | exit 0 | none | 5.1 s | 0.26 GB |
+| Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.53357 × 10⁹ USD | 3 min 47 s | 2.27 GB |
+| `sienna-to-results` | exit 0 | none | 1.9 s | 0.27 GB |
+| `aetos-to-results` | exit 0, 7 warnings | none | 4.5 s | 0.70 GB |
+| Compare of the dispatch | exit 0, 1,931 differences | none | 5.3 s | 0.75 GB |
+| `sienna-to-power-systems-investments`, full model | exit 0, 8 warnings | none | 53.5 s | 1.58 GB |
 | Expansion solve, full model | stopped at 14.5 GB, HiGHS did not start | none | 55 min 9 s | 15.1 GB |
-| `osemosys-csv-to-sienna-investments`, subset | exit 0, 16 warnings | none | 3.7 s | 0.42 GB |
-| `sienna-to-power-systems-investments`, subset | exit 0, 8 warnings | none | 2.2 s | 0.25 GB |
-| Expansion solve, subset | `SUCCESSFULLY_FINALIZED` | 3.17745 × 10¹⁰ USD | 2 min 41 s | 2.10 GB |
-| `power-systems-investments-to-results`, subset | exit 0 | none | 0.7 s | 0.14 GB |
-| Compare of the expansion | exit 0, 1,899 differences | none | 3.4 s | 0.76 GB |
+| `osemosys-csv-to-sienna-investments`, subset | exit 0, 16 warnings | none | 4.6 s | 0.42 GB |
+| `sienna-to-power-systems-investments`, subset | exit 0, 8 warnings | none | 2.4 s | 0.25 GB |
+| Expansion solve, subset | `SUCCESSFULLY_FINALIZED` | 3.17745 × 10¹⁰ USD | 2 min 49 s | 2.18 GB |
+| `power-systems-investments-to-results`, subset | exit 0 | none | 0.8 s | 0.14 GB |
+| Compare of the expansion | exit 0, 1,899 differences | none | 4.1 s | 0.72 GB |
 
-The time of each REPL run includes the start of tz-oss-interop. The canonical stage is 1.6 MB on
-disk. The `decisions.md` of the operations translation is 12 MB. The `decisions.md` of the full
-expansion leg is 18 MB.
+The time of each REPL run includes the start of tz-oss-interop. The time changes from one run
+to the next on the same input. Two dispatch solves of the same system took 3 min 47 s and
+3 min 16 s. The canonical stage is 1.6 MB on disk. The `decisions.md` of the operations
+translation is 12 MB. The `decisions.md` of the full expansion leg is 18 MB.
