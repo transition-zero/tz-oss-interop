@@ -551,21 +551,50 @@ record states the technology as a PyPSA `Link`:
 | `efficiency` | | The electricity output ratio / the electricity input ratio |
 | `marginal_cost` | $/MWh | `variable_operation_cost` in $/MWh / the electricity input ratio |
 | `p_max_pu` | | `availability_factor`, when it is below 1 |
-| `fom_charge_per_mw_year` | $/MW/yr | `fixed_cost` / the electricity input ratio |
+| `input_fuel`, `output_fuel` | | The electricity fuel that it takes in and the one that it puts out. No PyPSA field. |
 | Each other field | | Refer to [The values that Sienna has no field for](#the-values-that-sienna-has-no-field-for). Each capacity rates on the electricity that goes in. |
 
 The dispatch does not apply a conversion record. So the loss of a conversion is not in the
 dispatch, and each demand stays at the value that the model states.
+
+### A trade route
+
+A trade route moves a fuel from one region to another: OSeMOSYS states it with `TradeRoute`
+(`transport_route`) and the other trade parameters. A trade route of an electricity fuel gets
+a `conversion` record too. A route joins regions and not locations, so `bus0` and `bus1` name
+the region and the fuel as `<region>/<fuel>`, and not a Sienna bus. No location has to be
+chosen. A route is in the record when any trade parameter states a row for it.
+
+| Field | Unit | From |
+| --- | --- | --- |
+| `name` | | `<start region>/<end region>/<fuel>` |
+| `bus0`, `bus1` | | `<start region>/<fuel>` and `<end region>/<fuel>` |
+| `input_fuel`, `output_fuel` | | The fuel |
+| `active` | | `TradeRoute` (`transport_route`) is 1, for each year |
+| `p_nom` | MW | `ResidualTradeCapacity` (`residual_transport_capacity`) |
+| `efficiency` | | 1 − `TradeLossBetweenRegions` (`line_loss`) |
+| `p_max_pu` | | `AvailabilityFactorTrade` (`transport_availability_factor`), when it is not 1 |
+| `overnight_cost_per_mw` | $/MW | `CapitalCostTrade` (`transport_capital_cost`) |
+| `lifetime_years` | yr | `OperationalLifeTrade` (`transport_lifetime`) |
+| `discount_rate` | | `DiscountRateTrade` (`transport_discount_rate`) |
+| `max_growth` | MW | `TotalAnnualMaxTradeInvestment` (`total_annual_max_transport_investment`) |
+| `e_sum_min`, `e_sum_max` | MWh | `TotalTradeAnnualActivityLowerLimit` and `TotalTradeAnnualActivityUpperLimit`, for each year |
+| `capacity_factor_min` | | `TotalAnnualMinCapacityFactorTrade` (`transport_total_annual_min_capacity_factor`) |
+| `capacity_to_activity_unit` | MWh/MW | `TradeCapacityToActivityUnit` (`transport_capacity_to_activity_unit`) |
+
+Each value is that of the operations year, except `active`, `e_sum_min` and `e_sum_max`, which
+hold for each year. A route of a fuel that is not electricity has no record.
 
 ## The values that Sienna has no field for
 
 The generator, `storage`, `controllable_line` and `conversion` records hold the values below.
 Each field takes the name of the PyPSA attribute with the same meaning, in the PyPSA unit. A
 field with no PyPSA attribute takes a plain name. A value is the value of the operations year,
-except the bounds of a mode, which hold for each year. A capacity rates on the electricity of
-the component: the output of a generator and of a storage, and the input of a line and of a
-conversion. So a capacity multiplies by that electricity ratio, and a cost for each unit of
-capacity divides by it. A row that binds nothing, for example a limit of -1, gives no field.
+except the annual bounds and the bounds of a mode, which hold for each year. A capacity rates
+on the electricity of the component: the output of a generator and of a storage, and the input
+of a line and of a conversion. So a capacity multiplies by that electricity ratio, and a cost
+for each unit of capacity divides by it. A row that binds nothing, for example a limit of -1,
+gives no field.
 
 | Field | Unit | From | PyPSA attribute |
 | --- | --- | --- | --- |
@@ -577,14 +606,16 @@ capacity divides by it. A row that binds nothing, for example a limit of -1, giv
 | `p_nom_min` | MW | `TotalAnnualMinCapacity` (`capacity_limits_min`), above 0 | `p_nom_min` |
 | `max_growth` | MW | `TotalAnnualMaxCapacityInvestment` (`total_annual_max_capacity_investment`), not -1 | `Carrier.max_growth` |
 | `min_growth` | MW | `TotalAnnualMinCapacityInvestment` (`total_annual_min_capacity_investment`), above 0 | none |
-| `max_relative_growth` | | `CapacityAdditionalMaxGrowthRate` (`capacity_additional_max_growth_rate`) | `Carrier.max_relative_growth` |
-| `min_relative_growth` | | `CapacityAdditionalMinGrowthRate` (`capacity_additional_min_growth_rate`) | none |
+| `max_growth_rate` | | `CapacityAdditionalMaxGrowthRate` (`capacity_additional_max_growth_rate`): new capacity per unit of the total capacity of the year before | none: `Carrier.max_relative_growth` weighs the new capacity of the period before |
+| `min_growth_rate` | | `CapacityAdditionalMinGrowthRate` (`capacity_additional_min_growth_rate`) | none |
 | `max_growth_floor` | MW | `CapacityAdditionalMaxFloor` (`capacity_additional_max_floor`) | none |
 | `e_sum_min_horizon` | MWh | `TotalTechnologyModelPeriodActivityLowerLimit` (`total_technology_model_period_activity_lower_limit`), above 0, × the electricity ratio of the operations year | `e_sum_min` |
 | `e_sum_max_horizon` | MWh | `TotalTechnologyModelPeriodActivityUpperLimit` (`total_technology_model_period_activity_upper_limit`), 0 or above, × that ratio | `e_sum_max` |
 | `capacity_factor_min` | | `TotalAnnualMinCapacityFactor` (`total_annual_min_capacity_factor`) | none |
 | `production_share_min`, `production_share_max` | | `TechnologyMinProductionTarget` and `TechnologyMaxProductionTarget`, for each fuel | none |
 | `capacity_to_activity_unit` | MWh/MW | `CapacityToActivityUnit` (`capacity_to_activity_unit`) in MWh for each MW. It is 8760 when the model agrees with `units:`. | none |
+| `e_sum_min`, `e_sum_max` | MWh | `TotalTechnologyAnnualActivityLowerLimit` and `TotalTechnologyAnnualActivityUpperLimit` of each year × the electricity ratio of that year | `e_sum_min`, `e_sum_max`, keyed by the investment period |
+| `fom_charge_per_mw_year` | $/MW/yr | `FixedCost` (`fixed_cost`), for a line and a conversion. A generator and a storage state it too, as their sections say. | `fom_cost` |
 | `operating_modes` | | One entry for each mode that the component does not run, and for each mode with a bound. Refer to the table below. | none |
 
 A storage takes these values from the technology that discharges it, except `lifetime_years`
@@ -599,6 +630,10 @@ and `discount_rate`. It also states:
 | `cyclic_state_of_charge_per_period` | | `StorageBalanceYear` (`storage_balance_year`) is 1 | `cyclic_state_of_charge_per_period` |
 | `cyclic_state_of_charge_per_season` | | `StorageBalanceSeason` (`storage_balance_season`) is 1 | none |
 | `cyclic_state_of_charge_per_day` | | `StorageBalanceDay` (`storage_balance_day`) is 1 | none |
+| `charge_fom_cost` | $/MW/yr | `FixedCost` of the technology that charges the storage, where it does not also discharge it, / its electricity input ratio | none |
+
+The record keeps no other value of a separate charging technology. `decisions.md` names its
+`capacity_factor` and each other value that no step applies.
 
 A generator and a line run the operations mode. A storage runs its charge mode and its
 discharge mode. Each entry of `operating_modes` states one mode, for each MWh of its activity:
@@ -612,8 +647,10 @@ discharge mode. Each entry of `operating_modes` states one mode, for each MWh of
 | `activity_max`, `activity_min` | MWh | `TechnologyActivityByModeUpperLimit` and `TechnologyActivityByModeLowerLimit`, for each year, above 0 |
 | `activity_decrease_max` | | `TechnologyActivityDecreaseByModeLimit`, for each year, above 0 |
 
-The first four fields are for a mode that the component does not run. The bounds are for each
-mode. `decisions.md` records each value that goes to a record.
+The cost and the ratios are for a mode that the component does not run. `emission_rates` are
+for a mode that a generator does not run, and for each mode of a storage, a line and a
+conversion, which have no other field for them. The bounds are for each mode.
+`decisions.md` records each value that goes to a record.
 
 ## The policies of the model
 
@@ -785,8 +822,12 @@ three. A row at the default of the parameter states nothing, so it does not coun
 osemosys-to-sienna: total_technology_annual_activity_upper_limit states 39 row(s) for 2021 that no step of the pipeline applies or keeps, for 39 technology(ies): ...
 ```
 
-A row of a technology that has no component, for example a `fuel_supply` technology, is one
-that no record holds.
+A component notes each row of its technology that it applies or that its record keeps: the
+residual capacity, the availability, the costs and the emission rates among them. The report
+counts only those rows as applied. So a row of a technology that has no component, for example
+the residual capacity of a `fuel_supply` technology, is reported. So are the capacity factor of
+a technology that charges a storage that another technology discharges, and the cost of a
+`fuel_supply` technology that prices no fuel that a plant burns.
 
 ---
 
@@ -809,7 +850,8 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | Fuels that are not electricity, and their technologies | No component and no record. The fuel cost and the emission rate of a plant still read them. `decisions.md` names each value that states one. |
 | A `conversion` between two electricity fuels at one location | Its `conversion` record holds it. The dispatch does not apply its loss, and the demand stays at the value that the model states. |
 | The capacity that a plan builds, and the years other than the operations year | The system holds the residual capacity of one year. A record holds the values of that year, except a bound of each year and a policy. |
-| `TotalTechnologyAnnualActivityLowerLimit`, `TotalTechnologyAnnualActivityUpperLimit`, `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | The records hold them. No step applies them. An upper limit of 0 in the year keeps a `fuel_supply` technology from being a fuel producer. |
+| `TotalTechnologyAnnualActivityLowerLimit`, `TotalTechnologyAnnualActivityUpperLimit` | The generator, `storage`, `controllable_line` and `conversion` records hold them, as `e_sum_min` and `e_sum_max`. No step applies them. An upper limit of 0 in the year keeps a `fuel_supply` technology from being a fuel producer. |
+| `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | The records hold them. No step applies them. |
 | `AnnualEmissionLimit`, `ModelPeriodEmissionLimit` and the region group limits | The `constraint` records hold them. No step applies them to the system. |
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | The `constraint` records hold them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | The `constraint` records hold them. No step applies them. |
@@ -819,7 +861,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | The `capacity_factor` of a storage or a transport technology | The companion parquet holds it. The system does not apply it. |
 | `DepreciationMethod` | Not translated. No record holds a region. |
 | Unit commitment data | OSeMOSYS states none. |
-| The trade parameters (`TradeRoute`, `ResidualTradeCapacity` and the other `*Trade*` parameters) | No step reads them. A connection between two locations must be an `AggregateTransportTechnology`. |
+| The trade parameters (`TradeRoute`, `ResidualTradeCapacity` and the other `*Trade*` parameters) | A `conversion` record holds a route of an electricity fuel. Refer to [A trade route](#a-trade-route). No step applies them, and the system has no line for a route. A connection between two locations must be an `AggregateTransportTechnology`. |
 | The investment parameters (`CapitalCost`, `OperationalLife` and the others) | The records hold the values of the operations year. The portfolio reads every year. Refer to [translation-from-osemosys-to-sienna-investments.md](translation-from-osemosys-to-sienna-investments.md). |
 | Each extension table of the canonical stage | No step reads it. |
 

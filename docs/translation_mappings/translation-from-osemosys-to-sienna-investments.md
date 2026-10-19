@@ -300,7 +300,9 @@ So the limits of each other pollutant are in that record:
 
 `decisions.md` records each such pollutant as `COMPONENT_SKIPPED`, and one warning names three.
 A pollutant that covers the whole model and states a `model_period_emission_limit` records that
-limit as `NOT_MAPPED`, because `CarbonCaps` holds one year. The `constraint` record holds it.
+limit as `NOT_MAPPED`, because `CarbonCaps` holds one year. The portfolio step takes the yearly
+limits of such a pollutant out of its `constraint` record, because `CarbonCaps` holds them. The
+record keeps the limit over the model period, or goes when the pollutant states none.
 
 ## A plant that already runs → `ExistingDevices` and `RetirementPotential`
 
@@ -359,7 +361,7 @@ network keys a value by its investment period:
 | `p_nom` | MW | `residual_capacity` | `p_nom` |
 | `max_growth` | MW | `total_annual_max_capacity_investment`, for each year with a limit | `Carrier.max_growth` |
 | `min_growth` | MW | `total_annual_min_capacity_investment`, for each year above 0 | none |
-| `max_relative_growth`, `min_relative_growth` | | `capacity_additional_max_growth_rate`, `capacity_additional_min_growth_rate` | `Carrier.max_relative_growth`, none |
+| `max_growth_rate`, `min_growth_rate` | | `capacity_additional_max_growth_rate`, `capacity_additional_min_growth_rate` | none |
 | `max_growth_floor` | MW | `capacity_additional_max_floor` | none |
 | `e_sum_min`, `e_sum_max` | MWh | `total_technology_annual_activity_lower_limit` above 0, `total_technology_annual_activity_upper_limit` not -1, × the electricity ratio | `e_sum_min`, `e_sum_max` |
 | `marginal_cost` | $/MWh | The variable cost with the fuel cost and the emission penalty (supply only) | `marginal_cost` |

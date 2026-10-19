@@ -58,7 +58,7 @@ give the measured numbers.
 | Group | Entries | What to know |
 | --- | --- | --- |
 | [The four structural losses](#the-four-structural-losses) | 4 | No network, no unit commitment data, no time order inside a timeslice, one year of fleet. No version of this translator can carry them. |
-| [What the system has no component for](#what-the-system-has-no-component-for) | 5 | The system holds electricity only. The largest effect is the loss of the conversion losses between two electricity fuels. `extensions.json` holds each conversion. |
+| [What the system has no component for](#what-the-system-has-no-component-for) | 6 | The system holds electricity only. The largest effect is the loss of the conversion losses between two electricity fuels. `extensions.json` holds each conversion. |
 | [Operating modes](#operating-modes) | 4 | The system uses one mode for each technology. `extensions.json` holds the other modes, and the dispatch does not run them. |
 | [Costs and prices](#costs-and-prices) | 6 | The fuel price comes from one producer. A line has no cost. |
 | [Limits on activity and energy](#limits-on-activity-and-energy) | 5 | No annual limit on energy reaches a dispatch. This is the largest single effect on the dispatch. |
@@ -89,6 +89,7 @@ give the measured numbers.
 | A technology of kind `conversion` between two electricity fuels at one location, for example a transmission or distribution step from one voltage fuel to another | It has no component. A `conversion` record of `extensions.json` holds it, with its `efficiency`. `decisions.md` records each one. The demand stays at the fuel where the model states it. | translation: the two fuels of one location share one bus, so the conversion joins nothing. | The dispatch does not make the electricity that the conversion loses. On a large published model this is about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. |
 | A fuel that is not electricity, and its `fuel_supply`, `conversion` and pipeline technologies | No component. `decisions.md` records each one. The fuel cost rule still reads the cost of a `fuel_supply` technology. | translation: the scope is electricity only. | A limit on a fuel, for example the gas that a region can import, does not limit the plants that burn it. |
 | A technology of kind `export` | No component. An export of electricity has a `conversion` record with no `bus1`. | translation: the system has no component that takes energy out of the model. | An export of electricity is a demand that the system does not hold. |
+| A trade route of an electricity fuel: `TradeRoute` (`transport_route`) and the other trade parameters | No component. A `conversion` record of `extensions.json` holds it, with the ends `<region>/<fuel>`. | translation: a route joins regions, and the system holds locations. | The dispatch moves no energy on the route. |
 | `AccumulatedAnnualDemand` (`accumulated_annual_demand`) of a fuel that is not electricity | Left out. One warning names the fuels. | translation: the scope is electricity only. | None on the dispatch. |
 | A technology with no kind | No component. `decisions.md` records each one that has a flow in the year. | translation: no kind fits it. | Its energy is not in the system. |
 
