@@ -14,6 +14,7 @@ from typing import Any
 from interop.core.extensions import ExtensionKind
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
     UNIT_KM,
     UNIT_KV,
@@ -75,6 +76,11 @@ _EXT_COMMITTABLE_ATTR = f"{_EXTENSIONS}.committable"
 _COMMITTABLE_FROM_EXT = f"{_EXT_COMMITTABLE_ATTR} (PyPSA round-trip)"
 _EXT_S_NOM_EXTENDABLE_ATTR = f"{_EXTENSIONS}.s_nom_extendable"
 _S_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_S_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
+_EXT_OVERNIGHT_COST_ATTR = f"{_EXTENSIONS}.overnight_cost_per_mw"
+_UNPRICED_OVERNIGHT_COST_NOTE = (
+    "the record states no discount_rate, and PyPSA cannot annualise an overnight_cost without "
+    "one, so the network leaves the cost out; extensions.json keeps it"
+)
 _EXT_P_NOM_EXTENDABLE_ATTR = f"{_EXTENSIONS}.p_nom_extendable"
 _P_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_P_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
 _AVAILABLE_TO_ACTIVE = "available -> active"
@@ -159,6 +165,19 @@ class _Reporter(DestinationReporter):
             sources=[self._source_field(sienna_type, name, attribute, value, unit)],
             destinations=[self._destination(name, column, value, unit)],
             derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
+    def record_overnight_cost_unpriced(
+        self, sienna_type: str, name: str, overnight_cost: float
+    ) -> None:
+        """An overnight cost the network leaves out, as the record states no discount rate."""
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    sienna_type, name, _EXT_OVERNIGHT_COST_ATTR, overnight_cost, UNIT_DOLLARS_PER_MW
+                )
+            ],
+            note=_UNPRICED_OVERNIGHT_COST_NOTE,
         )
 
 

@@ -30,6 +30,11 @@ from interop_testing.steps.pypsa_network._written_network import (
 _EMPTY = ""
 
 
+@then(parsers.parse('the PyPSA network "{path}" passes the PyPSA consistency check'))
+def assert_consistent(path: str) -> None:
+    read_network(path).consistency_check()
+
+
 # ---------- Buses ----------
 
 
@@ -109,6 +114,11 @@ def assert_generator_carrier(path: str, name: str, carrier: str) -> None:
 )
 def assert_generator_attribute(path: str, name: str, attr: str, value: float) -> None:
     WrittenComponent(path, GENERATOR, name).assert_close(attr, value)
+
+
+@then(parsers.parse('the PyPSA network "{path}" generator "{name}" states no "{attr}"'))
+def assert_generator_unstated(path: str, name: str, attr: str) -> None:
+    WrittenComponent(path, GENERATOR, name).assert_unstated(attr)
 
 
 @then(parsers.parse('the PyPSA network "{path}" generator "{name}" is committable'))
@@ -302,6 +312,11 @@ def assert_storage_unit_carrier(path: str, name: str, carrier: str) -> None:
 )
 def assert_storage_unit_attribute(path: str, name: str, attr: str, value: float) -> None:
     WrittenComponent(path, STORAGE_UNIT, name).assert_close(attr, value)
+
+
+@then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" states no "{attr}"'))
+def assert_storage_unit_unstated(path: str, name: str, attr: str) -> None:
+    WrittenComponent(path, STORAGE_UNIT, name).assert_unstated(attr)
 
 
 @then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" is extendable'))

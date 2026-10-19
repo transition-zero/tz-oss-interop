@@ -177,7 +177,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator only. | `sidecar` or `derived` |
 | `efficiency` | | `extensions.efficiency` of the `generator` record. If absent, PyPSA's own default of 1.0. | `sidecar` or `default` |
-| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record | `sidecar` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `e_sum_min`, `e_sum_max` | MWh | The value of the year of the snapshots in `extensions.e_sum_min` and `.e_sum_max`. Refer to [Annual energy bounds](#annual-energy-bounds). | `sidecar` |
 
 Sienna states a ramp rate in MW for each minute, and PyPSA states it as a share of `p_nom`
@@ -282,7 +282,7 @@ field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 | `cyclic_state_of_charge` | | `True` where `operation_cost.energy_shortage_cost` is above zero. If not, `False`. | `derived` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `storage` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_min` | MW | `extensions.p_nom_min` of the `storage` record. If absent, `base_power`, for an extendable storage unit only. | `sidecar` or `derived` |
-| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record | `sidecar` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `cyclic_state_of_charge_per_period` | | `extensions.cyclic_state_of_charge_per_period` of the `storage` record | `sidecar` |
 | `inflow` | MW | `extensions.inflow_mw` of the `storage` record. If absent, `0.0`. | `sidecar` or `default` |
 
@@ -542,7 +542,8 @@ states goes, unchanged, to the `extensions.json` that the pipeline writes beside
 network. The report gives one row for each field that travels on, with the rule
 `relayed unchanged to extensions.json, as PyPSA has no attribute for it`.
 
-These fields become PyPSA attributes:
+These fields become PyPSA attributes. `overnight_cost_per_mw` becomes one only if the record
+also states a `discount_rate`:
 
 | Kind | Fields |
 | --- | --- |
@@ -557,6 +558,17 @@ These fields become PyPSA attributes:
 | `storage`, for a `HydroDispatch` | `max_hours`, `state_of_charge_initial`, `inflow_mw`, `inflow_series`, `rating_series` |
 | `conversion` | `bus0`, `bus1`, `carrier`, `p_nom`, `efficiency`, `marginal_cost`, `p_max_pu`, for a record that becomes a link. Refer to [Conversion records → `Link`](#conversion-records--link). |
 | `representative_period` | `weight`, `first_timestamp` and `hours` give the [snapshot weightings](#snapshot-weightings), and the whole record also travels on |
+
+### Overnight cost
+
+PyPSA refuses a network in which a component states `overnight_cost` and no
+`discount_rate`, because it cannot annualise the cost. So if a `generator` or a `storage`
+record states `overnight_cost_per_mw` and no `discount_rate`, these things occur:
+
+1. The network leaves out `overnight_cost` of the component.
+2. The field travels on to `extensions.json`.
+3. The report gives a `NOT_MAPPED` row for the field.
+4. The log gives one warning, which names three components and counts the rest.
 
 Examples of fields that travel on: the emission rates, the operating modes, the growth
 limits, the fixed cost and the unit size of a technology, and the price of lost load of a

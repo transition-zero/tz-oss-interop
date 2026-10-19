@@ -2,7 +2,8 @@
 
 A mapping reads a record through ``ExtensionLookup.get_fields`` with one of these sets, and
 relays every other field it states to the PyPSA sidecar. A field that a set names and the
-mapping does not map is lost, so each set names only the fields that its mapping writes.
+mapping does not map is lost, so each set names only the fields that its mapping writes. No
+set names `overnight_cost_per_mw`, which maps only beside a discount rate.
 """
 
 from __future__ import annotations
@@ -36,7 +37,6 @@ RENEWABLE_MAPPED_FIELDS = build_field_names(
     "p_nom_extendable",
     "p_nom_max",
     "p_nom_min",
-    "overnight_cost_per_mw",
     "discount_rate",
     "lifetime_years",
     "build_year",
@@ -63,7 +63,6 @@ STORAGE_MAPPED_FIELDS = build_field_names(
     "p_nom_extendable",
     "p_nom_max",
     "p_nom_min",
-    "overnight_cost_per_mw",
     "discount_rate",
     "lifetime_years",
     "build_year",

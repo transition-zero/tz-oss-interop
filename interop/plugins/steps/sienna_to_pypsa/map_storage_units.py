@@ -58,6 +58,12 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     per_unit_of,
     variable_proportional_term,
 )
+from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
+    UnpricedCost,
+    find_overnight_cost,
+    list_unpriced_costs,
+    report_unpriced_costs,
+)
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
 
@@ -105,6 +111,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                     hydro_base_power[hydro.name] = hydro.base_power
 
         storage = state.source_topology.get(SiennaTable.STORAGE)
+        unpriced: list[UnpricedCost] = []
         if storage is not None:
             extensions = self._extensions.read(ExtensionKind.STORAGE)
             for row in storage.collect().iter_rows(named=True):
@@ -114,6 +121,8 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                     phs = _derive_phs(row, bus_names, extensions)
                     _record_phs(reporter, phs)
                     rows.append(_phs_row(phs))
+                    unpriced.extend(phs.unpriced_costs)
+        report_unpriced_costs(reporter, unpriced)
 
         if rows:
             state.destination_tables[PyPSADestinationTable.STORAGE_UNITS] = pl.DataFrame(
@@ -308,6 +317,8 @@ class _PhsMapping:
     # PyPSA storage unit only through the sidecar.
     p_nom_max: float | None
     overnight_cost: float | None
+    # The network leaves out a cost that the record states with no discount rate.
+    unpriced_costs: list[UnpricedCost]
     discount_rate: float | None
     lifetime: float | None
     build_year: int | None
@@ -349,7 +360,8 @@ def _derive_phs(
         ),
         cyclic=float(operation_cost.get(SiennaStructField.ENERGY_SHORTAGE_COST, 0.0)) > 0.0,
         p_nom_max=ext.p_nom_max,
-        overnight_cost=ext.overnight_cost_per_mw,
+        overnight_cost=find_overnight_cost(extensions, ext),
+        unpriced_costs=list_unpriced_costs(SiennaComponent.ENERGY_RESERVOIR_STORAGE, ext),
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
         build_year=ext.build_year,
