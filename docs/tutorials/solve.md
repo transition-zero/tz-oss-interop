@@ -178,10 +178,19 @@ snapshot once, for its length, as the Sienna path counts it. It writes a warning
 the total and the three buses with the most:
 
 ```
-solve: 60 MWh of load goes unserved, most at bus_1 (60 MWh)
+solve: 60 MWh of load goes unserved at a penalty, the most at bus_1 (60 MWh)
 ```
 
-The summary line gives the total as `unserved_energy=60 MWh`.
+These are the words of the Sienna path. The summary line gives the total as
+`unserved_energy=60 MWh`.
+
+#### Annual energy bounds and windows
+
+PyPSA applies the `e_sum_min` and the `e_sum_max` of a generator to the snapshots of each solve.
+A network whose generators state such a bound, solved in more than one window, applies the
+bound to each window. `solve` writes a warning that names three such generators. Choose one
+window that holds all the snapshots, for example `year`, for a network over representative
+periods.
 
 #### Unit commitment
 

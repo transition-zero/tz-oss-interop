@@ -93,8 +93,9 @@ the period occurs in the year. The `sienna-to-results` pipeline then writes thes
 - `production` of a `TwoTerminalGenericHVDCLine` is the same sum of the absolute `flow`. The
   solve models the line as lossless, so the energy that it delivers equals the energy that it
   sends.
-- `installed_capacity` is `base_power` × `rating` of a generator or a storage, and
-  `active_power_limits_from.max` of a `TwoTerminalGenericHVDCLine`.
+- `installed_capacity` is `base_power` × `rating` of a generator, `base_power` ×
+  `output_active_power_limits.max` of a storage, and `active_power_limits_from.max` of a
+  `TwoTerminalGenericHVDCLine`.
 - `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
   rate in `emission_rates_t_per_mwh` of the generator record.
 
@@ -124,12 +125,17 @@ The definitions are those of `sienna-to-results`, with the PyPSA fields:
   part of `p`, multiplied by the `generators` snapshot weighting.
 - `production` of a link is the same sum of the power that the link delivers at the end that
   receives it, `max(-p0, 0) + max(-p1, 0)`. A link that loses energy delivers less than it
-  sends. Its `category` is null, as for a Sienna HVDC line.
-- `installed_capacity` is `p_nom` × `p_max_pu` of a generator, a storage unit or a link. The
-  Sienna to PyPSA translation writes `base_power` as `p_nom` and `rating` as `p_max_pu`, so the
-  two pipelines give the same number for one component.
-- `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
-  rate in `emission_rates_t_per_mwh` of the `generator` record of the sidecar.
+  sends. Its `category` is null, as for a Sienna HVDC line. The `<name> reverse` link of a
+  two-way line adds to the `production` of `<name>`, so the row meets the one Sienna line.
+- `installed_capacity` is `p_nom` × `p_max_pu` of a generator, a storage unit or a link. A
+  two-way line and its reverse link give one row. The Sienna to PyPSA translation writes
+  `base_power` as `p_nom`. It writes `rating` as the `p_max_pu` of a generator, and
+  `output_active_power_limits.max` as the `p_max_pu` of a storage, so the two pipelines give
+  the same number for one component.
+- `emissions` of a pollutant is the sum over the generators and the storage units of
+  `production` multiplied by the rate in `emission_rates_t_per_mwh` of the `generator` record of
+  the sidecar. A Sienna `HydroDispatch` is a generator, and a PyPSA storage unit, so both
+  pipelines count its emissions.
 
 Two more results pipelines write annual rows:
 

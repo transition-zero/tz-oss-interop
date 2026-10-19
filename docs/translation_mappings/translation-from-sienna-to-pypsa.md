@@ -394,9 +394,24 @@ either. Check the length of each line if you plan to use it.
 | `p_max_pu` in each snapshot | per unit of `p_nom` | The `p_max_pu` column of `controllable_lines.parquet`, that `extensions.p_max_pu_series` names, × the static `p_max_pu` | `sidecar` |
 
 Sienna states the loss of a line as the proportional term of `loss`, and the translator
-writes 1 minus that term as `efficiency`. PyPSA applies `efficiency` in both directions of a
-link that can flow back (`p_min_pu` below zero). The flow back then delivers more at `bus0`
-than it takes at `bus1`. Refer to [Round-trip asymmetries](#round-trip-asymmetries).
+writes 1 minus that term as `efficiency`.
+
+**A two-way link that loses energy or costs money becomes two one-way links.** PyPSA applies
+one `efficiency` and one `marginal_cost` to both directions of a link, and its power balance is
+linear in the flow. On one link, a flow back takes `efficiency` × the power at `bus1` and gives
+the full power at `bus0`, and it earns the marginal cost instead of paying it. Thus, where
+`p_min_pu` is below zero and `efficiency` is below 1 or `marginal_cost` is not 0, the
+translator writes:
+
+| Link | `bus0` | `bus1` | `p_nom` | `p_min_pu` | `p_max_pu` | `efficiency`, `marginal_cost` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `<name>` | `bus0` | `bus1` | `p_nom` | `0` | `p_max_pu` | The values of the line |
+| `<name> reverse` | `bus1` | `bus0` | `p_nom` | `0` | −`p_min_pu` of the line | The values of the line |
+
+The reverse link also gets the `p_max_pu` series of the line, multiplied by its own
+`p_max_pu`. The report gives one row for the split. The translator does not split an
+extendable link, because the two links would not share one `p_nom`. Such a link stays one
+two-way link, and the report and the log name it.
 
 Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
 `active_power_limits_from.max` as `p_nom` × `p_max_pu`. The translator undoes this in three
@@ -435,7 +450,8 @@ PyPSA `Link` when all three conditions hold:
 | `active` | | `True` | `default` |
 
 Each other field of the record travels on to the PyPSA sidecar. A record that does not
-become a link travels on whole. These records do not become a link:
+become a link travels on whole. A record that joins two buses under the name of a link of the
+network gets a `NOT_MAPPED` row and a warning. These records do not become a link:
 
 - An export, which has no `bus1`.
 - A step inside one location, whose `bus0` and `bus1` are the same bus.
@@ -612,12 +628,12 @@ values stay in the HDF5 companion, and the report says nothing about them.
 charge cost and a discharge cost. The translator reads the discharge cost, and the charge
 cost does not reach the network. No report row records it.
 
-**A line that loses energy and flows both ways.** PyPSA applies one `efficiency` to both
-directions of a link. A link that flows back takes `efficiency` × the power at `bus1` and
-delivers the full power at `bus0`. Thus a line with a loss of 5% gains about 5% on the flow
-back. A Sienna system from OSeMOSYS states the loss of the flow back in the
-`operating_modes` of the `controllable_line` record, and that record travels on to the PyPSA
-sidecar.
+**A line that loses energy or costs money and flows both ways.** The translator writes it as
+two one-way links. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link).
+A PyPSA network that goes out to Sienna and comes back therefore comes back with two links in
+place of one. The reverse link loses and pays as the forward link does. A Sienna system from
+OSeMOSYS states the loss of the flow back in the `operating_modes` of the `controllable_line`
+record, and that record travels on to the PyPSA sidecar.
 
 **The cyclic state of charge.** Sienna has no cyclic flag, so the opposite direction states
 the state as a large `energy_shortage_cost`. This translator reads any
