@@ -71,20 +71,25 @@ class EnergyLimitMapper:
         bounds = _list_bounds(reader, generators[PyPSAGeneratorCol.NAME].to_list())
         if not bounds:
             return
-        if not span.is_whole_year:
+        if span.is_whole_year:
+            self._map_year(state, bounds, span)
+        else:
             self._report_part_year(state, bounds, span)
-            return
+
+    def _map_year(self, state: State, bounds: list[EnergyBound], span: SnapshotSpan) -> None:
+        """Write the bound of the year of the snapshots, and report each bound that has none."""
         year = str(span.year)
         held = [bound for bound in bounds if year in bound.by_year]
         self._report_no_year(state, [bound for bound in bounds if year not in bound.by_year], year)
         self._record_mapped(state, held, span)
+        generators = state.destination_tables[PyPSADestinationTable.GENERATORS]
         state.destination_tables[PyPSADestinationTable.GENERATORS] = _set_bounds(
             generators, held, year
         )
 
     def _record_mapped(self, state: State, held: list[EnergyBound], span: SnapshotSpan) -> None:
         reporter = GeneratorReporter(self._recorder)
-        types = _find_sienna_types(state)
+        types = _build_sienna_types(state)
         derivation = _MAPPED_DERIVATION.format(year=span.year, hours=span.represented_hours)
         for bound in held:
             value = bound.by_year[str(span.year)]
@@ -102,20 +107,20 @@ class EnergyLimitMapper:
     ) -> None:
         year = _MORE_THAN_ONE_YEAR if span.year is None else str(span.year)
         note = _PART_YEAR_NOTE.format(hours=span.represented_hours, year=year)
-        self._report_unmapped(state, bounds, note)
+        self._record_unmapped(state, bounds, note)
         labels = [f"{bound.name}.{bound.field_name}" for bound in bounds]
         log.warning(_PART_YEAR_WARNING, len(bounds), span.represented_hours, name_a_few(labels))
 
     def _report_no_year(self, state: State, bounds: list[EnergyBound], year: str) -> None:
         if not bounds:
             return
-        self._report_unmapped(state, bounds, _NO_YEAR_NOTE.format(year=year))
+        self._record_unmapped(state, bounds, _NO_YEAR_NOTE.format(year=year))
         labels = [f"{bound.name}.{bound.field_name}" for bound in bounds]
         log.warning(_NO_YEAR_WARNING, len(bounds), year, name_a_few(labels))
 
-    def _report_unmapped(self, state: State, bounds: list[EnergyBound], note: str) -> None:
+    def _record_unmapped(self, state: State, bounds: list[EnergyBound], note: str) -> None:
         reporter = GeneratorReporter(self._recorder)
-        types = _find_sienna_types(state)
+        types = _build_sienna_types(state)
         for bound in bounds:
             reporter.record_energy_bound_unmapped(
                 types.get(bound.name, ExtensionKind.GENERATOR),
@@ -151,7 +156,7 @@ def _set_bounds(generators: pl.DataFrame, held: list[EnergyBound], year: str) ->
     return generators.with_columns(columns)
 
 
-def _find_sienna_types(state: State) -> dict[str, str]:
+def _build_sienna_types(state: State) -> dict[str, str]:
     """The Sienna type of each generator, which the report names as the source."""
     source = state.source_topology.get(SiennaTable.GENERATORS)
     if source is None:

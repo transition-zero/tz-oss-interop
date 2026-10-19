@@ -67,6 +67,10 @@ PYPSA_SNAPSHOTS_GENERATORS_VAR = "snapshots_generators"
 # ``_objective`` becomes ``network__objective``.
 PYPSA_NETWORK_ATTR_PREFIX = "network_"
 
+# The suffix of the link that carries the flow back of a two-way link that loses energy or
+# costs money, as PyPSA applies one efficiency and one cost to both directions of a link.
+REVERSE_LINK_SUFFIX = " reverse"
+
 # PyPSA states a load as a positive quantity and flips it with this sign, so every Load
 # carries the same value and Sienna's positive-consumption PowerLoad has nothing to state.
 PYPSA_LOAD_SIGN = -1.0

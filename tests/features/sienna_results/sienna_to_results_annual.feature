@@ -22,7 +22,7 @@ the HVDC line in MW. The gas plant emits 0.5 t of
     And the RenewableDispatch "solar" has ext carrier "solar"
     And the system contains a RenewableNonDispatch "rooftop" on bus "node_b" with base_power 4 rating 1 active_power 0 prime_mover "PVe"
     And the RenewableNonDispatch "rooftop" has ext carrier "solar-rooftop"
-    And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 40 initial_level 0 rating 1 input_max 10 output_max 10 efficiency_in 1 efficiency_out 1 discharge_cost 0
+    And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 40 initial_level 0 rating 0.5 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
     And the system contains an HVDC line "link" from "node_a" to "node_b" with p_nom 20 efficiency 1
     And Sienna solve results
     And the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00 2030-01-01T02:00:00 2030-01-01T03:00:00

@@ -132,10 +132,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         return state
 
     def _carry_on(self, state: State, names: list[str], hydro_names: list[str]) -> None:
-        """Pass on each field of a unit's records that no PyPSA column holds.
-
-        A hydro unit can hold a generator record too, which maps to nothing here.
-        """
+        """Pass on each unmapped field of a unit's records, with a hydro unit's generator record."""
         storage = self._extensions.read(ExtensionKind.STORAGE)
         relay_records(
             state, ExtensionKind.STORAGE, [storage.relay(name) for name in names], self._recorder

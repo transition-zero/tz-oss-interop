@@ -156,4 +156,4 @@ class AnnualCol(StrEnum):
     YEAR = "year"
     POLLUTANT = "pollutant"
     RATE = "rate"
-    SIENNA_TYPE = "sienna_type"
+    COMPONENT_TYPE = "component_type"

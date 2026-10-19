@@ -143,6 +143,8 @@ class SiennaLoadCol:
 
     ID = "id"
     NAME = "name"
+    # The Sienna type of a staged row, such as PowerLoad or InterruptiblePowerLoad.
+    SIENNA_TYPE = "sienna_type"
     AVAILABLE = "available"
     BUS = "bus"
     BUS_NAME = "bus_name"

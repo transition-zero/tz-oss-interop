@@ -74,9 +74,8 @@ class SiennaToPypsaMapLoads(TranslationStep):
             if ext.type is not None:
                 reporter.record_type_from_ext(name, ext.type)
             if ext.sign is not None:
-                reporter.record_carried(
-                    SiennaComponent.POWER_LOAD, name, "sign", PyPSALoadCol.SIGN, ext.sign
-                )
+                sienna_type = row.get(SiennaLoadCol.SIENNA_TYPE, SiennaComponent.POWER_LOAD)
+                reporter.record_carried(sienna_type, name, "sign", PyPSALoadCol.SIGN, ext.sign)
             rows.append(
                 {
                     PyPSALoadCol.NAME: name,

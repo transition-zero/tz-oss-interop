@@ -116,10 +116,7 @@ def build_network(
 
 
 def _set_snapshot_weightings(network: pypsa.Network, tables: dict[str, pl.LazyFrame]) -> None:
-    """Write the hours each snapshot counts for, where a mapping derived them.
-
-    A snapshot the table does not name keeps PyPSA's own weighting.
-    """
+    """Write the hours each snapshot counts for, where a mapping derived them."""
     weightings = tables.get(PyPSADestinationTable.SNAPSHOT_WEIGHTINGS)
     if weightings is None:
         return

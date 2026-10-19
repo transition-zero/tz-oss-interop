@@ -51,11 +51,7 @@ def stage_companion_columns(
     columns: tuple[CompanionColumn, ...],
     written: dict[str, float],
 ) -> None:
-    """Stage each column the companion holds, and point the components it names at it.
-
-    ``written`` maps each component the hop wrote to the number the sink multiplies its
-    series by, so a column naming a component the hop left out reaches no metadata row.
-    """
+    """Stage each companion column, for each written component, times its scaling factor."""
     frame = state.source_extension_series.get(kind)
     if frame is None:
         return

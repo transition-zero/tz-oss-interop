@@ -70,6 +70,20 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" without field "carrier"
     And the file "decisions.md" contains "| `sienna.generator.gas.extensions.max_growth` = 0.0 | `pypsa.generator.gas.extensions.max_growth` = 0.0 | relayed unchanged to extensions.json, as PyPSA has no attribute for it |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
 
+  Scenario: A floor that the sidecar states wins over the rating of an extendable plant
+    Given the ThermalStandard "gas" is p_nom_extendable in ext
+    And the ThermalStandard "gas" has ext "p_nom_min" set to 50.0
+    And the system is saved as "inputs/floor.json"
+    When I run translate against "inputs/floor.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "p_nom_min" is 50.0
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.p_nom_min` = 50.0 MW | `pypsa.Generator.gas.p_nom_min` = 50.0 MW | extensions.p_nom_min (PyPSA round-trip) |"
+
+  Scenario: A record whose every field maps is not written to the PyPSA sidecar
+    Given the ThermalStandard "gas" has ext carrier "gas"
+    And the system is saved as "inputs/mapped.json"
+    When I run translate against "inputs/mapped.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the file "outputs/extensions.json" parses as JSON with no generator extension record for "gas"
+
   Scenario: The generator record of a hydro plant travels on, as the plant becomes a storage unit
     Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
     And the HydroDispatch "hydro" has ext "category" set to "hydro-dam"
@@ -95,17 +109,53 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "line" having "operating_modes" set to [{"mode": "2", "variable_cost": 3.0}]
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "line" without field "marginal_cost"
 
+  Scenario: A line that flows both ways and loses energy becomes two one-way links
+    PyPSA applies one efficiency and one cost to both directions of a link, so the flow back
+    goes on a reverse link from node_b to node_a, which loses and pays as the forward link does.
+    Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 0.95
+    And the TwoTerminalGenericHVDCLine "line" has ext "marginal_cost" set to 10.0
+    And the TwoTerminalGenericHVDCLine "line" has ext "p_min_pu" set to -0.8
+    And the HVDC line "line" has an ext p_max_pu series 1 0.5 0 1
+    And the system is saved as "inputs/two_way.json"
+    When I run translate against "inputs/two_way.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 links
+    And the PyPSA network "outputs/network.nc" link "line" attribute "p_min_pu" is 0.0
+    And the PyPSA network "outputs/network.nc" link "line reverse" has bus0 "node_b"
+    And the PyPSA network "outputs/network.nc" link "line reverse" has bus1 "node_a"
+    And the PyPSA network "outputs/network.nc" link "line reverse" attribute "p_nom" is 500.0
+    And the PyPSA network "outputs/network.nc" link "line reverse" attribute "p_min_pu" is 0.0
+    And the PyPSA network "outputs/network.nc" link "line reverse" attribute "efficiency" is 0.95
+    And the PyPSA network "outputs/network.nc" link "line reverse" attribute "marginal_cost" is 10.0
+    And the PyPSA network "outputs/network.nc" link "line reverse" has a p_max_pu time series 0.8 0.4 0 0.8
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.active_power_limits_from.min` = -400.0 MW | `pypsa.Link.line.p_min_pu` = 0.0 | a link that flows both ways and loses energy or costs money becomes two one-way links"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.active_power_limits_from.min` = -400.0 MW | `pypsa.Link.line reverse.p_max_pu` = 0.8 |"
+
+  Scenario: An extendable line that flows both ways and loses energy stays one link, and the log says so
+    Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 0.95
+    And the TwoTerminalGenericHVDCLine "line" has ext "p_min_pu" set to -1.0
+    And the HVDC line "line" is extendable in ext
+    And the system is saved as "inputs/two_way_extendable.json"
+    When I run translate against "inputs/two_way_extendable.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 link
+    And the PyPSA network "outputs/network.nc" link "line" attribute "p_min_pu" is -1.0
+    And the log contains "1 extendable link(s) flow both ways and lose energy or cost money, so each stays one link whose flow back gains what its forward flow loses: line"
+
   Scenario: A storage keeps its yearly cycle and its build year, and its energy cost travels on
     Given the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 4 initial_level 0 rating 1 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
-    And the EnergyReservoirStorage "battery" has ext "cyclic_state_of_charge_per_period" set to false
+    And the EnergyReservoirStorage "battery" has ext "cyclic_state_of_charge_per_period" set to true
     And the EnergyReservoirStorage "battery" has ext "build_year" set to 2015
     And the EnergyReservoirStorage "battery" has ext "energy_overnight_cost" set to 5.0
+    And the EnergyReservoirStorage "battery" has ext "p_nom_max" set to 40.0
+    And the EnergyReservoirStorage "battery" has ext "overnight_cost_per_mw" set to 1000.0
     And the system is saved as "inputs/storage.json"
     When I run translate against "inputs/storage.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
-    Then the PyPSA network "outputs/network.nc" storage unit "battery" has "cyclic_state_of_charge_per_period" clear
+    Then the PyPSA network "outputs/network.nc" storage unit "battery" has "cyclic_state_of_charge_per_period" set
     And the PyPSA network "outputs/network.nc" storage unit "battery" attribute "build_year" is 2015
+    And the PyPSA network "outputs/network.nc" storage unit "battery" attribute "p_nom_max" is 40.0
     And the file "outputs/extensions.json" parses as JSON storage extension record for "battery" having "energy_overnight_cost" set to 5.0
-    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.cyclic_state_of_charge_per_period` = False | `pypsa.StorageUnit.battery.cyclic_state_of_charge_per_period` = False | extensions.cyclic_state_of_charge_per_period (PyPSA round-trip) |"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.cyclic_state_of_charge_per_period` = True | `pypsa.StorageUnit.battery.cyclic_state_of_charge_per_period` = True | extensions.cyclic_state_of_charge_per_period (PyPSA round-trip) |"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.p_nom_max` = 40.0 MW | `pypsa.StorageUnit.battery.p_nom_max` = 40.0 MW | extensions.p_nom_max (PyPSA round-trip) |"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.overnight_cost_per_mw` = 1000.0 \$/MW | `pypsa.StorageUnit.battery.overnight_cost` = 1000.0 \$/MW | extensions.overnight_cost_per_mw (PyPSA round-trip) |"
 
   Scenario: The price of lost load of a bus travels on, and the sign of a load maps
     Given the ACBus "node_b" has ext "value_of_lost_load" set to 9000.0
@@ -140,6 +190,16 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "a_inside" having "p_nom" set to 10.0
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ELC" having "bus0" set to "R1/ELC"
     And the file "decisions.md" contains "| `sienna.conversion.a_to_b.extensions.efficiency` = 0.9 | `pypsa.Link.a_to_b.efficiency` = 0.9 | extensions.efficiency (PyPSA round-trip) |"
+
+  Scenario: A conversion under the name of a link travels on, and the log says so
+    Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
+    And the system has a conversion extension record "line" with "bus0" set to "node_a"
+    And the system has a conversion extension record "line" with "bus1" set to "node_b"
+    And the system is saved as "inputs/taken.json"
+    When I run translate against "inputs/taken.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 link
+    And the file "outputs/extensions.json" parses as JSON conversion extension record for "line" having "bus0" set to "node_a"
+    And the log contains "1 conversion record(s) join two buses under the name of a link of the network, so each travels on to extensions.json and becomes no link: line"
 
   Scenario: A policy record and a portfolio record travel on whole
     Given the system has a constraint extension record "CO2CAP" with "type" set to "primary_energy"

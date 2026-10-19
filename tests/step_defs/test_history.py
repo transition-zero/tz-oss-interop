@@ -247,6 +247,30 @@ def when_run_solve_from_menu(monkeypatch: pytest.MonkeyPatch, path: str, model: 
     )
 
 
+@when(
+    parsers.parse(
+        'I run a PyPSA solve from the menu for "{path}" with unserved energy "{unserved}"'
+    )
+)
+def when_run_pypsa_solve_from_menu(
+    monkeypatch: pytest.MonkeyPatch, path: str, unserved: str
+) -> None:
+    invoke_run(
+        monkeypatch,
+        ["solve", "pypsa", "linearised", "month", unserved, "quit"],
+        extra_path_answers={"Path to PyPSA network?": path, "Output directory?": "solved"},
+    )
+
+
+@when("I replay the last PyPSA solve invocation")
+def when_replay_last_pypsa_solve(monkeypatch: pytest.MonkeyPatch, isolated_history: Path) -> None:
+    invocation = _last_invocation(isolated_history, "solve")
+    invoke_run(
+        monkeypatch,
+        ["history", invocation, "pypsa", "linearised", "month", "refused", "quit"],
+    )
+
+
 @when("I replay the recorded solve invocation")
 def when_replay_recorded_solve(
     monkeypatch: pytest.MonkeyPatch, recorded_invocation: dict[str, Any]

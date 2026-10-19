@@ -77,6 +77,13 @@ Feature: REPL history records and re-runs past invocations
     Then the select prompt "Network model?" offered default "dcp"
     And the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered no default
 
+  Scenario: a PyPSA solve records its unserved energy answer, and a replay offers it again
+    Given a PyPSA network with 24 hourly snapshots saved as "inputs/net.nc"
+    When I run a PyPSA solve from the menu for "inputs/net.nc" with unserved energy "penalised"
+    Then the history file records a "solve" invocation with detail "unserved_energy" set to "penalised"
+    When I replay the last PyPSA solve invocation
+    Then the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered default "penalised"
+
   Scenario: a compare run records its answers in the history file
     Given a compare-ready working directory
     When I run from the menu a compare of pypsa against sienna

@@ -14,7 +14,11 @@ from typing import NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, ExtensionReader
+from interop.core.extensions import (
+    ExtensionKind,
+    ExtensionReader,
+    RepresentativePeriodExtension,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_HOURS, Framework
@@ -95,10 +99,7 @@ class SnapshotWindow(NamedTuple):
 
 
 class SnapshotSpan(NamedTuple):
-    """The calendar year that holds every snapshot, and the hours the snapshots count for.
-
-    ``year`` is None where the snapshots fall in more than one year, or there are none.
-    """
+    """The one calendar year of every snapshot, else None, and the hours they count for."""
 
     year: int | None
     represented_hours: float
@@ -132,25 +133,30 @@ class SnapshotWeightingMapper:
     def map_weightings(
         self, state: State, reader: ExtensionReader, window: SnapshotWindow | None
     ) -> SnapshotSpan:
-        """Write the weightings where the sidecar states periods; answer what they span."""
+        """Write the weightings where the sidecar states periods, and answer what they span."""
         records = reader.read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
         if window is None:
-            self._report_unweighted([record.name for record in records], _NO_SNAPSHOTS_NOTE)
+            self._record_unweighted([record.name for record in records], _NO_SNAPSHOTS_NOTE)
             return SnapshotSpan(None, 0.0)
         snapshots = window.list_snapshots()
         if not records:
             return _build_span(snapshots, [1.0] * len(snapshots))
-        periods = PeriodChooser(self._recorder, _LEFT_OUT_PERIOD_TEXT).choose_periods(records)
-        weights = _list_period_weights(snapshots, periods)
-        self._record_periods(snapshots, periods, window.snapshot_hours)
-        self._report_outside(snapshots, weights)
-        counted = [
-            window.snapshot_hours * (1.0 if weight is None else weight) for weight in weights
-        ]
+        counted = self._weight_snapshots(records, window)
         state.destination_time_series[PyPSADestinationTable.SNAPSHOT_WEIGHTINGS] = (
             _build_weightings(snapshots, counted, window.snapshot_hours)
         )
         return _build_span(snapshots, counted)
+
+    def _weight_snapshots(
+        self, records: list[RepresentativePeriodExtension], window: SnapshotWindow
+    ) -> list[float]:
+        """The hours each snapshot counts for, with an event for each period and each gap."""
+        snapshots = window.list_snapshots()
+        periods = PeriodChooser(self._recorder, _LEFT_OUT_PERIOD_TEXT).choose_periods(records)
+        weights = _list_period_weights(snapshots, periods)
+        self._record_periods(snapshots, periods, window.snapshot_hours)
+        self._report_outside(snapshots, weights)
+        return [window.snapshot_hours * (1.0 if weight is None else weight) for weight in weights]
 
     def _record_periods(
         self, snapshots: list[datetime], periods: list[Period], hours: float
@@ -158,7 +164,7 @@ class SnapshotWeightingMapper:
         for period in periods:
             held = [moment for moment in snapshots if period.is_holding(moment)]
             if not held:
-                self._report_unweighted([period.name], _EMPTY_PERIOD_NOTE)
+                self._record_unweighted([period.name], _EMPTY_PERIOD_NOTE)
                 continue
             self._recorder.append(_build_weighting_event(period, held, hours))
 
@@ -176,7 +182,7 @@ class SnapshotWeightingMapper:
             count = sum(run[2] for run in runs)
             log.warning(_OUTSIDE_WARNING, count, name_a_few(run[0].isoformat() for run in runs))
 
-    def _report_unweighted(self, names: list[str], note: str) -> None:
+    def _record_unweighted(self, names: list[str], note: str) -> None:
         for name in names:
             self._recorder.append(
                 TranslationEvent(

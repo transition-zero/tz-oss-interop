@@ -212,7 +212,7 @@ Feature: Solve a PyPSA network
     And the solved network "outputs/solved/short.nc" records 60 MWh of unserved energy at "bus_1"
     And the solved network "outputs/solved/short.nc" has no generator "bus_1 unserved energy"
     And the solved network "outputs/solved/short.nc" has generator "gen" dispatch 50 50
-    And the log contains "60 MWh of load goes unserved, most at bus_1 (60 MWh)"
+    And the log contains "solve: 60 MWh of load goes unserved at a penalty, the most at bus_1 (60 MWh)"
 
   Scenario: the same shortfall with unserved energy refused does not solve
     Given a PyPSA network
@@ -222,4 +222,31 @@ Feature: Solve a PyPSA network
     And the network contains load "load_1" on "bus_1" with static p_set 80.0
     And the network is saved as "inputs/short.nc"
     When I run solve on "inputs/short.nc" from "2026-09-01" to "2026-09-01" with unserved energy "refused" into "outputs/solved"
-    Then the printed output contains "FAILED"
+    Then the printed output contains "[FAILED]  status=infeasible"
+    And the printed output does not contain "unserved_energy="
+
+  Scenario: Generation that no load can take goes to the surplus slack at a penalty
+    The generator must run at its full 100 MW, and the load takes 80 MW, so 20 MW in each of
+    the two hours finds no load.
+    Given a PyPSA network
+    And the network has 2 snapshots starting 2026-09-01 at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "gen" on "bus_1" carrier "gas" p_nom 100.0 p_min_pu 1.0 marginal_cost 10.0
+    And the network contains load "load_1" on "bus_1" with static p_set 80.0
+    And the network is saved as "inputs/surplus.nc"
+    When I run solve on "inputs/surplus.nc" from "2026-09-01" to "2026-09-01" with unserved energy "penalised" into "outputs/solved"
+    Then the solve reported success
+    And the printed output contains "unserved_energy=0 MWh"
+    And the log contains "solve: 40 MWh of generation finds no load at a penalty, the most at bus_1 (40 MWh)"
+    And the solved network "outputs/solved/surplus.nc" has no generator "bus_1 surplus energy"
+
+  Scenario: An energy bound over all the snapshots, solved in more than one window, is named in the log
+    Given a PyPSA network
+    And the network has 48 snapshots starting 2026-09-01 at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "gen" on "bus_1" carrier "gas" p_nom 100.0 marginal_cost 10.0
+    And generator "gen" has e_sum_max 5000
+    And the network contains load "load_1" on "bus_1" with static p_set 50.0
+    And the network is saved as "inputs/bounded.nc"
+    When I run solve on "inputs/bounded.nc" from "2026-09-01" to "2026-09-02" in "day" windows with a 0 day look-ahead into "outputs/solved"
+    Then the log contains "solve: 2 window(s) each apply the e_sum_min or e_sum_max of 1 generator(s), which the network states for all its snapshots: gen"

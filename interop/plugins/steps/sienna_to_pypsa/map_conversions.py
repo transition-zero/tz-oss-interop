@@ -9,6 +9,7 @@ and a trade route names `<region>/<fuel>` ends that are not buses.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 import polars as pl
@@ -34,6 +35,14 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ConversionReporter
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
+
+_TAKEN_NAME_WARNING = (
+    "%d conversion record(s) join two buses under the name of a link of the network, so each "
+    "travels on to extensions.json and becomes no link: %s"
+)
 
 # PyPSA's own Link defaults, for a record that states no capacity or no efficiency.
 _DEFAULT_P_NOM = 0.0
@@ -65,10 +74,11 @@ class SiennaToPypsaMapConversions(TranslationStep):
         records = lookup.list_records()
         if not records:
             return state
-        buses = _list_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
-        links = _list_names(state, PyPSADestinationTable.LINKS, PyPSALinkCol.NAME)
-        linked = [record for record in records if _is_linkable(record, buses, links)]
-        self._map_links(state, lookup, linked)
+        buses = _build_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
+        links = _build_names(state, PyPSADestinationTable.LINKS, PyPSALinkCol.NAME)
+        joining = [record for record in records if _is_joining_buses(record, buses)]
+        self._report_taken_names([record.name for record in joining if record.name in links])
+        self._map_links(state, lookup, [record for record in joining if record.name not in links])
         relay_records(
             state,
             ExtensionKind.CONVERSION,
@@ -76,6 +86,14 @@ class SiennaToPypsaMapConversions(TranslationStep):
             self._recorder,
         )
         return state
+
+    def _report_taken_names(self, names: list[str]) -> None:
+        """Report each conversion that joins two buses under the name of a link of the network."""
+        reporter = ConversionReporter(self._recorder)
+        for name in names:
+            reporter.record_name_taken(name)
+        if names:
+            log.warning(_TAKEN_NAME_WARNING, len(names), name_a_few(names))
 
     def _map_links(
         self,
@@ -98,13 +116,13 @@ class SiennaToPypsaMapConversions(TranslationStep):
         )
 
 
-def _is_linkable(record: ConversionExtension, buses: set[str], links: set[str]) -> bool:
-    """Whether the record joins two different buses of the network, under a free Link name."""
+def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
+    """Whether the record joins two different buses of the network."""
     ends = {record.bus0, record.bus1}
-    return len(ends) == 2 and ends <= buses and record.name not in links
+    return len(ends) == 2 and ends <= buses
 
 
-def _list_names(state: State, table: str, column: str) -> set[str]:
+def _build_names(state: State, table: str, column: str) -> set[str]:
     frame = state.destination_tables.get(table)
     return set() if frame is None else set(frame[column].to_list())
 

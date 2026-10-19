@@ -9,6 +9,8 @@ thin ``_source`` (which fills in the Sienna component, fixed or passed per call)
 
 from __future__ import annotations
 
+from typing import Any
+
 from interop.core.extensions import ExtensionKind
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
@@ -1034,6 +1036,39 @@ class LinkReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
+    def record_split(
+        self, forward: dict[str, Any], reverse: dict[str, Any], p_min_pu: float
+    ) -> None:
+        """The flow back of a two-way link, as a one-way link from bus1 to bus0."""
+        name = forward[PyPSALinkCol.NAME]
+        reverse_name = reverse[PyPSALinkCol.NAME]
+        columns = (
+            PyPSALinkCol.BUS0,
+            PyPSALinkCol.BUS1,
+            PyPSALinkCol.P_NOM,
+            PyPSALinkCol.P_MAX_PU,
+            PyPSALinkCol.EFFICIENCY,
+            PyPSALinkCol.MARGINAL_COST,
+        )
+        self._derived(
+            sources=[
+                self._source(
+                    name,
+                    _ACTIVE_POWER_LIMITS_FROM_MIN,
+                    p_min_pu * forward[PyPSALinkCol.P_NOM],
+                    UNIT_MW,
+                )
+            ],
+            destinations=[
+                self._destination(name, PyPSALinkCol.P_MIN_PU, 0.0),
+                *(self._destination(reverse_name, column, reverse[column]) for column in columns),
+            ],
+            derivation=_SPLIT_DERIVATION,
+        )
+
+    def record_unsplit(self, name: str) -> None:
+        self._not_mapped(sources=[self._source(name, SiennaLinkCol.LOSS, None)], note=_UNSPLIT_NOTE)
+
     def record_marginal_cost_from_ext(self, name: str, marginal_cost: float) -> None:
         """Sienna prices no flow over a branch, so the price comes back from the sidecar."""
         self._derived(
@@ -1056,6 +1091,15 @@ class LinkReporter(_Reporter):
         )
 
 
+_SPLIT_DERIVATION = (
+    "a link that flows both ways and loses energy or costs money becomes two one-way links, "
+    "as PyPSA applies one efficiency and one cost to both directions: the forward link keeps "
+    "p_min_pu 0, and the reverse link runs from bus1 to bus0 with p_max_pu = -p_min_pu"
+)
+_UNSPLIT_NOTE = (
+    "the link can extend, so it stays one two-way link, as two links would not share one "
+    "p_nom; its flow back gains what its forward flow loses"
+)
 _RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
 
 
@@ -1075,6 +1119,10 @@ class ExtensionRelayReporter(_Reporter):
         )
 
 
+_TAKEN_NAME_NOTE = (
+    "a link of the network has the name of the conversion record, so the record becomes no "
+    "link and travels on to extensions.json"
+)
 _DEFAULT_LINK_NOTE = "the conversion record states no {column}, so PyPSA's own default applies"
 
 
@@ -1087,6 +1135,12 @@ class ConversionReporter(_Reporter):
         self, name: str, field_name: str, column: str, value: object, unit: str | None
     ) -> None:
         self.record_carried(ExtensionKind.CONVERSION, name, field_name, column, value, unit)
+
+    def record_name_taken(self, name: str) -> None:
+        self._not_mapped(
+            sources=[self._source_field(ExtensionKind.CONVERSION, name, None, None)],
+            note=_TAKEN_NAME_NOTE,
+        )
 
     def record_default(self, name: str, column: str, value: float) -> None:
         self._default_applied(

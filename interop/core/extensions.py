@@ -801,11 +801,7 @@ def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
 
 @dataclass
 class KindConsumption:
-    """What the readers of one hop did with the records of one kind.
-
-    ``whole`` holds the names of the records a reader took as a whole. ``fields`` holds, for
-    a record a reader took field by field, the fields that a mapping maps or a relay carries.
-    """
+    """The records of one kind that readers took whole, and the fields handled in the rest."""
 
     whole: set[str] = field(default_factory=set)
     fields: dict[str, set[str]] = field(default_factory=dict)
@@ -827,10 +823,6 @@ class ExtensionLookup(Generic[RecordT]):
     ``get`` always answers with a record, so a consumer reads a field rather than branching
     on whether the hop before it wrote anything. A name the sidecar never mentioned yields a
     record whose every field is unset, which is what "the source said nothing" means.
-
-    ``get`` takes a record as a whole. ``get_fields`` takes only the fields a mapping maps,
-    and ``relay`` then carries the other fields on, so the hop reports a field that neither
-    reaches.
     """
 
     def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: KindConsumption):
@@ -848,10 +840,7 @@ class ExtensionLookup(Generic[RecordT]):
         return self._find_or_build(name)
 
     def relay(self, name: str) -> RecordT:
-        """A record that holds each stated field of ``name`` that no mapping here maps.
-
-        The fields it holds count as relayed. A record with nothing left holds the name alone.
-        """
+        """A record of the stated fields of ``name`` that no mapping maps, marked as relayed."""
         handled = self._consumed.fields.setdefault(name, set())
         left = {
             field_name: value
@@ -886,25 +875,34 @@ class ExtensionConsumption:
     """
 
     recorder: EventRecorder
-    by_kind: dict[ExtensionKind, KindConsumption] = field(default_factory=dict)
+    by_kind: dict[ExtensionKind, KindConsumption] = field(
+        default_factory=lambda: {kind: KindConsumption() for kind in ExtensionKind}
+    )
 
     def get_kind(self, kind: ExtensionKind) -> KindConsumption:
-        return self.by_kind.setdefault(kind, KindConsumption())
+        return self.by_kind[kind]
 
     def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
-        """Report each record that no reader read, and each field of a record read field by
-        field that nothing maps or relays."""
-        dropped_fields: list[str] = []
+        """Report each record no reader read, and each field nothing maps or relays."""
         for kind, records in staged.items():
-            consumed = self.by_kind.get(kind, KindConsumption())
-            unread = [record for record in records if consumed.is_unread(record)]
+            unread = [record for record in records if self.by_kind[kind].is_unread(record)]
             report_dropped({kind: unread}, framework, self.recorder)
-            for record in records:
-                for field_name in consumed.list_unhandled_fields(record):
-                    self._record_dropped_field(kind, record, field_name, framework)
-                    dropped_fields.append(f"{kind} {record.name}.{field_name}")
-        if dropped_fields:
-            log.warning(_UNHANDLED_FIELD_WARNING, len(dropped_fields), _name_a_few(dropped_fields))
+        dropped = self._list_dropped_fields(staged)
+        for kind, record, field_name in dropped:
+            self._record_dropped_field(kind, record, field_name, framework)
+        if dropped:
+            labels = [f"{kind} {record.name}.{field_name}" for kind, record, field_name in dropped]
+            log.warning(_UNHANDLED_FIELD_WARNING, len(labels), _build_few_names(labels))
+
+    def _list_dropped_fields(
+        self, staged: StagedExtensions
+    ) -> list[tuple[ExtensionKind, ExtensionRecord, str]]:
+        return [
+            (kind, record, field_name)
+            for kind, records in staged.items()
+            for record in records
+            for field_name in self.by_kind[kind].list_unhandled_fields(record)
+        ]
 
     def _record_dropped_field(
         self, kind: ExtensionKind, record: ExtensionRecord, field_name: str, framework: str
@@ -927,7 +925,7 @@ class ExtensionConsumption:
         )
 
 
-def _name_a_few(labels: list[str]) -> str:
+def _build_few_names(labels: list[str]) -> str:
     named = ", ".join(labels[:_NAMED_FIELDS])
     rest = len(labels) - _NAMED_FIELDS
     return named if rest <= 0 else f"{named}, and {rest} more"

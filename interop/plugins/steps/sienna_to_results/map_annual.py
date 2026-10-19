@@ -9,7 +9,6 @@ is written.
 
 from __future__ import annotations
 
-import logging
 from typing import NamedTuple
 
 import polars as pl
@@ -23,22 +22,21 @@ from interop.core.extensions import (
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.annual_results import (
+    EMISSIONS_DERIVATION,
     PRODUCTION_SCHEMA,
+    AnnualReporter,
+    Production,
     build_annual_rows,
     build_emission_rates,
     build_emissions,
 )
 from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
-from interop.plugins.shared.results_constants import (
-    RESULTS_TABLE_KEY,
-    VARIABLE_UNIT,
-    ResultsCol,
-    ResultsVariable,
-)
+from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaGeneratorCol,
     SiennaLinkCol,
+    SiennaStorageCol,
     SiennaTable,
 )
 from interop.plugins.shared.sienna_results_constants import (
@@ -46,16 +44,10 @@ from interop.plugins.shared.sienna_results_constants import (
     AnnualCol,
     SiennaResultSeries,
 )
-from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_results.hour_weights import HourWeighter
 from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
     SourceField,
-    TranslationEvent,
 )
-
-log = logging.getLogger(__name__)
 
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
 
@@ -67,21 +59,10 @@ _PRODUCTION_DERIVATION = (
     "line as lossless, so the energy that it delivers equals the energy that it sends."
 )
 _INSTALLED_CAPACITY_DERIVATION = (
-    "base_power × rating for a generator or a storage, active_power_limits_from.max for a "
-    "TwoTerminalGenericHVDCLine → installed_capacity at 1 January of the year"
+    "base_power × rating for a generator, base_power × output_active_power_limits.max for a "
+    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine → "
+    "installed_capacity at 1 January of the year"
 )
-_EMISSIONS_DERIVATION = (
-    "Σ over generators of production × emission_rates_t_per_mwh of the pollutant → emissions "
-    "at 1 January of the year"
-)
-_UNPRODUCED_NOTE = (
-    "the solve states no output for the component, so it has installed_capacity and no production"
-)
-_UNPRODUCED_WARNING = (
-    "%d component(s) have a rating, but the solve states no output for them, so they have no "
-    "production: %s"
-)
-
 _PRODUCTION_SOURCES = [
     SourceField(
         framework=Framework.SIENNA,
@@ -113,7 +94,7 @@ _INSTALLED_CAPACITY_SOURCES = [
     SourceField(
         framework=Framework.SIENNA,
         component=SiennaTable.STORAGE,
-        name=SiennaGeneratorCol.RATING,
+        name=SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS,
     ),
     SourceField(
         framework=Framework.SIENNA,
@@ -152,23 +133,13 @@ class HourlyResults(NamedTuple):
         return [*self.generator_dispatch, *self.storage_dispatch, *self.link_flow]
 
 
-class Production(NamedTuple):
-    """MWh in each year, by component, for each kind of component that produces."""
-
-    generators: pl.DataFrame
-    storage: pl.DataFrame
-    links: pl.DataFrame
-
-    def build_table(self) -> pl.DataFrame:
-        return pl.concat([self.generators, self.storage, self.links])
-
-
 class AnnualResultsMapper:
     """Writes `production`, `installed_capacity` and `emissions` for a solve over
     representative periods."""
 
     def __init__(self, recorder: ScopedRecorder) -> None:
         self._recorder = recorder
+        self._reporter = AnnualReporter(recorder, Framework.SIENNA)
 
     def map_annual(
         self, state: State, hourly: HourlyResults, carrier_lookup: pl.LazyFrame | None
@@ -196,7 +167,7 @@ class AnnualResultsMapper:
     def _map_production(self, production: pl.DataFrame) -> list[pl.LazyFrame]:
         if production.is_empty():
             return []
-        self._record_derivation(
+        self._reporter.record_derivation(
             ResultsVariable.PRODUCTION, _PRODUCTION_SOURCES, _PRODUCTION_DERIVATION
         )
         return [build_annual_rows(production, ResultsVariable.PRODUCTION)]
@@ -206,12 +177,14 @@ class AnnualResultsMapper:
     ) -> list[pl.LazyFrame]:
         if capacity.is_empty():
             return []
-        self._record_derivation(
+        self._reporter.record_derivation(
             ResultsVariable.INSTALLED_CAPACITY,
             _INSTALLED_CAPACITY_SOURCES,
             _INSTALLED_CAPACITY_DERIVATION,
         )
-        self._report_unproduced(capacity.join(production, on=ResultsCol.COMPONENT, how="anti"))
+        self._reporter.report_unproduced(
+            capacity.join(production, on=ResultsCol.COMPONENT, how="anti")
+        )
         return [build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
 
     def _map_emissions(
@@ -222,55 +195,10 @@ class AnnualResultsMapper:
         )
         if rates.is_empty():
             return []
-        self._record_derivation(
-            ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, _EMISSIONS_DERIVATION
+        self._reporter.record_derivation(
+            ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, EMISSIONS_DERIVATION
         )
         return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
-
-    def _record_derivation(
-        self, variable: ResultsVariable, sources: list[SourceField], derivation: str
-    ) -> None:
-        self._recorder.append(
-            TranslationEvent(
-                kind=EventKind.VALUE_DERIVED,
-                sources=list(sources),
-                destinations=[_build_results_destination(variable)],
-                derivation=derivation,
-            )
-        )
-
-    def _report_unproduced(self, capacity: pl.DataFrame) -> None:
-        """Report each component that has a rating and no output in the solve."""
-        rows = capacity.unique(ResultsCol.COMPONENT, maintain_order=True).iter_rows(named=True)
-        names = []
-        for row in rows:
-            names.append(row[ResultsCol.COMPONENT])
-            self._recorder.append(
-                TranslationEvent(
-                    kind=EventKind.NOT_MAPPED,
-                    sources=[
-                        SourceField(
-                            framework=Framework.SIENNA,
-                            component=row[AnnualCol.SIENNA_TYPE],
-                            name=row[ResultsCol.COMPONENT],
-                        )
-                    ],
-                    destinations=[_build_results_destination(ResultsVariable.PRODUCTION)],
-                    note=_UNPRODUCED_NOTE,
-                )
-            )
-        if names:
-            log.warning(_UNPRODUCED_WARNING, len(names), name_a_few(names))
-
-
-def _build_results_destination(variable: ResultsVariable) -> DestinationField:
-    return DestinationField(
-        framework=Framework.RESULTS,
-        component=RESULTS_TABLE_KEY,
-        name=str(variable),
-        attribute=ResultsCol.VARIABLE,
-        unit=VARIABLE_UNIT[variable],
-    )
 
 
 def _build_all_production(hourly: HourlyResults, weights: pl.DataFrame) -> Production:
@@ -310,11 +238,15 @@ def _build_capacity(
     state: State, carrier_lookup: pl.LazyFrame | None, years: pl.DataFrame
 ) -> pl.DataFrame:
     """The MW rating of each generator, storage and HVDC line, for each year of the solve."""
-    rated = pl.col(SiennaGeneratorCol.BASE_POWER) * pl.col(SiennaGeneratorCol.RATING)
+    base_power = pl.col(SiennaGeneratorCol.BASE_POWER)
+    rated = base_power * pl.col(SiennaGeneratorCol.RATING)
+    output = pl.col(SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS).struct.field(MinMaxField.MAX)
     limit = pl.col(SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM).struct.field(MinMaxField.MAX)
     ratings = [
         _build_rating(state.source_topology.get(SiennaTable.GENERATORS), rated, carrier_lookup),
-        _build_rating(state.source_topology.get(SiennaTable.STORAGE), rated, carrier_lookup),
+        _build_rating(
+            state.source_topology.get(SiennaTable.STORAGE), base_power * output, carrier_lookup
+        ),
         _build_rating(state.source_topology.get(SiennaTable.LINKS), limit, None),
     ]
     stated = [rating for rating in ratings if rating is not None]
@@ -330,7 +262,7 @@ def _build_rating(
         return None
     rows = table.select(
         pl.col(SiennaGeneratorCol.NAME).alias(ResultsCol.COMPONENT),
-        pl.col(SiennaGeneratorCol.SIENNA_TYPE).alias(AnnualCol.SIENNA_TYPE),
+        pl.col(SiennaGeneratorCol.SIENNA_TYPE).alias(AnnualCol.COMPONENT_TYPE),
         rating.cast(pl.Float64).alias(ResultsCol.VALUE),
     )
     if carrier_lookup is None:

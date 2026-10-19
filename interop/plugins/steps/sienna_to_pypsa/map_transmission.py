@@ -46,6 +46,7 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+from interop.plugins.steps.sienna_to_pypsa.split_links import LinkSplitter, add_reverse_series
 
 # The OSeMOSYS CapacityFactor of a line multiplies its static p_max_pu, which PyPSA's own
 # series replaces, so the sink scales the series by the static value.
@@ -338,21 +339,26 @@ class SiennaToPypsaMapTransmission(TranslationStep):
                     PyPSALinkCol.MARGINAL_COST: ext.marginal_cost,
                 }
             )
-        if rows:
-            state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
-                rows, schema=LINKS_DESTINATION_SCHEMA
-            )
-            stage_companion_columns(
-                state,
-                ExtensionKind.CONTROLLABLE_LINE,
-                _COMPANION_COLUMNS,
-                _scale_by_static_p_max_pu(rows),
-            )
         relayed = [extensions.relay(row[PyPSALinkCol.NAME]) for row in rows]
+        if rows:
+            self._write_links(state, rows, reporter)
         relay_records(state, ExtensionKind.CONTROLLABLE_LINE, relayed, self._recorder)
 
+    def _write_links(
+        self, state: State, rows: list[dict[str, Any]], reporter: LinkReporter
+    ) -> None:
+        """Write the links, with the flow back of each lossy two-way link as a link of its own."""
+        splits = LinkSplitter(reporter).split_links(rows)
+        state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
+            rows, schema=LINKS_DESTINATION_SCHEMA
+        )
+        stage_companion_columns(
+            state, ExtensionKind.CONTROLLABLE_LINE, _COMPANION_COLUMNS, _build_series_scaling(rows)
+        )
+        add_reverse_series(state, splits)
 
-def _scale_by_static_p_max_pu(rows: list[dict[str, Any]]) -> dict[str, float]:
+
+def _build_series_scaling(rows: list[dict[str, Any]]) -> dict[str, float]:
     """The static p_max_pu of each link, which multiplies its series; PyPSA's default is 1."""
     return {
         row[PyPSALinkCol.NAME]: row[PyPSALinkCol.P_MAX_PU]

@@ -54,11 +54,7 @@ class Period(NamedTuple):
 
 
 class LeftOutPeriodText(NamedTuple):
-    """What a reader says of a period it leaves out: the note of one, and the warning of all.
-
-    ``faulty_note`` takes ``{fault}`` and ``overlapping_note`` takes ``{earlier}``. Each
-    warning takes the count and the names.
-    """
+    """The note and the warning that a reader writes for a period it leaves out."""
 
     faulty_note: str
     faulty_warning: str

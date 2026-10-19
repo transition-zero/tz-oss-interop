@@ -128,10 +128,7 @@ _WEIGHTINGS = (
 def _stage_snapshot_weightings(
     ds: xr.Dataset, data_vars: list[str], staging_dir: Path, variable: str, attribute: str
 ) -> pl.LazyFrame | None:
-    """Stage one per-snapshot weighting (hours), or None where the file states none.
-
-    The pypsa->sienna pipeline never reads this key.
-    """
+    """Stage one per-snapshot weighting (hours), or None where the file states none."""
     if variable not in data_vars:
         return None
     df = pl.DataFrame(

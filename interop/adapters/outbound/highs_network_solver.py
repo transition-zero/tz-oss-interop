@@ -7,6 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
+from interop.adapters.outbound.balance_slacks import (
+    SlackEnergy,
+    build_slack_energy,
+    warn_balance_slacks,
+)
 from interop.ports.outbound.netcdf import netcdf_engine
 from interop.ports.outbound.network_solver import (
     NetworkSolverPort,
@@ -51,10 +56,8 @@ _UNSERVED_CARRIER = "unserved_energy"
 _SURPLUS_CARRIER = "surplus_energy"
 # network.meta key: the MWh of load that goes unserved at each bus.
 _UNSERVED_ENERGY_KEY = "unserved_energy_mwh"
-# A slack below this many MWh at a bus is solver noise, not energy.
-_SLACK_TOLERANCE_MWH = 1e-6
-# How many buses a warning names before it counts the rest.
-_NAMED_BUSES = 3
+# How many generators a warning names.
+_NAMED_GENERATORS = 3
 
 
 class HighsNetworkSolver(NetworkSolverPort):
@@ -74,6 +77,7 @@ class HighsNetworkSolver(NetworkSolverPort):
         import pypsa
 
         network = pypsa.Network(str(network_path))
+        _warn_if_windows_cut_energy_bounds(network, windows)
         slacks = (
             _add_balance_slacks(network) if unserved_energy is UnservedEnergy.PENALISED else None
         )
@@ -112,7 +116,13 @@ class HighsNetworkSolver(NetworkSolverPort):
             return DispatchOutcome(_NOTHING_SOLVED, 0.0)
         _record_reported_snapshots(network, reported_snapshots)
         network._objective = objective  # pypsa.Network.objective has no public setter
-        unserved_mwh = _remove_balance_slacks(network, slacks) if slacks is not None else None
+        unserved_mwh = None
+        if slacks is not None:
+            unserved = _read_slack_energy(network, slacks.unserved)
+            warn_balance_slacks(unserved, _read_slack_energy(network, slacks.surplus))
+            _set_unserved_energy(network, unserved)
+            _drop_balance_slacks(network, slacks)
+            unserved_mwh = unserved.total_mwh
         output_path.parent.mkdir(parents=True, exist_ok=True)
         network.export_to_netcdf(str(output_path))
         return DispatchOutcome(_combine(conditions), objective, unserved_mwh)
@@ -146,69 +156,80 @@ class _BalanceSlacks(NamedTuple):
     surplus: list[str]
 
 
+class _Slack(NamedTuple):
+    """One kind of balance slack: its name suffix, its carrier and its output range."""
+
+    suffix: str
+    carrier: str
+    p_min_pu: float
+    p_max_pu: float
+    marginal_cost: float
+
+
+# Unserved load runs from 0 to the rating; surplus generation runs negative, and its negative
+# cost makes a negative output cost the penalty.
+_UNSERVED = _Slack(_UNSERVED_SUFFIX, _UNSERVED_CARRIER, 0.0, 1.0, _SLACK_PENALTY_PER_MWH)
+_SURPLUS = _Slack(_SURPLUS_SUFFIX, _SURPLUS_CARRIER, -1.0, 0.0, -_SLACK_PENALTY_PER_MWH)
+
+
 def _add_balance_slacks(network: pypsa.Network) -> _BalanceSlacks:
-    """Give each bus a generator for unserved load and one for surplus generation.
+    """Give each bus a generator for unserved load and one for surplus generation, at the
+    penalty of the Sienna balance slack."""
+    network.add("Carrier", [_UNSERVED.carrier, _SURPLUS.carrier])
+    return _BalanceSlacks(
+        _add_slack_generators(network, _UNSERVED), _add_slack_generators(network, _SURPLUS)
+    )
 
-    Both cost the penalty of the Sienna balance slack, so a location that cannot balance
-    makes the solve costly rather than infeasible, as the Sienna solve does.
-    """
+
+def _add_slack_generators(network: pypsa.Network, slack: _Slack) -> list[str]:
     buses = list(network.buses.index)
-    slacks = _BalanceSlacks(
-        [f"{bus}{_UNSERVED_SUFFIX}" for bus in buses], [f"{bus}{_SURPLUS_SUFFIX}" for bus in buses]
-    )
-    network.add("Carrier", [_UNSERVED_CARRIER, _SURPLUS_CARRIER])
+    names = [f"{bus}{slack.suffix}" for bus in buses]
     network.add(
         "Generator",
-        slacks.unserved,
+        names,
         bus=buses,
-        carrier=_UNSERVED_CARRIER,
+        carrier=slack.carrier,
         p_nom=_SLACK_P_NOM_MW,
-        marginal_cost=_SLACK_PENALTY_PER_MWH,
+        p_min_pu=slack.p_min_pu,
+        p_max_pu=slack.p_max_pu,
+        marginal_cost=slack.marginal_cost,
     )
-    network.add(
-        "Generator",
-        slacks.surplus,
-        bus=buses,
-        carrier=_SURPLUS_CARRIER,
-        p_nom=_SLACK_P_NOM_MW,
-        p_min_pu=-1.0,
-        p_max_pu=0.0,
-        marginal_cost=-_SLACK_PENALTY_PER_MWH,
-    )
-    return slacks
+    return names
 
 
-def _remove_balance_slacks(network: pypsa.Network, slacks: _BalanceSlacks) -> float:
-    """Warn of the energy each slack takes, keep it in network.meta, and take the slacks out.
-
-    The energy counts each snapshot once, by its length, as the Sienna solve counts it.
-    """
-    unserved = _read_slack_energy(network, slacks.unserved)
-    surplus = _read_slack_energy(network, slacks.surplus)
-    _warn_slack_energy(unserved, "of load goes unserved")
-    _warn_slack_energy(surplus, "of generation finds no load")
-    network.meta[_UNSERVED_ENERGY_KEY] = unserved
-    network.remove("Generator", [*slacks.unserved, *slacks.surplus])
-    network.remove("Carrier", [_UNSERVED_CARRIER, _SURPLUS_CARRIER])
-    return float(sum(unserved.values()))
-
-
-def _read_slack_energy(network: pypsa.Network, slacks: list[str]) -> dict[str, float]:
-    """The MWh that the slacks take at each bus, most first, above the tolerance."""
+def _read_slack_energy(network: pypsa.Network, slacks: list[str]) -> SlackEnergy:
+    """The MWh that the slacks take at each bus, each snapshot counted once for its length."""
     dispatch = network.generators_t.p.reindex(columns=slacks).fillna(0.0).abs()
     energy = dispatch.multiply(network.snapshot_weightings.stores, axis=0).sum()
     by_bus = energy.groupby(network.generators.bus.reindex(slacks).to_numpy()).sum()
-    held = by_bus[by_bus > _SLACK_TOLERANCE_MWH].sort_values(ascending=False)
-    return {str(bus): float(mwh) for bus, mwh in held.items()}
+    return build_slack_energy((str(bus), float(mwh)) for bus, mwh in by_bus.items())
 
 
-def _warn_slack_energy(by_bus: dict[str, float], what: str) -> None:
-    if not by_bus:
-        return
-    named = ", ".join(f"{bus} ({mwh:.6g} MWh)" for bus, mwh in list(by_bus.items())[:_NAMED_BUSES])
-    rest = len(by_bus) - _NAMED_BUSES
-    more = f", and {rest} more" if rest > 0 else ""
-    log.warning("solve: %.6g MWh %s, most at %s%s", sum(by_bus.values()), what, named, more)
+def _set_unserved_energy(network: pypsa.Network, unserved: SlackEnergy) -> None:
+    network.meta[_UNSERVED_ENERGY_KEY] = {
+        entry.location: entry.energy_mwh for entry in unserved.locations
+    }
+
+
+def _drop_balance_slacks(network: pypsa.Network, slacks: _BalanceSlacks) -> None:
+    """Take the slack generators out, so the solved network holds the input components only."""
+    network.remove("Generator", [*slacks.unserved, *slacks.surplus])
+    network.remove("Carrier", [_UNSERVED.carrier, _SURPLUS.carrier])
+
+
+def _warn_if_windows_cut_energy_bounds(network: pypsa.Network, windows: list[SolveWindow]) -> None:
+    """Warn where more than one window each applies a bound that the network states for all
+    its snapshots."""
+    generators = network.generators
+    bounded = generators.index[_is_finite(generators.e_sum_min) | _is_finite(generators.e_sum_max)]
+    if len(windows) > 1 and len(bounded):
+        log.warning(
+            "solve: %d window(s) each apply the e_sum_min or e_sum_max of %d generator(s), "
+            "which the network states for all its snapshots: %s",
+            len(windows),
+            len(bounded),
+            ", ".join(list(bounded)[:_NAMED_GENERATORS]),
+        )
 
 
 def _snapshot_coordinate(dataset: xr.Dataset) -> np.ndarray:
@@ -305,3 +326,7 @@ def _combine(conditions: list[str]) -> str:
     if all(condition == _OPTIMAL for condition in conditions):
         return _OPTIMAL
     return ", ".join(sorted(set(conditions)))
+
+
+def _is_finite(values: pd.Series) -> pd.Series:
+    return values.abs() != float("inf")

@@ -76,6 +76,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "phs_1" is cyclic
     And the decisions report contains "| `plexos.Storage.phs_head.Max Volume` = 3000.0 MWh | `sienna.EnergyReservoirStorage.phs_1.storage_capacity` = 6.0 h | head Storage.Max Volume / p_nom |  | $source_leg$ | $source_storage_step$ |"
     And the decisions report contains "| `sienna.EnergyReservoirStorage.phs_1.storage_capacity` = 6.0 | `pypsa.StorageUnit.phs_1.max_hours` = 6.0 | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "phs_1" having "max_hours" set to 6.0
 
   Scenario: a reservoir whose volume names no unit is read as the model wrote it
     A published export can leave the unit of a volume blank. The values are still the ones
