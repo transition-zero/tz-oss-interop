@@ -70,7 +70,10 @@ from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
     report_unpriced_costs,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
-from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
+from interop.plugins.shared.sienna_pypsa_translations.reporters import (
+    GeneratorReporter,
+    ThermalLimit,
+)
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit
 # multiplier that reconstructs p_max_pu is the component's get_max_active_power divided by
@@ -240,6 +243,7 @@ class _ThermalMapping:
     active_power_min: float
     active_power_max: float
     p_min_pu: float
+    p_max_pu: float
     marginal_cost: float
     start_up_cost: float
     shut_down_cost: float
@@ -283,6 +287,7 @@ def _derive_thermal(
     bus_id = row[SiennaGeneratorCol.BUS]
     ext = extensions.get_fields(row[SiennaGeneratorCol.NAME], THERMAL_MAPPED_FIELDS)
     operation_cost = row[SiennaGeneratorCol.OPERATION_COST]
+    rating = float(row[SiennaGeneratorCol.RATING])
 
     ramp_limits = row.get(SiennaGeneratorCol.RAMP_LIMITS)
     ramp_up = ramp_limits.get(SiennaStructField.UP) if ramp_limits is not None else None
@@ -322,10 +327,11 @@ def _derive_thermal(
         lifetime=ext.lifetime_years,
         build_year=ext.build_year,
         base_power=base_power,
-        rating=float(row[SiennaGeneratorCol.RATING]),
+        rating=rating,
         active_power_min=active_power_min,
         active_power_max=active_power_max,
         p_min_pu=per_unit_of(active_power_min, base_power),
+        p_max_pu=_derive_thermal_p_max_pu(rating, active_power_max, base_power),
         marginal_cost=variable_proportional_term(operation_cost, SiennaStructField.VARIABLE),
         start_up_cost=float(operation_cost.get(SiennaStructField.START_UP, 0.0)),
         shut_down_cost=float(operation_cost.get(SiennaStructField.SHUT_DOWN, 0.0)),
@@ -343,6 +349,13 @@ def _derive_thermal(
         up_time_before=up_time_before,
         up_time_is_sentinel=up_time_is_sentinel,
     )
+
+
+def _derive_thermal_p_max_pu(rating: float, active_power_max: float, base_power: float) -> float:
+    """The output limit per unit of base_power, capped by the rating; a plant of 0 MW keeps it."""
+    if not base_power:
+        return rating
+    return min(rating, per_unit_of(active_power_max, base_power))
 
 
 # Every value Sienna states nowhere, and the PyPSA column it comes back into.
@@ -397,7 +410,9 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     sienna_type = SiennaComponent.THERMAL_STANDARD
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
-    reporter.record_p_max_pu(sienna_type, m.name, m.rating)
+    reporter.record_p_max_pu_from_limits(
+        m.name, ThermalLimit(m.active_power_max, m.rating, m.p_max_pu)
+    )
     reporter.record_p_min_pu_from_limits(sienna_type, m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     if m.ext_carrier is not None:
@@ -462,7 +477,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.CARRIER: m.ext_carrier if m.ext_carrier is not None else m.carrier,
         PyPSAGeneratorCol.P_NOM: m.base_power,
         PyPSAGeneratorCol.P_MIN_PU: m.p_min_pu,
-        PyPSAGeneratorCol.P_MAX_PU: m.rating,
+        PyPSAGeneratorCol.P_MAX_PU: m.p_max_pu,
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: m.committable,
         PyPSAGeneratorCol.RAMP_LIMIT_UP: m.ramp_limit_up,

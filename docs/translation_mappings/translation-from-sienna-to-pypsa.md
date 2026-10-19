@@ -163,7 +163,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `extensions.carrier` of the `generator` record. If absent, the `prime_mover_type` and `fuel_type` pair. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `active_power_limits.max` ÷ `base_power`, but not more than `rating`. A plant of 0 MW gets `rating`. | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
 | `start_up_cost` | cost | `operation_cost.start_up` | `direct` |

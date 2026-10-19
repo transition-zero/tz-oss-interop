@@ -9,7 +9,7 @@ thin ``_source`` (which fills in the Sienna component, fixed or passed per call)
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop.core.extensions import ExtensionKind
 from interop.core.reporting import ScopedRecorder
@@ -53,6 +53,8 @@ from interop.plugins.shared.sienna_constants import (
 from interop.ports.outbound.reporting import SourceField
 
 _ACTIVE_POWER_LIMITS_MIN = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MIN}"
+_ACTIVE_POWER_LIMITS_MAX = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
+_THERMAL_P_MAX_PU_DERIVATION = "min(active_power_limits.max / base_power, rating)"
 _ACTIVE_POWER_LIMITS_FROM_MAX = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MAX}"
 _ACTIVE_POWER_LIMITS_FROM_MIN = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MIN}"
 # How the report names a value that reached this hop in the extensions sidecar rather than
@@ -232,6 +234,14 @@ class BusReporter(_Reporter):
         )
 
 
+class ThermalLimit(NamedTuple):
+    """The output limit of a thermal plant, its rating, and the p_max_pu they give."""
+
+    active_power_max: float
+    rating: float
+    p_max_pu: float
+
+
 class GeneratorReporter(_Reporter):
     """Records translation events for Sienna generator -> PyPSA Generator decisions."""
 
@@ -270,6 +280,19 @@ class GeneratorReporter(_Reporter):
             sources=[self._source(sienna_type, name, SiennaGeneratorCol.RATING, rating)],
             destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, rating)],
             derivation="direct",
+        )
+
+    def record_p_max_pu_from_limits(self, name: str, limit: ThermalLimit) -> None:
+        sienna_type = SiennaComponent.THERMAL_STANDARD
+        self._derived(
+            sources=[
+                self._source(
+                    sienna_type, name, _ACTIVE_POWER_LIMITS_MAX, limit.active_power_max, UNIT_MW
+                ),
+                self._source(sienna_type, name, SiennaGeneratorCol.RATING, limit.rating),
+            ],
+            destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, limit.p_max_pu)],
+            derivation=_THERMAL_P_MAX_PU_DERIVATION,
         )
 
     def record_p_min_pu_from_limits(
