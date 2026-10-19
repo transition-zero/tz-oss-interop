@@ -97,6 +97,17 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | variable           | component | category | timestamp           | value |
       | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 10    |
 
+  Scenario: An annual energy bound of a generator gives no warning, as the results map no network
+    The staged system holds no series, so the reused mapping has no snapshots for a bound.
+    Given the ThermalStandard "gas" has ext "e_sum_min" set to {"2030": 100.0}
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the log does not contain "annual energy bound(s)"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.e_sum_min` |  |  | the network has no snapshots, so the bound binds nothing |"
+
   Scenario: Emissions are the production of each generator times its rate, by pollutant
     Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
     And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50

@@ -496,6 +496,11 @@ bound for a year would ask a part of the year for the energy of all of it. The r
 a `NOT_MAPPED` row for each bound, and the log names them. A record that states no value for
 the year of the snapshots gets the same report.
 
+Where the system holds no series, the network has no snapshots, and the translator writes no
+bound. The report gives a `NOT_MAPPED` row for each bound, and the log gives no warning, as
+for the [snapshot weightings](#snapshot-weightings). `sienna-to-results` reuses this mapping
+over a system with no series, so it writes no warning for a bound.
+
 Both fields always travel on, with every year, to the PyPSA sidecar.
 
 ## Time series

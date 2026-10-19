@@ -4,7 +4,9 @@ The sidecar states `e_sum_min` and `e_sum_max` in MWh for each year in scope. Py
 bound over all the snapshots, weighted by the `generators` snapshot weighting. The value of the
 year maps only where the snapshots count for that whole year; a bound for less than a year
 would ask a part of the year for the energy of all of it. The record keeps every year either
-way, because the generator step relays both fields.
+way, because the generator step relays both fields. With no snapshots at all, as where the
+staged system holds no series, the report records each bound and the log stays quiet, as it
+does for the period weights.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ _PART_YEAR_NOTE = (
     "does not apply to them; extensions.json keeps it"
 )
 _NO_YEAR_NOTE = "the record states no bound for {year}, the year of the snapshots"
+_NO_SNAPSHOTS_NOTE = "the network has no snapshots, so the bound binds nothing"
 _PART_YEAR_WARNING = (
     "%d annual energy bound(s) stay in extensions.json and bind nothing, because the "
     "snapshots count for %.1f h, not one whole year: %s"
@@ -71,7 +74,9 @@ class EnergyLimitMapper:
         bounds = _list_bounds(reader, generators[PyPSAGeneratorCol.NAME].to_list())
         if not bounds:
             return
-        if span.is_whole_year:
+        if not span.has_snapshots:
+            self._record_unmapped(state, bounds, _NO_SNAPSHOTS_NOTE)
+        elif span.is_whole_year:
             self._map_year(state, bounds, span)
         else:
             self._report_part_year(state, bounds, span)

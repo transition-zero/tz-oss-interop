@@ -99,10 +99,16 @@ class SnapshotWindow(NamedTuple):
 
 
 class SnapshotSpan(NamedTuple):
-    """The one calendar year of every snapshot, else None, and the hours they count for."""
+    """The one calendar year of every snapshot, else None, the hours they count for, and how
+    many there are."""
 
     year: int | None
     represented_hours: float
+    snapshot_count: int
+
+    @property
+    def has_snapshots(self) -> bool:
+        return self.snapshot_count > 0
 
     @property
     def is_whole_year(self) -> bool:
@@ -137,7 +143,7 @@ class SnapshotWeightingMapper:
         records = reader.read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
         if window is None:
             self._record_unweighted([record.name for record in records], _NO_SNAPSHOTS_NOTE)
-            return SnapshotSpan(None, 0.0)
+            return SnapshotSpan(None, 0.0, 0)
         snapshots = window.list_snapshots()
         if not records:
             return _build_span(snapshots, [1.0] * len(snapshots))
@@ -216,7 +222,7 @@ def _build_weightings(
 def _build_span(snapshots: list[datetime], counted: list[float]) -> SnapshotSpan:
     years = {moment.year for moment in snapshots}
     year = next(iter(years)) if len(years) == 1 else None
-    return SnapshotSpan(year, float(sum(counted)))
+    return SnapshotSpan(year, float(sum(counted)), len(snapshots))
 
 
 def _list_unweighted_runs(
