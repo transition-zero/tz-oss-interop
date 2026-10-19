@@ -116,6 +116,7 @@ that touches the disk can still raise.
 | `delete_` | Remove a file or a directory | raises | a container in memory, which is `drop_` |
 | `copy_` | Duplicate a file or a directory | raises | a copy in memory |
 | `record_` | Append a `TranslationEvent` through the recorder | no absent case | the console, which is `warn_` |
+| `relay_` | Pass a sidecar record or field unchanged to the destination sidecar, and record it | no absent case | a value the destination holds, which is `map_` |
 | `warn_` | Write one `log.warning`, and name at most three components | no absent case | the audit trail, which is `record_` |
 | `report_` | Record the events **and** write the warning | no absent case | one of the two alone |
 | `reject_` | A guard. Raises when the named condition holds | no absent case | a call that returns a value |
