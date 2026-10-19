@@ -24,7 +24,11 @@ from interop.core.extensions import (
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
-from interop.plugins.shared.pypsa_annual_results import PypsaAnnualResultsMapper, is_solved
+from interop.plugins.shared.pypsa_annual_results import (
+    PypsaAnnualResultsMapper,
+    build_reverse_links,
+    is_solved,
+)
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_NAME_COLUMN,
     PyPSAComponent,
@@ -228,6 +232,8 @@ class PypsaToResultsMapObservations(TranslationStep):
             ts = state.source_time_series.get((table, PyPSASolvedAttr.FLOW))
             if ts is None:
                 continue
+            if table == PyPSATable.LINKS:
+                ts = _merge_reverse_flow(state, ts)
             pieces.append(
                 ts.select(_build_piece_columns(ResultsVariable.FLOW, category=_NULL_UTF8))
             )
@@ -244,7 +250,9 @@ class PypsaToResultsMapObservations(TranslationStep):
             self._emit(
                 ResultsVariable.FLOW,
                 sources,
-                "lines_t.p0 and links_t.p0 -> flow (MW from bus0 towards bus1)",
+                "lines_t.p0 and links_t.p0 -> flow (MW from bus0 towards bus1); the flow of a "
+                "two-way link is p0(<name>) - p0(<name> reverse), as the reverse link carries "
+                "the flow back from bus1 to bus0",
             )
         return pieces
 
@@ -473,6 +481,22 @@ def _surplus_columns() -> list[pl.Expr]:
         category=_NULL_UTF8,
         component=_NULL_UTF8,
         value=headroom,
+    )
+
+
+def _merge_reverse_flow(state: State, flow: pl.LazyFrame) -> pl.LazyFrame:
+    """The flow of each two-way link, less the p0 of its reverse link, positive from bus0 to
+    bus1 of the two-way link."""
+    reverses = build_reverse_links(state)
+    if not reverses:
+        return flow
+    component = pl.col(PyPSATimeSeriesCol.COMPONENT)
+    value = pl.col(PyPSATimeSeriesCol.VALUE)
+    signed = pl.when(component.is_in(list(reverses))).then(-value).otherwise(value)
+    return (
+        flow.with_columns(signed.alias(PyPSATimeSeriesCol.VALUE), component.replace(reverses))
+        .group_by(PyPSATimeSeriesCol.SNAPSHOT, PyPSATimeSeriesCol.COMPONENT, maintain_order=True)
+        .agg(value.sum())
     )
 
 

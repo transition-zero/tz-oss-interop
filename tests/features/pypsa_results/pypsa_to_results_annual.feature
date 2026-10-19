@@ -59,6 +59,19 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
     And the file "decisions.md" contains "max(-p0, 0) + max(-p1, 0)"
 
+  Scenario: The hourly flow of a two-way line is the flow of its link less the flow of its reverse link
+    The reverse link sends 3 MW from node_b to node_a in the second hour, which is a flow of
+    -3 MW of the line from node_a to node_b.
+    Given the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "flow" rows:
+      | variable | component | category | timestamp           | value |
+      | flow     | link      |          | 2030-01-01T00:00:00 | 5     |
+      | flow     | link      |          | 2030-01-01T01:00:00 | -3    |
+      | flow     | link      |          | 2030-01-01T02:00:00 | 0     |
+      | flow     | link      |          | 2030-01-01T03:00:00 | 2     |
+
   Scenario: A component with no output in a solved network has a production and a dispatch of 0
     PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so the solved file
     states no p for the peaker.

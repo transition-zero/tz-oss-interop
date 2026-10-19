@@ -266,13 +266,13 @@ def _sum_energy(power: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
 def _express_owner(state: State, table: str) -> pl.Expr:
     """The component that owns each row: the two-way link of a reverse link, else itself."""
     component = pl.col(PyPSATimeSeriesCol.COMPONENT)
-    reverses = _build_reverse_links(state) if table == PyPSATable.LINKS else {}
+    reverses = build_reverse_links(state) if table == PyPSATable.LINKS else {}
     if not reverses:
         return component
     return component.replace(reverses)
 
 
-def _build_reverse_links(state: State) -> dict[str, str]:
+def build_reverse_links(state: State) -> dict[str, str]:
     """Each reverse link of the network, mapped to the two-way link it carries the flow back of."""
     topology = state.source_topology.get(PyPSATable.LINKS)
     if topology is None:
@@ -311,7 +311,7 @@ def _build_capacity(state: State, years: pl.DataFrame) -> pl.DataFrame:
     ]
     if not ratings:
         return pl.DataFrame()
-    reverses = list(_build_reverse_links(state))
+    reverses = list(build_reverse_links(state))
     rated = pl.concat(ratings).filter(~pl.col(ResultsCol.COMPONENT).is_in(reverses))
     return rated.collect().join(years, how="cross")
 
