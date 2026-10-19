@@ -339,7 +339,7 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         carrier=row[AnnotationColumn.CATEGORY],
         category=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
-        emission_rates_t_per_mwh=_build_emission_rates(row[EMISSION_TERMS]),
+        emission_rates_t_per_mwh=build_emission_rates(row[EMISSION_TERMS]),
         e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
         e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
         operating_modes=build_operating_mode_field(row),
@@ -350,7 +350,8 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
     )
 
 
-def _build_emission_rates(terms: list[dict[str, Any]] | None) -> dict[str, float] | None:
+def build_emission_rates(terms: list[dict[str, Any]] | None) -> dict[str, float] | None:
+    """The rate of each pollutant in t/MWh, from the emission terms of one generator."""
     if not terms:
         return None
     return {term[POLLUTANT]: term[RATE_T_PER_MWH] for term in terms}

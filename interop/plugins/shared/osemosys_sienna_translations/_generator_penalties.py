@@ -49,7 +49,7 @@ def enrich_emission_penalties(
 
     `generators` holds the emission terms and the variable cost of each generator.
     """
-    priced = _build_penalty_terms(state, operations, _list_emission_rates(generators))
+    priced = build_penalty_terms(state, operations, _list_emission_rates(generators))
     listed = (
         priced.sort(POLLUTANT)
         .group_by(_KEYS)
@@ -81,9 +81,13 @@ def _list_emission_rates(generators: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _build_penalty_terms(
+def build_penalty_terms(
     state: State, operations: OperationsYear, rates: pl.DataFrame
 ) -> pl.DataFrame:
+    """The rows of `rates` whose pollutant has a penalty in their region, with its cost per MWh.
+
+    `rates` holds `region`, `pollutant` and the rate in t/MWh, with any other key columns.
+    """
     keys = rates.select(_PENALTY_KEYS).unique()
     penalties = read_parameter_with_defaults(
         state, SupplyParameter.EMISSION_PENALTY, operations.year, keys

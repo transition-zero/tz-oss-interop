@@ -59,6 +59,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generators import (
     build_generators_source,
     set_generator_values_persisted,
 )
+from interop.plugins.shared.osemosys_sienna_translations._import_translations import (
+    build_import_translations,
+)
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     report_left_out_technologies,
 )
@@ -104,6 +107,9 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
     read_transport_ends,
     set_line_values_persisted,
     warn_one_way_lines,
+)
+from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
+    build_import_extensions,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_translations import (
     TRANSPORT_TRANSLATIONS,
@@ -151,6 +157,8 @@ __all__ = [
     "build_fuel_records",
     "build_generator_extensions",
     "build_generators_source",
+    "build_import_extensions",
+    "build_import_translations",
     "build_line_extensions",
     "build_load_series",
     "build_loads_source",

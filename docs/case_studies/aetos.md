@@ -275,8 +275,8 @@ names each component and gives the reason. These warnings tell you the most:
   the model builds none at no cost, for example `ATNGBACKSTOP`. The other technologies of those
   fuels become records of `extensions.json`. Refer to
   [The fuels that are not electricity](#the-fuels-that-are-not-electricity).
-- 21 transport technologies state an operating mode that is not the flow back. Each one is an
-  import from outside the model, and the line does not hold it.
+- 21 transport technologies have a mode that imports from outside the model. Each import mode
+  becomes a `ThermalStandard` named `<line>/import/<mode>`, about 37.8 GW in total.
 - 17 warnings each name one parameter that no step applies, for example `capital_cost` and
   `variable_operation_cost`.
 

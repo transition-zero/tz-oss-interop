@@ -278,6 +278,10 @@ class GeneratorExtension(ActivityExtension):
     # t/MWh of electricity, by pollutant, without the emissions of the fuels that fuel_buses
     # names; OSeMOSYS EmissionActivityRatio of the plant only.
     own_emission_rates_t_per_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the technology and the operating mode that the generator stands for, when
+    # it is a mode of a technology that is not a generator, such as an import mode of a line.
+    source_technology: str | None = None
+    source_mode: str | None = None
 
 
 class LoadExtension(ExtensionRecord):

@@ -140,21 +140,23 @@ _NO_MINIMUM = 0.0
 _NO_COST = 0.0
 _UNITY_POWER_FACTOR = 1.0
 
-_PROPORTIONAL_TERM = f"{_Col.OPERATION_COST}.variable.value_curve.function_data.proportional_term"
-_FIXED_ATTRIBUTE = f"{_Col.OPERATION_COST}.fixed"
+PROPORTIONAL_TERM_ATTRIBUTE = (
+    f"{_Col.OPERATION_COST}.variable.value_curve.function_data.proportional_term"
+)
+FIXED_COST_ATTRIBUTE = f"{_Col.OPERATION_COST}.fixed"
 _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
-_PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "
+PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "
 _SERIES_ATTRIBUTE = f"{SiennaSeriesName.MAX_ACTIVE_POWER} time series"
 _BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
 _EXTENSIONS_PREFIX = "extensions."
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
-_EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
-_CATEGORY_ATTRIBUTE = "extensions.category"
-_CARRIER_ATTRIBUTE = "extensions.carrier"
+EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
+CATEGORY_ATTRIBUTE = "extensions.category"
+CARRIER_ATTRIBUTE = "extensions.carrier"
 _EACH_TIMESLICE = "each timeslice"
 
-_ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
-_AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every generator is available"
+GENERATOR_ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
+GENERATOR_AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every generator is available"
 _TYPE_NOTE = "the carriers: row of the category of the technology names the Sienna type"
 _PRIME_MOVER_NOTE = "the carriers: row of the category of the technology names the prime mover"
 _FUEL_TYPE_NOTE = "the carriers: row of the category of the technology names the fuel"
@@ -294,8 +296,10 @@ def _build_identity(dest: DestinationFieldFactory) -> list[Translation]:
                 _NAME_DERIVATION,
             ),
         ),
-        row_position_id_translation(dest, dest_name_col=_Col.NAME, id_col=_Col.ID, note=_ID_NOTE),
-        default(dest_col=_Col.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
+        row_position_id_translation(
+            dest, dest_name_col=_Col.NAME, id_col=_Col.ID, note=GENERATOR_ID_NOTE
+        ),
+        default(dest_col=_Col.AVAILABLE, value=True, note=GENERATOR_AVAILABLE_NOTE),
         Translation(
             exprs=[pl.col(AnnotationColumn.LOCATION).alias(_Col.BUS_NAME)],
             make_events=lambda old, new: build_derived(
@@ -350,7 +354,6 @@ def _build_user_choice(
 
 
 def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
-    default = partial(default_translation, dest, name_col=GENERATOR_NAME)
     return [
         Translation(
             exprs=[pl.col(OUTPUT_CAPACITY_MW).alias(_Col.BASE_POWER)],
@@ -369,6 +372,14 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
                 _BASE_POWER_DERIVATION,
             ),
         ),
+        *build_power_defaults(dest),
+    ]
+
+
+def build_power_defaults(dest: DestinationFieldFactory) -> list[Translation]:
+    """The rating, and the initial active and reactive power, that OSeMOSYS does not state."""
+    default = partial(default_translation, dest, name_col=GENERATOR_NAME)
+    return [
         default(dest_col=_Col.RATING, value=_FULL_RATING, note=_RATING_NOTE),
         default(dest_col=_Col.ACTIVE_POWER, value=_NO_POWER, note=_ACTIVE_POWER_NOTE, unit=UNIT_MW),
         default(
@@ -410,7 +421,7 @@ def _build_cost_term_reports(dest: DestinationFieldFactory) -> list[Translation]
     """The fuel terms and the penalties that add to the operation cost of the type."""
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_fuel_term_events(dest, old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(dest, old)),
+        Translation(exprs=[], make_events=lambda old, _new: build_penalty_events(dest, old)),
     ]
 
 
@@ -525,7 +536,7 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
         build_sienna_source(
             old[SIENNA_TYPE],
             old[GENERATOR_NAME],
-            f"{_PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
+            f"{PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
             term[PENALTY_COST_MWH],
             UNIT_DOLLARS_PER_MWH,
         )
@@ -570,7 +581,7 @@ def _build_emission_events(
             [
                 dest(
                     old[GENERATOR_NAME],
-                    f"{_EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
+                    f"{EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
                     term[RATE_T_PER_MWH],
                     UNIT_TONNES_PER_MWH,
                 )
@@ -595,7 +606,7 @@ def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[S
     return [own, *burned, _build_output_ratio_source(old)]
 
 
-def _build_penalty_events(
+def build_penalty_events(
     dest: DestinationFieldFactory, old: dict[str, Any]
 ) -> list[TranslationEvent]:
     """One event for each pollutant: the emission rate and the penalty give a cost per MWh."""
@@ -606,7 +617,7 @@ def _build_penalty_events(
             destinations=[
                 dest(
                     old[GENERATOR_NAME],
-                    f"{_PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
+                    f"{PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
                     term[PENALTY_COST_MWH],
                     UNIT_DOLLARS_PER_MWH,
                 )
@@ -634,7 +645,7 @@ def _build_penalty_sources(old: dict[str, Any], term: dict[str, Any]) -> list[So
         build_sienna_source(
             old[SIENNA_TYPE],
             old[GENERATOR_NAME],
-            f"{_EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
+            f"{EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
             term[RATE_T_PER_MWH],
             UNIT_TONNES_PER_MWH,
         ),
@@ -654,12 +665,12 @@ def _build_grouping_events(
     return [
         *build_derived(
             [_build_category_source(old)],
-            [dest(old[GENERATOR_NAME], _CATEGORY_ATTRIBUTE, category)],
+            [dest(old[GENERATOR_NAME], CATEGORY_ATTRIBUTE, category)],
             _CATEGORY_DERIVATION,
         ),
         *build_derived(
             [_build_category_source(old)],
-            [dest(old[GENERATOR_NAME], _CARRIER_ATTRIBUTE, category)],
+            [dest(old[GENERATOR_NAME], CARRIER_ATTRIBUTE, category)],
             _CARRIER_DERIVATION,
         ),
     ]
@@ -686,7 +697,7 @@ def _build_operation_cost(
                 [
                     dest(
                         old[GENERATOR_NAME],
-                        _PROPORTIONAL_TERM,
+                        PROPORTIONAL_TERM_ATTRIBUTE,
                         old[OPERATION_COST_MWH],
                         UNIT_DOLLARS_PER_MWH,
                     )
@@ -699,7 +710,7 @@ def _build_operation_cost(
             make_events=lambda old, _new: [
                 TranslationEvent(
                     kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                    destinations=[dest(old[GENERATOR_NAME], _FIXED_ATTRIBUTE, _NO_COST)],
+                    destinations=[dest(old[GENERATOR_NAME], FIXED_COST_ATTRIBUTE, _NO_COST)],
                     note=_NO_FIXED_COST_NOTE if old[FIXED_COST] is None else _FIXED_NOTE,
                 )
             ],
@@ -763,7 +774,7 @@ def _build_power_limits(dest: DestinationFieldFactory, maximum: pl.Expr) -> Tran
     )
 
 
-def _build_commitment(dest: DestinationFieldFactory) -> list[Translation]:
+def build_commitment(dest: DestinationFieldFactory) -> list[Translation]:
     """The unit commitment fields, at the values that every Sienna translation writes."""
     return [
         _build_not_stated(dest, _Col.STATUS, pl.lit(True)),
@@ -791,7 +802,8 @@ def _build_shared(dest: DestinationFieldFactory) -> list[Translation]:
     return [*_build_identity(dest), *_build_capacity(dest), *_build_reports(dest)]
 
 
-def _build_reactive_limits(dest: DestinationFieldFactory) -> Translation:
+def build_reactive_limits(dest: DestinationFieldFactory) -> Translation:
+    """No reactive power limits, as OSeMOSYS states none."""
     return default_translation(
         dest,
         name_col=GENERATOR_NAME,
@@ -834,10 +846,10 @@ def _build_thermal() -> list[Translation]:
         _build_power_limits(
             dest, limit.otherwise(pl.col(OUTPUT_CAPACITY_MW) * pl.col(PEAK_FACTOR))
         ),
-        _build_reactive_limits(dest),
+        build_reactive_limits(dest),
         *_build_cost_term_reports(dest),
         *_build_operation_cost(dest, cost, THERMAL_GENERATION_COST_DTYPE),
-        *_build_commitment(dest),
+        *build_commitment(dest),
     ]
 
 
@@ -850,7 +862,7 @@ def _build_renewable_dispatch() -> list[Translation]:
     )
     return [
         *_build_shared(dest),
-        _build_reactive_limits(dest),
+        build_reactive_limits(dest),
         _build_power_factor(dest),
         *_build_cost_term_reports(dest),
         *_build_operation_cost(dest, cost, RENEWABLE_GENERATION_COST_DTYPE),

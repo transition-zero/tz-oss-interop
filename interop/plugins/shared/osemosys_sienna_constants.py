@@ -39,6 +39,11 @@ REGION_NAME_SEPARATOR = "/"
 # A load of accumulated annual demand takes the name of its fuel, this separator and suffix.
 LOAD_NAME_SEPARATOR = "/"
 ACCUMULATED_LOAD_SUFFIX = "accumulated"
+# The generator of an import mode takes the name `<line>/import/<mode>`.
+IMPORT_NAME_SEPARATOR = "/"
+IMPORT_NAME_PART = "import"
+# The carrier and the category of the generator of an import mode, which states no plant.
+IMPORT_CARRIER = "import"
 
 # The fallback that the base power of a load takes when its peak is lower, in MVA.
 MIN_LOAD_BASE_POWER_MVA = 0.1

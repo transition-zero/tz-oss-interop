@@ -165,6 +165,7 @@ The REPL shows a list that a pipeline file states as text separated by commas. E
 | [`SupplyTechnology`](#supplytechnology--a-generator) | `ThermalStandard`, `RenewableDispatch`, `RenewableNonDispatch` or `HydroDispatch`, as its carriers row names |
 | [`STORAGE` and the technologies that charge and discharge it](#storage--energyreservoirstorage) | One `EnergyReservoirStorage` |
 | [`AggregateTransportTechnology`](#aggregatetransporttechnology--twoterminalgenerichvdcline) | `TwoTerminalGenericHVDCLine`, and an `Arc` |
+| [An import mode of an `AggregateTransportTechnology`](#an-import-mode--thermalstandard) | `ThermalStandard`, with the fuel `OTHER` and the prime mover `OT` |
 | [`TIMESLICE`, `SEASON`, `DAYTYPE`, `DAILYTIMEBRACKET`](#the-calendar) | The hours of each time series, and one `representative_period` record for each day in `extensions.json` |
 | [A `fuel_supply` technology](#the-fuels-that-are-not-electricity) | A `generator` record on the bus of its fuel in `extensions.json`. It also sets the fuel cost and part of the emission rate of each plant that burns its fuel. |
 | [`EMISSION`](#the-emission-penalty) | No component. Its rate goes to `extensions.json`, and its penalty adds to the variable cost. |
@@ -538,6 +539,52 @@ The step does not apply the `capacity_factor` of a transport technology to the s
 companion `controllable_lines.parquet` holds it for each hour, in the column `p_max_pu`, and the
 `p_max_pu_series` field of the record names the file.
 
+### An import mode → `ThermalStandard`
+
+An import mode is a mode of a transport technology, other than the operations mode, that obeys
+all of these conditions:
+
+- It puts out electricity at one location only.
+- That location is one end of the line.
+- It takes in no electricity.
+
+So it brings electricity into the model from outside. Each import mode becomes one
+`ThermalStandard` on the bus of that end. The line keeps its forward direction and its flow
+back. The generator exists only when the line exists, so the checks of the line apply to it
+too.
+
+OSeMOSYS states no plant and no fuel for an import, so the generator takes a fixed type, a
+fixed prime mover and a fixed fuel. A carriers row does not apply, because the category of a
+transport technology names the line and not the import. `decisions.md` records each fixed
+value as `TRANSLATOR_DEFAULT_APPLIED`.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `<line>/import/<mode>`. `<line>` is the name of the line. | `derived` |
+| `bus` | | The location of the electricity fuel that the mode puts out | `derived` |
+| `prime_mover_type` | | `OT` | `default` |
+| `fuel_type` | | `OTHER` | `default` |
+| `base_power` | MVA | `residual_capacity` of the line in MW × the electricity `output_activity_ratio` of the mode | `derived` |
+| `active_power_limits` | MW | `(0, base_power × availability_factor of the line)` | `derived` |
+| `operation_cost.variable` | $/MWh | A linear curve: `variable_operation_cost` of the mode in $/MWh / the electricity output ratio of the mode + the emission penalty of each pollutant | `derived` |
+| `operation_cost.fixed` | $ | `0.0`. OSeMOSYS states the fixed cost for the technology, and the line record holds it. | `default` |
+| `rating` | pu | `1.0` | `default` |
+
+The other fields take the values of [`ThermalStandard`](#thermalstandard). The emission
+penalty of a pollutant is the rate of the mode in t/MWh × `emission_penalty` of the region.
+Refer to [The emission penalty](#the-emission-penalty).
+
+The generator gets a generator record in `extensions.json`:
+
+| Field | Unit | From |
+| --- | --- | --- |
+| `carrier`, `category` | | `import` |
+| `emission_rates_t_per_mwh` | t/MWh | For each pollutant, `emission_rate` of the mode / the electricity output ratio of the mode. A rate of 0 is left out. |
+| `source_technology` | | `<region>/<technology>` of the transport technology |
+| `source_mode` | | The import mode |
+
+The line record still holds the values of the import mode in its `operating_modes`.
+
 ## Technologies with no component
 
 The system has no component for the two technologies of electricity below. The step records
@@ -897,11 +944,12 @@ electricity at the far end and puts it out at the near end. The line then flows 
 limits of the flow back come from the ratios of that mode. When two modes flow back, the first
 in number order applies.
 
-The line runs the operations mode and the flow back. The `operating_modes` of its record hold
-each other mode, and the ratios of the flow back. One warning names three lines that state
-values at a mode that is not the flow back. A mode that puts out electricity with no input,
-which is an import from outside the model, is one example. A line states one loss, so the loss
-of the flow back is in the ratios of its `operating_modes` entry only.
+The line runs the operations mode and the flow back. An import mode becomes a generator. Refer
+to [An import mode → `ThermalStandard`](#an-import-mode--thermalstandard). The
+`operating_modes` of the line record hold each other mode, and the ratios of the flow back. One
+warning names three lines that state values at a mode that is neither the flow back nor an
+import. A line states one loss, so the loss of the flow back is in the ratios of its
+`operating_modes` entry only.
 
 ### Storage
 

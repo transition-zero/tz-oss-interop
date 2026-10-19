@@ -5,8 +5,10 @@ it out at another. The line runs from the bus of the first to the bus of the sec
 direction. It sends at most its residual capacity in MW × its availability factor × its
 electricity input ratio, and it loses the share `1 - output ratio / input ratio` of what it
 sends. When another mode takes electricity in at the second location and puts it out at the
-first, the line also flows back, within the limits of that mode. The values of every other mode,
-and each value that a Sienna line has no field for, go to the line record of extensions.json.
+first, the line also flows back, within the limits of that mode. A mode that puts out
+electricity at one end and takes in none is an import, which becomes a generator. The values of
+every other mode, and each value that a Sienna line has no field for, go to the line record of
+extensions.json.
 """
 
 from __future__ import annotations
@@ -122,6 +124,12 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATION,
     TO_LOCATIONS,
 )
+from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
+    build_imports_source,
+    enrich_import_flows,
+    is_held_by_import_mode,
+    read_import_modes,
+)
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
@@ -152,10 +160,13 @@ _APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
 
 @dataclass(frozen=True)
 class TransportSources:
-    """One row for each line, and the capacity factor of each hour of each line that has one."""
+    """One row for each line, the capacity factor of each hour of each line that has one, and
+    one row for each import mode.
+    """
 
     table: pl.DataFrame
     series: pl.DataFrame
+    imports: pl.DataFrame
 
 
 class _EndColumns(NamedTuple):
@@ -221,7 +232,9 @@ def build_transport_source(
     for rule in _SKIP_RULES:
         lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
     if lines.height == 0:
-        return TransportSources(lines, pl.DataFrame())
+        return TransportSources(lines, pl.DataFrame(), pl.DataFrame())
+    imports = read_import_modes(state, operations, lines)
+    lines = enrich_import_flows(lines, imports)
     lines = _enrich_reverse_modes(state, operations, lines)
     lines = _enrich_ratings(state, operations, lines)
     lines = _enrich_costs(state, operations, lines)
@@ -236,7 +249,8 @@ def build_transport_source(
     lines = lines.with_columns(
         express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS)
     )
-    return TransportSources(lines.sort(LINE_NAME), series)
+    imports = build_imports_source(state, operations, imports, lines)
+    return TransportSources(lines.sort(LINE_NAME), series, imports)
 
 
 def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension]:
@@ -288,15 +302,17 @@ def _enrich_extension_values(
 
 
 def warn_one_way_lines(lines: pl.DataFrame) -> None:
-    """Name the lines whose technology states values at a mode that is not the flow back."""
+    """Name the lines whose technology states values at a mode that is neither the flow back
+    nor an import.
+    """
     named = [
         line[TECHNOLOGY_NAME] for line in lines.iter_rows(named=True) if _list_lost_values(line)
     ]
     if named:
         log.warning(
-            "%s: %d transport technology(ies) state values at an operating mode that is not the "
-            "flow back, and the line does not run them; extensions.json holds them. "
-            "Technologies: %s",
+            "%s: %d transport technology(ies) state values at an operating mode that is neither "
+            "the flow back nor an import, and the line does not run them; extensions.json holds "
+            "them. Technologies: %s",
             OSEMOSYS_TO_SIENNA_PIPELINE,
             len(named),
             name_a_few(named),
@@ -304,7 +320,7 @@ def warn_one_way_lines(lines: pl.DataFrame) -> None:
 
 
 def _list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
-    """The values of the other modes that the line does not run.
+    """The values of the other modes that neither the line nor an import generator runs.
 
     The flows of the reverse mode are the flow back, and a cost of the reverse mode that is
     the cost of the operations mode is the one cost of the line.
@@ -312,7 +328,7 @@ def _list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         value
         for value in line[OTHER_MODE_VALUES] or []
-        if not _is_held_by_reverse_mode(line, value)
+        if not _is_held_by_reverse_mode(line, value) and not is_held_by_import_mode(line, value)
     ]
 
 
