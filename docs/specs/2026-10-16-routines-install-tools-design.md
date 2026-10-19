@@ -25,7 +25,9 @@ runs.
 ## The design
 
 One script, `.claude/routines/install-tools.sh`, installs `make` and `uv` when they are
-absent, then runs `uv sync --locked --all-groups`. Three places call it:
+absent, then runs `uv sync --locked --all-groups`. It fails when the caller's PATH cannot
+reach either tool, because the routine runs both later from shells with that PATH. Three
+places call it:
 
 - nightly Phase 0 step 7;
 - steward Setup step 4;

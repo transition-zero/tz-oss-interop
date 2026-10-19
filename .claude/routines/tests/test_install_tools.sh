@@ -1,28 +1,24 @@
 # shellcheck shell=bash
 # Each fake command appends its name and arguments to calls.log. PATH holds only the fakes, so
 # a tool without a fake is absent. A fake calls real tools by absolute path for the same reason.
-fake() { # root name
-	cat >"$1/bin/$2" <<FAKE
+fake() { # root name [dir]
+	local dir=${3:-$1/bin}
+	cat >"$dir/$2" <<FAKE
 #!/bin/bash
 echo "$2 \$*" >>"$1/calls.log"
 FAKE
-	chmod +x "$1/bin/$2"
+	chmod +x "$dir/$2"
 }
 
-# The fake dnf install puts a fake make in bin, and the fake pip install puts a fake uv where
-# pip --user would.
+# The fake installers move a fake make into bin, and a fake uv to where pip --user puts it.
 fake_installers() { # root
+	mkdir -p "$1/stash"
+	fake "$1" make "$1/stash"
+	fake "$1" uv "$1/stash"
 	fake "$1" sudo
-	cat >>"$1/bin/sudo" <<FAKE
-printf '#!/bin/bash\necho "make \$*" >>"$1/calls.log"\n' >"$1/bin/make"
-/bin/chmod +x "$1/bin/make"
-FAKE
+	echo "/bin/mv '$1/stash/make' '$1/bin/make'" >>"$1/bin/sudo"
 	fake "$1" python3
-	cat >>"$1/bin/python3" <<FAKE
-/bin/mkdir -p "$1/home/.local/bin"
-printf '#!/bin/bash\necho "uv \$*" >>"$1/calls.log"\n' >"$1/home/.local/bin/uv"
-/bin/chmod +x "$1/home/.local/bin/uv"
-FAKE
+	echo "/bin/mv '$1/stash/uv' '$1/home/.local/bin/uv'" >>"$1/bin/python3"
 }
 
 run_install() { # root caller-path; prints the calls, then the exit status
@@ -50,7 +46,7 @@ rm -rf "$root"
 
 root=$(new_root)
 fake_installers "$root"
-assert_eq "exit 1" "$(run_install "$root" "$root/bin" | tail -1)" "install-tools: a uv the caller's PATH cannot reach fails the install"
+assert_eq $'sudo dnf install -y -q make\npython3 -m pip install --user --quiet uv\nexit 1' "$(run_install "$root" "$root/bin")" "install-tools: a uv the caller's PATH cannot reach fails before the sync"
 assert_eq "install-tools: uv is installed, but not on the caller's PATH. Add $root/home/.local/bin to PATH." "$(cat "$root/stderr")" "install-tools: the failure names the directory to add"
 rm -rf "$root"
 
