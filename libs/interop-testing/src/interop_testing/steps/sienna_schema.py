@@ -11,7 +11,10 @@ is ``outputs/portfolio.json``, the paths every pipeline writes by default.
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
+from functools import cache
+from importlib.resources import files
 from types import ModuleType
 from typing import Any
 
@@ -37,6 +40,16 @@ _SDK_MODULES: tuple[ModuleType, ...] = (
     timeseries_models,
     infrastructure_core_models,
 )
+
+
+@cache
+def list_component_keys(document_class: type[SystemDocument | PortfolioDocument]) -> list[str]:
+    """Every key the SDK schema of ``document_class`` allows under ``components``."""
+    schema_path = files("power_openapi_models").joinpath(
+        "bundles", SCHEMA_VERSION, f"{document_class.__name__}.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return list(schema["properties"]["components"]["properties"])
 
 
 def find_sdk_class(type_name: str) -> type[BaseModel] | None:
@@ -83,6 +96,21 @@ def list_type_problems(type_name: str, rows: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
+def list_component_problems(
+    type_name: str,
+    rows: list[dict[str, Any]],
+    document_class: type[SystemDocument | PortfolioDocument],
+) -> list[str]:
+    """What is wrong with the rows under one component key of ``document_class``.
+
+    The SDK modules also name enums and shared models, so a key must be a component key of
+    the document schema before its rows are checked.
+    """
+    if type_name not in list_component_keys(document_class):
+        return [f"{type_name}: SiennaSchemas 0.2 has no such component type"]
+    return list_type_problems(type_name, rows)
+
+
 def list_envelope_problems(
     document: dict[str, Any], document_class: type[SystemDocument | PortfolioDocument]
 ) -> list[str]:
@@ -94,7 +122,7 @@ def list_envelope_problems(
             f"expected {SCHEMA_VERSION!r}"
         )
     components = document.get("components", {})
-    if list(components) != sorted(components):
+    if isinstance(components, dict) and list(components) != sorted(components):
         problems.append("envelope: components keys are not sorted")
     try:
         document_class.model_validate(document)
@@ -102,15 +130,6 @@ def list_envelope_problems(
         for detail in error.errors():
             path = ".".join(str(part) for part in detail["loc"])
             problems.append(f"envelope: {path}: {detail['msg']}")
-    return problems
-
-
-def list_document_problems(
-    document: dict[str, Any], document_class: type[SystemDocument | PortfolioDocument]
-) -> list[str]:
-    problems = list_envelope_problems(document, document_class)
-    for type_name, rows in document.get("components", {}).items():
-        problems.extend(list_type_problems(type_name, rows))
     return problems
 
 
@@ -125,6 +144,19 @@ def list_id_problems(document: dict[str, Any]) -> list[str]:
         for component_id, users in owners.items()
         if len(users) > 1
     ]
+
+
+def list_document_problems(
+    document: dict[str, Any], document_class: type[SystemDocument | PortfolioDocument]
+) -> list[str]:
+    problems = list_envelope_problems(document, document_class)
+    components = document.get("components", {})
+    if not isinstance(components, dict):
+        return problems
+    for type_name, rows in components.items():
+        problems.extend(list_component_problems(type_name, rows, document_class))
+    problems.extend(list_id_problems(document))
+    return problems
 
 
 def assert_no_problems(problems: list[str], path: str) -> None:
@@ -145,7 +177,7 @@ def assert_system_envelope() -> None:
 def assert_system_type(sienna_type: str) -> None:
     rows = read_json(SYSTEM_PATH).get("components", {}).get(sienna_type, [])
     assert rows, f"{SYSTEM_PATH} holds no {sienna_type!r} component"
-    assert_no_problems(list_type_problems(sienna_type, rows), SYSTEM_PATH)
+    assert_no_problems(list_component_problems(sienna_type, rows, SystemDocument), SYSTEM_PATH)
 
 
 @then("the written Sienna system is a valid SiennaSchemas 0.2 document")
@@ -171,9 +203,7 @@ def assert_portfolio_document() -> None:
     )
 )
 def assert_system_reports(expected: str) -> None:
-    problems = list_document_problems(read_json(SYSTEM_PATH), SystemDocument) + list_id_problems(
-        read_json(SYSTEM_PATH)
-    )
+    problems = list_document_problems(read_json(SYSTEM_PATH), SystemDocument)
     assert any(expected in problem for problem in problems), (
         f"expected a problem containing {expected!r}, got {problems!r}"
     )
