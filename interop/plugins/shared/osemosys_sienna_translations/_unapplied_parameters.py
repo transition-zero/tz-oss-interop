@@ -1,10 +1,11 @@
 """The parameters that state values for the operations year and that no step of the pipeline
-applies.
+applies or writes to extensions.json.
 
 A parameter of the canonical stage that the Sienna documents have no field for still holds
-data of the model, so each one is reported: one event for each member that it states values
-for, else one event for each region, else one event with a count, and one warning.
-A row that holds the default of the parameter states nothing beyond it, so it is not counted.
+data of the model, so each row whose values no extension record holds is reported: one event
+for each member that it states values for, else one event for each region, else one event with
+a count, and one warning. A row that holds the default of the parameter states nothing beyond
+it, so it is not counted.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import express_r
 from interop.plugins.shared.osemosys_sienna_translations._operations import (
     require_operations_year,
 )
+from interop.plugins.shared.osemosys_sienna_translations._persisted import drop_persisted_rows
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
@@ -76,19 +78,14 @@ INVESTMENTS_PARAMETERS: frozenset[str] = frozenset(
     {*OPERATIONS_PARAMETERS, *InvestmentParameter, *EmissionParameter}
 )
 
-_UNAPPLIED_NOTE = "no step of the pipeline applies this parameter"
-_BOUND_NOTE = (
-    "a Sienna system has no field for a bound on the energy of a year, so no step applies it; "
-    "when the technology becomes a generator, its extension record holds its bound of each year "
-    "in MWh"
+_UNAPPLIED_NOTE = (
+    "no step of the pipeline applies this parameter, and no record of extensions.json holds it"
 )
 _UPPER_BOUND_NOTE = (
-    f"{_BOUND_NOTE}; a fuel_supply technology whose bound in the year is 0 is not a fuel producer"
+    f"{_UNAPPLIED_NOTE}; a fuel_supply technology whose bound in the year is 0 is not a fuel "
+    "producer"
 )
-_NOTES: dict[str, str] = {
-    SupplyParameter.ACTIVITY_LOWER_LIMIT: _BOUND_NOTE,
-    SupplyParameter.ACTIVITY_UPPER_LIMIT: _UPPER_BOUND_NOTE,
-}
+_NOTES: dict[str, str] = {SupplyParameter.ACTIVITY_UPPER_LIMIT: _UPPER_BOUND_NOTE}
 # The columns that name the member a row is about, in the order that the report prefers them.
 _MEMBER_COLUMNS: dict[str, str] = {
     TECHNOLOGY: "technology(ies)",
@@ -147,7 +144,7 @@ def _list_unapplied_parameters(state: State, applied: Set[str]) -> list[str]:
 
 
 def _read_stated_rows(state: State, parameter: str, year: int) -> pl.DataFrame:
-    rows = read_parameter(state, parameter, year)
+    rows = drop_persisted_rows(state, parameter, read_parameter(state, parameter, year))
     default = find_parameter_default(state, parameter)
     if default is None:
         return rows
@@ -184,7 +181,7 @@ def _report_groups(unapplied: UnappliedRows, grouping: Grouping, recorder: Scope
         recorder.append(_build_event(unapplied, row[_NAME], value, row[_ROW_COUNT]))
     names = groups[_NAME].to_list()
     log.warning(
-        "%s: %s states %d row(s) %s that no step of the pipeline applies, for %d %s: %s",
+        "%s: %s states %d row(s) %s that no step of the pipeline applies or keeps, for %d %s: %s",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         unapplied.parameter,
         unapplied.rows.height,
@@ -198,7 +195,7 @@ def _report_groups(unapplied: UnappliedRows, grouping: Grouping, recorder: Scope
 def _report_parameter(unapplied: UnappliedRows, recorder: ScopedRecorder) -> None:
     recorder.append(_build_event(unapplied, ALL_COMPONENTS, None, unapplied.rows.height))
     log.warning(
-        "%s: %s states %d row(s) %s that no step of the pipeline applies",
+        "%s: %s states %d row(s) %s that no step of the pipeline applies or keeps",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         unapplied.parameter,
         unapplied.rows.height,

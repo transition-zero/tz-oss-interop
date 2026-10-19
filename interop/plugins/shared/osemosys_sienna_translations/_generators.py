@@ -15,7 +15,7 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import GeneratorExtension
+from interop.core.extensions import ExtensionKind, GeneratorExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import StagedTimeSeriesCol
@@ -23,6 +23,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     OPERATING_MODE,
     OSEMOSYS_FRAMEWORK,
     POLLUTANT,
+    REGION,
     TECHNOLOGY,
     YEAR,
     AnnotationColumn,
@@ -39,6 +40,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     express_output_capacity,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    ACTIVITY_BOUNDS,
     LIMIT_MWH,
     LOWER_BOUND,
     UPPER_BOUND,
@@ -59,6 +61,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     CAPACITY_MW,
     CAPACITY_UNIT,
     GENERATOR_NAME,
+    GENERATOR_OWNERS,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
     RESIDUAL_CAPACITY,
@@ -66,11 +69,8 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    COST_MWH,
     FIXED_COST_MW_YEAR,
-    OTHER_MODE_COSTS,
     enrich_fixed_costs,
-    enrich_other_modes,
     enrich_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
@@ -88,12 +88,25 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
 )
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_operating_mode_field,
+    build_operating_modes,
+    set_mode_bounds_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
     enrich_residual_capacity,
     enrich_targets,
     list_bus_names,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    COMPONENT_VALUES,
+    RATING_RATIO,
+    build_value_fields,
+    enrich_technology_values,
+    set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent
@@ -109,6 +122,7 @@ GENERATOR_TYPES: tuple[SiennaComponent, ...] = tuple(
     mapping.sienna_type for mapping in GENERATOR_TYPE_MAPPINGS
 )
 _COUNTED_NOUN = "supply technology(ies)"
+
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 
 
@@ -206,6 +220,16 @@ def build_generator_extensions(generators: pl.DataFrame) -> list[GeneratorExtens
     return [_build_extension(row) for row in generators.iter_rows(named=True)]
 
 
+def set_generator_values_persisted(state: State, generators: pl.DataFrame) -> None:
+    """Note that the generator records hold the values of each supply technology."""
+    set_values_persisted(state, GENERATOR_OWNERS, generators, COMPONENT_VALUES)
+    set_mode_bounds_persisted(state, GENERATOR_OWNERS, generators)
+    for bound in ACTIVITY_BOUNDS:
+        set_persisted_rows(
+            state, ExtensionKind.GENERATOR, bound.parameter, [generators.select(REGION, TECHNOLOGY)]
+        )
+
+
 # --- the generators of the year -----------------------------------------------------
 
 
@@ -265,9 +289,19 @@ def _enrich_generators(
     table = enrich_fixed_costs(state, operations, table)
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)
     table = enrich_emission_penalties(state, operations, table)
-    table = enrich_other_modes(state, operations, table)
     table = enrich_activity_limits(state, operations, table)
+    table = _enrich_extension_values(state, operations, table)
     return table.with_columns(_express_has_series().alias(HAS_SERIES))
+
+
+def _enrich_extension_values(
+    state: State, operations: OperationsYear, generators: pl.DataFrame
+) -> pl.DataFrame:
+    """The values that a generator rates on its electricity output, and its other modes."""
+    rated = generators.with_columns(pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO))
+    table = enrich_technology_values(state, operations, rated, COMPONENT_VALUES)
+    held = generators.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
+    return build_operating_modes(state, operations, held).enrich(table)
 
 
 def _express_has_series() -> pl.Expr:
@@ -286,9 +320,10 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         category=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=_build_emission_rates(row[EMISSION_TERMS]),
-        other_mode_variable_costs_per_mwh=_build_other_mode_costs(row[OTHER_MODE_COSTS]),
-        annual_output_lower_limit_mwh=_build_yearly_limits(row[LOWER_BOUND.column]),
-        annual_output_upper_limit_mwh=_build_yearly_limits(row[UPPER_BOUND.column]),
+        e_sum_min=_build_yearly_limits(row[LOWER_BOUND.column]),
+        e_sum_max=_build_yearly_limits(row[UPPER_BOUND.column]),
+        operating_modes=build_operating_mode_field(row),
+        **build_value_fields(row, COMPONENT_VALUES),
     )
 
 
@@ -302,9 +337,3 @@ def _build_yearly_limits(bounds: list[dict[str, Any]] | None) -> dict[str, float
     if not bounds:
         return None
     return {bound[YEAR]: bound[LIMIT_MWH] for bound in bounds}
-
-
-def _build_other_mode_costs(costs: list[dict[str, Any]] | None) -> dict[str, float] | None:
-    if not costs:
-        return None
-    return {cost[OPERATING_MODE]: cost[COST_MWH] for cost in costs}

@@ -10,9 +10,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._availabili
     build_availability_series,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._carbon_caps import (
-    PollutantLimits,
     build_carbon_cap_translations,
-    build_pollutant_limits,
+    build_carbon_caps,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CANDIDATE_NAME,
@@ -27,6 +26,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._extensions
     TRANSPORT_FIELDS,
     YearlyField,
     build_technology_extensions,
+    set_technology_extensions_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._financials import (
     build_osemosys_financial_data,
@@ -84,21 +84,21 @@ __all__ = [
     "TRANSPORT_SCHEMA",
     "FleetFamily",
     "InvestmentPlan",
-    "PollutantLimits",
     "PortfolioSeries",
     "StorageCandidates",
     "SupplyCandidates",
     "TransportCandidates",
     "YearlyField",
     "set_portfolio_series",
+    "set_technology_extensions_persisted",
     "build_availability_series",
     "build_carbon_cap_translations",
+    "build_carbon_caps",
     "build_demand_series",
     "build_fleet_table",
     "build_osemosys_financial_data",
     "build_osemosys_financial_events",
     "build_plan_year",
-    "build_pollutant_limits",
     "build_storage_candidates",
     "build_storage_translations",
     "build_supply_candidates",

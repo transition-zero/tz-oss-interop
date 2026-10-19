@@ -5,19 +5,26 @@ it out at another. The line runs from the bus of the first to the bus of the sec
 direction. It sends at most its residual capacity in MW × its availability factor × its
 electricity input ratio, and it loses the share `1 - output ratio / input ratio` of what it
 sends. When another mode takes electricity in at the second location and puts it out at the
-first, the line also flows back, within the limits of that mode. The values of any other mode
-are reported and left out.
+first, the line also flows back, within the limits of that mode. The values of every other mode,
+and each value that a Sienna line has no field for, go to the line record of extensions.json.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any, NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ControllableLineExtension
+from interop.core.extensions import (
+    CompanionSeriesCol,
+    ControllableLineCompanionCol,
+    ControllableLineExtension,
+    ExtensionKind,
+    companion_filename,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -34,6 +41,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
+    WHOLE_CAPACITY,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
@@ -41,8 +49,14 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._capacity_factors import (
+    HAS_CAPACITY_FACTORS,
+    build_capacity_factor_series,
+    express_has_capacity_factors,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
@@ -54,6 +68,11 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
 )
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_operating_mode_field,
+    build_operating_modes,
+    set_mode_bounds_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     AVAILABILITY_FACTOR,
@@ -61,6 +80,14 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_residual_capacity,
     read_availability_factors,
     read_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    COMPONENT_VALUES,
+    RATING_RATIO,
+    ValueOwners,
+    build_value_fields,
+    enrich_technology_values,
+    set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
@@ -76,7 +103,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     OUTPUT_RATIO,
     RECEIVED_MW,
     REVERSE_INPUT_RATIO,
-    REVERSE_LOSS,
     REVERSE_MODE,
     REVERSE_OUTPUT_RATIO,
     REVERSE_RECEIVED_MW,
@@ -87,6 +113,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATIONS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
+from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
@@ -105,6 +132,18 @@ _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 _ONE_LOCATION = 1
 _NO_COST = 0.0
 _NO_FLOW = 0.0
+_SERIES_FILE = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
+
+# The records of the lines, and the columns that name each line and its technology.
+LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
+
+
+@dataclass(frozen=True)
+class TransportSources:
+    """One row for each line, and the capacity factor of each hour of each line that has one."""
+
+    table: pl.DataFrame
+    series: pl.DataFrame
 
 
 class _EndColumns(NamedTuple):
@@ -161,7 +200,7 @@ def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
 
 def build_transport_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
-) -> pl.DataFrame:
+) -> TransportSources:
     """One row for each transport technology that the operations system holds as a line.
 
     Each end of a line is the location of an electricity fuel, which always has a bus.
@@ -170,23 +209,83 @@ def build_transport_source(
     for rule in _SKIP_RULES:
         lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
     if lines.height == 0:
-        return lines
+        return TransportSources(lines, pl.DataFrame())
     lines = _enrich_reverse_modes(state, operations, lines)
     lines = _enrich_ratings(state, operations, lines)
     lines = _enrich_costs(state, operations, lines)
-    return enrich_other_mode_values(state, operations, lines).sort(LINE_NAME)
+    lines = enrich_other_mode_values(state, operations, lines)
+    lines = _enrich_extension_values(state, operations, lines)
+    series = build_capacity_factor_series(
+        state,
+        operations,
+        lines.select(REGION, TECHNOLOGY, pl.col(LINE_NAME).alias(CompanionSeriesCol.NAME)),
+        ControllableLineCompanionCol.P_MAX_PU,
+    )
+    lines = lines.with_columns(
+        express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS)
+    )
+    return TransportSources(lines.sort(LINE_NAME), series)
 
 
 def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension]:
-    """The cost of each MWh that a line sends, which a Sienna line prices nowhere."""
-    return [
-        ControllableLineExtension(name=row[LINE_NAME], marginal_cost=row[COST_MWH])
-        for row in lines.filter(pl.col(COST_MWH) != _NO_COST).iter_rows(named=True)
+    """What each line states that a Sienna line has no field for, for each line with any."""
+    records = [_build_extension(row) for row in lines.iter_rows(named=True)]
+    return [record for record in records if record.has_any_value()]
+
+
+def has_series(line: dict[str, Any]) -> bool:
+    """Whether the companion parquet holds the capacity factor of each hour of the line."""
+    return bool(line[HAS_CAPACITY_FACTORS])
+
+
+def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
+    """Note that the line records hold the values of each line technology."""
+    set_values_persisted(state, LINE_OWNERS, lines, COMPONENT_VALUES)
+    set_mode_bounds_persisted(state, LINE_OWNERS, lines)
+
+
+def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
+    return ControllableLineExtension(
+        name=row[LINE_NAME],
+        marginal_cost=row[COST_MWH] if row[COST_MWH] != _NO_COST else None,
+        p_max_pu=row[AVAILABILITY] if row[AVAILABILITY] != WHOLE_CAPACITY else None,
+        p_max_pu_series=_SERIES_FILE if has_series(row) else None,
+        operating_modes=build_operating_mode_field(row),
+        **build_value_fields(row, COMPONENT_VALUES),
+    )
+
+
+def _enrich_extension_values(
+    state: State, operations: OperationsYear, lines: pl.DataFrame
+) -> pl.DataFrame:
+    """The values that a line rates on the electricity that it sends, and its other modes."""
+    rated = lines.with_columns(
+        pl.col(INPUT_RATIO).alias(RATING_RATIO),
+        pl.lit(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value).alias(SIENNA_TYPE),
+    )
+    table = enrich_technology_values(state, operations, rated, COMPONENT_VALUES)
+    held = lines.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
+    return build_operating_modes(state, operations, held).enrich(table)
+
+
+def warn_one_way_lines(lines: pl.DataFrame) -> None:
+    """Name the lines whose technology states values at a mode that is not the flow back."""
+    named = [
+        line[TECHNOLOGY_NAME] for line in lines.iter_rows(named=True) if _list_lost_values(line)
     ]
+    if named:
+        log.warning(
+            "%s: %d transport technology(ies) state values at an operating mode that is not the "
+            "flow back, and the line does not run them; extensions.json holds them. "
+            "Technologies: %s",
+            OSEMOSYS_TO_SIENNA_PIPELINE,
+            len(named),
+            name_a_few(named),
+        )
 
 
-def list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
-    """The values of the other modes that the line does not hold.
+def _list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
+    """The values of the other modes that the line does not run.
 
     The flows of the reverse mode are the flow back, and a cost of the reverse mode that is
     the cost of the operations mode is the one cost of the line.
@@ -196,21 +295,6 @@ def list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
         for value in line[OTHER_MODE_VALUES] or []
         if not _is_held_by_reverse_mode(line, value)
     ]
-
-
-def warn_one_way_lines(lines: pl.DataFrame) -> None:
-    """Name the lines whose technology states values at a mode that is not the flow back."""
-    named = [
-        line[TECHNOLOGY_NAME] for line in lines.iter_rows(named=True) if list_lost_values(line)
-    ]
-    if named:
-        log.warning(
-            "%s: %d transport technology(ies) state values at an operating mode that is not the "
-            "flow back, and the line does not hold them. Technologies: %s",
-            OSEMOSYS_TO_SIENNA_PIPELINE,
-            len(named),
-            name_a_few(named),
-        )
 
 
 def _is_held_by_reverse_mode(line: dict[str, Any], value: dict[str, Any]) -> bool:
@@ -322,7 +406,6 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
         (1.0 - pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(LOSS),
         (capacity * pl.col(REVERSE_INPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_SENT_MW),
         (capacity * pl.col(REVERSE_OUTPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_RECEIVED_MW),
-        (1.0 - pl.col(REVERSE_OUTPUT_RATIO) / pl.col(REVERSE_INPUT_RATIO)).alias(REVERSE_LOSS),
     )
 
 

@@ -195,8 +195,9 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "lifetime" set to 30
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "financial_data.capital_recovery_period" set to 30
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "financial_data.return_on_equity" set to 0.07
-    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capital_cost_per_mw_by_year" set to {"2030": 1000000.0, "2035": 900000.0}
-    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 7.0, "2035": 7.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "overnight_cost" set to {"2030": 1000000.0, "2035": 900000.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "marginal_cost" set to {"2030": 7.0, "2035": 7.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "fom_cost" set to {"2030": 20000.0, "2035": 0.0}
 
   Scenario: The report of the parameters that no step applies leaves out the parameters of the portfolio
     The portfolio step applies the capital cost, the lifetime and the emission limits, so the
@@ -209,7 +210,32 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the log does not contain "capital_cost states"
     And the log does not contain "annual_emission_limit states"
     And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASNEW` = 1000000000.0 |  |  |"
-    And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies, for 1 region(s): R1"
+    And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
+
+  Scenario: The bounds on the growth and the energy of a candidate reach its technology record
+    Given the otoole parameter "TotalAnnualMinCapacityInvestment" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASNEW   | 2035 | 0.1   |
+    And the otoole parameter "CapacityAdditionalMaxGrowthRate" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASNEW   | 2030 | 0.2   |
+      | R1     | ATGASNEW   | 2035 | 0.3   |
+    And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASNEW   | 2035 | 2     |
+    And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 1 has the rows:
+      | REGION | TECHNOLOGY | VALUE |
+      | R1     | ATGASNEW   | 8760  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "min_growth" set to {"2035": 100.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "e_sum_max" set to {"2035": 2000.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capacity_to_activity_unit" set to 8760.0
+    And the log does not contain "capacity_to_activity_unit states"
+    And the log does not contain "total_technology_annual_activity_upper_limit states"
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "max_relative_growth" set to {"2030": 0.2, "2035": 0.3}
+    And the log does not contain "total_annual_min_capacity_investment states"
+    And the log does not contain "capacity_additional_max_growth_rate states"
 
   Scenario: The emission penalty of each year adds to the variable cost of a candidate
     ATGASNEW emits 0.35 t of CO2 for each MWh in 2030 and none in 2035. At 100 USD/t, the
@@ -221,7 +247,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.variable_operation_cost.value_curve.function_data.proportional_term" set to 42.0
-    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "variable_cost_per_mwh_by_year" set to {"2030": 42.0, "2035": 7.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "marginal_cost" set to {"2030": 42.0, "2035": 7.0}
     And the file "decisions.md" contains "`sienna.SupplyTechnology.ATGASNEW.operation_costs emission penalty` = 35.0 \$/MWh | Σ over pollutants of the emission rate in t/MWh"
     And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASNEW.the earliest year in scope` = 7.0 \$/MWh"
 
@@ -273,10 +299,13 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CO2/2035" having "max_mtons" set to 0.25
 
   Scenario: A pollutant that only some technologies emit goes to extensions.json, and the report names it
+    The operations step writes one constraint record for each pollutant with a limit, and the
+    portfolio step writes no second one.
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as a portfolio with no component "CarbonCaps" named "ATNOX/2030"
-    And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "limits" set to [{"period": "year", "value": 100.0, "unit": "t", "year": 2030}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "limits" set to [{"period": "year", "value": 100.0, "unit": "t", "investment_period": 2030}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "CO2" having "type" set to "primary_energy"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "sense" set to "<="
     And the log contains "R1/ATNOX"
     And the file "decisions.md" contains "so the limits go to extensions.json as a constraint record"
@@ -383,4 +412,4 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the file "decisions.md" contains "`osemosys.storage_lifetime.R1/ATPHSS` = 50.0 yr"
       And the file "decisions.md" contains "`osemosys.storage_discount_rate.R1/ATPHSS` = 0.06"
       And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "StorageTechnology" "ATPHSS" has "existing_devices" set to ["ATPHSS"]
-      And the file "outputs/extensions.json" parses as JSON technology extension record for "ATPHSS" having "energy_capital_cost_per_mwh_by_year" set to {"2030": 50000.0, "2035": 0.0}
+      And the file "outputs/extensions.json" parses as JSON technology extension record for "ATPHSS" having "energy_overnight_cost" set to {"2030": 50000.0, "2035": 0.0}

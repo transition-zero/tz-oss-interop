@@ -89,10 +89,12 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
     drop_non_candidates,
     enrich_yearly_units,
     read_technology_years,
-    read_yearly_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
+from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_parameter,
+    read_yearly_values,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,

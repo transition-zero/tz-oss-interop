@@ -31,6 +31,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    DAYS_IN_DAY_TYPE,
     HOURS_PER_DAY,
     HOURS_PER_YEAR,
     MEMBERSHIP_FLAG,
@@ -47,6 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -76,6 +78,7 @@ _TIMESLICE_DERIVATION = "one hour for each timeslice, in the order of the timesl
 _ROUNDING_DERIVATION = "day_split × 8760 h, rounded to a whole hour"
 _DAY_WEIGHT_DERIVATION = "year_split of a timeslice / day_split of its daily time bracket"
 _HOUR_WEIGHT_DERIVATION = "year_split × 8760 h"
+_DAYS_DERIVATION = "the days of the day type in one week of the season, which no Sienna field holds"
 
 
 class CalendarMode(StrEnum):
@@ -219,8 +222,11 @@ def build_calendar(state: State, year: int) -> Calendar:
         return _build_timeslice_calendar(slices, str(reason))
 
 
-def build_representative_periods(calendar: Calendar) -> list[RepresentativePeriodExtension]:
-    """One record for each period of the calendar."""
+def build_representative_periods(
+    state: State, year: int, calendar: Calendar
+) -> list[RepresentativePeriodExtension]:
+    """One record for each period of the calendar, with the days of its day type in a week."""
+    days = _read_days_in_day_type(state, year, calendar)
     return [
         RepresentativePeriodExtension(
             name=row[CalendarPeriodCol.NAME],
@@ -229,9 +235,50 @@ def build_representative_periods(calendar: Calendar) -> list[RepresentativePerio
             weight=row[CalendarPeriodCol.WEIGHT],
             season=row[CalendarPeriodCol.SEASON],
             day_type=row[CalendarPeriodCol.DAY_TYPE],
+            days_in_day_type=days.get(
+                (row[CalendarPeriodCol.SEASON], row[CalendarPeriodCol.DAY_TYPE])
+            ),
         )
         for row in calendar.periods.iter_rows(named=True)
     ]
+
+
+def build_days_events(records: Sequence[RepresentativePeriodExtension]) -> list[TranslationEvent]:
+    """One VALUE_DERIVED for each day that holds the days of its day type."""
+    return [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[_build_osemosys_field(DAYS_IN_DAY_TYPE, record.name, record.days_in_day_type)],
+            destinations=[
+                _build_period_field(record.name, DAYS_IN_DAY_TYPE, record.days_in_day_type)
+            ],
+            derivation=_DAYS_DERIVATION,
+        )
+        for record in records
+        if record.days_in_day_type is not None
+    ]
+
+
+def set_days_persisted(state: State, records: Sequence[RepresentativePeriodExtension]) -> None:
+    """Note that the records of the days hold days_in_day_type, when the days stand for one."""
+    if any(record.days_in_day_type is not None for record in records):
+        rows = pl.DataFrame({SEASON: [record.season for record in records]})
+        set_persisted_rows(state, ExtensionKind.REPRESENTATIVE_PERIOD, DAYS_IN_DAY_TYPE, [rows])
+
+
+def _read_days_in_day_type(
+    state: State, year: int, calendar: Calendar
+) -> dict[tuple[str, str], float]:
+    """The days of each day type in a week of its season; one-hour periods have none."""
+    if not calendar.is_representative:
+        return {}
+    keys = calendar.periods.select(CalendarPeriodCol.SEASON, CalendarPeriodCol.DAY_TYPE)
+    stated = read_parameter_with_defaults(state, DAYS_IN_DAY_TYPE, year, keys)
+    return {
+        (season, day_type): value
+        for season, day_type, value in stated.select(SEASON, DAY_TYPE, VALUE_COL).rows()
+        if value is not None
+    }
 
 
 def report_calendar(calendar: Calendar, recorder: ScopedRecorder) -> None:

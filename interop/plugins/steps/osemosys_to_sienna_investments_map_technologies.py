@@ -42,12 +42,12 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     TransportCandidates,
     build_availability_series,
     build_carbon_cap_translations,
+    build_carbon_caps,
     build_demand_series,
     build_fleet_table,
     build_osemosys_financial_data,
     build_osemosys_financial_events,
     build_plan_year,
-    build_pollutant_limits,
     build_storage_candidates,
     build_storage_translations,
     build_supply_candidates,
@@ -58,8 +58,13 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     find_investment_plan,
     find_region_discount_rate,
     set_portfolio_series,
+    set_technology_extensions_persisted,
 )
-from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations import (
+    CANDIDATE_VALUES,
+    OperationsYear,
+    enrich_technology_values,
+)
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     AREA_NAME,
@@ -188,7 +193,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._map_carbon_caps(state, plan, numbering)
         self._map_series(state, plan_years, candidates)
         self._map_supplemental_attributes(state, plan, buses, candidates)
-        self._map_extensions(state, candidates)
+        self._map_extensions(state, plan_years[plan.base_year], candidates)
         self._map_financial_data(state, plan)
         return state
 
@@ -244,11 +249,9 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         )
 
     def _map_carbon_caps(self, state: State, plan: InvestmentPlan, numbering: _Numbering) -> None:
-        limits = build_pollutant_limits(state, plan, self._recorder)
-        append_extensions(state.destination_extensions, ExtensionKind.CONSTRAINT, limits.records)
         self._map_table(
             state,
-            limits.caps,
+            build_carbon_caps(state, plan, self._recorder),
             build_carbon_cap_translations,
             CARBON_CAPS_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.CARBON_CAPS,
@@ -332,7 +335,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
 
     # --- the records of extensions.json and the portfolio financial data ----------------------
 
-    def _map_extensions(self, state: State, candidates: _Candidates) -> None:
+    def _map_extensions(self, state: State, base: OperationsYear, candidates: _Candidates) -> None:
         families = (
             (
                 SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
@@ -357,10 +360,14 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             ),
         )
         for component, table, yearly, fields, keys in families:
+            valued = enrich_technology_values(state, base, table, CANDIDATE_VALUES)
             records = build_technology_extensions(
-                component, table, yearly, fields, keys, self._recorder
+                component, valued, yearly, fields, keys, self._recorder
             )
             append_extensions(state.destination_extensions, ExtensionKind.TECHNOLOGY, records)
+        set_technology_extensions_persisted(
+            state, [(table, fields, keys) for _, table, _, fields, keys in families]
+        )
 
     def _map_financial_data(self, state: State, plan: InvestmentPlan) -> None:
         rate = find_region_discount_rate(state, plan)

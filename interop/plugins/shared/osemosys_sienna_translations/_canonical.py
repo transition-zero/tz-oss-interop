@@ -107,6 +107,33 @@ def find_parameter_default(state: State, name: str) -> float | None:
     return None if found.height == 0 else found.item(0, 0)
 
 
+def read_yearly_values(
+    state: State, name: str, keys: pl.DataFrame, years: Sequence[int]
+) -> pl.DataFrame:
+    """One row for each row of `keys` and each year, with the stated value or the default.
+
+    `keys` holds the key columns of the parameter other than `year`. The `year` column is an
+    integer, and the value column takes the name of the parameter. A parameter with no default
+    keeps a null where the model states no row, so the caller chooses what the null means.
+    """
+    stated = read_parameter_for_years(state, name, years).select(
+        *keys.columns,
+        pl.col(YEAR).cast(pl.Int64),
+        pl.col(VALUE_COL).cast(pl.Float64).alias(name),
+    )
+    grid = build_year_grid(keys, years)
+    table = grid.join(stated, on=[*keys.columns, YEAR], how="left")
+    default = find_parameter_default(state, name)
+    if default is None:
+        return table
+    return table.with_columns(pl.col(name).fill_null(default))
+
+
+def build_year_grid(keys: pl.DataFrame, years: Sequence[int]) -> pl.DataFrame:
+    """Each row of `keys` in each year, with the year as an integer."""
+    return keys.join(pl.DataFrame({YEAR: list(years)}, schema={YEAR: pl.Int64}), how="cross")
+
+
 def _build_empty_parameter(name: str) -> pl.DataFrame:
     columns = load_canonical_schema().parameters[name].column_names
     return pl.DataFrame(schema={**dict.fromkeys(columns, pl.Utf8), VALUE_COL: pl.Float64})

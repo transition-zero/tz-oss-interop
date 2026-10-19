@@ -12,9 +12,8 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
     build_storage_extensions,
-    build_storage_technologies,
     build_storages_source,
-    report_unread_capacity_factors,
+    set_storage_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import (
@@ -35,9 +34,9 @@ class OsemosysToSiennaMapStorage(OperationsMapping):
 
     def map_components(self, state: State, operations: OperationsYear) -> None:
         source = build_storages_source(state, operations, self._mappings, self._recorder)
-        if source.height == 0:
+        if source.table.height == 0:
             return
-        destination = apply_translations(source, STORAGE_TRANSLATIONS, self._recorder)
+        destination = apply_translations(source.table, STORAGE_TRANSLATIONS, self._recorder)
         state.destination_tables[SiennaComponent.ENERGY_RESERVOIR_STORAGE] = finalise(
             destination,
             ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
@@ -45,8 +44,10 @@ class OsemosysToSiennaMapStorage(OperationsMapping):
             SiennaComponent.ENERGY_RESERVOIR_STORAGE,
         )
         append_extensions(
-            state.destination_extensions, ExtensionKind.STORAGE, build_storage_extensions(source)
+            state.destination_extensions,
+            ExtensionKind.STORAGE,
+            build_storage_extensions(source.table),
         )
-        report_unread_capacity_factors(
-            state, operations.year, build_storage_technologies(source), self._recorder
-        )
+        set_storage_values_persisted(state, source.table)
+        if source.series.height > 0:
+            state.destination_extension_series[ExtensionKind.STORAGE] = source.series.lazy()

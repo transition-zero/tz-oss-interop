@@ -13,7 +13,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
     build_line_extensions,
     build_transport_source,
-    report_unread_capacity_factors,
+    set_line_values_persisted,
     warn_one_way_lines,
 )
 from interop.plugins.shared.sienna_constants import HVDC_DESTINATION_SCHEMA, SiennaComponent
@@ -30,11 +30,10 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
 
     def map_components(self, state: State, operations: OperationsYear) -> None:
         source = build_transport_source(state, operations, self._recorder)
-        if source.height == 0:
+        if source.table.height == 0:
             return
-        destination = apply_translations(source, TRANSPORT_TRANSLATIONS, self._recorder)
-        warn_one_way_lines(source)
-        report_unread_capacity_factors(state, operations.year, source, self._recorder)
+        destination = apply_translations(source.table, TRANSPORT_TRANSLATIONS, self._recorder)
+        warn_one_way_lines(source.table)
         state.destination_tables[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = finalise(
             destination,
             HVDC_DESTINATION_SCHEMA,
@@ -44,5 +43,10 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
         append_extensions(
             state.destination_extensions,
             ExtensionKind.CONTROLLABLE_LINE,
-            build_line_extensions(source),
+            build_line_extensions(source.table),
         )
+        set_line_values_persisted(state, source.table)
+        if source.series.height > 0:
+            state.destination_extension_series[ExtensionKind.CONTROLLABLE_LINE] = (
+                source.series.lazy()
+            )

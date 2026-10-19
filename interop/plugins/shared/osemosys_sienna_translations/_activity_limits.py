@@ -52,13 +52,13 @@ LOWER_BOUND = ActivityBound(
     SupplyParameter.ACTIVITY_LOWER_LIMIT,
     "activity_lower_limits",
     pl.col(LIMIT) > 0,
-    "annual_output_lower_limit_mwh",
+    "e_sum_min",
 )
 UPPER_BOUND = ActivityBound(
     SupplyParameter.ACTIVITY_UPPER_LIMIT,
     "activity_upper_limits",
     pl.col(LIMIT) >= 0,
-    "annual_output_upper_limit_mwh",
+    "e_sum_max",
 )
 ACTIVITY_BOUNDS = (LOWER_BOUND, UPPER_BOUND)
 

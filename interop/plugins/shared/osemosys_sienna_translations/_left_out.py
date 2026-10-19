@@ -3,7 +3,8 @@
 A technology of kind `fuel_supply`, `export` or `conversion`, or of no kind, has no type in an
 electricity-only operations system. Each other kind belongs to a component group, which
 reports what it leaves out itself. A technology of no kind and with no flow in the year moves
-no energy, so it is not reported.
+no energy, so it is not reported. A conversion or an export of electricity alone has a
+conversion record in extensions.json.
 """
 
 from __future__ import annotations
@@ -73,15 +74,21 @@ FUEL_SUPPLY_SKIP = _build_skip(
     "the operations system holds electricity only, so a fuel_supply technology has no "
     "component; the fuel cost rule still reads its cost for each plant that burns its fuel",
 )
-EXPORT_SKIP = _build_skip(
-    "take in a fuel and put out nothing",
+ELECTRICITY_EXPORT_SKIP = _build_skip(
+    "take in electricity and put out nothing",
     "the operations system has no component that takes energy out of the model, so an export "
-    "of electricity is a demand that the system does not hold",
+    "of electricity is a demand that the system does not hold; extensions.json holds it as a "
+    "conversion record",
+)
+OTHER_EXPORT_SKIP = _build_skip(
+    "take in a fuel that is not electricity and put out nothing",
+    "the operations system holds electricity only, so an export of another fuel has no component",
 )
 ELECTRICITY_CONVERSION_SKIP = _build_skip(
     "convert one electricity fuel into another at one location",
-    "the electricity fuels of one location share one bus, so the conversion joins nothing; its "
-    "loss is lost, and each demand stays at the value that the model states",
+    "the electricity fuels of one location share one bus, so the conversion joins nothing; the "
+    "dispatch loses its loss, and each demand stays at the value that the model states; "
+    "extensions.json holds it as a conversion record",
 )
 OTHER_CONVERSION_SKIP = _build_skip(
     "convert a fuel that is not electricity at one location",
@@ -96,7 +103,11 @@ NO_KIND_SKIP = _build_skip(
 
 _SKIP_RULES = (
     SkipRule(_KIND.ne_missing(TechnologyKind.FUEL_SUPPLY), FUEL_SUPPLY_SKIP),
-    SkipRule(_KIND.ne_missing(TechnologyKind.EXPORT), EXPORT_SKIP),
+    SkipRule(
+        ~(_KIND.eq_missing(TechnologyKind.EXPORT) & pl.col(IS_ALL_ELECTRICITY)),
+        ELECTRICITY_EXPORT_SKIP,
+    ),
+    SkipRule(_KIND.ne_missing(TechnologyKind.EXPORT), OTHER_EXPORT_SKIP),
     SkipRule(
         ~(_KIND.eq_missing(TechnologyKind.CONVERSION) & pl.col(IS_ALL_ELECTRICITY)),
         ELECTRICITY_CONVERSION_SKIP,
@@ -110,12 +121,13 @@ def report_left_out_technologies(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> None:
     """Record one COMPONENT_SKIPPED for each technology, and warn once for each reason."""
-    technologies = _read_left_out_technologies(state, operations)
+    technologies = read_left_out_technologies(state, operations)
     for rule in _SKIP_RULES:
         technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
 
 
-def _read_left_out_technologies(state: State, operations: OperationsYear) -> pl.DataFrame:
+def read_left_out_technologies(state: State, operations: OperationsYear) -> pl.DataFrame:
+    """Each technology of a kind with no component, with `is_all_electricity` and `has_flows`."""
     technologies = (
         read_annotations(state, TECHNOLOGY)
         .filter(_KIND.is_null() | _KIND.is_in(_LEFT_OUT_KINDS))

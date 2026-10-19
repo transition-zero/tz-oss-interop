@@ -7,6 +7,7 @@ from typing import Any
 
 import polars as pl
 
+from interop.core.extensions import ExtensionKind, companion_filename
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
@@ -35,6 +36,14 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     FIXED_COST,
     FIXED_COST_MW_YEAR,
+)
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_mode_events,
+)
+from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    STORAGE_OWNERS,
+    STORAGE_TECHNOLOGY_OWNERS,
+    has_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_AVAILABILITY,
@@ -67,6 +76,11 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_HOURS,
     STORAGE_NAME,
     STORAGE_REPORT_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    DISCHARGE_TECHNOLOGY_VALUES,
+    STORAGE_VALUES,
+    build_value_events,
 )
 from interop.plugins.shared.sienna_constants import (
     DEFAULT_CYCLE_LIMITS,
@@ -115,6 +129,13 @@ _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaul
 _CHARGE_DIRECTION = "charge"
 _DISCHARGE_DIRECTION = "discharge"
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
+_RATING_SERIES_ATTRIBUTE = "extensions.rating_series"
+_COMPANION = companion_filename(ExtensionKind.STORAGE)
+_EACH_TIMESLICE = "each timeslice"
+_RATING_SERIES_DERIVATION = (
+    "capacity_factor of the discharging technology in the timeslice of each hour, in the "
+    "companion parquet; a Sienna storage applies no factor in each hour"
+)
 _CONVERSION_NOTE = "the energy and the level are both in MWh, so no conversion applies"
 _TARGET_NOTE = "OSeMOSYS states no level at the end of the operations horizon"
 _CYCLE_LIMITS_NOTE = "OSeMOSYS states no limit on the cycles of a storage"
@@ -477,10 +498,35 @@ def _build_fixed_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
     )
 
 
+def _build_extension_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    """The values of the technology, of the storage and of the other modes, and the series."""
+    events = [
+        *build_value_events(old, DISCHARGE_TECHNOLOGY_VALUES, STORAGE_TECHNOLOGY_OWNERS),
+        *build_value_events(old, STORAGE_VALUES, STORAGE_OWNERS),
+        *build_mode_events(old, STORAGE_TECHNOLOGY_OWNERS),
+    ]
+    if has_series(old):
+        events.extend(
+            build_derived(
+                [
+                    _build_source(
+                        SupplyParameter.CAPACITY_FACTOR,
+                        old[DISCHARGE_TECHNOLOGY_NAME],
+                        _EACH_TIMESLICE,
+                    )
+                ],
+                [_dest(old[STORAGE_NAME], _RATING_SERIES_ATTRIBUTE, _COMPANION)],
+                _RATING_SERIES_DERIVATION,
+            )
+        )
+    return events
+
+
 STORAGE_TRANSLATIONS: list[Translation] = [
     *_build_identity(),
     *_build_power(),
     *_build_energy(),
     _build_cost(),
     Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(old)),
+    Translation(exprs=[], make_events=lambda old, _new: _build_extension_events(old)),
 ]

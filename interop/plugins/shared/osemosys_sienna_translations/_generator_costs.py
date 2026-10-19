@@ -4,12 +4,10 @@ The variable cost is the `variable_operation_cost` of the technology at the oper
 plus a fuel term for each fuel that it takes in: `input_activity_ratio` × the cost of the
 producer for each unit of the fuel. A fuel with no producer adds no term. Each cost is for a
 unit of activity, so it converts to the units of the model and then divides by the electricity
-output ratio. The values of the other operating modes go to the extension record.
+output ratio.
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 import polars as pl
 
@@ -26,9 +24,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
-    ELECTRICITY_RATIO,
     express_per_output,
-    read_electricity_ratios,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
@@ -59,10 +55,8 @@ VARIABLE_COST_MWH = "variable_cost_mwh"
 FIXED_COST = "fixed_cost"
 FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
 OTHER_MODE_VALUES = "other_mode_values"
-OTHER_MODE_COSTS = "other_mode_costs"
 PARAMETER = "parameter"
 DETAIL = "detail"
-COST_MWH = "cost_mwh"
 
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_TERM = "fuel_term"
@@ -74,12 +68,6 @@ _MODE_PARAMETERS: dict[str, str | None] = {
     FlowParameter.OUTPUT_ACTIVITY_RATIO: FUEL,
     SupplyParameter.EMISSION_RATE: POLLUTANT,
 }
-
-
-def build_other_mode_attribute(row: dict[str, Any]) -> str:
-    """The mode of a value of another mode, and the fuel or pollutant that it is about."""
-    mode = f"{OPERATING_MODE} {row[OPERATING_MODE]}"
-    return mode if row[DETAIL] is None else f"{mode}, {row[DETAIL]}"
 
 
 def enrich_variable_costs(
@@ -121,15 +109,6 @@ def enrich_fixed_costs(
     convert = operations.units.convert_cost_per_capacity_to_dollars_per_mw
     fixed = express_per_output(express_converted(table, FIXED_COST, convert))
     return table.with_columns(fixed.alias(FIXED_COST_MW_YEAR))
-
-
-def enrich_other_modes(
-    state: State, operations: OperationsYear, generators: pl.DataFrame
-) -> pl.DataFrame:
-    """The stated values of each operating mode other than the operations mode, and their cost."""
-    values = _read_other_mode_values(state, operations, generators)
-    costs = _build_other_mode_costs(state, operations, values)
-    return _enrich_listed_values(generators, values).join(costs, on=_KEYS, how="left")
 
 
 def enrich_other_mode_values(
@@ -219,23 +198,4 @@ def _read_other_mode_rows(
         OPERATING_MODE,
         detail_expr.alias(DETAIL),
         pl.col(VALUE_COL).cast(pl.Float64),
-    )
-
-
-def _build_other_mode_costs(
-    state: State, operations: OperationsYear, values: pl.DataFrame
-) -> pl.DataFrame:
-    """Each cost for each MWh of the electricity of its own mode; a mode with none has no cost."""
-    ratios = read_electricity_ratios(state, operations.year, FlowParameter.OUTPUT_ACTIVITY_RATIO)
-    costs = values.filter(pl.col(PARAMETER) == SupplyParameter.VARIABLE_OPERATION_COST).join(
-        ratios, on=[*_KEYS, OPERATING_MODE], how="left"
-    )
-    convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
-    per_output = express_converted(costs, VALUE_COL, convert) / pl.col(ELECTRICITY_RATIO)
-    return (
-        costs.with_columns(per_output.alias(COST_MWH))
-        .filter(pl.col(ELECTRICITY_RATIO) > 0)
-        .sort(OPERATING_MODE)
-        .group_by(_KEYS)
-        .agg(pl.struct(OPERATING_MODE, COST_MWH).alias(OTHER_MODE_COSTS))
     )

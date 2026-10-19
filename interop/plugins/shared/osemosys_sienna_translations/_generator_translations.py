@@ -23,11 +23,9 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OPERATING_MODE,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
     YEAR,
     AnnotationColumn,
     FlowParameter,
@@ -67,6 +65,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     CAPACITY_UNIT,
     FUEL_TYPE,
     GENERATOR_NAME,
+    GENERATOR_OWNERS,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
     PRIME_MOVER,
@@ -79,11 +78,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     FIXED_COST_MW_YEAR,
     FUEL_TERM_MWH,
     FUEL_TERMS,
-    OTHER_MODE_COSTS,
-    OTHER_MODE_VALUES,
     OWN_COST,
-    PARAMETER,
-    build_other_mode_attribute,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
@@ -98,8 +93,15 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
     PENALTY_PER_TONNE,
     PENALTY_TERMS,
 )
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_mode_events,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     AVAILABILITY_FACTOR,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    COMPONENT_VALUES,
+    build_value_events,
 )
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -150,7 +152,6 @@ _BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
 _EXTENSIONS_PREFIX = "extensions."
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
 _EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
-_OTHER_MODE_COSTS_ATTRIBUTE = "extensions.other_mode_variable_costs_per_mwh"
 _CATEGORY_ATTRIBUTE = "extensions.category"
 _CARRIER_ATTRIBUTE = "extensions.carrier"
 _EACH_TIMESLICE = "each timeslice"
@@ -252,19 +253,6 @@ def _build_no_producer_note(old: dict[str, Any], term: dict[str, Any]) -> str:
         f"no fuel_supply technology puts out the fuel {_build_region_name(old, term[FUEL])}, so "
         "the generator pays no fuel cost for it"
     )
-
-
-def _build_other_mode_note(row: dict[str, Any], priced_modes: set[str]) -> str:
-    if (
-        row[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST
-        and row[OPERATING_MODE] in priced_modes
-    ):
-        return (
-            "the operations system runs one operating mode, so the cost of another mode that "
-            f"puts out electricity goes to {_OTHER_MODE_COSTS_ATTRIBUTE}, for each MWh of that "
-            "output"
-        )
-    return "the operations system runs one operating mode, so this value of another mode is lost"
 
 
 def _build_region_name(old: dict[str, Any], member: str) -> str:
@@ -405,7 +393,13 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_bound_events(dest, old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
+        Translation(
+            exprs=[],
+            make_events=lambda old, _new: [
+                *build_value_events(old, COMPONENT_VALUES, GENERATOR_OWNERS),
+                *build_mode_events(old, GENERATOR_OWNERS),
+            ],
+        ),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(dest, old)),
     ]
 
@@ -688,20 +682,6 @@ def _build_bound_event(
         ],
         _BOUND_DERIVATION.format(parameter=bound.parameter),
     )[0]
-
-
-def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    priced_modes = {cost[OPERATING_MODE] for cost in old[OTHER_MODE_COSTS] or []}
-    return [
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=[
-                _build_source(row[PARAMETER], old, build_other_mode_attribute(row), row[VALUE_COL])
-            ],
-            note=_build_other_mode_note(row, priced_modes),
-        )
-        for row in old[OTHER_MODE_VALUES] or []
-    ]
 
 
 def _build_grouping_events(

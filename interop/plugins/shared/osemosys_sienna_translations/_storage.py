@@ -10,11 +10,18 @@ energy in hours of the base power, and each level as a share of the energy.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import StorageExtension
+from interop.core.extensions import (
+    CompanionSeriesCol,
+    ExtensionKind,
+    StorageCompanionCol,
+    StorageExtension,
+    companion_filename,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -45,11 +52,15 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._capacity_factors import (
+    HAS_CAPACITY_FACTORS,
+    build_capacity_factor_series,
+    express_has_capacity_factors,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     PRIME_MOVER,
     RESIDUAL_CAPACITY,
     SIENNA_TYPE,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     FIXED_COST,
@@ -59,6 +70,11 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
+)
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_operating_mode_field,
+    build_operating_modes,
+    set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
@@ -111,6 +127,15 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_availability_factors,
     read_variable_costs,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    DISCHARGE_TECHNOLOGY_VALUES,
+    RATING_RATIO,
+    STORAGE_VALUES,
+    ValueOwners,
+    build_value_fields,
+    enrich_technology_values,
+    set_values_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent
@@ -128,6 +153,24 @@ _LISTED = SkippedNames(column=STORAGE_REPORT_NAME, label="Storages")
 _ONE_LINK = 1
 _AVAILABILITY = "availability"
 _EMPTY = 0.0
+_SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
+
+# The records of the storages: the values of the technology that discharges each one, and the
+# values of the storage itself.
+STORAGE_TECHNOLOGY_OWNERS = ValueOwners(
+    ExtensionKind.STORAGE, STORAGE_NAME, DISCHARGE_TECHNOLOGY_NAME, SIENNA_TYPE
+)
+STORAGE_OWNERS = ValueOwners(
+    ExtensionKind.STORAGE, STORAGE_NAME, STORAGE_REPORT_NAME, SIENNA_TYPE, STORAGE
+)
+
+
+@dataclass(frozen=True)
+class StorageSources:
+    """One row for each storage, and the capacity factor of each hour of each that has one."""
+
+    table: pl.DataFrame
+    series: pl.DataFrame
 
 
 class _LinkColumns(NamedTuple):
@@ -267,18 +310,33 @@ def build_storages_source(
     operations: OperationsYear,
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
-) -> pl.DataFrame:
+) -> StorageSources:
     """One row for each storage that the operations system holds, with its ratings."""
     storages = _read_storages(state, operations)
     storages = _drop_skipped(storages, _build_link_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
     storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
     if storages.height == 0:
-        return storages
+        return StorageSources(storages, pl.DataFrame())
     storages = _enrich_ratings(state, operations, storages)
     storages = _enrich_levels(state, operations, storages)
     storages = _enrich_costs(state, operations, storages)
-    return _enrich_fixed_costs(state, operations, storages).sort(STORAGE_NAME)
+    storages = _enrich_fixed_costs(state, operations, storages)
+    storages = _enrich_extension_values(state, operations, storages)
+    series = build_capacity_factor_series(
+        state,
+        operations,
+        storages.select(
+            REGION,
+            pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY),
+            pl.col(STORAGE_NAME).alias(CompanionSeriesCol.NAME),
+        ),
+        StorageCompanionCol.RATING_PU,
+    )
+    storages = storages.with_columns(
+        express_has_capacity_factors(series, STORAGE_NAME).alias(HAS_CAPACITY_FACTORS)
+    )
+    return StorageSources(storages.sort(STORAGE_NAME), series)
 
 
 def read_linked_storages(
@@ -288,29 +346,78 @@ def read_linked_storages(
     return _enrich_technologies(state, operations, _read_storages(state, operations), mappings)
 
 
-def build_storage_technologies(storages: pl.DataFrame) -> pl.DataFrame:
-    """The technologies that charge or discharge the storages: region, technology and name."""
-    return pl.concat(
-        [
-            storages.select(
-                REGION,
-                pl.col(technology).alias(TECHNOLOGY),
-                pl.col(name).alias(TECHNOLOGY_NAME),
-            )
-            for technology, name in (
-                (CHARGE_TECHNOLOGY, CHARGE_TECHNOLOGY_NAME),
-                (DISCHARGE_TECHNOLOGY, DISCHARGE_TECHNOLOGY_NAME),
-            )
-        ]
-    ).unique()
-
-
 def build_storage_extensions(storages: pl.DataFrame) -> list[StorageExtension]:
-    """The fixed cost of each storage that states one, which Sienna has no field for."""
-    return [
-        StorageExtension(name=row[STORAGE_NAME], fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR])
-        for row in storages.filter(pl.col(FIXED_COST).is_not_null()).iter_rows(named=True)
+    """What each storage states that Sienna has no field for, for each storage with any."""
+    records = [_build_extension(row) for row in storages.iter_rows(named=True)]
+    return [record for record in records if record.has_any_value()]
+
+
+def has_series(storage: dict[str, Any]) -> bool:
+    """Whether the companion parquet holds the capacity factor of each hour of the storage."""
+    return bool(storage[HAS_CAPACITY_FACTORS])
+
+
+def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
+    """Note that the storage records hold the values of each storage and its technology."""
+    technologies = storages.select(REGION, pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY))
+    set_values_persisted(
+        state, STORAGE_TECHNOLOGY_OWNERS, technologies, DISCHARGE_TECHNOLOGY_VALUES
+    )
+    set_values_persisted(state, STORAGE_OWNERS, storages, STORAGE_VALUES)
+    set_mode_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, technologies)
+
+
+def _build_extension(row: dict[str, Any]) -> StorageExtension:
+    return StorageExtension(
+        name=row[STORAGE_NAME],
+        fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
+        rating_series=_SERIES_FILE if has_series(row) else None,
+        operating_modes=build_operating_mode_field(row),
+        **build_value_fields(row, DISCHARGE_TECHNOLOGY_VALUES),
+        **build_value_fields(row, STORAGE_VALUES),
+    )
+
+
+def _enrich_extension_values(
+    state: State, operations: OperationsYear, storages: pl.DataFrame
+) -> pl.DataFrame:
+    """The values of the discharging technology, rated on its output, those of the storage, and
+    the modes of the technology other than the two that the storage runs."""
+    technologies = storages.select(
+        REGION,
+        pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY),
+        pl.col(DISCHARGE_RATIO).alias(RATING_RATIO),
+    ).unique(subset=[REGION, TECHNOLOGY])
+    discharging = enrich_technology_values(
+        state, operations, technologies, DISCHARGE_TECHNOLOGY_VALUES
+    ).drop(RATING_RATIO)
+    own = enrich_technology_values(
+        state,
+        operations,
+        storages.select(REGION, STORAGE, pl.lit(WHOLE_CAPACITY).alias(RATING_RATIO)),
+        STORAGE_VALUES,
+        member=STORAGE,
+    ).drop(RATING_RATIO)
+    table = storages.join(
+        discharging.rename({TECHNOLOGY: DISCHARGE_TECHNOLOGY}),
+        on=[REGION, DISCHARGE_TECHNOLOGY],
+        how="left",
+    ).join(own, on=_STORAGE_KEYS, how="left")
+    modes = build_operating_modes(state, operations, _list_held_modes(storages))
+    return modes.enrich(table, [REGION, DISCHARGE_TECHNOLOGY])
+
+
+def _list_held_modes(storages: pl.DataFrame) -> pl.DataFrame:
+    """The modes of the discharging technology that the storage runs: the discharge mode, and
+    the charge mode when the same technology charges the storage."""
+    charges_too = pl.col(CHARGE_TECHNOLOGY) == pl.col(DISCHARGE_TECHNOLOGY)
+    held = [
+        storages.select(REGION, DISCHARGE_TECHNOLOGY, pl.col(DISCHARGE_MODE).alias(OPERATING_MODE)),
+        storages.filter(charges_too).select(
+            REGION, DISCHARGE_TECHNOLOGY, pl.col(CHARGE_MODE).alias(OPERATING_MODE)
+        ),
     ]
+    return pl.concat(held).rename({DISCHARGE_TECHNOLOGY: TECHNOLOGY})
 
 
 # --- the storages and their links -------------------------------------------------------------

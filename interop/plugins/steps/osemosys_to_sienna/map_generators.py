@@ -22,6 +22,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     add_per_unit_series,
     build_generator_extensions,
     build_generators_source,
+    set_generator_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
@@ -48,6 +49,7 @@ class OsemosysToSiennaMapGenerators(OperationsMapping):
             ExtensionKind.GENERATOR,
             build_generator_extensions(source.table),
         )
+        set_generator_values_persisted(state, source.table)
 
     def _map_type(
         self, state: State, source: GeneratorSources, mapping: GeneratorTypeMapping

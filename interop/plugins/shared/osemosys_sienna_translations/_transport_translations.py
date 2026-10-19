@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import math
 from functools import partial
 from typing import Any
 
 import polars as pl
 
+from interop.core.extensions import ExtensionKind, companion_filename
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
     AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
+    WHOLE_CAPACITY,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -31,11 +31,17 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     RESIDUAL_CAPACITY,
     TECHNOLOGY_NAME,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    PARAMETER,
-    build_other_mode_attribute,
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    build_mode_events,
 )
-from interop.plugins.shared.osemosys_sienna_translations._transport import list_lost_values
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    COMPONENT_VALUES,
+    build_value_events,
+)
+from interop.plugins.shared.osemosys_sienna_translations._transport import (
+    LINE_OWNERS,
+    has_series,
+)
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
     COST,
@@ -48,7 +54,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     OUTPUT_RATIO,
     RECEIVED_MW,
     REVERSE_INPUT_RATIO,
-    REVERSE_LOSS,
     REVERSE_MODE,
     REVERSE_OUTPUT_RATIO,
     REVERSE_RECEIVED_MW,
@@ -70,7 +75,7 @@ from interop.plugins.shared.translation_runner import (
     default_translation,
     row_position_id_translation,
 )
-from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+from interop.ports.outbound.reporting import SourceField, TranslationEvent
 
 _dest = partial(build_sienna_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE)
 _build_value = ComputedValues(_dest, LINE_NAME).build_translation
@@ -85,12 +90,17 @@ _ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available"
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
-_OTHER_MODE_NOTE = (
-    "the line holds the operations mode and its flow back, so this value of another mode is lost"
+_P_MAX_PU_ATTRIBUTE = "extensions.p_max_pu"
+_P_MAX_PU_SERIES_ATTRIBUTE = "extensions.p_max_pu_series"
+_COMPANION = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
+_EACH_TIMESLICE = "each timeslice"
+_P_MAX_PU_DERIVATION = (
+    "availability_factor of the operations year; the line limits fold it into one number, so "
+    "the record keeps it as the Link states it"
 )
-_REVERSE_LOSS_NOTE = (
-    "a Sienna line states one loss, the loss of the operations mode, so the loss of the flow "
-    "back is lost"
+_P_MAX_PU_SERIES_DERIVATION = (
+    "capacity_factor of the timeslice of each hour, in the companion parquet; a Sienna line "
+    "applies no factor in each hour"
 )
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
 _ENDS_DERIVATION = (
@@ -199,21 +209,37 @@ def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
 def _build_reports() -> list[Translation]:
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_other_mode_events(old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_reverse_loss_events(old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
+        Translation(
+            exprs=[],
+            make_events=lambda old, _new: [
+                *build_value_events(old, COMPONENT_VALUES, LINE_OWNERS),
+                *build_mode_events(old, LINE_OWNERS),
+            ],
+        ),
     ]
 
 
-def _build_reverse_loss_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    if old[REVERSE_MODE] is None or math.isclose(old[REVERSE_LOSS], old[LOSS]):
-        return []
-    return [
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=_build_reverse_sources(old),
-            note=_REVERSE_LOSS_NOTE,
+def _build_availability_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    """The availability factor, and the capacity factor of each hour, as the Link states them."""
+    events = []
+    if old[AVAILABILITY] != WHOLE_CAPACITY:
+        events.extend(
+            build_derived(
+                [_build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])],
+                [_dest(old[LINE_NAME], _P_MAX_PU_ATTRIBUTE, old[AVAILABILITY])],
+                _P_MAX_PU_DERIVATION,
+            )
         )
-    ]
+    if has_series(old):
+        events.extend(
+            build_derived(
+                [_build_source(SupplyParameter.CAPACITY_FACTOR, old, _EACH_TIMESLICE)],
+                [_dest(old[LINE_NAME], _P_MAX_PU_SERIES_ATTRIBUTE, _COMPANION)],
+                _P_MAX_PU_SERIES_DERIVATION,
+            )
+        )
+    return events
 
 
 def _build_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
@@ -227,19 +253,6 @@ def _build_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
         [_dest(old[LINE_NAME], _MARGINAL_COST_ATTRIBUTE, old[COST_MWH], UNIT_DOLLARS_PER_MWH)],
         _COST_DERIVATION,
     )
-
-
-def _build_other_mode_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=[
-                _build_source(row[PARAMETER], old, build_other_mode_attribute(row), row[VALUE_COL])
-            ],
-            note=_OTHER_MODE_NOTE,
-        )
-        for row in list_lost_values(old)
-    ]
 
 
 TRANSPORT_TRANSLATIONS: list[Translation] = [

@@ -32,8 +32,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._plan impor
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
-    read_yearly_values,
 )
+from interop.plugins.shared.osemosys_sienna_translations._canonical import read_yearly_values
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     CandidateTechnology,

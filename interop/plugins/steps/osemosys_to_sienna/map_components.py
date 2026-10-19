@@ -13,20 +13,26 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
     build_calendar,
+    build_days_events,
     build_representative_periods,
     parse_units,
     read_operations_mode,
     report_calendar,
     report_unread_defaults,
     require_model_year,
+    set_days_persisted,
     set_operations_year,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.steps.osemosys_to_sienna.map_buses import OsemosysToSiennaMapBuses
+from interop.plugins.steps.osemosys_to_sienna.map_conversions import (
+    OsemosysToSiennaMapConversions,
+)
 from interop.plugins.steps.osemosys_to_sienna.map_generators import (
     OsemosysToSiennaMapGenerators,
 )
 from interop.plugins.steps.osemosys_to_sienna.map_loads import OsemosysToSiennaMapLoads
+from interop.plugins.steps.osemosys_to_sienna.map_policies import OsemosysToSiennaMapPolicies
 from interop.plugins.steps.osemosys_to_sienna.map_storage import OsemosysToSiennaMapStorage
 from interop.plugins.steps.osemosys_to_sienna.map_transport import OsemosysToSiennaMapTransport
 from interop.plugins.steps.osemosys_to_sienna.report_left_out import OsemosysToSiennaReportLeftOut
@@ -72,6 +78,10 @@ class OsemosysToSiennaMapComponents(TranslationStep):
                 osemosys_sienna_mappings,
             ),
             OsemosysToSiennaMapTransport(_scoped(recorder, OsemosysToSiennaMapTransport.step_name)),
+            OsemosysToSiennaMapConversions(
+                _scoped(recorder, OsemosysToSiennaMapConversions.step_name)
+            ),
+            OsemosysToSiennaMapPolicies(_scoped(recorder, OsemosysToSiennaMapPolicies.step_name)),
             OsemosysToSiennaReportLeftOut(
                 _scoped(recorder, OsemosysToSiennaReportLeftOut.step_name)
             ),
@@ -88,12 +98,17 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         report_unread_defaults(state, self._defaults_recorder)
         for mapping in self._mappings:
             mapping.map_components(state, operations)
-        append_extensions(
-            state.destination_extensions,
-            ExtensionKind.REPRESENTATIVE_PERIOD,
-            build_representative_periods(operations.calendar),
-        )
+        self._map_periods(state, operations)
         return state
+
+    def _map_periods(self, state: State, operations: OperationsYear) -> None:
+        periods = build_representative_periods(state, operations.year, operations.calendar)
+        append_extensions(
+            state.destination_extensions, ExtensionKind.REPRESENTATIVE_PERIOD, periods
+        )
+        for event in build_days_events(periods):
+            self._calendar_recorder.append(event)
+        set_days_persisted(state, periods)
 
     def _build_operations_year(
         self, state: State, params: OsemosysToSiennaMapComponentsParams

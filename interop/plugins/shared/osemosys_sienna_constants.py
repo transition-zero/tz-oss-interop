@@ -15,6 +15,9 @@ SERIES_KEY_SEPARATOR = "."
 # The `State.source_time_series` key of the one-row table that holds the operations year, which
 # the operations step writes for a later step of the pipeline. It is not a canonical table kind.
 OPERATIONS_YEAR_KEY = ("osemosys_sienna_operations", "year")
+# The first part of the `State.source_time_series` key of each table of the rows whose values
+# extensions.json holds, which the report of the unapplied parameters reads.
+OSEMOSYS_SIENNA_PERSISTED = "osemosys_sienna_persisted"
 
 HOURS_PER_YEAR = 8760.0
 HOURS_PER_DAY = 24
@@ -105,6 +108,64 @@ class SupplyParameter(StrEnum):
     EMISSION_PENALTY = "emission_penalty"
     ACTIVITY_UPPER_LIMIT = "total_technology_annual_activity_upper_limit"
     ACTIVITY_LOWER_LIMIT = "total_technology_annual_activity_lower_limit"
+
+
+class ActivityParameter(StrEnum):
+    """A canonical parameter that bounds the activity of a technology or of one of its modes."""
+
+    MODEL_PERIOD_LOWER_LIMIT = "total_technology_model_period_activity_lower_limit"
+    MODEL_PERIOD_UPPER_LIMIT = "total_technology_model_period_activity_upper_limit"
+    BY_MODE_UPPER_LIMIT = "technology_activity_by_mode_upper_limit"
+    BY_MODE_LOWER_LIMIT = "technology_activity_by_mode_lower_limit"
+    DECREASE_BY_MODE_LIMIT = "technology_activity_decrease_by_mode_limit"
+    MIN_CAPACITY_FACTOR = "total_annual_min_capacity_factor"
+    MIN_PRODUCTION_TARGET = "technology_min_production_target"
+    MAX_PRODUCTION_TARGET = "technology_max_production_target"
+    CAPACITY_TO_ACTIVITY_UNIT = "capacity_to_activity_unit"
+
+
+class GrowthParameter(StrEnum):
+    """A canonical parameter that bounds the new capacity of a technology in a year."""
+
+    MIN_CAPACITY_INVESTMENT = "total_annual_min_capacity_investment"
+    MAX_GROWTH_RATE = "capacity_additional_max_growth_rate"
+    MIN_GROWTH_RATE = "capacity_additional_min_growth_rate"
+    MAX_FLOOR = "capacity_additional_max_floor"
+
+
+class StorageBalanceParameter(StrEnum):
+    """A canonical flag that makes the charge of a storage equal its discharge over a span."""
+
+    DAY = "storage_balance_day"
+    SEASON = "storage_balance_season"
+    YEAR = "storage_balance_year"
+
+
+class PolicyParameter(StrEnum):
+    """A canonical parameter of a renewable target, a reserve margin or a region group."""
+
+    RENEWABLE_TAG_TECHNOLOGY = "renewable_tag_technology"
+    RENEWABLE_TAG_FUEL = "renewable_tag_fuel"
+    GENERATION_FRACTION = "generation_fraction_requirement"
+    RESERVE_MARGIN = "reserve_margin"
+    RESERVE_MARGIN_TAG_TECHNOLOGY = "reserve_margin_tag_technology"
+    RESERVE_MARGIN_TAG_FUEL = "reserve_margin_tag_fuel"
+    REGION_GROUP_TAG_REGION = "region_group_tag_region"
+    REGION_GROUP_GENERATION_FRACTION = "region_group_generation_fraction_requirement"
+    REGION_GROUP_EMISSION_LIMIT = "annual_emission_limit_region_group"
+    REGION_GROUP_EXOGENOUS_EMISSION = "annual_exogenous_emission_region_group"
+
+
+class PolicyType(StrEnum):
+    """The `type` of a constraint record: PyPSA's own name where PyPSA has the kind."""
+
+    EMISSION_LIMIT = "primary_energy"
+    RENEWABLE_SHARE = "renewable_share"
+    RESERVE_MARGIN = "reserve_margin"
+
+
+# The canonical parameter of the days of a day type, which the record of each day holds.
+DAYS_IN_DAY_TYPE = "days_in_day_type"
 
 
 class StorageParameter(StrEnum):

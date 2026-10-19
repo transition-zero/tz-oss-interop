@@ -57,6 +57,10 @@ class ExtensionKind(StrEnum):
     REPRESENTATIVE_PERIOD = "representative_period"
     # OSeMOSYS only: the values of a portfolio technology that change from year to year.
     TECHNOLOGY = "technology"
+    # A PyPSA Link that turns energy at one bus into energy at another bus, or out of the
+    # model; OSeMOSYS states it as a conversion or an export technology; Sienna has no
+    # component for it, so the whole record lives here.
+    CONVERSION = "conversion"
 
 
 class ReserveDirection(StrEnum):
@@ -158,7 +162,78 @@ class ExpansionExtension(ExtensionRecord):
     build_year: int | None = None
 
 
-class GeneratorExtension(ExpansionExtension):
+class OperatingMode(BaseModel):
+    """One OSeMOSYS operating mode of a technology, for each MWh of the activity of the mode.
+
+    A Sienna component and a PyPSA component each run one mode, so the values of every other
+    mode, and the bounds of every mode, have no field there.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str  # OSeMOSYS MODE_OF_OPERATION
+    variable_cost: float | None = None  # $/MWh of activity; OSeMOSYS VariableCost.
+    # MWh of each fuel for each MWh of activity, by fuel; OSeMOSYS InputActivityRatio.
+    input_ratios: dict[str, float] | None = None
+    # MWh of each fuel for each MWh of activity, by fuel; OSeMOSYS OutputActivityRatio.
+    output_ratios: dict[str, float] | None = None
+    # t for each MWh of activity, by pollutant; OSeMOSYS EmissionActivityRatio.
+    emission_rates: dict[str, float] | None = None
+    # MWh of activity in each year, by year; OSeMOSYS TechnologyActivityByModeUpperLimit.
+    activity_max: dict[str, float] | None = None
+    # MWh of activity in each year, by year; OSeMOSYS TechnologyActivityByModeLowerLimit.
+    activity_min: dict[str, float] | None = None
+    # Per unit, by year: the most the activity can fall from the year before; OSeMOSYS
+    # TechnologyActivityDecreaseByModeLimit.
+    activity_decrease_max: dict[str, float] | None = None
+
+
+class ActivityExtension(ExpansionExtension):
+    """What a technology states about its energy, its growth and its modes. OSeMOSYS only."""
+
+    # MWh of electricity in each year, by year; PyPSA Generator.e_sum_min, keyed by the
+    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityLowerLimit.
+    e_sum_min: dict[str, float] | None = None
+    # MWh of electricity in each year, by year; PyPSA Generator.e_sum_max, keyed by the
+    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityUpperLimit.
+    e_sum_max: dict[str, float] | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_min over the horizon;
+    # OSeMOSYS TotalTechnologyModelPeriodActivityLowerLimit.
+    e_sum_min_horizon: float | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_max over the horizon;
+    # OSeMOSYS TotalTechnologyModelPeriodActivityUpperLimit.
+    e_sum_max_horizon: float | None = None
+    # MW of new capacity in a year; PyPSA states it as Carrier.max_growth; OSeMOSYS
+    # TotalAnnualMaxCapacityInvestment.
+    max_growth: float | None = None
+    # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
+    min_growth: float | None = None
+    # Per unit of the capacity of the year before; PyPSA states it as
+    # Carrier.max_relative_growth; OSeMOSYS CapacityAdditionalMaxGrowthRate.
+    max_relative_growth: float | None = None
+    # Per unit of the capacity of the year before; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMinGrowthRate.
+    min_relative_growth: float | None = None
+    # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMaxFloor.
+    max_growth_floor: float | None = None
+    # Per unit of a whole year at full capacity; no PyPSA field; OSeMOSYS
+    # TotalAnnualMinCapacityFactor.
+    capacity_factor_min: float | None = None
+    # Per unit of the production of each fuel, by fuel; no PyPSA field; OSeMOSYS
+    # TechnologyMinProductionTarget.
+    production_share_min: dict[str, float] | None = None
+    # Per unit of the production of each fuel, by fuel; no PyPSA field; OSeMOSYS
+    # TechnologyMaxProductionTarget.
+    production_share_max: dict[str, float] | None = None
+    # MWh of activity that one MW runs in a year, 8760 where the units of the model agree.
+    # No PyPSA field; OSeMOSYS CapacityToActivityUnit.
+    capacity_to_activity_unit: float | None = None
+    # Each mode whose values the component does not run; no PyPSA field.
+    operating_modes: list[OperatingMode] | None = None
+
+
+class GeneratorExtension(ActivityExtension):
     # PyPSA Generator.carrier. Sienna states fuel and prime mover instead, and several PyPSA
     # carriers share one (prime_mover, fuel) pair, so the reverse cannot recover this.
     carrier: str | None = None
@@ -174,14 +249,9 @@ class GeneratorExtension(ExpansionExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
-    # OSeMOSYS only: t/MWh by pollutant, with the emissions of the fuel that the plant burns.
+    # t/MWh of electricity, by pollutant, with the emissions of the fuel that the plant burns.
+    # OSeMOSYS only: PyPSA states Carrier.co2_emissions for each MWh of primary energy.
     emission_rates_t_per_mwh: dict[str, float] | None = None
-    # OSeMOSYS only: $/MWh of electricity output by operating mode, for each mode the system skips.
-    other_mode_variable_costs_per_mwh: dict[str, float] | None = None
-    # OSeMOSYS only: the least MWh of electricity output in each year, keyed by year.
-    annual_output_lower_limit_mwh: dict[str, float] | None = None
-    # OSeMOSYS only: the most MWh of electricity output in each year, keyed by year.
-    annual_output_upper_limit_mwh: dict[str, float] | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -202,7 +272,7 @@ class LineExtension(ExtensionRecord):
     s_nom_extendable: bool | None = None  # PyPSA only
 
 
-class ControllableLineExtension(ExtensionRecord):
+class ControllableLineExtension(ActivityExtension):
     carrier: str | None = None  # PyPSA Link.carrier
     # $/MWh. PyPSA Link.marginal_cost, which PLEXOS states as a Wheeling Charge. Sienna
     # prices no flow over a branch, so the charge has no field there.
@@ -219,9 +289,12 @@ class ControllableLineExtension(ExtensionRecord):
     has_time_varying_efficiency: bool | None = None
     has_time_varying_p_max_pu: bool | None = None
     has_time_varying_p_min_pu: bool | None = None
+    # Ours: the companion parquet holding the p_max_pu of each snapshot; Sienna states one
+    # rating for a line and names no series against it.
+    p_max_pu_series: str | None = None
 
 
-class StorageExtension(ExpansionExtension):
+class StorageExtension(ActivityExtension):
     p_nom_extendable: bool | None = None  # PyPSA only
     # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,
     # so a hydro unit loses it without this.
@@ -237,6 +310,18 @@ class StorageExtension(ExpansionExtension):
     # Ours: the companion parquet holding the share of its rating the unit reaches at each
     # snapshot. Sienna states one rating and names no series against it.
     rating_series: str | None = None
+    # $/MWh of energy capacity; PyPSA states it as Store.overnight_cost; OSeMOSYS
+    # CapitalCostStorage.
+    energy_overnight_cost: float | None = None
+    # h at full power in one timeslice; no PyPSA field, because StorageUnit.max_hours is the
+    # energy over the power; OSeMOSYS StorageMaxHours.
+    duration_max_hours: float | None = None
+    # PyPSA StorageUnit.cyclic_state_of_charge_per_period; OSeMOSYS StorageBalanceYear.
+    cyclic_state_of_charge_per_period: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceSeason.
+    cyclic_state_of_charge_per_season: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceDay.
+    cyclic_state_of_charge_per_day: bool | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -297,13 +382,19 @@ class ConstraintLimit(BaseModel):
     period: ConstraintPeriod
     value: float
     unit: str | None = None  # the unit the source stated the limit in
-    # The year that a yearly limit applies in, where the source states one limit for each year.
-    year: int | None = None
+    # PyPSA GlobalConstraint.investment_period: the year of a yearly limit; OSeMOSYS YEAR.
+    investment_period: int | None = None
 
 
 class ConstraintExtension(ExtensionRecord):
     """A weighted sum over named objects, held to one or more right-hand sides."""
 
+    # PyPSA GlobalConstraint.type, for example primary_energy for an emission limit; PLEXOS
+    # names no type.
+    type: str | None = None
+    # PyPSA GlobalConstraint.carrier_attribute: the quantity of each member that the sum
+    # counts, which is the pollutant of an OSeMOSYS emission limit.
+    carrier_attribute: str | None = None
     sense: ConstraintSense | None = None
     limits: list[ConstraintLimit] = []
     members: list[ConstraintMember] = []
@@ -331,21 +422,73 @@ class RepresentativePeriodExtension(ExtensionRecord):
     # OSeMOSYS SEASON and DAYTYPE, absent for a span of one timeslice hour.
     season: str | None = None
     day_type: str | None = None
+    # Days of the day type in one week of the season; OSeMOSYS DaysInDayType.
+    days_in_day_type: float | None = None
 
 
 class TechnologyExtension(ExtensionRecord):
-    """The yearly values of a portfolio technology, each keyed by the year as a string."""
+    """The values of a portfolio technology. A yearly value is keyed by the year as a string.
 
-    capital_cost_per_mw_by_year: dict[str, float] | None = None
-    # The storage energy that a build adds, priced for each MWh.
-    energy_capital_cost_per_mwh_by_year: dict[str, float] | None = None
-    fixed_cost_per_mw_year_by_year: dict[str, float] | None = None
-    variable_cost_per_mwh_by_year: dict[str, float] | None = None
-    residual_capacity_mw_by_year: dict[str, float] | None = None
-    total_annual_max_capacity_investment_mw_by_year: dict[str, float] | None = None
-    # Total capacity bounds of a type whose capacity_limits holds one bound for every year.
-    capacity_limits_min_mw_by_year: dict[str, float] | None = None
-    capacity_limits_max_mw_by_year: dict[str, float] | None = None
+    PyPSA keys a value of a multi-period network by its investment period, which is the year.
+    """
+
+    # $/MW of electricity; PyPSA Generator.overnight_cost; OSeMOSYS CapitalCost.
+    overnight_cost: dict[str, float] | None = None
+    # $/MWh of energy capacity; PyPSA states it as Store.overnight_cost; OSeMOSYS
+    # CapitalCostStorage.
+    energy_overnight_cost: dict[str, float] | None = None
+    # $/MW/yr; PyPSA Generator.fom_cost; OSeMOSYS FixedCost.
+    fom_cost: dict[str, float] | None = None
+    # $/MWh, with the fuel cost and the emission penalty; PyPSA Generator.marginal_cost.
+    marginal_cost: dict[str, float] | None = None
+    # MW that already runs; PyPSA Generator.p_nom; OSeMOSYS ResidualCapacity.
+    p_nom: dict[str, float] | None = None
+    # MW of total capacity; PyPSA Generator.p_nom_min and p_nom_max; OSeMOSYS
+    # TotalAnnualMinCapacity and TotalAnnualMaxCapacity.
+    p_nom_min: dict[str, float] | None = None
+    p_nom_max: dict[str, float] | None = None
+    # MW of new capacity in a year; PyPSA states it as Carrier.max_growth; OSeMOSYS
+    # TotalAnnualMaxCapacityInvestment.
+    max_growth: dict[str, float] | None = None
+    # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
+    min_growth: dict[str, float] | None = None
+    # Per unit of the capacity of the year before; PyPSA states it as
+    # Carrier.max_relative_growth; OSeMOSYS CapacityAdditionalMaxGrowthRate.
+    max_relative_growth: dict[str, float] | None = None
+    # Per unit of the capacity of the year before; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMinGrowthRate.
+    min_relative_growth: dict[str, float] | None = None
+    # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMaxFloor.
+    max_growth_floor: dict[str, float] | None = None
+    # MWh of electricity in each year; PyPSA Generator.e_sum_min and e_sum_max, keyed by the
+    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityLowerLimit and UpperLimit.
+    e_sum_min: dict[str, float] | None = None
+    e_sum_max: dict[str, float] | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_min and e_sum_max over
+    # the horizon; OSeMOSYS TotalTechnologyModelPeriodActivityLowerLimit and UpperLimit.
+    e_sum_min_horizon: float | None = None
+    e_sum_max_horizon: float | None = None
+    # MWh of activity that one MW runs in a year; no PyPSA field; OSeMOSYS
+    # CapacityToActivityUnit.
+    capacity_to_activity_unit: float | None = None
+
+
+class ConversionExtension(ActivityExtension):
+    """A technology that turns electricity into electricity, or takes it out of the model."""
+
+    carrier: str | None = None  # PyPSA Link.carrier; the OSeMOSYS category of the technology
+    bus0: str | None = None  # PyPSA Link.bus0: the location of the electricity that goes in
+    # PyPSA Link.bus1: the location of the electricity that comes out, absent for an export.
+    bus1: str | None = None
+    # MW of electricity in; PyPSA Link.p_nom; OSeMOSYS ResidualCapacity × the input ratio.
+    p_nom: float | None = None
+    # Per unit: electricity out for each MWh in; PyPSA Link.efficiency.
+    efficiency: float | None = None
+    # $/MWh of electricity in; PyPSA Link.marginal_cost; OSeMOSYS VariableCost.
+    marginal_cost: float | None = None
+    # Per unit of p_nom; PyPSA Link.p_max_pu; OSeMOSYS AvailabilityFactor.
+    p_max_pu: float | None = None
 
 
 class Extensions(BaseModel):
@@ -364,6 +507,7 @@ class Extensions(BaseModel):
     network: list[NetworkExtension] = []
     representative_period: list[RepresentativePeriodExtension] = []
     technology: list[TechnologyExtension] = []
+    conversion: list[ConversionExtension] = []
 
 
 EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
@@ -378,6 +522,7 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.NETWORK: NetworkExtension,
     ExtensionKind.REPRESENTATIVE_PERIOD: RepresentativePeriodExtension,
     ExtensionKind.TECHNOLOGY: TechnologyExtension,
+    ExtensionKind.CONVERSION: ConversionExtension,
 }
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
@@ -483,6 +628,12 @@ class StorageCompanionCol(StrEnum):
     RATING_PU = "rating_pu"
 
 
+class ControllableLineCompanionCol(StrEnum):
+    """Value columns of the controllable line companion parquet."""
+
+    P_MAX_PU = "p_max_pu"
+
+
 class Companion(NamedTuple):
     """The parquet a kind's series live in, and the record fields that name that file."""
 
@@ -497,6 +648,7 @@ _COMPANIONS: dict[ExtensionKind, Companion] = {
     ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
     ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
     ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
+    ExtensionKind.CONTROLLABLE_LINE: Companion("controllable_lines.parquet", ("p_max_pu_series",)),
 }
 
 
@@ -590,6 +742,10 @@ def record_for(
 def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.TECHNOLOGY], name: str
 ) -> TechnologyExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.CONVERSION], name: str
+) -> ConversionExtension | None: ...
 
 
 def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
@@ -691,6 +847,10 @@ class ExtensionReader:
     def read(
         self, kind: Literal[ExtensionKind.TECHNOLOGY]
     ) -> ExtensionLookup[TechnologyExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.CONVERSION]
+    ) -> ExtensionLookup[ConversionExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""

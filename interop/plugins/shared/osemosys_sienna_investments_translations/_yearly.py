@@ -15,11 +15,11 @@ from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
     YEAR,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_LIMIT,
+    GrowthParameter,
     InvestmentParameter,
     SupplyParameter,
 )
@@ -28,9 +28,15 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPACITY_LIMITS_MAX_MW,
     CAPACITY_LIMITS_MIN_MW,
     CAPITAL_COST_MW,
+    E_SUM_MAX_MWH,
+    E_SUM_MIN_MWH,
     FIXED_COST_MW_YEAR,
     IS_BUILDABLE,
     MAX_CAPACITY_INVESTMENT_MW,
+    MAX_GROWTH_FLOOR_MW,
+    MAX_RELATIVE_GROWTH,
+    MIN_GROWTH_MW,
+    MIN_RELATIVE_GROWTH,
     RATING_RATIO,
     RESIDUAL_CAPACITY_MW,
     UNIT_SIZE_MW,
@@ -39,8 +45,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._plan impor
     InvestmentPlan,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    find_parameter_default,
-    read_parameter_for_years,
+    build_year_grid,
+    read_yearly_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
@@ -62,29 +68,10 @@ TECHNOLOGY_YEAR_PARAMETERS: tuple[str, ...] = (
     InvestmentParameter.CAPACITY_LIMITS_MAX,
     InvestmentParameter.MAX_CAPACITY_INVESTMENT,
     InvestmentParameter.UNIT_SIZE,
+    *GrowthParameter,
+    SupplyParameter.ACTIVITY_LOWER_LIMIT,
+    SupplyParameter.ACTIVITY_UPPER_LIMIT,
 )
-
-
-def read_yearly_values(
-    state: State, name: str, keys: pl.DataFrame, years: Sequence[int]
-) -> pl.DataFrame:
-    """One row for each row of `keys` and each year, with the stated value or the default.
-
-    `keys` holds the key columns of the parameter other than `year`. The `year` column is an
-    integer, and the value column takes the name of the parameter. A parameter with no default
-    keeps a null where the model states no row, so the caller chooses what the null means.
-    """
-    stated = read_parameter_for_years(state, name, years).select(
-        *keys.columns,
-        pl.col(YEAR).cast(pl.Int64),
-        pl.col(VALUE_COL).cast(pl.Float64).alias(name),
-    )
-    grid = _build_year_grid(keys, years)
-    table = grid.join(stated, on=[*keys.columns, YEAR], how="left")
-    default = find_parameter_default(state, name)
-    if default is None:
-        return table
-    return table.with_columns(pl.col(name).fill_null(default))
 
 
 def read_technology_years(
@@ -92,7 +79,7 @@ def read_technology_years(
 ) -> pl.DataFrame:
     """One row for each technology and year, with one column for each parameter of the year."""
     keys = technologies.select(TECHNOLOGY_KEYS).unique()
-    table = _build_year_grid(keys, plan.years)
+    table = build_year_grid(keys, plan.years)
     for name in TECHNOLOGY_YEAR_PARAMETERS:
         values = read_yearly_values(state, name, keys, plan.years)
         table = table.join(values, on=[*TECHNOLOGY_KEYS, YEAR], how="left")
@@ -143,11 +130,17 @@ def enrich_yearly_units(
     table = table.with_columns(
         _express_limited(InvestmentParameter.CAPACITY_LIMITS_MAX),
         _express_limited(InvestmentParameter.MAX_CAPACITY_INVESTMENT),
+        _express_bounded(GrowthParameter.MIN_CAPACITY_INVESTMENT),
+        _express_bounded(SupplyParameter.ACTIVITY_LOWER_LIMIT),
+        _express_unbounded_below(SupplyParameter.ACTIVITY_UPPER_LIMIT),
     )
     capacity = _build_capacity_columns(table, units)
     cost = units.convert_cost_per_capacity_to_dollars_per_mw
     return table.with_columns(
         *capacity,
+        *_build_energy_columns(table, units),
+        pl.col(GrowthParameter.MAX_GROWTH_RATE).alias(MAX_RELATIVE_GROWTH),
+        pl.col(GrowthParameter.MIN_GROWTH_RATE).alias(MIN_RELATIVE_GROWTH),
         (
             express_converted(table, InvestmentParameter.CAPITAL_COST, cost) / pl.col(RATING_RATIO)
         ).alias(CAPITAL_COST_MW),
@@ -184,10 +177,6 @@ def build_year_values(yearly: pl.DataFrame, year: int) -> pl.DataFrame:
     return yearly.filter(pl.col(YEAR) == year).drop(YEAR)
 
 
-def _build_year_grid(keys: pl.DataFrame, years: Sequence[int]) -> pl.DataFrame:
-    return keys.join(pl.DataFrame({YEAR: list(years)}, schema={YEAR: pl.Int64}), how="cross")
-
-
 def _express_is_buildable() -> pl.Expr:
     """`total_annual_max_capacity_investment` is not 0, and `capacity_limits_max` is above the
     residual capacity or states no limit."""
@@ -197,9 +186,32 @@ def _express_is_buildable() -> pl.Expr:
     return (investment != 0) & has_room
 
 
+def _express_bounded(column: str) -> pl.Expr:
+    """A lower bound, with null where it is 0 and binds nothing."""
+    return pl.when(pl.col(column) > 0).then(pl.col(column)).alias(column)
+
+
+def _express_unbounded_below(column: str) -> pl.Expr:
+    """An upper bound, with null where it is negative and binds nothing."""
+    return pl.when(pl.col(column) >= 0).then(pl.col(column)).alias(column)
+
+
 def _express_limited(column: str) -> pl.Expr:
     """A limit parameter, with null where it states no limit."""
     return pl.when(pl.col(column) != NO_LIMIT).then(pl.col(column)).alias(column)
+
+
+def _build_energy_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.Expr]:
+    """The bounds on the activity of each year, in MWh of electricity."""
+    convert = units.convert_energy_to_mwh
+    pairs = (
+        (SupplyParameter.ACTIVITY_LOWER_LIMIT, E_SUM_MIN_MWH),
+        (SupplyParameter.ACTIVITY_UPPER_LIMIT, E_SUM_MAX_MWH),
+    )
+    return [
+        (express_converted(table, column, convert) * pl.col(RATING_RATIO)).alias(target)
+        for column, target in pairs
+    ]
 
 
 def _build_capacity_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.Expr]:
@@ -210,6 +222,8 @@ def _build_capacity_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.E
         (InvestmentParameter.CAPACITY_LIMITS_MAX, CAPACITY_LIMITS_MAX_MW),
         (InvestmentParameter.MAX_CAPACITY_INVESTMENT, MAX_CAPACITY_INVESTMENT_MW),
         (InvestmentParameter.UNIT_SIZE, UNIT_SIZE_MW),
+        (GrowthParameter.MIN_CAPACITY_INVESTMENT, MIN_GROWTH_MW),
+        (GrowthParameter.MAX_FLOOR, MAX_GROWTH_FLOOR_MW),
     )
     return [
         (express_converted(table, column, convert) * pl.col(RATING_RATIO)).alias(target)
