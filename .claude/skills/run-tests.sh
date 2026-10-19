@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # run-tests.sh <skill dir>…   run each skill's tests/test_*.sh, each in a shell of its own
+#                             with $skill set to that directory and assert_eq defined
 set -euo pipefail
 
 assert_eq() {
