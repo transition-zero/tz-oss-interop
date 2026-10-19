@@ -611,6 +611,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATSOLAR` = 0.0 |  |"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "overnight_cost_per_mw" set to 0.9
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "discount_rate" set to 0.07
+      And the file "decisions.md" contains "| `osemosys.discount_rate.R1` = 0.07 | `sienna.ThermalStandard.ATGASCC.extensions.discount_rate` = 0.07 pu | the model states no technology_discount_rate for the member and the parameter has no default, so the discount_rate of the region applies; no Sienna field holds it |"
       And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "days_in_day_type" set to 91.0
 
     Scenario: The values of a generator that its Sienna type has no field for reach extensions.json under the PyPSA names
@@ -1028,6 +1029,28 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" without field "operating_modes"
       And the log does not contain "storage_balance_day states"
       And the log does not contain "energy_capital_cost states"
+
+    Scenario: A storage that states no discount rate takes the default that the model declares for storage_discount_rate
+      The region states its own rate, but OSeMOSYS gives a storage with no row the default of
+      DiscountRateStorage, so the region rate does not apply.
+      Given the otoole parameter "DiscountRate" keyed by "REGION" with default 0.05 has the rows:
+        | REGION | VALUE |
+        | R1     | 0.07  |
+      And the otoole parameter "DiscountRateStorage" keyed by "REGION STORAGE" with default 0.075 has the rows:
+        | REGION | STORAGE | VALUE |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "discount_rate" set to 0.075
+      And the file "decisions.md" contains "| `osemosys.storage_discount_rate.R1/ATPHSS` = 0.075 | `sienna.EnergyReservoirStorage.ATPHSS.extensions.discount_rate` = 0.075 pu | the model states no storage_discount_rate for the member, so the default of the parameter applies; no Sienna field holds it |"
+
+    Scenario: A storage that states a discount rate keeps it
+      Given the otoole parameter "DiscountRateStorage" keyed by "REGION STORAGE" with default 0.075 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 0.06  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "discount_rate" set to 0.06
+      And the file "decisions.md" contains "| `osemosys.storage_discount_rate.R1/ATPHSS` = 0.06 | `sienna.EnergyReservoirStorage.ATPHSS.extensions.discount_rate` = 0.06 pu | the value of the operations year, which no Sienna field holds |"
 
     Scenario: A storage that a technology of its own charges keeps the fixed cost of that technology, and the report names its capacity factor
       ATPUMP charges ATPHSS at mode 1, and ATPHS discharges it at mode 2. The emission of

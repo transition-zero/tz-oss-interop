@@ -601,7 +601,7 @@ gives no field.
 | --- | --- | --- | --- |
 | `overnight_cost_per_mw` | $/MW | `CapitalCost` (`capital_cost`) | `overnight_cost` |
 | `lifetime_years` | yr | `OperationalLife` (`lifetime`) | `lifetime` |
-| `discount_rate` | | `DiscountRateIdv` (`technology_discount_rate`), else `DiscountRate` (`discount_rate`) of the region | `discount_rate` |
+| `discount_rate` | | `DiscountRateIdv` (`technology_discount_rate`). If the model states no row, the default that the model declares for it. If it has no default, `DiscountRate` (`discount_rate`) of the region. | `discount_rate` |
 | `unit_size_mw` | MW | `CapacityOfOneTechnologyUnit` (`unit_size`), above 0 | `p_nom_mod` |
 | `p_nom_max` | MW | `TotalAnnualMaxCapacity` (`capacity_limits_max`), not -1 | `p_nom_max` |
 | `p_nom_min` | MW | `TotalAnnualMinCapacity` (`capacity_limits_min`), above 0 | `p_nom_min` |
@@ -626,7 +626,7 @@ and `discount_rate`. It also states:
 | --- | --- | --- | --- |
 | `energy_overnight_cost` | $/MWh | `CapitalCostStorage` (`energy_capital_cost`) | `Store.overnight_cost` |
 | `lifetime_years` | yr | `OperationalLifeStorage` (`storage_lifetime`) | `lifetime` |
-| `discount_rate` | | `DiscountRateStorage` (`storage_discount_rate`) | `discount_rate` |
+| `discount_rate` | | `DiscountRateStorage` (`storage_discount_rate`). If the model states no row, the default of `storage_discount_rate` (0.05 when the model declares none). | `discount_rate` |
 | `duration_max_hours` | h | `StorageMaxHours` (`duration_limits_max`) | none |
 | `cyclic_state_of_charge_per_period` | | `StorageBalanceYear` (`storage_balance_year`) is 1 | `cyclic_state_of_charge_per_period` |
 | `cyclic_state_of_charge_per_season` | | `StorageBalanceSeason` (`storage_balance_season`) is 1 | none |

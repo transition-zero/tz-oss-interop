@@ -44,6 +44,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    find_parameter_default,
     read_parameter,
     read_parameter_with_defaults,
 )
@@ -57,13 +58,16 @@ from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
     express_converted,
 )
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 # The electricity of the component for each unit of the activity of the technology.
 RATING_RATIO = "rating_ratio"
 EXTENSIONS_PREFIX = "extensions."
 
 _STATED_PREFIX = "stated."
+_ORIGIN_PREFIX = "origin."
+_FROM_DEFAULT = "default"
+_FROM_FALLBACK = "fallback"
 _VALUE_SCALED = "value_scaled"
 _FALLBACK = "fallback"
 _APPLIED_SCOPE = "applied"
@@ -91,8 +95,9 @@ class Scale(Enum):
 class TechnologyValue(NamedTuple):
     """One parameter, the field that holds its value, and which of its rows bind.
 
-    `detail` names a key column whose members key the field, which is then a dict. A
-    `fallback` is a parameter keyed by region that gives the value where the member states none.
+    `detail` names a key column whose members key the field, which is then a dict. Where the
+    member states no value, the default of the parameter applies, else the `fallback`, a
+    parameter keyed by region.
     A value of every year reads each year in scope rather than the operations year. A
     `derivation` replaces the text that the scale gives the event.
     """
@@ -114,6 +119,10 @@ class TechnologyValue(NamedTuple):
     @property
     def stated_column(self) -> str:
         return f"{_STATED_PREFIX}{self.field}"
+
+    @property
+    def origin_column(self) -> str:
+        return f"{_ORIGIN_PREFIX}{self.field}"
 
 
 @dataclass(frozen=True)
@@ -271,7 +280,11 @@ STORAGE_VALUES: tuple[TechnologyValue, ...] = (
     ),
     TechnologyValue(InvestmentParameter.STORAGE_LIFETIME, "lifetime_years", Scale.NONE, UNIT_YEARS),
     TechnologyValue(
-        InvestmentParameter.STORAGE_DISCOUNT_RATE, "discount_rate", Scale.NONE, UNIT_PER_UNIT
+        InvestmentParameter.STORAGE_DISCOUNT_RATE,
+        "discount_rate",
+        Scale.NONE,
+        UNIT_PER_UNIT,
+        fallback=InvestmentParameter.DISCOUNT_RATE,
     ),
     TechnologyValue(
         InvestmentParameter.DURATION_LIMITS_MAX, "duration_max_hours", Scale.NONE, UNIT_HOURS
@@ -405,17 +418,30 @@ def _fill_fallback(
     table: pl.DataFrame,
     value: TechnologyValue,
 ) -> pl.DataFrame:
-    """The value of the region of each member that states none of its own."""
-    fallback = value.fallback or ""
+    """The default of the parameter, else the value of the region, where a member states none."""
+    joined = keys.join(table, on=keys.columns, how="left")
+    default = find_parameter_default(state, value.parameter)
+    if default is not None:
+        return _fill_value(joined, value, pl.lit(float(default)), _FROM_DEFAULT)
     regions = keys.select(REGION).unique()
-    rates = read_parameter_with_defaults(state, fallback, operations.year, regions).select(
-        REGION, pl.col(VALUE_COL).cast(pl.Float64).alias(_FALLBACK)
+    rates = read_parameter_with_defaults(
+        state, value.fallback or "", operations.year, regions
+    ).select(REGION, pl.col(VALUE_COL).cast(pl.Float64).alias(_FALLBACK))
+    filled = _fill_value(
+        joined.join(rates, on=REGION, how="left"), value, pl.col(_FALLBACK), _FROM_FALLBACK
     )
-    joined = keys.join(table, on=keys.columns, how="left").join(rates, on=REGION, how="left")
-    return joined.with_columns(
-        pl.col(value.column).fill_null(pl.col(_FALLBACK)),
-        pl.col(value.stated_column).fill_null(pl.col(_FALLBACK)),
-    ).drop(_FALLBACK)
+    return filled.drop(_FALLBACK)
+
+
+def _fill_value(
+    table: pl.DataFrame, value: TechnologyValue, filler: pl.Expr, origin: str
+) -> pl.DataFrame:
+    is_unstated = pl.col(value.column).is_null() & filler.is_not_null()
+    return table.with_columns(
+        pl.col(value.column).fill_null(filler),
+        pl.col(value.stated_column).fill_null(filler),
+        pl.when(is_unstated).then(pl.lit(origin)).otherwise(None).alias(value.origin_column),
+    )
 
 
 def _express_scaled(rows: pl.DataFrame, scale: Scale, units: ModelUnits) -> pl.Expr:
@@ -466,11 +492,7 @@ def _build_events(
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[
-                build_osemosys_field(
-                    value.parameter, row[owners.report_col], entry[_DETAIL], entry[_STATED]
-                )
-            ],
+            sources=[_build_source(row, value, owners, entry)],
             destinations=[
                 build_sienna_field(
                     row[owners.component_col],
@@ -480,10 +502,30 @@ def _build_events(
                     value.unit,
                 )
             ],
-            derivation=value.derivation or _DERIVATIONS[value.scale],
+            derivation=_choose_derivation(row, value),
         )
         for entry in entries
     ]
+
+
+def _build_source(
+    row: dict[str, Any], value: TechnologyValue, owners: ValueOwners, entry: dict[str, Any]
+) -> SourceField:
+    """The parameter that gave the value: the region's own rate where the fallback applied."""
+    if row.get(value.origin_column) == _FROM_FALLBACK:
+        return build_osemosys_field(value.fallback or "", row[REGION], None, entry[_STATED])
+    return build_osemosys_field(
+        value.parameter, row[owners.report_col], entry[_DETAIL], entry[_STATED]
+    )
+
+
+def _choose_derivation(row: dict[str, Any], value: TechnologyValue) -> str:
+    origin = row.get(value.origin_column)
+    if origin == _FROM_DEFAULT:
+        return _DEFAULT_DERIVATION.format(parameter=value.parameter)
+    if origin == _FROM_FALLBACK:
+        return _FALLBACK_DERIVATION.format(parameter=value.parameter, fallback=value.fallback)
+    return value.derivation or _DERIVATIONS[value.scale]
 
 
 def _build_entry(row: dict[str, Any], value: TechnologyValue) -> dict[str, Any]:
@@ -494,6 +536,14 @@ def _build_attribute(value: TechnologyValue, detail: str | None) -> str:
     return value.column if detail is None else f"{value.column}.{detail}"
 
 
+_DEFAULT_DERIVATION = (
+    "the model states no {parameter} for the member, so the default of the parameter applies; "
+    "no Sienna field holds it"
+)
+_FALLBACK_DERIVATION = (
+    "the model states no {parameter} for the member and the parameter has no default, so the "
+    "{fallback} of the region applies; no Sienna field holds it"
+)
 _DERIVATIONS: dict[Scale, str] = {
     Scale.NONE: "the value of the operations year, which no Sienna field holds",
     Scale.CAPACITY: (
