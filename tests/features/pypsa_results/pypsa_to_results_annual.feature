@@ -58,6 +58,27 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
     And the file "decisions.md" contains "max(-p0, 0) + max(-p1, 0)"
 
+  Scenario: A component with no output in a solved network has a production of 0
+    PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so the solved file
+    states no p for the peaker.
+    Given the network contains generator "peaker" on "node_a" carrier "oil" p_nom 50.0 p_max_pu 1.0
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | peaker    | oil      | 2030-01-01T00:00:00 | 0     |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+    And the log does not contain "the solve states no output for them"
+
+  Scenario: A component with no output in a network that states no objective has no production, and is reported
+    Given the network contains generator "peaker" on "node_a" carrier "oil" p_nom 50.0 p_max_pu 1.0
+    And the network states no objective
+    And the network is saved as "inputs/unsolved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/unsolved.nc"
+    Then the pipeline exit code is 0
+    And the log contains "1 component(s) have a rating, but the solve states no output for them, so they have no production: peaker"
+
   Scenario: A sidecar with representative periods asks for annual rows when each snapshot counts once
     Given the snapshot weightings are 1 1 1 1
     And the generator snapshot weightings are 1 1 1 1

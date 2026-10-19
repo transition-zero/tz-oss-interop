@@ -14,7 +14,7 @@ from typing import NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, record_for
+from interop.core.extensions import NETWORK_RECORD_NAME, ExtensionKind, record_for
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.annual_results import (
@@ -41,6 +41,7 @@ from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.ports.outbound.reporting import SourceField
 
 _UNWEIGHTED = 1.0
+_NO_PRODUCTION = 0.0
 _P_MAX_PU = "p_max_pu"
 _P_NOM = "p_nom"
 # PyPSA writes a static attribute only where a component differs from its default, so an
@@ -54,7 +55,8 @@ _PRODUCTION_DERIVATION = (
     "Σ over the snapshots of max(p, 0) for a generator or a storage unit, or of the power that "
     "a link delivers at the end that receives it, max(-p0, 0) + max(-p1, 0), × the generators "
     "snapshot weighting → production at 1 January of the year; the reverse link of a two-way "
-    "link adds to the production of the two-way link"
+    "link adds to the production of the two-way link; a solved network gives 0 to a rated "
+    "component with no p, as PyPSA's netCDF export leaves out a series that is 0 in each snapshot"
 )
 _INSTALLED_CAPACITY_DERIVATION = (
     "p_nom × p_max_pu for a generator, a storage unit or a link, and once for a two-way link "
@@ -90,8 +92,10 @@ class PypsaAnnualResultsMapper:
         if weights is None or not _is_annual(state, weights):
             return []
         production = _build_all_production(state, weights)
-        produced = production.build_table()
         capacity = _build_capacity(state, _build_years(weights))
+        produced = production.build_table()
+        if is_solved(state):
+            produced = _fill_unproduced(produced, capacity)
         emitting = pl.concat([production.generators, production.storage])
         return [
             *self._map_production(produced),
@@ -135,6 +139,27 @@ class PypsaAnnualResultsMapper:
         source = _build_source(ExtensionKind.GENERATOR, _EMISSION_RATES_FIELD)
         self._reporter.record_derivation(ResultsVariable.EMISSIONS, [source], EMISSIONS_DERIVATION)
         return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+
+
+def is_solved(state: State) -> bool:
+    """Whether the network states an objective, which only a solve writes."""
+    record = record_for(state.source_extensions, ExtensionKind.NETWORK, NETWORK_RECORD_NAME)
+    return record is not None and record.objective is not None
+
+
+def _fill_unproduced(production: pl.DataFrame, capacity: pl.DataFrame) -> pl.DataFrame:
+    """A production of 0 for each rated component with no output; PyPSA's netCDF export
+    leaves out a series that is 0 in every snapshot."""
+    if capacity.is_empty():
+        return production
+    keys = [ResultsCol.COMPONENT, AnnualCol.YEAR]
+    unproduced = capacity.join(production, on=keys, how="anti").select(
+        ResultsCol.COMPONENT,
+        ResultsCol.CATEGORY,
+        AnnualCol.YEAR,
+        pl.lit(_NO_PRODUCTION).alias(ResultsCol.VALUE),
+    )
+    return pl.concat([production, unproduced.cast(pl.Schema(PRODUCTION_SCHEMA))])
 
 
 def _find_weights(state: State) -> pl.DataFrame | None:

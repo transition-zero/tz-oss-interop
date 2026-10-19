@@ -408,6 +408,11 @@ class PyPSANetworkBuilder:
         # n.objective is a read-only property; the private attribute is what export serialises.
         self._network._objective = value
 
+    def clear_objective(self) -> None:
+        """State no solve objective, as an unsolved network does."""
+        self._check_not_saved("network objective")
+        self._network._objective = None
+
     def set_pypsa_version(self, version: str) -> None:
         """State the PyPSA version the file records as its writer.
 

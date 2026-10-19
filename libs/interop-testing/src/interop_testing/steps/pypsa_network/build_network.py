@@ -420,6 +420,11 @@ def given_network_objective(
     pypsa_network_builder.set_objective(value)
 
 
+@given("the network states no objective")
+def given_no_network_objective(pypsa_network_builder: PyPSANetworkBuilder) -> None:
+    pypsa_network_builder.clear_objective()
+
+
 @given(parsers.parse("the network was written by PyPSA {version}"))
 def given_network_pypsa_version(
     pypsa_network_builder: PyPSANetworkBuilder,

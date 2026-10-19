@@ -123,6 +123,9 @@ The definitions are those of `sienna-to-results`, with the PyPSA fields:
 
 - `production` of a generator or a storage unit is the sum over the snapshots of the positive
   part of `p`, multiplied by the `generators` snapshot weighting.
+- PyPSA's netCDF export leaves out a series that is 0 in every snapshot. So if the network
+  states an objective, a component with a rating and no `p` gets a `production` of 0. If the
+  network states no objective, the component gets no `production` row, and the log warns.
 - `production` of a link is the same sum of the power that the link delivers at the end that
   receives it, `max(-p0, 0) + max(-p1, 0)`. A link that loses energy delivers less than it
   sends. Its `category` is null, as for a Sienna HVDC line. The `<name> reverse` link of a
