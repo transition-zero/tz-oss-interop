@@ -14,7 +14,6 @@ import polars as pl
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
     UNIT_MVA,
-    UNIT_MW,
     UNIT_TONNES_PER_MWH,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -66,41 +65,39 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_translations
     FIXED_COST_ATTRIBUTE,
     GENERATOR_AVAILABLE_NOTE,
     GENERATOR_ID_NOTE,
+    NO_COST,
     PENALTY_ATTRIBUTE,
     PROPORTIONAL_TERM_ATTRIBUTE,
     build_commitment,
     build_penalty_events,
     build_power_defaults,
     build_reactive_limits,
+    build_series_events,
+    build_thermal_power_limits,
+    express_thermal_cost,
 )
-from interop.plugins.shared.osemosys_sienna_translations._transport_columns import AVAILABILITY
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import IMPORT_FUELS
 from interop.plugins.shared.sienna_constants import (
-    ACTIVE_POWER_LIMITS_DTYPE,
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
     THERMAL_FUELS_DTYPE,
     THERMAL_GENERATION_COST_DTYPE,
     SiennaComponent,
-    SiennaCostType,
     SiennaPrimeMovers,
     SiennaThermalFuels,
     SiennaThermalGeneratorCol,
 )
-from interop.plugins.shared.sienna_cost_curves import variable_cost_curve
 from interop.plugins.shared.translation_runner import (
     Translation,
     default_translation,
     row_position_id_translation,
 )
-from interop.ports.outbound.reporting import SourceField, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _Col = SiennaThermalGeneratorCol
 _dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
 _default = partial(default_translation, _dest, name_col=GENERATOR_NAME)
 
-_NO_MINIMUM = 0.0
-_NO_COST = 0.0
 _SOURCE_TECHNOLOGY_ATTRIBUTE = "extensions.source_technology"
 _SOURCE_MODE_ATTRIBUTE = "extensions.source_mode"
 
@@ -128,10 +125,6 @@ _BASE_POWER_DERIVATION = (
     "residual_capacity of the transport technology in the operations year, in MW, × the "
     "electricity output_activity_ratio of the import mode"
 )
-_LIMITS_DERIVATION = (
-    "min = 0, as OSeMOSYS states no minimum stable level; max = base_power × "
-    "availability_factor of the transport technology, which the line applies as a derate too"
-)
 _VARIABLE_COST_DERIVATION = (
     "variable_operation_cost of the import mode, in $/MWh, / the electricity "
     "output_activity_ratio of the mode, plus the emission penalty of each pollutant that it emits"
@@ -154,7 +147,7 @@ def build_import_translations(start: int) -> list[Translation]:
         *_build_fixed_choices(),
         _build_base_power(),
         *build_power_defaults(_dest),
-        _build_power_limits(),
+        build_thermal_power_limits(_dest),
         build_reactive_limits(_dest),
         *_build_operation_cost(),
         *build_commitment(_dest),
@@ -271,50 +264,15 @@ def _build_base_power() -> Translation:
     )
 
 
-def _build_power_limits() -> Translation:
-    maximum = pl.col(OUTPUT_CAPACITY_MW) * pl.col(AVAILABILITY)
-    return Translation(
-        exprs=[
-            pl.struct(min=pl.lit(_NO_MINIMUM), max=maximum)
-            .cast(ACTIVE_POWER_LIMITS_DTYPE)
-            .alias(_Col.ACTIVE_POWER_LIMITS)
-        ],
-        make_events=lambda old, new: build_derived(
-            [
-                build_sienna_source(
-                    SiennaComponent.THERMAL_STANDARD,
-                    old[GENERATOR_NAME],
-                    _Col.BASE_POWER,
-                    old[OUTPUT_CAPACITY_MW],
-                    UNIT_MVA,
-                ),
-                _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
-            ],
-            [
-                _dest(
-                    old[GENERATOR_NAME],
-                    _Col.ACTIVE_POWER_LIMITS,
-                    new[_Col.ACTIVE_POWER_LIMITS],
-                    UNIT_MW,
-                )
-            ],
-            _LIMITS_DERIVATION,
-        ),
-    )
-
-
 def _build_operation_cost() -> list[Translation]:
     """The variable cost as a linear curve, and a fixed cost of zero."""
-    cost = pl.struct(
-        cost_type=pl.lit(SiennaCostType.THERMAL),
-        fixed=pl.lit(_NO_COST),
-        shut_down=pl.lit(_NO_COST),
-        start_up=pl.lit(_NO_COST),
-        variable=variable_cost_curve(pl.col(OPERATION_COST_MWH)),
-    )
     return [
         Translation(
-            exprs=[cost.cast(THERMAL_GENERATION_COST_DTYPE).alias(_Col.OPERATION_COST)],
+            exprs=[
+                express_thermal_cost()
+                .cast(THERMAL_GENERATION_COST_DTYPE)
+                .alias(_Col.OPERATION_COST)
+            ],
             make_events=lambda old, _new: build_derived(
                 _build_cost_sources(old),
                 [
@@ -331,7 +289,7 @@ def _build_operation_cost() -> list[Translation]:
         Translation(
             exprs=[],
             make_events=lambda old, _new: build_defaulted(
-                [_dest(old[GENERATOR_NAME], FIXED_COST_ATTRIBUTE, _NO_COST)], _FIXED_COST_NOTE
+                [_dest(old[GENERATOR_NAME], FIXED_COST_ATTRIBUTE, NO_COST)], _FIXED_COST_NOTE
             ),
         ),
     ]
@@ -358,11 +316,9 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
     return [own, _build_output_ratio_source(old), *penalties]
 
 
-# --- the events of the values that reach no Sienna column of their own -----------------------
-
-
 def _build_reports() -> list[Translation]:
     return [
+        Translation(exprs=[], make_events=lambda old, _new: build_series_events(_dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: build_penalty_events(_dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(old)),
@@ -372,8 +328,9 @@ def _build_reports() -> list[Translation]:
 
 def _build_emission_events(old: dict[str, Any]) -> list[TranslationEvent]:
     return [
-        build_derived(
-            [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
                 _build_source(
                     SupplyParameter.EMISSION_RATE,
                     old,
@@ -382,7 +339,7 @@ def _build_emission_events(old: dict[str, Any]) -> list[TranslationEvent]:
                 ),
                 _build_output_ratio_source(old),
             ],
-            [
+            destinations=[
                 _dest(
                     old[GENERATOR_NAME],
                     f"{EMISSION_ATTRIBUTE}{term[POLLUTANT]}",
@@ -390,8 +347,8 @@ def _build_emission_events(old: dict[str, Any]) -> list[TranslationEvent]:
                     UNIT_TONNES_PER_MWH,
                 )
             ],
-            _EMISSION_DERIVATION,
-        )[0]
+            derivation=_EMISSION_DERIVATION,
+        )
         for term in old[EMISSION_TERMS] or []
     ]
 

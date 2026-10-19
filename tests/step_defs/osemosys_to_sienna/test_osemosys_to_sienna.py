@@ -77,6 +77,45 @@ sinks:
       output_system_json_file_path: outputs/system.json
 """
 
+# The chain to PyPSA names the Sienna files that it hands over, which neither leg names alone.
+_TO_PYPSA_PIPELINE_YAML = """\
+source_framework: osemosys
+destination_framework: pypsa
+compose:
+  - pipeline: osemosys-csv-to-sienna
+    params:
+      stage_osemosys_csv.config_path: model/config.yaml
+      stage_osemosys_csv.csv_dir: model/csv
+      osemosys_to_sienna_map_components.year: {year}
+      emit_sienna_files.output_system_json_file_path: system.json
+      emit_sienna_files.output_h5_file_path: system_time_series_storage.h5
+      emit_sienna_files.output_extensions_file_path: extensions.json
+  - pipeline: sienna-to-pypsa
+    params:
+      stage_sienna_system_json.system_json_path: {system}
+      stage_sienna_system_json.time_series_h5_path: {h5}
+      stage_sienna_system_json.extensions_json_path: {extensions}
+      emit_pypsa_network.output_path: outputs/network.nc
+"""
+_SIENNA_FILES = "$osemosys-csv-to-sienna.emit_sienna_files"
+
+
+@given(
+    parsers.parse(
+        'a pipeline "{name}" that translates the otoole model to Sienna and then to PyPSA in the '
+        'year "{year}"'
+    )
+)
+def given_to_pypsa_pipeline(name: str, year: str) -> None:
+    """The two legs chained through the Sienna files, as a user composes them."""
+    pipeline = _TO_PYPSA_PIPELINE_YAML.format(
+        year=year,
+        system=f"{_SIENNA_FILES}.output_system_json_file_path",
+        h5=f"{_SIENNA_FILES}.output_h5_file_path",
+        extensions=f"{_SIENNA_FILES}.output_extensions_file_path",
+    )
+    write_pipeline(name, pipeline)
+
 
 @given(
     parsers.parse(

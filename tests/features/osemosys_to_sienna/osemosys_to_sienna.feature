@@ -1571,15 +1571,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     The invented interconnector ATDEBUY takes in 1 unit of electricity at AT and puts out 0.95
     of a unit at DE in mode 1. In mode 2 it puts out 0.8 of a unit at AT and takes in no
     electricity, which is an import from outside the model. Mode 2 costs 80 $/MWh of activity
-    and emits 0.4 t of CO2 for each MWh of activity, at a penalty of 20 $/t. ATDEODD runs from AT
-    to DE in both of its modes, so its mode 2 is neither the flow back nor an import. The gas
-    plant ATPEAKER is the one ThermalStandard of a supply technology.
+    and emits 0.4 t of CO2 for each MWh of activity, at a penalty of 20 $/t. In mode 3 it takes
+    in 1 unit at DE and puts out 0.9 of a unit at AT, which is the flow back. ATDEODD runs from
+    AT to DE in both of its modes, so its mode 2 is neither the flow back nor an import. The gas
+    plant ATPEAKER is the one ThermalStandard of a supply technology. The location of the
+    electricity fuel OUTSIDE captures nothing, so the fuel has no location.
 
     Background:
-      Given the otoole set "FUEL" holds "ATELEC DEELEC"
+      Given the otoole set "FUEL" holds "ATELEC DEELEC OUTSIDE"
       And the otoole set "TECHNOLOGY" holds "ATDEBUY ATDEODD ATPEAKER"
       And the otoole set "EMISSION" holds "CO2"
-      And the otoole set "MODE_OF_OPERATION" holds "1 2"
+      And the otoole set "MODE_OF_OPERATION" holds "1 2 3"
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDEBUY    | 2030 | 2     |
@@ -1591,12 +1593,14 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATDEBUY    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEBUY    | DEELEC | 3                 | 2030 | 1     |
         | R1     | ATDEODD    | ATELEC | 1                 | 2030 | 1     |
         | R1     | ATDEODD    | ATELEC | 2                 | 2030 | 1     |
       And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATDEBUY    | DEELEC | 1                 | 2030 | 0.95  |
         | R1     | ATDEBUY    | ATELEC | 2                 | 2030 | 0.8   |
+        | R1     | ATDEBUY    | ATELEC | 3                 | 2030 | 0.9   |
         | R1     | ATDEODD    | DEELEC | 1                 | 2030 | 1     |
         | R1     | ATDEODD    | DEELEC | 2                 | 2030 | 0.5   |
         | R1     | ATPEAKER   | ATELEC | 1                 | 2030 | 1     |
@@ -1615,7 +1619,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | osemosys: {                                                                                                                       |
         | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                                                  |
         | objects: {                                                                                                                        |
-        | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}],                                     |
+        | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},                                      |
+        | {match: "^(?P<country>[A-Z]{2})?OUTSIDE$", carrier: electricity, location: "{country}"}],                                         |
         | technologies: [{match: "PEAKER$", category: gas-ct}]}}                                                                            |
         | carriers: [                                                                                                                       |
         | {osemosys_category: gas-ct, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CT}] |
@@ -1634,15 +1639,58 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "prime_mover_type" set to "OT"
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "fuel_type" set to "OTHER"
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 110.0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_from" set to {"min": 0.0, "max": 1800.0}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "carrier" set to "import"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "source_technology" set to "R1/ATDEBUY"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "source_mode" set to "2"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "emission_rates_t_per_mwh" set to {"CO2": 0.5}
       And the file "decisions.md" contains "an import mode brings electricity from outside the model and states no plant, so it becomes a ThermalStandard"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.prime_mover_type` = OT"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.fuel_type` = OTHER"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.operation_cost emission penalty of CO2` = 10.0"
       And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATDEBUY.operating_mode 2` = 80000.0"
+
+    Scenario: A line keeps its flow back beside its import
+      The flow back of ATDEBUY sends at most 2000 × 0.9 × 1 = 1800 MW from DE and delivers at
+      most 2000 × 0.9 × 0.9 = 1620 MW at AT.
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_from" set to {"min": -1620.0, "max": 1800.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_to" set to {"min": -1800.0, "max": 1710.0}
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 1600.0
+
+    Scenario: An import takes the capacity factor of its line in each hour
+      Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
+        | R1     | ATDEBUY    | S1B1      | 2030 | 0.5   |
+        | R1     | ATPEAKER   | S1B1      | 2030 | 0.5   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "active_power_limits" set to {"min": 0.0, "max": 1600.0}
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "ATDEBUY/import/2" attribute "max_active_power" with length 48
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "ATPEAKER" attribute "max_active_power" with length 48
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.max_active_power time series`"
+
+    Scenario: An import of an electricity fuel with no location is left out and reported
+      Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDEBUY    | DEELEC  | 1                 | 2030 | 0.95  |
+        | R1     | ATDEBUY    | OUTSIDE | 2                 | 2030 | 0.8   |
+        | R1     | ATPEAKER   | ATELEC  | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
+      And the log contains "1 transport technology(ies) have a mode that imports an electricity fuel with no location, so no generator holds that import. Technologies: R1/ATDEBUY"
+      And the file "decisions.md" contains "the electricity fuel OUTSIDE has no location, so no bus can hold what the mode imports"
 
     Scenario: The report names only the modes that are neither the flow back nor an import
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "state values at an operating mode that is neither the flow back nor an import, and the line does not run them; extensions.json holds them. Technologies: R1/ATDEODD"
+
+    Scenario: An import reaches a PyPSA network as a generator of the carrier import
+      The PyPSA leg reads the carrier from the generator record of extensions.json.
+      Given a pipeline "osemosys-to-pypsa" that translates the otoole model to Sienna and then to PyPSA in the year "2030"
+      When I run the otoole model through the pipeline "osemosys-to-pypsa"
+      Then the pipeline exit code is 0
+      And the PyPSA network "outputs/network.nc" generator "ATDEBUY/import/2" has carrier "import"
+      And the PyPSA network "outputs/network.nc" generator "ATDEBUY/import/2" attribute "marginal_cost" is 110.0

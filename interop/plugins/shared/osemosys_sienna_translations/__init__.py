@@ -87,6 +87,7 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
     add_per_unit_series,
     add_series,
+    append_per_unit_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
     build_storage_extensions,
@@ -145,6 +146,7 @@ __all__ = [
     "StagedSeries",
     "add_per_unit_series",
     "add_series",
+    "append_per_unit_series",
     "build_bus_extensions",
     "build_buses_source_table",
     "build_calendar",

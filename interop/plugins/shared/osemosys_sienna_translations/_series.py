@@ -81,6 +81,14 @@ def add_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame
     _add_scaled_series(state, series, owners, dict.fromkeys(names, _UNSCALED))
 
 
+def append_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
+    """Stage a series per unit beside the series that an earlier step staged under its key."""
+    earlier = state.source_time_series.pop(series.key, None)
+    add_per_unit_series(state, series, owners)
+    if earlier is not None:
+        state.source_time_series[series.key] = pl.concat([earlier, series.table.lazy()])
+
+
 def _add_scaled_series(
     state: State, series: StagedSeries, owners: pl.DataFrame, scales: dict[str, float]
 ) -> None:

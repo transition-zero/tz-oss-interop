@@ -73,6 +73,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     PARAMETER,
     enrich_other_mode_values,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generators import GeneratorSources
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -151,6 +152,7 @@ _ONE_LOCATION = 1
 _NO_COST = 0.0
 _NO_FLOW = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
+_NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
 
 # The records of the lines, and the columns that name each line and its technology.
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
@@ -166,7 +168,7 @@ class TransportSources:
 
     table: pl.DataFrame
     series: pl.DataFrame
-    imports: pl.DataFrame
+    imports: GeneratorSources
 
 
 class _EndColumns(NamedTuple):
@@ -232,8 +234,8 @@ def build_transport_source(
     for rule in _SKIP_RULES:
         lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
     if lines.height == 0:
-        return TransportSources(lines, pl.DataFrame(), pl.DataFrame())
-    imports = read_import_modes(state, operations, lines)
+        return TransportSources(lines, pl.DataFrame(), _NO_IMPORTS)
+    imports = read_import_modes(state, operations, lines, recorder)
     lines = enrich_import_flows(lines, imports)
     lines = _enrich_reverse_modes(state, operations, lines)
     lines = _enrich_ratings(state, operations, lines)
@@ -249,8 +251,8 @@ def build_transport_source(
     lines = lines.with_columns(
         express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS)
     )
-    imports = build_imports_source(state, operations, imports, lines)
-    return TransportSources(lines.sort(LINE_NAME), series, imports)
+    import_sources = build_imports_source(state, operations, imports, lines)
+    return TransportSources(lines.sort(LINE_NAME), series, import_sources)
 
 
 def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension]:

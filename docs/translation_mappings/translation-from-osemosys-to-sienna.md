@@ -551,7 +551,8 @@ all of these conditions:
 So it brings electricity into the model from outside. Each import mode becomes one
 `ThermalStandard` on the bus of that end. The line keeps its forward direction and its flow
 back. The generator exists only when the line exists, so the checks of the line apply to it
-too.
+too. An output to an electricity fuel with no location has no bus. `decisions.md` records it as
+`NOT_MAPPED`, and one warning names three lines.
 
 OSeMOSYS states no plant and no fuel for an import, so the generator takes a fixed type, a
 fixed prime mover and a fixed fuel. A carriers row does not apply, because the category of a
@@ -565,12 +566,15 @@ value as `TRANSLATOR_DEFAULT_APPLIED`.
 | `prime_mover_type` | | `OT` | `default` |
 | `fuel_type` | | `OTHER` | `default` |
 | `base_power` | MVA | `residual_capacity` of the line in MW × the electricity `output_activity_ratio` of the mode | `derived` |
-| `active_power_limits` | MW | `(0, base_power × availability_factor of the line)` | `derived` |
+| `active_power_limits` | MW | As for a `ThermalStandard`, with the `capacity_factor` and the `availability_factor` of the line. Refer to [The availability of each hour](#the-availability-of-each-hour). | `derived` |
 | `operation_cost.variable` | $/MWh | A linear curve: `variable_operation_cost` of the mode in $/MWh / the electricity output ratio of the mode + the emission penalty of each pollutant | `derived` |
 | `operation_cost.fixed` | $ | `0.0`. OSeMOSYS states the fixed cost for the technology, and the line record holds it. | `default` |
 | `rating` | pu | `1.0` | `default` |
 
-The other fields take the values of [`ThermalStandard`](#thermalstandard). The emission
+The availability of each hour is that of the line: its `capacity_factor` × its
+`availability_factor`. When the share differs from hour to hour, the generator gets a
+`max_active_power` time series, per unit of `base_power`. The other fields take the values of
+[`ThermalStandard`](#thermalstandard). The emission
 penalty of a pollutant is the rate of the mode in t/MWh × `emission_penalty` of the region.
 Refer to [The emission penalty](#the-emission-penalty).
 

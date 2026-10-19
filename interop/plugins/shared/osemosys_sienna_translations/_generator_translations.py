@@ -137,7 +137,7 @@ _Col = SiennaThermalGeneratorCol
 _FULL_RATING = 1.0
 _NO_POWER = 0.0
 _NO_MINIMUM = 0.0
-_NO_COST = 0.0
+NO_COST = 0.0
 _UNITY_POWER_FACTOR = 1.0
 
 PROPORTIONAL_TERM_ATTRIBUTE = (
@@ -393,7 +393,7 @@ def build_power_defaults(dest: DestinationFieldFactory) -> list[Translation]:
 
 def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
     return [
-        Translation(exprs=[], make_events=lambda old, _new: _build_series_events(dest, old)),
+        Translation(exprs=[], make_events=lambda old, _new: build_series_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_emission_events(dest, old)),
         Translation(
@@ -440,9 +440,10 @@ def _build_availability_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-def _build_series_events(
+def build_series_events(
     dest: DestinationFieldFactory, old: dict[str, Any]
 ) -> list[TranslationEvent]:
+    """The availability series of a generator that has one."""
     if not old[HAS_SERIES]:
         return []
     return build_derived(
@@ -710,7 +711,7 @@ def _build_operation_cost(
             make_events=lambda old, _new: [
                 TranslationEvent(
                     kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                    destinations=[dest(old[GENERATOR_NAME], FIXED_COST_ATTRIBUTE, _NO_COST)],
+                    destinations=[dest(old[GENERATOR_NAME], FIXED_COST_ATTRIBUTE, NO_COST)],
                     note=_NO_FIXED_COST_NOTE if old[FIXED_COST] is None else _FIXED_NOTE,
                 )
             ],
@@ -824,16 +825,27 @@ def _build_power_factor(dest: DestinationFieldFactory) -> Translation:
     )
 
 
-def _build_thermal() -> list[Translation]:
-    dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
+def build_thermal_power_limits(dest: DestinationFieldFactory) -> Translation:
+    """The limits of a ThermalStandard: its whole base power when a series states each hour."""
     limit = pl.when(pl.col(HAS_SERIES)).then(pl.col(OUTPUT_CAPACITY_MW))
-    cost = pl.struct(
+    return _build_power_limits(
+        dest, limit.otherwise(pl.col(OUTPUT_CAPACITY_MW) * pl.col(PEAK_FACTOR))
+    )
+
+
+def express_thermal_cost() -> pl.Expr:
+    """The operation cost of a ThermalStandard: the variable cost curve, and no other cost."""
+    return pl.struct(
         cost_type=pl.lit(SiennaCostType.THERMAL),
-        fixed=pl.lit(_NO_COST),
-        shut_down=pl.lit(_NO_COST),
-        start_up=pl.lit(_NO_COST),
+        fixed=pl.lit(NO_COST),
+        shut_down=pl.lit(NO_COST),
+        start_up=pl.lit(NO_COST),
         variable=_express_variable_curve(),
     )
+
+
+def _build_thermal() -> list[Translation]:
+    dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
     return [
         *_build_shared(dest),
         _build_user_choice(
@@ -843,12 +855,10 @@ def _build_thermal() -> list[Translation]:
             _FUEL_TYPE_NOTE,
             [pl.col(FUEL_TYPE).cast(THERMAL_FUELS_DTYPE).alias(_Col.FUEL_TYPE)],
         ),
-        _build_power_limits(
-            dest, limit.otherwise(pl.col(OUTPUT_CAPACITY_MW) * pl.col(PEAK_FACTOR))
-        ),
+        build_thermal_power_limits(dest),
         build_reactive_limits(dest),
         *_build_cost_term_reports(dest),
-        *_build_operation_cost(dest, cost, THERMAL_GENERATION_COST_DTYPE),
+        *_build_operation_cost(dest, express_thermal_cost(), THERMAL_GENERATION_COST_DTYPE),
         *build_commitment(dest),
     ]
 
@@ -858,7 +868,7 @@ def _build_renewable_dispatch() -> list[Translation]:
     cost = pl.struct(
         cost_type=pl.lit(SiennaCostType.RENEWABLE),
         variable=_express_variable_curve(),
-        fixed=pl.lit(_NO_COST),
+        fixed=pl.lit(NO_COST),
     )
     return [
         *_build_shared(dest),
@@ -884,7 +894,7 @@ def _build_hydro_dispatch() -> list[Translation]:
     cost = pl.struct(
         cost_type=pl.lit(SiennaCostType.HYDRO_GEN),
         variable=_express_variable_curve(),
-        fixed=pl.lit(_NO_COST),
+        fixed=pl.lit(NO_COST),
     )
     return [
         *_build_shared(dest),
