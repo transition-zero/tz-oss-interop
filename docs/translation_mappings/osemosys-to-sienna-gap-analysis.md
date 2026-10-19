@@ -36,7 +36,7 @@ Read it before you trust a number from a solve of a translated OSeMOSYS model.
 | **A representative day** | One day of 24 hours that stands for a number of days of the year, its weight |
 | **The dispatch** | A PowerSimulations.jl solve of the Sienna system |
 | **The expansion** | A PowerSystemsInvestments.jl solve of the portfolio |
-| `extensions.json` | A file that tz-oss-interop writes beside `system.json`. It holds values that Sienna has no field for. Sienna does not read it. |
+| `extensions.json` | A file that tz-oss-interop writes beside `system.json`. It holds values that Sienna has no field for, under the names of the PyPSA attributes with the same meaning. Sienna does not read it. |
 | `decisions.md` | A file that tz-oss-interop writes beside the output of each run. It names each component and each value that the run leaves out, with the reason. |
 
 ## The causes
@@ -45,7 +45,7 @@ Each entry names one cause:
 
 | Cause | Meaning |
 | --- | --- |
-| **translation** | The translation loses something. The reason is one of three: SiennaSchemas has no field for it, the rule of this translator leaves it out, or the scope of the translation is electricity only. |
+| **translation** | The translation loses something. The reason is one of three: SiennaSchemas has no field for it, the rule of this translator leaves it out, or the scope of the translation is electricity only. A value that SiennaSchemas has no field for is in `extensions.json` when its component is electricity, so only the solve loses it. |
 | **mathematics** | The two models state different mathematics. The data reaches Sienna, and the solve uses it in another way. |
 | **optimum** | The solver found a different optimum among equal ones. |
 
@@ -58,14 +58,14 @@ give the measured numbers.
 | Group | Entries | What to know |
 | --- | --- | --- |
 | [The four structural losses](#the-four-structural-losses) | 4 | No network, no unit commitment data, no time order inside a timeslice, one year of fleet. No version of this translator can carry them. |
-| [What the system has no component for](#what-the-system-has-no-component-for) | 5 | The system holds electricity only. The largest effect is the loss of the conversion losses between two electricity fuels. |
-| [Operating modes](#operating-modes) | 4 | The system uses one mode for each technology. An import mode of a line is lost. |
+| [What the system has no component for](#what-the-system-has-no-component-for) | 5 | The system holds electricity only. The largest effect is the loss of the conversion losses between two electricity fuels. `extensions.json` holds each conversion. |
+| [Operating modes](#operating-modes) | 4 | The system uses one mode for each technology. `extensions.json` holds the other modes, and the dispatch does not run them. |
 | [Costs and prices](#costs-and-prices) | 6 | The fuel price comes from one producer. A line has no cost. |
 | [Limits on activity and energy](#limits-on-activity-and-energy) | 5 | No annual limit on energy reaches a dispatch. This is the largest single effect on the dispatch. |
 | [Storage](#storage) | 7 | A storage is rated on its electricity output, and it cycles in time order. |
 | [Time](#time) | 5 | The weights round, and a model with no day structure loses its time order. |
-| [Policy](#policy) | 3 | No emission limit, no renewable target and no reserve margin reaches a dispatch. |
-| [Units and defaults](#units-and-defaults) | 4 | `CapacityToActivityUnit` is not read. A non-zero default of a ratio is not applied. |
+| [Policy](#policy) | 3 | No emission limit, no renewable target and no reserve margin reaches a dispatch. `extensions.json` holds each one. |
+| [Units and defaults](#units-and-defaults) | 4 | `CapacityToActivityUnit` does not convert a unit. A non-zero default of a ratio is not applied. |
 | [The portfolio](#the-portfolio) | 10 | One value for each candidate where OSeMOSYS states one for each year. A cap only for a pollutant of the whole model. |
 | [The expansion solve](#the-expansion-solve) | 11 | Some entries are open. |
 | [Differences that are not a loss](#differences-that-are-not-a-loss) | 6 | A comparison against published results also differs where nothing is lost. |
@@ -86,9 +86,9 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| A technology of kind `conversion` between two electricity fuels at one location, for example a transmission or distribution step from one voltage fuel to another | It has no component. `decisions.md` records each one. The demand stays at the fuel where the model states it. | translation: the two fuels of one location share one bus, so the conversion joins nothing. | The dispatch does not make the electricity that the conversion loses. On a large published model this is about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. |
+| A technology of kind `conversion` between two electricity fuels at one location, for example a transmission or distribution step from one voltage fuel to another | It has no component. A `conversion` record of `extensions.json` holds it, with its `efficiency`. `decisions.md` records each one. The demand stays at the fuel where the model states it. | translation: the two fuels of one location share one bus, so the conversion joins nothing. | The dispatch does not make the electricity that the conversion loses. On a large published model this is about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. |
 | A fuel that is not electricity, and its `fuel_supply`, `conversion` and pipeline technologies | No component. `decisions.md` records each one. The fuel cost rule still reads the cost of a `fuel_supply` technology. | translation: the scope is electricity only. | A limit on a fuel, for example the gas that a region can import, does not limit the plants that burn it. |
-| A technology of kind `export` | No component. | translation: the system has no component that takes energy out of the model. | An export of electricity is a demand that the system does not hold. |
+| A technology of kind `export` | No component. An export of electricity has a `conversion` record with no `bus1`. | translation: the system has no component that takes energy out of the model. | An export of electricity is a demand that the system does not hold. |
 | `AccumulatedAnnualDemand` (`accumulated_annual_demand`) of a fuel that is not electricity | Left out. One warning names the fuels. | translation: the scope is electricity only. | None on the dispatch. |
 | A technology with no kind | No component. `decisions.md` records each one that has a flow in the year. | translation: no kind fits it. | Its energy is not in the system. |
 
@@ -96,10 +96,10 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| The values of a generator at a mode other than the operations mode | The variable cost of a mode that puts out electricity goes to `other_mode_variable_costs_per_mwh` in `extensions.json`. Each other value is `NOT_MAPPED`. | translation: a Sienna generator runs one cost curve and one set of ratios. | A plant that can switch to a cheaper or a cleaner mode cannot switch. |
-| A mode of a transport technology that is not the flow back, for example a mode that puts out electricity at one end with no input, which is an import from outside the model | `NOT_MAPPED`, and one warning names three lines. | translation: a line holds one direction and its flow back. | The import does not happen. On a large published model, 21 lines to neighbours outside the model import about 70 TWh in the published solve and 0 in the dispatch. |
-| The loss of the flow back of a line, when it differs from the forward loss | `NOT_MAPPED` | translation: a Sienna line states one loss. | None in the dispatch today, because the solve applies no loss (refer to [Costs and prices](#costs-and-prices)). |
-| Two or more modes that flow back on one line | The first mode in number order applies. The others are `NOT_MAPPED`. | translation: a line holds one flow back. | The line uses the ratios of the first mode only. |
+| The values of a generator at a mode other than the operations mode | The `operating_modes` of the generator record in `extensions.json` hold the cost, the ratios and the emission rates of each other mode, for each MWh of its activity. | translation: a Sienna generator runs one cost curve and one set of ratios. | A plant that can switch to a cheaper or a cleaner mode cannot switch. |
+| A mode of a transport technology that is not the flow back, for example a mode that puts out electricity at one end with no input, which is an import from outside the model | The `operating_modes` of the line record hold it, and one warning names three lines. | translation: a line holds one direction and its flow back. | The import does not happen. On a large published model, 21 lines to neighbours outside the model import about 70 TWh in the published solve and 0 in the dispatch. |
+| The loss of the flow back of a line, when it differs from the forward loss | The ratios of the flow back are in the `operating_modes` of the line record. | translation: a Sienna line states one loss. | None in the dispatch today, because the solve applies no loss (refer to [Costs and prices](#costs-and-prices)). |
+| Two or more modes that flow back on one line | The first mode in number order applies. The `operating_modes` of the line record hold the others. | translation: a line holds one flow back. | The line uses the ratios of the first mode only. |
 
 ## Costs and prices
 
@@ -116,10 +116,10 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) and `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) | They go to the generator record of `extensions.json`, in MWh of output for each year. `decisions.md` records each one, and one warning names three. | translation: a Sienna system has no field for a limit on the energy of a year. | The largest single effect on the dispatch. On a large published model, 24 gas plants must make about 450 TWh. The dispatch gives them about 56 TWh. Gas combined cycle makes about 220 TWh against about 550 TWh published, and coal makes more. |
-| `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | `decisions.md` records each one that states a value, and one warning names three. | translation: SiennaSchemas has no field for them. | The dispatch is free of these limits. |
+| `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) and `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) | They go to `e_sum_min` and `e_sum_max` of the generator record of `extensions.json`, in MWh of output for each year. `decisions.md` records each limit of a technology with no record, and one warning names three. | translation: a Sienna system has no field for a limit on the energy of a year. | The largest single effect on the dispatch. On a large published model, 24 gas plants must make about 450 TWh. The dispatch gives them about 56 TWh. Gas combined cycle makes about 220 TWh against about 550 TWh published, and coal makes more. |
+| `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | The record of the component holds them: `e_sum_min_horizon`, `e_sum_max_horizon` and the bounds of `operating_modes`. `decisions.md` records each one of a technology with no record, and one warning names three. | translation: SiennaSchemas has no field for them. | The dispatch is free of these limits. |
 | `AvailabilityFactor` (`availability_factor`) | The step applies it in each hour, as a derate. | mathematics: OSeMOSYS states it as a limit on the energy of the year. A dispatch has no such limit. | A plant cannot reach its full output in a peak hour. On a large published model, the effect is small: about 1 TWh less nuclear. |
-| `CapacityFactor` (`capacity_factor`) of a storage technology or a transport technology | `NOT_MAPPED`, and one warning | translation: a storage and a line take their `availability_factor` as one derate for every hour, and no factor for each timeslice. | The storage or the line can use its capacity × its `availability_factor` in each hour. |
+| `CapacityFactor` (`capacity_factor`) of a storage technology or a transport technology | A companion parquet beside `extensions.json` holds the factor of each hour: `storage.parquet` or `controllable_lines.parquet`. | translation: a storage and a line take their `availability_factor` as one derate for every hour, and no factor for each timeslice. | The storage or the line can use its capacity × its `availability_factor` in each hour. |
 | The minimum stable level of a thermal plant | `active_power_limits.min` is 0. | translation: OSeMOSYS states none. | A thermal plant can run at any output. |
 
 ## Storage
@@ -127,7 +127,7 @@ give the measured numbers.
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
 | The capacity of a storage technology. OSeMOSYS states it on its activity. | `base_power` is the residual capacity × the electricity output ratio of the discharging technology. | mathematics: Sienna rates a storage on its electricity output. | The installed capacity of a storage is lower than the published value by the output ratio. On a large published model, pumped storage is about 9 GW lower. |
-| The storage balance. OSeMOSYS balances a storage over its timeslices, and `StorageBalanceDay`, `StorageBalanceSeason` and `StorageBalanceYear` can add a balance over a day, a season or a year. | The dispatch carries the level from one representative day to the next. No step applies the three flags. | mathematics: the dispatch runs the days in time order. | A storage cycles more. On a large published model, pumped storage puts out about 9 TWh in the dispatch against 0.05 TWh published. |
+| The storage balance. OSeMOSYS balances a storage over its timeslices, and `StorageBalanceDay`, `StorageBalanceSeason` and `StorageBalanceYear` can add a balance over a day, a season or a year. | The dispatch carries the level from one representative day to the next. The storage record holds the three flags, and no step applies them. | mathematics: the dispatch runs the days in time order. | A storage cycles more. On a large published model, pumped storage puts out about 9 TWh in the dispatch against 0.05 TWh published. |
 | A storage that two or more technologies or modes charge, or discharge | Left out | translation: a Sienna storage takes its power from one technology in each direction. | Its capacity is lost. |
 | A storage with no `ResidualStorageCapacity` (`residual_storage_capacity`) in the operations year | Left out | translation: it holds no energy. | Its power is lost. On a large published model, one battery of about 0.4 GW states 0 energy. |
 | The default 999 of `residual_storage_capacity` | A storage with no row takes 999 units of energy, as OSeMOSYS gives it. | translation: the translator uses the value as it is. | A storage with power and no stated energy has a very large energy capacity. On a large published model, no such storage has power in the first year. |
@@ -148,15 +148,15 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| `AnnualEmissionLimit` (`annual_emission_limit`) and `ModelPeriodEmissionLimit` (`model_period_emission_limit`) in the dispatch | No step applies them to the system. | translation: an operations system has no emission cap. | None on a model whose limits do not bind in the operations year. On a large published model, no limit binds in the first year. |
-| `REMinProductionTarget` (`generation_fraction_requirement`), `RETagFuel`, `RETagTechnology` | `decisions.md` records each one that states a value. | translation: this translator writes no `EnergyShareRequirements`. | No renewable target binds. |
-| `ReserveMargin` (`reserve_margin`), `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | `decisions.md` records each one. | translation: this translator writes no reserve requirement. | No reserve margin binds. |
+| `AnnualEmissionLimit` (`annual_emission_limit`) and `ModelPeriodEmissionLimit` (`model_period_emission_limit`) in the dispatch | A `constraint` record of `extensions.json` holds them. No step applies them to the system. | translation: an operations system has no emission cap. | None on a model whose limits do not bind in the operations year. On a large published model, no limit binds in the first year. |
+| `REMinProductionTarget` (`generation_fraction_requirement`), `RETagFuel`, `RETagTechnology` | A `constraint` record holds them. | translation: this translator writes no `EnergyShareRequirements`. | No renewable target binds. |
+| `ReserveMargin` (`reserve_margin`), `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | A `constraint` record holds them, when a tag states a value. | translation: this translator writes no reserve requirement. | No reserve margin binds. |
 
 ## Units and defaults
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| `CapacityToActivityUnit` (`capacity_to_activity_unit`) | No step reads it. `decisions.md` records it. The step uses `units:` for each conversion. | translation: the rule of this translator reads the units from the mappings file. | A model whose `CapacityToActivityUnit` does not agree with `units:` gets wrong costs and limits for each MWh. No check finds it today. |
+| `CapacityToActivityUnit` (`capacity_to_activity_unit`) | The record of each component holds it, in MWh for each MW. The step uses `units:` for each conversion. | translation: the rule of this translator reads the units from the mappings file. | A model whose `CapacityToActivityUnit` does not agree with `units:` gets wrong costs and limits for each MWh. No check finds it today. |
 | A default other than 0 of `InputActivityRatio`, `OutputActivityRatio` or `EmissionActivityRatio` | Not applied. `decisions.md` records it, and one warning names it. | translation: such a default gives every technology the ratio for every fuel and every mode. | A ratio that the model states only by its default is lost. |
 | A currency code | The step applies the scale of the currency, for example `million`, and no other conversion. | translation: the translator converts no currency. | A model in euros reads as a model in dollars. |
 | A default of `TotalTechnologyAnnualActivityLowerLimit` above 0, or of the upper limit at 0 or above | The bounds in `extensions.json` read the stated rows only. | translation: the rule of this translator. | A bound that the model states by its default is not in the record. |
@@ -170,10 +170,10 @@ give the measured numbers.
 | The capacity limits of an `AggregateTransportTechnology` | The portfolio holds the first year. `extensions.json` holds each year. | translation: the type holds one bound. | A limit that changes by year does not change. |
 | The electricity ratios of each year | The portfolio reads the ratios of the first year. | translation: the rule of this translator. | A technology whose efficiency improves by year keeps the efficiency of the first year. |
 | `AnnualEmissionLimit` of a pollutant that only some technologies emit, for example a pollutant of one region | It goes to a `constraint` record of `extensions.json`. `decisions.md` records each one. | translation: `CarbonCaps` names no region and no pollutant, so it limits the whole portfolio. | No limit binds. On a large published model, each pollutant belongs to one country, so no limit reaches the portfolio. |
-| `ModelPeriodEmissionLimit` of a pollutant that covers the whole model | `NOT_MAPPED`, and one warning | translation: `CarbonCaps` holds one year. | That limit does not bind. |
+| `ModelPeriodEmissionLimit` of a pollutant that covers the whole model | `NOT_MAPPED` in the portfolio, and one warning. The `constraint` record holds it. | translation: `CarbonCaps` holds one year. | That limit does not bind. |
 | A limit on the energy capacity of a storage | None | translation: the canonical stage states none. | `capacity_limits_energy` is absent. |
 | The variable cost of a storage candidate, and of a transport candidate | Not in the portfolio | translation: `AggregateTransportTechnology` has no operation cost, and the storage candidate states its fixed cost only. | The expansion runs them at no cost. |
-| `TotalAnnualMinCapacityInvestment`, `CapacityAdditionalMaxGrowthRate`, `CapacityAdditionalMinGrowthRate`, `CapacityAdditionalMaxFloor` | `decisions.md` records each one. | translation: SiennaSchemas has no field for a limit on the build of one year. | The expansion can build any amount in one period. |
+| `TotalAnnualMinCapacityInvestment`, `CapacityAdditionalMaxGrowthRate`, `CapacityAdditionalMinGrowthRate`, `CapacityAdditionalMaxFloor` | The `technology` record holds them for each year. `decisions.md` records each one of a technology that is not a candidate. | translation: SiennaSchemas has no field for a limit on the build of one year. | The expansion can build any amount in one period. |
 | A plant of the base system that is not a candidate | In no technology. | translation: the rule of this translator gives a plant to the candidate of the same name only. | The expansion leg adds such a plant as a technology of its own. Refer to [The expansion solve](#the-expansion-solve). |
 
 ## The expansion solve

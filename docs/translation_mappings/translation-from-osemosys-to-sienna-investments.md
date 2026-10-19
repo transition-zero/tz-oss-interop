@@ -284,18 +284,23 @@ A pollutant that covers the whole model gets one `CarbonCaps` for each year whos
 OSeMOSYS adds `annual_exogenous_emission` to the emissions that a limit holds. So the cap is the
 limit less that emission.
 
-The limits of each other pollutant go to a `constraint` record of `extensions.json`:
+The operations step writes a `constraint` record of `extensions.json` for each pollutant with
+a limit, whether it covers the whole model or not. Refer to
+[The policies of the model](translation-from-osemosys-to-sienna.md#the-policies-of-the-model).
+So the limits of each other pollutant are in that record:
 
 | Field | Value |
 | --- | --- |
 | `name` | The pollutant |
+| `type` | `primary_energy`, as a PyPSA `GlobalConstraint` names a limit on emissions |
+| `carrier_attribute` | The pollutant |
 | `sense` | `<=` |
-| `limits` | One entry for each year with a limit: `period` `year`, `value` in t (the limit less the exogenous emission), `unit` `t`, `year`. One entry with `period` `horizon` from `ModelPeriodEmissionLimit` (`model_period_emission_limit`) − `ModelPeriodExogenousEmission` (`model_period_exogenous_emission`). |
+| `limits` | One entry for each year with a limit: `period` `year`, `value` in t (the limit less the exogenous emission), `unit` `t`, `investment_period`. One entry with `period` `horizon` from `ModelPeriodEmissionLimit` (`model_period_emission_limit`) − `ModelPeriodExogenousEmission` (`model_period_exogenous_emission`). |
 | `members` | Each technology that emits the pollutant |
 
 `decisions.md` records each such pollutant as `COMPONENT_SKIPPED`, and one warning names three.
 A pollutant that covers the whole model and states a `model_period_emission_limit` records that
-limit as `NOT_MAPPED`, because `CarbonCaps` holds one year.
+limit as `NOT_MAPPED`, because `CarbonCaps` holds one year. The `constraint` record holds it.
 
 ## A plant that already runs → `ExistingDevices` and `RetirementPotential`
 
@@ -343,21 +348,30 @@ Each year builds its own representative days from the calendar of that year.
 
 ## The `technology` records of `extensions.json`
 
-Each candidate gets one `technology` record. Each field is keyed by the year, as text:
+Each candidate gets one `technology` record. A field takes the name of the PyPSA attribute
+with the same meaning. A yearly field is keyed by the year, as text, as a multi-period PyPSA
+network keys a value by its investment period:
 
-| Field | Unit | From |
-| --- | --- | --- |
-| `capital_cost_per_mw_by_year` | $/MW | `capital_cost` |
-| `fixed_cost_per_mw_year_by_year` | $/MW/yr | `fixed_cost` |
-| `residual_capacity_mw_by_year` | MW | `residual_capacity` |
-| `total_annual_max_capacity_investment_mw_by_year` | MW | `total_annual_max_capacity_investment`, for each year with a limit |
-| `variable_cost_per_mwh_by_year` | $/MWh | The variable cost with the fuel cost and the emission penalty (supply only) |
-| `energy_capital_cost_per_mwh_by_year` | $/MWh | `energy_capital_cost` (storage only) |
-| `capacity_limits_min_mw_by_year`, `capacity_limits_max_mw_by_year` | MW | The capacity limits (transport only) |
+| Field | Unit | From | PyPSA attribute |
+| --- | --- | --- | --- |
+| `overnight_cost` | $/MW | `capital_cost` | `overnight_cost` |
+| `fom_cost` | $/MW/yr | `fixed_cost` | `fom_cost` |
+| `p_nom` | MW | `residual_capacity` | `p_nom` |
+| `max_growth` | MW | `total_annual_max_capacity_investment`, for each year with a limit | `Carrier.max_growth` |
+| `min_growth` | MW | `total_annual_min_capacity_investment`, for each year above 0 | none |
+| `max_relative_growth`, `min_relative_growth` | | `capacity_additional_max_growth_rate`, `capacity_additional_min_growth_rate` | `Carrier.max_relative_growth`, none |
+| `max_growth_floor` | MW | `capacity_additional_max_floor` | none |
+| `e_sum_min`, `e_sum_max` | MWh | `total_technology_annual_activity_lower_limit` above 0, `total_technology_annual_activity_upper_limit` not -1, × the electricity ratio | `e_sum_min`, `e_sum_max` |
+| `marginal_cost` | $/MWh | The variable cost with the fuel cost and the emission penalty (supply only) | `marginal_cost` |
+| `energy_overnight_cost` | $/MWh | `energy_capital_cost` (storage only) | `Store.overnight_cost` |
+| `p_nom_min`, `p_nom_max` | MW | The capacity limits (transport only) | `p_nom_min`, `p_nom_max` |
 
-A year with no limit is not in a `_by_year` field of a limit. So a year that is not in
-`capacity_limits_max_mw_by_year` or `total_annual_max_capacity_investment_mw_by_year` has no
-limit.
+A record also holds three values of the earliest year, which hold in every year:
+`e_sum_min_horizon` and `e_sum_max_horizon` in MWh, from the model period activity limits, and
+`capacity_to_activity_unit` in MWh/MW.
+
+A year with no limit is not in a yearly field of a limit. So a year that is not in `p_nom_max`
+or `max_growth` has no limit.
 
 ---
 
@@ -409,12 +423,12 @@ the leg reads and what the solve loses.
 
 | OSeMOSYS | Effect |
 | --- | --- |
-| A pollutant that does not cover the whole model | Its limits go to a `constraint` record of `extensions.json`. Nothing applies them. |
+| A pollutant that does not cover the whole model | Its limits are in a `constraint` record of `extensions.json`. Nothing applies them. |
 | `ModelPeriodEmissionLimit` of a pollutant that covers the whole model | `NOT_MAPPED`. A `CarbonCaps` holds one year. |
-| `AnnualEmissionLimitRegionGroup` and the other region group parameters | No step applies them. |
-| `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | No step applies them. No `EnergyShareRequirements` is written. |
-| `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | No step applies them. |
-| `TotalAnnualMinCapacityInvestment`, `CapacityAdditionalMaxGrowthRate`, `CapacityAdditionalMinGrowthRate`, `CapacityAdditionalMaxFloor` | No step applies them. |
+| `AnnualEmissionLimitRegionGroup` and the other region group parameters | A `constraint` record holds them. No step applies them. |
+| `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | A `constraint` record holds them. No step applies them. No `EnergyShareRequirements` is written. |
+| `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | A `constraint` record holds them. No step applies them. |
+| `TotalAnnualMinCapacityInvestment`, `CapacityAdditionalMaxGrowthRate`, `CapacityAdditionalMinGrowthRate`, `CapacityAdditionalMaxFloor` | The `technology` record holds them for each year. No step applies them. |
 | `TotalAnnualMaxCapacityInvestment` | It decides which technology is a candidate. `extensions.json` holds it. No field bounds the build of one year. |
 | `DepreciationMethod`, the salvage value | Not translated. |
 | The fixed and the variable cost of the years after the first year | `extensions.json` holds them. |
