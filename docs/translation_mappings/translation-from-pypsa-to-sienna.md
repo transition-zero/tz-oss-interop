@@ -94,9 +94,9 @@ SiennaSchemas defines per-component schemas but not how a whole system is packag
 ```json
 {
   "ACBus": [ { "id": 1, "name": "bus_1", ... } ],
-  "PowerLoad": [ { "id": 1, "name": "load_1", ... } ],
-  "ThermalStandard": [ { "id": 1, "name": "ccgt_1", ... } ],
-  "Line": [ { "id": 1, ... } ]
+  "PowerLoad": [ { "id": 3, "name": "load_1", ... } ],
+  "ThermalStandard": [ { "id": 4, "name": "ccgt_1", ... } ],
+  "Line": [ { "id": 5, ... } ]
 }
 ```
 
