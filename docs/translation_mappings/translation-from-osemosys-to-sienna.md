@@ -7,7 +7,9 @@ It gives the source of each field.
 > pipeline writes the fleet of one model year for dispatch. It writes no capacity expansion.
 > What your plan may build becomes a Sienna Investments Portfolio, which
 > [the `osemosys-csv-to-sienna-investments` pipeline](translation-from-osemosys-to-sienna-investments.md)
-> writes. A fuel that is not electricity has no component. Refer to
+> writes. A fuel that is not electricity has no Sienna component. `extensions.json` holds it,
+> and each technology on it, as PyPSA components for the Sienna to PyPSA hop. Refer to
+> [The fuels that are not electricity](#the-fuels-that-are-not-electricity), to
 > [Not translated](#not-translated) and to [the gap analysis](osemosys-to-sienna-gap-analysis.md),
 > which names each thing that the translation loses, and its effect.
 
@@ -34,7 +36,7 @@ The operations pipelines run these nodes, in this order:
 | --- | --- |
 | `stage_osemosys_csv` or `stage_tz_osemosys_json` | Writes the canonical stage. |
 | `osemosys_canonical_drop_outside_scope` | Removes the locations and the years outside the scope that you give. |
-| `osemosys_to_sienna_map_components` | Writes the buses, the loads, the generators, the storages and the lines of one model year. |
+| `osemosys_to_sienna_map_components` | Writes the buses, the loads, the generators, the storages and the lines of one model year, and the records of the fuels that are not electricity. |
 | `sienna_relate_components` | Writes one `Area` for each bus area, and one `Arc` for each line. |
 | `osemosys_to_sienna_report_unapplied_parameters` | Records each parameter of the model that no step applies. |
 | `emit_sienna_files` | Writes `system.json`, `system_time_series_storage.h5` and `extensions.json`. |
@@ -82,7 +84,7 @@ kind (refer to [How tz-oss-interop infers a kind](../tutorials/osemosys-mappings
 | `SupplyTechnology` | A generator, when its residual capacity in the operations year is above 0 | A `SupplyTechnology`, when a plan may build it |
 | `StorageTechnology` | Through the storage that it charges or discharges | Through that storage, as a `StorageTechnology` |
 | `AggregateTransportTechnology` | A `TwoTerminalGenericHVDCLine`, when its residual capacity is above 0 | An `AggregateTransportTechnology`, when a plan may build it |
-| `fuel_supply`, `export`, `conversion`, or no kind | No component | No technology |
+| `fuel_supply`, `export`, `conversion`, or no kind | No component. A record of `extensions.json` for each mode, when a fuel of its flows is not electricity | No technology |
 
 A technology can be in both documents. Its residual capacity is in the system, and the capacity
 that a plan may add is in the portfolio.
@@ -106,8 +108,11 @@ The values of each other mode go to the `operating_modes` field of the record of
   electricity fuels at one location share one bus.
 - Each location of an electricity fuel becomes one `ACBus` and one `Area`.
 - A technology between two locations has the location `A~B`. That location is not a bus.
-- A fuel that is not electricity has no component. It still sets the fuel cost and the emission
-  rate of a plant that burns it. Refer to [The fuel producer rule](#the-fuel-producer-rule).
+- A fuel that is not electricity has no Sienna component. Its bus is `<region>/<fuel>`, because
+  the fuel balances in its region, and a `bus` record of `extensions.json` holds it. It also
+  sets the fuel cost and the emission rate of a plant that burns it. Refer to
+  [The fuels that are not electricity](#the-fuels-that-are-not-electricity) and to
+  [The fuel producer rule](#the-fuel-producer-rule).
 - OSeMOSYS states no electrical network. So the system is a transport model with no impedance:
   each connection between two locations is a `TwoTerminalGenericHVDCLine`, and the system has no
   `Line`.
@@ -161,9 +166,11 @@ The REPL shows a list that a pipeline file states as text separated by commas. E
 | [`STORAGE` and the technologies that charge and discharge it](#storage--energyreservoirstorage) | One `EnergyReservoirStorage` |
 | [`AggregateTransportTechnology`](#aggregatetransporttechnology--twoterminalgenerichvdcline) | `TwoTerminalGenericHVDCLine`, and an `Arc` |
 | [`TIMESLICE`, `SEASON`, `DAYTYPE`, `DAILYTIMEBRACKET`](#the-calendar) | The hours of each time series, and one `representative_period` record for each day in `extensions.json` |
-| [A `fuel_supply` technology](#the-fuel-producer-rule) | No component. It sets the fuel cost and part of the emission rate of each plant that burns its fuel. |
+| [A `fuel_supply` technology](#the-fuels-that-are-not-electricity) | A `generator` record on the bus of its fuel in `extensions.json`. It also sets the fuel cost and part of the emission rate of each plant that burns its fuel. |
 | [`EMISSION`](#the-emission-penalty) | No component. Its rate goes to `extensions.json`, and its penalty adds to the variable cost. |
-| [`fuel_supply`, `export`, `conversion`, or no kind](#technologies-with-no-component) | No component. `decisions.md` names each one. A `conversion` or an `export` of electricity gets a `conversion` record in `extensions.json`. |
+| [A `conversion` or an `export` of electricity](#technologies-with-no-component) | No component. `decisions.md` names each one, and a `conversion` record of `extensions.json` holds it. |
+| [A technology that moves or converts a fuel that is not electricity](#the-fuels-that-are-not-electricity) | A `conversion` record of `extensions.json` for each mode |
+| [A demand for a fuel that is not electricity](#the-fuels-that-are-not-electricity) | A `load` record of `extensions.json` on the bus of the fuel |
 | [An emission limit, a renewable target, a reserve margin](#the-policies-of-the-model) | A `constraint` record in `extensions.json` |
 | Each other parameter | Refer to [Not translated](#not-translated). `decisions.md` names each one that states a value that no record holds. |
 
@@ -304,9 +311,11 @@ The time series is a `TimeSeriesAssociation` on `max_active_power`. Its value in
 | Specified | `SpecifiedAnnualDemand` (`specified_annual_demand`) in MWh × `SpecifiedDemandProfile` (`specified_demand_profile`) of the timeslice of the hour / (`YearSplit` (`year_split`) of that timeslice × 8760 h) |
 | Accumulated | `AccumulatedAnnualDemand` (`accumulated_annual_demand`) in MWh / 8760 h |
 
-The step leaves out these demands, and `decisions.md` names each one:
+A demand for a fuel that is not electricity becomes a `load` record of `extensions.json`, as
+[The fuels that are not electricity](#the-fuels-that-are-not-electricity) states. A demand for
+an electricity fuel with no location has no bus, and the bus step reports the fuel. The step
+leaves out these demands, and `decisions.md` names each one:
 
-- a demand for a fuel that is not electricity, or for a fuel with no location;
 - a negative demand;
 - a demand that gives no hour above 0 MW;
 - the share of a demand in a timeslice whose `year_split` is 0, which holds no hour.
@@ -429,7 +438,14 @@ penalty as an event of its own, and the cost event reads them.
 | `emission_rates_t_per_mwh` | t/MWh | For each pollutant, (`EmissionActivityRatio` (`emission_rate`) at the operations mode + `input_activity_ratio` × the emission rate of the producer of each fuel for each unit of that fuel) / the electricity output ratio. A rate of 0 is left out. A negative rate stays. |
 | `e_sum_min` | MWh | For each year, `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) in MWh × the electricity output ratio of that year. A limit of 0 is left out. |
 | `e_sum_max` | MWh | For each year, `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) in MWh × the electricity output ratio of that year. A negative limit is left out. |
+| `fuel_buses` | MWh/MWh | For each fuel that the plant takes in at the operations mode and that is not electricity, `input_activity_ratio` / the electricity output ratio, keyed by the bus of the fuel, `<region>/<fuel>`. No PyPSA field: PyPSA states it as the `bus0` and the `efficiency` of a `Link`. |
+| `own_marginal_cost` | $/MWh | The own cost, plus the penalty of the own emissions of the plant, without a fuel term. Only where `fuel_buses` is stated. |
+| `own_emission_rates_t_per_mwh` | t/MWh | For each pollutant, `EmissionActivityRatio` at the operations mode / the electricity output ratio, without the rate of a fuel. Only where `fuel_buses` is stated. |
 | Each other field | | Refer to [The values that Sienna has no field for](#the-values-that-sienna-has-no-field-for). |
+
+The Sienna to PyPSA hop reads `fuel_buses`, `own_marginal_cost` and
+`own_emission_rates_t_per_mwh`. Where the network holds the bus of each fuel, a `ThermalStandard`
+becomes a PyPSA `Link` that draws the fuel from its bus, so the network prices the fuel once.
 
 No step applies the two annual limits. A Sienna system has no field for a limit on the energy
 of a year.
@@ -524,20 +540,18 @@ companion `controllable_lines.parquet` holds it for each hour, in the column `p_
 
 ## Technologies with no component
 
-The system holds electricity only. The step records each technology below as
-`COMPONENT_SKIPPED`, with its kind, and one warning for each reason names three:
+The system has no component for the two technologies of electricity below. The step records
+each one as `COMPONENT_SKIPPED`, with its kind, and one warning for each reason names three:
 
 | Technology | Note |
 | --- | --- |
-| Kind `fuel_supply` | It supplies a fuel that is not electricity. The fuel producer rule still reads its cost. |
 | Kind `export`, and it takes in electricity | It takes in electricity and puts out nothing. The system has no component that takes energy out of the model. A `conversion` record holds it. |
-| Kind `export`, and it takes in a fuel that is not electricity | The system holds electricity only. |
 | Kind `conversion`, and each fuel of its flows is electricity | It converts one electricity fuel into another at one location. The two fuels share one bus, so it joins nothing. The dispatch loses its loss, and each demand stays at the value that the model states. A `conversion` record holds it. |
-| Kind `conversion`, and a fuel of its flows is not electricity | The electricity that it takes in is a demand that the system does not hold. |
-| No kind, with a flow in the year | It fits no kind, for example a pipeline of a fuel that is not electricity. |
 
-A technology with no kind and no flow in the year moves no energy, so the step does not report
-it.
+A technology of kind `fuel_supply`, `export` or `conversion`, or of no kind, whose fuels are not
+all electricity, has records of its own. Refer to
+[The fuels that are not electricity](#the-fuels-that-are-not-electricity). A technology with
+no kind and no flow in the year moves no energy, so the step does not report it.
 
 A technology of kind `conversion` whose fuels are all electricity, and a technology of kind
 `export` that takes in electricity, each get a `conversion` record in `extensions.json`. The
@@ -587,6 +601,98 @@ it, unless `TradeRoute` is 0 in each year that it states, which closes the route
 
 Each value is that of the operations year, except `active`, `e_sum_min` and `e_sum_max`, which
 hold for each year. A route of a fuel that is not electricity has no record.
+
+## The fuels that are not electricity
+
+Sienna holds electricity only. Each other fuel, and each technology that supplies, moves or
+converts it, gets records of `extensions.json` in PyPSA terms. The Sienna to PyPSA hop builds
+a PyPSA component from each record. The group `osemosys_to_sienna_map_fuels` of the step writes
+them. Refer to [translation-from-sienna-to-pypsa.md](translation-from-sienna-to-pypsa.md#the-fuels-that-are-not-electricity).
+
+### The bus of a fuel
+
+A fuel that is not electricity balances in its region, so its bus is `<region>/<fuel>`, for
+example `R1/DENG`. This is the name of a trade route end too. A fuel of electricity has the bus
+of its location. A fuel gets a `bus` record when a technology of this section or a demand uses
+it:
+
+| Field | From |
+| --- | --- |
+| `name` | `<region>/<fuel>` |
+| `carrier` | The `carrier` annotation of the fuel, or the name of the fuel where it states none |
+| `location` | The `location` annotation of the fuel |
+
+A fuel that only a plant burns gets no bus. The plant then stays a PyPSA `Generator` at its
+Sienna price.
+
+### The technologies
+
+The step reads each technology of kind `fuel_supply`, `export` or `conversion`, or of no kind,
+whose fuels are not all electricity and that has a flow in the operations year. Each operating
+mode with a flow becomes one record. The operations mode, and the one mode of a technology of
+one mode, take the name of the technology. Each other mode takes `<name>/mode<mode>`, for
+example `DENGFRPI0/mode2`.
+
+| The flows of the mode | Record | PyPSA component |
+| --- | --- | --- |
+| It takes in nothing and puts out one fuel | `generator` | A `Generator` on the bus of the fuel |
+| It takes in and puts out | `conversion` | A `Link` from the bus of its largest input (`bus0`) to the bus of its largest output (`bus1`). A third and a fourth fuel go to `bus2` and `bus3`. |
+| It takes in and puts out nothing | `conversion` with no `bus1` | None. The record travels on. |
+
+A pipeline of two modes, one for each direction, thus becomes two one-way links. An import
+from outside the model, which takes in nothing in its operations mode, is a generator in that
+mode.
+
+The step leaves out a mode, records it as `COMPONENT_SKIPPED` and warns once for each reason:
+
+| Reason | Note |
+| --- | --- |
+| It uses an electricity fuel with no location | The fuel has no bus. |
+| It takes in nothing and puts out more than one fuel | A PyPSA `Generator` has one bus. |
+| It takes in and puts out more than four fuels | A link of this translation has four buses at most. |
+| It has no residual capacity, and the model builds none at no cost | The fleet of the year holds none of it. |
+| Its annual activity upper limit is 0 | It may not run in the year. |
+
+### The values of a mode
+
+Each value is for one MWh of the fuel that rates the component: the fuel that a generator puts
+out, or the fuel that goes in at `bus0` of a link. The rating ratio is the
+`output_activity_ratio` or the `input_activity_ratio` of that fuel at the mode.
+
+| Field | Unit | From |
+| --- | --- | --- |
+| `bus`, `bus0`, `bus1`, `bus2`, `bus3` | | The bus of each fuel |
+| `carrier` | | The category of the technology, else the carrier of its output fuel |
+| `efficiency` | | The ratio of the output at `bus1` / the rating ratio |
+| `efficiency2`, `efficiency3` | | The ratio of the fuel / the rating ratio, negative for a fuel that goes in |
+| `p_nom` | MW | `ResidualCapacity` × `CapacityToActivityUnit`, in MWh, / 8760 h × the rating ratio |
+| `p_nom_extendable` | | True where `CapitalCost` is 0, `TotalAnnualMaxCapacityInvestment` is not 0, and `TotalAnnualMaxCapacity` leaves room |
+| `p_nom_max` | MW | `TotalAnnualMaxCapacity`, converted as `p_nom` is, for an extendable mode |
+| `marginal_cost` | $/MWh | (`VariableCost` + Σ `EmissionActivityRatio` × `EmissionsPenalty`), in $/MWh of activity, / the rating ratio |
+| `p_max_pu` | | `AvailabilityFactor`, when it is not 1 |
+| `emission_rates_t_per_mwh` | t/MWh | `EmissionActivityRatio` of the mode, for each pollutant, / the rating ratio |
+| `e_sum_min`, `e_sum_max` | MWh | The annual activity limit of the mode, and of a technology of one mode, in MWh × the rating ratio, keyed by the operations year |
+| `input_fuel`, `output_fuel` | | The largest fuel that a link takes in and puts out |
+
+`CapacityToActivityUnit` converts the capacity, because the capacity of a fuel technology is
+often in units of energy a year rather than in the capacity unit of the mappings file. A model
+that declares no `CapacityToActivityUnit` converts with its capacity unit. Each mode can run at
+the whole capacity of the technology, where OSeMOSYS shares the capacity among the modes. The
+annual limit of a technology of two modes holds their sum, so no mode states it, and the report
+of the parameters that no step applies names it. `decisions.md` records an event for each value.
+
+### A demand for a fuel that is not electricity
+
+`SpecifiedAnnualDemand` and `AccumulatedAnnualDemand` of a fuel that is not electricity become
+a `load` record, with the name and the MW of each hour that a `PowerLoad` would take:
+
+| Field | Unit | From |
+| --- | --- | --- |
+| `name` | | The fuel, or `<fuel>/accumulated` |
+| `bus` | | `<region>/<fuel>` |
+| `carrier` | | The carrier of the fuel, or the name of the fuel |
+| `p_set` | MW | The MW of each hour, where each hour is the same |
+| `p_set_series` | | `loads.parquet`, where the hours differ. The companion holds the MW of each hour in the column `p_set`. |
 
 ## The values that Sienna has no field for
 
@@ -827,10 +933,11 @@ osemosys-to-sienna: total_technology_annual_activity_upper_limit states 39 row(s
 
 A component notes each row of its technology that it applies or that its record keeps: the
 residual capacity, the availability, the costs and the emission rates among them. The report
-counts only those rows as applied. So a row of a technology that has no component, for example
-the residual capacity of a `fuel_supply` technology, is reported. So are the capacity factor of
-a technology that charges a storage that another technology discharges, and the cost of a
-`fuel_supply` technology that prices no fuel that a plant burns.
+counts only those rows as applied. So a row of a technology that has no component and no record,
+for example the residual capacity of a supply technology with no carriers row, is reported. So
+are the capacity factor of a technology that charges a storage that another technology
+discharges, and the capital cost, the fixed cost and the life of a technology of a fuel that is
+not electricity, which its record does not hold.
 
 ---
 
@@ -850,7 +957,10 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 
 | OSeMOSYS | Effect |
 | --- | --- |
-| Fuels that are not electricity, and their technologies | No component and no record. The fuel cost and the emission rate of a plant still read them. `decisions.md` names each value that states one. |
+| Fuels that are not electricity, and their technologies | No Sienna component. The `bus`, `generator`, `conversion` and `load` records hold them as PyPSA components, and the Sienna to PyPSA hop builds them. The Sienna dispatch still prices a fuel at its cheapest producer. |
+| A storage of a fuel that is not electricity | Not translated. The storage step reports it, as its technologies put out no electricity. |
+| A trade route of a fuel that is not electricity | Not translated. The report of the parameters that no step applies names it. |
+| The capital cost, the fixed cost and the life of a technology of a fuel that is not electricity | No record holds them. The report of the parameters that no step applies names them. |
 | A `conversion` between two electricity fuels at one location | Its `conversion` record holds it. The dispatch does not apply its loss, and the demand stays at the value that the model states. |
 | The capacity that a plan builds, and the years other than the operations year | The system holds the residual capacity of one year. A record holds the values of that year, except a bound of each year and a policy. |
 | `TotalTechnologyAnnualActivityLowerLimit`, `TotalTechnologyAnnualActivityUpperLimit` | The generator, `storage`, `controllable_line` and `conversion` records hold them, as `e_sum_min` and `e_sum_max`. No step applies them. An upper limit of 0 in the year keeps a `fuel_supply` technology from being a fuel producer. |
@@ -859,7 +969,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | The `constraint` records hold them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | The `constraint` records hold them. No step applies them. |
 | `StorageBalanceDay`, `StorageBalanceSeason`, `StorageBalanceYear`, `StorageMaxHours` | The `storage` records hold them. No step applies them to the system. |
-| `CapacityToActivityUnit` | The records hold it. No step reads it for a conversion. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
+| `CapacityToActivityUnit` | The records hold it. The records of the fuels that are not electricity convert their capacity with it. No other step reads it. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
 | The values of another operating mode | The `operating_modes` of the records hold them. Refer to [Technology](#technology). |
 | The `capacity_factor` of a storage or a transport technology | The companion parquet holds it. The system does not apply it. |
 | `DepreciationMethod` | Not translated. No record holds a region. |
@@ -882,5 +992,6 @@ convention, the translator gives wrong values.
 | `StorageMaxChargeRate`, `StorageMaxDischargeRate` | Energy in a year, in the unit of `units: energy`. A value of 0 states no limit. |
 | `StorageLevelStart` | The level at the start of the operations year |
 | `TechnologyToStorage`, `TechnologyFromStorage` | One technology and one mode in each direction |
-| The cheapest `fuel_supply` technology of a fuel | The price that a plant pays for that fuel, with no limit on what that producer makes |
+| The cheapest `fuel_supply` technology of a fuel | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
+| A fuel technology with no residual capacity and no capital cost | Capacity that the model builds at no cost, so its PyPSA component is extendable |
 | A category | One Sienna type, one prime mover and, for a thermal type, one fuel |

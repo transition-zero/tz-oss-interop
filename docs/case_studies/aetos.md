@@ -206,7 +206,8 @@ tables stays as the model states it:
 Of the 213 technologies with no kind, 132 are solar, wind and hydro plants. Their names end in
 `SO00I00`, `WI00I00` and `HY00I00`. The other 81 are gas pipelines between two countries, for
 example `ATNGDEPI0`. A technology with no kind has no Sienna component, even when a row in
-`objects:` gives it a category.
+`objects:` gives it a category. Each pipeline becomes `conversion` records of
+`extensions.json`, one for each direction, which the PyPSA network builds as links.
 
 ## Translate the model into a Sienna system
 
@@ -270,11 +271,33 @@ names each component and gives the reason. These warnings tell you the most:
   plan can build in a later year.
 - 156 technologies convert one electricity fuel into another at one location. The system has no
   component for them.
-- 495 technologies supply a fuel that is not electricity.
+- 119 modes of technologies of a fuel that is not electricity have no residual capacity, and
+  the model builds none at no cost, for example `ATNGBACKSTOP`. The other technologies of those
+  fuels become records of `extensions.json`. Refer to
+  [The fuels that are not electricity](#the-fuels-that-are-not-electricity).
 - 21 transport technologies state an operating mode that is not the flow back. Each one is an
   import from outside the model, and the line does not hold it.
 - 17 warnings each name one parameter that no step applies, for example `capital_cost` and
   `variable_operation_cost`.
+
+### The fuels that are not electricity
+
+The system holds electricity only. The run of 2026-10-19 writes the other fuels of AETOS to
+`extensions.json`, as PyPSA components for the [PyPSA dispatch](#solve-the-dispatch-with-pypsa):
+
+| Record of `extensions.json` | Count | What it is |
+| --- | --- | --- |
+| `bus` named `REGION1/<fuel>` | 420 | One bus for each fuel that a supply, a pipeline or a demand uses: gas, coal, lignite, oil, biomass, uranium and the others |
+| `generator` with a `bus` | 423 | Gas production, LNG imports, coal, oil and uranium supply, and the 16 pipelines that import gas from outside the model in mode 1 |
+| `conversion` on the buses of fuels | 127 | The 66 pipelines with capacity in 2021, one record for each direction, and the 8 LNG export terminals with capacity |
+| `load` with a `bus` | 42 | The gas demand of each country that states one, 3,709 TWh in the year |
+
+A supply with no residual capacity and no capital cost, for example coal supply, is
+extendable, because the model builds its capacity at no cost. The capacity of a fuel
+technology is in PJ a year, because the model states no `CapacityToActivityUnit` for it, so
+the run converts it with that parameter. The record of each of the 572 gas, coal, oil and
+biomass plants with a fleet also names the bus of its fuel, its own cost and its own emission
+rate.
 
 ## Translate the model into a Sienna Investments Portfolio
 
@@ -467,8 +490,9 @@ difference.
 
 The `sienna-to-pypsa` pipeline turns the Sienna system into a PyPSA network. A PyPSA network
 has attributes for some values that a Sienna system has no field for, for example an annual
-energy bound and the cost of a line. This section solves that network and compares three
-results: the published results, the Sienna dispatch and the PyPSA dispatch.
+energy bound, the cost of a line, and the fuels that are not electricity. This section solves
+that network and compares three results: the published results, the Sienna dispatch and the
+PyPSA dispatch.
 
 We did the runs of this section on 2026-10-19, on the branch `osemosys-to-sienna`. They read
 the files of [Translate the model into a Sienna system](#translate-the-model-into-a-sienna-system)
@@ -492,12 +516,21 @@ Select `translate`. Then give these answers:
 
 Move `decisions.md` and `validation-report.md` to `outputs/pypsa/`.
 
-tz-oss-interop writes no warning. PyPSA writes one `FutureWarning` about the string type of
-pandas. The network holds 92 buses, 699 generators, 115 storage units, 78 loads and 205 links,
-over the 96 hours of the Sienna system. It also holds these values of `extensions.json`:
+tz-oss-interop writes one warning, about the 24 gas plants below. PyPSA writes one
+`FutureWarning` about the string type of pandas. The network holds 512 buses, 583 generators,
+115 storage units, 120 loads and 871 links, over the 96 hours of the Sienna system. It also
+holds these values of `extensions.json`:
+
+- 420 buses hold a fuel that is not electricity, for example `REGION1/DENG`, the gas of `DE`.
+  423 generators supply those fuels, 42 loads take the gas demand, and 127 links are the
+  pipelines and the LNG export terminals.
+- 539 gas, coal, oil and biomass plants become links that draw their fuel from its bus. Each
+  link pays the cost of the plant without its fuel, and the network prices the fuel.
 
 - 24 gas plants state an `e_sum_min` for 2021, 450.59 TWh in total. This is the
-  `TotalTechnologyAnnualActivityLowerLimit` of the model.
+  `TotalTechnologyAnnualActivityLowerLimit` of the model. A PyPSA link has no `e_sum_min`, so
+  these plants stay generators, and they pay the Sienna price of their gas. The warning names
+  three of them.
 - Each link has a `marginal_cost` of 10.00 USD for each MWh and an `efficiency` of 0.95.
 - 92 of the 113 lines flow both ways. Each of them becomes two one-way links, for example
   `ATELCHPH1` and `ATELCHPH1 reverse`, so a flow loses energy in each direction.
@@ -529,18 +562,22 @@ The run gives this result:
 | Item | Value |
 | --- | --- |
 | Status | `optimal` |
-| Objective | 1,846,171,141 USD, which is 1.84617 × 10⁹ |
-| Unserved energy | 1,141.06 MWh: 1,121.94 MWh in `MR` and 19.12 MWh in `GW` |
-| Time | 11.2 s |
-| Peak memory | 0.95 GB |
+| Objective | 5,112,548,136 USD, which is 5.11255 × 10⁹ |
+| Unserved energy | 1,141.06 MWh: 1,121.95 MWh in `MR` and 19.12 MWh in `GW` |
+| Time | 20.6 s |
+| Peak memory | 1.53 GB |
 
-The summary line is `[OK]  status=optimal  objective=1.84617e+09  unserved_energy=1141.06 MWh`.
+The summary line is `[OK]  status=optimal  objective=5.11255e+09  unserved_energy=1141.06 MWh`.
+Every bus of a fuel balances, so no gas, coal or oil goes unserved. The objective is higher than
+the objective of the network with no fuels, 1.84617 × 10⁹ USD, because it pays for the gas that
+the 42 gas loads take.
 
-The two dispatch objectives compare. Each is the operating cost of the 96 hours with no weight
-for the days, plus 10,000 USD for each MWh of unserved energy. The PyPSA objective is 20 %
-higher than the Sienna objective, because PyPSA pays the cost of the lines and meets the
-annual bounds. The PyPSA solve is about 20 times faster than the Sienna solve, and it uses
-less than half of the memory.
+The two dispatch objectives do not compare directly. Each is the operating cost of the 96
+hours with no weight for the days, plus 10,000 USD for each MWh of unserved energy. The PyPSA
+objective also pays for the fuels, and the gas demand, that the Sienna system does not hold.
+With no fuels, the PyPSA objective was 1.84617 × 10⁹ USD, 20 % higher than the Sienna
+objective, because PyPSA pays the cost of the lines and meets the annual bounds. The PyPSA
+solve is about 10 times faster than the Sienna solve.
 
 ### Turn the solve into the results format
 
@@ -555,7 +592,12 @@ INTEROP_LOG_LEVEL=WARNING uv run interop headless_cli --pipeline pypsa-to-result
 
 The run writes no warning. As `sienna-to-results` does, it multiplies each hour by the weight of
 its day. It adds the flow of a reverse link to the trade of its line. It gives the
-installed capacity of a generator as `p_nom`, which is the `base_power` of the Sienna plant.
+installed capacity of a generator as `p_nom`, which is the `base_power` of the Sienna plant,
+and of a plant link as `p_nom` × `efficiency`, the same value. A generator, a link and a load
+of a fuel that is not electricity have no `production`, `dispatch`, `flow` or `load` row,
+because the results format counts electricity, as the published `production` does. The
+`emissions` count each component with a rate: a fuel supply for each MWh of fuel, a plant link
+for its own rate, and a pipeline for each MWh that goes in.
 
 ### Compare the three results
 
@@ -570,12 +612,12 @@ with these changes:
 | `pypsa.extensions_json_path` | `outputs/pypsa/extensions.json` |
 | `Output path for summary report?` | `outputs/comparison_pypsa/comparison_summary.md` |
 
-The three `sienna.` prompts do not come. The console shows `compared results: diffs=1,916`.
+The three `sienna.` prompts do not come. The console shows `compared results: diffs=1,925`.
 
 Select `compare` again. Give `sienna` as the first framework and `pypsa` as the second. Give
 the `sienna.` and the `pypsa.` answers above, and the output path
 `outputs/comparison_sienna_pypsa/comparison_summary.md`. The console shows
-`compared results: diffs=91,100`.
+`compared results: diffs=98,400`.
 
 Note that the hourly `flow` rows of PyPSA give each reverse link a row of its own. Thus the
 compare of Sienna and PyPSA joins the hourly flow of 37 of the 113 lines. The annual trade
@@ -590,8 +632,8 @@ These are the 2021 totals:
 | Installed capacity of the generators and the storages | 1,397.2 GW | 1,384.7 GW | 1,384.7 GW |
 | Installed capacity of the lines | 171.0 GW | 171.0 GW | 171.0 GW |
 | Production of the generators and the storages | 4,102.8 TWh | 3,732.6 TWh | 3,744.5 TWh |
-| Trade, which is the production of the lines | 389.5 TWh | 815.2 TWh | 400.1 TWh |
-| Emissions | 1,459.1 Mt | 847.3 Mt | 759.9 Mt |
+| Trade, which is the production of the lines | 389.5 TWh | 815.2 TWh | 399.8 TWh |
+| Emissions | 1,459.1 Mt | 847.3 Mt | 1,441.5 Mt |
 | Unserved energy in the 96 hours | none | 1,141.06 MWh | 1,141.06 MWh |
 
 The installed capacity of each of the 814 components and the 113 lines is the same in the two
@@ -601,14 +643,14 @@ These are the production totals of the categories with the largest differences:
 
 | Category | Published | Sienna dispatch | PyPSA dispatch |
 | --- | --- | --- | --- |
-| `gas-combined-cycle` | 547.9 TWh | 217.9 TWh | 510.3 TWh |
-| `coal` | 568.2 TWh | 735.1 TWh | 526.5 TWh |
-| `gas-steam` | 118.2 TWh | 58.4 TWh | 100.6 TWh |
-| `gas-turbine` | 56.5 TWh | 9.6 TWh | 43.0 TWh |
-| `oil-steam` | 102.4 TWh | 45.2 TWh | 23.2 TWh |
+| `gas-combined-cycle` | 547.9 TWh | 217.9 TWh | 490.7 TWh |
+| `coal` | 568.2 TWh | 735.1 TWh | 527.7 TWh |
+| `gas-steam` | 118.2 TWh | 58.4 TWh | 99.5 TWh |
+| `gas-turbine` | 56.5 TWh | 9.6 TWh | 44.5 TWh |
+| `oil-steam` | 102.4 TWh | 45.2 TWh | 36.7 TWh |
 | `other-gas` | 54.7 TWh | 7.4 TWh | 1.5 TWh |
 | `nuclear` | 943.8 TWh | 942.8 TWh | 892.9 TWh |
-| `biomass` | 134.5 TWh | 141.9 TWh | 105.1 TWh |
+| `biomass` | 134.5 TWh | 141.9 TWh | 105.5 TWh |
 | `hydro` | 748.8 TWh | 742.7 TWh | 741.8 TWh |
 | `pumped-storage` | 0.05 TWh | 8.87 TWh | 1.49 TWh |
 
@@ -616,8 +658,8 @@ These are the production totals of the categories with the largest differences:
 
 To measure each cause alone, we solved diagnostic copies of the network. A script outside
 tz-oss-interop changed one set of attributes in each copy. The copies come from an earlier
-run of the same branch, whose network gave the same objective and the same unserved energy
-as the network above.
+run of the same branch, with no fuels that are not electricity, whose network gave the
+objective 1.84617 × 10⁹ USD and the same unserved energy as the network above.
 
 | Run | Objective | Trade | Emissions | `gas-combined-cycle` | `coal` |
 | --- | --- | --- | --- | --- | --- |
@@ -625,7 +667,8 @@ as the network above.
 | PyPSA, with no annual bounds, and lines with no cost and no loss | 1.52715 × 10⁹ USD | 872.8 TWh | 838.4 Mt | 216.6 TWh | 730.6 TWh |
 | PyPSA, with no annual bounds | 1.61018 × 10⁹ USD | 405.2 TWh | 857.8 Mt | 214.6 TWh | 740.3 TWh |
 | PyPSA, with lines with no cost and no loss | 1.77078 × 10⁹ USD | 875.4 TWh | 737.0 Mt | 512.4 TWh | 505.7 TWh |
-| PyPSA dispatch, as translated | 1.84617 × 10⁹ USD | 400.1 TWh | 759.9 Mt | 510.3 TWh | 526.5 TWh |
+| PyPSA dispatch, with no fuels | 1.84617 × 10⁹ USD | 400.1 TWh | 759.9 Mt | 510.3 TWh | 526.5 TWh |
+| PyPSA dispatch, as translated | 5.11255 × 10⁹ USD | 399.8 TWh | 1,441.5 Mt | 490.7 TWh | 527.7 TWh |
 | Published | none | 389.5 TWh | 1,459.1 Mt | 547.9 TWh | 568.2 TWh |
 
 The second row applies what the Sienna dispatch applies. It agrees with the Sienna dispatch to
@@ -633,7 +676,7 @@ The second row applies what the Sienna dispatch applies. It agrees with the Sien
 carries the Sienna system correctly. The trade differs by 58 TWh, because many flows have
 the same cost when a line has no cost and no loss.
 
-PyPSA removes two causes:
+PyPSA removes three causes:
 
 - **The annual activity bounds.** The 24 gas plants make 451.73 TWh in PyPSA, 78.30 TWh in
   Sienna and 452.62 TWh in the published results. With the bounds, `gas-combined-cycle` makes
@@ -642,6 +685,10 @@ PyPSA removes two causes:
 - **The cost and the loss of the lines.** The trade is 400.1 TWh in PyPSA, 815.2 TWh in Sienna
   and 389.5 TWh in the published results. With the cost and the loss, the trade is about
   475 TWh lower. The lines lose 21.06 TWh in the year.
+- **The emission scope.** The network holds the fuels, so each fuel supply emits as it does
+  in OSeMOSYS. The emissions are 1,441.5 Mt, against 759.9 Mt with no fuels and 1,459.1 Mt
+  published. Of the 699.2 Mt gap with no fuels, 681.5 Mt closes. The electricity production
+  and the trade change by less than 0.1 %.
 
 These causes remain:
 
@@ -651,9 +698,13 @@ These causes remain:
   and coal. For example, `UKNUG2PH1` makes 175.03 TWh against 223.94 TWh published.
 - **The residual fleet.** `MR` and `GW` have 1,141.06 MWh of unserved energy in the 96 hours,
   as in Sienna. The published solve builds `ZAWINDPN1`, 2.50 GW of onshore wind, in 2021.
-- **The emission scope.** The emissions are 759.9 Mt against 1,459.1 Mt published. Only the
-  power plants emit in the dispatch. For example, `DECO2` is 119.62 Mt against 305.90 Mt, and
-  the published results give `UACO2` −128.72 Mt.
+- **The emissions of the electricity gap.** The emissions are 17.7 Mt lower than published.
+  The supplies of coal, oil and derived gas make less, because the plants that burn them make
+  less without the conversion load. Coal supply makes 3,489 PJ against 4,249 PJ published, and
+  heavy fuel oil supply 307 PJ against 857 PJ. Lignite supply makes more, 1,394 PJ against
+  1,024 PJ. The emissions of each country also move with the gas that the pipelines carry: for
+  example, `DECO2` is 262.34 Mt against 305.90 Mt, and `UACO2` is −51.29 Mt against −128.72 Mt,
+  because less gas transits Ukraine.
 - **The imports from outside the model.** The 21 lines that import from outside the model
   carry 69.4 TWh in the published results, and 0 in each dispatch. `HUELUAPH1` alone carries
   15.97 TWh.

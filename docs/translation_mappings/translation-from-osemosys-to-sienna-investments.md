@@ -65,6 +65,10 @@ and the discharge mode of its links.
 A technology sits in the region of its location: the `Area` of that location in the base
 system. A transport candidate runs between two areas.
 
+A fuel that is not electricity has no candidate. The base system step writes the records of
+those fuels, and of the technologies on them, for the first year only. Refer to
+[The fuels that are not electricity](translation-from-osemosys-to-sienna.md#the-fuels-that-are-not-electricity).
+
 ### Timeslice
 
 The portfolio gives each year its own representative days. A series of a year covers the days
@@ -440,6 +444,7 @@ the leg reads and what the solve loses.
 | The representative days of the years after the first year | Each series uses them, and `extensions.json` holds no record for them. |
 | A plant of the base system that is not a candidate | It is in no technology. |
 | The trade parameters (`TradeRoute`, `CapitalCostTrade` and the other `*Trade*` parameters) | No step reads them. |
+| A fuel that is not electricity, and the technologies on it | No candidate. `extensions.json` holds the records of the first year, as the base system writes them. |
 
 ## Assumptions worth checking against your model
 

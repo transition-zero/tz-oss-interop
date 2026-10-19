@@ -152,6 +152,17 @@ The definitions are those of `sienna-to-results`, with the PyPSA fields:
   `production` multiplied by the rate in `emission_rates_t_per_mwh` of the `generator` record of
   the sidecar. A Sienna `HydroDispatch` is a generator, and a PyPSA storage unit, so both
   pipelines count its emissions.
+- A bus whose carrier is not `AC` or `DC` holds a fuel that is not electricity. A generator, a
+  load and a link on such a bus make or take no electricity, so they have no `production`,
+  `installed_capacity`, `dispatch`, `available_capacity`, `flow` or `load` row, and the bus has
+  no `price` row. A plant link, which draws a fuel at `bus0` and puts out electricity at
+  `bus1`, is a plant: its `dispatch` is `-p1`, its `production` is the electricity that it
+  delivers, its `installed_capacity` is `p_nom` × `efficiency`, and its `category` is its
+  carrier.
+- The `emissions` also count a generator of a fuel, with its `production` of the fuel; a plant
+  link, with its electricity × `own_emission_rates_t_per_mwh` of its `generator` record, as the
+  generator of its fuel counts the fuel; and a link of a fuel, with the positive part of `p0` ×
+  the `emission_rates_t_per_mwh` of its `conversion` record.
 
 Two more results pipelines write annual rows:
 

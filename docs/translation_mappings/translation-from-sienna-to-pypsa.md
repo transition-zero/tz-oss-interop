@@ -3,9 +3,12 @@
 This document tells you what each part of your Sienna system becomes in the PyPSA network.
 It gives the source of each field.
 
-> **Scope:** the translator accepts a SiennaSchemas system, and only that. It accepts
-> electricity-only systems. It reads the system JSON, its HDF5 time series companion and an
-> optional `extensions.json` sidecar. Refer to
+> **Scope:** the translator accepts a SiennaSchemas system, and only that. The system holds
+> electricity only. The fuels that are not electricity reach the translator as records of the
+> optional `extensions.json` sidecar, and the translator builds them as PyPSA buses,
+> generators, links and loads. Refer to
+> [The fuels that are not electricity](#the-fuels-that-are-not-electricity). It reads the
+> system JSON, its HDF5 time series companion and the sidecar. Refer to
 > [What the translator reads](#what-the-translator-reads). Many Sienna systems come from the
 > opposite translation, so this document also tells you which values change when a PyPSA
 > network goes out to Sienna and comes back. Refer to
@@ -37,6 +40,8 @@ direction.
 | [`extensions.json`](#the-extensions-sidecar) | No component. It restores the PyPSA fields that Sienna cannot hold, and the PyPSA sidecar keeps each other field. |
 | A [`representative_period` record](#snapshot-weightings) of `extensions.json` | The snapshot weightings. |
 | A [`conversion` record](#conversion-records--link) of `extensions.json` that joins two buses | `Link` |
+| A [`bus`, `generator` or `load` record](#the-fuels-that-are-not-electricity) of a fuel that is not electricity | `Bus`, `Generator` or `Load` |
+| A [`ThermalStandard` whose record names the bus of each fuel](#a-plant-that-draws-its-fuel-from-a-bus) | `Link` from the bus of its fuel |
 | Every other SiennaSchemas type | [Not translated](#not-translated) |
 
 ## Reading the tables
@@ -429,11 +434,13 @@ positive. A positive lower bound therefore survives only in the sidecar.
 
 ## Conversion records → `Link`
 
-Sienna has no component that turns electricity at one bus into electricity at another bus,
-so the whole `conversion` record reaches the translator in the sidecar. A record becomes a
-PyPSA `Link` when all three conditions hold:
+Sienna has no component that turns energy at one bus into energy at another bus, so the whole
+`conversion` record reaches the translator in the sidecar. A record becomes a PyPSA `Link` when
+all three conditions hold:
 
-- `bus0` and `bus1` both name a bus of the network.
+- `bus0`, `bus1`, and `bus2` and `bus3` where the record states them, each name a bus of the
+  network. A bus of a fuel that is not electricity is a bus of the network when its `bus`
+  record built one.
 - `bus0` and `bus1` name two different buses.
 - No link of the network has the name of the record.
 
@@ -441,8 +448,10 @@ PyPSA `Link` when all three conditions hold:
 | --- | --- | --- | --- |
 | `name` | | The name of the record | `direct` |
 | `bus0` / `bus1` | | `bus0` and `bus1` | `sidecar` |
+| `bus2`, `efficiency2`, `bus3`, `efficiency3` | | The fields of the same name. A negative efficiency draws from the bus. | `sidecar` |
 | `carrier` | | `carrier` | `sidecar` |
-| `p_nom` | MW of the electricity in | `p_nom`. If absent, `0.0`. | `sidecar` or `default` |
+| `p_nom` | MW of the energy in | `p_nom`. If absent, `0.0`. | `sidecar` or `default` |
+| `p_nom_extendable`, `p_nom_max` | | The fields of the same name | `sidecar` |
 | `efficiency` | | `efficiency`. If absent, `1.0`. | `sidecar` or `default` |
 | `marginal_cost` | cost for each MWh in | `marginal_cost` | `sidecar` |
 | `p_max_pu` | per unit of `p_nom` | `p_max_pu` | `sidecar` |
@@ -455,7 +464,71 @@ network gets a `NOT_MAPPED` row and a warning. These records do not become a lin
 
 - An export, which has no `bus1`.
 - A step inside one location, whose `bus0` and `bus1` are the same bus.
-- A trade route, whose ends `<region>/<fuel>` are not buses.
+- A trade route of electricity, whose ends `<region>/<fuel>` are not buses.
+
+The emission rates of a record, `emission_rates_t_per_mwh`, travel on. `pypsa-to-results`
+reads them for each MWh that goes in at `bus0`.
+
+## The fuels that are not electricity
+
+A Sienna system holds electricity only. An OSeMOSYS model also holds fuels such as gas and
+coal, and the technologies that supply, move and convert them. The OSeMOSYS hop writes them as
+records of `extensions.json`, in PyPSA terms. Refer to
+[translation-from-osemosys-to-sienna.md](translation-from-osemosys-to-sienna.md#the-fuels-that-are-not-electricity).
+The step `sienna_to_pypsa_map_components` builds them:
+
+| Record | Condition | PyPSA component |
+| --- | --- | --- |
+| `bus` | No `ACBus` has its name, and its `carrier` is not `AC` or `DC` | A `Bus` with the `carrier` and the `location` of the record, `v_nom` 1.0 and `control` `PQ` |
+| `generator` | It states a `bus` of the network, and no Sienna generator has its name | A `Generator` on that bus |
+| `load` | It states a `bus` of the network, and no Sienna load has its name | A `Load` on that bus |
+| `conversion` | As [Conversion records → `Link`](#conversion-records--link) states | A `Link` |
+
+| `Generator` field | From | If absent |
+| --- | --- | --- |
+| `bus`, `carrier`, `p_nom`, `marginal_cost`, `p_max_pu`, `p_nom_extendable`, `p_nom_max` | The field of the same name | `p_nom` 0, `marginal_cost` 0, `p_max_pu` 1, not extendable |
+| `p_nom_min` | `p_nom`, for an extendable generator with a capacity above 0 | None |
+| `e_sum_min`, `e_sum_max` | As [Annual energy bounds](#annual-energy-bounds) gives | None |
+
+| `Load` field | From | If absent |
+| --- | --- | --- |
+| `bus`, `carrier`, `p_set` | The field of the same name | `p_set` 0 |
+| The `p_set` time series | The column `p_set` of `loads.parquet`, where `p_set_series` names it | None |
+
+The emission rates and the annual bounds of a generator record travel on, so
+`pypsa-to-results` can count the emissions of each fuel. The solve gives each bus, of a fuel
+too, the slack generators of unserved and surplus energy.
+
+### A plant that draws its fuel from a bus
+
+A `ThermalStandard` pays the Sienna price of its fuel. Where the network holds the bus of the
+fuel, that price counts the fuel twice: once in the plant, and once in the generator that
+supplies the bus. So a `ThermalStandard` becomes a PyPSA `Link` when all of these hold:
+
+- its `generator` record states `fuel_buses`, and names three buses at most;
+- the network holds each bus that `fuel_buses` names;
+- the record states no annual energy bound;
+- the plant is not extendable, and its marginal cost is the same in every hour.
+
+
+| `Link` field | From |
+| --- | --- |
+| `bus0` | The bus of the largest fuel of `fuel_buses` |
+| `bus1` | The bus of the generator |
+| `p_nom` | `base_power` × the MWh of that fuel for each MWh of electricity |
+| `efficiency` | 1 / the MWh of that fuel for each MWh of electricity |
+| `marginal_cost` | `own_marginal_cost` / the MWh of that fuel for each MWh of electricity, as a link prices the power at `bus0` |
+| `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel) |
+| `p_min_pu`, `p_max_pu`, `carrier`, `committable`, `start_up_cost`, `shut_down_cost`, `min_up_time`, `min_down_time`, `up_time_before`, `ramp_limit_up`, `ramp_limit_down` | The value of the generator, per unit of the link |
+
+The `p_max_pu` time series of the generator moves to the link. The record travels on whole,
+and `pypsa-to-results` counts the emissions of the plant with `own_emission_rates_t_per_mwh`,
+as the generator of the fuel emits for the fuel.
+
+A PyPSA `Link` has no `e_sum_min` or `e_sum_max`. So a plant whose record states an annual
+energy bound stays a `Generator`. It keeps the Sienna price and the emission rate of its fuel,
+and it does not draw the fuel from its bus. The report gives a `NOT_MAPPED` row for each one,
+and one warning names three. A plant whose fuel has no bus also stays a `Generator`.
 
 ## Snapshot weightings
 
@@ -552,16 +625,17 @@ also states a `discount_rate`:
 
 | Kind | Fields |
 | --- | --- |
-| `bus` | `carrier` |
+| `bus` | `carrier`; `location` too, for a bus of a fuel |
 | `generator`, for a thermal type | `carrier`, `committable`, `efficiency`, `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `marginal_cost_series` |
 | `generator`, for a renewable type | The same fields, other than `committable` and `efficiency` |
 | `generator`, for both | `e_sum_min` and `e_sum_max` apply as [Annual energy bounds](#annual-energy-bounds) gives, and also travel on |
-| `load` | `carrier`, `type`, `sign` |
+| `load` | `carrier`, `type`, `sign`; `bus`, `p_set` and `p_set_series` too, for a load of a fuel |
+| `generator`, for a generator of a fuel | `bus`, `carrier`, `p_nom`, `p_nom_extendable`, `p_nom_max`, `marginal_cost`, `p_max_pu` |
 | `line` | `carrier`, `length`, `num_parallel`, `s_nom_extendable` |
 | `controllable_line` | `carrier`, `marginal_cost`, `p_nom_extendable`, `p_max_pu`, `p_min_pu`, `p_max_pu_series` |
 | `storage`, for an `EnergyReservoirStorage` | `carrier`, `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `inflow_mw`, `inflow_series`, `rating_series`, `cyclic_state_of_charge_per_period` |
 | `storage`, for a `HydroDispatch` | `max_hours`, `state_of_charge_initial`, `inflow_mw`, `inflow_series`, `rating_series` |
-| `conversion` | `bus0`, `bus1`, `carrier`, `p_nom`, `efficiency`, `marginal_cost`, `p_max_pu`, for a record that becomes a link. Refer to [Conversion records → `Link`](#conversion-records--link). |
+| `conversion` | `bus0`, `bus1`, `bus2`, `efficiency2`, `bus3`, `efficiency3`, `carrier`, `p_nom`, `p_nom_extendable`, `p_nom_max`, `efficiency`, `marginal_cost`, `p_max_pu`, for a record that becomes a link. Refer to [Conversion records → `Link`](#conversion-records--link). |
 | `representative_period` | `weight`, `first_timestamp` and `hours` give the [snapshot weightings](#snapshot-weightings), and the whole record also travels on |
 
 ### Overnight cost
