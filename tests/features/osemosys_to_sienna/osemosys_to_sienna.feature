@@ -614,6 +614,19 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "| `osemosys.discount_rate.R1` = 0.07 | `sienna.ThermalStandard.ATGASCC.extensions.discount_rate` = 0.07 pu | the model states no technology_discount_rate for the member and the parameter has no default, so the discount_rate of the region applies; no Sienna field holds it |"
       And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "days_in_day_type" set to 91.0
 
+    Scenario: A generator that states no discount rate takes the default that the model declares for technology_discount_rate
+      The default comes before the rate of the region, as the default that a model declares
+      replaces the default of OSeMOSYS, which is the rate of the region.
+      Given the otoole parameter "DiscountRate" keyed by "REGION" with default 0.05 has the rows:
+        | REGION | VALUE |
+        | R1     | 0.07  |
+      And the otoole parameter "DiscountRateIdv" keyed by "REGION TECHNOLOGY" with default 0.09 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "discount_rate" set to 0.09
+      And the file "decisions.md" contains "| `osemosys.technology_discount_rate.R1/ATGASCC` = 0.09 | `sienna.ThermalStandard.ATGASCC.extensions.discount_rate` = 0.09 pu | the model states no technology_discount_rate for the member, so the default of the parameter applies; no Sienna field holds it |"
+
     Scenario: The values of a generator that its Sienna type has no field for reach extensions.json under the PyPSA names
       Each capacity is in MW of electricity output, so the oil plant, which puts out half a unit
       of electricity for each unit of activity, has a unit of 5 MW and a bound of 5000 MWh over
