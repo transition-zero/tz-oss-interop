@@ -1,15 +1,16 @@
-"""OSeMOSYS conversion, export and trade of electricity -> conversion records in extensions.json.
+"""OSeMOSYS export and trade of electricity -> conversion records in extensions.json.
 
-The system has no component for these, because the electricity fuels of one location share one
-bus, the system takes no energy out of the model, and a trade route joins regions and not
-locations. A PyPSA Link states each one: electricity goes in at `bus0`, and comes out at `bus1`
-with the share `efficiency`, or leaves the model where there is no `bus1`.
+The system has no component for these, because the system takes no energy out of the model,
+and a trade route joins regions, which the operations system does not hold. A PyPSA Link states
+each one: electricity goes in at `bus0`, and comes out at `bus1` with the share `efficiency`, or
+leaves the model where there is no `bus1`. A conversion between two electricity fuels is a line,
+which `_transport` builds.
 
-- A technology rates its capacity and its cost on the electricity that goes in at the
-  operations mode, and its buses are locations.
-- A trade route of an electricity fuel names its ends as `<region>/<fuel>`, so no location has
-  to be chosen. Its capacity is its residual trade capacity, and its efficiency is 1 less its
-  loss.
+- An export rates its capacity and its cost on the electricity that goes in at the operations
+  mode, and its bus is the bus of that electricity fuel.
+- A trade route of an electricity fuel names its ends as `<region>/<fuel>`, the bus of that
+  fuel in each region. Its capacity is its residual trade capacity, and its efficiency is 1
+  less its loss.
 """
 
 from __future__ import annotations
@@ -103,12 +104,12 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
+    FROM_BUS,
     FROM_FUEL,
-    FROM_LOCATION,
     INPUT_RATIO,
     OUTPUT_RATIO,
+    TO_BUS,
     TO_FUEL,
-    TO_LOCATION,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
@@ -120,7 +121,6 @@ _EFFICIENCY = "efficiency"
 _MARGINAL_COST = "marginal_cost"
 _KEYS = [REGION, TECHNOLOGY]
 _ROUTE_KEYS = (START_REGION, END_REGION, FUEL)
-_KINDS = (TechnologyKind.CONVERSION, TechnologyKind.EXPORT)
 _CLOSED = "is_closed"
 
 CONVERSION_OWNERS = ValueOwners(
@@ -214,11 +214,11 @@ class ConversionRecords:
 
 
 def build_conversions_source(state: State, operations: OperationsYear) -> pl.DataFrame:
-    """One row for each conversion or export whose fuels are all electricity."""
+    """One row for each export whose fuels are all electricity."""
     kind = pl.col(AnnotationColumn.KIND)
     conversions = (
         read_left_out_technologies(state, operations)
-        .filter(kind.is_in(_KINDS) & pl.col(IS_ALL_ELECTRICITY))
+        .filter((kind == TechnologyKind.EXPORT) & pl.col(IS_ALL_ELECTRICITY))
         .with_columns(
             express_component_name(TECHNOLOGY).alias(CONVERSION_NAME),
             pl.lit(ExtensionKind.CONVERSION.value).alias(_COMPONENT),
@@ -285,7 +285,7 @@ def _enrich_link(
     """The ends, the capacity, the efficiency, the cost and the availability of each Link."""
     keys = conversions.select(_KEYS)
     ends = read_transport_ends(state, operations.year, operations.mode).select(
-        *_KEYS, FROM_LOCATION, TO_LOCATION, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
+        *_KEYS, FROM_BUS, TO_BUS, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
     )
     costs = read_variable_costs(
         state, operations.year, keys.with_columns(pl.lit(operations.mode).alias(OPERATING_MODE))
@@ -312,8 +312,8 @@ def _build_extension(row: dict[str, Any]) -> ConversionExtension:
     return ConversionExtension(
         name=row[CONVERSION_NAME],
         carrier=row[AnnotationColumn.CATEGORY],
-        bus0=row[FROM_LOCATION],
-        bus1=row[TO_LOCATION],
+        bus0=row[FROM_BUS],
+        bus1=row[TO_BUS],
         input_fuel=row[FROM_FUEL],
         output_fuel=row[TO_FUEL],
         p_nom=row[_P_NOM],
@@ -480,9 +480,9 @@ def _build_link_event(
 
 
 _OPERATIONS_MODE = "electricity at the operations mode"
-_BUS0_DERIVATION = "the location of the electricity fuel that the technology takes in"
+_BUS0_DERIVATION = "the bus of the electricity fuel that the technology takes in, <region>/<fuel>"
 _BUS1_DERIVATION = (
-    "the location of the electricity fuel that the technology puts out; an export puts out none"
+    "the bus of the electricity fuel that the technology puts out; an export puts out none"
 )
 _INPUT_FUEL_DERIVATION = "the electricity fuel that the technology takes in"
 _OUTPUT_FUEL_DERIVATION = "the electricity fuel that the technology puts out"

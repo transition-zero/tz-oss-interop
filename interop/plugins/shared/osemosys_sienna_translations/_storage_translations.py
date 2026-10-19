@@ -25,6 +25,7 @@ from interop.plugins.shared.osemosys_sienna_constants import StorageParameter, S
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
     build_bound_events,
 )
+from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
     build_derived,
@@ -147,7 +148,10 @@ _CONVERSION_NOTE = "the energy and the level are both in MWh, so no conversion a
 _TARGET_NOTE = "OSeMOSYS states no level at the end of the operations horizon"
 _CYCLE_LIMITS_NOTE = "OSeMOSYS states no limit on the cycles of a storage"
 _NAME_DERIVATION = "the storage, after its region when two regions hold it"
-_BUS_DERIVATION = "the location of the discharging technology -> bus"
+_BUS_DERIVATION = (
+    "the bus of the largest electricity fuel that the discharging technology puts out at the "
+    "discharge mode, <region>/<fuel>"
+)
 _BASE_POWER_DERIVATION = (
     "residual_capacity of the discharging technology in the operations year, in MW, × its "
     "electricity output_activity_ratio at the discharge mode"
@@ -262,15 +266,8 @@ def _build_identity() -> list[Translation]:
         _default(dest_col=_Col.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
         _build_value(
             _Col.BUS_NAME,
-            pl.col(AnnotationColumn.LOCATION),
-            lambda old: [
-                _build_source(
-                    TECHNOLOGY,
-                    old[DISCHARGE_TECHNOLOGY_NAME],
-                    AnnotationColumn.LOCATION,
-                    old[AnnotationColumn.LOCATION],
-                )
-            ],
+            pl.col(ELECTRICITY_BUS),
+            lambda old: [_build_output_ratio_source(old)],
             _BUS_DERIVATION,
         ),
         _build_user_choice(SIENNA_TYPE_ATTRIBUTE, SIENNA_TYPE, _TYPE_NOTE, []),

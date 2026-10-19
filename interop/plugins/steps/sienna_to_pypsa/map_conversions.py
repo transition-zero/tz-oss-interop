@@ -4,9 +4,8 @@ Sienna has no component for a technology that turns energy at one bus into energ
 so the whole record reaches this hop in the sidecar. Where both ends, and each further bus,
 name a bus of the network and bus0 and bus1 differ, PyPSA holds it as a Link. A bus of a fuel
 that is not electricity is a bus of the network where its bus record built one. Every other
-conversion record travels on unchanged: an export has no bus1, a step inside one location
-joins a bus to itself, and a trade route of electricity names `<region>/<fuel>` ends that are
-not buses.
+conversion record travels on unchanged, for example an export, which has no bus1, and a trade
+route whose `<region>/<fuel>` end the network does not hold.
 """
 
 from __future__ import annotations

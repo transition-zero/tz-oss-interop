@@ -59,6 +59,31 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
     And the file "decisions.md" contains "max(-p0, 0) + max(-p1, 0)"
 
+  Scenario: A link between two buses of electricity at one location converts electricity, so it has no production and no installed capacity
+    The link step_down joins two AC buses at the location AT, as a conversion between two
+    electricity fuels of one location becomes. The published results leave a conversion out of
+    production, so the link has no annual row.
+    Given the network contains bus "at_high" carrier "AC" v_nom 380.0 location "AT"
+    And the network contains bus "at_low" carrier "AC" v_nom 380.0 location "AT"
+    And the network contains link "step_down" from "at_high" to "at_low" with capacity 30.0 MW efficiency 0.99
+    And the link "step_down" carries flow 1 1 1 1
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "production" rows:
+      | variable   | component | category | timestamp           | value |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+      | production | battery   | battery  | 2030-01-01T00:00:00 | 400   |
+      | production | dam       | hydro    | 2030-01-01T00:00:00 | 300   |
+      | production | link      |          | 2030-01-01T00:00:00 | 810   |
+    And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
+      | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 10    |
+      | installed_capacity | dam       | hydro    | 2030-01-01T00:00:00 | 5     |
+      | installed_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
+    And the file "decisions.md" contains "a link between two buses of electricity at one location converts electricity, so it has no row"
+
   Scenario: The hourly flow of a two-way line is the flow of its link less the flow of its reverse link
     The reverse link sends 3 MW from node_b to node_a in the second hour, which is a flow of
     -3 MW of the line from node_a to node_b.

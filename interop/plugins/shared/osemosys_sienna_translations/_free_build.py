@@ -22,11 +22,11 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
 
-RESIDUAL = "residual"
-CAPITAL_COST = "capital_cost"
-FIXED_COST = "fixed_cost"
-MAX_INVESTMENT = "max_investment"
-MAX_CAPACITY = "max_capacity"
+RESIDUAL = "build_residual"
+CAPITAL_COST = "build_capital_cost"
+FIXED_COST = "build_fixed_cost"
+MAX_INVESTMENT = "build_max_investment"
+MAX_CAPACITY = "build_max_capacity"
 IS_FREE_TO_BUILD = "is_free_to_build"
 # The capacity that a technology which builds at no cost can use, null where no limit binds.
 BUILD_LIMIT = "build_limit"

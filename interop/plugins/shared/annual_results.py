@@ -113,6 +113,12 @@ class Production(NamedTuple):
     def build_table(self) -> pl.DataFrame:
         return pl.concat([self.generators, self.storage, self.links])
 
+    def drop_links(self, names: frozenset[str]) -> Production:
+        """The production without the links of `names`."""
+        return self._replace(
+            links=self.links.filter(~pl.col(ResultsCol.COMPONENT).is_in(list(names)))
+        )
+
     def drop_fuels(self, fuels: FuelComponents) -> Production:
         """The production of electricity: no generator and no link of a fuel."""
         component = pl.col(ResultsCol.COMPONENT)

@@ -5,7 +5,7 @@ Feature: tz-osemosys-to-sienna translates one year of a TZ-format model into a S
 
   The invented model below has one region, R1, with a gas plant that puts out electricity.
 
-  Scenario: A gas plant with residual capacity becomes a ThermalStandard on the bus of its region
+  Scenario: A gas plant with residual capacity becomes a ThermalStandard on the bus of its electricity
     Given a TZ-format model
     And the TZ-format model has the regions "R1"
     And the TZ-format model has the years "2030"
@@ -27,7 +27,7 @@ Feature: tz-osemosys-to-sienna translates one year of a TZ-format model into a S
     When I translate the TZ-format model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/electricity" having "bustype" set to "PQ"
     And the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "gas-combined-cycle" having "base_power" set to 500.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "gas-combined-cycle" having "bus" set to 1

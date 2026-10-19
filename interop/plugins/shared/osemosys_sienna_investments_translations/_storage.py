@@ -121,7 +121,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
-    list_bus_names,
+    list_area_names,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
@@ -213,7 +213,7 @@ def build_storage_candidates(
         [InvestmentParameter.CAPITAL_COST, ENERGY_CAPITAL_COST],
         keys=[REGION, TECHNOLOGY],
     )
-    storages = _drop_skipped(storages, list_bus_names(state), recorder)
+    storages = _drop_skipped(storages, list_area_names(state), recorder)
     discharge = _enrich_energy_costs(enrich_yearly_units(yearly, storages, plan.units), plan)
     return StorageCandidates(_enrich_values(state, plan, storages, discharge), discharge)
 
@@ -260,14 +260,14 @@ def _read_storage_years(state: State, plan: InvestmentPlan, storages: pl.DataFra
 
 
 def _drop_skipped(
-    storages: pl.DataFrame, buses: list[str], recorder: ScopedRecorder
+    storages: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
 ) -> pl.DataFrame:
-    for rule in _build_skip_rules(buses):
+    for rule in _build_skip_rules(areas):
         storages, _ = filter_component(storages, rule.keep, rule.report, recorder)
     return storages
 
 
-def _build_skip_rules(buses: list[str]) -> list[SkipRule]:
+def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
     skip = TECHNOLOGY_SOURCE.skip
     one_link = (pl.col(CHARGE_LINKS) == _ONE_LINK) & (pl.col(DISCHARGE_LINKS) == _ONE_LINK)
     return [
@@ -307,11 +307,14 @@ def _build_skip_rules(buses: list[str]) -> list[SkipRule]:
             ),
         ),
         SkipRule(
-            pl.col(AnnotationColumn.LOCATION).is_in(buses),
+            pl.col(AnnotationColumn.LOCATION).is_in(areas),
             skip(
                 name_col=REPORT_NAME,
-                reason="may be built and have a location that holds no bus",
-                note="no electricity fuel is at the location, so the storage is in no region",
+                reason="may be built and have a location that holds no electricity bus",
+                note=(
+                    "no electricity fuel with a bus is at the location, so the storage is in no "
+                    "region"
+                ),
                 listed=_LISTED,
                 attribute_col=AnnotationColumn.LOCATION,
             ),

@@ -1,7 +1,7 @@
 """OSeMOSYS demand for a fuel -> a load with an hourly series.
 
-A demand for an electricity fuel becomes a Sienna PowerLoad on the bus of its location. A
-demand for another fuel becomes a load record of extensions.json on the bus of the fuel.
+A demand for a fuel becomes a load on the bus of the fuel, `<region>/<fuel>`: a Sienna
+PowerLoad for an electricity fuel, and a load record of extensions.json for another fuel.
 
 The specified annual demand of a fuel becomes a load named for the fuel. In each hour of the
 calendar, the load is `specified_annual_demand (MWh) × specified_demand_profile /
@@ -31,7 +31,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TIMESLICE,
     VALUE_COL,
-    AnnotationColumn,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     ACCUMULATED_LOAD_SUFFIX,
@@ -43,6 +42,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     DemandParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
+    ELECTRICITY_BUS,
     FUEL_NAME,
     read_electricity_fuels,
 )
@@ -56,7 +56,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
     build_sienna_source,
 )
-from interop.plugins.shared.osemosys_sienna_translations._fuels import read_other_fuels
+from interop.plugins.shared.osemosys_sienna_translations._fuels import (
+    FUEL_BUS,
+    read_other_fuels,
+)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -88,6 +91,7 @@ log = logging.getLogger(__name__)
 
 # One row for each load, in OSeMOSYS words, before any Sienna column exists.
 LOAD_NAME = "load_name"
+LOAD_BUS = "load_bus"
 DEMAND_PARAMETER = "demand_parameter"
 ANNUAL_DEMAND = "annual_demand"
 ANNUAL_DEMAND_MWH = "annual_demand_mwh"
@@ -109,7 +113,7 @@ _NAME_DERIVATION = (
     "the fuel, after its region when two regions state demand for one fuel, and then "
     f"'{LOAD_NAME_SEPARATOR}{ACCUMULATED_LOAD_SUFFIX}' for accumulated annual demand"
 )
-_BUS_DERIVATION = "the location of the fuel -> bus"
+_BUS_DERIVATION = "the bus of the electricity fuel, <region>/<fuel>"
 _SPECIFIED_DERIVATION = (
     "specified_annual_demand (MWh) × specified_demand_profile / (year_split × 8760 h) of the "
     "timeslice of each hour"
@@ -128,7 +132,7 @@ _SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
     FUEL: pl.Utf8,
     FUEL_NAME: pl.Utf8,
-    AnnotationColumn.LOCATION: pl.Utf8,
+    LOAD_BUS: pl.Utf8,
     DEMAND_PARAMETER: pl.Utf8,
     ANNUAL_DEMAND: pl.Float64,
 }
@@ -178,8 +182,9 @@ def build_loads_source(
 def build_fuel_loads_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> LoadSources:
-    """One row for each demand for a fuel that is not electricity, with its bus as location."""
-    inputs = _LoadInputs(read_other_fuels(state), _build_reported_drop(recorder), recorder)
+    """One row for each demand for a fuel that is not electricity."""
+    fuels = read_other_fuels(state).rename({FUEL_BUS: LOAD_BUS})
+    inputs = _LoadInputs(fuels, _build_reported_drop(recorder), recorder)
     return _build_loads(state, operations, inputs)
 
 
@@ -197,7 +202,7 @@ def build_load_series(
 
 @dataclass(frozen=True)
 class _LoadInputs:
-    """The fuels whose demand becomes a load, with the location of each, and how rows drop."""
+    """The fuels whose demand becomes a load, with the bus of each, and how rows drop."""
 
     fuels: pl.DataFrame
     drop: _DropRows
@@ -206,7 +211,8 @@ class _LoadInputs:
 
 def _read_located_electricity_fuels(state: State) -> pl.DataFrame:
     """The bus group reports an electricity fuel with no location, so this drop is silent."""
-    return read_electricity_fuels(state).filter(pl.col(AnnotationColumn.LOCATION).is_not_null())
+    fuels = read_electricity_fuels(state).filter(pl.col(ELECTRICITY_BUS).is_not_null())
+    return fuels.select(REGION, FUEL, pl.col(ELECTRICITY_BUS).alias(LOAD_BUS))
 
 
 def _build_loads(state: State, operations: OperationsYear, inputs: _LoadInputs) -> LoadSources:
@@ -266,7 +272,7 @@ def _read_demand(
         express_report_name(FUEL).alias(FUEL_NAME),
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
-    ).join(fuels.select(REGION, FUEL, AnnotationColumn.LOCATION), on=[REGION, FUEL], how="inner")
+    ).join(fuels.select(REGION, FUEL, LOAD_BUS), on=[REGION, FUEL], how="inner")
     positive = drop(
         rows, SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter))
     )
@@ -458,16 +464,9 @@ LOAD_NAME_TRANSLATION = Translation(
 )
 
 LOAD_BUS_NAME = Translation(
-    exprs=[pl.col(AnnotationColumn.LOCATION).alias(SiennaLoadCol.BUS_NAME)],
+    exprs=[pl.col(LOAD_BUS).alias(SiennaLoadCol.BUS_NAME)],
     make_events=lambda old, new: build_derived(
-        [
-            build_osemosys_field(
-                FUEL,
-                old[FUEL_NAME],
-                AnnotationColumn.LOCATION,
-                old[AnnotationColumn.LOCATION],
-            )
-        ],
+        [build_osemosys_field(FUEL, old[FUEL_NAME], FUEL, old[FUEL])],
         [_load_field(old[LOAD_NAME], SiennaLoadCol.BUS_NAME, new[SiennaLoadCol.BUS_NAME])],
         _BUS_DERIVATION,
     ),

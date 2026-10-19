@@ -464,8 +464,9 @@ become a link travels on whole. A record that joins two buses under the name of 
 network gets a `NOT_MAPPED` row and a warning. These records do not become a link:
 
 - An export, which has no `bus1`.
-- A step inside one location, whose `bus0` and `bus1` are the same bus.
-- A trade route of electricity, whose ends `<region>/<fuel>` are not buses.
+- A record whose `bus0` and `bus1` are the same bus.
+- A trade route of electricity whose end `<region>/<fuel>` the network does not hold. A route
+  between two electricity buses of the network becomes a link.
 
 The emission rates of a record, `emission_rates_t_per_mwh`, travel on. `pypsa-to-results`
 reads them for each MWh that goes in at `bus0`.

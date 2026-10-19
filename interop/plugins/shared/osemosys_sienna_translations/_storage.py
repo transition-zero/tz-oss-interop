@@ -1,10 +1,11 @@
 """OSeMOSYS storage -> Sienna EnergyReservoirStorage.
 
 A storage holds the `residual_storage_capacity` of the operations year. The technology that
-empties it through `technology_from_storage` gives its bus, its category and its base power:
-its residual capacity in MW × its electricity output ratio at that mode. The technology that
-fills it through `technology_to_storage` gives the most that it can draw. Sienna states the
-energy in hours of the base power, and each level as a share of the energy.
+empties it through `technology_from_storage` gives its category, its bus and its base power. The
+bus is that of the electricity fuel that the technology puts out at that mode, and the base
+power is its residual capacity in MW × its electricity output ratio at that mode. The
+technology that fills it through `technology_to_storage` gives the most that it can draw. Sienna
+states the energy in hours of the base power, and each level as a share of the energy.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
     enrich_activity_limits,
     set_bounds_persisted,
 )
+from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
@@ -85,6 +87,10 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._storage_buses import (
+    enrich_storage_buses,
+    report_storage_buses,
+)
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_AVAILABILITY,
     CHARGE_CAPACITY,
@@ -293,10 +299,9 @@ NOT_A_STORAGE_SKIP = _build_skip(
     AnnotationColumn.CATEGORY,
 )
 NO_BUS_SKIP = _build_skip(
-    "have a discharging technology on a location that holds no bus",
-    "no electricity fuel is at the location of the discharging technology, so no bus can "
+    "have a discharging technology that puts out electricity only to fuels with no location",
+    "no electricity fuel that the discharging technology puts out has a location, so no bus can "
     "hold the storage",
-    AnnotationColumn.LOCATION,
 )
 NO_OUTPUT_SKIP = _build_skip(
     "put out no electricity at the discharge mode",
@@ -336,6 +341,7 @@ def build_storages_source(
     storages = _drop_skipped(storages, _build_link_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
     storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
+    report_storage_buses(storages, recorder)
     if storages.height == 0:
         return StorageSources(storages, pl.DataFrame())
     storages = _enrich_ratings(state, operations, storages)
@@ -546,8 +552,8 @@ def _build_technology_rules(bus_names: list[str]) -> list[SkipRule]:
         SkipRule(
             pl.col(SIENNA_TYPE) == SiennaComponent.ENERGY_RESERVOIR_STORAGE, NOT_A_STORAGE_SKIP
         ),
-        SkipRule(pl.col(AnnotationColumn.LOCATION).is_in(bus_names), NO_BUS_SKIP),
         SkipRule(pl.col(DISCHARGE_RATIO) > 0, NO_OUTPUT_SKIP),
+        SkipRule(pl.col(ELECTRICITY_BUS).is_in(bus_names), NO_BUS_SKIP),
         SkipRule(pl.col(CHARGE_RATIO) > 0, NO_INPUT_SKIP),
     ]
 
@@ -581,7 +587,8 @@ def _enrich_technologies(
     table = storages.join(discharging, on=[REGION, DISCHARGE_TECHNOLOGY], how="left").join(
         charging, on=[REGION, CHARGE_TECHNOLOGY], how="left"
     )
-    return _enrich_ratios(state, operations, table).with_columns(
+    table = enrich_storage_buses(state, operations, _enrich_ratios(state, operations, table))
+    return table.with_columns(
         _express_technology_name(CHARGE_TECHNOLOGY).alias(CHARGE_TECHNOLOGY_NAME),
         _express_technology_name(DISCHARGE_TECHNOLOGY).alias(DISCHARGE_TECHNOLOGY_NAME),
     )

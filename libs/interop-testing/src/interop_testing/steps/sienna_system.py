@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import h5py
+import pytest
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
@@ -523,6 +524,22 @@ def assert_sienna_component_field(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == expected, (
         f"expected [{sienna_type}:{name}].{field_path!r} = {expected!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
+        ' having "{field_path}" close to {value:g}'
+    )
+)
+def assert_sienna_component_field_close(
+    path: str, sienna_type: str, name: str, field_path: str, value: float
+) -> None:
+    component = find_sienna_component(read_json(path), sienna_type, name)
+    actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
+    assert actual == pytest.approx(value), (
+        f"expected [{sienna_type}:{name}].{field_path!r} ≈ {value!r} in {path}, got {actual!r}"
     )
 
 

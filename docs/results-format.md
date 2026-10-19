@@ -87,6 +87,11 @@ reports these variables, and an hourly dispatch does not.
 - `production` is the electricity that a technology puts out in the year. The trade between
   two locations is the `production` of the transport technology between them. That is the
   energy that it delivers at its far end. The format has no `trade` variable.
+- A conversion between two electricity fuels of one location, for example from transmission
+  to distribution, is neither production nor trade. It has no `production`, `installed_capacity`
+  or `new_capacity` row. A line of a solve that joins two buses of one area, or a PyPSA link
+  between two electricity buses of one `location`, is such a conversion. Its hourly `flow` row
+  stays.
 
 A Sienna solve over representative periods also gives annual rows. The `extensions.json`
 sidecar of the system must hold `representative_period` records. Each record gives the first
@@ -102,7 +107,7 @@ the period occurs in the year. The `sienna-to-results` pipeline then writes thes
   sends.
 - `installed_capacity` is `base_power` × `rating` of a generator, `base_power` ×
   `output_active_power_limits.max` of a storage, and `active_power_limits_from.max` of a
-  `TwoTerminalGenericHVDCLine`.
+  `TwoTerminalGenericHVDCLine` between two areas.
 - `installed_capacity` is the nameplate, as the published `TotalCapacityAnnual` of an OSeMOSYS
   model is. `base_power` × `rating` is the nameplate of a plant from OSeMOSYS: `base_power` is
   the residual capacity in MW of electricity, and `rating` is always 1.0. The availability

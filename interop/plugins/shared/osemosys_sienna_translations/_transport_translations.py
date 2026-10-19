@@ -1,4 +1,4 @@
-"""The Translation list that turns the transport source table into TwoTerminalGenericHVDCLine."""
+"""The Translation list that turns the line source table into TwoTerminalGenericHVDCLine."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
     TECHNOLOGY,
-    AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
@@ -26,6 +25,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
+    build_defaulted,
     build_derived,
     build_osemosys_field,
     build_sienna_field,
@@ -49,9 +49,10 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     AVAILABILITY,
     COST,
     COST_MWH,
+    FROM_BUS,
     FROM_FUEL,
-    FROM_LOCATION,
     INPUT_RATIO,
+    IS_UNLIMITED,
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
@@ -62,8 +63,8 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     REVERSE_RECEIVED_MW,
     REVERSE_SENT_MW,
     SENT_MW,
+    TO_BUS,
     TO_FUEL,
-    TO_LOCATION,
 )
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
@@ -107,20 +108,29 @@ _P_MAX_PU_SERIES_DERIVATION = (
 )
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
 _ENDS_DERIVATION = (
-    "the location of the electricity fuel that the technology takes in at the operations mode "
-    "-> bus0; the location of the electricity fuel that it puts out -> bus1"
+    "the bus of the electricity fuel that the technology takes in at the operations mode, "
+    "<region>/<fuel> -> bus0; the bus of the electricity fuel that it puts out -> bus1"
+)
+_CAPACITY_TERM = (
+    "the capacity in MW × availability_factor, where the capacity is residual_capacity, or for "
+    "a technology with no residual_capacity that the model builds at no cost "
+    "min(total_annual_max_capacity, total_annual_max_capacity_investment)"
 )
 _FROM_DERIVATION = (
-    "min = - residual_capacity, in MW, × availability_factor × the electricity "
-    "output_activity_ratio of the flow back, or 0 when no mode flows back; max = "
-    "residual_capacity, in MW, × availability_factor × the electricity input_activity_ratio at "
-    "the operations mode"
+    f"min = - {_CAPACITY_TERM} × the electricity output_activity_ratio of the flow back, or 0 "
+    "when no mode flows back; max = the same capacity × the electricity input_activity_ratio "
+    "at the operations mode"
 )
 _TO_DERIVATION = (
-    "min = - residual_capacity, in MW, × availability_factor × the electricity "
-    "input_activity_ratio of the flow back, or 0 when no mode flows back; max = "
-    "residual_capacity, in MW, × availability_factor × the electricity output_activity_ratio at "
-    "the operations mode"
+    f"min = - {_CAPACITY_TERM} × the electricity input_activity_ratio of the flow back, or 0 "
+    "when no mode flows back; max = the same capacity × the electricity output_activity_ratio "
+    "at the operations mode"
+)
+_UNLIMITED_NOTE = (
+    "the model builds the technology at no cost and no limit binds it, so the capacity is the "
+    "electricity that the whole fleet of the year can put out (Σ residual_capacity in MW × the "
+    "largest electricity output_activity_ratio of each technology) / the smallest ratio of the "
+    "line; no flow can exceed it, so it never binds"
 )
 _LOSS_DERIVATION = (
     "a linear curve with the proportional term 1 - the electricity output_activity_ratio / the "
@@ -182,8 +192,8 @@ def _express_limits(back: str, forward: str) -> pl.Expr:
 def _build_ends() -> Translation:
     return Translation(
         exprs=[
-            pl.col(FROM_LOCATION).alias(SiennaLinkCol.BUS0),
-            pl.col(TO_LOCATION).alias(SiennaLinkCol.BUS1),
+            pl.col(FROM_BUS).alias(SiennaLinkCol.BUS0),
+            pl.col(TO_BUS).alias(SiennaLinkCol.BUS1),
         ],
         make_events=lambda old, new: build_derived(
             _build_end_sources(old),
@@ -197,20 +207,31 @@ def _build_ends() -> Translation:
 
 
 def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
-    """The fuel flows at the operations mode, and the location of each fuel."""
+    """The fuel flows at the operations mode, and each fuel."""
     sources = []
-    for parameter, fuel, ratio, location in (
-        (FlowParameter.INPUT_ACTIVITY_RATIO, old[FROM_FUEL], old[INPUT_RATIO], old[FROM_LOCATION]),
-        (FlowParameter.OUTPUT_ACTIVITY_RATIO, old[TO_FUEL], old[OUTPUT_RATIO], old[TO_LOCATION]),
+    for parameter, fuel, ratio in (
+        (FlowParameter.INPUT_ACTIVITY_RATIO, old[FROM_FUEL], old[INPUT_RATIO]),
+        (FlowParameter.OUTPUT_ACTIVITY_RATIO, old[TO_FUEL], old[OUTPUT_RATIO]),
     ):
         sources.append(_build_source(parameter, old, f"{fuel} at the operations mode", ratio))
         fuel_name = f"{old[REGION]}{REGION_NAME_SEPARATOR}{fuel}"
-        sources.append(build_osemosys_field(FUEL, fuel_name, AnnotationColumn.LOCATION, location))
+        sources.append(build_osemosys_field(FUEL, fuel_name, FUEL, fuel))
     return sources
+
+
+def _build_unlimited_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
+    if not old[IS_UNLIMITED]:
+        return []
+    limits = new[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM]
+    return build_defaulted(
+        [_dest(old[LINE_NAME], SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, limits, UNIT_MW)],
+        _UNLIMITED_NOTE,
+    )
 
 
 def _build_reports() -> list[Translation]:
     return [
+        Translation(exprs=[], make_events=_build_unlimited_events),
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
         Translation(

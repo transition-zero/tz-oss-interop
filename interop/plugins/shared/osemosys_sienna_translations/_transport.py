@@ -1,14 +1,16 @@
-"""OSeMOSYS AggregateTransportTechnology -> Sienna TwoTerminalGenericHVDCLine.
+"""OSeMOSYS AggregateTransportTechnology and conversion of electricity -> Sienna
+TwoTerminalGenericHVDCLine.
 
-At the operations mode, a transport technology takes in electricity at one location and puts
-it out at another. The line runs from the bus of the first to the bus of the second, in that
-direction. It sends at most its residual capacity in MW × its availability factor × its
+At the operations mode, a transport technology takes in electricity at the bus of one fuel and
+puts it out at the bus of another, in another location. A conversion technology does the same
+between two electricity fuels of one location. Each becomes a line from the first bus to the
+second, in that direction. It sends at most its capacity in MW × its availability factor × its
 electricity input ratio, and it loses the share `1 - output ratio / input ratio` of what it
-sends. When another mode takes electricity in at the second location and puts it out at the
-first, the line also flows back, within the limits of that mode. A mode that puts out
-electricity at one end and takes in none is an import, which becomes a generator. The values of
-every other mode, and each value that a Sienna line has no field for, go to the line record of
-extensions.json.
+sends. `_line_capacity` gives the capacity. When another mode takes electricity in at the second
+bus and puts it out at the first, the line also flows back, within the limits of that mode. A
+mode that puts out electricity at one end and takes in none is an import, which becomes a
+generator. The values of every other mode, and each value that a Sienna line has no field for,
+go to the line record of extensions.json.
 """
 
 from __future__ import annotations
@@ -53,7 +55,10 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
     enrich_activity_limits,
     set_bounds_persisted,
 )
-from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
+from interop.plugins.shared.osemosys_sienna_translations._buses import (
+    ELECTRICITY_BUS,
+    read_electricity_fuels,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
@@ -62,6 +67,9 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     HAS_CAPACITY_FACTORS,
     build_capacity_factor_series,
     express_has_capacity_factors,
+)
+from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    FREE_BUILD_PARAMETERS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     RESIDUAL_CAPACITY,
@@ -74,6 +82,14 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     enrich_other_mode_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import GeneratorSources
+from interop.plugins.shared.osemosys_sienna_translations._left_out import (
+    IS_ALL_ELECTRICITY,
+    read_left_out_technologies,
+)
+from interop.plugins.shared.osemosys_sienna_translations._line_capacity import (
+    enrich_line_capacity,
+    read_fleet_output_mw,
+)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -85,6 +101,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     AVAILABILITY_FACTOR,
     VARIABLE_COST,
@@ -107,10 +124,15 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     CAPACITY_MW,
     COST,
     COST_MWH,
+    FROM_BUS,
+    FROM_BUSES,
     FROM_FUEL,
     FROM_LOCATION,
     FROM_LOCATIONS,
     INPUT_RATIO,
+    IS_BUILT_FREE,
+    IS_UNLIMITED,
+    LINE_CAPACITY,
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
@@ -121,6 +143,8 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     REVERSE_RECEIVED_MW,
     REVERSE_SENT_MW,
     SENT_MW,
+    TO_BUS,
+    TO_BUSES,
     TO_FUEL,
     TO_LOCATION,
     TO_LOCATIONS,
@@ -146,9 +170,9 @@ log = logging.getLogger(__name__)
 _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
-_COUNTED_NOUN = "transport technology(ies)"
+_COUNTED_NOUN = "line technology(ies)"
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
-_ONE_LOCATION = 1
+_ONE_BUS = 1
 _NO_COST = 0.0
 _NO_FLOW = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
@@ -156,6 +180,7 @@ _NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
 
 # The records of the lines, and the columns that name each line and its technology.
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
+_FREE_BUILD_SCOPE = "free-build"
 # The rows of a line technology that the line applies, beside those its record keeps.
 _APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
 
@@ -176,12 +201,14 @@ class _EndColumns(NamedTuple):
 
     location: str
     locations: str
+    bus: str
+    buses: str
     fuel: str
     ratio: str
 
 
-_FROM = _EndColumns(FROM_LOCATION, FROM_LOCATIONS, FROM_FUEL, INPUT_RATIO)
-_TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, TO_FUEL, OUTPUT_RATIO)
+_FROM = _EndColumns(FROM_LOCATION, FROM_LOCATIONS, FROM_BUS, FROM_BUSES, FROM_FUEL, INPUT_RATIO)
+_TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, TO_BUS, TO_BUSES, TO_FUEL, OUTPUT_RATIO)
 
 
 def _build_skip(
@@ -202,22 +229,22 @@ def _build_skip(
 
 
 NO_CAPACITY_SKIP = _build_skip(
-    "have no residual capacity in the operations year",
+    "have no residual capacity in the operations year, and the model builds none at no cost",
     "the fleet of the operations year is its residual capacity, which holds none of it",
     RESIDUAL_CAPACITY,
 )
 NO_ENDS_SKIP = _build_skip(
-    "do not take in electricity at one location and put it out at another at the operations mode",
-    "a line needs one location where the technology takes in electricity and another where it "
-    "puts electricity out, at the operations mode",
-    AnnotationColumn.LOCATION,
+    "do not take in electricity at one bus and put it out at another at the operations mode",
+    "a line needs one bus where the technology takes in electricity and another where it puts "
+    "electricity out, at the operations mode",
 )
 
 
 def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
     """Where each technology takes in and puts out electricity at the mode, with the ratios.
 
-    `from_locations` and `to_locations` count the locations of each end; a line needs one each.
+    `from_buses` and `to_buses` count the buses of each end; a line needs one each.
+    `from_locations` and `to_locations` count the locations of each end.
     """
     ends = _read_mode_ends(state, year)
     return ends.filter(pl.col(OPERATING_MODE) == mode).drop(OPERATING_MODE)
@@ -226,9 +253,9 @@ def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
 def build_transport_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> TransportSources:
-    """One row for each transport technology that the operations system holds as a line.
+    """One row for each technology that the operations system holds as a line.
 
-    Each end of a line is the location of an electricity fuel, which always has a bus.
+    Each end of a line is the bus of an electricity fuel.
     """
     lines = _read_lines(state, operations)
     for rule in _SKIP_RULES:
@@ -272,6 +299,12 @@ def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
     set_mode_bounds_persisted(state, LINE_OWNERS, lines)
     set_bounds_persisted(state, LINE_OWNERS, lines)
     set_applied_rows(state, LINE_OWNERS, lines, _APPLIED_PARAMETERS)
+    free = lines.filter(pl.col(IS_BUILT_FREE)).select(_KEYS)
+    if free.height > 0:
+        for parameter in FREE_BUILD_PARAMETERS:
+            set_persisted_rows(
+                state, ExtensionKind.CONTROLLABLE_LINE, parameter, [free], _FREE_BUILD_SCOPE
+            )
 
 
 def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
@@ -312,8 +345,8 @@ def warn_one_way_lines(lines: pl.DataFrame) -> None:
     ]
     if named:
         log.warning(
-            "%s: %d transport technology(ies) state values at an operating mode that is neither "
-            "the flow back nor an import, and the line does not run them; extensions.json holds "
+            "%s: %d line technology(ies) state values at an operating mode that is neither the "
+            "flow back nor an import, and the line does not run them; extensions.json holds "
             "them. Technologies: %s",
             OSEMOSYS_TO_SIENNA_PIPELINE,
             len(named),
@@ -346,7 +379,9 @@ def _is_held_by_reverse_mode(line: dict[str, Any], value: dict[str, Any]) -> boo
 
 def _read_mode_ends(state: State, year: int) -> pl.DataFrame:
     """The ends of each technology at each operating mode."""
-    fuels = read_electricity_fuels(state).select(REGION, FUEL, AnnotationColumn.LOCATION)
+    fuels = read_electricity_fuels(state).select(
+        REGION, FUEL, AnnotationColumn.LOCATION, ELECTRICITY_BUS
+    )
     ends = [
         _read_end(state, year, parameter, fuels, columns)
         for parameter, columns in ((_FLOWS[0], _FROM), (_FLOWS[1], _TO))
@@ -366,6 +401,8 @@ def _read_end(
         .agg(
             location.min().alias(columns.location),
             location.n_unique().alias(columns.locations),
+            pl.col(ELECTRICITY_BUS).min().alias(columns.bus),
+            pl.col(ELECTRICITY_BUS).n_unique().alias(columns.buses),
             pl.col(FUEL).min().alias(columns.fuel),
             pl.col(VALUE_COL).cast(pl.Float64).sum().alias(columns.ratio),
         )
@@ -373,30 +410,40 @@ def _read_end(
 
 
 def _read_lines(state: State, operations: OperationsYear) -> pl.DataFrame:
-    """Every transport technology, so that each Sienna name knows of a clash in another region."""
-    lines = (
-        read_annotations(state, TECHNOLOGY)
-        .filter(pl.col(AnnotationColumn.KIND) == TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
-        .with_columns(
-            express_component_name(TECHNOLOGY).alias(LINE_NAME),
-            express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME),
-        )
+    """Every transport technology and every conversion of electricity alone, so that each
+    Sienna name knows of a clash in another region."""
+    lines = _read_line_technologies(state, operations).with_columns(
+        express_component_name(TECHNOLOGY).alias(LINE_NAME),
+        express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME),
     )
     lines = enrich_residual_capacity(state, operations.year, lines)
+    lines = enrich_line_capacity(state, operations, lines)
     ends = read_transport_ends(state, operations.year, operations.mode)
     return lines.join(ends, on=_KEYS, how="left")
 
 
+def _read_line_technologies(state: State, operations: OperationsYear) -> pl.DataFrame:
+    kind = pl.col(AnnotationColumn.KIND)
+    conversions = (
+        read_left_out_technologies(state, operations)
+        .filter(kind.eq_missing(TechnologyKind.CONVERSION) & pl.col(IS_ALL_ELECTRICITY))
+        .select(_KEYS)
+    )
+    technologies = read_annotations(state, TECHNOLOGY)
+    transport = technologies.filter(kind == TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
+    return pl.concat([transport, technologies.join(conversions, on=_KEYS, how="semi")])
+
+
 def _express_has_ends() -> pl.Expr:
     return (
-        (pl.col(FROM_LOCATIONS) == _ONE_LOCATION)
-        & (pl.col(TO_LOCATIONS) == _ONE_LOCATION)
-        & (pl.col(FROM_LOCATION) != pl.col(TO_LOCATION))
+        (pl.col(FROM_BUSES) == _ONE_BUS)
+        & (pl.col(TO_BUSES) == _ONE_BUS)
+        & (pl.col(FROM_BUS) != pl.col(TO_BUS))
     )
 
 
 _SKIP_RULES = (
-    SkipRule(pl.col(RESIDUAL_CAPACITY) > 0, NO_CAPACITY_SKIP),
+    SkipRule((pl.col(RESIDUAL_CAPACITY) > 0) | pl.col(IS_BUILT_FREE), NO_CAPACITY_SKIP),
     SkipRule(_express_has_ends(), NO_ENDS_SKIP),
 )
 
@@ -411,9 +458,9 @@ def _enrich_reverse_modes(
         _read_mode_ends(state, operations.year)
         .filter((pl.col(OPERATING_MODE) != operations.mode) & _express_has_ends())
         .join(
-            lines.select(*_KEYS, FROM_LOCATION, TO_LOCATION),
-            left_on=[*_KEYS, FROM_LOCATION, TO_LOCATION],
-            right_on=[*_KEYS, TO_LOCATION, FROM_LOCATION],
+            lines.select(*_KEYS, FROM_BUS, TO_BUS),
+            left_on=[*_KEYS, FROM_BUS, TO_BUS],
+            right_on=[*_KEYS, TO_BUS, FROM_BUS],
         )
         .sort(pl.col(OPERATING_MODE).cast(pl.Int64, strict=False), OPERATING_MODE)
         .group_by(_KEYS)
@@ -427,14 +474,17 @@ def _enrich_reverse_modes(
 
 
 def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
-    stated = read_availability_factors(state, operations.year, lines.select(_KEYS)).rename(
-        {AVAILABILITY_FACTOR: AVAILABILITY}
-    )
-    rated = lines.join(stated, on=_KEYS).with_columns(
-        (
-            operations.units.convert_capacity_to_mw(pl.col(RESIDUAL_CAPACITY))
-            * pl.col(AVAILABILITY)
-        ).alias(CAPACITY_MW)
+    """The capacity in MW of activity × the availability factor; a line with no limit gets
+    what the whole fleet can put out / its smallest ratio, so that no limit of the line binds."""
+    stated = read_availability_factors(state, operations.year, lines.select(_KEYS))
+    rated = lines.join(stated.rename({AVAILABILITY_FACTOR: AVAILABILITY}), on=_KEYS)
+    limited = express_converted(rated, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
+    unlimited = pl.lit(_find_unlimited_mw(state, operations, lines), dtype=pl.Float64)
+    rated = rated.with_columns(
+        pl.when(pl.col(IS_UNLIMITED))
+        .then(unlimited / _express_smallest_ratio())
+        .otherwise(limited * pl.col(AVAILABILITY))
+        .alias(CAPACITY_MW)
     )
     capacity = pl.col(CAPACITY_MW)
     return rated.with_columns(
@@ -444,6 +494,19 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
         (capacity * pl.col(REVERSE_INPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_SENT_MW),
         (capacity * pl.col(REVERSE_OUTPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_RECEIVED_MW),
     )
+
+
+def _find_unlimited_mw(
+    state: State, operations: OperationsYear, lines: pl.DataFrame
+) -> float | None:
+    if not lines[IS_UNLIMITED].any():
+        return None
+    return read_fleet_output_mw(state, operations)
+
+
+def _express_smallest_ratio() -> pl.Expr:
+    ratios = (INPUT_RATIO, OUTPUT_RATIO, REVERSE_INPUT_RATIO, REVERSE_OUTPUT_RATIO)
+    return pl.concat_list(*ratios).list.drop_nulls().list.min()
 
 
 def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:

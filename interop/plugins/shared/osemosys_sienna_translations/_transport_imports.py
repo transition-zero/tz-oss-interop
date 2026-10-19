@@ -26,7 +26,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
-    AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
@@ -45,7 +44,10 @@ from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
     build_availability,
 )
-from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
+from interop.plugins.shared.osemosys_sienna_translations._buses import (
+    ELECTRICITY_BUS,
+    read_electricity_fuels,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
@@ -88,10 +90,10 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
-    FROM_LOCATION,
+    FROM_BUS,
     IMPORT_FLOWS,
     LINE_NAME,
-    TO_LOCATION,
+    TO_BUS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
@@ -105,8 +107,8 @@ IMPORT_FUELS = "import_fuels"
 
 _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
-_LOCATIONS = "locations"
-_ONE_LOCATION = 1
+_BUSES = "buses"
+_ONE_BUS = 1
 _NO_COST = 0.0
 _NAME_INFIX = f"{IMPORT_NAME_SEPARATOR}{IMPORT_NAME_PART}{IMPORT_NAME_SEPARATOR}"
 # The values of an import mode, other than its flows, that its generator holds.
@@ -120,15 +122,15 @@ def read_import_modes(
 ) -> pl.DataFrame:
     """Each mode of a line that puts out electricity at one end of it, and takes in none.
 
-    `lines` holds the name and the ends of each line. Each row holds the location of the end,
-    the electricity fuels that the mode puts out there, and the sum of their output ratios. An
+    `lines` holds the name and the ends of each line. Each row holds the bus of the end, the
+    electricity fuels that the mode puts out there, and the sum of their output ratios. An
     output to an electricity fuel with no location is reported, because no bus can hold it.
     """
-    ends = lines.select(*_KEYS, TECHNOLOGY_NAME, FROM_LOCATION, TO_LOCATION)
+    ends = lines.select(*_KEYS, TECHNOLOGY_NAME, FROM_BUS, TO_BUS)
     outputs = _read_unfed_outputs(state, operations).join(ends, on=_KEYS)
-    has_location = pl.col(AnnotationColumn.LOCATION).is_not_null()
-    _report_unplaced_outputs(outputs.filter(~has_location), recorder)
-    return _build_import_modes(outputs.filter(has_location))
+    has_bus = pl.col(ELECTRICITY_BUS).is_not_null()
+    _report_unplaced_outputs(outputs.filter(~has_bus), recorder)
+    return _build_import_modes(outputs.filter(has_bus))
 
 
 def enrich_import_flows(lines: pl.DataFrame, imports: pl.DataFrame) -> pl.DataFrame:
@@ -180,9 +182,9 @@ def build_import_extensions(imports: pl.DataFrame) -> list[GeneratorExtension]:
 
 def _read_unfed_outputs(state: State, operations: OperationsYear) -> pl.DataFrame:
     """Each electricity output of a mode, other than the operations mode, that takes in no
-    electricity, with the location of its fuel.
+    electricity, with the bus of its fuel.
     """
-    fuels = read_electricity_fuels(state).select(REGION, FUEL, AnnotationColumn.LOCATION)
+    fuels = read_electricity_fuels(state).select(REGION, FUEL, ELECTRICITY_BUS)
     outputs = _read_flows(state, operations.year, FlowParameter.OUTPUT_ACTIVITY_RATIO, fuels)
     inputs = _read_flows(state, operations.year, FlowParameter.INPUT_ACTIVITY_RATIO, fuels)
     return outputs.filter(pl.col(OPERATING_MODE) != operations.mode).join(
@@ -191,21 +193,21 @@ def _read_unfed_outputs(state: State, operations: OperationsYear) -> pl.DataFram
 
 
 def _build_import_modes(outputs: pl.DataFrame) -> pl.DataFrame:
-    """The modes whose electricity outputs are at one location, which is one end of the line."""
-    location = pl.col(AnnotationColumn.LOCATION)
-    at_an_end = (location == pl.col(FROM_LOCATION)) | (location == pl.col(TO_LOCATION))
+    """The modes whose electricity outputs are at one bus, which is one end of the line."""
+    bus = pl.col(ELECTRICITY_BUS)
+    at_an_end = (bus == pl.col(FROM_BUS)) | (bus == pl.col(TO_BUS))
     return (
         outputs.group_by(_MODE_KEYS)
         .agg(
-            location.min(),
-            location.n_unique().alias(_LOCATIONS),
-            pl.col(FROM_LOCATION).first(),
-            pl.col(TO_LOCATION).first(),
+            bus.min(),
+            bus.n_unique().alias(_BUSES),
+            pl.col(FROM_BUS).first(),
+            pl.col(TO_BUS).first(),
             pl.col(FUEL).sort().alias(IMPORT_FUELS),
             pl.col(VALUE_COL).cast(pl.Float64).sum().alias(ELECTRICITY_OUTPUT_RATIO),
         )
-        .filter((pl.col(_LOCATIONS) == _ONE_LOCATION) & at_an_end)
-        .drop(_LOCATIONS, FROM_LOCATION, TO_LOCATION)
+        .filter((pl.col(_BUSES) == _ONE_BUS) & at_an_end)
+        .drop(_BUSES, FROM_BUS, TO_BUS)
         .sort(_MODE_KEYS)
     )
 
@@ -218,7 +220,7 @@ def _report_unplaced_outputs(outputs: pl.DataFrame, recorder: ScopedRecorder) ->
         recorder.append(_build_unplaced_event(row))
     names = outputs[TECHNOLOGY_NAME].unique().sort().to_list()
     log.warning(
-        "%s: %d transport technology(ies) have a mode that imports an electricity fuel with no "
+        "%s: %d line technology(ies) have a mode that imports an electricity fuel with no "
         "location, so no generator holds that import. Technologies: %s",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         len(names),

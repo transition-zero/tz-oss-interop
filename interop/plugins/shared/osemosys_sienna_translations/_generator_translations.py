@@ -41,6 +41,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     PEAK_FACTOR,
 )
+from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
@@ -174,7 +175,10 @@ _FIXED_NOTE = (
 _NO_FIXED_COST_NOTE = "OSeMOSYS states no fixed cost of the technology, so the fixed cost is 0"
 _COMMITMENT_NOTE = "OSeMOSYS states no unit commitment data"
 _NAME_DERIVATION = "the technology, after its region when two regions hold it"
-_BUS_DERIVATION = "the location of the technology -> bus"
+_BUS_DERIVATION = (
+    "the bus of the largest electricity fuel that the technology puts out at the operations "
+    "mode, <region>/<fuel>"
+)
 _BASE_POWER_DERIVATION = (
     "residual_capacity of the operations year, in MW, × the electricity output_activity_ratio at "
     "the operations mode"
@@ -300,9 +304,9 @@ def _build_identity(dest: DestinationFieldFactory) -> list[Translation]:
         ),
         default(dest_col=_Col.AVAILABLE, value=True, note=GENERATOR_AVAILABLE_NOTE),
         Translation(
-            exprs=[pl.col(AnnotationColumn.LOCATION).alias(_Col.BUS_NAME)],
+            exprs=[pl.col(ELECTRICITY_BUS).alias(_Col.BUS_NAME)],
             make_events=lambda old, new: build_derived(
-                [_build_location_source(old)],
+                [_build_output_ratio_source(old)],
                 [dest(old[GENERATOR_NAME], _Col.BUS_NAME, new[_Col.BUS_NAME])],
                 _BUS_DERIVATION,
             ),
@@ -316,12 +320,6 @@ def _build_identity(dest: DestinationFieldFactory) -> list[Translation]:
             [pl.col(PRIME_MOVER).cast(PRIME_MOVERS_DTYPE).alias(_Col.PRIME_MOVER_TYPE)],
         ),
     ]
-
-
-def _build_location_source(old: dict[str, Any]) -> SourceField:
-    return build_osemosys_field(
-        TECHNOLOGY, old[TECHNOLOGY_NAME], AnnotationColumn.LOCATION, old[AnnotationColumn.LOCATION]
-    )
 
 
 def _build_user_choice(

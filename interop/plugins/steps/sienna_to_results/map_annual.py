@@ -5,6 +5,10 @@ A solve over representative periods states each hour of a period once, and the p
 each period's hours and weight, so the hourly rows of the solve sum to the energy of the year.
 With no such records, the solve covers the hours it states and nothing more, so no annual row
 is written.
+
+A TwoTerminalGenericHVDCLine between two buses of one area converts one electricity fuel into
+another at one location. It is neither production nor trade, so it has no production and no
+installed capacity row.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
+    SiennaACBusCol,
     SiennaGeneratorCol,
     SiennaLinkCol,
     SiennaStorageCol,
@@ -50,18 +55,21 @@ from interop.ports.outbound.reporting import (
 )
 
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
+_AREA0 = "area0"
+_AREA1 = "area1"
 
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
     "|flow| for a TwoTerminalGenericHVDCLine, × 1 h × the weight of the representative "
     "period that holds the hour → production at 1 January of the year. The dispatch of a "
     "RenewableNonDispatch is its ActivePowerTimeSeriesParameter. The solve models the HVDC "
-    "line as lossless, so the energy that it delivers equals the energy that it sends."
+    "line as lossless, so the energy that it delivers equals the energy that it sends. A line "
+    "between two buses of one area converts electricity, so it has no row."
 )
 _INSTALLED_CAPACITY_DERIVATION = (
     "base_power × rating for a generator, base_power × output_active_power_limits.max for a "
-    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine → "
-    "installed_capacity at 1 January of the year"
+    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine between two "
+    "areas → installed_capacity at 1 January of the year"
 )
 _PRODUCTION_SOURCES = [
     SourceField(
@@ -148,9 +156,12 @@ class AnnualResultsMapper:
         weights = self._build_weights(reader, hourly)
         if weights.is_empty():
             return []
-        production = _build_all_production(hourly, weights)
+        conversions = _build_conversion_lines(state)
+        production = _build_all_production(hourly, weights).drop_links(conversions)
         produced = production.build_table()
         capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
+        if not capacity.is_empty():
+            capacity = capacity.filter(~pl.col(ResultsCol.COMPONENT).is_in(list(conversions)))
         return [
             *self._map_production(produced),
             *self._map_installed_capacity(capacity, produced),
@@ -199,6 +210,22 @@ class AnnualResultsMapper:
             ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, EMISSIONS_DERIVATION
         )
         return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+
+
+def _build_conversion_lines(state: State) -> frozenset[str]:
+    """Each HVDC line whose two buses are in one area, which converts electricity there."""
+    links = state.source_topology.get(SiennaTable.LINKS)
+    buses = state.source_topology.get(SiennaTable.BUSES)
+    if links is None or buses is None:
+        return frozenset()
+    areas = buses.select(SiennaACBusCol.ID, SiennaACBusCol.AREA).collect()
+    ends = links.select(SiennaLinkCol.NAME, SiennaLinkCol.BUS0, SiennaLinkCol.BUS1).collect()
+    for end, area in ((SiennaLinkCol.BUS0, _AREA0), (SiennaLinkCol.BUS1, _AREA1)):
+        ends = ends.join(
+            areas.rename({SiennaACBusCol.ID: end, SiennaACBusCol.AREA: area}), on=end, how="left"
+        )
+    inside = ends.filter(pl.col(_AREA0).is_not_null() & (pl.col(_AREA0) == pl.col(_AREA1)))
+    return frozenset(inside[SiennaLinkCol.NAME].to_list())
 
 
 def _build_all_production(hourly: HourlyResults, weights: pl.DataFrame) -> Production:

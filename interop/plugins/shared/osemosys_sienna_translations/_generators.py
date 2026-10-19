@@ -2,8 +2,9 @@
 
 The fleet of the operations year is the `residual_capacity` of that year. A supply technology
 becomes a ThermalStandard, a RenewableDispatch, a RenewableNonDispatch or a HydroDispatch on
-the bus of its location. Its base power is its residual capacity in MW × its electricity output
-ratio at the operations mode, and it rates at all of it. Its availability in each hour is a
+the bus of the electricity fuel that it puts out at the operations mode. Its base power is its
+residual capacity in MW × its electricity output ratio at the operations mode, and it rates at
+all of it. Its availability in each hour is a
 series per unit of the base power, or the maximum of its active power limits when that is the
 same in every hour.
 """
@@ -50,8 +51,14 @@ from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
     build_availability,
 )
+from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
+)
+from interop.plugins.shared.osemosys_sienna_translations._flow_buses import (
+    SplitFlow,
+    read_flow_buses,
+    report_split_flows,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     PRODUCER,
@@ -142,6 +149,9 @@ _PRODUCER_PARAMETERS = (SupplyParameter.VARIABLE_OPERATION_COST, SupplyParameter
 _PRODUCER_OWNERS = replace(GENERATOR_OWNERS, report_col=PRODUCER)
 
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
+_OUTPUT_FLOW = SplitFlow(
+    FlowParameter.OUTPUT_ACTIVITY_RATIO, TECHNOLOGY_NAME, "the operations mode"
+)
 
 
 NO_CAPACITY_SKIP = SkipReport(
@@ -185,11 +195,10 @@ NO_BUS_SKIP = SkipReport(
     framework=OSEMOSYS_FRAMEWORK,
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
-    reason="have a location that holds no bus",
+    reason="put out electricity only to fuels with no location",
     counted_noun=_COUNTED_NOUN,
-    note="no electricity fuel is at the location of the technology, so no bus can hold it",
+    note="no electricity fuel that the technology puts out has a location, so no bus can hold it",
     listed=_LISTED,
-    attribute_col=AnnotationColumn.LOCATION,
 )
 NO_ELECTRICITY_OUTPUT_SKIP = SkipReport(
     pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
@@ -262,9 +271,18 @@ def _read_generators(
     technologies = enrich_electricity_output_ratios(
         state, operations.year, operations.mode, technologies
     )
+    technologies = technologies.join(
+        _read_output_buses(state, operations), on=[REGION, TECHNOLOGY], how="left"
+    )
     for rule in _build_skip_rules(list_bus_names(state)):
         technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
+    report_split_flows(technologies, _OUTPUT_FLOW, recorder)
     return technologies
+
+
+def _read_output_buses(state: State, operations: OperationsYear) -> pl.DataFrame:
+    buses = read_flow_buses(state, operations.year, FlowParameter.OUTPUT_ACTIVITY_RATIO)
+    return buses.filter(pl.col(OPERATING_MODE) == operations.mode).drop(OPERATING_MODE)
 
 
 def _enrich_capacity(operations: OperationsYear, generators: pl.DataFrame) -> pl.DataFrame:
@@ -292,8 +310,8 @@ def _build_skip_rules(bus_names: list[str]) -> list[SkipRule]:
         SkipRule(pl.col(RESIDUAL_CAPACITY) > 0, NO_CAPACITY_SKIP),
         SkipRule(pl.col(SIENNA_TYPE).is_not_null(), NO_CARRIERS_ROW_SKIP),
         SkipRule(pl.col(SIENNA_TYPE).is_in(list(GENERATOR_TYPES)), NOT_A_GENERATOR_SKIP),
-        SkipRule(pl.col(AnnotationColumn.LOCATION).is_in(bus_names), NO_BUS_SKIP),
         SkipRule(pl.col(ELECTRICITY_OUTPUT_RATIO) > 0, NO_ELECTRICITY_OUTPUT_SKIP),
+        SkipRule(pl.col(ELECTRICITY_BUS).is_in(bus_names), NO_BUS_SKIP),
     ]
 
 

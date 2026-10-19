@@ -118,7 +118,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generators import GENE
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
     enrich_targets,
-    list_bus_names,
+    list_area_names,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
@@ -174,7 +174,7 @@ def build_supply_candidates(
     yearly = read_technology_years(state, plan, technologies)
     technologies = drop_non_candidates(technologies, yearly, [InvestmentParameter.CAPITAL_COST])
     technologies = _enrich_ratings(state, plan, enrich_targets(technologies, mappings))
-    technologies = _drop_skipped(technologies, list_bus_names(state), recorder)
+    technologies = _drop_skipped(technologies, list_area_names(state), recorder)
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     table = enrich_base_year_values(technologies, yearly, plan).join(
@@ -208,14 +208,14 @@ def _enrich_ratings(state: State, plan: InvestmentPlan, technologies: pl.DataFra
 
 
 def _drop_skipped(
-    technologies: pl.DataFrame, buses: list[str], recorder: ScopedRecorder
+    technologies: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
 ) -> pl.DataFrame:
-    for rule in _build_skip_rules(buses):
+    for rule in _build_skip_rules(areas):
         technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
     return technologies
 
 
-def _build_skip_rules(buses: list[str]) -> list[SkipRule]:
+def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
     skip = TECHNOLOGY_SOURCE.skip
     return [
         SkipRule(
@@ -243,11 +243,14 @@ def _build_skip_rules(buses: list[str]) -> list[SkipRule]:
             ),
         ),
         SkipRule(
-            pl.col(AnnotationColumn.LOCATION).is_in(buses),
+            pl.col(AnnotationColumn.LOCATION).is_in(areas),
             skip(
                 name_col=REPORT_NAME,
-                reason="may be built and have a location that holds no bus",
-                note="no electricity fuel is at the location, so the technology is in no region",
+                reason="may be built and have a location that holds no electricity bus",
+                note=(
+                    "no electricity fuel with a bus is at the location, so the technology is in no "
+                    "region"
+                ),
                 listed=_LISTED,
                 attribute_col=AnnotationColumn.LOCATION,
             ),

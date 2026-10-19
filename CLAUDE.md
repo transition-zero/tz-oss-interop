@@ -29,7 +29,7 @@ Unless overridden in a specific prompt:
 
 ### OSeMOSYS to Sienna
 
-- **The Sienna system and the portfolio hold electricity.** Every fuel that is not electricity, and each technology that supplies, moves or converts it, travels in `extensions.json` as `bus`, `generator`, `conversion` and `load` records in PyPSA terms. The bus of such a fuel is `<region>/<fuel>`. The Sienna → PyPSA leg builds them as PyPSA buses, generators, links and loads, and a `ThermalStandard` whose fuel has a bus becomes a `Link` from that bus. The mapping lives at `./docs/translation_mappings/translation-from-osemosys-to-sienna.md`.
+- **The Sienna system and the portfolio hold electricity.** Each electricity fuel with a location is an `ACBus` named `<region>/<fuel>`, in the `Area` of its location, and a conversion between two electricity fuels is a line. Every fuel that is not electricity, and each technology that supplies, moves or converts it, travels in `extensions.json` as `bus`, `generator`, `conversion` and `load` records in PyPSA terms. The bus of such a fuel is `<region>/<fuel>` too. The Sienna → PyPSA leg builds them as PyPSA buses, generators, links and loads, and a `ThermalStandard` whose fuel has a bus becomes a `Link` from that bus. The mapping lives at `./docs/translation_mappings/translation-from-osemosys-to-sienna.md`.
 
 ### Sienna to PyPSA
 

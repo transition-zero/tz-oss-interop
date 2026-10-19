@@ -62,12 +62,13 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       | line                                                                                                                              |
       | osemosys: {units: {energy: GWh}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
 
-  Scenario: Each location of an electricity fuel becomes one bus and one area
+  Scenario: Each electricity fuel with a location becomes one bus, and each location one area
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 2 components of type "ACBus"
     And the file "outputs/system.json" parses as JSON with 2 components of type "Area"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/DEELEC" having "area" set to 2
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
     And the file "outputs/system.json" parses as JSON with component "Area" named "DE" having "id" set to 2
 
   Scenario: A specified annual demand becomes a load with its MW in each hour of the days
@@ -226,20 +227,20 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     When I translate the otoole model to Sienna in the REPL and answer the year "2030" and the locations "AT, FR"
     Then the prompt "step[1].year" was asked
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
 
   Scenario: The REPL offers the locations that a pipeline states, and Enter keeps them
     Given a pipeline "osemosys-at-to-sienna" that keeps the location "AT" before the translation
     When I run the otoole model through the pipeline "osemosys-at-to-sienna" in the REPL and answer the year "2030"
     Then the prompt "step[0].locations" offered default "AT"
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
 
   Scenario: A scope of one location gives a system with the bus of that location only
     When I translate the otoole model to Sienna for the locations "AT" and the years "2030" in the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "AT" having "bustype" set to "PQ"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
     And the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
 
   Scenario: A demand with no energy unit stops the run
@@ -279,8 +280,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     oil plant at AT. The oil plant puts out half a unit of electricity for each unit of its
     activity. Some technologies are left out: a biomass plant whose category has no carriers:
     row, a battery whose row names a storage type, a gas plant at DE with no residual capacity
-    in 2030, a gas plant on two locations, and a gas plant that makes electricity in mode 2
-    only. Two fuel_supply technologies make the gas ATGAS, at 3 and 5 $/MWh. A pipeline carries
+    in 2030, and a gas plant that makes electricity in mode 2 only. The gas plant ATDEGASCC
+    burns gas at AT and puts out electricity at DE, so it sits on the bus of DE. Two fuel_supply technologies make the gas ATGAS, at 3 and 5 $/MWh. A pipeline carries
     DEGAS to ATGAS for less, but it is not a fuel_supply technology. No technology makes the
     oil ATOIL.
 
@@ -376,7 +377,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     Scenario: A gas plant becomes a ThermalStandard that pays for its fuel at the price of the cheapest producer
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with 2 components of type "ThermalStandard"
+      And the file "outputs/system.json" parses as JSON with 3 components of type "ThermalStandard"
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "base_power" set to 500.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "rating" set to 1.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "bus" set to 1
@@ -504,11 +505,12 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log contains "have a category whose carriers: row names a type that is not a generator, so each is left out. Technologies: R1/ATBATT"
       And the file "decisions.md" contains "names EnergyReservoirStorage, which a supply technology cannot become"
 
-    Scenario: A technology on a location that holds no bus is left out and reported
+    Scenario: A plant sits on the bus of the electricity fuel that it puts out
+      ATDEGASCC burns gas at AT and puts out electricity at DE, the second bus.
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "have a location that holds no bus, so each is left out. Technologies: R1/ATDEGASCC"
-      And the file "decisions.md" contains "`osemosys.technology.R1/ATDEGASCC.location` = AT~DE"
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEGASCC" having "bus" set to 2
+      And the file "decisions.md" contains "| `sienna.ThermalStandard.ATDEGASCC.bus_name` = R1/DEELEC | the bus of the largest electricity fuel that the technology puts out at the operations mode, <region>/<fuel> |"
 
     Scenario: A plant with carbon capture keeps a negative emission rate
       Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
@@ -628,7 +630,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
       And the log contains "osemosys-to-sienna: depreciation_method states 1 row(s) for every year that no step of the pipeline applies or keeps, for 1 region(s): R1"
       And the log contains "osemosys-to-sienna: transport_route states 1 row(s) for 2030 that no step of the pipeline applies or keeps"
-      And the log contains "osemosys-to-sienna: residual_capacity states 4 row(s) for 2030 that no step of the pipeline applies or keeps, for 4 technology(ies): R1/ATBATT, R1/ATBIO, R1/ATDEGASCC and 1 more"
+      And the log contains "osemosys-to-sienna: residual_capacity states 3 row(s) for 2030 that no step of the pipeline applies or keeps, for 3 technology(ies): R1/ATBATT, R1/ATBIO, R1/ATSPAREGASCC"
       And the log does not contain "variable_operation_cost states"
       And the log does not contain "fixed_cost states"
       And the log does not contain "discount_rate states"
@@ -859,7 +861,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       When I translate the otoole model to Sienna for the year "2030"
       And I run the validation chain over "outputs/system.json" writing "outputs/power_simulations_system.json"
       Then the file "outputs/power_simulations_system.json" parses as valid JSON
-      And the PS.jl system "outputs/power_simulations_system.json" contains 2 components of type "ThermalStandard"
+      And the PS.jl system "outputs/power_simulations_system.json" contains 3 components of type "ThermalStandard"
       And the PS.jl system "outputs/power_simulations_system.json" contains 1 component of type "RenewableDispatch"
       And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "PowerLoad" component "ATELEC"
       And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "RenewableDispatch" component "ATSOLAR"
@@ -887,7 +889,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     - ATTWOS has two technologies that charge it.
     - ATIDLES has a discharging technology with no residual capacity.
     - ATSUNS has a discharging technology whose carriers: row names a generator.
-    - HTHEATS has a discharging technology at the location HT, which holds no bus.
+    - HTHEATS has a discharging technology that puts out an electricity fuel with no location.
     - ATNOOUTS has a discharging technology that puts out no electricity.
     - ATNOINS has a charging technology that takes in no electricity.
 
@@ -976,7 +978,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | units: {capacity: GW, energy: GWh, currency: USD},                                                         |
         | objects: {                                                                                                 |
         | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},               |
-        | {match: "^ATWATER$", carrier: water, location: AT}, {match: "^HTHEATF$", carrier: heat, location: HT}],   |
+        | {match: "^ATWATER$", carrier: water, location: AT},                                                        |
+        | {match: "^(?P<country>[A-Z]{2})?HTHEATF$", carrier: electricity, location: "{country}"}],                 |
         | technologies: [{match: "PHS$", category: pumped-storage}, {match: "BATT$", category: battery},             |
         | {match: "IDLE$", category: battery}, {match: "HEAT$", category: battery},                                  |
         | {match: "NOOUT$", category: battery}, {match: "NOIN$", category: battery},                                 |
@@ -1156,7 +1159,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log contains "have more than one technology or mode that charges or discharges them, so each is left out. Storages: R1/ATTWOS"
       And the log contains "have a discharging technology with no residual capacity in the operations year, so each is left out. Storages: R1/ATIDLES"
       And the log contains "have a discharging technology whose carriers: row names a type that is not a storage, so each is left out. Storages: R1/ATSUNS"
-      And the log contains "have a discharging technology on a location that holds no bus, so each is left out. Storages: R1/HTHEATS"
+      And the log contains "have a discharging technology that puts out electricity only to fuels with no location, so each is left out. Storages: R1/HTHEATS"
       And the log contains "put out no electricity at the discharge mode, so each is left out. Storages: R1/ATNOOUTS"
       And the log contains "take in no electricity at the charge mode, so each is left out. Storages: R1/ATNOINS"
       And the file "decisions.md" contains "`osemosys.storage.R1/ATBATS.residual_storage_capacity` = 0.0"
@@ -1165,15 +1168,27 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "`osemosys.storage.R1/ATIDLES.residual_capacity` = 0.0"
       And the file "decisions.md" contains "the residual_capacity of R1/ATIDLE, which discharges the storage, holds none"
 
-  Rule: A transport technology becomes a line, and the report names each technology that the system leaves out
+    Scenario: A storage sits on the bus of its discharge, and the report names a charge from another bus
+      ATPHS discharges to AT and charges from DE, and a Sienna storage charges at its own bus.
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | DEELEC | 1                 | 2030 | 1.25  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "bus" set to 1
+      And the log contains "1 technology(ies) charge a storage from another bus than the one that it discharges to, and a Sienna storage charges at its own bus. Technologies: R1/ATPHS"
+      And the file "decisions.md" contains "the technology takes in electricity at R1/DEELEC, and the storage charges at its own bus, R1/ATELEC"
+
+  Rule: A transport technology, and a conversion between two electricity fuels, becomes a line, and the report names each technology that the system leaves out
     The invented interconnector ATDELINK takes in 1.25 units of electricity at AT and puts out
     0.75 of a unit at DE in mode 1. In mode 2 it takes in 1 unit at DE and puts out 0.75 at AT,
     which is the flow back. ATDEODD runs from AT to DE in both of its modes. ATDEIDLE has no
-    residual capacity. ATDESPARE moves electricity in mode 2 only. The other technologies have
-    no component in an operations system: the export ATEXPORT, and the transformers ATSTEPDOWN
-    and ATSTEPUP between two electricity fuels at AT, of which
-    ATSTEPUP runs in 2035 only. The gas well ATGASWELL, the electrolyser ATELECTROLYSER and the
-    gas pipeline DEATPIPE have records of extensions.json instead.
+    residual capacity, and a capital cost. ATDESPARE moves electricity in mode 2 only. The
+    transformers ATSTEPDOWN and ATSTEPUP convert between the two electricity fuels at AT, and
+    ATSTEPUP runs in 2035 only. ATSTEPDOWN states no capacity and no cost, so the model builds
+    what it needs at no cost. The export ATEXPORT has no component in an operations system. The
+    gas well ATGASWELL, the electrolyser ATELECTROLYSER and the gas pipeline DEATPIPE have
+    records of extensions.json instead.
 
     Background:
       Given the otoole set "FUEL" holds "ATELEC ATELECLV DEELEC ATGAS DEGAS ATH2"
@@ -1187,6 +1202,9 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDELINK   | 2030 | 0.9   |
+      And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATDEIDLE   | 2030 | 100   |
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY     | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATDELINK       | ATELEC | 1                 | 2030 | 1.25  |
@@ -1227,15 +1245,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | {match: "^(?P<country>[A-Z]{2})H2$", carrier: hydrogen, location: "{country}"}]}}                       |
 
     Scenario: An interconnector becomes a line that flows both ways within the limits of each mode
+      The lines are ATDELINK, ATDEODD and the transformer ATSTEPDOWN. The buses are R1/ATELEC,
+      R1/ATELECLV and R1/DEELEC, in that order.
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with 2 components of type "TwoTerminalGenericHVDCLine"
+      And the file "outputs/system.json" parses as JSON with 3 components of type "TwoTerminalGenericHVDCLine"
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": -1350.0, "max": 2250.0}
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": -1800.0, "max": 1350.0}
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.4
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "arc" set to 1
       And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1
-      And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 2
+      And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 3
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "marginal_cost" set to 0.8
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "p_max_pu" set to 0.9
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "operating_modes" set to [{"mode": "2", "variable_cost": 1.0, "input_ratios": {"DEELEC": 1.0}, "output_ratios": {"ATELEC": 0.75}}]
@@ -1332,24 +1352,47 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log does not contain "line_loss states"
       And the log does not contain "residual_transport_capacity states"
 
-    Scenario: A transport technology with no residual capacity is left out and reported
+    Scenario: A line technology with no residual capacity and a capital cost is left out and reported
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "have no residual capacity in the operations year, so each is left out. Technologies: R1/ATDEIDLE"
+      And the log contains "have no residual capacity in the operations year, and the model builds none at no cost, so each is left out. Technologies: R1/ATDEIDLE"
 
-    Scenario: A transport technology with no end at the operations mode is left out and reported
+    Scenario: A line technology with no end at the operations mode is left out and reported
+      ATSTEPUP runs in 2035 only, so it has no end in 2030.
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "do not take in electricity at one location and put it out at another at the operations mode, so each is left out. Technologies: R1/ATDESPARE"
+      And the log contains "do not take in electricity at one bus and put it out at another at the operations mode, so each is left out. Technologies: R1/ATDESPARE, R1/ATSTEPUP"
 
-    Scenario: Each conversion and export of electricity that the system has no component for is named in the log and in decisions.md
+    Scenario: Each export of electricity that the system has no component for is named in the log and in decisions.md
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "take in electricity and put out nothing, so each is left out. Technologies: R1/ATEXPORT"
-      And the log contains "convert one electricity fuel into another at one location, so each is left out. Technologies: R1/ATSTEPDOWN, R1/ATSTEPUP"
+      And the log does not contain "convert one electricity fuel into another"
       And the log does not contain "supply a fuel that is not electricity"
       And the log does not contain "have no kind"
-      And the file "decisions.md" contains "the dispatch loses its loss, and each demand stays at the value that the model states; extensions.json holds it as a conversion record"
+      And the file "decisions.md" contains "an export of electricity is a demand that the system does not hold; extensions.json holds it as a conversion record"
+
+    Scenario: Two electricity fuels at one location are two buses of one area
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 3 components of type "ACBus"
+      And the file "outputs/system.json" parses as JSON with 2 components of type "Area"
+      And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "area" set to 1
+      And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELECLV" having "area" set to 1
+      And the file "decisions.md" contains "| `osemosys.fuel.R1/ATELECLV.fuel` = ATELECLV | `sienna.ACBus.R1/ATELECLV.name` = R1/ATELECLV | the region and the electricity fuel, <region>/<fuel>, as each fuel balances in its region |"
+
+    Scenario: A conversion that states no capacity and that the model builds at no cost becomes a line that never binds
+      No limit binds ATSTEPDOWN, so it can carry what the whole fleet can put out: 2 GW × 0.75
+      for ATDELINK, 1 GW × 1 for ATDEODD and 1 GW × 1 for ATDESPARE, 3500 MW. Its smallest ratio
+      is 0.99, so it can take in 3500 / 0.99 MW and put out 3500 MW. It loses 1 % of what it
+      sends, and records no conversion record.
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from.max" close to 3535.3535354
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to.max" close to 3500.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
+      And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATSTEPDOWN"
+      And the file "decisions.md" contains "the model builds the technology at no cost and no limit binds it, so the capacity is the electricity that the whole fleet of the year can put out"
 
     Scenario: The technologies of the fuels that are not electricity become records of extensions.json in PyPSA terms
       The gas well, the pipeline and the electrolyser state no capacity and no capital cost, so
@@ -1363,7 +1406,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "bus0" set to "R1/DEGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "bus1" set to "R1/ATGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "efficiency" set to 1.0
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATELECTROLYSER" having "bus0" set to "AT"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATELECTROLYSER" having "bus0" set to "R1/ATELEC"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATELECTROLYSER" having "bus1" set to "R1/ATH2"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATELECTROLYSER" having "efficiency" close to 0.6666667
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATELECTROLYSER" having "carrier" set to "hydrogen"
@@ -1371,10 +1414,20 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON bus extension record for "R1/ATGAS" having "location" set to "AT"
       And the file "outputs/extensions.json" parses as JSON bus extension record for "R1/ATH2" having "carrier" set to "hydrogen"
 
-    Scenario: A conversion and an export of electricity become conversion records under the names of a PyPSA Link
+    Scenario: A conversion line reaches a PyPSA network as a link between the two buses of its location
+      Given a pipeline "osemosys-to-pypsa" that translates the otoole model to Sienna and then to PyPSA in the year "2030"
+      When I run the otoole model through the pipeline "osemosys-to-pypsa"
+      Then the pipeline exit code is 0
+      And the PyPSA network "outputs/network.nc" link "ATSTEPDOWN" has bus0 "R1/ATELEC"
+      And the PyPSA network "outputs/network.nc" link "ATSTEPDOWN" has bus1 "R1/ATELECLV"
+      And the PyPSA network "outputs/network.nc" link "ATSTEPDOWN" attribute "efficiency" is 0.99
+      And the PyPSA network "outputs/network.nc" bus "R1/ATELECLV" has location "AT"
+
+    Scenario: A conversion with residual capacity becomes a line between the buses of its fuels, and an export a conversion record
       The transformer ATSTEPDOWN takes in 1 GWh of electricity at AT for each unit of its
-      activity and puts out 0.99 GWh of low-voltage electricity at AT. The export ATEXPORT takes
-      in electricity at AT and puts out nothing, so its record has no bus1.
+      activity and puts out 0.99 GWh of low-voltage electricity at AT. Its 3 GW send at most
+      3000 MW. The export ATEXPORT takes in electricity at AT and puts out nothing, so its record
+      has no bus1.
       Given the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDELINK   | 2030 | 2     |
@@ -1394,18 +1447,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | R1     | ATSTEPDOWN | 2030 | 2     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "bus0" set to "AT"
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "bus1" set to "AT"
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "p_nom" set to 3000.0
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "efficiency" set to 0.99
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "marginal_cost" set to 0.5
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "lifetime_years" set to 40.0
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "e_sum_max" set to {"2030": 2000.0}
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "input_fuel" set to "ATELEC"
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "output_fuel" set to "ATELECLV"
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "bus0" set to "AT"
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from" set to {"min": 0.0, "max": 3000.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to" set to {"min": 0.0, "max": 2970.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "marginal_cost" set to 0.5
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "lifetime_years" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "e_sum_max" set to {"2030": 2000.0}
+      And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATSTEPDOWN"
+      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.bus0` = R1/ATELEC |"
+      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.bus1` = R1/ATELECLV |"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "bus0" set to "R1/ATELEC"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" without field "bus1"
-      And the file "decisions.md" contains "`sienna.conversion.ATSTEPDOWN.extensions.efficiency` = 0.99"
       And the log does not contain "lifetime states"
 
   Rule: The fuels that are not electricity reach extensions.json as PyPSA buses, generators, links and loads
@@ -1540,7 +1592,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "bus0" set to "R1/ATGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "bus1" set to "R1/ATOIL"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "efficiency" set to 0.8
-      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "bus2" set to "AT"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "bus2" set to "R1/ATELEC"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "efficiency2" set to -0.1
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATREFINERY" having "p_nom" close to 100.0
 
@@ -1754,8 +1806,33 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
-      And the log contains "1 transport technology(ies) have a mode that imports an electricity fuel with no location, so no generator holds that import. Technologies: R1/ATDEBUY"
+      And the log contains "1 line technology(ies) have a mode that imports an electricity fuel with no location, so no generator holds that import. Technologies: R1/ATDEBUY"
       And the file "decisions.md" contains "the electricity fuel OUTSIDE has no location, so no bus can hold what the mode imports"
+
+    Scenario: A plant that puts out electricity only to a fuel with no location is left out and reported
+      Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDEBUY    | DEELEC  | 1                 | 2030 | 0.95  |
+        | R1     | ATPEAKER   | OUTSIDE | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
+      And the log contains "put out electricity only to fuels with no location, so each is left out. Technologies: R1/ATPEAKER"
+
+    Scenario: A plant that puts out two electricity fuels sits on the bus of the larger, and the report says so
+      ATPEAKER puts out 0.4 of a unit at AT and 0.6 at DE, so it sits on the bus of DE and rates
+      at all 100 MW.
+      Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDEBUY    | DEELEC | 1                 | 2030 | 0.95  |
+        | R1     | ATPEAKER   | ATELEC | 1                 | 2030 | 0.4   |
+        | R1     | ATPEAKER   | DEELEC | 1                 | 2030 | 0.6   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATPEAKER" having "bus" set to 2
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATPEAKER" having "base_power" set to 100.0
+      And the log contains "1 technology(ies) put out electricity at more than one bus at the operations mode, so each component sits on the bus of its largest electricity fuel. Technologies: R1/ATPEAKER"
+      And the file "decisions.md" contains "the technology puts out electricity at 2 buses, and a Sienna component sits on one, so it sits on R1/DEELEC, the bus of its largest electricity fuel"
 
     Scenario: The report names only the modes that are neither the flow back nor an import
       When I translate the otoole model to Sienna for the year "2030"

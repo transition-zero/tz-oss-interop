@@ -59,9 +59,9 @@ give the measured numbers.
 | Group | Entries | What to know |
 | --- | --- | --- |
 | [The four structural losses](#the-four-structural-losses) | 4 | No network, no unit commitment data, no time order inside a timeslice, one year of fleet. No version of this translator can carry them. |
-| [What the system has no component for](#what-the-system-has-no-component-for) | 9 | The system holds electricity only. The largest effect is the loss of the conversion losses between two electricity fuels. `extensions.json` holds each conversion, and the fuels that are not electricity as PyPSA components. |
+| [What the system has no component for](#what-the-system-has-no-component-for) | 8 | The system holds electricity only. `extensions.json` holds the fuels that are not electricity as PyPSA components. |
 | [Operating modes](#operating-modes) | 4 | The system uses one mode for each technology. `extensions.json` holds the other modes, and the dispatch does not run them. |
-| [Costs and prices](#costs-and-prices) | 6 | The fuel price comes from one producer. A line has no cost. |
+| [Costs and prices](#costs-and-prices) | 6 | The fuel price comes from one producer. A line has no cost, and the Sienna solve applies no loss of a line. A conversion between two electricity fuels is a line, so the Sienna dispatch loses about 400 TWh of conversion loss. A PyPSA dispatch applies it. |
 | [Limits on activity and energy](#limits-on-activity-and-energy) | 5 | No annual limit on energy reaches a Sienna dispatch. This is the largest single effect on the dispatch. The `sienna-to-pypsa` leg gives the limits of the year to a PyPSA dispatch. |
 | [Storage](#storage) | 7 | A storage is rated on its electricity output, and it cycles in time order. |
 | [Time](#time) | 5 | The weights round, and a model with no day structure loses its time order. |
@@ -88,12 +88,11 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| A technology of kind `conversion` between two electricity fuels at one location, for example a transmission or distribution step from one voltage fuel to another | It has no component. A `conversion` record of `extensions.json` holds it, with its `efficiency`. `decisions.md` records each one. The demand stays at the fuel where the model states it. | translation: the two fuels of one location share one bus, so the conversion joins nothing. | The dispatch does not make the electricity that the conversion loses. On a large published model this is about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. |
 | A fuel that is not electricity, and its `fuel_supply`, `conversion` and pipeline technologies | No Sienna component. The `bus`, `generator` and `conversion` records of `extensions.json` hold them as PyPSA buses, generators and links, one for each mode. The fuel cost rule still prices the fuel of a Sienna plant. | translation: Sienna holds electricity only. | In the Sienna dispatch, a limit on a fuel, for example the gas that a region can import, does not limit the plants that burn it. A PyPSA network of the same translation holds the limit. |
 | Two modes of one fuel technology, for example the two directions of a pipeline | Each mode is a component of its own, and each can run at the whole capacity of the technology. | translation: a PyPSA component runs one set of ratios. | The two modes together can move twice the capacity. A flow in both directions at one time only loses energy, so a solve does not choose it. |
 | The capital cost, the fixed cost and the life of a technology of a fuel that is not electricity | No record holds them. The report of the parameters that no step applies names them. | translation: a dispatch builds no capacity of a fuel at a cost. | A fuel technology with residual capacity and a capital cost keeps its residual capacity. One with no capital cost is extendable at no cost. |
 | A technology of kind `export` | No component. An export of electricity has a `conversion` record with no `bus1`. | translation: the system has no component that takes energy out of the model. | An export of electricity is a demand that the system does not hold. |
-| A trade route of an electricity fuel: `TradeRoute` (`transport_route`) and the other trade parameters | No component. A `conversion` record of `extensions.json` holds it, with the ends `<region>/<fuel>`. | translation: a route joins regions, and the system holds locations. | The dispatch moves no energy on the route. |
+| A trade route of an electricity fuel: `TradeRoute` (`transport_route`) and the other trade parameters | No Sienna component. A `conversion` record of `extensions.json` holds it, with the ends `<region>/<fuel>`, which are the buses of the fuel. The `sienna-to-pypsa` leg builds a link where the network holds both buses. | translation: the step reads a route as a record only. | The Sienna dispatch moves no energy on the route. |
 | `AccumulatedAnnualDemand` (`accumulated_annual_demand`) and `SpecifiedAnnualDemand` of a fuel that is not electricity | A `load` record of `extensions.json` on the bus of the fuel. An accumulated demand is flat over the year. | translation: Sienna holds electricity only. | None on the Sienna dispatch. A PyPSA network meets the demand in each hour, where OSeMOSYS meets an accumulated demand over the year. |
 | A technology with no kind | Its records of `extensions.json`, where a fuel of its flows is not electricity. | translation: no kind fits it, often because it moves a fuel between two locations. | Its energy is not in the Sienna system. |
 | A storage of a fuel that is not electricity, and a trade route of a fuel that is not electricity | Not translated. The storage step and the report of the parameters that no step applies name them. | translation: no record kind of this translation holds them. | The fuel cannot shift in time or move between regions. |
@@ -115,7 +114,7 @@ give the measured numbers.
 | The price of a fuel. OSeMOSYS prices a fuel by the technologies that make it, with their limits. | A plant pays the `VariableCost` (`variable_operation_cost`) of the cheapest `fuel_supply` technology of the fuel in its region, for each unit of the fuel. A pipeline is not a producer. | translation: a Sienna cost curve states one price. The rule of this translator chooses one producer. | When the cheapest producer has a limit, the true price is higher, so the plant runs too cheaply. When the only producer is a backstop, the plant pays the backstop price and does not run. On a large published model, 13 gas plants of about 3 GW take a backstop price and do not run. The published solve gives them about 0.7 TWh. |
 | The other costs of a producer: its capital cost, its fixed cost and the fuels that it takes in | Not in the fuel price | translation: the rule reads the variable cost of the producer only. | The fuel price is lower than the full cost of the fuel. |
 | `VariableCost` of an `AggregateTransportTechnology` | It goes to `marginal_cost` of the `controllable_line` record of `extensions.json`. The `sienna-to-pypsa` leg writes it as `Link.marginal_cost`, so a PyPSA dispatch applies it. | translation: `TwoTerminalGenericHVDCLine` has no cost field. | Trade is free. With the loss below, this is most of the difference in trade: on a large published model, about 815 TWh in the dispatch against about 390 TWh published. |
-| The loss of a line, `1 − output ratio / input ratio` | The system states it in `loss`. The solve uses `HVDCTwoTerminalLossless`, which ignores it. The `sienna-to-pypsa` leg writes it as `Link.efficiency`. It writes a two-way line as two one-way links, so a PyPSA dispatch applies the loss in each direction. | mathematics: the solve formulation is lossless. | Trade loses nothing, so a line carries more than in OSeMOSYS. |
+| The loss of a line, `1 − output ratio / input ratio`. A transport technology and a `conversion` between two electricity fuels, for example a transmission or distribution step, are lines. | The system states it in `loss`. The solve uses `HVDCTwoTerminalLossless`, which ignores it, and a `copperplate` solve ignores the lines. The `sienna-to-pypsa` leg writes it as `Link.efficiency`. It writes a two-way line as two one-way links, so a PyPSA dispatch applies the loss in each direction. | mathematics: the solve formulation is lossless. | Trade loses nothing, so a line carries more than in OSeMOSYS. A conversion loses nothing, so the Sienna dispatch does not make the electricity that it loses. On a large published model this is about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. |
 | `FixedCost` (`fixed_cost`) of a generator or a storage | It goes to `fom_charge_per_mw_year` in `extensions.json`. `operation_cost.fixed` is 0. | translation: OSeMOSYS charges a fixed cost on capacity. A dispatch cannot change capacity. | None on the dispatch. The objective holds no fixed cost. |
 | `VariableCost` of a `RenewableNonDispatch` | `NOT_MAPPED` | translation: the type has no `operation_cost`. | None on the dispatch, because the output is fixed. |
 
@@ -246,7 +245,7 @@ portfolio, so the entries of [The portfolio](#the-portfolio) and
 | [A fuel that is not electricity, and its technologies](#what-the-system-has-no-component-for) | Yes. The network holds a bus for each fuel, a generator for each supply, a link for each mode that moves or converts a fuel, and a load for each demand. | The emissions are 1,441 Mt, against about 760 Mt before and 1,459 Mt published. The objective of the 96 hours rises from 1.85 × 10⁹ to 5.11 × 10⁹ USD, because it pays for the gas demand. |
 | [The demand for a fuel that is not electricity](#what-the-system-has-no-component-for) | Yes. Each demand becomes a `Load` on the bus of its fuel. | The gas demand is 3,709 TWh in the year. |
 | [`VariableCost` of an `AggregateTransportTechnology`](#costs-and-prices) | Yes. It becomes `Link.marginal_cost`. | With the loss of the line: the trade is about 400 TWh, against about 815 TWh in the dispatch and about 390 TWh published. A PyPSA dispatch with no line cost and no line loss gives about 875 TWh. |
-| [The loss of a line](#costs-and-prices) | Yes. It becomes `Link.efficiency`, in each direction. | The lines lose about 21 TWh in the year. The row above gives the effect on trade. |
+| [The loss of a line](#costs-and-prices) | Yes. It becomes `Link.efficiency`, in each direction. | The transport lines lose about 21 TWh in the year. The row above gives the effect on trade. The 156 conversion lines lose 398 TWh, so the production is 4,140 TWh against 4,103 TWh published, where it was 3,744 TWh before each conversion became a line. |
 | [`VariableCost` of a `RenewableNonDispatch`](#costs-and-prices) | No. `marginal_cost` is 0. | None, because the output is fixed. |
 | [`TotalTechnologyAnnualActivityLowerLimit` and `UpperLimit`](#limits-on-activity-and-energy) | Yes. They become `Generator.e_sum_min` and `e_sum_max` when the snapshots stand for one whole year. Solve them in one window. | The 24 gas plants make about 452 TWh, against about 78 TWh in the dispatch and about 453 TWh published. Without the bounds, a PyPSA dispatch gives gas combined cycle about 296 TWh less, coal about 214 TWh more, and about 98 Mt more emissions. |
 | [The limits over the model period and by mode](#limits-on-activity-and-energy) | No. They go on to `extensions.json`. | Not measured |
@@ -261,13 +260,16 @@ portfolio, so the entries of [The portfolio](#the-portfolio) and
 The other entries have the same effect on the PyPSA dispatch, because their cause comes before
 the Sienna system. The comparison measured three of them:
 
-- The production is about 358 TWh lower than published in the PyPSA dispatch, and about
-  370 TWh lower in the dispatch. The conversions between two electricity fuels have no
-  component in either network.
-- The unserved energy is 1,141 MWh in the 96 hours in each dispatch.
-- The emissions are about 1,441 Mt in the PyPSA dispatch, about 847 Mt in the dispatch and
-  about 1,459 Mt published. The rest of the difference comes from the electricity production:
-  less coal, oil and derived gas burn where the conversions lose nothing.
+- The production is about 37 TWh higher than published in the PyPSA dispatch, which applies
+  the conversion losses, and about 370 TWh lower in the Sienna dispatch, which does not.
+- The unserved energy is 1,141 MWh in the 96 hours of the Sienna dispatch and 2,368 MWh in
+  the PyPSA dispatch, most of it at `MRE3`. The PyPSA dispatch must also cover the conversion
+  losses at the location where the fleet is short.
+- The emissions are about 1,702 Mt in the PyPSA dispatch, about 845 Mt in the Sienna dispatch
+  and about 1,459 Mt published. Coal makes 756 TWh in the PyPSA dispatch against 568 TWh
+  published, and oil and derived gas make less. The negative emissions of `UACO2` and `ALCO2`,
+  which the pipelines of gas state, are 109 Mt smaller than published. The cause of the coal
+  difference is not traced.
 
 ## Losses that the report does not name
 

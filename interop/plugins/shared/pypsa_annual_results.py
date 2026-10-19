@@ -35,6 +35,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATable,
     PyPSATimeSeriesCol,
 )
+from interop.plugins.shared.pypsa_conversion_links import build_conversion_links
 from interop.plugins.shared.pypsa_fuel_components import FuelComponents, build_fuel_components
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_results_constants import AnnualCol
@@ -72,12 +73,14 @@ _PRODUCTION_DERIVATION = (
     "link adds to the production of the two-way link; a solved network gives 0 to a rated "
     "component with no p, as PyPSA's netCDF export leaves out a series that is 0 in each "
     "snapshot; a generator and a link on the bus of a fuel make no electricity, so they have no "
-    "row, and a plant link makes the electricity that it delivers at bus1"
+    "row, and a plant link makes the electricity that it delivers at bus1; a link between two "
+    "buses of electricity at one location converts electricity, so it has no row"
 )
 _INSTALLED_CAPACITY_DERIVATION = (
     "p_nom, the nameplate, for a generator; p_nom × p_max_pu for a storage unit or a link, and "
-    "once for a two-way link and its reverse link; p_nom × efficiency for a plant link → "
-    "installed_capacity at 1 January of the year"
+    "once for a two-way link and its reverse link; p_nom × efficiency for a plant link; no row "
+    "for a link between two buses of electricity at one location → installed_capacity at 1 "
+    "January of the year"
 )
 
 
@@ -121,9 +124,10 @@ class PypsaAnnualResultsMapper:
         if weights is None or not _is_annual(state, weights):
             return []
         fuels = build_fuel_components(state)
+        conversions = build_conversion_links(state, fuels)
         activity = _build_all_production(state, weights, fuels)
-        production = activity.drop_fuels(fuels)
-        capacity = _build_capacity(state, _build_years(weights), fuels)
+        production = activity.drop_fuels(fuels).drop_links(conversions)
+        capacity = _build_capacity(state, _build_years(weights), fuels, conversions)
         produced = production.build_table()
         if is_solved(state):
             produced = _fill_unproduced(produced, capacity)
@@ -348,7 +352,9 @@ def _build_categories(state: State, table: str, fuels: FuelComponents) -> pl.Laz
     )
 
 
-def _build_capacity(state: State, years: pl.DataFrame, fuels: FuelComponents) -> pl.DataFrame:
+def _build_capacity(
+    state: State, years: pl.DataFrame, fuels: FuelComponents, conversions: frozenset[str]
+) -> pl.DataFrame:
     """The MW rating of each component that puts out electricity, for each year of the solve."""
     ratings = [
         _build_rating(state, rated, fuels)
@@ -357,7 +363,7 @@ def _build_capacity(state: State, years: pl.DataFrame, fuels: FuelComponents) ->
     ]
     if not ratings:
         return pl.DataFrame()
-    excluded = [*build_reverse_links(state), *fuels.generators, *fuels.fuel_links]
+    excluded = [*build_reverse_links(state), *fuels.generators, *fuels.fuel_links, *conversions]
     rated = pl.concat(ratings).filter(~pl.col(ResultsCol.COMPONENT).is_in(excluded))
     return rated.collect().join(years, how="cross")
 

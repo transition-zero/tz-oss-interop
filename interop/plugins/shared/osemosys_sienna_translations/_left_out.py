@@ -1,8 +1,9 @@
 """The technologies of electricity that the operations system has no component for.
 
-A conversion or an export of electricity alone has no type in the operations system, so each
-is reported once; extensions.json holds it as a conversion record. A technology of a fuel that
-is not electricity, of kind `fuel_supply`, `export`, `conversion` or of no kind, has a record of
+An export of electricity alone has no type in the operations system, so each is reported once;
+extensions.json holds it as a conversion record. A conversion of electricity alone becomes a
+line, and the line group reports what it leaves out. A technology of a fuel that is not
+electricity, of kind `fuel_supply`, `export`, `conversion` or of no kind, has a record of
 extensions.json from the fuel group, which reports what it leaves out itself. So does each
 other kind, from its own component group.
 """
@@ -75,32 +76,18 @@ ELECTRICITY_EXPORT_SKIP = _build_skip(
     "of electricity is a demand that the system does not hold; extensions.json holds it as a "
     "conversion record",
 )
-ELECTRICITY_CONVERSION_SKIP = _build_skip(
-    "convert one electricity fuel into another at one location",
-    "the electricity fuels of one location share one bus, so the conversion joins nothing; the "
-    "dispatch loses its loss, and each demand stays at the value that the model states; "
-    "extensions.json holds it as a conversion record",
-)
-_SKIP_RULES = (
-    SkipRule(
-        ~(_KIND.eq_missing(TechnologyKind.EXPORT) & pl.col(IS_ALL_ELECTRICITY)),
-        ELECTRICITY_EXPORT_SKIP,
-    ),
-    SkipRule(
-        ~(_KIND.eq_missing(TechnologyKind.CONVERSION) & pl.col(IS_ALL_ELECTRICITY)),
-        ELECTRICITY_CONVERSION_SKIP,
-    ),
+_SKIP_RULE = SkipRule(
+    ~(_KIND.eq_missing(TechnologyKind.EXPORT) & pl.col(IS_ALL_ELECTRICITY)),
+    ELECTRICITY_EXPORT_SKIP,
 )
 
 
 def report_left_out_technologies(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> None:
-    """Record one COMPONENT_SKIPPED for each conversion or export of electricity, and warn once
-    for each."""
+    """Record one COMPONENT_SKIPPED for each export of electricity, and warn once."""
     technologies = read_left_out_technologies(state, operations)
-    for rule in _SKIP_RULES:
-        technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
+    filter_component(technologies, _SKIP_RULE.keep, _SKIP_RULE.report, recorder)
 
 
 def read_left_out_technologies(state: State, operations: OperationsYear) -> pl.DataFrame:

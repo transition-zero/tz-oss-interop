@@ -188,6 +188,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "prime_mover_type" set to "CC"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "fuel" set to ["NATURAL_GAS"]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [1]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 1 has "buses" set to ["R1/ATELEC"]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capacity_limits" set to {"2030.0": {"min": 0.0, "max": 1000.0}, "2035.0": {"min": 200.0}}
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capital_costs.capital_cost.function_data.proportional_term" set to 1000000.0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.fixed" set to 20000.0

@@ -152,12 +152,29 @@ its far end in the year. A new results pipeline reads the published AETOS result
 published CSV has no `ProductionByTechnology` and no `Trade` rows. So its reader calculates both
 from `TotalAnnualTechnologyActivityByMode` and the model's `OutputActivityRatio`.
 
-### 9. Electricity only, one bus for each location
+### 9. Electricity only, one bus for each electricity fuel
 
-- Each location of an electricity fuel becomes one `ACBus` and one `Area`. Two or more
-  electricity fuels at one location share the bus.
-- A `conversion` technology between two electricity fuels at one location is left out. Its loss
-  is a gap analysis entry. The demand stays at the value that the model states.
+The owner changed this decision on 2026-10-19. The first answer gave each location one bus,
+which two or more electricity fuels of the location shared. A `conversion` technology between
+two of those fuels then joined a bus to itself, so the dispatch lost its loss. On AETOS that is
+about 400 TWh of a 4,100 TWh year, the largest part of the difference in production. The owner
+chose one bus for each electricity fuel, so that each conversion becomes a line with its loss.
+
+- Each electricity fuel with a location becomes one `ACBus`, named `<region>/<fuel>`, as the bus
+  of every other fuel is. Each location becomes one `Area`, and each bus of the location takes
+  it as its area, so the totals of a location still add up.
+- Each component sits on the bus of the electricity fuel that the model states for it: a plant
+  on the fuel that it puts out, a demand on its fuel, a storage on the fuel of its discharge,
+  a transport line between the fuel that it takes in and the fuel that it puts out, and an
+  import generator on the fuel that it puts out.
+- A `conversion` technology between two electricity fuels becomes a
+  `TwoTerminalGenericHVDCLine` from the bus of its input fuel to the bus of its output fuel. The
+  rules of a transport line apply to it. A line that states no capacity, and that the model
+  builds at no cost, rates at what the whole fleet of the year can put out, so that it never
+  binds. The `conversion` record of such a technology is not written. An `export` keeps its
+  record.
+- The results count a line inside one area neither as production nor as trade, as the
+  published results leave a conversion out of production.
 - A technology on a fuel that is not electricity is left out and reported.
 - A thermal plant takes its fuel cost and its emission rate from the cheapest `fuel_supply`
   technology that makes its input fuel at its location. A pipeline is not a `fuel_supply`

@@ -22,7 +22,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
-    AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
@@ -33,6 +32,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
+from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_defaulted,
     build_derived,
@@ -118,8 +118,8 @@ _NAME_DERIVATION = (
     "the operating mode"
 )
 _BUS_DERIVATION = (
-    "the location of the electricity fuel that the import mode puts out, which is one end of "
-    "the line -> bus"
+    "the bus of the electricity fuel that the import mode puts out, <region>/<fuel>, which is "
+    "one end of the line"
 )
 _BASE_POWER_DERIVATION = (
     "residual_capacity of the transport technology in the operations year, in MW, × the "
@@ -192,23 +192,18 @@ def _build_name() -> Translation:
 
 def _build_bus() -> Translation:
     return Translation(
-        exprs=[pl.col(AnnotationColumn.LOCATION).alias(_Col.BUS_NAME)],
+        exprs=[pl.col(ELECTRICITY_BUS).alias(_Col.BUS_NAME)],
         make_events=lambda old, new: build_derived(
-            [_build_output_ratio_source(old), *_build_fuel_location_sources(old)],
+            [_build_output_ratio_source(old), *_build_fuel_sources(old)],
             [_dest(old[GENERATOR_NAME], _Col.BUS_NAME, new[_Col.BUS_NAME])],
             _BUS_DERIVATION,
         ),
     )
 
 
-def _build_fuel_location_sources(old: dict[str, Any]) -> list[SourceField]:
+def _build_fuel_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
-        build_osemosys_field(
-            FUEL,
-            f"{old[REGION]}{REGION_NAME_SEPARATOR}{fuel}",
-            AnnotationColumn.LOCATION,
-            old[AnnotationColumn.LOCATION],
-        )
+        build_osemosys_field(FUEL, f"{old[REGION]}{REGION_NAME_SEPARATOR}{fuel}", FUEL, fuel)
         for fuel in old[IMPORT_FUELS]
     ]
 

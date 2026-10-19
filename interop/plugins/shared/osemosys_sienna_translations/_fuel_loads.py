@@ -36,6 +36,7 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
 from interop.plugins.shared.osemosys_sienna_translations._loads import (
     ANNUAL_DEMAND,
     DEMAND_PARAMETER,
+    LOAD_BUS,
     LOAD_NAME,
     LoadSources,
 )
@@ -91,7 +92,7 @@ def _enrich_shapes(loads: LoadSources) -> pl.DataFrame:
 def _build_record(row: dict[str, Any]) -> LoadExtension:
     return LoadExtension(
         name=row[LOAD_NAME],
-        bus=row[AnnotationColumn.LOCATION],
+        bus=row[LOAD_BUS],
         carrier=row[FUEL_CARRIER],
         p_set=row[_FLAT_MW] if row[_IS_FLAT] else None,
         p_set_series=None if row[_IS_FLAT] else _SERIES_FILE,

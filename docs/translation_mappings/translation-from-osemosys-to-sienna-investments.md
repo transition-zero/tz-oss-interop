@@ -107,7 +107,7 @@ plan. Refer to [Size](translation-from-osemosys-to-sienna.md#size).
 | [`AnnualEmissionLimit` of a pollutant that covers the whole model](#emission-limits--carboncaps-or-a-constraint-record) | One `CarbonCaps` for each year that states a limit |
 | [`AnnualEmissionLimit` of any other pollutant](#emission-limits--carboncaps-or-a-constraint-record) | A `constraint` record in `extensions.json` |
 | [A plant of the base system with the name of a candidate](#a-plant-that-already-runs--existingdevices-and-retirementpotential) | `ExistingDevices` and `RetirementPotential` on the candidate |
-| Each location of the base system | A `TopologyMapping` that names the bus of the area |
+| Each location of the base system | A `TopologyMapping` that names the buses of the area: one `<region>/<fuel>` bus for each electricity fuel at the location |
 | [`DiscountRate` and `units: currency_year`](#the-financial-data-of-the-portfolio) | `PortfolioFinancialData` |
 | Everything else | A component of the base system, or not translated |
 
@@ -159,10 +159,10 @@ These checks then leave a candidate out, and `decisions.md` names each one:
 | Candidate | Check |
 | --- | --- |
 | Supply | Its category has no carriers row, or the row names a type that is not a generator. |
-| Supply | Its location is not a bus, or it puts out no electricity at the operations mode. |
+| Supply | Its location holds no electricity bus, or it puts out no electricity at the operations mode. |
 | Storage | It does not link one charging technology and one discharging technology. |
 | Storage | The category of the discharging technology has no carriers row, or the row is not `EnergyReservoirStorage`. |
-| Storage | The location of the discharging technology is not a bus, or the links take in or put out no electricity. |
+| Storage | The location of the discharging technology holds no electricity bus, or the links take in or put out no electricity. |
 | Transport | It does not take in electricity at one location and put it out at another, at the operations mode. |
 | Transport | An end is not an `Area` of the base system. |
 

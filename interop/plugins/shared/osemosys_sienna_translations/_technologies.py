@@ -33,7 +33,11 @@ from interop.plugins.shared.sienna_carrier_targets import (
     PrimeMoverTarget,
     ThermalTarget,
 )
-from interop.plugins.shared.sienna_constants import SIENNA_NAME_COLUMN, SiennaComponent
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_NAME_COLUMN,
+    SiennaACBusCol,
+    SiennaComponent,
+)
 
 log = logging.getLogger(__name__)
 
@@ -93,9 +97,15 @@ def build_no_carriers_row_note(category: str | None) -> str:
 
 
 def list_bus_names(state: State) -> list[str]:
-    """The name of each ACBus that the bus group wrote, which is the location it stands for."""
+    """The name of each ACBus that the bus group wrote, `<region>/<fuel>`."""
     buses = state.destination_tables.get(SiennaComponent.AC_BUS)
     return [] if buses is None else buses[SIENNA_NAME_COLUMN].to_list()
+
+
+def list_area_names(state: State) -> list[str]:
+    """The area of each ACBus that the bus group wrote, which is a location."""
+    buses = state.destination_tables.get(SiennaComponent.AC_BUS)
+    return [] if buses is None else buses[SiennaACBusCol.AREA].unique().sort().to_list()
 
 
 def _build_target_row(category: str, target: CarrierTarget | None) -> dict[str, str | None]:
