@@ -129,6 +129,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     _record_thermal(reporter, thermal)
                     rows.append(_thermal_row(thermal))
                     unpriced.extend(thermal.unpriced_costs)
+                    # Sienna applies a series to active_power_limits.max, and not to rating.
                     p_max_pu_scale_by_name[thermal.name] = per_unit_of(
                         thermal.active_power_max, thermal.base_power
                     )
