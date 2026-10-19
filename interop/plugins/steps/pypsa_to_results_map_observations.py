@@ -61,7 +61,7 @@ _RESULTS_TIMESTAMP_DTYPE = RESULTS_SCHEMA[ResultsCol.TIMESTAMP]
 
 # Null category or component for variables that do not carry that dimension.
 _NULL_UTF8 = pl.lit(None, dtype=pl.Utf8)
-_IDLE_DISPATCH = 0.0
+_IDLE_VALUE = 0.0
 
 # What names the load side of the surplus join, whose other side is the capacity.
 _LOAD_SUFFIX = "_load"
@@ -229,11 +229,13 @@ class PypsaToResultsMapObservations(TranslationStep):
         pieces: list[pl.LazyFrame] = []
         sources: list[SourceField] = []
         for table, component in specs:
-            ts = state.source_time_series.get((table, PyPSASolvedAttr.FLOW))
+            ts = (
+                _fill_idle_link_flow(state)
+                if table == PyPSATable.LINKS
+                else state.source_time_series.get((table, PyPSASolvedAttr.FLOW))
+            )
             if ts is None:
                 continue
-            if table == PyPSATable.LINKS:
-                ts = _merge_reverse_flow(state, ts)
             pieces.append(
                 ts.select(_build_piece_columns(ResultsVariable.FLOW, category=_NULL_UTF8))
             )
@@ -252,7 +254,8 @@ class PypsaToResultsMapObservations(TranslationStep):
                 sources,
                 "lines_t.p0 and links_t.p0 -> flow (MW from bus0 towards bus1); the flow of a "
                 "two-way link is p0(<name>) - p0(<name> reverse), as the reverse link carries "
-                "the flow back from bus1 to bus0",
+                "the flow back from bus1 to bus0; 0 in each snapshot for a link of a solved "
+                "network whose two directions state no p0",
             )
         return pieces
 
@@ -501,21 +504,45 @@ def _merge_reverse_flow(state: State, flow: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _fill_idle_dispatch(state: State, table: str) -> pl.LazyFrame | None:
-    """The dispatch of a table, with 0 in each snapshot for each component of a solved network
-    that states no p; PyPSA's netCDF export leaves out a series that is 0 in every snapshot."""
+    """The dispatch of a table, with 0 in each snapshot for each component that states no p."""
     dispatch = state.source_time_series.get((table, PyPSASolvedAttr.DISPATCH))
     topology = state.source_topology.get(table)
-    snapshots = _find_snapshots(state)
-    if topology is None or snapshots is None or not is_solved(state):
+    if topology is None:
         return dispatch
     names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT))
-    if dispatch is not None:
-        stated = dispatch.select(PyPSATimeSeriesCol.COMPONENT).unique()
+    return _fill_idle(state, dispatch, names)
+
+
+def _fill_idle_link_flow(state: State) -> pl.LazyFrame | None:
+    """The flow of each link, merged with its reverse link, with 0 in each snapshot for each
+    link whose two directions state no p0."""
+    flow = state.source_time_series.get((PyPSATable.LINKS, PyPSASolvedAttr.FLOW))
+    merged = None if flow is None else _merge_reverse_flow(state, flow)
+    topology = state.source_topology.get(PyPSATable.LINKS)
+    if topology is None:
+        return merged
+    reverses = list(build_reverse_links(state))
+    names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT)).filter(
+        ~pl.col(PyPSATimeSeriesCol.COMPONENT).is_in(reverses)
+    )
+    return _fill_idle(state, merged, names)
+
+
+def _fill_idle(
+    state: State, series: pl.LazyFrame | None, names: pl.LazyFrame
+) -> pl.LazyFrame | None:
+    """A solved series with 0 in each snapshot for each of `names` that it holds no row for;
+    PyPSA's netCDF export leaves out a series that is 0 in every snapshot."""
+    snapshots = _find_snapshots(state)
+    if snapshots is None or not is_solved(state):
+        return series
+    if series is not None:
+        stated = series.select(PyPSATimeSeriesCol.COMPONENT).unique()
         names = names.join(stated, on=PyPSATimeSeriesCol.COMPONENT, how="anti")
     idle = snapshots.join(names, how="cross").with_columns(
-        pl.lit(_IDLE_DISPATCH).alias(PyPSATimeSeriesCol.VALUE)
+        pl.lit(_IDLE_VALUE).alias(PyPSATimeSeriesCol.VALUE)
     )
-    return idle if dispatch is None else pl.concat([dispatch, idle], how="vertical_relaxed")
+    return idle if series is None else pl.concat([series, idle], how="vertical_relaxed")
 
 
 def _find_snapshots(state: State) -> pl.LazyFrame | None:

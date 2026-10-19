@@ -72,6 +72,25 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | flow     | link      |          | 2030-01-01T02:00:00 | 0     |
       | flow     | link      |          | 2030-01-01T03:00:00 | 2     |
 
+  Scenario: A two-way line that carries nothing in a solved network has a flow of 0 in each hour
+    PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so the solved file
+    states no p0 for "idle" or "idle reverse".
+    Given the network contains link "idle" from "node_a" to "node_b" with capacity 20.0 MW efficiency 0.9
+    And the network contains link "idle reverse" from "node_b" to "node_a" with capacity 20.0 MW efficiency 0.9
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "flow" rows:
+      | variable | component | category | timestamp           | value |
+      | flow     | link      |          | 2030-01-01T00:00:00 | 5     |
+      | flow     | link      |          | 2030-01-01T01:00:00 | -3    |
+      | flow     | link      |          | 2030-01-01T02:00:00 | 0     |
+      | flow     | link      |          | 2030-01-01T03:00:00 | 2     |
+      | flow     | idle      |          | 2030-01-01T00:00:00 | 0     |
+      | flow     | idle      |          | 2030-01-01T01:00:00 | 0     |
+      | flow     | idle      |          | 2030-01-01T02:00:00 | 0     |
+      | flow     | idle      |          | 2030-01-01T03:00:00 | 0     |
+
   Scenario: A component with no output in a solved network has a production and a dispatch of 0
     PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so the solved file
     states no p for the peaker.
