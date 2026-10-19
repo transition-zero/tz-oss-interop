@@ -137,7 +137,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         pieces: list[pl.LazyFrame] = []
         sources: list[SourceField] = []
         for table, component, carrier_col in specs:
-            ts = _enrich_idle_dispatch(state, table)
+            ts = _fill_idle_dispatch(state, table)
             topology = state.source_topology.get(table)
             if ts is None or topology is None:
                 continue
@@ -476,7 +476,7 @@ def _surplus_columns() -> list[pl.Expr]:
     )
 
 
-def _enrich_idle_dispatch(state: State, table: str) -> pl.LazyFrame | None:
+def _fill_idle_dispatch(state: State, table: str) -> pl.LazyFrame | None:
     """The dispatch of a table, with 0 in each snapshot for each component of a solved network
     that states no p; PyPSA's netCDF export leaves out a series that is 0 in every snapshot."""
     dispatch = state.source_time_series.get((table, PyPSASolvedAttr.DISPATCH))

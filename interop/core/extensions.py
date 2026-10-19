@@ -299,8 +299,7 @@ class ControllableLineExtension(ActivityExtension):
 
 
 class StorageExtension(ActivityExtension):
-    # PyPSA StorageUnit.carrier; OSeMOSYS the category of the discharging technology. Sienna
-    # states a prime mover, which several categories share.
+    # PyPSA StorageUnit.carrier, or the OSeMOSYS category of the discharging technology.
     carrier: str | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
     # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,

@@ -95,9 +95,9 @@ class Scale(Enum):
 class TechnologyValue(NamedTuple):
     """One parameter, the field that holds its value, and which of its rows bind.
 
-    `detail` names a key column whose members key the field, which is then a dict. Where the
-    member states no value, the default of the parameter applies, else the `fallback`, a
-    parameter keyed by region.
+    `detail` names a key column whose members key the field, which is then a dict. A value with a
+    `fallback`, a parameter keyed by region, fills a member that states none with the default
+    of its parameter, else with the fallback; a value with no fallback leaves the member empty.
     A value of every year reads each year in scope rather than the operations year. A
     `derivation` replaces the text that the scale gives the event.
     """

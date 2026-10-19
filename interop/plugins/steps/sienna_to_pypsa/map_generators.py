@@ -66,7 +66,7 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
 from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
     UnpricedCost,
     find_overnight_cost,
-    list_unpriced_costs,
+    find_unpriced_cost,
     report_unpriced_costs,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
@@ -128,7 +128,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     thermal = _derive_thermal(row, bus_names, extensions, dt_minutes)
                     _record_thermal(reporter, thermal)
                     rows.append(_thermal_row(thermal))
-                    unpriced.extend(thermal.unpriced_costs)
+                    if thermal.unpriced_cost is not None:
+                        unpriced.append(thermal.unpriced_cost)
                     # Sienna applies a series to active_power_limits.max, and not to rating.
                     p_max_pu_scale_by_name[thermal.name] = per_unit_of(
                         thermal.active_power_max, thermal.base_power
@@ -143,7 +144,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, dispatch)
                     rows.append(_renewable_row(dispatch))
-                    unpriced.extend(dispatch.unpriced_costs)
+                    if dispatch.unpriced_cost is not None:
+                        unpriced.append(dispatch.unpriced_cost)
                     p_max_pu_scale_by_name[dispatch.name] = dispatch.rating
                 case SiennaComponent.RENEWABLE_NON_DISPATCH:
                     non_dispatch = _derive_renewable(
@@ -155,7 +157,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, non_dispatch)
                     rows.append(_renewable_row(non_dispatch))
-                    unpriced.extend(non_dispatch.unpriced_costs)
+                    if non_dispatch.unpriced_cost is not None:
+                        unpriced.append(non_dispatch.unpriced_cost)
                     p_max_pu_scale_by_name[non_dispatch.name] = non_dispatch.rating
                 case SiennaComponent.HYDRO_DISPATCH:
                     continue
@@ -255,7 +258,7 @@ class _ThermalMapping:
     p_nom_max: float | None
     overnight_cost: float | None
     # The network leaves out a cost that the record states with no discount rate.
-    unpriced_costs: list[UnpricedCost]
+    unpriced_cost: UnpricedCost | None
     discount_rate: float | None
     lifetime: float | None
     build_year: int | None
@@ -323,7 +326,7 @@ def _derive_thermal(
         efficiency=ext.efficiency,
         p_nom_max=ext.p_nom_max,
         overnight_cost=find_overnight_cost(extensions, ext),
-        unpriced_costs=list_unpriced_costs(SiennaComponent.THERMAL_STANDARD, ext),
+        unpriced_cost=find_unpriced_cost(SiennaComponent.THERMAL_STANDARD, ext),
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
         build_year=ext.build_year,
@@ -518,7 +521,7 @@ class _RenewableMapping:
     # reach a PyPSA generator only through the sidecar.
     p_nom_max: float | None
     overnight_cost: float | None
-    unpriced_costs: list[UnpricedCost]
+    unpriced_cost: UnpricedCost | None
     discount_rate: float | None
     lifetime: float | None
     build_year: int | None
@@ -562,7 +565,7 @@ def _derive_renewable(
         p_nom_min_from_ext=ext.p_nom_min is not None,
         p_nom_max=ext.p_nom_max,
         overnight_cost=find_overnight_cost(extensions, ext),
-        unpriced_costs=list_unpriced_costs(sienna_type, ext),
+        unpriced_cost=find_unpriced_cost(sienna_type, ext),
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
         build_year=ext.build_year,

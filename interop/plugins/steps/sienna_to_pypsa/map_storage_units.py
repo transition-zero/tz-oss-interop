@@ -61,7 +61,7 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
 from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
     UnpricedCost,
     find_overnight_cost,
-    list_unpriced_costs,
+    find_unpriced_cost,
     report_unpriced_costs,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
@@ -121,7 +121,8 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                     phs = _derive_phs(row, bus_names, extensions)
                     _record_phs(reporter, phs)
                     rows.append(_phs_row(phs))
-                    unpriced.extend(phs.unpriced_costs)
+                    if phs.unpriced_cost is not None:
+                        unpriced.append(phs.unpriced_cost)
         report_unpriced_costs(reporter, unpriced)
 
         if rows:
@@ -320,7 +321,7 @@ class _PhsMapping:
     p_nom_max: float | None
     overnight_cost: float | None
     # The network leaves out a cost that the record states with no discount rate.
-    unpriced_costs: list[UnpricedCost]
+    unpriced_cost: UnpricedCost | None
     discount_rate: float | None
     lifetime: float | None
     build_year: int | None
@@ -364,7 +365,7 @@ def _derive_phs(
         cyclic=float(operation_cost.get(SiennaStructField.ENERGY_SHORTAGE_COST, 0.0)) > 0.0,
         p_nom_max=ext.p_nom_max,
         overnight_cost=find_overnight_cost(extensions, ext),
-        unpriced_costs=list_unpriced_costs(SiennaComponent.ENERGY_RESERVOIR_STORAGE, ext),
+        unpriced_cost=find_unpriced_cost(SiennaComponent.ENERGY_RESERVOIR_STORAGE, ext),
         discount_rate=ext.discount_rate,
         lifetime=ext.lifetime_years,
         build_year=ext.build_year,
@@ -455,7 +456,7 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
     return {
         PyPSAStorageUnitCol.NAME: m.name,
         PyPSAStorageUnitCol.BUS: m.bus_name,
-        PyPSAStorageUnitCol.CARRIER: m.ext_carrier or m.carrier,
+        PyPSAStorageUnitCol.CARRIER: m.ext_carrier if m.ext_carrier is not None else m.carrier,
         PyPSAStorageUnitCol.P_NOM: m.base_power,
         PyPSAStorageUnitCol.P_MIN_PU: m.p_min_pu,
         PyPSAStorageUnitCol.P_MAX_PU: m.output_max,

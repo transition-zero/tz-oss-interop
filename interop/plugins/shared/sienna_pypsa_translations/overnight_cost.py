@@ -45,11 +45,11 @@ def find_overnight_cost(lookup: ExtensionLookup[RecordT], record: RecordT) -> fl
     return lookup.get_fields(record.name, OVERNIGHT_COST_FIELDS).overnight_cost_per_mw
 
 
-def list_unpriced_costs(sienna_type: str, record: ExpansionExtension) -> list[UnpricedCost]:
+def find_unpriced_cost(sienna_type: str, record: ExpansionExtension) -> UnpricedCost | None:
     """The overnight cost of a record that states no discount rate, which the network leaves out."""
     if record.overnight_cost_per_mw is None or record.discount_rate is not None:
-        return []
-    return [UnpricedCost(sienna_type, record.name, record.overnight_cost_per_mw)]
+        return None
+    return UnpricedCost(sienna_type, record.name, record.overnight_cost_per_mw)
 
 
 def report_unpriced_costs(
