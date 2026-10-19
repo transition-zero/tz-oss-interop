@@ -112,6 +112,25 @@ It records each run of consecutive hours in `decisions.md` and writes one warnin
 with a rating and no output in the solve gets `installed_capacity` and no `production`, and the
 pipeline reports it. A solve with no `representative_period` records gives no annual rows.
 
+A PyPSA solve over representative periods gives the same annual rows. The `pypsa-to-results`
+pipeline writes them when one of these conditions holds:
+
+- a `generators` snapshot weighting of the network is not 1;
+- the `extensions.json` beside the network holds `representative_period` records.
+
+The definitions are those of `sienna-to-results`, with the PyPSA fields:
+
+- `production` of a generator or a storage unit is the sum over the snapshots of the positive
+  part of `p`, multiplied by the `generators` snapshot weighting.
+- `production` of a link is the same sum of the power that the link delivers at the end that
+  receives it, `max(-p0, 0) + max(-p1, 0)`. A link that loses energy delivers less than it
+  sends. Its `category` is null, as for a Sienna HVDC line.
+- `installed_capacity` is `p_nom` × `p_max_pu` of a generator, a storage unit or a link. The
+  Sienna to PyPSA translation writes `base_power` as `p_nom` and `rating` as `p_max_pu`, so the
+  two pipelines give the same number for one component.
+- `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
+  rate in `emission_rates_t_per_mwh` of the `generator` record of the sidecar.
+
 Two more results pipelines write annual rows:
 
 - `aetos-to-results` reads a published results CSV of an OSeMOSYS model, which holds one value

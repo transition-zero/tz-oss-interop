@@ -121,7 +121,9 @@ For a worked end-to-end example (translate, solve, compare) see the
 4. **End date?** `YYYY-MM-DD`, or blank to end at the network's own last snapshot.
 5. **Unit commitment treatment?** `exact` or `linearised` (see below).
 6. **How much of the range does one solve cover?** `day`, `week`, `month` or `year`.
-7. **Days to solve past the end of each window?** A whole number, blank for 14.
+7. **Unserved energy?** `refused` (the default) or `penalised`. See
+   [Unserved energy on the PyPSA path](#unserved-energy-on-the-pypsa-path).
+8. **Days to solve past the end of each window?** A whole number, blank for 14.
 
 The date range is cut into windows of the length chosen at prompt 6. Each window is solved
 on its own, extended by the look-ahead from prompt 7 so storage does not empty out just
@@ -155,11 +157,31 @@ and nothing in the solve reads them, so contributing units are free to run at fu
 and dispatch is looser than in the source model, which tightens it by carrying reserves.
 State this wherever a number from this pipeline is published.
 
-An hour where capacity cannot cover load makes that window's solve **infeasible** rather
-than producing a measured shortfall, for a network translated by `plexos-to-pypsa`. The
-pipeline adds no load-shedding resource, so loads keep a fixed `p_set`, and an hour short of
-capacity fails to solve instead of reporting the energy it could not serve. No pipeline adds
-a load-shedding resource. State this wherever a number from this pipeline is published.
+#### Unserved energy on the PyPSA path
+
+A PyPSA load has a fixed `p_set`. With `refused`, an hour where the capacity at a bus cannot
+cover the load makes the solve of that window infeasible.
+
+With `penalised`, the solve gives each bus two generators before it optimises:
+
+- One generator serves the load that nothing else can serve. Its output is the unserved energy.
+- One generator takes the generation that no load can take. Its output is negative.
+
+Both cost 10,000 for each MWh, which is the penalty of the Sienna balance slack for hourly
+steps on a 100 MW base. Thus a model solved by both paths pays the same penalty. The
+objective that `solve` prints includes the penalty.
+
+After the solve, `solve` takes the two generators out of the network again, so the solved
+network holds the components of the input network and nothing more. It writes the unserved
+energy at each bus to `meta["unserved_energy_mwh"]` of the solved network. It counts each
+snapshot once, for its length, as the Sienna path counts it. It writes a warning that gives
+the total and the three buses with the most:
+
+```
+solve: 60 MWh of load goes unserved, most at bus_1 (60 MWh)
+```
+
+The summary line gives the total as `unserved_energy=60 MWh`.
 
 #### Unit commitment
 
