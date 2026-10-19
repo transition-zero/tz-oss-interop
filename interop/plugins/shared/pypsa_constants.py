@@ -222,6 +222,16 @@ class PyPSALinkCol:
     BUS1 = "bus1"
     BUS2 = "bus2"
     BUS3 = "bus3"
+    EFFICIENCY2 = "efficiency2"
+    EFFICIENCY3 = "efficiency3"
+    COMMITTABLE = "committable"
+    START_UP_COST = "start_up_cost"
+    SHUT_DOWN_COST = "shut_down_cost"
+    MIN_UP_TIME = "min_up_time"
+    MIN_DOWN_TIME = "min_down_time"
+    UP_TIME_BEFORE = "up_time_before"
+    RAMP_LIMIT_UP = "ramp_limit_up"
+    RAMP_LIMIT_DOWN = "ramp_limit_down"
     P_NOM = "p_nom"
     P_NOM_OPT = "p_nom_opt"
     P_NOM_EXTENDABLE = "p_nom_extendable"
@@ -597,6 +607,21 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSALinkCol.P_NOM_MIN: pl.Float64,
+    PyPSALinkCol.P_NOM_MAX: pl.Float64,
+    # A third and a fourth bus, null for a link of two buses; a negative efficiency draws.
+    PyPSALinkCol.BUS2: pl.Utf8,
+    PyPSALinkCol.EFFICIENCY2: pl.Float64,
+    PyPSALinkCol.BUS3: pl.Utf8,
+    PyPSALinkCol.EFFICIENCY3: pl.Float64,
+    # The commitment of a plant that draws its fuel from a bus, null for every other link.
+    PyPSALinkCol.COMMITTABLE: pl.Boolean,
+    PyPSALinkCol.START_UP_COST: pl.Float64,
+    PyPSALinkCol.SHUT_DOWN_COST: pl.Float64,
+    PyPSALinkCol.MIN_UP_TIME: pl.Float64,
+    PyPSALinkCol.MIN_DOWN_TIME: pl.Float64,
+    PyPSALinkCol.UP_TIME_BEFORE: pl.Float64,
+    PyPSALinkCol.RAMP_LIMIT_UP: pl.Float64,
+    PyPSALinkCol.RAMP_LIMIT_DOWN: pl.Float64,
 }
 
 SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

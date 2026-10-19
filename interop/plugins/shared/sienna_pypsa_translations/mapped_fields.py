@@ -29,6 +29,8 @@ def build_field_names(model: type[ExtensionRecord], *names: str) -> frozenset[st
 
 
 BUS_MAPPED_FIELDS = build_field_names(BusExtension, "carrier")
+# A bus of a fuel that is not electricity has no Sienna bus, so its record states the bus.
+FUEL_BUS_MAPPED_FIELDS = build_field_names(BusExtension, "carrier", "location")
 
 # A renewable plant has no fuel to convert and no commitment, so its record keeps both fields.
 RENEWABLE_MAPPED_FIELDS = build_field_names(
@@ -93,9 +95,33 @@ CONVERSION_MAPPED_FIELDS = build_field_names(
     ConversionExtension,
     "bus0",
     "bus1",
+    "bus2",
+    "efficiency2",
+    "bus3",
+    "efficiency3",
     "carrier",
     "p_nom",
+    "p_nom_extendable",
+    "p_nom_max",
     "efficiency",
     "marginal_cost",
     "p_max_pu",
+)
+
+# A generator of a fuel that is not electricity has no Sienna component, so its record states
+# the whole generator; its emission rates and its annual bounds travel on.
+FUEL_GENERATOR_MAPPED_FIELDS = build_field_names(
+    GeneratorExtension,
+    "bus",
+    "carrier",
+    "p_nom",
+    "p_nom_extendable",
+    "p_nom_max",
+    "marginal_cost",
+    "p_max_pu",
+)
+
+# A load of a fuel that is not electricity has no Sienna load, so its record states the load.
+FUEL_LOAD_MAPPED_FIELDS = build_field_names(
+    LoadExtension, "bus", "carrier", "p_set", "p_set_series"
 )

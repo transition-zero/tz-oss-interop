@@ -407,6 +407,25 @@ def given_system_has_extension_record(
     sienna_system_builder.add_record(kind, name, {field: json.loads(value)})
 
 
+@given(
+    parsers.parse(
+        'the system has a load record "{name}" on bus "{bus}" with a p_set series {series}'
+    )
+)
+def given_system_has_load_record_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bus: str, series: str
+) -> None:
+    """A load that only the sidecar holds, whose MW in each hour sit in the companion parquet."""
+    sienna_system_builder.add_ext("PowerLoad", name, {"bus": bus})
+    sienna_system_builder.add_companion_series(
+        "PowerLoad",
+        name,
+        "p_set_series",
+        "loads.parquet",
+        [float(value) for value in series.split()],
+    )
+
+
 @given(parsers.parse('the HVDC line "{name}" has an ext p_max_pu series {series}'))
 def given_hvdc_line_has_ext_p_max_pu_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str

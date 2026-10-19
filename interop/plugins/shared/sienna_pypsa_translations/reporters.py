@@ -233,6 +233,12 @@ class BusReporter(_Reporter):
             derivation=_AREA_TO_LOCATION,
         )
 
+    def record_fuel_bus(self, name: str, carrier: str | None, location: str | None) -> None:
+        """A bus of a fuel that is not electricity, whose record states it whole."""
+        self.record_carried(ExtensionKind.BUS, name, "carrier", PyPSABusCol.CARRIER, carrier)
+        if location is not None:
+            self.record_carried(ExtensionKind.BUS, name, "location", PyPSABusCol.LOCATION, location)
+
 
 class ThermalLimit(NamedTuple):
     """The output limit of a thermal plant, its rating, and the p_max_pu they give."""
@@ -1199,4 +1205,71 @@ class ConversionReporter(_Reporter):
         self._default_applied(
             destinations=[self._destination(name, column, value)],
             note=_DEFAULT_LINK_NOTE.format(column=column),
+        )
+
+
+_PLANT_LINK_NOTE = (
+    "the plant burns a fuel whose bus the network holds, so it draws the fuel from that bus as "
+    "a Link and pays the price that the network gives the fuel"
+)
+_PLANT_BUS0_DERIVATION = "the bus of the largest fuel of extensions.fuel_buses"
+_PLANT_EFFICIENCY_DERIVATION = "1 / the MWh of that fuel for each MWh of electricity"
+_PLANT_P_NOM_DERIVATION = "base_power × the MWh of that fuel for each MWh of electricity"
+_PLANT_MARGINAL_COST_DERIVATION = (
+    "extensions.own_marginal_cost, for each MWh of electricity, / the MWh of that fuel for each "
+    "MWh of electricity, as a Link prices the power that goes in at bus0"
+)
+_BOUNDED_PLANT_NOTE = (
+    "the plant states an annual energy bound, and a PyPSA Link has no e_sum_min or e_sum_max, "
+    "so it stays a Generator that pays the Sienna price of its fuel and does not draw the fuel "
+    "from its bus"
+)
+
+
+class PlantLinkReporter(_Reporter):
+    """Records a Sienna ThermalStandard that becomes a PyPSA Link from the bus of its fuel."""
+
+    destination_component = PyPSAComponent.LINK
+
+    def record_link(self, name: str, row: dict[str, Any], base_power: float) -> None:
+        source = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{_EXTENSIONS}.fuel_buses", None
+        )
+        power = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, SiennaGeneratorCol.BASE_POWER, base_power
+        )
+        cost = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{_EXTENSIONS}.own_marginal_cost", None
+        )
+        values = (
+            (PyPSALinkCol.BUS0, None, [source], _PLANT_BUS0_DERIVATION),
+            (PyPSALinkCol.EFFICIENCY, None, [source], _PLANT_EFFICIENCY_DERIVATION),
+            (PyPSALinkCol.P_NOM, UNIT_MW, [power, source], _PLANT_P_NOM_DERIVATION),
+            (
+                PyPSALinkCol.MARGINAL_COST,
+                UNIT_DOLLARS_PER_MWH,
+                [cost, source],
+                _PLANT_MARGINAL_COST_DERIVATION,
+            ),
+        )
+        for column, unit, sources, derivation in values:
+            self._derived(
+                sources=sources,
+                destinations=[self._destination(name, column, row[column], unit)],
+                derivation=derivation,
+            )
+        self._derived(
+            sources=[self._source_field(SiennaComponent.THERMAL_STANDARD, name, None, None)],
+            destinations=[self._destination(name, PyPSALinkCol.BUS1, row[PyPSALinkCol.BUS1])],
+            derivation=_PLANT_LINK_NOTE,
+        )
+
+    def record_bounded(self, name: str) -> None:
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    SiennaComponent.THERMAL_STANDARD, name, f"{_EXTENSIONS}.fuel_buses", None
+                )
+            ],
+            note=_BOUNDED_PLANT_NOTE,
         )

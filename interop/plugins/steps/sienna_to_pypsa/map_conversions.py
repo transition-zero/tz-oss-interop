@@ -1,10 +1,12 @@
 """Conversion records that join two buses of the network become PyPSA Links.
 
-Sienna has no component for a technology that turns electricity at one bus into electricity at
-another, so the whole record reaches this hop in the sidecar. Where both ends name a bus of the
-network and the two buses differ, PyPSA holds it as a Link. Every other conversion record
-travels on unchanged: an export has no bus1, a step inside one location joins a bus to itself,
-and a trade route names `<region>/<fuel>` ends that are not buses.
+Sienna has no component for a technology that turns energy at one bus into energy at another,
+so the whole record reaches this hop in the sidecar. Where both ends, and each further bus,
+name a bus of the network and bus0 and bus1 differ, PyPSA holds it as a Link. A bus of a fuel
+that is not electricity is a bus of the network where its bus record built one. Every other
+conversion record travels on unchanged: an export has no bus1, a step inside one location
+joins a bus to itself, and a trade route of electricity names `<region>/<fuel>` ends that are
+not buses.
 """
 
 from __future__ import annotations
@@ -53,8 +55,14 @@ _P_MIN_PU = 0.0
 _MAPPED_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
     ("bus0", PyPSALinkCol.BUS0, None),
     ("bus1", PyPSALinkCol.BUS1, None),
+    ("bus2", PyPSALinkCol.BUS2, None),
+    ("efficiency2", PyPSALinkCol.EFFICIENCY2, None),
+    ("bus3", PyPSALinkCol.BUS3, None),
+    ("efficiency3", PyPSALinkCol.EFFICIENCY3, None),
     ("carrier", PyPSALinkCol.CARRIER, None),
     ("p_nom", PyPSALinkCol.P_NOM, UNIT_MW),
+    ("p_nom_extendable", PyPSALinkCol.P_NOM_EXTENDABLE, None),
+    ("p_nom_max", PyPSALinkCol.P_NOM_MAX, UNIT_MW),
     ("efficiency", PyPSALinkCol.EFFICIENCY, None),
     ("marginal_cost", PyPSALinkCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
     ("p_max_pu", PyPSALinkCol.P_MAX_PU, None),
@@ -117,9 +125,10 @@ class SiennaToPypsaMapConversions(TranslationStep):
 
 
 def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
-    """Whether the record joins two different buses of the network."""
+    """Whether the record joins two different buses of the network, and names no other bus."""
     ends = {record.bus0, record.bus1}
-    return len(ends) == 2 and ends <= buses
+    further = {bus for bus in (record.bus2, record.bus3) if bus is not None}
+    return len(ends) == 2 and ends | further <= buses
 
 
 def _build_names(state: State, table: str, column: str) -> set[str]:
@@ -152,4 +161,10 @@ def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
         PyPSALinkCol.MARGINAL_COST: record.marginal_cost,
         PyPSALinkCol.ACTIVE: True,
         PyPSALinkCol.CARRIER: record.carrier,
+        PyPSALinkCol.P_NOM_EXTENDABLE: record.p_nom_extendable,
+        PyPSALinkCol.P_NOM_MAX: record.p_nom_max,
+        PyPSALinkCol.BUS2: record.bus2,
+        PyPSALinkCol.EFFICIENCY2: record.efficiency2,
+        PyPSALinkCol.BUS3: record.bus3,
+        PyPSALinkCol.EFFICIENCY3: record.efficiency3,
     }

@@ -100,6 +100,7 @@ def build_network(
             (loads, [PyPSALoadCol.BUS]),
             (lines, [PyPSALineCol.BUS0, PyPSALineCol.BUS1]),
             (links, [PyPSALinkCol.BUS0, PyPSALinkCol.BUS1]),
+            (links, _list_named_ports(links)),
         ]
     )
     _add_buses(network, buses, referenced)
@@ -139,6 +140,13 @@ def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
     )
 
 
+def _list_named_ports(links: pl.DataFrame | None) -> list[str]:
+    """The further bus columns of the links, so a bus that only they name is still checked."""
+    if links is None:
+        return []
+    return [bus for bus, _ in _list_extra_ports(links)]
+
+
 def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -> set[str]:
     """Collect bus names referenced by component tables, one (table, bus columns) per entry."""
     names: set[str] = set()
@@ -146,7 +154,7 @@ def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -
         if frame is None:
             continue
         for column in columns:
-            names.update(frame[column].to_list())
+            names.update(frame[column].drop_nulls().to_list())
     return names
 
 
@@ -269,10 +277,11 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
 def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
     if links is None:
         return
+    ports = _list_extra_ports(links)
     _add_in_bulk(
         network,
         PyPSAComponent.LINK,
-        links,
+        _fill_extra_ports(links, ports),
         PyPSALinkCol.NAME,
         required=(
             PyPSALinkCol.BUS0,
@@ -281,6 +290,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_MIN_PU,
             PyPSALinkCol.EFFICIENCY,
             PyPSALinkCol.ACTIVE,
+            *[column for port in ports for column in port],
         ),
         # Null round-trip fields are absent from the Sienna source; let PyPSA default them.
         optional=(
@@ -289,7 +299,41 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
             PyPSALinkCol.P_NOM_MIN,
+            PyPSALinkCol.P_NOM_MAX,
+            PyPSALinkCol.COMMITTABLE,
+            PyPSALinkCol.START_UP_COST,
+            PyPSALinkCol.SHUT_DOWN_COST,
+            PyPSALinkCol.MIN_UP_TIME,
+            PyPSALinkCol.MIN_DOWN_TIME,
+            PyPSALinkCol.UP_TIME_BEFORE,
+            PyPSALinkCol.RAMP_LIMIT_UP,
+            PyPSALinkCol.RAMP_LIMIT_DOWN,
         ),
+    )
+
+
+# Each further bus of a link, and its efficiency; PyPSA adds the column only where one is named.
+_EXTRA_PORTS = (
+    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
+    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
+)
+# PyPSA's own value for a link that names no further bus: no bus, and an efficiency of 1.
+_NO_BUS = ""
+_NO_LOSS = 1.0
+
+
+def _list_extra_ports(links: pl.DataFrame) -> list[tuple[str, str]]:
+    return [
+        port
+        for port in _EXTRA_PORTS
+        if port[0] in links.columns and links[port[0]].is_not_null().any()
+    ]
+
+
+def _fill_extra_ports(links: pl.DataFrame, ports: list[tuple[str, str]]) -> pl.DataFrame:
+    return links.with_columns(
+        *[pl.col(bus).fill_null(_NO_BUS) for bus, _ in ports],
+        *[pl.col(efficiency).fill_null(_NO_LOSS) for _, efficiency in ports],
     )
 
 

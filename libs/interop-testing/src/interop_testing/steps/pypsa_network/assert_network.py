@@ -261,6 +261,21 @@ def assert_link_bus1(path: str, name: str, bus: str) -> None:
     WrittenComponent(path, LINK, name).assert_label("bus1", bus)
 
 
+@then(parsers.parse('the PyPSA network "{path}" link "{name}" has bus2 "{bus}"'))
+def assert_link_bus2(path: str, name: str, bus: str) -> None:
+    WrittenComponent(path, LINK, name).assert_label("bus2", bus)
+
+
+@then(parsers.parse('the PyPSA network "{path}" link "{name}" is committable'))
+def assert_link_committable(path: str, name: str) -> None:
+    WrittenComponent(path, LINK, name).assert_flag_set("committable")
+
+
+@then(parsers.parse('the PyPSA network "{path}" has no link "{name}"'))
+def assert_no_link(path: str, name: str) -> None:
+    WrittenComponent(path, LINK, name).assert_absent()
+
+
 @then(parsers.parse('the PyPSA network "{path}" link "{name}" has carrier "{carrier}"'))
 def assert_link_carrier(path: str, name: str, carrier: str) -> None:
     WrittenComponent(path, LINK, name).assert_label("carrier", carrier)
