@@ -96,6 +96,12 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
+    build_fuel_buses_field,
+    build_own_cost_field,
+    build_own_rates_field,
+    enrich_plant_fuels,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
     enrich_residual_capacity,
@@ -300,6 +306,7 @@ def _enrich_generators(
     table = enrich_fixed_costs(state, operations, table)
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)
     table = enrich_emission_penalties(state, operations, table)
+    table = enrich_plant_fuels(state, operations, table, inputs)
     rated = table.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
     bounds = enrich_activity_limits(state, operations, rated, FlowParameter.OUTPUT_ACTIVITY_RATIO)
     table = table.join(bounds.drop(OPERATING_MODE), on=[REGION, TECHNOLOGY], how="left")
@@ -336,6 +343,9 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
         e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
         operating_modes=build_operating_mode_field(row),
+        fuel_buses=build_fuel_buses_field(row),
+        own_marginal_cost=build_own_cost_field(row),
+        own_emission_rates_t_per_mwh=build_own_rates_field(row),
         **build_value_fields(row, COMPONENT_VALUES),
     )
 

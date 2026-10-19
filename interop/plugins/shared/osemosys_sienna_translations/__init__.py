@@ -33,6 +33,18 @@ from interop.plugins.shared.osemosys_sienna_translations._conversions import (
 from interop.plugins.shared.osemosys_sienna_translations._defaults import (
     report_unread_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._fuel_loads import (
+    FuelLoads,
+    build_fuel_loads,
+)
+from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
+    build_fuel_modes_source,
+)
+from interop.plugins.shared.osemosys_sienna_translations._fuel_records import (
+    FuelRecords,
+    build_fuel_records,
+    set_fuel_values_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     GENERATOR_NAME,
     SIENNA_TYPE,
@@ -54,6 +66,7 @@ from interop.plugins.shared.osemosys_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
     LOAD_TRANSLATIONS,
     LoadSources,
+    build_fuel_loads_source,
     build_load_series,
     build_loads_source,
 )
@@ -115,6 +128,8 @@ __all__ = [
     "STORAGE_TRANSLATIONS",
     "TRANSPORT_TRANSLATIONS",
     "Calendar",
+    "FuelLoads",
+    "FuelRecords",
     "GeneratorSources",
     "GeneratorTypeMapping",
     "LoadSources",
@@ -130,6 +145,10 @@ __all__ = [
     "build_conversion_records",
     "build_conversions_source",
     "build_days_events",
+    "build_fuel_loads",
+    "build_fuel_loads_source",
+    "build_fuel_modes_source",
+    "build_fuel_records",
     "build_generator_extensions",
     "build_generators_source",
     "build_line_extensions",
@@ -155,6 +174,7 @@ __all__ = [
     "require_model_year",
     "set_conversion_values_persisted",
     "set_days_persisted",
+    "set_fuel_values_persisted",
     "set_generator_values_persisted",
     "set_line_values_persisted",
     "set_operations_year",

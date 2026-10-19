@@ -90,6 +90,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     build_mode_events,
 )
+from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
+    build_plant_fuel_events,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     AVAILABILITY_FACTOR,
 )
@@ -396,6 +399,10 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
             ],
         ),
         Translation(exprs=[], make_events=lambda old, _new: _build_grouping_events(dest, old)),
+        Translation(
+            exprs=[],
+            make_events=lambda old, _new: build_plant_fuel_events(dest, old, GENERATOR_NAME),
+        ),
     ]
 
 

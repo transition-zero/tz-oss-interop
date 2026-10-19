@@ -1,4 +1,7 @@
-"""OSeMOSYS demand for an electricity fuel -> Sienna PowerLoad with an hourly series.
+"""OSeMOSYS demand for a fuel -> a load with an hourly series.
+
+A demand for an electricity fuel becomes a Sienna PowerLoad on the bus of its location. A
+demand for another fuel becomes a load record of extensions.json on the bus of the fuel.
 
 The specified annual demand of a fuel becomes a load named for the fuel. In each hour of the
 calendar, the load is `specified_annual_demand (MWh) × specified_demand_profile /
@@ -53,6 +56,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
     build_sienna_source,
 )
+from interop.plugins.shared.osemosys_sienna_translations._fuels import read_other_fuels
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -94,7 +98,6 @@ FIRST_MW = "first_mw"
 _PROFILE = "profile"
 _YEAR_SPLIT = "year_split"
 _HOURLY_MW = "hourly_mw"
-_IS_ELECTRICITY = "is_electricity"
 _NO_REACTIVE_POWER = 0.0
 
 _ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
@@ -166,7 +169,18 @@ class LoadSources:
 def build_loads_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> LoadSources:
-    return _build_loads(state, operations, _build_reported_drop(recorder), recorder)
+    """One row for each demand for an electricity fuel, and its hourly MW."""
+    fuels = _read_located_electricity_fuels(state)
+    inputs = _LoadInputs(fuels, _build_reported_drop(recorder), recorder)
+    return _build_loads(state, operations, inputs)
+
+
+def build_fuel_loads_source(
+    state: State, operations: OperationsYear, recorder: ScopedRecorder
+) -> LoadSources:
+    """One row for each demand for a fuel that is not electricity, with its bus as location."""
+    inputs = _LoadInputs(read_other_fuels(state), _build_reported_drop(recorder), recorder)
+    return _build_loads(state, operations, inputs)
 
 
 def build_load_series(
@@ -177,20 +191,34 @@ def build_load_series(
     A demand that is not a load leaves no report here, so a caller that reads many years does
     not repeat one report for each year.
     """
-    return _build_loads(state, operations, _drop_silently, recorder).series
+    fuels = _read_located_electricity_fuels(state)
+    return _build_loads(state, operations, _LoadInputs(fuels, _drop_silently, recorder)).series
 
 
-def _build_loads(
-    state: State, operations: OperationsYear, drop: _DropRows, recorder: ScopedRecorder
-) -> LoadSources:
-    demands = _enrich_load_names(_read_demands(state, operations.year, drop))
+@dataclass(frozen=True)
+class _LoadInputs:
+    """The fuels whose demand becomes a load, with the location of each, and how rows drop."""
+
+    fuels: pl.DataFrame
+    drop: _DropRows
+    recorder: ScopedRecorder
+
+
+def _read_located_electricity_fuels(state: State) -> pl.DataFrame:
+    """The bus group reports an electricity fuel with no location, so this drop is silent."""
+    return read_electricity_fuels(state).filter(pl.col(AnnotationColumn.LOCATION).is_not_null())
+
+
+def _build_loads(state: State, operations: OperationsYear, inputs: _LoadInputs) -> LoadSources:
+    drop = inputs.drop
+    demands = _enrich_load_names(_read_demands(state, operations.year, inputs.fuels, drop))
     if demands.height == 0:
         return LoadSources(demands, pl.DataFrame(schema=_SERIES_SCHEMA))
     demands = demands.with_columns(
         operations.units.convert_energy_to_mwh(pl.col(ANNUAL_DEMAND)).alias(ANNUAL_DEMAND_MWH),
         pl.lit(operations.units.energy_unit, dtype=pl.Utf8).alias(ENERGY_UNIT),
     )
-    series = _build_series(state, operations, demands, recorder)
+    series = _build_series(state, operations, demands, inputs.recorder)
     table = _enrich_series_values(demands, series)
     table = drop(table, SkipRule(pl.col(PEAK_MW) > 0, NO_HOURLY_DEMAND_SKIP))
     kept = series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(table[LOAD_NAME].implode()))
@@ -211,8 +239,7 @@ def _drop_silently(table: pl.DataFrame, rule: SkipRule) -> pl.DataFrame:
     return table.filter(rule.keep.fill_null(False))  # noqa: FBT003
 
 
-def _read_demands(state: State, year: int, drop: _DropRows) -> pl.DataFrame:
-    fuels = read_electricity_fuels(state).with_columns(pl.lit(value=True).alias(_IS_ELECTRICITY))
+def _read_demands(state: State, year: int, fuels: pl.DataFrame, drop: _DropRows) -> pl.DataFrame:
     tables = [
         _read_demand(state, year, parameter, fuels, drop)
         for parameter in (
@@ -230,6 +257,8 @@ def _read_demand(
     fuels: pl.DataFrame,
     drop: _DropRows,
 ) -> pl.DataFrame:
+    """The demands for the fuels of `fuels`; a demand for another fuel is a load of another
+    caller."""
     stated = read_parameter(state, parameter, year).filter(pl.col(VALUE_COL) != 0)
     rows = stated.select(
         REGION,
@@ -237,30 +266,11 @@ def _read_demand(
         express_report_name(FUEL).alias(FUEL_NAME),
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
-    ).join(
-        fuels.select(REGION, FUEL, AnnotationColumn.LOCATION, _IS_ELECTRICITY),
-        on=[REGION, FUEL],
-        how="left",
-    )
+    ).join(fuels.select(REGION, FUEL, AnnotationColumn.LOCATION), on=[REGION, FUEL], how="inner")
     positive = drop(
         rows, SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter))
     )
-    electricity = drop(
-        _drop_unlocated_electricity(positive),
-        SkipRule(
-            pl.col(AnnotationColumn.LOCATION).is_not_null(),
-            _build_not_electricity_skip(parameter),
-        ),
-    )
-    return electricity.drop(_IS_ELECTRICITY).cast(pl.Schema(_SOURCE_SCHEMA))
-
-
-def _drop_unlocated_electricity(demands: pl.DataFrame) -> pl.DataFrame:
-    """The bus group reports an electricity fuel with no location, so this drop is silent."""
-    is_unlocated = (
-        pl.col(_IS_ELECTRICITY).is_not_null() & pl.col(AnnotationColumn.LOCATION).is_null()
-    )
-    return demands.filter(~is_unlocated)
+    return positive.cast(pl.Schema(_SOURCE_SCHEMA))
 
 
 def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:
@@ -272,23 +282,6 @@ def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:
         reason=f"state a negative {parameter}",
         counted_noun="fuel(s)",
         note="a demand below zero is not a load, so the demand is left out",
-        attribute_col=ANNUAL_DEMAND,
-        attribute_name=parameter,
-    )
-
-
-def _build_not_electricity_skip(parameter: DemandParameter) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
-        component=FUEL,
-        name_col=FUEL_NAME,
-        reason=f"state {parameter} but are not electricity fuels with a location",
-        counted_noun="fuel(s)",
-        note=(
-            "the operations system holds electricity only, and a demand needs a bus at the "
-            "location of its fuel, so the demand is left out"
-        ),
         attribute_col=ANNUAL_DEMAND,
         attribute_name=parameter,
     )

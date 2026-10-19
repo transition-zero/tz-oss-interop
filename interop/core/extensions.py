@@ -134,6 +134,9 @@ class BusExtension(ExtensionRecord):
     # rather than the bus. PyPSA has no field for it at all, so a chain through PyPSA needs
     # this to keep the price a shortfall is charged at.
     value_of_lost_load: float | None = None
+    # PyPSA Bus.location; the OSeMOSYS location of a fuel that is not electricity, whose bus
+    # Sienna does not hold.
+    location: str | None = None
 
 
 class ExpansionExtension(ExtensionRecord):
@@ -253,9 +256,28 @@ class GeneratorExtension(ActivityExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
-    # t/MWh of electricity, by pollutant, with the emissions of the fuel that the plant burns.
-    # OSeMOSYS only: PyPSA states Carrier.co2_emissions for each MWh of primary energy.
+    # t for each MWh that the generator puts out, by pollutant, with the emissions of the fuel
+    # that a plant burns; OSeMOSYS only, as PyPSA states Carrier.co2_emissions instead.
     emission_rates_t_per_mwh: dict[str, float] | None = None
+    # PyPSA Generator.bus, for a generator of a fuel that is not electricity, which Sienna does
+    # not hold; OSeMOSYS fuel_supply.
+    bus: str | None = None
+    # MW of the fuel; PyPSA Generator.p_nom, for a generator that Sienna does not hold.
+    p_nom: float | None = None
+    # $/MWh of the fuel; PyPSA Generator.marginal_cost, for a generator that Sienna does not hold.
+    marginal_cost: float | None = None
+    # PyPSA Generator.p_max_pu, for a generator that Sienna does not hold; OSeMOSYS
+    # AvailabilityFactor.
+    p_max_pu: float | None = None
+    # MWh of each fuel for each MWh of electricity, by the bus of the fuel; no PyPSA field, as
+    # PyPSA states it as Link.bus0 and Link.efficiency; OSeMOSYS InputActivityRatio.
+    fuel_buses: dict[str, float] | None = None
+    # $/MWh of electricity without the price of the fuels that fuel_buses names; no PyPSA
+    # field, as PyPSA states it as Link.marginal_cost for each MWh of fuel.
+    own_marginal_cost: float | None = None
+    # t/MWh of electricity, by pollutant, without the emissions of the fuels that fuel_buses
+    # names; OSeMOSYS EmissionActivityRatio of the plant only.
+    own_emission_rates_t_per_mwh: dict[str, float] | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -264,6 +286,12 @@ class LoadExtension(ExtensionRecord):
     # PyPSA Load.sign, -1 by convention. Sienna PowerLoad is positive-consumption by
     # definition, so it has nothing to state here.
     sign: float | None = None
+    # PyPSA Load.bus, for a demand for a fuel that is not electricity, which Sienna does not hold.
+    bus: str | None = None
+    # MW of the fuel in each snapshot; PyPSA Load.p_set, for a load that Sienna does not hold.
+    p_set: float | None = None
+    # Ours: the companion parquet holding p_set at each snapshot, where the demand changes.
+    p_set_series: str | None = None
 
 
 class LineExtension(ExtensionRecord):
@@ -488,22 +516,33 @@ class TechnologyExtension(ExtensionRecord):
 
 
 class ConversionExtension(ActivityExtension):
-    """A technology or a trade route that moves electricity, or takes it out of the model.
+    """A technology or a trade route that moves or converts energy, or takes it out of the model.
 
-    For an OSeMOSYS trade route, `bus0` and `bus1` name the region and the fuel as
-    `<region>/<fuel>`, not a Sienna bus, because a route joins regions and not locations.
+    A bus of electricity is its location. A bus of another fuel, and each end of an OSeMOSYS
+    trade route, is `<region>/<fuel>`, because a fuel balances in a region.
     """
 
     carrier: str | None = None  # PyPSA Link.carrier; the OSeMOSYS category of the technology
-    bus0: str | None = None  # PyPSA Link.bus0: the location of the electricity that goes in
-    # PyPSA Link.bus1: the location of the electricity that comes out, absent for an export.
+    bus0: str | None = None  # PyPSA Link.bus0: the bus of the energy that goes in
+    # PyPSA Link.bus1: the bus of the energy that comes out, absent for an export.
     bus1: str | None = None
-    # MW of electricity in; PyPSA Link.p_nom; OSeMOSYS ResidualCapacity × the input ratio.
+    # PyPSA Link.bus2 and Link.efficiency2, Link.bus3 and Link.efficiency3: a third and a fourth
+    # fuel, with a negative efficiency for a fuel that goes in.
+    bus2: str | None = None
+    efficiency2: float | None = None
+    bus3: str | None = None
+    efficiency3: float | None = None
+    # MW in at bus0; PyPSA Link.p_nom; OSeMOSYS ResidualCapacity × the input ratio.
     p_nom: float | None = None
-    # Per unit: electricity out for each MWh in; PyPSA Link.efficiency.
+    # Per unit: energy out at bus1 for each MWh in at bus0; PyPSA Link.efficiency.
     efficiency: float | None = None
-    # $/MWh of electricity in; PyPSA Link.marginal_cost; OSeMOSYS VariableCost.
+    # $/MWh in at bus0; PyPSA Link.marginal_cost; OSeMOSYS VariableCost.
     marginal_cost: float | None = None
+    # PyPSA Link.p_nom_extendable: OSeMOSYS adds the capacity that the link needs at no cost.
+    p_nom_extendable: bool | None = None
+    # t for each MWh in at bus0, by pollutant, from OSeMOSYS EmissionActivityRatio, as PyPSA
+    # states Carrier.co2_emissions instead.
+    emission_rates_t_per_mwh: dict[str, float] | None = None
     # Per unit of p_nom; PyPSA Link.p_max_pu; OSeMOSYS AvailabilityFactor.
     p_max_pu: float | None = None
     # The fuel that goes in and the fuel that comes out; no PyPSA field, as PyPSA states a fuel
@@ -644,6 +683,12 @@ class GeneratorCompanionCol(StrEnum):
     MARGINAL_COST = "marginal_cost"
 
 
+class LoadCompanionCol(StrEnum):
+    """Value columns of the load companion parquet, named for the field each holds."""
+
+    P_SET = "p_set"
+
+
 class StorageCompanionCol(StrEnum):
     """Value columns of the storage companion parquet, each named for the field it holds."""
 
@@ -669,6 +714,7 @@ class Companion(NamedTuple):
 # column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
     ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
+    ExtensionKind.LOAD: Companion("loads.parquet", ("p_set_series",)),
     ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
     ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
     ExtensionKind.CONTROLLABLE_LINE: Companion("controllable_lines.parquet", ("p_max_pu_series",)),
