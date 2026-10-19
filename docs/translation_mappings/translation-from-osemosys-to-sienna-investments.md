@@ -220,7 +220,7 @@ charge side then states no bound and no price of its own.
 | `efficiency.in` | | `technology_to_storage` / the electricity input ratio of the charging technology | `derived` |
 | `efficiency.out` | | The electricity output ratio of the discharging technology / `technology_from_storage` | `derived` |
 | `lifetime` | yr | `OperationalLifeStorage` (`storage_lifetime`) when it is above 0, else the `lifetime` of the discharging technology | `derived` |
-| `financial_data.return_on_equity` | | `DiscountRateStorage` (`storage_discount_rate`) when the model states it, else the rate of the discharging technology | `derived` |
+| `financial_data.return_on_equity` | | `DiscountRateStorage` (`storage_discount_rate`) when the model states it, else the default of `storage_discount_rate` (0.05 when the model declares none), as the operations translation does. If the parameter has no default, the rate of the discharging technology. | `derived` |
 | `financial_data` (the other fields) | | As for a [`SupplyTechnology`](#supplytechnology-candidate--supplytechnology) | |
 | `capacity_limits_energy` | | The canonical stage has no limit on the energy capacity of a storage. | `dropped` |
 | `unit_size_charge`, `unit_size_energy` | | OSeMOSYS sizes one unit by its capacity only. | `dropped` |

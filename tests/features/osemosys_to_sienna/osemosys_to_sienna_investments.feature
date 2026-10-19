@@ -437,3 +437,13 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the file "decisions.md" contains "`osemosys.storage_discount_rate.R1/ATPHSS` = 0.06"
       And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "StorageTechnology" "ATPHSS" has "existing_devices" set to ["ATPHSS"]
       And the file "outputs/extensions.json" parses as JSON technology extension record for "ATPHSS" having "energy_overnight_cost" set to {"2030": 50000.0, "2035": 0.0}
+
+    Scenario: A storage candidate that states no discount rate takes the default of storage_discount_rate
+      The region states 0.07, but OSeMOSYS gives a storage with no row the default of
+      DiscountRateStorage, as the operations translation does.
+      Given the otoole parameter "DiscountRateStorage" keyed by "REGION STORAGE" with default 0.075 has the rows:
+        | REGION | STORAGE | VALUE |
+      When I translate the otoole model to a Sienna investments portfolio
+      Then the pipeline exit code is 0
+      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "financial_data.return_on_equity" set to 0.075
+      And the file "decisions.md" contains "`osemosys.storage_discount_rate.R1/ATPHSS` = 0.075"

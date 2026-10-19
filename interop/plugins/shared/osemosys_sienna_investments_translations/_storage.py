@@ -92,6 +92,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    find_parameter_default,
     read_parameter,
     read_yearly_values,
 )
@@ -345,13 +346,17 @@ def _enrich_values(
 
 
 class _StorageFinance(NamedTuple):
-    """A storage parameter that replaces a value of the discharging technology when stated."""
+    """A storage parameter that replaces a value of the discharging technology when stated.
+
+    A parameter that `has_default` gives its default to a storage that states no row.
+    """
 
     parameter: InvestmentParameter
     value_col: str
     parameter_col: str
     member_col: str
     keep: pl.Expr
+    has_default: bool
 
 
 # A life of zero years recovers no cost, so only a positive storage life replaces the other.
@@ -362,6 +367,7 @@ _STORAGE_FINANCE = (
         LIFETIME_PARAMETER,
         LIFETIME_MEMBER,
         pl.col(VALUE_COL) > 0,
+        has_default=False,
     ),
     _StorageFinance(
         InvestmentParameter.STORAGE_DISCOUNT_RATE,
@@ -369,6 +375,7 @@ _STORAGE_FINANCE = (
         RATE_PARAMETER,
         RATE_MEMBER,
         pl.col(VALUE_COL).is_not_null(),
+        has_default=True,
     ),
 )
 _STATED = "stated"
@@ -377,8 +384,9 @@ _STATED = "stated"
 def _enrich_storage_finance(
     state: State, plan: InvestmentPlan, storages: pl.DataFrame
 ) -> pl.DataFrame:
-    """`storage_lifetime` and `storage_discount_rate` where the model states them, else the
-    values of the discharging technology."""
+    """`storage_lifetime` where the model states it, and `storage_discount_rate` where the model
+    states it or else its default, as OSeMOSYS applies them; else the values of the
+    discharging technology."""
     for finance in _STORAGE_FINANCE:
         stated = (
             read_parameter(state, finance.parameter, plan.base_year)
@@ -386,8 +394,16 @@ def _enrich_storage_finance(
             .select(*_STORAGE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_STATED))
         )
         storages = storages.join(stated, on=_STORAGE_KEYS, how="left")
+        storages = _fill_default(state, finance, storages)
         storages = storages.with_columns(*_express_stated(finance)).drop(_STATED)
     return storages
+
+
+def _fill_default(state: State, finance: _StorageFinance, storages: pl.DataFrame) -> pl.DataFrame:
+    default = find_parameter_default(state, finance.parameter) if finance.has_default else None
+    if default is None:
+        return storages
+    return storages.with_columns(pl.col(_STATED).fill_null(float(default)))
 
 
 def _express_stated(finance: _StorageFinance) -> list[pl.Expr]:

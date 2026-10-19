@@ -88,7 +88,8 @@ _BASE_YEAR_NOTE = (
 _RECOVERY_DERIVATION = "the operational life, over which OSeMOSYS recovers a capital cost"
 _RATE_DERIVATION = (
     "technology_discount_rate when the model states it, else the discount_rate of the region, "
-    "as OSeMOSYS applies them; a storage takes storage_discount_rate when the model states it; "
+    "as OSeMOSYS applies them; a storage takes storage_discount_rate when the model states it, "
+    "else the default of storage_discount_rate; "
     f"{WACC_DERIVATION}"
 )
 
