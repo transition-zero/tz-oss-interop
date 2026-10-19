@@ -29,6 +29,7 @@ from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     PyPSADestinationTable,
     PyPSAGeneratorCol,
+    PyPSALinkCol,
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_time_series import series_components
@@ -282,30 +283,27 @@ class SiennaResultsToResultsFormat(TranslationStep):
 
 
 def _build_carrier_lookup(state: State) -> pl.LazyFrame | None:
-    frames: list[pl.LazyFrame] = []
-    generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
-    if generators is not None:
-        frames.append(
-            generators.lazy().select(
-                [
-                    pl.col(PyPSAGeneratorCol.NAME).alias(StagedTimeSeriesCol.COMPONENT),
-                    pl.col(PyPSAGeneratorCol.CARRIER).alias(ResultsCol.CATEGORY),
-                ]
-            )
+    """The carrier of each generator and storage unit of the mapped network, and of each link,
+    as a plant that draws its fuel from a bus becomes a link that keeps its carrier."""
+    frames = [
+        table.lazy().select(
+            pl.col(name).alias(StagedTimeSeriesCol.COMPONENT),
+            pl.col(carrier).alias(ResultsCol.CATEGORY),
         )
-    storage_units = state.destination_tables.get(PyPSADestinationTable.STORAGE_UNITS)
-    if storage_units is not None:
-        frames.append(
-            storage_units.lazy().select(
-                [
-                    pl.col(PyPSAStorageUnitCol.NAME).alias(StagedTimeSeriesCol.COMPONENT),
-                    pl.col(PyPSAStorageUnitCol.CARRIER).alias(ResultsCol.CATEGORY),
-                ]
-            )
-        )
+        for key, name, carrier in _CARRIER_TABLES
+        if (table := state.destination_tables.get(key)) is not None
+    ]
     if not frames:
         return None
-    return pl.concat(frames)
+    lookup = pl.concat(frames)
+    return lookup.unique(StagedTimeSeriesCol.COMPONENT, keep="first", maintain_order=True)
+
+
+_CARRIER_TABLES = (
+    (PyPSADestinationTable.GENERATORS, PyPSAGeneratorCol.NAME, PyPSAGeneratorCol.CARRIER),
+    (PyPSADestinationTable.STORAGE_UNITS, PyPSAStorageUnitCol.NAME, PyPSAStorageUnitCol.CARRIER),
+    (PyPSADestinationTable.LINKS, PyPSALinkCol.NAME, PyPSALinkCol.CARRIER),
+)
 
 
 def _build_dispatch_frame(

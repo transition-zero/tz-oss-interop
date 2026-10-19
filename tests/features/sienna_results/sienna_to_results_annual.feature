@@ -49,6 +49,23 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | production | link      |               | 2030-01-01T00:00:00 | 900   |
     And the file "decisions.md" contains "the energy that it delivers equals the energy that it sends"
 
+  Scenario: A plant that draws its fuel from a bus keeps its category
+    The mapping of the network makes the gas plant a link from the bus of its gas, and the link
+    keeps the carrier of the plant.
+    Given the system has a bus extension record "R1/GAS" with "carrier" set to "gas"
+    And the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/GAS": 2.0}
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+    And the results parquet "outputs/results.parquet" holds these "dispatch" rows among others:
+      | variable | component | category | timestamp           | value |
+      | dispatch | gas       | gas      | 2030-01-01T00:00:00 | 10    |
+
   Scenario: A renewable plant has hourly dispatch rows
     Given the system is saved as "inputs/system.json"
     When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
