@@ -47,6 +47,16 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
     When I run translate against "inputs/thermal_rated.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_max_pu" is 0.6
 
+  Scenario: an annual energy bound of a system with no series stays in extensions.json, and the log says so
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 1.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "coal_1" has ext "e_sum_min" set to {"2030": 100.0}
+    And the system is saved as "inputs/thermal_bound.json"
+    When I run translate against "inputs/thermal_bound.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "1 annual energy bound(s) stay in extensions.json and bind nothing, because the network has no snapshots: coal_1.e_sum_min"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.extensions.e_sum_min` |  |  | the network has no snapshots, so the bound binds nothing; extensions.json keeps it |"
+
   Scenario: a ThermalStandard with an ext carrier overrides the derived carrier
     Given a Sienna system
     And the system contains a bus "node_a"

@@ -80,6 +80,8 @@ _OUTSIDE_NOTE = (
 )
 _OUTSIDE_WARNING = "%d snapshot(s) fall in no representative period, so each counts once: %s"
 _NO_SNAPSHOTS_NOTE = "the network has no snapshots, so the period weights nothing"
+# A snapshot that no period holds counts once.
+_UNWEIGHTED = 1.0
 
 
 class SnapshotWindow(NamedTuple):
@@ -130,6 +132,19 @@ def find_snapshot_window(state: State) -> SnapshotWindow | None:
     )
 
 
+def find_snapshot_span(state: State) -> SnapshotSpan:
+    """What the snapshots of the network span, weighted as an earlier step weighted them."""
+    window = find_snapshot_window(state)
+    if window is None:
+        return SnapshotSpan(None, 0.0, 0)
+    snapshots = window.list_snapshots()
+    weightings = state.destination_time_series.get(PyPSADestinationTable.SNAPSHOT_WEIGHTINGS)
+    if weightings is None:
+        return _build_span(snapshots, [_UNWEIGHTED] * len(snapshots))
+    counted = weightings.select(PyPSASnapshotWeightingCol.GENERATORS).collect().to_series()
+    return _build_span(snapshots, counted.to_list())
+
+
 class SnapshotWeightingMapper:
     """Gives each snapshot the weighting of the representative period that holds it."""
 
@@ -146,7 +161,7 @@ class SnapshotWeightingMapper:
             return SnapshotSpan(None, 0.0, 0)
         snapshots = window.list_snapshots()
         if not records:
-            return _build_span(snapshots, [1.0] * len(snapshots))
+            return _build_span(snapshots, [_UNWEIGHTED] * len(snapshots))
         counted = self._weight_snapshots(records, window)
         state.destination_time_series[PyPSADestinationTable.SNAPSHOT_WEIGHTINGS] = (
             _build_weightings(snapshots, counted, window.snapshot_hours)

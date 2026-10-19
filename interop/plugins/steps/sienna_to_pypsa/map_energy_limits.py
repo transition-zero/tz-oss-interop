@@ -4,26 +4,28 @@ The sidecar states `e_sum_min` and `e_sum_max` in MWh for each year in scope. Py
 bound over all the snapshots, weighted by the `generators` snapshot weighting. The value of the
 year maps only where the snapshots count for that whole year; a bound for less than a year
 would ask a part of the year for the energy of all of it. The record keeps every year either
-way, because the generator step relays both fields. With no snapshots at all, as where the
-staged system holds no series, the report records each bound and the log stays quiet, as it
-does for the period weights.
+way, because the generator step relays both fields.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import NamedTuple
+from typing import ClassVar, NamedTuple
 
 import polars as pl
+from pydantic import BaseModel
 
 from interop.core.extensions import ExtensionKind, ExtensionReader
-from interop.core.pipeline import State
+from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import PyPSADestinationTable, PyPSAGeneratorCol
 from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaTable
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import SnapshotSpan
+from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
+    SnapshotSpan,
+    find_snapshot_span,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +45,13 @@ _PART_YEAR_NOTE = (
     "does not apply to them; extensions.json keeps it"
 )
 _NO_YEAR_NOTE = "the record states no bound for {year}, the year of the snapshots"
-_NO_SNAPSHOTS_NOTE = "the network has no snapshots, so the bound binds nothing"
+_NO_SNAPSHOTS_NOTE = (
+    "the network has no snapshots, so the bound binds nothing; extensions.json keeps it"
+)
+_NO_SNAPSHOTS_WARNING = (
+    "%d annual energy bound(s) stay in extensions.json and bind nothing, because the network "
+    "has no snapshots: %s"
+)
 _PART_YEAR_WARNING = (
     "%d annual energy bound(s) stay in extensions.json and bind nothing, because the "
     "snapshots count for %.1f h, not one whole year: %s"
@@ -61,6 +69,23 @@ class EnergyBound(NamedTuple):
     by_year: dict[str, float]
 
 
+class SiennaToPypsaMapEnergyLimits(TranslationStep):
+    """Bounds each generator's energy over the year that the weighted snapshots span."""
+
+    name: ClassVar[str] = "sienna_to_pypsa_map_energy_limits"
+    params_schema: ClassVar[type[BaseModel] | None] = None
+
+    def __init__(self, recorder: ScopedRecorder) -> None:
+        self._recorder = recorder
+
+    def run(self, state: State, params: BaseModel | None) -> State:
+        reader = state.extension_reader(self._recorder)
+        EnergyLimitMapper(self._recorder).map_energy_limits(
+            state, reader, find_snapshot_span(state)
+        )
+        return state
+
+
 class EnergyLimitMapper:
     """Writes `e_sum_min` and `e_sum_max` of each generator for the year of the snapshots."""
 
@@ -75,7 +100,7 @@ class EnergyLimitMapper:
         if not bounds:
             return
         if not span.has_snapshots:
-            self._record_unmapped(state, bounds, _NO_SNAPSHOTS_NOTE)
+            self._report_no_snapshots(state, bounds)
         elif span.is_whole_year:
             self._map_year(state, bounds, span)
         else:
@@ -115,6 +140,11 @@ class EnergyLimitMapper:
         self._record_unmapped(state, bounds, note)
         labels = [f"{bound.name}.{bound.field_name}" for bound in bounds]
         log.warning(_PART_YEAR_WARNING, len(bounds), span.represented_hours, name_a_few(labels))
+
+    def _report_no_snapshots(self, state: State, bounds: list[EnergyBound]) -> None:
+        self._record_unmapped(state, bounds, _NO_SNAPSHOTS_NOTE)
+        labels = [f"{bound.name}.{bound.field_name}" for bound in bounds]
+        log.warning(_NO_SNAPSHOTS_WARNING, len(bounds), name_a_few(labels))
 
     def _report_no_year(self, state: State, bounds: list[EnergyBound], year: str) -> None:
         if not bounds:
