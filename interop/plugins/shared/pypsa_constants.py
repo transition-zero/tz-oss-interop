@@ -417,6 +417,11 @@ DEFAULT_BUS_V_NOM: float = 1.0
 # A bus whose source names no containing area or region carries no location label.
 UNSET_BUS_LOCATION: str = ""
 
+# The carriers of a bus of electricity.
+ELECTRICITY_BUS_CARRIERS: frozenset[str] = frozenset({PyPSACarrier.AC.value, PyPSACarrier.DC.value})
+# The carrier of a bus that states none, which PyPSA reads as AC.
+UNSET_BUS_CARRIER: str = ""
+
 # A component whose source has no availability input is translated as in service.
 DEFAULT_COMPONENT_ACTIVE: bool = True
 
@@ -623,6 +628,12 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.RAMP_LIMIT_UP: pl.Float64,
     PyPSALinkCol.RAMP_LIMIT_DOWN: pl.Float64,
 }
+
+# Each further bus of a link after bus0 and bus1, and the efficiency that goes with it.
+LINK_FURTHER_PORTS: tuple[tuple[str, str], ...] = (
+    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
+    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
+)
 
 SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSASnapshotWeightingCol.SNAPSHOT: pl.Datetime("us"),

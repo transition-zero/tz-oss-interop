@@ -14,17 +14,17 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.plugins.shared.pypsa_constants import (
+    ELECTRICITY_BUS_CARRIERS,
     PYPSA_NAME_COLUMN,
+    UNSET_BUS_CARRIER,
     PyPSABusCol,
-    PyPSACarrier,
     PyPSAGeneratorCol,
     PyPSALinkCol,
     PyPSALoadCol,
     PyPSATable,
 )
 
-# The carriers of a bus of electricity; PyPSA states AC where a file states none.
-_ELECTRICITY_CARRIERS = (PyPSACarrier.AC.value, PyPSACarrier.DC.value, "")
+_ELECTRICITY_CARRIERS = (*ELECTRICITY_BUS_CARRIERS, UNSET_BUS_CARRIER)
 # PyPSA writes a static attribute only where a link differs from its default, so an absent
 # column holds the default.
 _LINK_DEFAULTS: dict[str, float | str] = {
@@ -55,7 +55,7 @@ class FuelComponents:
 
 def build_fuel_components(state: State) -> FuelComponents:
     """The fuel components of the staged network; a network of electricity alone has none."""
-    buses = _list_fuel_buses(state)
+    buses = _build_fuel_buses(state)
     if not buses:
         return FuelComponents()
     links = _read_links(state)
@@ -67,10 +67,12 @@ def build_fuel_components(state: State) -> FuelComponents:
     )
     return FuelComponents(
         buses=frozenset(buses),
-        generators=_list_on_buses(state, PyPSATable.GENERATORS, PyPSAGeneratorCol.BUS, buses),
-        loads=_list_on_buses(state, PyPSATable.LOADS, PyPSALoadCol.BUS, buses),
-        plant_links=_list_names(links.filter(is_plant)),
-        fuel_links=_list_names(links.filter(touches & ~is_plant)),
+        generators=_build_names_on_buses(
+            state, PyPSATable.GENERATORS, PyPSAGeneratorCol.BUS, buses
+        ),
+        loads=_build_names_on_buses(state, PyPSATable.LOADS, PyPSALoadCol.BUS, buses),
+        plant_links=_build_names(links.filter(is_plant)),
+        fuel_links=_build_names(links.filter(touches & ~is_plant)),
     )
 
 
@@ -81,7 +83,7 @@ def express_link_attribute(links: pl.LazyFrame, attribute: str) -> pl.Expr:
     return pl.lit(_LINK_DEFAULTS[attribute])
 
 
-def _list_fuel_buses(state: State) -> set[str]:
+def _build_fuel_buses(state: State) -> set[str]:
     buses = state.source_topology.get(PyPSATable.BUSES)
     if buses is None or PyPSABusCol.CARRIER not in buses.collect_schema().names():
         return set()
@@ -103,13 +105,15 @@ def _read_links(state: State) -> pl.DataFrame:
     return links.select(PYPSA_NAME_COLUMN, PyPSALinkCol.BUS0, PyPSALinkCol.BUS1).collect()
 
 
-def _list_on_buses(state: State, table: str, bus_column: str, buses: set[str]) -> frozenset[str]:
+def _build_names_on_buses(
+    state: State, table: str, bus_column: str, buses: set[str]
+) -> frozenset[str]:
     topology = state.source_topology.get(table)
     if topology is None:
         return frozenset()
     held = topology.filter(pl.col(bus_column).is_in(list(buses))).collect()
-    return _list_names(held)
+    return _build_names(held)
 
 
-def _list_names(table: pl.DataFrame) -> frozenset[str]:
+def _build_names(table: pl.DataFrame) -> frozenset[str]:
     return frozenset(table[PYPSA_NAME_COLUMN].to_list())

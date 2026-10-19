@@ -18,6 +18,7 @@ import polars as pl
 from interop.core.extensions import ExtensionKind
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
@@ -62,7 +63,6 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 
 # The electricity of the component for each unit of the activity of the technology.
 RATING_RATIO = "rating_ratio"
-EXTENSIONS_PREFIX = "extensions."
 
 _STATED_PREFIX = "stated."
 _ORIGIN_PREFIX = "origin."

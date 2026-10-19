@@ -15,6 +15,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     BUSES_DESTINATION_SCHEMA,
+    ELECTRICITY_BUS_CARRIERS,
     UNSET_BUS_LOCATION,
     PyPSABusCol,
     PyPSABusControl,
@@ -69,11 +70,10 @@ def _map_fuel_buses(
 
 
 def _is_fuel_bus(record: BusExtension, electricity: set[str]) -> bool:
-    is_electricity = record.carrier in _ELECTRICITY_CARRIERS
+    is_electricity = record.carrier in ELECTRICITY_BUS_CARRIERS
     return record.name not in electricity and record.carrier is not None and not is_electricity
 
 
-_ELECTRICITY_CARRIERS = frozenset({PyPSACarrier.AC, PyPSACarrier.DC})
 # PyPSA's own nominal voltage, as a bus of a fuel has none.
 _FUEL_BUS_V_NOM = 1.0
 

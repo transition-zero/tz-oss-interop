@@ -20,7 +20,7 @@ from interop.core.extensions import (
     companion_filename,
 )
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import UNIT_MW, StagedTimeSeriesCol
+from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_MW, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import FUEL, REGION, AnnotationColumn
 from interop.plugins.shared.osemosys_sienna_translations._buses import FUEL_NAME
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -41,7 +41,6 @@ from interop.plugins.shared.osemosys_sienna_translations._loads import (
 )
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
-_EXTENSIONS = "extensions."
 _IS_FLAT = "is_flat"
 _FLAT_MW = "flat_mw"
 _SERIES_FILE = companion_filename(ExtensionKind.LOAD)
@@ -131,7 +130,7 @@ def _build_events(row: dict[str, Any], record: LoadExtension) -> list[Translatio
             sources=[source],
             destinations=[
                 build_sienna_field(
-                    ExtensionKind.LOAD, record.name, f"{_EXTENSIONS}{name}", value, unit
+                    ExtensionKind.LOAD, record.name, f"{EXTENSIONS_PREFIX}{name}", value, unit
                 )
             ],
             derivation=derivation,

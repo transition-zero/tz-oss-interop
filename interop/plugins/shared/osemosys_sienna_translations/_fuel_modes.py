@@ -12,9 +12,11 @@ PyPSA component, which extensions.json holds:
 A technology rates its capacity in units of activity. One unit of capacity runs
 `capacity_to_activity_unit` of activity in a year, so a mode rates `residual_capacity` ×
 `capacity_to_activity_unit` / 8760 h, in MW of activity. A model that declares no
-`capacity_to_activity_unit` converts the capacity with its capacity unit. A technology that
-the model lets build capacity at no cost in the year is extendable. Each mode can run at the
-whole capacity, where OSeMOSYS shares the capacity among the modes.
+`capacity_to_activity_unit` takes the canonical default of 1, so its capacity is the activity
+of a year. Only a canonical stage with no default converts with the capacity unit. Each mode can
+run at
+the whole capacity, where OSeMOSYS shares the capacity among the modes. A technology that the
+model builds at no cost in the year is extendable, up to the limit that `_free_build` gives.
 """
 
 from __future__ import annotations
@@ -38,17 +40,21 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
-    NO_LIMIT,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     WHOLE_CAPACITY,
     ActivityParameter,
-    InvestmentParameter,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
+)
+from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    BUILD_LIMIT,
+    IS_FREE_TO_BUILD,
+    RESIDUAL,
+    enrich_free_build,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_BUS,
@@ -86,11 +92,7 @@ INPUTS = "inputs"
 OUTPUTS = "outputs"
 RATIO = "ratio"
 RATED_RATIO = "rated_ratio"
-RESIDUAL = "residual"
 CTAU = "capacity_to_activity"
-CAPITAL_COST = "capital_cost"
-MAX_INVESTMENT = "max_investment"
-MAX_CAPACITY = "max_capacity"
 AVAILABILITY = "availability"
 VARIABLE_COST = "variable_cost"
 ACTIVITY_MW = "activity_mw"
@@ -292,8 +294,8 @@ def _express_rated_ratio() -> pl.Expr:
 
 
 def _enrich_capacity(state: State, operations: OperationsYear, modes: pl.DataFrame) -> pl.DataFrame:
+    table = enrich_free_build(state, operations.year, modes)
     keys = modes.select(_KEYS).unique()
-    table = modes
     for parameter, column in _CAPACITY_PARAMETERS:
         values = read_parameter_with_defaults(state, parameter, operations.year, keys)
         table = table.join(
@@ -302,27 +304,18 @@ def _enrich_capacity(state: State, operations: OperationsYear, modes: pl.DataFra
             how="left",
         )
     table = table.with_columns(
-        pl.col(RESIDUAL).fill_null(0.0),
-        pl.col(CAPITAL_COST).fill_null(_NO_COST),
-        pl.col(MAX_INVESTMENT).fill_null(NO_LIMIT),
-        pl.col(MAX_CAPACITY).fill_null(NO_LIMIT),
-        pl.col(AVAILABILITY).fill_null(WHOLE_CAPACITY),
+        pl.col(AVAILABILITY).fill_null(WHOLE_CAPACITY), pl.col(BUILD_LIMIT).alias(MAX_ACTIVITY_MW)
     )
-    max_capacity = pl.when(pl.col(MAX_CAPACITY) != NO_LIMIT).then(pl.col(MAX_CAPACITY))
-    table = table.with_columns(max_capacity.alias(MAX_ACTIVITY_MW))
     return table.with_columns(
         _express_activity_mw(table, RESIDUAL, operations.units).alias(ACTIVITY_MW),
         _express_activity_mw(table, MAX_ACTIVITY_MW, operations.units).alias(MAX_ACTIVITY_MW),
-        _express_extendable().alias(IS_EXTENDABLE),
+        pl.col(IS_FREE_TO_BUILD).alias(IS_EXTENDABLE),
     )
 
 
+# A null capacity_to_activity_unit, where the stage has no default, converts with the capacity unit.
 _CAPACITY_PARAMETERS = (
-    (SupplyParameter.RESIDUAL_CAPACITY, RESIDUAL),
     (ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, CTAU),
-    (InvestmentParameter.CAPITAL_COST, CAPITAL_COST),
-    (InvestmentParameter.MAX_CAPACITY_INVESTMENT, MAX_INVESTMENT),
-    (InvestmentParameter.CAPACITY_LIMITS_MAX, MAX_CAPACITY),
     (SupplyParameter.AVAILABILITY_FACTOR, AVAILABILITY),
 )
 
@@ -341,14 +334,6 @@ def _build_factor(table: pl.DataFrame, values: pl.Expr, convert: Callable[[float
     """The factor of a unit, or 1 where every value is zero or null and so needs no unit."""
     is_needed = table.select((values.fill_null(0.0) != 0).any()).item()
     return convert(1.0) if is_needed else 1.0
-
-
-def _express_extendable() -> pl.Expr:
-    """The model builds capacity at no cost, and no limit stops it."""
-    is_free = pl.col(CAPITAL_COST) == _NO_COST
-    may_build = pl.col(MAX_INVESTMENT) != 0
-    has_room = (pl.col(MAX_CAPACITY) == NO_LIMIT) | (pl.col(MAX_CAPACITY) > pl.col(RESIDUAL))
-    return is_free & may_build & has_room
 
 
 # --- the annual bounds -----------------------------------------------------------------------

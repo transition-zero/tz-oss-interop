@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from interop.core.extensions import ExtensionKind, ExtensionReader
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import EXTENSIONS_PREFIX
 from interop.plugins.shared.pypsa_constants import PyPSADestinationTable, PyPSAGeneratorCol
 from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaTable
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
@@ -29,7 +30,6 @@ from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
 
 log = logging.getLogger(__name__)
 
-_EXTENSIONS = "extensions"
 # Each annual bound of a record, and the PyPSA column that holds it.
 _BOUNDS: tuple[tuple[str, str], ...] = (
     ("e_sum_min", PyPSAGeneratorCol.E_SUM_MIN),
@@ -126,7 +126,7 @@ class EnergyLimitMapper:
             reporter.record_energy_bound(
                 types.get(bound.name, ExtensionKind.GENERATOR),
                 bound.name,
-                f"{_EXTENSIONS}.{bound.field_name}",
+                f"{EXTENSIONS_PREFIX}{bound.field_name}",
                 bound.column,
                 value,
                 derivation,
@@ -160,7 +160,7 @@ class EnergyLimitMapper:
             reporter.record_energy_bound_unmapped(
                 types.get(bound.name, ExtensionKind.GENERATOR),
                 bound.name,
-                f"{_EXTENSIONS}.{bound.field_name}",
+                f"{EXTENSIONS_PREFIX}{bound.field_name}",
                 note,
             )
 

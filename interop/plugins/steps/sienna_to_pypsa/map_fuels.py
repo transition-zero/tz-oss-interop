@@ -83,7 +83,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         self._extensions = extensions
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        buses = _list_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
+        buses = _build_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
         self._map_generators(state, buses)
         self._map_loads(state, buses)
         PlantLinkMapper(self._recorder).map_plant_links(state, self._extensions, buses)
@@ -91,7 +91,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
 
     def _map_generators(self, state: State, buses: set[str]) -> None:
         lookup = self._extensions.read(ExtensionKind.GENERATOR)
-        held = _list_names(state, PyPSADestinationTable.GENERATORS, PyPSAGeneratorCol.NAME)
+        held = _build_names(state, PyPSADestinationTable.GENERATORS, PyPSAGeneratorCol.NAME)
         records = [
             record
             for record in lookup.list_records()
@@ -110,7 +110,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
 
     def _map_loads(self, state: State, buses: set[str]) -> None:
         lookup = self._extensions.read(ExtensionKind.LOAD)
-        held = _list_names(state, PyPSADestinationTable.LOADS, PyPSALoadCol.NAME)
+        held = _build_names(state, PyPSADestinationTable.LOADS, PyPSALoadCol.NAME)
         records = [
             record
             for record in lookup.list_records()
@@ -127,7 +127,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
             stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
 
 
-def _list_names(state: State, table: str, column: str) -> set[str]:
+def _build_names(state: State, table: str, column: str) -> set[str]:
     frame = state.destination_tables.get(table)
     return set() if frame is None else set(frame[column].to_list())
 

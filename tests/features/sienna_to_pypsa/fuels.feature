@@ -112,3 +112,58 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     When I run translate against "inputs/no_bus.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
     And the PyPSA network "outputs/network.nc" has no link "gas"
+
+  Scenario: An annual bound of a conversion record that becomes a link travels on, and the log says so
+    Given the system has a conversion extension record "pipe" with "bus0" set to "R1/DEGAS"
+    And the system has a conversion extension record "pipe" with "bus1" set to "R1/ATGAS"
+    And the system has a conversion extension record "pipe" with "p_nom" set to 1000.0
+    And the system has a conversion extension record "pipe" with "e_sum_max" set to {"2020": 5000.0}
+    And the system is saved as "inputs/bounded_pipe.json"
+    When I run translate against "inputs/bounded_pipe.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "pipe" has bus0 "R1/DEGAS"
+    And the log contains "1 annual energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: pipe.e_sum_max"
+    And the file "outputs/extensions.json" parses as JSON conversion extension record for "pipe" having "e_sum_max" set to {"2020": 5000.0}
+    And the file "decisions.md" contains "| `sienna.conversion.pipe.extensions.e_sum_max` |"
+
+  Scenario: An extendable conversion record keeps the capacity that it has as a floor
+    Given the system has a conversion extension record "pipe" with "bus0" set to "R1/DEGAS"
+    And the system has a conversion extension record "pipe" with "bus1" set to "R1/ATGAS"
+    And the system has a conversion extension record "pipe" with "p_nom" set to 1000.0
+    And the system has a conversion extension record "pipe" with "p_nom_extendable" set to true
+    And the system is saved as "inputs/extendable_pipe.json"
+    When I run translate against "inputs/extendable_pipe.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "pipe" is extendable
+    And the PyPSA network "outputs/network.nc" link "pipe" attribute "p_nom_min" is 1000.0
+
+  Scenario: A plant that burns a second fuel draws it at bus2, and decisions.md names each column of the Link
+    The plant burns 2 MWh of gas and 0.5 MWh of gas from DE for each MWh of electricity, so
+    bus2 takes -0.5 / 2 = -0.25 MWh for each MWh that goes in at bus0. The Generator of the
+    plant states a discount rate, which the Link does not hold.
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0, "R1/DEGAS": 0.5}
+    And the ThermalStandard "gas" has ext "discount_rate" set to 0.07
+    And the system is saved as "inputs/two_fuels.json"
+    When I run translate against "inputs/two_fuels.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "gas" has bus0 "R1/ATGAS"
+    And the PyPSA network "outputs/network.nc" link "gas" has bus2 "R1/DEGAS"
+    And the PyPSA network "outputs/network.nc" link "gas" attribute "efficiency2" is -0.25
+    And the file "decisions.md" contains "| `pypsa.Link.gas.efficiency2` = -0.25 | a further fuel of extensions.fuel_buses"
+    And the file "decisions.md" contains "| `pypsa.Generator.gas.carrier` = CCGT | `pypsa.Link.gas.carrier` = CCGT | the Generator of the plant moves to the Link"
+    And the file "decisions.md" contains "`pypsa.Generator.gas.discount_rate` = 0.07"
+    And the file "decisions.md" contains "the Link that replaces it does not hold it"
+
+  Scenario: The availability of a plant in each hour moves to its Link
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}
+    And the ThermalStandard "gas" has a max_active_power series 0.5 1 1 0.5
+    And the system is saved as "inputs/hourly_plant.json"
+    When I run translate against "inputs/hourly_plant.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has no generator "gas"
+    And the PyPSA network "outputs/network.nc" link "gas" has a p_max_pu time series 0.5 1 1 0.5
+
+  Scenario: A plant that the network may build stays a Generator at its Sienna price
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}
+    And the ThermalStandard "gas" has ext "p_nom_extendable" set to true
+    And the system is saved as "inputs/extendable_plant.json"
+    When I run translate against "inputs/extendable_plant.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" is extendable
+    And the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
+    And the PyPSA network "outputs/network.nc" has no link "gas"

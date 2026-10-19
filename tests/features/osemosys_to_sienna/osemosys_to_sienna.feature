@@ -1567,6 +1567,81 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.extensions.fuel_buses`"
 
+    Scenario: A limit of a technology that runs in two modes binds their sum, so the report names it
+      Each mode of the pipeline is a link of its own, and no one link can hold a limit on the
+      sum of the two.
+      Given the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASWELL  | 2030 | 100   |
+        | R1     | DEATPIPE   | 2030 | 5000  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" without field "e_sum_max"
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "e_sum_max" set to {"2030": 100000.0}
+      And the log contains "total_technology_annual_activity_upper_limit states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/DEATPIPE"
+
+    Scenario: A fuel technology that builds at no cost may build up to the capacity limit of the year
+      The gas well may build 0.5 GW in 2030 and hold 2 GW in total, so it may hold 0.5 GW,
+      which runs 4380 GWh a year, 500 MW. The well in DE costs 5 USD a year for each GW that it
+      keeps, so the model does not build it at no cost.
+      Given the otoole parameter "TotalAnnualMaxCapacityInvestment" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASWELL  | 2030 | 0.5   |
+      And the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASWELL  | 2030 | 2     |
+      And the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | DEGASWELL  | 2030 | 5     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "p_nom_extendable" set to true
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "p_nom_max" close to 500.0
+      And the file "outputs/extensions.json" parses as JSON with no generator extension record for "DEGASWELL"
+      And the log contains "have no residual capacity in the operations year, and the model builds none at no cost, so each is left out. Technologies: R1/ATCOSTLY, R1/DEGASWELL"
+      And the log does not contain "total_annual_max_capacity_investment states"
+      And the log does not contain "total_annual_max_capacity states"
+      And the file "decisions.md" contains "min(total_annual_max_capacity, residual_capacity + total_annual_max_capacity_investment)"
+
+    Scenario: A fuel technology whose capacity_to_activity_unit is 1 states its capacity in energy a year
+      The LNG terminal states 8760 GWh a year as its capacity, which is 1000 MW.
+      Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATGASCC    | 8760  |
+        | R1     | ATGASLNG   | 1     |
+      And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 0.5   |
+        | R1     | ATGASLNG   | 2030 | 8760  |
+        | R1     | DEATPIPE   | 2030 | 1     |
+        | R1     | ATREFINERY | 2030 | 0.1   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" having "p_nom" close to 1000.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "p_nom" close to 1000.0
+
+    Scenario: A model that declares no capacity_to_activity_unit takes the OSeMOSYS default of 1
+      The canonical default of capacity_to_activity_unit is 1, so the 2 units of the LNG
+      terminal run 2 GWh a year, 2000 MWh / 8760 h.
+      Given the otoole parameter "CapacityToActivityUnit" is not declared
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" having "p_nom" close to 0.2283105
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "p_nom" close to 0.1141553
+
+    Scenario: A demand for a fuel that the model does not declare is left out and reported
+      The canonical stage leaves out a value of a member that its set does not hold, so no load
+      group meets the demand.
+      Given the otoole parameter "AccumulatedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | FUEL   | YEAR | VALUE |
+        | R1     | DEELEC | 2030 | 876   |
+        | R1     | ATGAS  | 2030 | 876   |
+        | R1     | XXGAS  | 2030 | 10    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "accumulated_annual_demand (absent members: XXGAS)"
+      And the file "outputs/extensions.json" parses as JSON with no load extension record for "XXGAS/accumulated"
+
   Rule: A mode of a transport technology that imports electricity becomes a generator at the end where it puts electricity out
     The invented interconnector ATDEBUY takes in 1 unit of electricity at AT and puts out 0.95
     of a unit at DE in mode 1. In mode 2 it puts out 0.8 of a unit at AT and takes in no

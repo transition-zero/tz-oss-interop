@@ -42,6 +42,9 @@ A real sample label is always a digit string, so this never collides with one.
 """
 
 
+# How an event names a field that a record of extensions.json holds: `extensions.<field>`.
+EXTENSIONS_PREFIX = "extensions."
+
 UNIT_KV = "kV"
 UNIT_MW = "MW"
 UNIT_MWH = "MWh"

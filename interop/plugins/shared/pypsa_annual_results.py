@@ -127,7 +127,8 @@ class PypsaAnnualResultsMapper:
         produced = production.build_table()
         if is_solved(state):
             produced = _fill_unproduced(produced, capacity)
-        emitting = pl.concat([activity.generators, activity.storage, activity.links])
+        fuel_links = activity.links.filter(pl.col(ResultsCol.COMPONENT).is_in(list(fuels.links)))
+        emitting = pl.concat([activity.generators, activity.storage, fuel_links])
         return [
             *self._map_production(produced),
             *self._map_installed_capacity(capacity, produced),
@@ -389,7 +390,8 @@ def _express_attribute(topology: pl.LazyFrame, attribute: str) -> pl.Expr:
 
 def _find_rates(state: State, name: str, fuels: FuelComponents) -> dict[str, float] | None:
     """A link of a fuel emits for each MWh in; a plant link emits its own rate for each MWh of
-    electricity, as the generator of its fuel emits for the fuel."""
+    electricity, as the generator of its fuel emits for the fuel. Every other link emits
+    nothing, so the caller gives no other link."""
     if name in fuels.fuel_links:
         conversion = record_for(state.source_extensions, ExtensionKind.CONVERSION, name)
         return None if conversion is None else conversion.emission_rates_t_per_mwh

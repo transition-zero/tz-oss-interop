@@ -14,7 +14,7 @@ from typing import Any, NamedTuple
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import UNIT_MWH
+from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_MWH
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
@@ -37,7 +37,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    EXTENSIONS_PREFIX,
     ValueOwners,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted

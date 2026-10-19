@@ -14,7 +14,11 @@ from typing import Any
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_TONNES_PER_MWH
+from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
+    UNIT_DOLLARS_PER_MWH,
+    UNIT_TONNES_PER_MWH,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     POLLUTANT,
@@ -60,7 +64,6 @@ _FUEL_RATIO = "fuel_ratio"
 _RATE = "rate"
 _OWN_PENALTY = "own_penalty"
 _NO_COST = 0.0
-_EXTENSIONS = "extensions."
 _FUEL_BUSES_DERIVATION = (
     "input_activity_ratio / the electricity output_activity_ratio, by the bus of the fuel, "
     "<region>/<fuel>"
@@ -83,8 +86,8 @@ def enrich_plant_fuels(
     `inputs` holds the input ratios of the generators at the operations mode, and `generators`
     their electricity output ratio and own variable cost.
     """
-    buses = _list_fuel_buses(state, generators, inputs)
-    rates = _list_own_rates(state, operations, generators)
+    buses = _build_fuel_buses(state, generators, inputs)
+    rates = _build_own_rates(state, operations, generators)
     table = generators.join(buses, on=_KEYS, how="left").join(rates, on=_KEYS, how="left")
     own_cost = pl.col(OWN_COST_MWH).fill_null(_NO_COST) + pl.col(_OWN_PENALTY).fill_null(_NO_COST)
     return table.with_columns(own_cost.alias(OWN_OPERATION_COST_MWH)).drop(_OWN_PENALTY)
@@ -141,7 +144,7 @@ def build_plant_fuel_events(
     return [
         build_derived(
             [build_osemosys_field(parameter, report) for parameter in parameters],
-            [dest(name, f"{_EXTENSIONS}{field}", value, unit)],
+            [dest(name, f"{EXTENSIONS_PREFIX}{field}", value, unit)],
             derivation,
         )[0]
         for field, value, unit, parameters, derivation in values
@@ -149,7 +152,7 @@ def build_plant_fuel_events(
     ]
 
 
-def _list_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFrame) -> pl.DataFrame:
+def _build_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFrame) -> pl.DataFrame:
     """The largest fuel first, so the network draws the main fuel at bus0."""
     fuels = read_fuel_buses(state).filter(~pl.col(IS_ELECTRICITY)).select(REGION, FUEL, FUEL_BUS)
     ratio = (pl.col(INPUT_RATIO) / pl.col(ELECTRICITY_OUTPUT_RATIO)).alias(_FUEL_RATIO)
@@ -163,7 +166,7 @@ def _list_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFram
     )
 
 
-def _list_own_rates(
+def _build_own_rates(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:
     """The own rate of each pollutant in t/MWh of electricity, and the penalty of their sum."""

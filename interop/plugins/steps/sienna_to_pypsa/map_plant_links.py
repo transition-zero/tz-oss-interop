@@ -21,6 +21,7 @@ from interop.core.extensions import ExtensionKind, ExtensionReader, GeneratorExt
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
+    LINK_FURTHER_PORTS,
     LINKS_DESTINATION_SCHEMA,
     PyPSADestinationTable,
     PyPSAGeneratorCol,
@@ -40,11 +41,6 @@ _BOUNDED_WARNING = (
     "Sienna price of its fuel: %s"
 )
 _NO_COST = 0.0
-# A Link of this hop holds two further buses at most.
-_FURTHER_PORTS = (
-    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
-    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
-)
 # The commitment of the generator, which the Link keeps column by column.
 _KEPT_COLUMNS = (
     (PyPSAGeneratorCol.P_MIN_PU, PyPSALinkCol.P_MIN_PU),
@@ -61,6 +57,17 @@ _KEPT_COLUMNS = (
 )
 
 
+# The columns of the generator that a Link of this hop does not hold.
+_DROPPED_COLUMNS = (
+    PyPSAGeneratorCol.P_NOM_MIN,
+    PyPSAGeneratorCol.P_NOM_MAX,
+    PyPSAGeneratorCol.OVERNIGHT_COST,
+    PyPSAGeneratorCol.DISCOUNT_RATE,
+    PyPSAGeneratorCol.LIFETIME,
+    PyPSAGeneratorCol.BUILD_YEAR,
+)
+
+
 class PlantLinkMapper:
     """Moves each plant whose fuels have a bus from the generators to the links."""
 
@@ -71,8 +78,8 @@ class PlantLinkMapper:
         generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
         if generators is None:
             return
-        records = _list_plant_records(state, reader, buses)
-        fixed = _list_fixed_names(state, generators)
+        records = _build_plant_records(state, reader, buses)
+        fixed = _build_fixed_names(state, generators)
         records = {name: record for name, record in records.items() if name in fixed}
         bounded = sorted(name for name, record in records.items() if _is_bounded(record))
         self._report_bounded(bounded)
@@ -104,13 +111,26 @@ class PlantLinkMapper:
             PyPSALinkCol.P_NOM_EXTENDABLE: False,
             **{link: generator[column] for column, link in _KEPT_COLUMNS},
         }
-        for (bus, share), (bus_column, efficiency_column) in zip(
-            fuels[1:], _FURTHER_PORTS, strict=False
-        ):
+        further = list(zip(fuels[1:], LINK_FURTHER_PORTS, strict=False))
+        for (bus, share), (bus_column, efficiency_column) in further:
             row[bus_column] = bus
             row[efficiency_column] = -share / ratio
-        self._reporter.record_link(row[PyPSALinkCol.NAME], row, generator[PyPSAGeneratorCol.P_NOM])
+        self._record_link(generator, row, [ports for _, ports in further])
         return row
+
+    def _record_link(
+        self, generator: dict[str, Any], row: dict[str, Any], ports: list[tuple[str, str]]
+    ) -> None:
+        name = row[PyPSALinkCol.NAME]
+        self._reporter.record_link(name, row, generator[PyPSAGeneratorCol.P_NOM])
+        for column, link in _KEPT_COLUMNS:
+            if row[link] is not None:
+                self._reporter.record_moved(name, column, link, row[link])
+        for port in ports:
+            self._reporter.record_further_port(name, row, port)
+        for column in _DROPPED_COLUMNS:
+            if generator[column] is not None:
+                self._reporter.record_dropped(name, column, generator[column])
 
     def _report_bounded(self, names: list[str]) -> None:
         for name in names:
@@ -119,11 +139,11 @@ class PlantLinkMapper:
             log.warning(_BOUNDED_WARNING, len(names), name_a_few(names))
 
 
-def _list_plant_records(
+def _build_plant_records(
     state: State, reader: ExtensionReader, buses: set[str]
 ) -> dict[str, GeneratorExtension]:
     """The record of each ThermalStandard whose fuels each have a bus, by name."""
-    thermal = _list_thermal_names(state)
+    thermal = _build_thermal_names(state)
     records = reader.read(ExtensionKind.GENERATOR).list_records()
     return {
         record.name: record
@@ -132,14 +152,14 @@ def _list_plant_records(
     }
 
 
-def _list_fixed_names(state: State, generators: pl.DataFrame) -> set[str]:
+def _build_fixed_names(state: State, generators: pl.DataFrame) -> set[str]:
     """The generators that a Link can hold: no build, and one marginal cost in every hour."""
     fixed = generators.filter(~pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE).fill_null(False))  # noqa: FBT003
-    priced = _list_series_names(state, PyPSAGeneratorCol.MARGINAL_COST)
+    priced = _build_series_names(state, PyPSAGeneratorCol.MARGINAL_COST)
     return set(fixed[PyPSAGeneratorCol.NAME].to_list()) - priced
 
 
-def _list_series_names(state: State, attribute: str) -> set[str]:
+def _build_series_names(state: State, attribute: str) -> set[str]:
     metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
     if metadata is None:
         return set()
@@ -152,14 +172,14 @@ def _list_series_names(state: State, attribute: str) -> set[str]:
 
 def _has_fuel_buses(record: GeneratorExtension, buses: set[str]) -> bool:
     fuels = record.fuel_buses or {}
-    return 0 < len(fuels) <= 1 + len(_FURTHER_PORTS) and set(fuels) <= buses
+    return 0 < len(fuels) <= 1 + len(LINK_FURTHER_PORTS) and set(fuels) <= buses
 
 
 def _is_bounded(record: GeneratorExtension) -> bool:
     return bool(record.e_sum_min) or bool(record.e_sum_max)
 
 
-def _list_thermal_names(state: State) -> set[str]:
+def _build_thermal_names(state: State) -> set[str]:
     source = state.source_topology.get(SiennaTable.GENERATORS)
     if source is None:
         return set()

@@ -717,8 +717,8 @@ out, or the fuel that goes in at `bus0` of a link. The rating ratio is the
 | `efficiency` | | The ratio of the output at `bus1` / the rating ratio |
 | `efficiency2`, `efficiency3` | | The ratio of the fuel / the rating ratio, negative for a fuel that goes in |
 | `p_nom` | MW | `ResidualCapacity` × `CapacityToActivityUnit`, in MWh, / 8760 h × the rating ratio |
-| `p_nom_extendable` | | True where `CapitalCost` is 0, `TotalAnnualMaxCapacityInvestment` is not 0, and `TotalAnnualMaxCapacity` leaves room |
-| `p_nom_max` | MW | `TotalAnnualMaxCapacity`, converted as `p_nom` is, for an extendable mode |
+| `p_nom_extendable` | | True where `CapitalCost` and `FixedCost` are 0, `TotalAnnualMaxCapacityInvestment` is not 0, and `TotalAnnualMaxCapacity` leaves room |
+| `p_nom_max` | MW | min(`TotalAnnualMaxCapacity`, `ResidualCapacity` + `TotalAnnualMaxCapacityInvestment`), converted as `p_nom` is, for an extendable mode. A limit of -1 binds nothing. |
 | `marginal_cost` | $/MWh | (`VariableCost` + Σ `EmissionActivityRatio` × `EmissionsPenalty`), in $/MWh of activity, / the rating ratio |
 | `p_max_pu` | | `AvailabilityFactor`, when it is not 1 |
 | `emission_rates_t_per_mwh` | t/MWh | `EmissionActivityRatio` of the mode, for each pollutant, / the rating ratio |
@@ -727,10 +727,13 @@ out, or the fuel that goes in at `bus0` of a link. The rating ratio is the
 
 `CapacityToActivityUnit` converts the capacity, because the capacity of a fuel technology is
 often in units of energy a year rather than in the capacity unit of the mappings file. A model
-that declares no `CapacityToActivityUnit` converts with its capacity unit. Each mode can run at
+that declares no `CapacityToActivityUnit` takes the canonical default of 1, so its capacity is
+the energy of a year. Each mode can run at
 the whole capacity of the technology, where OSeMOSYS shares the capacity among the modes. The
 annual limit of a technology of two modes holds their sum, so no mode states it, and the report
-of the parameters that no step applies names it. `decisions.md` records an event for each value.
+of the parameters that no step applies names it. An extendable mode applies `CapitalCost`,
+`FixedCost`, `TotalAnnualMaxCapacityInvestment` and `TotalAnnualMaxCapacity`, so the report does
+not name them for it. `decisions.md` records an event for each value.
 
 ### A demand for a fuel that is not electricity
 
@@ -1045,5 +1048,5 @@ convention, the translator gives wrong values.
 | `StorageLevelStart` | The level at the start of the operations year |
 | `TechnologyToStorage`, `TechnologyFromStorage` | One technology and one mode in each direction |
 | The cheapest `fuel_supply` technology of a fuel | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
-| A fuel technology with no residual capacity and no capital cost | Capacity that the model builds at no cost, so its PyPSA component is extendable |
+| A fuel technology with no residual capacity, no capital cost and no fixed cost | Capacity that the model builds at no cost, so its PyPSA component is extendable |
 | A category | One Sienna type, one prime mover and, for a thermal type, one fuel |

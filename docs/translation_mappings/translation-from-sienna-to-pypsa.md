@@ -452,6 +452,7 @@ all three conditions hold:
 | `carrier` | | `carrier` | `sidecar` |
 | `p_nom` | MW of the energy in | `p_nom`. If absent, `0.0`. | `sidecar` or `default` |
 | `p_nom_extendable`, `p_nom_max` | | The fields of the same name | `sidecar` |
+| `p_nom_min` | MW of the energy in | `p_nom`, for an extendable record with a capacity above 0, as PyPSA ignores the `p_nom` of an extendable link | `derived` |
 | `efficiency` | | `efficiency`. If absent, `1.0`. | `sidecar` or `default` |
 | `marginal_cost` | cost for each MWh in | `marginal_cost` | `sidecar` |
 | `p_max_pu` | per unit of `p_nom` | `p_max_pu` | `sidecar` |
@@ -468,6 +469,10 @@ network gets a `NOT_MAPPED` row and a warning. These records do not become a lin
 
 The emission rates of a record, `emission_rates_t_per_mwh`, travel on. `pypsa-to-results`
 reads them for each MWh that goes in at `bus0`.
+
+A PyPSA `Link` has no `e_sum_min` or `e_sum_max`. So the annual bounds of a record that becomes
+a link travel on and bind nothing. The report gives a `NOT_MAPPED` row for each bound, and one
+warning names three.
 
 ## The fuels that are not electricity
 
@@ -520,6 +525,11 @@ supplies the bus. So a `ThermalStandard` becomes a PyPSA `Link` when all of thes
 | `marginal_cost` | `own_marginal_cost` / the MWh of that fuel for each MWh of electricity, as a link prices the power at `bus0` |
 | `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel) |
 | `p_min_pu`, `p_max_pu`, `carrier`, `committable`, `start_up_cost`, `shut_down_cost`, `min_up_time`, `min_down_time`, `up_time_before`, `ramp_limit_up`, `ramp_limit_down` | The value of the generator, per unit of the link |
+
+`decisions.md` gives a row for each column that moves from the generator to the link, and for
+each further bus and its efficiency. A column of the generator that the link does not hold
+(`p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year`) gets a
+`NOT_MAPPED` row where it states a value.
 
 The `p_max_pu` time series of the generator moves to the link. The record travels on whole,
 and `pypsa-to-results` counts the emissions of the plant with `own_emission_rates_t_per_mwh`,

@@ -19,6 +19,7 @@ import polars as pl
 from interop.core.extensions import OperatingMode
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MWH,
     UNIT_PER_UNIT,
@@ -44,7 +45,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    EXTENSIONS_PREFIX,
     ValueOwners,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import (

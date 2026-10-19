@@ -197,11 +197,13 @@ class OperatingMode(BaseModel):
 class ActivityExtension(ExpansionExtension):
     """What a technology states about its energy, its growth and its modes. OSeMOSYS only."""
 
-    # MWh of electricity in each year, by year; PyPSA Generator.e_sum_min, keyed by the
-    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityLowerLimit.
+    # MWh in each year, by year, of electricity or of the fuel that rates the component; PyPSA
+    # Generator.e_sum_min, keyed by the investment period; OSeMOSYS
+    # TotalTechnologyAnnualActivityLowerLimit.
     e_sum_min: dict[str, float] | None = None
-    # MWh of electricity in each year, by year; PyPSA Generator.e_sum_max, keyed by the
-    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityUpperLimit.
+    # MWh in each year, by year, of electricity or of the fuel that rates the component; PyPSA
+    # Generator.e_sum_max, keyed by the investment period; OSeMOSYS
+    # TotalTechnologyAnnualActivityUpperLimit.
     e_sum_max: dict[str, float] | None = None
     # MWh of electricity over the model period; PyPSA Generator.e_sum_min over the horizon;
     # OSeMOSYS TotalTechnologyModelPeriodActivityLowerLimit.
@@ -276,7 +278,7 @@ class GeneratorExtension(ActivityExtension):
     # field, as PyPSA states it as Link.marginal_cost for each MWh of fuel.
     own_marginal_cost: float | None = None
     # t/MWh of electricity, by pollutant, without the emissions of the fuels that fuel_buses
-    # names; OSeMOSYS EmissionActivityRatio of the plant only.
+    # names; no PyPSA field; OSeMOSYS EmissionActivityRatio of the plant only.
     own_emission_rates_t_per_mwh: dict[str, float] | None = None
     # OSeMOSYS only: the technology and the operating mode that the generator stands for, when
     # it is a mode of a technology that is not a generator, such as an import mode of a line.

@@ -45,6 +45,12 @@ _TAKEN_NAME_WARNING = (
     "%d conversion record(s) join two buses under the name of a link of the network, so each "
     "travels on to extensions.json and becomes no link: %s"
 )
+_BOUND_WARNING = (
+    "%d annual energy bound(s) of a link stay in extensions.json and bind nothing, because a "
+    "PyPSA Link has no e_sum_min or e_sum_max: %s"
+)
+# Each annual bound of a conversion record, which a PyPSA Link has no attribute for.
+_BOUND_FIELDS = ("e_sum_min", "e_sum_max")
 
 # PyPSA's own Link defaults, for a record that states no capacity or no efficiency.
 _DEFAULT_P_NOM = 0.0
@@ -117,11 +123,25 @@ class SiennaToPypsaMapConversions(TranslationStep):
             lookup.get_fields(record.name, CONVERSION_MAPPED_FIELDS)
             _record_link(reporter, record)
             rows.append(_build_link_row(record))
+        self._report_bounds(reporter, linked)
         new = pl.DataFrame(rows, schema=LINKS_DESTINATION_SCHEMA)
         existing = state.destination_tables.get(PyPSADestinationTable.LINKS)
         state.destination_tables[PyPSADestinationTable.LINKS] = (
             new if existing is None else pl.concat([existing, new])
         )
+
+    def _report_bounds(
+        self, reporter: ConversionReporter, linked: list[ConversionExtension]
+    ) -> None:
+        """Record each annual bound that a link of the network does not hold, and name a few."""
+        labels = []
+        for record in linked:
+            for field_name in _BOUND_FIELDS:
+                if getattr(record, field_name):
+                    reporter.record_bound_unmapped(record.name, field_name)
+                    labels.append(f"{record.name}.{field_name}")
+        if labels:
+            log.warning(_BOUND_WARNING, len(labels), name_a_few(labels))
 
 
 def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
@@ -141,6 +161,9 @@ def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> N
         value = getattr(record, field_name)
         if value is not None:
             reporter.record_from_record(record.name, field_name, column, value, unit)
+    floor = _build_floor(record)
+    if floor is not None:
+        reporter.record_p_nom_min(record.name, floor)
     if record.p_nom is None:
         reporter.record_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
     if record.efficiency is None:
@@ -162,9 +185,16 @@ def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
         PyPSALinkCol.ACTIVE: True,
         PyPSALinkCol.CARRIER: record.carrier,
         PyPSALinkCol.P_NOM_EXTENDABLE: record.p_nom_extendable,
+        PyPSALinkCol.P_NOM_MIN: _build_floor(record),
         PyPSALinkCol.P_NOM_MAX: record.p_nom_max,
         PyPSALinkCol.BUS2: record.bus2,
         PyPSALinkCol.EFFICIENCY2: record.efficiency2,
         PyPSALinkCol.BUS3: record.bus3,
         PyPSALinkCol.EFFICIENCY3: record.efficiency3,
     }
+
+
+def _build_floor(record: ConversionExtension) -> float | None:
+    """PyPSA ignores the p_nom of an extendable link, so the capacity it has is a floor."""
+    has_capacity = record.p_nom is not None and record.p_nom > 0
+    return record.p_nom if record.p_nom_extendable and has_capacity else None

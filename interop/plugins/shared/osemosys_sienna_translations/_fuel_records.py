@@ -20,6 +20,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MW,
     UNIT_MWH,
@@ -44,6 +45,9 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    FREE_BUILD_PARAMETERS,
+)
 from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     ACTIVITY_MW,
     AVAILABILITY,
@@ -53,6 +57,7 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     INPUTS,
     IS_EXTENDABLE,
     MAX_ACTIVITY_MW,
+    MODE_COUNT,
     MODE_NAME,
     MODE_REPORT_NAME,
     OUTPUTS,
@@ -73,7 +78,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
-_EXTENSIONS = "extensions."
 _NO_COST = 0.0
 _FUEL_SCOPE = "fuel"
 # The ports after bus0 and bus1 of a link, and the fields that hold each.
@@ -115,23 +119,30 @@ def build_fuel_records(modes: pl.DataFrame, loads: pl.DataFrame, year: int) -> F
             conversion = _build_conversion(row, year)
             built.conversions.append(conversion)
             built.events.extend(_build_events(row, ExtensionKind.CONVERSION, conversion))
-    for bus in _list_buses(modes, loads).iter_rows(named=True):
+    for bus in _build_buses(modes, loads).iter_rows(named=True):
         built.buses.append(_build_bus(bus))
         built.events.extend(_build_bus_events(bus))
     return built
 
 
 def set_fuel_values_persisted(state: State, modes: pl.DataFrame) -> None:
-    """Note the rows of each technology whose values a generator or a conversion record holds."""
+    """Note the rows of each technology whose values a generator or a conversion record holds.
+
+    A limit of the technology binds the sum of its modes, so only a technology of one mode
+    applies it.
+    """
     for kind, held in (
         (ExtensionKind.GENERATOR, modes.filter(pl.col(ROLE) == SUPPLY)),
         (ExtensionKind.CONVERSION, modes.filter(pl.col(ROLE) != SUPPLY)),
     ):
-        extendable = held.filter(pl.col(IS_EXTENDABLE))
-        for parameter in _HELD_PARAMETERS:
-            _set_persisted(state, kind, parameter, held)
-        for parameter in _EXTENDABLE_PARAMETERS:
-            _set_persisted(state, kind, parameter, extendable)
+        groups = (
+            (_HELD_PARAMETERS, held),
+            (_TECHNOLOGY_LIMITS, held.filter(pl.col(MODE_COUNT) == 1)),
+            (FREE_BUILD_PARAMETERS, held.filter(pl.col(IS_EXTENDABLE))),
+        )
+        for parameters, rows in groups:
+            for parameter in parameters:
+                _set_persisted(state, kind, parameter, rows)
 
 
 def _set_persisted(state: State, kind: ExtensionKind, parameter: str, held: pl.DataFrame) -> None:
@@ -143,17 +154,14 @@ _HELD_PARAMETERS: tuple[str, ...] = (
     SupplyParameter.RESIDUAL_CAPACITY,
     SupplyParameter.AVAILABILITY_FACTOR,
     ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT,
-    SupplyParameter.ACTIVITY_UPPER_LIMIT,
-    SupplyParameter.ACTIVITY_LOWER_LIMIT,
     SupplyParameter.VARIABLE_OPERATION_COST,
     SupplyParameter.EMISSION_RATE,
     ActivityParameter.BY_MODE_UPPER_LIMIT,
     ActivityParameter.BY_MODE_LOWER_LIMIT,
 )
-_EXTENDABLE_PARAMETERS: tuple[str, ...] = (
-    InvestmentParameter.CAPITAL_COST,
-    InvestmentParameter.MAX_CAPACITY_INVESTMENT,
-    InvestmentParameter.CAPACITY_LIMITS_MAX,
+_TECHNOLOGY_LIMITS: tuple[str, ...] = (
+    SupplyParameter.ACTIVITY_UPPER_LIMIT,
+    SupplyParameter.ACTIVITY_LOWER_LIMIT,
 )
 
 
@@ -233,7 +241,7 @@ def _build_yearly(value: float | None, rated: float, year: int) -> dict[str, flo
     return None if value is None else {str(year): value * rated}
 
 
-def _list_buses(modes: pl.DataFrame, loads: pl.DataFrame) -> pl.DataFrame:
+def _build_buses(modes: pl.DataFrame, loads: pl.DataFrame) -> pl.DataFrame:
     """Each fuel that is not electricity and that a mode or a load uses, once, by bus."""
     ports = [
         modes.select(pl.col(ports).alias(_PORT))
@@ -281,7 +289,7 @@ def _build_event(
         ],
         destinations=[
             build_sienna_field(
-                kind, row[MODE_NAME], f"{_EXTENSIONS}{value.field}", stated, value.unit
+                kind, row[MODE_NAME], f"{EXTENSIONS_PREFIX}{value.field}", stated, value.unit
             )
         ],
         derivation=value.derivation,
@@ -295,7 +303,7 @@ def _build_bus_events(bus: dict[str, Any]) -> list[TranslationEvent]:
             sources=[build_osemosys_field(FUEL, bus[FUEL_BUS], attribute, bus[column])],
             destinations=[
                 build_sienna_field(
-                    ExtensionKind.BUS, bus[FUEL_BUS], f"{_EXTENSIONS}{name}", bus[column]
+                    ExtensionKind.BUS, bus[FUEL_BUS], f"{EXTENSIONS_PREFIX}{name}", bus[column]
                 )
             ],
             derivation=derivation,
@@ -384,15 +392,22 @@ _VALUES = (
     ),
     _Value(
         "p_nom_extendable",
-        (InvestmentParameter.CAPITAL_COST, InvestmentParameter.MAX_CAPACITY_INVESTMENT),
+        FREE_BUILD_PARAMETERS,
         None,
-        "the model builds capacity of the technology at no cost in the year",
+        "capital_cost and fixed_cost are 0, and the year may build more capacity, so the model "
+        "builds capacity of the technology at no cost",
     ),
     _Value(
         "p_nom_max",
-        (InvestmentParameter.CAPACITY_LIMITS_MAX, ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT),
+        (
+            InvestmentParameter.CAPACITY_LIMITS_MAX,
+            SupplyParameter.RESIDUAL_CAPACITY,
+            InvestmentParameter.MAX_CAPACITY_INVESTMENT,
+            ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT,
+        ),
         UNIT_MW,
-        f"the total capacity limit, converted as p_nom is, {_RATED}",
+        "min(total_annual_max_capacity, residual_capacity + total_annual_max_capacity_investment), "
+        f"converted as p_nom is, {_RATED}",
     ),
     _Value(
         "marginal_cost",
