@@ -83,6 +83,20 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | installed_capacity | battery   | PHS           | 2030-01-01T00:00:00 | 10    |
       | installed_capacity | link      |               | 2030-01-01T00:00:00 | 20    |
 
+  Scenario: A storage takes the category that its sidecar record names
+    Given the EnergyReservoirStorage "battery" has ext "carrier" set to "battery"
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | battery   | battery  | 2030-01-01T00:00:00 | 400   |
+    And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 10    |
+
   Scenario: Emissions are the production of each generator times its rate, by pollutant
     Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
     And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50

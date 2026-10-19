@@ -60,6 +60,7 @@ HYDRO_MAPPED_FIELDS = build_field_names(
 
 STORAGE_MAPPED_FIELDS = build_field_names(
     StorageExtension,
+    "carrier",
     "p_nom_extendable",
     "p_nom_max",
     "p_nom_min",

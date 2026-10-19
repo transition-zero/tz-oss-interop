@@ -481,7 +481,9 @@ One technology can do both. These checks leave a storage out, in this order:
 
 A charge rate or a discharge rate of 0 states no limit, because 0 is the default of the
 parameter. The fixed cost of the discharging technology goes to the `storage` record of
-`extensions.json`, as `fom_charge_per_mw_year` in $/MW/yr.
+`extensions.json`, as `fom_charge_per_mw_year` in $/MW/yr. The category of the discharging
+technology goes to the same record, as `carrier`. A prime mover cannot keep it, because
+several categories share one prime mover.
 
 The step does not apply the `capacity_factor` of the discharging technology to the system. The
 companion `storage.parquet` beside `extensions.json` holds it for each hour, in the column

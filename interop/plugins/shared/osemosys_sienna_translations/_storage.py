@@ -393,6 +393,7 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
 def _build_extension(row: dict[str, Any]) -> StorageExtension:
     return StorageExtension(
         name=row[STORAGE_NAME],
+        carrier=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         rating_series=_SERIES_FILE if has_series(row) else None,
         operating_modes=build_operating_mode_field(row),

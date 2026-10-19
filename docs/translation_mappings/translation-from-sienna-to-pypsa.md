@@ -29,7 +29,7 @@ direction.
 | [`RenewableDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`RenewableNonDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`HydroDispatch`](#hydrodispatch--storageunit) | `StorageUnit` with the carrier `hydro` |
-| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier `PHS` |
+| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else `PHS` |
 | [`Line`](#line-and-monitoredline--line) | `Line` |
 | [`MonitoredLine`](#line-and-monitoredline--line) | `Line`, the same as a `Line` |
 | [`TwoTerminalGenericHVDCLine`](#twoterminalgenerichvdcline--link) | `Link` |
@@ -270,7 +270,7 @@ field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 | --- | --- | --- | --- |
 | `name` | | `EnergyReservoirStorage.name` | `direct` |
 | `bus` | | The bus that `bus` points at | `derived` |
-| `carrier` | | `PHS`, for every `EnergyReservoirStorage` | `default` |
+| `carrier` | | `extensions.carrier` of the `storage` record. If absent, `PHS`. | `sidecar` or `default` |
 | `p_nom` | MW | `base_power` | `direct` |
 | `max_hours` | h | `storage_capacity` | `direct` |
 | `p_max_pu` | per unit of `p_nom` | `output_active_power_limits.max` | `direct` |
@@ -293,9 +293,9 @@ PyPSA states charge and discharge on one `p_nom`, with a negative `p_min_pu` for
 side. Sienna states them as two separate limits. The translator changes the sign of the
 input limit to get `p_min_pu`.
 
-The translator does not read the `prime_mover_type`. Every `EnergyReservoirStorage` gets the
-carrier `PHS`, so a battery that reached Sienna through this type comes back as pumped
-storage.
+The translator does not read the `prime_mover_type`. An `EnergyReservoirStorage` whose record
+states no `carrier` gets the carrier `PHS`, so a battery that reached Sienna through this type
+with no record comes back as pumped storage.
 
 A PyPSA storage unit has one `marginal_cost`, and Sienna has a charge cost and a discharge
 cost. The translator reads the discharge cost. Refer to [Not translated](#not-translated).
@@ -554,7 +554,7 @@ also states a `discount_rate`:
 | `load` | `carrier`, `type`, `sign` |
 | `line` | `carrier`, `length`, `num_parallel`, `s_nom_extendable` |
 | `controllable_line` | `carrier`, `marginal_cost`, `p_nom_extendable`, `p_max_pu`, `p_min_pu`, `p_max_pu_series` |
-| `storage`, for an `EnergyReservoirStorage` | `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `inflow_mw`, `inflow_series`, `rating_series`, `cyclic_state_of_charge_per_period` |
+| `storage`, for an `EnergyReservoirStorage` | `carrier`, `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `inflow_mw`, `inflow_series`, `rating_series`, `cyclic_state_of_charge_per_period` |
 | `storage`, for a `HydroDispatch` | `max_hours`, `state_of_charge_initial`, `inflow_mw`, `inflow_series`, `rating_series` |
 | `conversion` | `bus0`, `bus1`, `carrier`, `p_nom`, `efficiency`, `marginal_cost`, `p_max_pu`, for a record that becomes a link. Refer to [Conversion records → `Link`](#conversion-records--link). |
 | `representative_period` | `weight`, `first_timestamp` and `hours` give the [snapshot weightings](#snapshot-weightings), and the whole record also travels on |

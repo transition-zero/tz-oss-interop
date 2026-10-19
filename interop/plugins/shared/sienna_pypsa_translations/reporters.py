@@ -591,6 +591,17 @@ class StorageUnitReporter(_Reporter):
             derivation=_CARRIER_FROM_PRIME_MOVER,
         )
 
+    def record_carrier_from_ext(self, name: str, carrier: str) -> None:
+        self._derived(
+            sources=[
+                self._source(
+                    SiennaComponent.ENERGY_RESERVOIR_STORAGE, name, _EXT_CARRIER_ATTR, carrier
+                )
+            ],
+            destinations=[self._destination(name, PyPSAStorageUnitCol.CARRIER, carrier)],
+            derivation=_CARRIER_FROM_EXT,
+        )
+
     def record_p_max_pu(
         self,
         sienna_type: SiennaComponent,

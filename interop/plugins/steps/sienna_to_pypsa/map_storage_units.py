@@ -298,6 +298,8 @@ class _PhsMapping:
     bus_name: str
     prime_mover: PrimeMover
     carrier: PyPSACarrier
+    # The sidecar names a carrier that a prime mover cannot, such as an OSeMOSYS category.
+    ext_carrier: str | None
     base_power: float
     output_max: float
     input_max: float
@@ -346,6 +348,7 @@ def _derive_phs(
         bus_name=bus_names[bus_id],
         prime_mover=prime_mover,
         carrier=pypsa_carrier(SiennaComponent.ENERGY_RESERVOIR_STORAGE, prime_mover, None),
+        ext_carrier=ext.carrier,
         base_power=base_power,
         output_max=float(row[SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS][SiennaStructField.MAX]),
         input_max=input_max,
@@ -392,7 +395,10 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     reporter.record_state_of_charge_initial(m.name, m.initial_level, m.state_of_charge_initial)
     reporter.record_cyclic(m.name, m.cyclic)
-    reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
+    if m.ext_carrier is not None:
+        reporter.record_carrier_from_ext(m.name, m.ext_carrier)
+    else:
+        reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
     if m.p_nom_extendable_from_ext:
         reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
     else:
@@ -449,7 +455,7 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
     return {
         PyPSAStorageUnitCol.NAME: m.name,
         PyPSAStorageUnitCol.BUS: m.bus_name,
-        PyPSAStorageUnitCol.CARRIER: m.carrier,
+        PyPSAStorageUnitCol.CARRIER: m.ext_carrier or m.carrier,
         PyPSAStorageUnitCol.P_NOM: m.base_power,
         PyPSAStorageUnitCol.P_MIN_PU: m.p_min_pu,
         PyPSAStorageUnitCol.P_MAX_PU: m.output_max,

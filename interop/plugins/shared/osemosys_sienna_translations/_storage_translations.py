@@ -134,6 +134,8 @@ _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaul
 _CHARGE_DIRECTION = "charge"
 _DISCHARGE_DIRECTION = "discharge"
 _FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
+_CARRIER_ATTRIBUTE = "extensions.carrier"
+_CARRIER_DERIVATION = "the category of the discharging technology, which names its carriers: row"
 _RATING_SERIES_ATTRIBUTE = "extensions.rating_series"
 _COMPANION = companion_filename(ExtensionKind.STORAGE)
 _EACH_TIMESLICE = "each timeslice"
@@ -503,9 +505,23 @@ def _build_fixed_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
     )
 
 
+def _build_carrier_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    category = old[AnnotationColumn.CATEGORY]
+    return build_derived(
+        [
+            _build_source(
+                TECHNOLOGY, old[DISCHARGE_TECHNOLOGY_NAME], AnnotationColumn.CATEGORY, category
+            )
+        ],
+        [_dest(old[STORAGE_NAME], _CARRIER_ATTRIBUTE, category)],
+        _CARRIER_DERIVATION,
+    )
+
+
 def _build_extension_events(old: dict[str, Any]) -> list[TranslationEvent]:
     """The values of the technology, of the storage and of the other modes, and the series."""
     events = [
+        *_build_carrier_events(old),
         *build_value_events(old, DISCHARGE_TECHNOLOGY_VALUES, STORAGE_TECHNOLOGY_OWNERS),
         *build_value_events(old, STORAGE_VALUES, STORAGE_OWNERS),
         *build_value_events(old, CHARGE_VALUES, CHARGE_TECHNOLOGY_OWNERS),

@@ -962,6 +962,8 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 2.5
       And the file "decisions.md" contains "in = technology_to_storage / the electricity input_activity_ratio at the charge mode"
       And the file "decisions.md" contains "`osemosys.technology_to_storage.R1/ATPHS.ATPHSS` = 0.9"
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "carrier" set to "pumped-storage"
+      And the file "decisions.md" contains "| `osemosys.technology.R1/ATPHS.category` = pumped-storage | `sienna.EnergyReservoirStorage.ATPHSS.extensions.carrier` = pumped-storage | the category of the discharging technology, which names its carriers: row |"
 
     Scenario: The availability, the charge and discharge rates and the fixed cost of a storage are applied
       Given the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
