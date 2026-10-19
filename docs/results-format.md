@@ -92,7 +92,10 @@ reports these variables, and an hourly dispatch does not.
   or `new_capacity` row. The `controllable_line` record of such a line states
   `is_conversion: true` in `extensions.json`, and the Sienna to PyPSA hop carries the record
   to the PyPSA sidecar. `decisions.md` names each line that this leaves out, and one warning
-  names three. Its hourly `flow` row stays.
+  names three. Its hourly `flow` row stays. A line between two buses of one area, or a PyPSA
+  link between two electricity buses of one `location`, whose record states no mark counts as
+  production and trade. Each such line gets a `NOT_MAPPED` row and one warning names three,
+  because a sidecar of an older run, or no sidecar, leaves a conversion unmarked.
 
 A Sienna solve over representative periods also gives annual rows. The `extensions.json`
 sidecar of the system must hold `representative_period` records. Each record gives the first

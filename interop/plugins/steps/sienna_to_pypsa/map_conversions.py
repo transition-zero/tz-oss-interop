@@ -31,7 +31,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSADestinationTable,
     PyPSALinkCol,
 )
-from interop.plugins.shared.sienna_pypsa_translations.link_bounds import report_link_bounds
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     CONVERSION_MAPPED_FIELDS,
 )
@@ -117,7 +116,6 @@ class SiennaToPypsaMapConversions(TranslationStep):
             lookup.get_fields(record.name, CONVERSION_MAPPED_FIELDS)
             _record_link(reporter, record)
             rows.append(_build_link_row(record))
-        report_link_bounds(linked, reporter.record_bound_unmapped)
         new = pl.DataFrame(rows, schema=LINKS_DESTINATION_SCHEMA)
         existing = state.destination_tables.get(PyPSADestinationTable.LINKS)
         state.destination_tables[PyPSADestinationTable.LINKS] = (

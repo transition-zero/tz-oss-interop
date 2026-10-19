@@ -28,12 +28,14 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     BUILD_LIMIT,
+    BUILD_LIMIT_PARAMETER,
     IS_FREE_TO_BUILD,
     RESIDUAL,
     enrich_free_build,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
+    CAPACITY_PARAMETER,
     IS_BUILT_FREE,
     IS_UNLIMITED,
     LINE_CAPACITY,
@@ -53,9 +55,11 @@ def enrich_line_capacity(
     is_built = (pl.col(RESIDUAL) == 0) & pl.col(IS_FREE_TO_BUILD)
     has_limit = pl.col(BUILD_LIMIT).is_not_null()
     capacity = pl.when(is_built & has_limit).then(pl.col(BUILD_LIMIT)).otherwise(pl.col(RESIDUAL))
+    parameter = pl.when(is_built & has_limit).then(pl.col(BUILD_LIMIT_PARAMETER))
     return table.with_columns(
         is_built.alias(IS_BUILT_FREE),
         capacity.alias(LINE_CAPACITY),
+        parameter.otherwise(pl.lit(SupplyParameter.RESIDUAL_CAPACITY)).alias(CAPACITY_PARAMETER),
         (is_built & ~has_limit).alias(IS_UNLIMITED),
     )
 

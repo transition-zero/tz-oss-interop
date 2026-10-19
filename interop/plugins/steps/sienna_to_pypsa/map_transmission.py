@@ -35,7 +35,6 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
     stage_companion_columns,
 )
-from interop.plugins.shared.sienna_pypsa_translations.link_bounds import report_link_bounds
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     LINE_MAPPED_FIELDS,
     LINK_MAPPED_FIELDS,
@@ -294,13 +293,10 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         extensions = self._extensions.read(ExtensionKind.CONTROLLABLE_LINE)
         reporter = LinkReporter(self._recorder)
         rows: list[dict[str, Any]] = []
-        records: list[ControllableLineExtension] = []
         for row in source.collect().iter_rows(named=True):
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
             ext = extensions.get_fields(row[SiennaLinkCol.NAME], LINK_MAPPED_FIELDS)
             rows.append(_build_link_row(reporter, row, bus_names, ext))
-            records.append(ext)
-        report_link_bounds(records, reporter.record_bound_unmapped)
         relayed = [extensions.relay(row[PyPSALinkCol.NAME]) for row in rows]
         if rows:
             self._write_links(state, rows, reporter)
@@ -338,39 +334,53 @@ def _build_link_row(
 ) -> dict[str, Any]:
     """The Link of one TwoTerminalGenericHVDCLine, with an event for each value."""
     name = row[SiennaLinkCol.NAME]
-    bus0 = bus_names[row[SiennaLinkCol.BUS0]]
-    bus1 = bus_names[row[SiennaLinkCol.BUS1]]
-    available = bool(row[SiennaLinkCol.AVAILABLE])
-    loss_term = float(
-        row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
-            SiennaStructField.PROPORTIONAL_TERM
-        ]
-    )
-    efficiency = 1.0 - loss_term
-    reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
-    reporter.record_available(name, available, available)
+    ends = _record_ends(reporter, row, bus_names)
+    efficiency = _record_efficiency(reporter, row)
     limits = _reconstruct_link_power_limits(
         reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
     )
-    reporter.record_efficiency(name, loss_term, efficiency)
     _record_link_ext(reporter, name, ext)
     p_nom_min = extendable_floor(limits.p_nom, ext.p_nom_extendable)
     if p_nom_min is not None:
         reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
     return {
-        PyPSALinkCol.NAME: name,
-        PyPSALinkCol.BUS0: bus0,
-        PyPSALinkCol.BUS1: bus1,
+        **ends,
         PyPSALinkCol.P_NOM: limits.p_nom,
         PyPSALinkCol.P_MIN_PU: limits.p_min_pu,
         PyPSALinkCol.P_MAX_PU: limits.p_max_pu,
         PyPSALinkCol.EFFICIENCY: efficiency,
-        PyPSALinkCol.ACTIVE: available,
         PyPSALinkCol.CARRIER: ext.carrier,
         PyPSALinkCol.P_NOM_EXTENDABLE: ext.p_nom_extendable,
         PyPSALinkCol.P_NOM_MIN: p_nom_min,
         PyPSALinkCol.MARGINAL_COST: ext.marginal_cost,
     }
+
+
+def _record_ends(
+    reporter: LinkReporter, row: dict[str, Any], bus_names: dict[int, str]
+) -> dict[str, Any]:
+    """The name, the two buses and the availability of the Link."""
+    name = row[SiennaLinkCol.NAME]
+    bus0 = bus_names[row[SiennaLinkCol.BUS0]]
+    bus1 = bus_names[row[SiennaLinkCol.BUS1]]
+    available = bool(row[SiennaLinkCol.AVAILABLE])
+    reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
+    reporter.record_available(name, available, available)
+    return {
+        PyPSALinkCol.NAME: name,
+        PyPSALinkCol.BUS0: bus0,
+        PyPSALinkCol.BUS1: bus1,
+        PyPSALinkCol.ACTIVE: available,
+    }
+
+
+def _record_efficiency(reporter: LinkReporter, row: dict[str, Any]) -> float:
+    """1 - the proportional term of the loss curve of the line."""
+    function_data = row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA]
+    loss_term = float(function_data[SiennaStructField.PROPORTIONAL_TERM])
+    efficiency = 1.0 - loss_term
+    reporter.record_efficiency(row[SiennaLinkCol.NAME], loss_term, efficiency)
+    return efficiency
 
 
 def _record_link_ext(reporter: LinkReporter, name: str, ext: ControllableLineExtension) -> None:

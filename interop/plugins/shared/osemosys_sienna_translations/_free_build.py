@@ -28,8 +28,10 @@ FIXED_COST = "build_fixed_cost"
 MAX_INVESTMENT = "build_max_investment"
 MAX_CAPACITY = "build_max_capacity"
 IS_FREE_TO_BUILD = "is_free_to_build"
-# The capacity that a technology which builds at no cost can use, null where no limit binds.
+# The capacity that a technology which builds at no cost can use, null where no limit binds,
+# and the parameter that states it.
 BUILD_LIMIT = "build_limit"
+BUILD_LIMIT_PARAMETER = "build_limit_parameter"
 
 _KEYS = [REGION, TECHNOLOGY]
 _NO_COST = 0.0
@@ -64,6 +66,7 @@ def enrich_free_build(state: State, year: int, technologies: pl.DataFrame) -> pl
     return table.with_columns(
         _express_is_free_to_build().alias(IS_FREE_TO_BUILD),
         _express_build_limit().alias(BUILD_LIMIT),
+        _express_build_limit_parameter().alias(BUILD_LIMIT_PARAMETER),
     )
 
 
@@ -76,9 +79,19 @@ def _express_is_free_to_build() -> pl.Expr:
 
 def _express_build_limit() -> pl.Expr:
     """The smaller of the two limits that the model states, or null where it states neither."""
-    total = pl.when(pl.col(MAX_CAPACITY) != NO_LIMIT).then(pl.col(MAX_CAPACITY))
-    built = pl.when(pl.col(MAX_INVESTMENT) != NO_LIMIT).then(
-        pl.col(RESIDUAL) + pl.col(MAX_INVESTMENT)
-    )
-    is_built_smaller = total.is_null() | (built < total).fill_null(False)  # noqa: FBT003
-    return pl.when(is_built_smaller).then(built).otherwise(total)
+    return pl.when(_express_is_built_smaller()).then(_BUILT).otherwise(_TOTAL)
+
+
+def _express_build_limit_parameter() -> pl.Expr:
+    """The parameter of the limit that `_express_build_limit` takes, or null."""
+    built = pl.when(_BUILT.is_not_null()).then(pl.lit(InvestmentParameter.MAX_CAPACITY_INVESTMENT))
+    total = pl.when(_TOTAL.is_not_null()).then(pl.lit(InvestmentParameter.CAPACITY_LIMITS_MAX))
+    return pl.when(_express_is_built_smaller()).then(built).otherwise(total)
+
+
+def _express_is_built_smaller() -> pl.Expr:
+    return _TOTAL.is_null() | (_BUILT < _TOTAL).fill_null(False)  # noqa: FBT003
+
+
+_TOTAL = pl.when(pl.col(MAX_CAPACITY) != NO_LIMIT).then(pl.col(MAX_CAPACITY))
+_BUILT = pl.when(pl.col(MAX_INVESTMENT) != NO_LIMIT).then(pl.col(RESIDUAL) + pl.col(MAX_INVESTMENT))

@@ -130,6 +130,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     FROM_LOCATION,
     FROM_LOCATIONS,
     HAS_DROPPED_DERATE,
+    HAS_STATED_FACTORS,
     INPUT_RATIO,
     IS_BUILT_FREE,
     IS_CONVERSION,
@@ -183,6 +184,7 @@ _NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
 # The records of the lines, and the columns that name each line and its technology.
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
 _FREE_BUILD_SCOPE = "free-build"
+_FLEET_MW = "fleet_mw"
 # The rows of a line technology that the line applies, beside those its record keeps.
 _APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
 
@@ -267,7 +269,7 @@ def build_transport_source(
     imports = read_import_modes(state, operations, lines, recorder)
     lines = enrich_import_flows(lines, imports)
     lines = _enrich_reverse_modes(state, operations, lines)
-    lines = _enrich_ratings(state, operations, lines)
+    lines = _enrich_ratings(state, operations, _enrich_fleet_output(state, operations, lines))
     lines = _enrich_costs(state, operations, lines)
     lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
@@ -332,6 +334,7 @@ def _enrich_capacity_factors(
     is_derated = has_factors | (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
     return lines.with_columns(
         express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS),
+        has_factors.alias(HAS_STATED_FACTORS),
         (pl.col(IS_UNLIMITED) & is_derated).alias(HAS_DROPPED_DERATE),
     ), series
 
@@ -503,10 +506,9 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
     stated = read_availability_factors(state, operations.year, lines.select(_KEYS))
     rated = lines.join(stated.rename({AVAILABILITY_FACTOR: AVAILABILITY}), on=_KEYS)
     limited = express_converted(rated, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
-    unlimited = pl.lit(_find_unlimited_mw(state, operations, lines), dtype=pl.Float64)
     rated = rated.with_columns(
         pl.when(pl.col(IS_UNLIMITED))
-        .then(unlimited / _express_smallest_ratio())
+        .then(pl.col(_FLEET_MW) / _express_smallest_ratio())
         .otherwise(limited * pl.col(AVAILABILITY))
         .alias(CAPACITY_MW)
     )
@@ -520,19 +522,19 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
     )
 
 
-def _find_unlimited_mw(
+def _enrich_fleet_output(
     state: State, operations: OperationsYear, lines: pl.DataFrame
-) -> float | None:
+) -> pl.DataFrame:
+    """What the whole fleet can put out, where a line has no limit, and a warning where that
+    is nothing."""
     unlimited = lines.filter(pl.col(IS_UNLIMITED))
-    if unlimited.height == 0:
-        return None
-    fleet_mw = read_fleet_output_mw(state, operations)
-    if fleet_mw <= 0:
-        _warn_no_fleet(unlimited[TECHNOLOGY_NAME].sort().to_list())
-    return fleet_mw
+    fleet_mw = read_fleet_output_mw(state, operations) if unlimited.height > 0 else None
+    if fleet_mw is not None and fleet_mw <= 0:
+        _warn_empty_fleet(unlimited[TECHNOLOGY_NAME].sort().to_list())
+    return lines.with_columns(pl.lit(fleet_mw, dtype=pl.Float64).alias(_FLEET_MW))
 
 
-def _warn_no_fleet(names: list[str]) -> None:
+def _warn_empty_fleet(names: list[str]) -> None:
     log.warning(
         "%s: the fleet of the operations year puts out no electricity, so %d line "
         "technology(ies) that the model builds at no cost with no limit rate at 0 MW. "

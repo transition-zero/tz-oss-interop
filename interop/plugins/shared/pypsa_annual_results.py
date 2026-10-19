@@ -37,6 +37,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_fuel_components import FuelComponents, build_fuel_components
+from interop.plugins.shared.pypsa_link_places import build_one_location_links
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.ports.outbound.reporting import SourceField
@@ -125,7 +126,7 @@ class PypsaAnnualResultsMapper:
             return []
         fuels = build_fuel_components(state)
         conversions = build_conversion_lines(state.source_extensions)
-        self._reporter.report_conversions(PyPSAComponent.LINK, conversions)
+        self._report_lines(state, fuels, conversions)
         activity = _build_all_production(state, weights, fuels)
         production = activity.drop_fuels(fuels).drop_links(conversions)
         capacity = _build_capacity(state, _build_years(weights), fuels, conversions)
@@ -139,6 +140,15 @@ class PypsaAnnualResultsMapper:
             *self._map_installed_capacity(capacity, produced),
             *self._map_emissions(state, emitting, fuels),
         ]
+
+    def _report_lines(
+        self, state: State, fuels: FuelComponents, conversions: frozenset[str]
+    ) -> None:
+        """Report each conversion link, and each link at one location that states no mark."""
+        self._reporter.report_conversions(PyPSAComponent.LINK, conversions)
+        reverses = frozenset(build_reverse_links(state))
+        unmarked = build_one_location_links(state, fuels) - conversions - reverses
+        self._reporter.report_unmarked(PyPSAComponent.LINK, unmarked)
 
     def _map_production(self, production: pl.DataFrame) -> list[pl.LazyFrame]:
         if production.is_empty():

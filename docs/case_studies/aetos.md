@@ -446,7 +446,10 @@ INTEROP_LOG_LEVEL=WARNING uv run interop headless_cli --pipeline aetos-to-result
   --user-mappings-path inputs/aetos_mappings.yaml
 ```
 
-Each pipeline writes `results.parquet` to its output directory. This Python code gives the 2021
+Each pipeline writes `results.parquet` to its output directory. `sienna-to-results` writes three
+warnings: the two of the PyPSA mapping that it runs inside (the 24 bounded gas plants and the 85
+bounds of the fuel links), and one that names the 156 conversion lines, which have no
+`production` or `installed_capacity` row. This Python code gives the 2021
 totals. A row with no category is a line, or a pollutant for `emissions`:
 
 ```python
@@ -523,7 +526,8 @@ Select `translate`. Then give these answers:
 
 Move `decisions.md` and `validation-report.md` to `outputs/pypsa/`.
 
-tz-oss-interop writes one warning, about the 24 gas plants below. PyPSA writes one
+tz-oss-interop writes two warnings: one about the 24 gas plants below, and one about the 85
+annual bounds of the pipelines and the LNG terminals, which a link does not hold. PyPSA writes one
 `FutureWarning` about the string type of pandas. The network holds 668 buses, 604 generators,
 115 storage units, 120 loads and 1,027 links, over the 96 hours of the Sienna system. 248 buses
 hold electricity. The links are 205 for the 113 transport lines, 156 for the conversions, 127
@@ -600,7 +604,11 @@ INTEROP_LOG_LEVEL=WARNING uv run interop headless_cli --pipeline pypsa-to-result
   --override 'sink[0].output_dir=outputs/results_pypsa'
 ```
 
-The run writes no warning. As `sienna-to-results` does, it multiplies each hour by the weight of
+The run writes one warning: the records of the 156 conversion lines mark them with
+`is_conversion`, so they have no `production` or `installed_capacity` row, and `decisions.md`
+names each one. A sidecar with no mark, or a run with no sidecar, counts them as production
+and trade instead, and the run then warns that the lines inside one location state no mark.
+As `sienna-to-results` does, it multiplies each hour by the weight of
 its day. It adds the flow of a reverse link to the trade of its line. It gives the
 installed capacity of a generator as `p_nom`, which is the `base_power` of the Sienna plant,
 and of a plant link as `p_nom` × `efficiency`, the same value. A generator, a link and a load
@@ -933,12 +941,12 @@ The time of a solve does not include the download and the compilation of the Jul
 | `osemosys-csv-to-sienna-investments`, every year | exit 0, 21 warnings | none | 20.4 s | 0.54 GB |
 | `sienna-to-power-simulations` | exit 0 | none | 5.1 s | 0.26 GB |
 | Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.53338 × 10⁹ USD | 3 min 5 s | 2.27 GB |
-| `sienna-to-results` | exit 0 | none | 1.9 s | 0.27 GB |
+| `sienna-to-results` | exit 0, 3 warnings | none | 1.9 s | 0.32 GB |
 | `aetos-to-results` | exit 0, 7 warnings | none | 4.5 s | 0.70 GB |
 | Compare of the dispatch | exit 0, 1,931 differences | none | 5.3 s | 0.75 GB |
-| `sienna-to-pypsa` | exit 0 | none | 4.9 s | 0.43 GB |
+| `sienna-to-pypsa` | exit 0, 2 warnings | none | 4.6 s | 0.46 GB |
 | PyPSA dispatch solve | `optimal` | 5.54311 × 10⁹ USD | 26.6 s | 1.78 GB |
-| `pypsa-to-results` | exit 0 | none | 1.9 s | 0.29 GB |
+| `pypsa-to-results` | exit 0, 1 warning | none | 1.9 s | 0.32 GB |
 | Compare of the published results and PyPSA | exit 0, 1,931 differences | none | 4.8 s | 0.70 GB |
 | Compare of Sienna and PyPSA | exit 0, 115,440 differences | none | 3.3 s | 0.34 GB |
 | `sienna-to-power-systems-investments`, full model | exit 0, 8 warnings | none | 53.5 s | 1.58 GB |

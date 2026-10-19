@@ -14,7 +14,7 @@ from typing import NamedTuple
 import polars as pl
 
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.constants import EXTENSIONS_PREFIX, Framework
 from interop.plugins.shared.pypsa_fuel_components import FuelComponents
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
@@ -52,6 +52,15 @@ _CONVERSION_NOTE = (
 _CONVERSION_WARNING = (
     "%d line(s) convert electricity at one location, so they have no production or "
     "installed_capacity row: %s"
+)
+_UNMARKED_NOTE = (
+    "the line joins two buses of one area or one location, and its extensions record states no "
+    "is_conversion, so the results count it as production and trade; a conversion between two "
+    "electricity fuels is neither"
+)
+_UNMARKED_WARNING = (
+    "%d line(s) join two buses of one area or one location and state no is_conversion mark, so "
+    "they count as production and trade; mark each conversion in extensions.json: %s"
 )
 _UNPRODUCED_WARNING = (
     "%d component(s) have a rating, but the solve states no output for them, so they have no "
@@ -173,6 +182,19 @@ class AnnualReporter:
         if names:
             log.warning(_CONVERSION_WARNING, len(names), name_a_few(sorted(names)))
 
+    def report_unmarked(self, component_type: str, names: frozenset[str]) -> None:
+        """Record each line that joins two buses of one place and states no conversion mark."""
+        for name in sorted(names):
+            self._recorder.append(
+                TranslationEvent(
+                    kind=EventKind.NOT_MAPPED,
+                    sources=[_build_mark_source(self._framework, component_type, name)],
+                    note=_UNMARKED_NOTE,
+                )
+            )
+        if names:
+            log.warning(_UNMARKED_WARNING, len(names), name_a_few(sorted(names)))
+
     def report_unproduced(self, capacity: pl.DataFrame) -> None:
         """Report each component that has a rating and no output in the solve."""
         rows = capacity.unique(ResultsCol.COMPONENT, maintain_order=True)
@@ -202,4 +224,13 @@ def build_results_destination(variable: ResultsVariable) -> DestinationField:
         name=str(variable),
         attribute=ResultsCol.VARIABLE,
         unit=VARIABLE_UNIT[variable],
+    )
+
+
+def _build_mark_source(framework: Framework, component_type: str, name: str) -> SourceField:
+    return SourceField(
+        framework=framework,
+        component=component_type,
+        name=name,
+        attribute=f"{EXTENSIONS_PREFIX}is_conversion",
     )

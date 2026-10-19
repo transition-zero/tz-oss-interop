@@ -16,10 +16,13 @@ TO_BUSES = "to_buses"
 # The capacity that the year can use, in the capacity unit, whether it is capacity that the model
 # builds at no cost, and whether no limit binds it.
 LINE_CAPACITY = "line_capacity"
+CAPACITY_PARAMETER = "capacity_parameter"
 IS_BUILT_FREE = "is_built_free"
 IS_UNLIMITED = "is_unlimited"
 # Whether a line with no limit leaves out an availability or a capacity factor that it states.
 HAS_DROPPED_DERATE = "has_dropped_derate"
+# Whether the model states a capacity factor for the line.
+HAS_STATED_FACTORS = "has_stated_factors"
 # Whether the line is a conversion between two electricity fuels, which its record marks.
 IS_CONVERSION = "is_conversion"
 INPUT_RATIO = "electricity_input_ratio"

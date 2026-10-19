@@ -44,7 +44,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     CAPACITY_UNIT,
     GENERATOR_NAME,
     OUTPUT_CAPACITY_MW,
-    RESIDUAL_CAPACITY,
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import OWN_COST
@@ -75,6 +74,10 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_translations
     build_series_events,
     build_thermal_power_limits,
     express_thermal_cost,
+)
+from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
+    CAPACITY_PARAMETER,
+    LINE_CAPACITY,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import IMPORT_FUELS
 from interop.plugins.shared.sienna_constants import (
@@ -247,10 +250,10 @@ def _build_base_power() -> Translation:
         make_events=lambda old, new: build_derived(
             [
                 build_osemosys_field(
-                    SupplyParameter.RESIDUAL_CAPACITY,
+                    old[CAPACITY_PARAMETER],
                     old[TECHNOLOGY_NAME],
                     None,
-                    old[RESIDUAL_CAPACITY],
+                    old[LINE_CAPACITY],
                     old[CAPACITY_UNIT],
                 ),
                 _build_output_ratio_source(old),

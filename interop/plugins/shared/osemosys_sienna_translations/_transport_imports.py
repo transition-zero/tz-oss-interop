@@ -57,7 +57,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     GENERATOR_NAME,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
-    RESIDUAL_CAPACITY,
     SIENNA_TYPE,
     TECHNOLOGY_NAME,
 )
@@ -91,6 +90,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
+    CAPACITY_PARAMETER,
     FROM_BUS,
     IMPORT_FLOWS,
     IS_UNLIMITED,
@@ -188,7 +188,7 @@ def build_imports_source(
     """
     if imports.height == 0:
         return GeneratorSources(imports, pl.DataFrame())
-    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, RESIDUAL_CAPACITY, LINE_CAPACITY)
+    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, LINE_CAPACITY, CAPACITY_PARAMETER)
     table = _enrich_capacity(operations, imports.join(held, on=_KEYS))
     availability = build_availability(state, operations, table, GENERATOR_NAME)
     table = _enrich_own_costs(state, operations, availability.table)

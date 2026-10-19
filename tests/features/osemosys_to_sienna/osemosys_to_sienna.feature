@@ -1412,7 +1412,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to` ="
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "is_conversion" set to true
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" without field "p_max_pu"
-      And the file "decisions.md" contains "so the availability_factor and the capacity_factor of the line limit nothing"
+      And the file "decisions.md" contains "| `osemosys.availability_factor.R1/ATSTEPDOWN` = 0.9 |  |  | the model builds the line at no cost and no limit binds it, so the factor that the model states limits nothing"
 
     Scenario: A conversion that the model builds at no cost up to a limit rates at that limit
       The year may build 0.5 GW of ATSTEPDOWN, so it sends at most 500 MW and delivers 495 MW.
@@ -1924,6 +1924,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 800.0
+      And the file "decisions.md" contains "`osemosys.total_annual_max_capacity_investment.R1/ATDEBUY` = 1.0"
 
     Scenario: The report names only the modes that are neither the flow back nor an import
       When I translate the otoole model to Sienna for the year "2030"

@@ -763,9 +763,8 @@ out, or the fuel that goes in at `bus0` of a link. The rating ratio is the
 often in units of energy a year rather than in the capacity unit of the mappings file. A model
 that declares no `CapacityToActivityUnit` takes the canonical default of 1, so its capacity is
 the energy of a year. Each mode can run at the whole capacity of the technology, where OSeMOSYS
-shares the capacity among the modes. The
-annual limit of a technology of two modes holds their sum, so no mode states it, and the report
-of the parameters that no step applies names it. An extendable mode applies `CapitalCost`,
+shares the capacity among the modes. The annual limit of a technology of two modes holds their
+sum, so no mode states it, and the report of the parameters that no step applies names it. An extendable mode applies `CapitalCost`,
 `FixedCost`, `TotalAnnualMaxCapacityInvestment` and `TotalAnnualMaxCapacity`, so the report does
 not name them for it. `decisions.md` records an event for each value.
 

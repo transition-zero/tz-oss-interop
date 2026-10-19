@@ -6,6 +6,9 @@ each period's hours and weight, so the hourly rows of the solve sum to the energ
 With no such records, the solve covers the hours it states and nothing more, so no annual row
 is written.
 
+A line between two buses of one area whose record states no mark counts as production and
+trade; the report names it, as it can be a conversion that an older sidecar does not mark.
+
 A TwoTerminalGenericHVDCLine whose `controllable_line` record marks it as a conversion between
 two electricity fuels of one location is neither production nor trade, so it has no production
 and no installed capacity row.
@@ -39,6 +42,7 @@ from interop.plugins.shared.conversion_lines import build_conversion_lines
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
+    SiennaACBusCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLinkCol,
@@ -56,6 +60,9 @@ from interop.ports.outbound.reporting import (
 )
 
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
+_LINE_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+_AREA0 = "area0"
+_AREA1 = "area1"
 
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
@@ -156,14 +163,20 @@ class AnnualResultsMapper:
         if weights.is_empty():
             return []
         conversions = build_conversion_lines(state.source_extensions)
-        self._reporter.report_conversions(
-            SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE, conversions
-        )
+        self._report_lines(state, conversions)
         production = _build_all_production(hourly, weights).drop_links(conversions)
+        capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
+        return self._map_rows(reader, production, _drop_components(capacity, conversions))
+
+    def _report_lines(self, state: State, conversions: frozenset[str]) -> None:
+        """Report each conversion line, and each line inside one area that states no mark."""
+        self._reporter.report_conversions(_LINE_TYPE, conversions)
+        self._reporter.report_unmarked(_LINE_TYPE, _build_one_area_lines(state) - conversions)
+
+    def _map_rows(
+        self, reader: ExtensionReader, production: Production, capacity: pl.DataFrame
+    ) -> list[pl.LazyFrame]:
         produced = production.build_table()
-        capacity = _drop_components(
-            _build_capacity(state, carrier_lookup, _build_years(weights)), conversions
-        )
         return [
             *self._map_production(produced),
             *self._map_installed_capacity(capacity, produced),
@@ -212,6 +225,25 @@ class AnnualResultsMapper:
             ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, EMISSIONS_DERIVATION
         )
         return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+
+
+def _build_one_area_lines(state: State) -> frozenset[str]:
+    """Each HVDC line whose two buses have one area."""
+    links = state.source_topology.get(SiennaTable.LINKS)
+    buses = state.source_topology.get(SiennaTable.BUSES)
+    if links is None or buses is None:
+        return frozenset()
+    areas = buses.select(SiennaACBusCol.ID, SiennaACBusCol.AREA).collect()
+    ends = links.select(SiennaLinkCol.NAME, SiennaLinkCol.BUS0, SiennaLinkCol.BUS1).collect()
+    inside = _enrich_end_areas(ends, areas).filter(pl.col(_AREA0) == pl.col(_AREA1))
+    return frozenset(inside[SiennaLinkCol.NAME].to_list())
+
+
+def _enrich_end_areas(ends: pl.DataFrame, areas: pl.DataFrame) -> pl.DataFrame:
+    for end, area in ((SiennaLinkCol.BUS0, _AREA0), (SiennaLinkCol.BUS1, _AREA1)):
+        renamed = areas.rename({SiennaACBusCol.ID: end, SiennaACBusCol.AREA: area})
+        ends = ends.join(renamed, on=end, how="inner")
+    return ends
 
 
 def _drop_components(table: pl.DataFrame, names: frozenset[str]) -> pl.DataFrame:

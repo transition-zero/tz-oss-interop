@@ -89,6 +89,20 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the file "decisions.md" contains "a link that its extensions record marks as a conversion has no row"
     And the log contains "1 line(s) convert electricity at one location, so they have no production or installed_capacity row: step_down"
 
+  Scenario: A link between two buses of one location with no mark counts as production, and the report says so
+    The run reads no sidecar, so no record marks step_down as a conversion.
+    Given the network contains bus "at_high" carrier "AC" v_nom 380.0 location "AT"
+    And the network contains bus "at_low" carrier "AC" v_nom 380.0 location "AT"
+    And the network contains link "step_down" from "at_high" to "at_low" with capacity 30.0 MW efficiency 1.0
+    And the link "step_down" carries flow 1 1 1 1
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | step_down |          | 2030-01-01T00:00:00 | 300   |
+    And the log contains "1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json: step_down"
+
   Scenario: The hourly flow of a two-way line is the flow of its link less the flow of its reverse link
     The reverse link sends 3 MW from node_b to node_a in the second hour, which is a flow of
     -3 MW of the line from node_a to node_b.

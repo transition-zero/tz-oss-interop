@@ -32,7 +32,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    RESIDUAL_CAPACITY,
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -48,14 +47,17 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
+    CAPACITY_PARAMETER,
     COST,
     COST_MWH,
     FROM_BUS,
     FROM_FUEL,
     HAS_DROPPED_DERATE,
+    HAS_STATED_FACTORS,
     INPUT_RATIO,
     IS_CONVERSION,
     IS_UNLIMITED,
+    LINE_CAPACITY,
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
@@ -100,8 +102,8 @@ _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to
 _P_MAX_PU_ATTRIBUTE = "extensions.p_max_pu"
 _IS_CONVERSION_ATTRIBUTE = "extensions.is_conversion"
 _DROPPED_DERATE_NOTE = (
-    "the model builds the line at no cost and no limit binds it, so the availability_factor and "
-    "the capacity_factor of the line limit nothing, and neither p_max_pu nor its series is written"
+    "the model builds the line at no cost and no limit binds it, so the factor that the model "
+    "states limits nothing, and the record writes neither p_max_pu nor its series"
 )
 _CONVERSION_DERIVATION = (
     "the technology is of kind conversion and its fuels are all electricity, so it converts one "
@@ -186,7 +188,7 @@ def _build_reverse_sources(old: dict[str, Any]) -> list[SourceField]:
 
 def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
-        _build_source(SupplyParameter.RESIDUAL_CAPACITY, old, None, old[RESIDUAL_CAPACITY]),
+        _build_source(old[CAPACITY_PARAMETER], old, None, old[LINE_CAPACITY]),
         _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
         *_build_ratio_sources(old),
         *_build_reverse_sources(old),
@@ -294,16 +296,15 @@ def _build_availability_events(old: dict[str, Any]) -> list[TranslationEvent]:
 
 
 def _build_dropped_derate_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=[
-                _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
-                _build_source(SupplyParameter.CAPACITY_FACTOR, old, _EACH_TIMESLICE),
-            ],
-            note=_DROPPED_DERATE_NOTE,
+    """One event that names each factor that the model states for the line."""
+    sources = []
+    if old[AVAILABILITY] != WHOLE_CAPACITY:
+        sources.append(
+            _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])
         )
-    ]
+    if old[HAS_STATED_FACTORS]:
+        sources.append(_build_source(SupplyParameter.CAPACITY_FACTOR, old, _EACH_TIMESLICE))
+    return [TranslationEvent(kind=EventKind.NOT_MAPPED, sources=sources, note=_DROPPED_DERATE_NOTE)]
 
 
 def _build_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
