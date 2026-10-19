@@ -342,6 +342,7 @@ STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "solar-rooftop": ("RenewableNonDispatch", "PVe"),
     "hydro": ("HydroDispatch", "HY"),
     "PHS": ("EnergyReservoirStorage", "PS"),
+    "li-ion": ("EnergyReservoirStorage", "BA"),
 }
 
 

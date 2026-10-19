@@ -23,6 +23,7 @@ Feature: PyPSA out and back through Sienna
     And generator "built_ccgt" has p_nom_opt 400
     And the network contains line "line_1" from "bus_1" to "bus_2" with resistance 2.0 ohms reactance 8.0 ohms rating 500.0 MVA length 120.0 km 2.0 parallel circuits
     And the network contains link "link_1" from "bus_1" to "bus_2" with capacity 1000.0 MW efficiency 1.0 min dispatch fraction 0.2 max dispatch fraction 0.5 carrier "DC"
+    And the network contains storage unit "battery_1" on "bus_2" carrier "li-ion" p_nom 50.0 p_min_pu -1.0 max_hours 4.0
     And the network is saved as "inputs/round_trip.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
@@ -38,3 +39,4 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" link "link_1" has carrier "DC"
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_max_pu" is 0.5
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.2
+    And the PyPSA network "outputs/network.nc" storage unit "battery_1" has carrier "li-ion"

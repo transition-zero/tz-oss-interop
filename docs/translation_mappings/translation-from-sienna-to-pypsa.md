@@ -29,7 +29,7 @@ direction.
 | [`RenewableDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`RenewableNonDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`HydroDispatch`](#hydrodispatch--storageunit) | `StorageUnit` with the carrier `hydro` |
-| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else `PHS` |
+| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else the carrier of its prime mover |
 | [`Line`](#line-and-monitoredline--line) | `Line` |
 | [`MonitoredLine`](#line-and-monitoredline--line) | `Line`, the same as a `Line` |
 | [`TwoTerminalGenericHVDCLine`](#twoterminalgenerichvdcline--link) | `Link` |
@@ -270,7 +270,7 @@ field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 | --- | --- | --- | --- |
 | `name` | | `EnergyReservoirStorage.name` | `direct` |
 | `bus` | | The bus that `bus` points at | `derived` |
-| `carrier` | | `extensions.carrier` of the `storage` record. If absent, `PHS`. | `sidecar` or `default` |
+| `carrier` | | `extensions.carrier` of the `storage` record. If absent, `battery` for the prime mover `BA`, and `PHS` for every other prime mover. | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
 | `max_hours` | h | `storage_capacity` | `direct` |
 | `p_max_pu` | per unit of `p_nom` | `output_active_power_limits.max` | `direct` |
@@ -293,9 +293,9 @@ PyPSA states charge and discharge on one `p_nom`, with a negative `p_min_pu` for
 side. Sienna states them as two separate limits. The translator changes the sign of the
 input limit to get `p_min_pu`.
 
-The translator does not read the `prime_mover_type`. An `EnergyReservoirStorage` whose record
-states no `carrier` gets the carrier `PHS`, so a battery that reached Sienna through this type
-with no record comes back as pumped storage.
+An `EnergyReservoirStorage` whose record states no `carrier` gets the carrier of its prime
+mover: `battery` for `BA`, and `PHS` for every other prime mover. So a flywheel that reached
+Sienna with no record comes back as pumped storage.
 
 A PyPSA storage unit has one `marginal_cost`, and Sienna has a charge cost and a discharge
 cost. The translator reads the discharge cost. Refer to [Not translated](#not-translated).
