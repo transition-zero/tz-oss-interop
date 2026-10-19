@@ -15,6 +15,7 @@ import polars as pl
 
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.pypsa_fuel_components import FuelComponents
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
@@ -111,6 +112,15 @@ class Production(NamedTuple):
 
     def build_table(self) -> pl.DataFrame:
         return pl.concat([self.generators, self.storage, self.links])
+
+    def drop_fuels(self, fuels: FuelComponents) -> Production:
+        """The production of electricity: no generator and no link of a fuel."""
+        component = pl.col(ResultsCol.COMPONENT)
+        return Production(
+            generators=self.generators.filter(~component.is_in(list(fuels.generators))),
+            storage=self.storage,
+            links=self.links.filter(~component.is_in(list(fuels.fuel_links))),
+        )
 
 
 class AnnualReporter:
