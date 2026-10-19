@@ -48,13 +48,18 @@ class PyPSASolvedAttr:
 
     DISPATCH = "p"
     FLOW = "p0"
+    # The power a link withdraws at bus1, negative where it delivers there.
+    FAR_END_FLOW = "p1"
     MARGINAL_PRICE = "marginal_price"
     SNAPSHOT_WEIGHTING = "objective"
+    # The hours each snapshot counts for in a generator's energy sum.
+    GENERATOR_WEIGHTING = "generators"
 
 
 # NetCDF name for the per-snapshot objective weightings, which PyPSA does not expose as
 # a component (a ``*_i`` coordinate).
 PYPSA_SNAPSHOTS_OBJECTIVE_VAR = "snapshots_objective"
+PYPSA_SNAPSHOTS_GENERATORS_VAR = "snapshots_generators"
 
 # Prefix PyPSA's exporter gives every network-level attribute in ``ds.attrs``
 # (``ExporterNetCDF.save_attributes``): ``pypsa_version`` becomes
@@ -172,6 +177,7 @@ class PyPSALoadCol(PyPSAComponentCol):
     P_SET = "p_set"
     Q_SET = "q_set"
     TYPE = "type"
+    SIGN = "sign"
 
 
 class PyPSALineCol:
@@ -257,6 +263,8 @@ class PyPSAGeneratorCol(PyPSAComponentCol):
     LIFETIME = "lifetime"
     FOM_COST = "fom_cost"
     BUILD_YEAR = "build_year"
+    E_SUM_MIN = "e_sum_min"
+    E_SUM_MAX = "e_sum_max"
 
 
 class PyPSAStorageUnitCol(PyPSAComponentCol):
@@ -272,6 +280,7 @@ class PyPSAStorageUnitCol(PyPSAComponentCol):
     MARGINAL_COST = "marginal_cost"
     STATE_OF_CHARGE_INITIAL = "state_of_charge_initial"
     CYCLIC_STATE_OF_CHARGE = "cyclic_state_of_charge"
+    CYCLIC_STATE_OF_CHARGE_PER_PERIOD = "cyclic_state_of_charge_per_period"
     P_NOM_EXTENDABLE = "p_nom_extendable"
     P_NOM_OPT = "p_nom_opt"
     INFLOW = "inflow"
@@ -424,6 +433,17 @@ class PyPSADestinationTable:
     LINES = "lines"
     LINKS = "links"
     TIME_SERIES_METADATA = "time_series_metadata"
+    # A key of ``State.destination_time_series``: one row for each snapshot.
+    SNAPSHOT_WEIGHTINGS = "snapshot_weightings"
+
+
+class PyPSASnapshotWeightingCol:
+    """Columns of the snapshot weightings table: PyPSA ``n.snapshot_weightings``, in hours."""
+
+    SNAPSHOT = "snapshot"
+    OBJECTIVE = "objective"
+    GENERATORS = "generators"
+    STORES = "stores"
 
 
 class ReverseTimeSeriesMetadataCol:
@@ -489,6 +509,9 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
+    # MWh over the snapshots, null where the source states no bound.
+    PyPSAGeneratorCol.E_SUM_MIN: pl.Float64,
+    PyPSAGeneratorCol.E_SUM_MAX: pl.Float64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -516,6 +539,7 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.MARGINAL_COST: pl.Float64,
     PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: pl.Float64,
     PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: pl.Boolean,
+    PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD: pl.Boolean,
     PyPSAStorageUnitCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSAStorageUnitCol.INFLOW: pl.Float64,
     # Expansion fields, null for a component whose capacity the source fixes. The sink
@@ -534,6 +558,7 @@ LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALoadCol.P_SET: pl.Float64,
     PyPSALoadCol.CARRIER: pl.Utf8,
     PyPSALoadCol.TYPE: pl.Utf8,
+    PyPSALoadCol.SIGN: pl.Float64,
 }
 
 LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -568,6 +593,13 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSALinkCol.P_NOM_MIN: pl.Float64,
+}
+
+SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    PyPSASnapshotWeightingCol.SNAPSHOT: pl.Datetime("us"),
+    PyPSASnapshotWeightingCol.OBJECTIVE: pl.Float64,
+    PyPSASnapshotWeightingCol.GENERATORS: pl.Float64,
+    PyPSASnapshotWeightingCol.STORES: pl.Float64,
 }
 
 REVERSE_TIME_SERIES_METADATA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

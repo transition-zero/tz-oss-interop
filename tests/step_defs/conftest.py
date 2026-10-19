@@ -500,9 +500,13 @@ def invoke_solve_pypsa(
     unit_commitment: str = "exact",
     window: str = "month",
     look_ahead_days: str = "",
+    unserved_energy: str = "refused",
 ) -> None:
-    """Stub the pypsa solve prompts (model type, paths, dates, UC, window), then dispatch."""
-    stub_questionary_attr(monkeypatch, "select", iter(["pypsa", unit_commitment, window]))
+    """Stub the pypsa solve prompts (model type, paths, dates, UC, window, unserved energy),
+    then dispatch."""
+    stub_questionary_attr(
+        monkeypatch, "select", iter(["pypsa", unit_commitment, window, unserved_energy])
+    )
     stub_questionary_attr(monkeypatch, "path", iter([network_path, output_dir]))
     stub_questionary_attr(monkeypatch, "text", iter([start, end, look_ahead_days]))
     _dispatch(Command.SOLVE, make_container())
@@ -925,6 +929,44 @@ def run_solve_pypsa_with_unit_commitment(
     invoke_solve_pypsa(
         monkeypatch, network_path, output_dir, start, end, unit_commitment=unit_commitment
     )
+
+
+@when(
+    parsers.parse(
+        'I run solve on "{network_path}" from "{start}" to "{end}" '
+        'with unserved energy "{unserved_energy}" into "{output_dir}"'
+    )
+)
+def run_solve_pypsa_with_unserved_energy(
+    monkeypatch: pytest.MonkeyPatch,
+    network_path: str,
+    start: str,
+    end: str,
+    unserved_energy: str,
+    output_dir: str,
+) -> None:
+    invoke_solve_pypsa(
+        monkeypatch, network_path, output_dir, start, end, unserved_energy=unserved_energy
+    )
+
+
+@then(parsers.parse('the solved network "{path}" has no generator "{name}"'))
+def assert_solved_network_has_no_generator(path: str, name: str) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    assert name not in network.generators.index, f"expected no generator {name!r} in {path}"
+
+
+@then(
+    parsers.parse('the solved network "{path}" records {mwh:g} MWh of unserved energy at "{bus}"')
+)
+def assert_solved_network_records_unserved_energy(path: str, mwh: float, bus: str) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    recorded = network.meta.get("unserved_energy_mwh", {})
+    assert abs(recorded.get(bus, 0.0) - mwh) < 1e-6, f"expected {mwh} MWh at {bus}, got {recorded}"
 
 
 @then(parsers.parse('the solved network "{path}" has dispatch for {count:d} snapshots'))

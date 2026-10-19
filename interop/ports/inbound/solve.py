@@ -93,6 +93,7 @@ class SolveNetworkRequest:
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
     window: SolveWindowLength = SolveWindowLength.MONTH
     look_ahead_days: int = DEFAULT_LOOK_AHEAD_DAYS
+    unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
 
 
 @dataclass

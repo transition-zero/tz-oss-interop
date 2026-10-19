@@ -8,6 +8,7 @@ import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import (
+    ControllableLineCompanionCol,
     ControllableLineExtension,
     ExtensionKind,
     ExtensionReader,
@@ -30,12 +31,31 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
+    CompanionColumn,
+    stage_companion_columns,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    LINE_MAPPED_FIELDS,
+    LINK_MAPPED_FIELDS,
+)
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     bus_id_to_v_nom,
     extendable_floor,
 )
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+
+# The OSeMOSYS CapacityFactor of a line multiplies its static p_max_pu, which PyPSA's own
+# series replaces, so the sink scales the series by the static value.
+_COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
+    CompanionColumn(
+        ControllableLineCompanionCol.P_MAX_PU,
+        PyPSADestinationTable.LINKS,
+        PyPSALinkCol.P_MAX_PU,
+    ),
+)
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line.
 _DEFAULT_LENGTH = 0.0
@@ -227,7 +247,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             bus1 = bus_names[row[SiennaLineCol.BUS1]]
             available = bool(row[SiennaLineCol.AVAILABLE])
             z_base = bus_v_nom[bus0_id] ** 2 / DEFAULT_SYSTEM_BASE_MVA
-            ext = extensions.get(name)
+            ext = extensions.get_fields(name, LINE_MAPPED_FIELDS)
             reporter.record_endpoints(sienna_type, name, row[SiennaLineCol.ARC], bus0, bus1)
             reporter.record_available(sienna_type, name, available, available)
             impedance = _convert_line_impedance(reporter, sienna_type, name, row, z_base)
@@ -262,6 +282,8 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             state.destination_tables[PyPSADestinationTable.LINES] = pl.DataFrame(
                 rows, schema=LINES_DESTINATION_SCHEMA
             )
+        relayed = [extensions.relay(row[PyPSALineCol.NAME]) for row in rows]
+        relay_records(state, ExtensionKind.LINE, relayed, self._recorder)
 
     def _map_links(self, state: State, bus_names: dict[int, str]) -> None:
         source = state.source_topology.get(SiennaTable.LINKS)
@@ -276,7 +298,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             bus1 = bus_names[row[SiennaLinkCol.BUS1]]
             available = bool(row[SiennaLinkCol.AVAILABLE])
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
-            ext = extensions.get(name)
+            ext = extensions.get_fields(name, LINK_MAPPED_FIELDS)
             loss_term = float(
                 row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
                     SiennaStructField.PROPORTIONAL_TERM
@@ -320,3 +342,21 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
                 rows, schema=LINKS_DESTINATION_SCHEMA
             )
+            stage_companion_columns(
+                state,
+                ExtensionKind.CONTROLLABLE_LINE,
+                _COMPANION_COLUMNS,
+                _scale_by_static_p_max_pu(rows),
+            )
+        relayed = [extensions.relay(row[PyPSALinkCol.NAME]) for row in rows]
+        relay_records(state, ExtensionKind.CONTROLLABLE_LINE, relayed, self._recorder)
+
+
+def _scale_by_static_p_max_pu(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """The static p_max_pu of each link, which multiplies its series; PyPSA's default is 1."""
+    return {
+        row[PyPSALinkCol.NAME]: row[PyPSALinkCol.P_MAX_PU]
+        if row[PyPSALinkCol.P_MAX_PU] is not None
+        else 1.0
+        for row in rows
+    }

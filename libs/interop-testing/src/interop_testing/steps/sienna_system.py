@@ -389,6 +389,37 @@ def given_system_has_representative_period(
     sienna_system_builder.add_representative_period(name, first_timestamp, hours, weight)
 
 
+@given(parsers.parse('the {sienna_type} "{name}" has ext "{field}" set to {value}'))
+def given_component_has_ext_field(
+    sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str, field: str, value: str
+) -> None:
+    """One field of a component's sidecar record, stated as JSON."""
+    sienna_system_builder.add_ext(sienna_type, name, {field: json.loads(value)})
+
+
+@given(
+    parsers.parse('the system has a {kind} extension record "{name}" with "{field}" set to {value}')
+)
+def given_system_has_extension_record(
+    sienna_system_builder: SiennaSystemBuilder, kind: str, name: str, field: str, value: str
+) -> None:
+    """One field of a sidecar record that no component owns, stated as JSON."""
+    sienna_system_builder.add_record(kind, name, {field: json.loads(value)})
+
+
+@given(parsers.parse('the HVDC line "{name}" has an ext p_max_pu series {series}'))
+def given_hvdc_line_has_ext_p_max_pu_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series: str
+) -> None:
+    sienna_system_builder.add_companion_series(
+        "TwoTerminalGenericHVDCLine",
+        name,
+        "p_max_pu_series",
+        "controllable_lines.parquet",
+        [float(value) for value in series.split()],
+    )
+
+
 @given(parsers.parse('the {sienna_type} "{name}" is committable in ext'))
 def given_component_committable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str

@@ -19,7 +19,8 @@ only conversions are at the file edge, where the document is written and read ba
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import logging
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
@@ -30,6 +31,8 @@ from pydantic import BaseModel, ConfigDict
 from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 
 class ExtensionKind(StrEnum):
@@ -701,6 +704,15 @@ _UNCONSUMED_NOTE = (
     "no mapping in this translation reads this extension record, so it is dropped rather "
     "than carried into the next sidecar"
 )
+_UNHANDLED_FIELD_NOTE = (
+    "a mapping in this translation reads this extension record, but no mapping maps this "
+    "field and none relays it, so it is dropped rather than carried into the next sidecar"
+)
+_UNHANDLED_FIELD_WARNING = (
+    "%d field(s) of extension records reach no mapping and no relay, so each is dropped: %s"
+)
+# How many dropped fields a warning names before it counts the rest.
+_NAMED_FIELDS = 3
 
 
 def report_dropped(staged: StagedExtensions, framework: str, recorder: EventRecorder) -> None:
@@ -714,6 +726,18 @@ def report_dropped(staged: StagedExtensions, framework: str, recorder: EventReco
                     note=_UNCONSUMED_NOTE,
                 )
             )
+
+
+def build_stated_fields(record: ExtensionRecord) -> dict[str, Any]:
+    """The fields a record states a value for, other than its name, by field name."""
+    return {
+        field_name: getattr(record, field_name)
+        for field_name in record.model_dump(exclude={"name"}, exclude_none=True, exclude_unset=True)
+    }
+
+
+def _is_scalar(value: Any) -> bool:
+    return isinstance(value, str | int | float | bool)
 
 
 @overload
@@ -775,32 +799,85 @@ def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
     return next((record for record in staged.get(kind, []) if record.name == name), None)
 
 
+@dataclass
+class KindConsumption:
+    """What the readers of one hop did with the records of one kind.
+
+    ``whole`` holds the names of the records a reader took as a whole. ``fields`` holds, for
+    a record a reader took field by field, the fields that a mapping maps or a relay carries.
+    """
+
+    whole: set[str] = field(default_factory=set)
+    fields: dict[str, set[str]] = field(default_factory=dict)
+
+    def list_unhandled_fields(self, record: ExtensionRecord) -> list[str]:
+        """The stated fields of a record taken field by field that nothing handles."""
+        if record.name in self.whole or record.name not in self.fields:
+            return []
+        handled = self.fields[record.name]
+        return [name for name in build_stated_fields(record) if name not in handled]
+
+    def is_unread(self, record: ExtensionRecord) -> bool:
+        return record.name not in self.whole and record.name not in self.fields
+
+
 class ExtensionLookup(Generic[RecordT]):
     """One kind's staged records, by name.
 
     ``get`` always answers with a record, so a consumer reads a field rather than branching
     on whether the hop before it wrote anything. A name the sidecar never mentioned yields a
     record whose every field is unset, which is what "the source said nothing" means.
+
+    ``get`` takes a record as a whole. ``get_fields`` takes only the fields a mapping maps,
+    and ``relay`` then carries the other fields on, so the hop reports a field that neither
+    reaches.
     """
 
-    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: set[str]):
+    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: KindConsumption):
         self._model = model
         self._records = {record.name: record for record in records}
         self._consumed = consumed
 
     def get(self, name: str) -> RecordT:
-        self._consumed.add(name)
-        return self._records.get(name) or self._model(name=name)
+        self._consumed.whole.add(name)
+        return self._find_or_build(name)
+
+    def get_fields(self, name: str, mapped: Collection[str]) -> RecordT:
+        """One record, of which the caller maps only the ``mapped`` fields."""
+        self._consumed.fields.setdefault(name, set()).update(mapped)
+        return self._find_or_build(name)
+
+    def relay(self, name: str) -> RecordT:
+        """A record that holds each stated field of ``name`` that no mapping here maps.
+
+        The fields it holds count as relayed. A record with nothing left holds the name alone.
+        """
+        handled = self._consumed.fields.setdefault(name, set())
+        left = {
+            field_name: value
+            for field_name, value in build_stated_fields(self._find_or_build(name)).items()
+            if field_name not in handled
+        }
+        handled.update(left)
+        return self._model.model_validate({"name": name, **left})
+
+    def list_records(self) -> list[RecordT]:
+        """Every staged record of this kind, none of them marked as read."""
+        return list(self._records.values())
 
     def read_all(self) -> list[RecordT]:
         """Every staged record of this kind, each one marked as read."""
-        self._consumed.update(self._records)
+        self._consumed.whole.update(self._records)
         return list(self._records.values())
+
+    def _find_or_build(self, name: str) -> RecordT:
+        return self._records.get(name) or self._model(name=name)
 
 
 @dataclass
 class ExtensionConsumption:
-    """The names every reader of one hop has read, and the step to report a drop against.
+    """The records and fields every reader of one hop has read, and the step to report a drop
+    against.
 
     A hop may split its mappings across more than one step, so the readers those steps build
     share one of these and the run reports what none of them asked for once the last step
@@ -809,16 +886,51 @@ class ExtensionConsumption:
     """
 
     recorder: EventRecorder
-    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+    by_kind: dict[ExtensionKind, KindConsumption] = field(default_factory=dict)
 
-    def names_for(self, kind: ExtensionKind) -> set[str]:
-        return self.by_kind.setdefault(kind, set())
+    def get_kind(self, kind: ExtensionKind) -> KindConsumption:
+        return self.by_kind.setdefault(kind, KindConsumption())
 
     def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
+        """Report each record that no reader read, and each field of a record read field by
+        field that nothing maps or relays."""
+        dropped_fields: list[str] = []
         for kind, records in staged.items():
-            consumed = self.by_kind.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
+            consumed = self.by_kind.get(kind, KindConsumption())
+            unread = [record for record in records if consumed.is_unread(record)]
             report_dropped({kind: unread}, framework, self.recorder)
+            for record in records:
+                for field_name in consumed.list_unhandled_fields(record):
+                    self._record_dropped_field(kind, record, field_name, framework)
+                    dropped_fields.append(f"{kind} {record.name}.{field_name}")
+        if dropped_fields:
+            log.warning(_UNHANDLED_FIELD_WARNING, len(dropped_fields), _name_a_few(dropped_fields))
+
+    def _record_dropped_field(
+        self, kind: ExtensionKind, record: ExtensionRecord, field_name: str, framework: str
+    ) -> None:
+        value = getattr(record, field_name)
+        self.recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[
+                    SourceField(
+                        framework=framework,
+                        component=kind,
+                        name=record.name,
+                        attribute=field_name,
+                        value=value if _is_scalar(value) else None,
+                    )
+                ],
+                note=_UNHANDLED_FIELD_NOTE,
+            )
+        )
+
+
+def _name_a_few(labels: list[str]) -> str:
+    named = ", ".join(labels[:_NAMED_FIELDS])
+    rest = len(labels) - _NAMED_FIELDS
+    return named if rest <= 0 else f"{named}, and {rest} more"
 
 
 class ExtensionReader:
@@ -873,10 +985,10 @@ class ExtensionReader:
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.get_kind(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumption.names_for(kind).update(record.name for record in records)
+        self._consumption.get_kind(kind).whole.update(record.name for record in records)
         return records

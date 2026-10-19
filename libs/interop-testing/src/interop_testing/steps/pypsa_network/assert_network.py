@@ -7,6 +7,8 @@ lookup and the failure message. The Given steps that build the network live in
 
 from __future__ import annotations
 
+import math
+
 from pytest_bdd import parsers, then
 
 from interop_testing.builders.pypsa_networks import read_network
@@ -269,6 +271,11 @@ def assert_link_extendable(path: str, name: str) -> None:
     WrittenComponent(path, LINK, name).assert_flag_set("p_nom_extendable")
 
 
+@then(parsers.parse('the PyPSA network "{path}" link "{name}" has a p_max_pu time series {series}'))
+def assert_link_p_max_pu_series(path: str, name: str, series: str) -> None:
+    WrittenComponent(path, LINK, name).assert_series("p_max_pu", series)
+
+
 # ---------- Storage units ----------
 
 
@@ -305,6 +312,16 @@ def assert_storage_unit_extendable(path: str, name: str) -> None:
 @then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" is not extendable'))
 def assert_storage_unit_not_extendable(path: str, name: str) -> None:
     WrittenComponent(path, STORAGE_UNIT, name).assert_flag_clear("p_nom_extendable")
+
+
+@then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" has "{flag}" set'))
+def assert_storage_unit_flag_set(path: str, name: str, flag: str) -> None:
+    WrittenComponent(path, STORAGE_UNIT, name).assert_flag_set(flag)
+
+
+@then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" has "{flag}" clear'))
+def assert_storage_unit_flag_clear(path: str, name: str, flag: str) -> None:
+    WrittenComponent(path, STORAGE_UNIT, name).assert_flag_clear(flag)
 
 
 @then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" is cyclic'))
@@ -348,6 +365,15 @@ def assert_network_snapshot_count(path: str, count: int) -> None:
     assert len(network.snapshots) == count, (
         f"expected {count} snapshots in {path}, found {len(network.snapshots)}"
     )
+
+
+@then(parsers.parse('the PyPSA network "{path}" has snapshot weightings "{column}" of {values}'))
+def assert_network_snapshot_weightings(path: str, column: str, values: str) -> None:
+    expected = [float(value) for value in values.split()]
+    actual = [float(value) for value in read_network(path).snapshot_weightings[column]]
+    assert len(actual) == len(expected) and all(
+        math.isclose(a, e, rel_tol=1e-9) for a, e in zip(actual, expected, strict=True)
+    ), f"expected {column} snapshot weightings {expected} in {path}, got {actual}"
 
 
 @then(parsers.parse('the PyPSA network "{path}" is empty'))

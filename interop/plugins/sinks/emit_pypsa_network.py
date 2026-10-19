@@ -20,6 +20,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALineCol,
     PyPSALinkCol,
     PyPSALoadCol,
+    PyPSASnapshotWeightingCol,
     PyPSAStorageUnitCol,
     ReverseTimeSeriesMetadataCol,
 )
@@ -110,7 +111,26 @@ def build_network(
     cache = series_cache if series_cache is not None else {}
     if metadata is not None and metadata.height > 0:
         _attach_time_series(network, metadata, state, sample, cache)
+    _set_snapshot_weightings(network, state.destination_time_series)
     return network
+
+
+def _set_snapshot_weightings(network: pypsa.Network, tables: dict[str, pl.LazyFrame]) -> None:
+    """Write the hours each snapshot counts for, where a mapping derived them.
+
+    A snapshot the table does not name keeps PyPSA's own weighting.
+    """
+    weightings = tables.get(PyPSADestinationTable.SNAPSHOT_WEIGHTINGS)
+    if weightings is None:
+        return
+    table = weightings.collect().to_pandas().set_index(PyPSASnapshotWeightingCol.SNAPSHOT)
+    held = table.index.intersection(network.snapshots)
+    columns = [
+        PyPSASnapshotWeightingCol.OBJECTIVE,
+        PyPSASnapshotWeightingCol.GENERATORS,
+        PyPSASnapshotWeightingCol.STORES,
+    ]
+    network.snapshot_weightings.loc[held, columns] = table.loc[held, columns]
 
 
 def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
@@ -214,7 +234,7 @@ def _add_loads(network: pypsa.Network, loads: pl.DataFrame | None) -> None:
         loads,
         PyPSALoadCol.NAME,
         required=(PyPSALoadCol.BUS, PyPSALoadCol.P_SET),
-        optional=(PyPSALoadCol.CARRIER, PyPSALoadCol.TYPE),
+        optional=(PyPSALoadCol.CARRIER, PyPSALoadCol.TYPE, PyPSALoadCol.SIGN),
     )
 
 
@@ -312,6 +332,8 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.DISCOUNT_RATE,
             PyPSAGeneratorCol.LIFETIME,
             PyPSAGeneratorCol.BUILD_YEAR,
+            PyPSAGeneratorCol.E_SUM_MIN,
+            PyPSAGeneratorCol.E_SUM_MAX,
         ),
     )
 
@@ -348,6 +370,7 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.DISCOUNT_RATE,
             PyPSAStorageUnitCol.LIFETIME,
             PyPSAStorageUnitCol.BUILD_YEAR,
+            PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD,
         ),
     )
 
@@ -363,6 +386,7 @@ def _attach_time_series(
         PyPSADestinationTable.GENERATORS: network.generators_t,
         PyPSADestinationTable.STORAGE_UNITS: network.storage_units_t,
         PyPSADestinationTable.LOADS: network.loads_t,
+        PyPSADestinationTable.LINKS: network.links_t,
     }
     for (table, attribute), by_component in _columns_by_attribute(
         metadata, state, sample, series_cache

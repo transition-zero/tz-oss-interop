@@ -9,12 +9,15 @@ thin ``_source`` (which fills in the Sienna component, fixed or passed per call)
 
 from __future__ import annotations
 
+from interop.core.extensions import ExtensionKind
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
     UNIT_KM,
     UNIT_KV,
     UNIT_MVA,
     UNIT_MW,
+    UNIT_MWH,
     UNIT_OHM,
     UNIT_SIEMENS,
     Framework,
@@ -138,6 +141,23 @@ class _Reporter(DestinationReporter):
 
     source_framework = Framework.SIENNA
     destination_framework = Framework.PYPSA
+
+    def record_carried(
+        self,
+        sienna_type: str,
+        name: str,
+        field_name: str,
+        column: str,
+        value: object,
+        unit: str | None = None,
+    ) -> None:
+        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
+        attribute = f"{_EXTENSIONS}.{field_name}"
+        self._derived(
+            sources=[self._source_field(sienna_type, name, attribute, value, unit)],
+            destinations=[self._destination(name, column, value, unit)],
+            derivation=f"{attribute} (PyPSA round-trip)",
+        )
 
 
 class ProfileReporter(_Reporter):
@@ -455,21 +475,27 @@ class GeneratorReporter(_Reporter):
             note=_P_NOM_EXTENDABLE_DEFAULT,
         )
 
-    def record_carried(
+    def record_energy_bound(
         self,
-        sienna_type: SiennaComponent,
+        sienna_type: str,
         name: str,
-        field_name: str,
+        attribute: str,
         column: str,
-        value: object,
-        unit: str | None = None,
+        value: float,
+        derivation: str,
     ) -> None:
-        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
-        attribute = f"{_EXTENSIONS}.{field_name}"
+        """The bound of one year of an annual energy bound that the sidecar states."""
         self._derived(
-            sources=[self._source(sienna_type, name, attribute, value, unit)],
-            destinations=[self._destination(name, column, value, unit)],
-            derivation=f"{attribute} (PyPSA round-trip)",
+            sources=[self._source_field(sienna_type, name, attribute, value, UNIT_MWH)],
+            destinations=[self._destination(name, column, value, UNIT_MWH)],
+            derivation=derivation,
+        )
+
+    def record_energy_bound_unmapped(
+        self, sienna_type: str, name: str, attribute: str, note: str
+    ) -> None:
+        self._not_mapped(
+            sources=[self._source_field(sienna_type, name, attribute, None)], note=note
         )
 
 
@@ -1027,4 +1053,43 @@ class LinkReporter(_Reporter):
             sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
             derivation=_P_NOM_FLOOR_DERIVATION,
+        )
+
+
+_RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
+
+
+class ExtensionRelayReporter(_Reporter):
+    """Records each field of a sidecar record that the hop carries on to the PyPSA sidecar."""
+
+    def __init__(self, recorder: ScopedRecorder, kind: str) -> None:
+        super().__init__(recorder)
+        self.destination_component = kind
+
+    def record_relayed(self, name: str, field_name: str, value: object) -> None:
+        attribute = f"{_EXTENSIONS}.{field_name}"
+        self._derived(
+            sources=[self._source_field(self.destination_component, name, attribute, value)],
+            destinations=[self._destination(name, attribute, value)],
+            derivation=_RELAYED_DERIVATION,
+        )
+
+
+_DEFAULT_LINK_NOTE = "the conversion record states no {column}, so PyPSA's own default applies"
+
+
+class ConversionReporter(_Reporter):
+    """Records a conversion record of the sidecar that becomes a PyPSA Link."""
+
+    destination_component = PyPSAComponent.LINK
+
+    def record_from_record(
+        self, name: str, field_name: str, column: str, value: object, unit: str | None
+    ) -> None:
+        self.record_carried(ExtensionKind.CONVERSION, name, field_name, column, value, unit)
+
+    def record_default(self, name: str, column: str, value: float) -> None:
+        self._default_applied(
+            destinations=[self._destination(name, column, value)],
+            note=_DEFAULT_LINK_NOTE.format(column=column),
         )

@@ -24,6 +24,7 @@ from interop.core.extensions import (
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
+from interop.plugins.shared.pypsa_annual_results import PypsaAnnualResultsMapper
 from interop.plugins.shared.pypsa_constants import (
     PyPSAComponent,
     PyPSAGeneratorCol,
@@ -111,6 +112,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         pieces += self._map_price(state)
         pieces += self._map_snapshot_weight(state)
         pieces += self._map_objective(state)
+        pieces += PypsaAnnualResultsMapper(self._recorder).map_annual(state)
 
         if pieces:
             results = (

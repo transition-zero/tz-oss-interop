@@ -195,3 +195,31 @@ Feature: Solve a PyPSA network
     When I run solve on "inputs/net.nc" from "2026-09-30" to "2026-09-01" into "outputs/solved"
     Then the printed output contains "start must not be later than end, got 2026-09-30 to 2026-09-01"
     And the file "outputs/solved/net.nc" does not exist
+
+  Scenario: a shortfall that the refused option makes infeasible goes unserved at a penalty
+    The bus needs 80 MW and its only generator makes 50 MW. With unserved energy refused the
+    solve has no answer. With it penalised, 30 MW goes unserved in each of the two hours, at
+    the penalty of the Sienna balance slack, and the solved network keeps no slack generator.
+    Given a PyPSA network
+    And the network has 2 snapshots starting 2026-09-01 at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "gen" on "bus_1" carrier "gas" p_nom 50.0 marginal_cost 10.0
+    And the network contains load "load_1" on "bus_1" with static p_set 80.0
+    And the network is saved as "inputs/short.nc"
+    When I run solve on "inputs/short.nc" from "2026-09-01" to "2026-09-01" with unserved energy "penalised" into "outputs/solved"
+    Then the solve reported success
+    And the printed output contains "unserved_energy=60 MWh"
+    And the solved network "outputs/solved/short.nc" records 60 MWh of unserved energy at "bus_1"
+    And the solved network "outputs/solved/short.nc" has no generator "bus_1 unserved energy"
+    And the solved network "outputs/solved/short.nc" has generator "gen" dispatch 50 50
+    And the log contains "60 MWh of load goes unserved, most at bus_1 (60 MWh)"
+
+  Scenario: the same shortfall with unserved energy refused does not solve
+    Given a PyPSA network
+    And the network has 2 snapshots starting 2026-09-01 at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "gen" on "bus_1" carrier "gas" p_nom 50.0 marginal_cost 10.0
+    And the network contains load "load_1" on "bus_1" with static p_set 80.0
+    And the network is saved as "inputs/short.nc"
+    When I run solve on "inputs/short.nc" from "2026-09-01" to "2026-09-01" with unserved energy "refused" into "outputs/solved"
+    Then the printed output contains "FAILED"

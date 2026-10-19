@@ -25,7 +25,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import LOAD_MAPPED_FIELDS
 from interop.plugins.shared.sienna_pypsa_translations.mapping import bus_id_to_name
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LoadReporter
 
 # Load series carried back to p_set. A load's per-unit max_active_power profile becomes
@@ -59,7 +61,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
 
         for row in source.collect().iter_rows(named=True):
             name = row[SiennaLoadCol.NAME]
-            ext = records.get(name)
+            ext = records.get_fields(name, LOAD_MAPPED_FIELDS)
             bus_id = row[SiennaLoadCol.BUS]
             bus_name = bus_names[bus_id]
             # max_active_power is the demand magnitude; it becomes the PyPSA static p_set.
@@ -71,6 +73,10 @@ class SiennaToPypsaMapLoads(TranslationStep):
                 reporter.record_carrier_from_ext(name, ext.carrier)
             if ext.type is not None:
                 reporter.record_type_from_ext(name, ext.type)
+            if ext.sign is not None:
+                reporter.record_carried(
+                    SiennaComponent.POWER_LOAD, name, "sign", PyPSALoadCol.SIGN, ext.sign
+                )
             rows.append(
                 {
                     PyPSALoadCol.NAME: name,
@@ -80,6 +86,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
                     # a row that carries no value, and the sidecar states none.
                     PyPSALoadCol.CARRIER: ext.carrier,
                     PyPSALoadCol.TYPE: ext.type,
+                    PyPSALoadCol.SIGN: ext.sign,
                 }
             )
 
@@ -88,6 +95,12 @@ class SiennaToPypsaMapLoads(TranslationStep):
                 rows, schema=LOADS_DESTINATION_SCHEMA
             )
             self._record_load_time_series(state, max_active_power_by_name)
+            relay_records(
+                state,
+                ExtensionKind.LOAD,
+                [records.relay(name) for name in max_active_power_by_name],
+                self._recorder,
+            )
         return state
 
     def _record_load_time_series(

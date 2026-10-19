@@ -802,6 +802,14 @@ def _run_solve_pypsa(
     if window is None:
         return None
 
+    unserved_energy = questionary.select(
+        _UNSERVED_ENERGY_PROMPT,
+        choices=_UNSERVED_ENERGY_OPTIONS,
+        default=_select_default(replay.get(DetailKey.UNSERVED_ENERGY), _UNSERVED_ENERGY_OPTIONS),
+    ).ask()
+    if unserved_energy is None:
+        return None
+
     raw_look_ahead = questionary.text(
         "Days to solve past the end of each window and then discard? (stops storage being "
         "emptied into a window's last hours)",
@@ -823,6 +831,7 @@ def _run_solve_pypsa(
         DetailKey.END_DATE: str(end) if end is not None else "",
         DetailKey.UNIT_COMMITMENT: unit_commitment,
         DetailKey.SOLVE_WINDOW: window,
+        DetailKey.UNSERVED_ENERGY: unserved_energy,
         DetailKey.LOOK_AHEAD_DAYS: str(look_ahead_days),
     }
 
@@ -838,6 +847,7 @@ def _run_solve_pypsa(
                     unit_commitment=UnitCommitmentTreatment(unit_commitment),
                     window=SolveWindowLength(window),
                     look_ahead_days=look_ahead_days,
+                    unserved_energy=UnservedEnergy(unserved_energy),
                 )
             )
     except UserInputError as exc:

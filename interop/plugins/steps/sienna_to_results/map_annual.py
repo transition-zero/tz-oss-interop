@@ -22,9 +22,14 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.annual_results import (
+    PRODUCTION_SCHEMA,
+    build_annual_rows,
+    build_emission_rates,
+    build_emissions,
+)
 from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.results_constants import (
-    RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
     VARIABLE_UNIT,
     ResultsCol,
@@ -52,22 +57,7 @@ from interop.ports.outbound.reporting import (
 
 log = logging.getLogger(__name__)
 
-_FIRST_MONTH = 1
-_FIRST_DAY = 1
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
-
-_Schema = dict[str, pl.DataType | type[pl.DataType]]
-_PRODUCTION_SCHEMA: _Schema = {
-    ResultsCol.COMPONENT: pl.Utf8,
-    ResultsCol.CATEGORY: pl.Utf8,
-    AnnualCol.YEAR: pl.Int32,
-    ResultsCol.VALUE: pl.Float64,
-}
-_RATES_SCHEMA: _Schema = {
-    ResultsCol.COMPONENT: pl.Utf8,
-    AnnualCol.POLLUTANT: pl.Utf8,
-    AnnualCol.RATE: pl.Float64,
-}
 
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
@@ -209,7 +199,7 @@ class AnnualResultsMapper:
         self._record_derivation(
             ResultsVariable.PRODUCTION, _PRODUCTION_SOURCES, _PRODUCTION_DERIVATION
         )
-        return [_build_annual_rows(production, ResultsVariable.PRODUCTION)]
+        return [build_annual_rows(production, ResultsVariable.PRODUCTION)]
 
     def _map_installed_capacity(
         self, capacity: pl.DataFrame, production: pl.DataFrame
@@ -222,18 +212,20 @@ class AnnualResultsMapper:
             _INSTALLED_CAPACITY_DERIVATION,
         )
         self._report_unproduced(capacity.join(production, on=ResultsCol.COMPONENT, how="anti"))
-        return [_build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
+        return [build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
 
     def _map_emissions(
         self, production: pl.DataFrame, generators: ExtensionLookup[GeneratorExtension]
     ) -> list[pl.LazyFrame]:
-        rates = _build_emission_rates(production, generators)
+        rates = build_emission_rates(
+            production, lambda name: generators.get(name).emission_rates_t_per_mwh
+        )
         if rates.is_empty():
             return []
         self._record_derivation(
             ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, _EMISSIONS_DERIVATION
         )
-        return [_build_annual_rows(_build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+        return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
 
     def _record_derivation(
         self, variable: ResultsVariable, sources: list[SourceField], derivation: str
@@ -300,7 +292,7 @@ def _build_production(
 ) -> pl.DataFrame:
     """MWh in each year, by component: power × 1 h × the weight of the hour, summed."""
     if not frames:
-        return pl.DataFrame(schema=_PRODUCTION_SCHEMA)
+        return pl.DataFrame(schema=PRODUCTION_SCHEMA)
     energy = (power * SNAPSHOT_HOURS * pl.col(AnnualCol.WEIGHT)).sum().alias(ResultsCol.VALUE)
     year = pl.col(ResultsCol.TIMESTAMP).dt.year().alias(AnnualCol.YEAR)
     return (
@@ -310,7 +302,7 @@ def _build_production(
         .group_by(ResultsCol.COMPONENT, ResultsCol.CATEGORY, AnnualCol.YEAR, maintain_order=True)
         .agg(energy)
         .collect()
-        .cast(pl.Schema(_PRODUCTION_SCHEMA))
+        .cast(pl.Schema(PRODUCTION_SCHEMA))
     )
 
 
@@ -346,43 +338,4 @@ def _build_rating(
     categories = carrier_lookup.rename({StagedTimeSeriesCol.COMPONENT: ResultsCol.COMPONENT})
     return rows.join(categories, on=ResultsCol.COMPONENT, how="left").unique(
         subset=ResultsCol.COMPONENT, keep="first", maintain_order=True
-    )
-
-
-def _build_emission_rates(
-    production: pl.DataFrame, generators: ExtensionLookup[GeneratorExtension]
-) -> pl.DataFrame:
-    """The t/MWh of each pollutant, for each generator of the solve that states a rate."""
-    rows = [
-        (name, pollutant, rate)
-        for name in production[ResultsCol.COMPONENT].unique().sort().to_list()
-        for pollutant, rate in (generators.get(name).emission_rates_t_per_mwh or {}).items()
-    ]
-    return pl.DataFrame(rows, schema=_RATES_SCHEMA, orient="row")
-
-
-def _build_emissions(production: pl.DataFrame, rates: pl.DataFrame) -> pl.DataFrame:
-    """t in each year, by pollutant: the production of each generator × its rate, summed."""
-    emitted = (pl.col(ResultsCol.VALUE) * pl.col(AnnualCol.RATE)).sum().alias(ResultsCol.VALUE)
-    return (
-        production.join(rates, on=ResultsCol.COMPONENT, how="inner")
-        .group_by(AnnualCol.POLLUTANT, AnnualCol.YEAR, maintain_order=True)
-        .agg(emitted)
-        .select(
-            pl.col(AnnualCol.POLLUTANT).alias(ResultsCol.COMPONENT),
-            pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY),
-            AnnualCol.YEAR,
-            ResultsCol.VALUE,
-        )
-    )
-
-
-def _build_annual_rows(rows: pl.DataFrame, variable: ResultsVariable) -> pl.LazyFrame:
-    january_first = pl.datetime(pl.col(AnnualCol.YEAR), _FIRST_MONTH, _FIRST_DAY)
-    return rows.lazy().select(
-        pl.lit(variable.value).alias(ResultsCol.VARIABLE),
-        pl.col(ResultsCol.COMPONENT),
-        pl.col(ResultsCol.CATEGORY),
-        january_first.cast(RESULTS_SCHEMA[ResultsCol.TIMESTAMP]).alias(ResultsCol.TIMESTAMP),
-        pl.col(ResultsCol.VALUE).cast(pl.Float64),
     )

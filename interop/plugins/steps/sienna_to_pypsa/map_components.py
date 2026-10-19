@@ -4,28 +4,39 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader, append_extensions
+from interop.core.extensions import ExtensionKind, ExtensionReader
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ProfileReporter
 from interop.plugins.shared.staged_samples import choose_ensemble_samples
 from interop.plugins.steps.sienna_to_pypsa.map_buses import map_buses
+from interop.plugins.steps.sienna_to_pypsa.map_conversions import SiennaToPypsaMapConversions
+from interop.plugins.steps.sienna_to_pypsa.map_energy_limits import EnergyLimitMapper
 from interop.plugins.steps.sienna_to_pypsa.map_generators import SiennaToPypsaMapGenerators
 from interop.plugins.steps.sienna_to_pypsa.map_loads import SiennaToPypsaMapLoads
+from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
+    SnapshotWeightingMapper,
+    find_snapshot_window,
+)
 from interop.plugins.steps.sienna_to_pypsa.map_storage_units import SiennaToPypsaMapStorageUnits
 from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsaMapTransmission
 
 _DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
 _CHOOSE_ENSEMBLE_SAMPLES = "choose_ensemble_samples"
+_MAP_SNAPSHOT_WEIGHTINGS = "sienna_to_pypsa_map_snapshot_weightings"
+_MAP_ENERGY_LIMITS = "sienna_to_pypsa_map_energy_limits"
 
-# The kinds no sub-step here reads. Each one describes something PyPSA states nowhere, so it
-# travels on to the destination sidecar rather than stopping at this hop.
+# The kinds that travel on whole. PyPSA states none of them, other than the weights of the
+# representative periods, which also become the snapshot weightings.
 _RELAYED_KINDS: tuple[ExtensionKind, ...] = (
     ExtensionKind.RESERVE,
     ExtensionKind.CONSTRAINT,
     ExtensionKind.NETWORK,
+    ExtensionKind.REPRESENTATIVE_PERIOD,
+    ExtensionKind.TECHNOLOGY,
 )
 
 _WINDOW_ADVICE = (
@@ -51,6 +62,8 @@ class SiennaToPypsaMapComponents(TranslationStep):
         self._recorder = recorder
         self._off_window_recorder = ScopedRecorder(recorder, step=_DROP_PROFILES_OFF_THE_WINDOW)
         self._ensemble_recorder = ScopedRecorder(recorder, step=_CHOOSE_ENSEMBLE_SAMPLES)
+        self._weighting_recorder = ScopedRecorder(recorder, step=_MAP_SNAPSHOT_WEIGHTINGS)
+        self._energy_recorder = ScopedRecorder(recorder, step=_MAP_ENERGY_LIMITS)
 
     def run(self, state: State, params: BaseModel | None) -> State:
         reader = state.extension_reader(self._recorder)
@@ -59,20 +72,20 @@ class SiennaToPypsaMapComponents(TranslationStep):
             state = sub_step.run(state, params)
         self._drop_profiles_off_the_window(state)
         choose_ensemble_samples(state, self._ensemble_recorder, Framework.SIENNA)
+        self._map_snapshot_weightings(state, reader)
         self._relay_unread(state, reader)
         return state
 
-    def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
-        """Carry each kind no sub-step reads on to the destination sidecar.
+    def _map_snapshot_weightings(self, state: State, reader: ExtensionReader) -> None:
+        """Weight the snapshots, then bound each generator's energy over the year they span."""
+        weightings = SnapshotWeightingMapper(self._weighting_recorder)
+        span = weightings.map_weightings(state, reader, find_snapshot_window(state))
+        EnergyLimitMapper(self._energy_recorder).map_energy_limits(state, reader, span)
 
-        A record that names a companion parquet states no value of its own, so the frame
-        travels with it.
-        """
+    def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
+        """Carry each kind that travels on whole to the destination sidecar."""
         for kind in _RELAYED_KINDS:
-            append_extensions(state.destination_extensions, kind, reader.relay(kind))
-            series = state.source_extension_series.get(kind)
-            if series is not None:
-                state.destination_extension_series[kind] = series
+            relay_records(state, kind, reader.relay(kind), self._recorder)
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:
         return (
@@ -80,6 +93,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
             SiennaToPypsaMapStorageUnits(self._scoped(SiennaToPypsaMapStorageUnits.name), reader),
             SiennaToPypsaMapLoads(self._scoped(SiennaToPypsaMapLoads.name), reader),
             SiennaToPypsaMapTransmission(self._scoped(SiennaToPypsaMapTransmission.name), reader),
+            SiennaToPypsaMapConversions(self._scoped(SiennaToPypsaMapConversions.name), reader),
         )
 
     def _scoped(self, step: str) -> ScopedRecorder:

@@ -18,6 +18,8 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.sienna_constants import ACBusType, SiennaACBusCol, SiennaTable
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_control
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import BUS_MAPPED_FIELDS
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import BusReporter
 
 
@@ -35,13 +37,15 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
     records = extensions.read(ExtensionKind.BUS)
     rows: list[dict[str, Any]] = []
     for row in source.collect().iter_rows(named=True):
-        mapping = _derive_bus(row, records.get(row[SiennaACBusCol.NAME]))
+        mapping = _derive_bus(row, records.get_fields(row[SiennaACBusCol.NAME], BUS_MAPPED_FIELDS))
         _record_bus(reporter, mapping)
         rows.append(_bus_row(mapping))
     if rows:
         state.destination_tables[PyPSADestinationTable.BUSES] = pl.DataFrame(
             rows, schema=BUSES_DESTINATION_SCHEMA
         )
+    relayed = [records.relay(row[PyPSABusCol.NAME]) for row in rows]
+    relay_records(state, ExtensionKind.BUS, relayed, recorder)
 
 
 @dataclass(frozen=True)
