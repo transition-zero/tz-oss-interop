@@ -59,8 +59,8 @@ _PRODUCTION_DERIVATION = (
     "component with no p, as PyPSA's netCDF export leaves out a series that is 0 in each snapshot"
 )
 _INSTALLED_CAPACITY_DERIVATION = (
-    "p_nom × p_max_pu for a generator, a storage unit or a link, and once for a two-way link "
-    "and its reverse link → installed_capacity at 1 January of the year"
+    "p_nom, the nameplate, for a generator; p_nom × p_max_pu for a storage unit or a link, and "
+    "once for a two-way link and its reverse link → installed_capacity at 1 January of the year"
 )
 
 
@@ -70,12 +70,24 @@ class _Rated(NamedTuple):
     table: str
     component: PyPSAComponent
     has_category: bool
+    # A generator's p_max_pu is what it may make, so its nameplate is p_nom alone.
+    is_rated_by_p_max_pu: bool
 
 
 _RATED = (
-    _Rated(PyPSATable.GENERATORS, PyPSAComponent.GENERATOR, has_category=True),
-    _Rated(PyPSATable.STORAGE_UNITS, PyPSAComponent.STORAGE_UNIT, has_category=True),
-    _Rated(PyPSATable.LINKS, PyPSAComponent.LINK, has_category=False),
+    _Rated(
+        PyPSATable.GENERATORS,
+        PyPSAComponent.GENERATOR,
+        has_category=True,
+        is_rated_by_p_max_pu=False,
+    ),
+    _Rated(
+        PyPSATable.STORAGE_UNITS,
+        PyPSAComponent.STORAGE_UNIT,
+        has_category=True,
+        is_rated_by_p_max_pu=True,
+    ),
+    _Rated(PyPSATable.LINKS, PyPSAComponent.LINK, has_category=False, is_rated_by_p_max_pu=True),
 )
 # Finds the power of the components of one table, by snapshot, or None where it states none.
 _PowerFinder = Callable[[State, str], pl.LazyFrame | None]
@@ -306,7 +318,9 @@ def _build_capacity(state: State, years: pl.DataFrame) -> pl.DataFrame:
 
 def _build_rating(state: State, rated: _Rated) -> pl.LazyFrame:
     topology = state.source_topology[rated.table]
-    rating = _express_attribute(topology, _P_NOM) * _express_attribute(topology, _P_MAX_PU)
+    rating = _express_attribute(topology, _P_NOM)
+    if rated.is_rated_by_p_max_pu:
+        rating = rating * _express_attribute(topology, _P_MAX_PU)
     return topology.select(
         pl.col(PYPSA_NAME_COLUMN).alias(ResultsCol.COMPONENT),
         pl.lit(str(rated.component)).alias(AnnualCol.COMPONENT_TYPE),

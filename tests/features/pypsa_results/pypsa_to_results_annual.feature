@@ -31,6 +31,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the network objective is 1000.0
 
   Scenario: Production weights each snapshot, and a line delivers what reaches its far end
+    The installed capacity of the gas plant is its nameplate p_nom, not p_nom × p_max_pu.
     The line sends 5 MW and delivers 4.5 MW in the first hour. In the second hour its reverse
     link sends 3 MW back and delivers 2.7 MW, which counts as production of the line. The line
     has one installed capacity, so the comparison meets the one Sienna line.
@@ -48,7 +49,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | production | link      |          | 2030-01-01T00:00:00 | 810   |
     And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
       | variable           | component | category | timestamp           | value |
-      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 100   |
+      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
       | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 10    |
       | installed_capacity | dam       | hydro    | 2030-01-01T00:00:00 | 5     |
       | installed_capacity | link      |          | 2030-01-01T00:00:00 | 20    |

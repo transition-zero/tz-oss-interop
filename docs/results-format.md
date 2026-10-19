@@ -96,6 +96,11 @@ the period occurs in the year. The `sienna-to-results` pipeline then writes thes
 - `installed_capacity` is `base_power` × `rating` of a generator, `base_power` ×
   `output_active_power_limits.max` of a storage, and `active_power_limits_from.max` of a
   `TwoTerminalGenericHVDCLine`.
+- `installed_capacity` is the nameplate, as the published `TotalCapacityAnnual` of an OSeMOSYS
+  model is. `base_power` × `rating` is the nameplate of a plant from OSeMOSYS: `base_power` is
+  the residual capacity in MW of electricity, and `rating` is always 1.0. The availability
+  factor goes to `active_power_limits.max` and not to `rating`. A plant from PLEXOS or PyPSA
+  can state a `rating` below 1.0, a derate, and then this number is less than its nameplate.
 - `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
   rate in `emission_rates_t_per_mwh` of the generator record.
 
@@ -130,13 +135,12 @@ The definitions are those of `sienna-to-results`, with the PyPSA fields:
   receives it, `max(-p0, 0) + max(-p1, 0)`. A link that loses energy delivers less than it
   sends. Its `category` is null, as for a Sienna HVDC line. The `<name> reverse` link of a
   two-way line adds to the `production` of `<name>`, so the row meets the one Sienna line.
-- `installed_capacity` is `p_nom` × `p_max_pu` of a generator, a storage unit or a link. A
-  two-way line and its reverse link give one row. The Sienna to PyPSA translation writes
-  `base_power` as `p_nom`. It writes `rating` as the `p_max_pu` of a renewable generator, and
-  `output_active_power_limits.max` as the `p_max_pu` of a storage, so the two pipelines give
-  the same number for one of these components. For a `ThermalStandard`, it writes
-  `active_power_limits.max` ÷ `base_power`, but not more than `rating`. So where the limit is
-  less than `base_power` × `rating`, `pypsa-to-results` gives the smaller number.
+- `installed_capacity` is the nameplate. For a generator it is `p_nom`, because `p_max_pu` is
+  what the generator can make, not what it has. For a storage unit or a link it is `p_nom` ×
+  `p_max_pu`. A two-way line and its reverse link give one row. The Sienna to PyPSA
+  translation writes `base_power` as `p_nom`, and `output_active_power_limits.max` as the
+  `p_max_pu` of a storage, so the two pipelines give the same number for a storage. They give
+  the same number for a generator where `rating` is 1.0, as for every plant from OSeMOSYS.
 - `emissions` of a pollutant is the sum over the generators and the storage units of
   `production` multiplied by the rate in `emission_rates_t_per_mwh` of the `generator` record of
   the sidecar. A Sienna `HydroDispatch` is a generator, and a PyPSA storage unit, so both
