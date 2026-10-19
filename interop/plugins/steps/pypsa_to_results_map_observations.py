@@ -24,8 +24,9 @@ from interop.core.extensions import (
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
-from interop.plugins.shared.pypsa_annual_results import PypsaAnnualResultsMapper
+from interop.plugins.shared.pypsa_annual_results import PypsaAnnualResultsMapper, is_solved
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_NAME_COLUMN,
     PyPSAComponent,
     PyPSAGeneratorCol,
     PyPSALoadCol,
@@ -56,6 +57,7 @@ _RESULTS_TIMESTAMP_DTYPE = RESULTS_SCHEMA[ResultsCol.TIMESTAMP]
 
 # Null category or component for variables that do not carry that dimension.
 _NULL_UTF8 = pl.lit(None, dtype=pl.Utf8)
+_IDLE_DISPATCH = 0.0
 
 # What names the load side of the surplus join, whose other side is the capacity.
 _LOAD_SUFFIX = "_load"
@@ -135,7 +137,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         pieces: list[pl.LazyFrame] = []
         sources: list[SourceField] = []
         for table, component, carrier_col in specs:
-            ts = state.source_time_series.get((table, PyPSASolvedAttr.DISPATCH))
+            ts = _enrich_idle_dispatch(state, table)
             topology = state.source_topology.get(table)
             if ts is None or topology is None:
                 continue
@@ -169,7 +171,8 @@ class PypsaToResultsMapObservations(TranslationStep):
                 ResultsVariable.DISPATCH,
                 sources,
                 "generators_t.p and storage_units_t.p -> dispatch (MW into bus); "
-                "category = carrier",
+                "category = carrier; 0 in each snapshot for a component of a solved network "
+                "that states no p, as PyPSA's netCDF export leaves out a series of zeros",
             )
         return pieces
 
@@ -471,6 +474,33 @@ def _surplus_columns() -> list[pl.Expr]:
         component=_NULL_UTF8,
         value=headroom,
     )
+
+
+def _enrich_idle_dispatch(state: State, table: str) -> pl.LazyFrame | None:
+    """The dispatch of a table, with 0 in each snapshot for each component of a solved network
+    that states no p; PyPSA's netCDF export leaves out a series that is 0 in every snapshot."""
+    dispatch = state.source_time_series.get((table, PyPSASolvedAttr.DISPATCH))
+    topology = state.source_topology.get(table)
+    snapshots = _find_snapshots(state)
+    if topology is None or snapshots is None or not is_solved(state):
+        return dispatch
+    names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT))
+    if dispatch is not None:
+        stated = dispatch.select(PyPSATimeSeriesCol.COMPONENT).unique()
+        names = names.join(stated, on=PyPSATimeSeriesCol.COMPONENT, how="anti")
+    idle = snapshots.join(names, how="cross").with_columns(
+        pl.lit(_IDLE_DISPATCH).alias(PyPSATimeSeriesCol.VALUE)
+    )
+    return idle if dispatch is None else pl.concat([dispatch, idle], how="vertical_relaxed")
+
+
+def _find_snapshots(state: State) -> pl.LazyFrame | None:
+    """Every snapshot of the network, read from a snapshot weighting."""
+    for attribute in (PyPSASolvedAttr.SNAPSHOT_WEIGHTING, PyPSASolvedAttr.GENERATOR_WEIGHTING):
+        frame = state.source_time_series.get((PyPSATable.SNAPSHOTS, attribute))
+        if frame is not None:
+            return frame.select(PyPSATimeSeriesCol.SNAPSHOT)
+    return None
 
 
 def _build_piece_columns(

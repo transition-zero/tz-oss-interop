@@ -59,7 +59,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
     And the file "decisions.md" contains "max(-p0, 0) + max(-p1, 0)"
 
-  Scenario: A component with no output in a solved network has a production of 0
+  Scenario: A component with no output in a solved network has a production and a dispatch of 0
     PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so the solved file
     states no p for the peaker.
     Given the network contains generator "peaker" on "node_a" carrier "oil" p_nom 50.0 p_max_pu 1.0
@@ -70,6 +70,11 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | variable   | component | category | timestamp           | value |
       | production | peaker    | oil      | 2030-01-01T00:00:00 | 0     |
       | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+    And the results parquet "outputs/results.parquet" holds these "dispatch" rows among others:
+      | variable | component | category | timestamp           | value |
+      | dispatch | peaker    | oil      | 2030-01-01T00:00:00 | 0     |
+      | dispatch | peaker    | oil      | 2030-01-01T03:00:00 | 0     |
+      | dispatch | gas       | gas      | 2030-01-01T03:00:00 | 40    |
     And the log does not contain "the solve states no output for them"
 
   Scenario: A component with no output in a network that states no objective has no production, and is reported

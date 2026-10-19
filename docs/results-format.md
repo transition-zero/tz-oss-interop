@@ -38,6 +38,13 @@ Granularity is explicit in which dimensions are populated:
 A null is a null, not zero and not a sentinel. Sparseness is absent rows plus
 null dimensions; there is no wide variant and no second table.
 
+Each generator and each storage unit of a solved PyPSA network has a `dispatch` row in each
+snapshot. PyPSA's netCDF export leaves out a series that is 0 in every snapshot, so
+`pypsa-to-results` writes 0 for a component that the file states no `p` for, if the network
+states an objective. A PowerSimulations.jl solve writes a column for each device that it
+models, also when the output is 0, so `sienna-to-results` already has a row for each of them.
+A device with no column was not in the solve, and `sienna-to-results` writes no row for it.
+
 ## Variable vocabulary
 
 | Variable | Unit | Sign convention | Dimensions typically set |
