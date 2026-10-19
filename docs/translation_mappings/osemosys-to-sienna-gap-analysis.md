@@ -36,6 +36,7 @@ Read it before you trust a number from a solve of a translated OSeMOSYS model.
 | **A representative day** | One day of 24 hours that stands for a number of days of the year, its weight |
 | **The dispatch** | A PowerSimulations.jl solve of the Sienna system |
 | **The expansion** | A PowerSystemsInvestments.jl solve of the portfolio |
+| **The PyPSA dispatch** | A PyPSA solve of the network that the `sienna-to-pypsa` pipeline writes from the Sienna system and its `extensions.json` |
 | `extensions.json` | A file that tz-oss-interop writes beside `system.json`. It holds values that Sienna has no field for, under the names of the PyPSA attributes with the same meaning. Sienna does not read it. |
 | `decisions.md` | A file that tz-oss-interop writes beside the output of each run. It names each component and each value that the run leaves out, with the reason. |
 
@@ -68,7 +69,8 @@ give the measured numbers.
 | [Units and defaults](#units-and-defaults) | 4 | `CapacityToActivityUnit` does not convert a unit. A non-zero default of a ratio is not applied. |
 | [The portfolio](#the-portfolio) | 10 | One value for each candidate where OSeMOSYS states one for each year. A cap only for a pollutant of the whole model. |
 | [The expansion solve](#the-expansion-solve) | 11 | Some entries are open. |
-| [Differences that are not a loss](#differences-that-are-not-a-loss) | 6 | A comparison against published results also differs where nothing is lost. |
+| [Differences that are not a loss](#differences-that-are-not-a-loss) | 5 | A comparison against published results also differs where nothing is lost. |
+| [What a PyPSA dispatch holds](#what-a-pypsa-dispatch-holds) | 19 | A PyPSA network holds the annual bounds, the cost of a line and the loss of a line. The other limits of Sienna stay. |
 | [Losses that the report does not name](#losses-that-the-report-does-not-name) | 6 | These losses leave no event in `decisions.md`. |
 
 ---
@@ -117,7 +119,7 @@ give the measured numbers.
 
 | OSeMOSYS data | What happens to it | Cause | Effect |
 | --- | --- | --- | --- |
-| `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) and `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) | They go to `e_sum_min` and `e_sum_max` of the generator record of `extensions.json`, in MWh of output for each year. `decisions.md` records each limit of a technology with no record, and one warning names three. The `sienna-to-pypsa` leg writes the value of the operations year as `Generator.e_sum_min` and `e_sum_max`, weighted by the representative days, so a PyPSA dispatch applies it. | translation: a Sienna system has no field for a limit on the energy of a year. | The largest single effect on the dispatch. On a large published model, 24 gas plants must make about 450 TWh. The dispatch gives them about 56 TWh. Gas combined cycle makes about 220 TWh against about 550 TWh published, and coal makes more. |
+| `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) and `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) | They go to `e_sum_min` and `e_sum_max` of the generator record of `extensions.json`, in MWh of output for each year. `decisions.md` records each limit of a technology with no record, and one warning names three. The `sienna-to-pypsa` leg writes the value of the operations year as `Generator.e_sum_min` and `e_sum_max`, weighted by the representative days, so a PyPSA dispatch applies it. | translation: a Sienna system has no field for a limit on the energy of a year. | The largest single effect on the dispatch. On a large published model, 24 gas plants must make about 450 TWh. The dispatch gives them about 78 TWh. Gas combined cycle makes about 220 TWh against about 550 TWh published, and coal makes more. |
 | `TotalTechnologyModelPeriodActivityLowerLimit` / `UpperLimit`, `TechnologyActivityByModeLowerLimit` / `UpperLimit`, `TechnologyActivityDecreaseByModeLimit` | The record of the component holds them: `e_sum_min_horizon`, `e_sum_max_horizon` and the bounds of `operating_modes`. `decisions.md` records each one of a technology with no record, and one warning names three. | translation: SiennaSchemas has no field for them. | The dispatch is free of these limits. |
 | `AvailabilityFactor` (`availability_factor`) | The step applies it in each hour, as a derate. | mathematics: OSeMOSYS states it as a limit on the energy of the year. A dispatch has no such limit. | A plant cannot reach its full output in a peak hour. On a large published model, the effect is small: about 1 TWh less nuclear. |
 | `CapacityFactor` (`capacity_factor`) of a storage technology or a transport technology | A companion parquet beside `extensions.json` holds the factor of each hour: `storage.parquet` or `controllable_lines.parquet`. | translation: a storage and a line take their `availability_factor` as one derate for every hour, and no factor for each timeslice. | The storage or the line can use its capacity × its `availability_factor` in each hour. |
@@ -213,7 +215,52 @@ A comparison of a solve against published results differs for these reasons too:
 | Plants with the same cost | optimum: the solver can give the whole output to one plant of a set of plants with one cost. | On a large published model, the output of 19 gas plants at one cost goes to one of them. The total is the same. |
 | The flow on lines with no cost and no loss | optimum: many flows give the same objective. | The trade of one line can differ from one solve to the next. The total of the system is the same. |
 | The variable cost of a `RenewableDispatch` | mathematics: PowerSimulations.jl puts it in the objective with a negative sign, as a reward for output. | The objective is lower. On a large published model, by about 150 million USD in a year. |
-| The category of a storage | The Sienna results give a storage the category of its prime mover, for example `PHS`. The published results give the category of its technology. | A comparison by category puts one storage in two categories. A comparison by component joins them. |
+
+## What a PyPSA dispatch holds
+
+The `sienna-to-pypsa` pipeline turns the Sienna system into a PyPSA network. It reads the
+values of `extensions.json`, and gives each value that PyPSA has an attribute for to that
+attribute. Each other value goes on, unchanged, to the `extensions.json` of the network.
+[The Sienna to PyPSA mapping](translation-from-sienna-to-pypsa.md) gives each field.
+
+This table gives each entry above whose cause is a limit of Sienna: a field that SiennaSchemas
+does not have, or a formulation of PowerSimulations.jl. "Holds it" tells you if the PyPSA
+network of the same translation holds the OSeMOSYS data. The measured effects come from the
+same large published model, in the first year. The pipeline reads a Sienna system and not a
+portfolio, so the entries of [The portfolio](#the-portfolio) and
+[The expansion solve](#the-expansion-solve) are not in the table.
+
+| Entry | Holds it | Measured effect |
+| --- | --- | --- |
+| [The time order inside a year](#the-four-structural-losses) | No. PyPSA also dispatches the hours in time order. | Not measured |
+| [A technology of kind `export`](#what-the-system-has-no-component-for) | No. The `conversion` record has no `bus1`, so it goes on to `extensions.json`. | Not measured |
+| [The values of a generator at another mode](#operating-modes) | No. The `operating_modes` go on to `extensions.json`. A PyPSA generator has one `marginal_cost`. | Not measured |
+| [An import mode of a transport technology](#operating-modes) | No. The `operating_modes` go on to `extensions.json`. | 21 lines import about 69 TWh in the published solve, and 0 in each dispatch. |
+| [The loss of the flow back of a line](#operating-modes) | Partly. The reverse link of a line that flows both ways takes the `efficiency` of the forward direction. The ratios of the flow back go on to `extensions.json`. | Not measured |
+| [Two or more modes that flow back on one line](#operating-modes) | No. The reverse link uses the values of the line. | Not measured |
+| [The price of a fuel](#costs-and-prices) | No. `marginal_cost` comes from the same cost curve. | Not measured |
+| [`VariableCost` of an `AggregateTransportTechnology`](#costs-and-prices) | Yes. It becomes `Link.marginal_cost`. | With the loss of the line: the trade is about 400 TWh, against about 815 TWh in the dispatch and about 390 TWh published. A PyPSA dispatch with no line cost and no line loss gives about 875 TWh. |
+| [The loss of a line](#costs-and-prices) | Yes. It becomes `Link.efficiency`, in each direction. | The lines lose about 21 TWh in the year. The row above gives the effect on trade. |
+| [`VariableCost` of a `RenewableNonDispatch`](#costs-and-prices) | No. `marginal_cost` is 0. | None, because the output is fixed. |
+| [`TotalTechnologyAnnualActivityLowerLimit` and `UpperLimit`](#limits-on-activity-and-energy) | Yes. They become `Generator.e_sum_min` and `e_sum_max` when the snapshots stand for one whole year. Solve them in one window. | The 24 gas plants make about 452 TWh, against about 78 TWh in the dispatch and about 453 TWh published. Without the bounds, a PyPSA dispatch gives gas combined cycle about 296 TWh less, coal about 214 TWh more, and about 98 Mt more emissions. |
+| [The limits over the model period and by mode](#limits-on-activity-and-energy) | No. They go on to `extensions.json`. | Not measured |
+| [`AvailabilityFactor`](#limits-on-activity-and-energy) | No. The network takes the same derate in each hour. | Not measured |
+| [`CapacityFactor` of a storage or a transport technology](#limits-on-activity-and-energy) | Yes. The factor of each hour becomes the `p_max_pu` series of the storage unit or the link. | Not measured. The model states none. |
+| [The capacity of a storage technology](#storage) | No. `p_nom` is `base_power`, the electricity output. | Pumped storage is about 42.9 GW in each dispatch, against about 51.7 GW published. |
+| [The storage balance](#storage) | Partly. `StorageBalanceYear` becomes `cyclic_state_of_charge_per_period`, which PyPSA applies only to a cyclic unit. PyPSA also runs the days in time order. | Pumped storage puts out about 1.5 TWh, against about 8.9 TWh in the dispatch and 0.05 TWh published. |
+| [A storage that two or more technologies charge or discharge](#storage) | No. The system has no such storage, so the network has none. | Not measured |
+| [`AnnualEmissionLimit` and `ModelPeriodEmissionLimit` in the dispatch](#policy) | No. The `constraint` record goes on to `extensions.json`. | None. No limit binds in the first year. |
+| [The variable cost of a `RenewableDispatch`](#differences-that-are-not-a-loss) | Yes. PyPSA puts the cost in the objective with a positive sign. | Not measured |
+
+The other entries have the same effect on the PyPSA dispatch, because their cause comes before
+the Sienna system. The comparison measured three of them:
+
+- The production is about 358 TWh lower than published in the PyPSA dispatch, and about
+  370 TWh lower in the dispatch. The conversions between two electricity fuels have no
+  component in either network.
+- The unserved energy is 1,141 MWh in the 96 hours in each dispatch.
+- The emissions are about 760 Mt in the PyPSA dispatch, about 847 Mt in the dispatch and about
+  1,459 Mt published.
 
 ## Losses that the report does not name
 

@@ -126,7 +126,7 @@ For a worked end-to-end example (translate, solve, compare) see the
 8. **Days to solve past the end of each window?** A whole number, blank for 14.
 
 The date range is cut into windows of the length chosen at prompt 6. Each window is solved
-on its own, extended by the look-ahead from prompt 7 so storage does not empty out just
+on its own, extended by the look-ahead from prompt 8 so storage does not empty out just
 because the window ends; only the window's own snapshots are kept in the output, and the
 look-ahead's results are zeroed rather than dropped. The solved network's
 `meta["reported_snapshots"]` lists exactly the snapshots that are genuine output, as

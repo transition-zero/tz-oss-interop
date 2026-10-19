@@ -263,7 +263,7 @@ run writes them again.
 Each of the 78 countries has a bus and a load. The other 14 buses are countries outside the
 model, for example `UA` and `TR`. A line reaches each of them.
 
-The console shows 27 warnings. Each warning names three components at most. `decisions.md`
+The console shows 29 warnings. Each warning names three components at most. `decisions.md`
 names each component and gives the reason. These warnings tell you the most:
 
 - 1165 supply technologies have no residual capacity in 2021. Most of them are plants that the
@@ -273,8 +273,8 @@ names each component and gives the reason. These warnings tell you the most:
 - 495 technologies supply a fuel that is not electricity.
 - 21 transport technologies state an operating mode that is not the flow back. Each one is an
   import from outside the model, and the line does not hold it.
-- 14 warnings each name one parameter that no step applies, for example
-  `total_technology_annual_activity_lower_limit` and `capital_cost`.
+- 17 warnings each name one parameter that no step applies, for example `capital_cost` and
+  `variable_operation_cost`.
 
 ## Translate the model into a Sienna Investments Portfolio
 
@@ -463,6 +463,208 @@ These are the production totals of the categories with the largest differences:
 [What the numbers do not cover](#what-the-numbers-do-not-cover) gives the cause of each large
 difference.
 
+## Solve the dispatch with PyPSA
+
+The `sienna-to-pypsa` pipeline turns the Sienna system into a PyPSA network. A PyPSA network
+has attributes for some values that a Sienna system has no field for, for example an annual
+energy bound and the cost of a line. This section solves that network and compares three
+results: the published results, the Sienna dispatch and the PyPSA dispatch.
+
+We did the runs of this section on 2026-10-19, on the branch `osemosys-to-sienna`. They read
+the files of [Translate the model into a Sienna system](#translate-the-model-into-a-sienna-system)
+and the Sienna solve of [Solve the dispatch](#solve-the-dispatch).
+
+### Make the PyPSA network
+
+Select `translate`. Then give these answers:
+
+| Prompt | Answer |
+| --- | --- |
+| `Source framework?` | `sienna` |
+| `Destination framework?` | `pypsa` |
+| `Pipeline?` | `sienna-to-pypsa` |
+| `source.system_json_path` | `outputs/operations/system.json` |
+| `source.time_series_h5_path` | `outputs/operations/system_time_series_storage.h5` |
+| `source.extensions_json_path` | `outputs/operations/extensions.json` |
+| `sink[0].output_path` | `outputs/pypsa/network.nc` |
+| `sink[1].output_path` | `outputs/pypsa/extensions.json` |
+| `sink[1].indent` | Keep the default, `2`. |
+
+Move `decisions.md` and `validation-report.md` to `outputs/pypsa/`.
+
+tz-oss-interop writes no warning. PyPSA writes one `FutureWarning` about the string type of
+pandas. The network holds 92 buses, 699 generators, 115 storage units, 78 loads and 205 links,
+over the 96 hours of the Sienna system. It also holds these values of `extensions.json`:
+
+- 24 gas plants state an `e_sum_min` for 2021, 450.59 TWh in total. This is the
+  `TotalTechnologyAnnualActivityLowerLimit` of the model.
+- Each link has a `marginal_cost` of 10.00 USD for each MWh and an `efficiency` of 0.95.
+- 92 of the 113 lines flow both ways. Each of them becomes two one-way links, for example
+  `ATELCHPH1` and `ATELCHPH1 reverse`, so a flow loses energy in each direction.
+- The snapshot weightings give each hour the weight of its day. The `objective` and the
+  `generators` weightings add up to 8,760.55 hours.
+
+### Solve the network
+
+Select `solve`. Then give these answers:
+
+| Prompt | Answer |
+| --- | --- |
+| `Model type?` | `pypsa` |
+| `Path to PyPSA network?` | `outputs/pypsa/network.nc` |
+| `Output directory?` | `outputs/solved_pypsa` |
+| `Start date?` | Leave it empty. |
+| `End date?` | Leave it empty. |
+| `Unit commitment treatment?` | `linearised` |
+| `How much of the range does one solve cover?` | `year` |
+| `Unserved energy?` | `penalised` |
+| `Days to solve past the end of each window and then discard?` | `0` |
+
+The answer `year` puts the 96 hours in one window, so PyPSA applies each annual bound one time.
+A shorter window applies the bound to each window. The answer `penalised` lets the solve leave
+load unserved in `MR` and `GW`, as in the Sienna solve.
+
+The run gives this result:
+
+| Item | Value |
+| --- | --- |
+| Status | `optimal` |
+| Objective | 1,846,171,141 USD, which is 1.84617 × 10⁹ |
+| Unserved energy | 1,141.06 MWh: 1,121.94 MWh in `MR` and 19.12 MWh in `GW` |
+| Time | 11.2 s |
+| Peak memory | 0.95 GB |
+
+The summary line is `[OK]  status=optimal  objective=1.84617e+09  unserved_energy=1141.06 MWh`.
+
+The two dispatch objectives compare. Each is the operating cost of the 96 hours with no weight
+for the days, plus 10,000 USD for each MWh of unserved energy. The PyPSA objective is 20 %
+higher than the Sienna objective, because PyPSA pays the cost of the lines and meets the
+annual bounds. The PyPSA solve is about 20 times faster than the Sienna solve, and it uses
+less than half of the memory.
+
+### Turn the solve into the results format
+
+Do this command:
+
+```bash
+INTEROP_LOG_LEVEL=WARNING uv run interop headless_cli --pipeline pypsa-to-results \
+  --override 'source.path=outputs/solved_pypsa/network.nc' \
+  --override 'source.extensions_json_path=outputs/pypsa/extensions.json' \
+  --override 'sink[0].output_dir=outputs/results_pypsa'
+```
+
+The run writes no warning. As `sienna-to-results` does, it multiplies each hour by the weight of
+its day. It adds the flow of a reverse link to the trade of its line. It gives the
+installed capacity of a generator as `p_nom`, which is the `base_power` of the Sienna plant.
+
+### Compare the three results
+
+Select `compare`. Give the answers of
+[Compare the dispatch with the published results](#compare-the-dispatch-with-the-published-results),
+with these changes:
+
+| Prompt | Answer |
+| --- | --- |
+| `Second result's framework?` | `pypsa` |
+| `pypsa.path` | `outputs/solved_pypsa/network.nc` |
+| `pypsa.extensions_json_path` | `outputs/pypsa/extensions.json` |
+| `Output path for summary report?` | `outputs/comparison_pypsa/comparison_summary.md` |
+
+The three `sienna.` prompts do not come. The console shows `compared results: diffs=1,916`.
+
+Select `compare` again. Give `sienna` as the first framework and `pypsa` as the second. Give
+the `sienna.` and the `pypsa.` answers above, and the output path
+`outputs/comparison_sienna_pypsa/comparison_summary.md`. The console shows
+`compared results: diffs=91,100`.
+
+Note that the hourly `flow` rows of PyPSA give each reverse link a row of its own. Thus the
+compare of Sienna and PyPSA joins the hourly flow of 37 of the 113 lines. The annual trade
+rows join all 113 lines.
+
+To get the totals, add `"results_pypsa"` to the sides of the Python code in
+[Compare the dispatch with the published results](#compare-the-dispatch-with-the-published-results).
+These are the 2021 totals:
+
+| Item | Published | Sienna dispatch | PyPSA dispatch |
+| --- | --- | --- | --- |
+| Installed capacity of the generators and the storages | 1,397.2 GW | 1,384.7 GW | 1,384.7 GW |
+| Installed capacity of the lines | 171.0 GW | 171.0 GW | 171.0 GW |
+| Production of the generators and the storages | 4,102.8 TWh | 3,732.6 TWh | 3,744.5 TWh |
+| Trade, which is the production of the lines | 389.5 TWh | 815.2 TWh | 400.1 TWh |
+| Emissions | 1,459.1 Mt | 847.3 Mt | 759.9 Mt |
+| Unserved energy in the 96 hours | none | 1,141.06 MWh | 1,141.06 MWh |
+
+The installed capacity of each of the 814 components and the 113 lines is the same in the two
+dispatches.
+
+These are the production totals of the categories with the largest differences:
+
+| Category | Published | Sienna dispatch | PyPSA dispatch |
+| --- | --- | --- | --- |
+| `gas-combined-cycle` | 547.9 TWh | 217.9 TWh | 510.3 TWh |
+| `coal` | 568.2 TWh | 735.1 TWh | 526.5 TWh |
+| `gas-steam` | 118.2 TWh | 58.4 TWh | 100.6 TWh |
+| `gas-turbine` | 56.5 TWh | 9.6 TWh | 43.0 TWh |
+| `oil-steam` | 102.4 TWh | 45.2 TWh | 23.2 TWh |
+| `other-gas` | 54.7 TWh | 7.4 TWh | 1.5 TWh |
+| `nuclear` | 943.8 TWh | 942.8 TWh | 892.9 TWh |
+| `biomass` | 134.5 TWh | 141.9 TWh | 105.1 TWh |
+| `hydro` | 748.8 TWh | 742.7 TWh | 741.8 TWh |
+| `pumped-storage` | 0.05 TWh | 8.87 TWh | 1.49 TWh |
+
+### What PyPSA removes, and what remains
+
+To measure each cause alone, we solved diagnostic copies of the network. A script outside
+tz-oss-interop changed one set of attributes in each copy. The copies come from an earlier
+run of the same branch, whose network gave the same objective and the same unserved energy
+as the network above.
+
+| Run | Objective | Trade | Emissions | `gas-combined-cycle` | `coal` |
+| --- | --- | --- | --- | --- | --- |
+| Sienna dispatch | 1.53357 × 10⁹ USD | 815.2 TWh | 847.3 Mt | 217.9 TWh | 735.1 TWh |
+| PyPSA, with no annual bounds, and lines with no cost and no loss | 1.52715 × 10⁹ USD | 872.8 TWh | 838.4 Mt | 216.6 TWh | 730.6 TWh |
+| PyPSA, with no annual bounds | 1.61018 × 10⁹ USD | 405.2 TWh | 857.8 Mt | 214.6 TWh | 740.3 TWh |
+| PyPSA, with lines with no cost and no loss | 1.77078 × 10⁹ USD | 875.4 TWh | 737.0 Mt | 512.4 TWh | 505.7 TWh |
+| PyPSA dispatch, as translated | 1.84617 × 10⁹ USD | 400.1 TWh | 759.9 Mt | 510.3 TWh | 526.5 TWh |
+| Published | none | 389.5 TWh | 1,459.1 Mt | 547.9 TWh | 568.2 TWh |
+
+The second row applies what the Sienna dispatch applies. It agrees with the Sienna dispatch to
+0.4 % in the objective, 0.1 % in production and 1 % in emissions. Thus the PyPSA network
+carries the Sienna system correctly. The trade differs by 58 TWh, because many flows have
+the same cost when a line has no cost and no loss.
+
+PyPSA removes two causes:
+
+- **The annual activity bounds.** The 24 gas plants make 451.73 TWh in PyPSA, 78.30 TWh in
+  Sienna and 452.62 TWh in the published results. With the bounds, `gas-combined-cycle` makes
+  about 296 TWh more, `coal` makes about 214 TWh less, and the emissions are about 98 Mt
+  lower.
+- **The cost and the loss of the lines.** The trade is 400.1 TWh in PyPSA, 815.2 TWh in Sienna
+  and 389.5 TWh in the published results. With the cost and the loss, the trade is about
+  475 TWh lower. The lines lose 21.06 TWh in the year.
+
+These causes remain:
+
+- **The conversion losses.** The production is 358.3 TWh lower than the published production.
+  The 156 conversions between two electricity fuels of one country have no component in
+  either dispatch. With no conversion load, the gas of the bounds takes the place of nuclear
+  and coal. For example, `UKNUG2PH1` makes 175.03 TWh against 223.94 TWh published.
+- **The residual fleet.** `MR` and `GW` have 1,141.06 MWh of unserved energy in the 96 hours,
+  as in Sienna. The published solve builds `ZAWINDPN1`, 2.50 GW of onshore wind, in 2021.
+- **The emission scope.** The emissions are 759.9 Mt against 1,459.1 Mt published. Only the
+  power plants emit in the dispatch. For example, `DECO2` is 119.62 Mt against 305.90 Mt, and
+  the published results give `UACO2` −128.72 Mt.
+- **The imports from outside the model.** The 21 lines that import from outside the model
+  carry 69.4 TWh in the published results, and 0 in each dispatch. `HUELUAPH1` alone carries
+  15.97 TWh.
+- **The storage cycle.** Pumped storage makes 1.49 TWh in PyPSA, 8.87 TWh in Sienna and
+  0.05 TWh in the published results. Its capacity is 42.87 GW in each dispatch against
+  51.65 GW published. The storage units are not cyclic, so the dispatch can empty the level
+  that they hold at the start. The results then multiply each hour of that output by the
+  weight of its day.
+
+We did not measure the cause of the low output of `oil-steam` and `other-gas`.
+
 ## Expand the portfolio
 
 ### The full model
@@ -613,16 +815,17 @@ years, so these totals are an observation and not a test of the translation.
 for each thing that the translation or the solve loses, with its cause and its effect. These
 are the entries that explain the large differences above:
 
-- **The production is 370 TWh lower in the dispatch.** About 400 TWh of the published
-  production is the loss of the conversions between two electricity fuels of one country. The
-  system has no component for a conversion. Refer to
+- **The production is 370 TWh lower in the Sienna dispatch, and 358 TWh lower in the PyPSA
+  dispatch.** About 400 TWh of the published production is the loss of the conversions between
+  two electricity fuels of one country. The system has no component for a conversion. Refer to
   [What the system has no component for](../translation_mappings/osemosys-to-sienna-gap-analysis.md#what-the-system-has-no-component-for).
 - **Gas makes less and coal makes more.** The model gives 24 gas plants a lower limit on their
   energy in 2021, about 450 TWh. A Sienna system has no field for a limit on the energy of a
-  year, so the dispatch does not apply it. Refer to
+  year, so the Sienna dispatch does not apply it. The PyPSA dispatch applies it. Refer to
   [Limits on activity and energy](../translation_mappings/osemosys-to-sienna-gap-analysis.md#limits-on-activity-and-energy).
-- **The trade is two times the published trade.** A line has no cost in the system, and the
-  solve applies no loss. The 21 imports from outside the model do not happen. Refer to
+- **The trade is two times the published trade in the Sienna dispatch.** A line has no cost in
+  the system, and the solve applies no loss. The PyPSA dispatch applies both. The 21 imports
+  from outside the model do not happen in either dispatch. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices)
   and [Operating modes](../translation_mappings/osemosys-to-sienna-gap-analysis.md#operating-modes).
 - **The emissions are 612 Mt lower in the dispatch.** The published emissions also count the
@@ -641,8 +844,12 @@ are the entries that explain the large differences above:
   did not measure the effect of each cause by itself. Refer to
   [The expansion solve](../translation_mappings/osemosys-to-sienna-gap-analysis.md#the-expansion-solve).
 
-The two objectives of each comparison do not compare. The dispatch objective is the cost of 96
-hours. The published objective is the discounted cost of the whole model and of every year.
+The published objective does not compare with the objective of a dispatch or of the
+expansion. The dispatch objective is the cost of 96 hours. The published objective is the discounted cost of the whole
+model and of every year.
+
+[What PyPSA removes, and what remains](#what-pypsa-removes-and-what-remains) gives the measured
+effect of each cause on the PyPSA dispatch.
 
 ## What it costs
 
@@ -652,13 +859,18 @@ The time of a solve does not include the download and the compilation of the Jul
 | Run | Status | Objective | Time | Peak memory |
 | --- | --- | --- | --- | --- |
 | `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 3.0 s | 0.39 GB |
-| `osemosys-csv-to-sienna`, year 2021 | exit 0, 27 warnings | none | 4.8 s | 0.41 GB |
+| `osemosys-csv-to-sienna`, year 2021 | exit 0, 29 warnings | none | 4.8 s | 0.41 GB |
 | `osemosys-csv-to-sienna-investments`, every year | exit 0, 21 warnings | none | 20.4 s | 0.54 GB |
 | `sienna-to-power-simulations` | exit 0 | none | 5.1 s | 0.26 GB |
 | Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.53357 × 10⁹ USD | 3 min 47 s | 2.27 GB |
 | `sienna-to-results` | exit 0 | none | 1.9 s | 0.27 GB |
 | `aetos-to-results` | exit 0, 7 warnings | none | 4.5 s | 0.70 GB |
 | Compare of the dispatch | exit 0, 1,931 differences | none | 5.3 s | 0.75 GB |
+| `sienna-to-pypsa` | exit 0 | none | 4.9 s | 0.43 GB |
+| PyPSA dispatch solve | `optimal` | 1.84617 × 10⁹ USD | 11.2 s | 0.95 GB |
+| `pypsa-to-results` | exit 0 | none | 1.9 s | 0.29 GB |
+| Compare of the published results and PyPSA | exit 0, 1,916 differences | none | 4.7 s | 0.70 GB |
+| Compare of Sienna and PyPSA | exit 0, 91,100 differences | none | 3.0 s | 0.33 GB |
 | `sienna-to-power-systems-investments`, full model | exit 0, 8 warnings | none | 53.5 s | 1.58 GB |
 | Expansion solve, full model | stopped at 14.5 GB, HiGHS did not start | none | 55 min 9 s | 15.1 GB |
 | `osemosys-csv-to-sienna-investments`, subset | exit 0, 16 warnings | none | 4.6 s | 0.42 GB |
@@ -667,7 +879,9 @@ The time of a solve does not include the download and the compilation of the Jul
 | `power-systems-investments-to-results`, subset | exit 0 | none | 0.8 s | 0.14 GB |
 | Compare of the expansion | exit 0, 1,899 differences | none | 4.1 s | 0.72 GB |
 
-The time of each REPL run includes the start of tz-oss-interop. The time changes from one run
-to the next on the same input. Two dispatch solves of the same system took 3 min 47 s and
+The time of each REPL run includes the start of tz-oss-interop. We measured the five PyPSA rows
+on 2026-10-19. The solve and the two compares of those rows called the same use cases from a
+script, and each time includes the start of `uv run`. The time changes from one run to the
+next on the same input. Two dispatch solves of the same system took 3 min 47 s and
 3 min 16 s. The canonical stage is 1.6 MB on disk. The `decisions.md` of the operations
 translation is 12 MB. The `decisions.md` of the full expansion leg is 18 MB.
