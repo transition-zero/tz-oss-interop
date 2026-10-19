@@ -213,7 +213,11 @@ def _build_group_emission_policies(
             members=_build_group_members(regions, str(group)),
         )
         policies.records.append(record)
-        policies.events.extend(_build_limit_events(name, name, record.limits))
+        policies.events.extend(
+            _build_limit_events(
+                name, name, record.limits, PolicyParameter.REGION_GROUP_EMISSION_LIMIT
+            )
+        )
     return policies
 
 
@@ -385,7 +389,10 @@ def _build_limit_events(
     limits: Sequence[ConstraintLimit],
     parameter: str = EmissionParameter.ANNUAL_EMISSION_LIMIT,
 ) -> list[TranslationEvent]:
-    """One event for each limit; a limit over the model period reads its own parameter."""
+    """One event for each limit; a limit over the model period reads its own parameter.
+
+    An emission limit is net of its exogenous emission, and any other limit is the stated one.
+    """
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
@@ -403,7 +410,7 @@ def _build_limit_events(
                     limit.unit,
                 )
             ],
-            derivation=_DERIVATION,
+            derivation=_EMISSION_DERIVATION if _is_emission(parameter) else _DERIVATION,
         )
         for limit in limits
     ]
@@ -415,7 +422,18 @@ def _build_span(limit: ConstraintLimit) -> str:
     return f"{YEAR} {limit.investment_period}"
 
 
+def _is_emission(parameter: str) -> bool:
+    return parameter in _EMISSION_LIMIT_PARAMETERS
+
+
+_EMISSION_LIMIT_PARAMETERS = frozenset(
+    {EmissionParameter.ANNUAL_EMISSION_LIMIT, PolicyParameter.REGION_GROUP_EMISSION_LIMIT}
+)
+_EMISSION_DERIVATION = (
+    "the emission limit less its exogenous emission, in t, which an operations system has no "
+    "field for; a PyPSA GlobalConstraint states it"
+)
 _DERIVATION = (
-    "the limit of the policy, net of any exogenous emission, which an operations system has "
-    "no field for; a PyPSA GlobalConstraint states it"
+    "the limit of the policy as the model states it, which an operations system has no field "
+    "for; a PyPSA GlobalConstraint states it"
 )

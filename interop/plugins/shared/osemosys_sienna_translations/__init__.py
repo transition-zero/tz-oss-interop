@@ -25,9 +25,9 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_operations_mode,
 )
 from interop.plugins.shared.osemosys_sienna_translations._conversions import (
-    build_conversion_extensions,
+    build_conversion_records,
     build_conversions_source,
-    record_conversion_events,
+    build_routes_source,
     set_conversion_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._defaults import (
@@ -127,7 +127,7 @@ __all__ = [
     "build_bus_extensions",
     "build_buses_source_table",
     "build_calendar",
-    "build_conversion_extensions",
+    "build_conversion_records",
     "build_conversions_source",
     "build_days_events",
     "build_generator_extensions",
@@ -137,6 +137,7 @@ __all__ = [
     "build_loads_source",
     "build_policies",
     "build_representative_periods",
+    "build_routes_source",
     "build_storage_extensions",
     "build_storages_source",
     "build_transport_source",
@@ -147,7 +148,6 @@ __all__ = [
     "read_electricity_fuels",
     "read_storage_links",
     "read_transport_ends",
-    "record_conversion_events",
     "report_calendar",
     "report_left_out_technologies",
     "report_unapplied_parameters",

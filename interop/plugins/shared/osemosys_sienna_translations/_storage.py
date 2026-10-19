@@ -47,6 +47,13 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_RATIO,
     read_electricity_ratios,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    LOWER_BOUND,
+    UPPER_BOUND,
+    build_yearly_limits,
+    enrich_activity_limits,
+    set_bounds_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
@@ -72,6 +79,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    LINK_RUN_PARAMETERS,
     build_operating_mode_field,
     build_operating_modes,
     set_mode_bounds_persisted,
@@ -128,12 +136,15 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    CHARGE_VALUES,
     DISCHARGE_TECHNOLOGY_VALUES,
+    RATED_PARAMETERS,
     RATING_RATIO,
     STORAGE_VALUES,
     ValueOwners,
     build_value_fields,
     enrich_technology_values,
+    set_applied_rows,
     set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
@@ -160,8 +171,17 @@ _SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
 STORAGE_TECHNOLOGY_OWNERS = ValueOwners(
     ExtensionKind.STORAGE, STORAGE_NAME, DISCHARGE_TECHNOLOGY_NAME, SIENNA_TYPE
 )
+CHARGE_TECHNOLOGY_OWNERS = ValueOwners(
+    ExtensionKind.STORAGE, STORAGE_NAME, CHARGE_TECHNOLOGY_NAME, SIENNA_TYPE
+)
+# The rows of a discharging technology that the storage applies, beside those its record keeps.
+_DISCHARGE_APPLIED = (
+    *RATED_PARAMETERS,
+    SupplyParameter.FIXED_COST,
+    SupplyParameter.CAPACITY_FACTOR,
+)
 STORAGE_OWNERS = ValueOwners(
-    ExtensionKind.STORAGE, STORAGE_NAME, STORAGE_REPORT_NAME, SIENNA_TYPE, STORAGE
+    ExtensionKind.STORAGE, STORAGE_NAME, STORAGE_REPORT_NAME, SIENNA_TYPE, (REGION, STORAGE)
 )
 
 
@@ -358,13 +378,16 @@ def has_series(storage: dict[str, Any]) -> bool:
 
 
 def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
-    """Note that the storage records hold the values of each storage and its technology."""
-    technologies = storages.select(REGION, pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY))
-    set_values_persisted(
-        state, STORAGE_TECHNOLOGY_OWNERS, technologies, DISCHARGE_TECHNOLOGY_VALUES
-    )
+    """Note the rows that the storages apply or keep, of each storage and its technologies."""
+    discharging = storages.select(REGION, pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY))
+    set_values_persisted(state, STORAGE_TECHNOLOGY_OWNERS, discharging, DISCHARGE_TECHNOLOGY_VALUES)
     set_values_persisted(state, STORAGE_OWNERS, storages, STORAGE_VALUES)
-    set_mode_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, technologies)
+    set_mode_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, discharging)
+    set_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, discharging)
+    set_applied_rows(state, STORAGE_TECHNOLOGY_OWNERS, discharging, _DISCHARGE_APPLIED)
+    charging = _select_chargers(storages).select(REGION, TECHNOLOGY)
+    set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
+    set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, RATED_PARAMETERS)
 
 
 def _build_extension(row: dict[str, Any]) -> StorageExtension:
@@ -373,38 +396,70 @@ def _build_extension(row: dict[str, Any]) -> StorageExtension:
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         rating_series=_SERIES_FILE if has_series(row) else None,
         operating_modes=build_operating_mode_field(row),
+        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
+        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
         **build_value_fields(row, DISCHARGE_TECHNOLOGY_VALUES),
         **build_value_fields(row, STORAGE_VALUES),
+        **build_value_fields(row, CHARGE_VALUES),
     )
 
 
 def _enrich_extension_values(
     state: State, operations: OperationsYear, storages: pl.DataFrame
 ) -> pl.DataFrame:
-    """The values of the discharging technology, rated on its output, those of the storage, and
-    the modes of the technology other than the two that the storage runs."""
+    """The values of the discharging technology, rated on its output, those of the storage and
+    of a separate charging technology, the yearly bounds, and the modes of the technology."""
     technologies = storages.select(
         REGION,
         pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY),
         pl.col(DISCHARGE_RATIO).alias(RATING_RATIO),
+        pl.col(DISCHARGE_MODE).alias(OPERATING_MODE),
     ).unique(subset=[REGION, TECHNOLOGY])
     discharging = enrich_technology_values(
         state, operations, technologies, DISCHARGE_TECHNOLOGY_VALUES
+    ).drop(RATING_RATIO, OPERATING_MODE)
+    bounds = enrich_activity_limits(
+        state, operations, technologies.drop(RATING_RATIO), FlowParameter.OUTPUT_ACTIVITY_RATIO
+    ).drop(OPERATING_MODE)
+    charging = enrich_technology_values(
+        state, operations, _select_chargers(storages), CHARGE_VALUES
     ).drop(RATING_RATIO)
     own = enrich_technology_values(
         state,
         operations,
         storages.select(REGION, STORAGE, pl.lit(WHOLE_CAPACITY).alias(RATING_RATIO)),
         STORAGE_VALUES,
-        member=STORAGE,
+        keys=_STORAGE_KEYS,
     ).drop(RATING_RATIO)
-    table = storages.join(
-        discharging.rename({TECHNOLOGY: DISCHARGE_TECHNOLOGY}),
-        on=[REGION, DISCHARGE_TECHNOLOGY],
-        how="left",
-    ).join(own, on=_STORAGE_KEYS, how="left")
-    modes = build_operating_modes(state, operations, _list_held_modes(storages))
-    return modes.enrich(table, [REGION, DISCHARGE_TECHNOLOGY])
+    discharge_keys = [REGION, DISCHARGE_TECHNOLOGY]
+    table = (
+        storages.join(
+            discharging.rename({TECHNOLOGY: DISCHARGE_TECHNOLOGY}), on=discharge_keys, how="left"
+        )
+        .join(bounds.rename({TECHNOLOGY: DISCHARGE_TECHNOLOGY}), on=discharge_keys, how="left")
+        .join(own, on=_STORAGE_KEYS, how="left")
+        .join(
+            charging.rename({TECHNOLOGY: CHARGE_TECHNOLOGY}),
+            on=[REGION, CHARGE_TECHNOLOGY],
+            how="left",
+        )
+    )
+    held = _list_held_modes(storages)
+    modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
+    return modes.enrich(table, discharge_keys)
+
+
+def _select_chargers(storages: pl.DataFrame) -> pl.DataFrame:
+    """Each technology that charges a storage that another technology discharges."""
+    return (
+        storages.filter(pl.col(CHARGE_TECHNOLOGY) != pl.col(DISCHARGE_TECHNOLOGY))
+        .select(
+            REGION,
+            pl.col(CHARGE_TECHNOLOGY).alias(TECHNOLOGY),
+            pl.col(CHARGE_RATIO).alias(RATING_RATIO),
+        )
+        .unique(subset=[REGION, TECHNOLOGY])
+    )
 
 
 def _list_held_modes(storages: pl.DataFrame) -> pl.DataFrame:

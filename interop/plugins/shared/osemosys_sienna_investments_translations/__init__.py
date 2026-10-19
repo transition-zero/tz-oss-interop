@@ -12,6 +12,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._availabili
 from interop.plugins.shared.osemosys_sienna_investments_translations._carbon_caps import (
     build_carbon_cap_translations,
     build_carbon_caps,
+    drop_capped_limits,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CANDIDATE_NAME,
@@ -22,8 +23,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._demand imp
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._extensions import (
     STORAGE_FIELDS,
+    SUPPLY_APPLIED,
     SUPPLY_FIELDS,
     TRANSPORT_FIELDS,
+    CandidateFamily,
     YearlyField,
     build_technology_extensions,
     set_technology_extensions_persisted,
@@ -77,11 +80,13 @@ __all__ = [
     "LOADS_SOURCE",
     "STORAGE_FIELDS",
     "STORAGE_SCHEMA",
+    "SUPPLY_APPLIED",
     "SUPPLY_FIELDS",
     "SUPPLY_SCHEMA",
     "TECHNOLOGY_KEYS",
     "TRANSPORT_FIELDS",
     "TRANSPORT_SCHEMA",
+    "CandidateFamily",
     "FleetFamily",
     "InvestmentPlan",
     "PortfolioSeries",
@@ -94,6 +99,7 @@ __all__ = [
     "build_availability_series",
     "build_carbon_cap_translations",
     "build_carbon_caps",
+    "drop_capped_limits",
     "build_demand_series",
     "build_fleet_table",
     "build_osemosys_financial_data",

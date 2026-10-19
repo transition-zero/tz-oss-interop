@@ -22,6 +22,9 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import StorageParameter, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    build_bound_events,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
     build_derived,
@@ -41,6 +44,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     build_mode_events,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    CHARGE_TECHNOLOGY_OWNERS,
     STORAGE_OWNERS,
     STORAGE_TECHNOLOGY_OWNERS,
     has_series,
@@ -78,6 +82,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_REPORT_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
+    CHARGE_VALUES,
     DISCHARGE_TECHNOLOGY_VALUES,
     STORAGE_VALUES,
     build_value_events,
@@ -503,7 +508,9 @@ def _build_extension_events(old: dict[str, Any]) -> list[TranslationEvent]:
     events = [
         *build_value_events(old, DISCHARGE_TECHNOLOGY_VALUES, STORAGE_TECHNOLOGY_OWNERS),
         *build_value_events(old, STORAGE_VALUES, STORAGE_OWNERS),
+        *build_value_events(old, CHARGE_VALUES, CHARGE_TECHNOLOGY_OWNERS),
         *build_mode_events(old, STORAGE_TECHNOLOGY_OWNERS),
+        *build_bound_events(old, STORAGE_TECHNOLOGY_OWNERS, FlowParameter.OUTPUT_ACTIVITY_RATIO),
     ]
     if has_series(old):
         events.extend(

@@ -156,6 +156,23 @@ class PolicyParameter(StrEnum):
     REGION_GROUP_EXOGENOUS_EMISSION = "annual_exogenous_emission_region_group"
 
 
+class TradeParameter(StrEnum):
+    """A canonical parameter of a trade route, which moves a fuel from one region to another."""
+
+    ROUTE = "transport_route"
+    LOSS = "line_loss"
+    RESIDUAL_CAPACITY = "residual_transport_capacity"
+    MAX_INVESTMENT = "total_annual_max_transport_investment"
+    LIFETIME = "transport_lifetime"
+    CAPITAL_COST = "transport_capital_cost"
+    DISCOUNT_RATE = "transport_discount_rate"
+    CAPACITY_TO_ACTIVITY_UNIT = "transport_capacity_to_activity_unit"
+    ACTIVITY_UPPER_LIMIT = "total_transport_annual_activity_upper_limit"
+    ACTIVITY_LOWER_LIMIT = "total_transport_annual_activity_lower_limit"
+    AVAILABILITY_FACTOR = "transport_availability_factor"
+    MIN_CAPACITY_FACTOR = "transport_total_annual_min_capacity_factor"
+
+
 class PolicyType(StrEnum):
     """The `type` of a constraint record: PyPSA's own name where PyPSA has the kind."""
 

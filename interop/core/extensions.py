@@ -208,12 +208,13 @@ class ActivityExtension(ExpansionExtension):
     max_growth: float | None = None
     # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
     min_growth: float | None = None
-    # Per unit of the capacity of the year before; PyPSA states it as
-    # Carrier.max_relative_growth; OSeMOSYS CapacityAdditionalMaxGrowthRate.
-    max_relative_growth: float | None = None
-    # Per unit of the capacity of the year before; no PyPSA field; OSeMOSYS
+    # Per unit of the total capacity of the year before; no PyPSA field, because
+    # Carrier.max_relative_growth weighs the new capacity of the period before; OSeMOSYS
+    # CapacityAdditionalMaxGrowthRate.
+    max_growth_rate: float | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field; OSeMOSYS
     # CapacityAdditionalMinGrowthRate.
-    min_relative_growth: float | None = None
+    min_growth_rate: float | None = None
     # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
     # CapacityAdditionalMaxFloor.
     max_growth_floor: float | None = None
@@ -289,8 +290,8 @@ class ControllableLineExtension(ActivityExtension):
     has_time_varying_efficiency: bool | None = None
     has_time_varying_p_max_pu: bool | None = None
     has_time_varying_p_min_pu: bool | None = None
-    # Ours: the companion parquet holding the p_max_pu of each snapshot; Sienna states one
-    # rating for a line and names no series against it.
+    # Ours: the companion parquet holding the OSeMOSYS CapacityFactor of each snapshot, which
+    # multiplies the static p_max_pu, as Sienna states one rating for a line and no series.
     p_max_pu_series: str | None = None
 
 
@@ -322,6 +323,9 @@ class StorageExtension(ActivityExtension):
     cyclic_state_of_charge_per_season: bool | None = None
     # No PyPSA field; OSeMOSYS StorageBalanceDay.
     cyclic_state_of_charge_per_day: bool | None = None
+    # $/MW/yr of the technology that charges the storage, where it does not also discharge it;
+    # no PyPSA field, as PyPSA states it as fom_cost of the charging Link.
+    charge_fom_cost: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -389,8 +393,8 @@ class ConstraintLimit(BaseModel):
 class ConstraintExtension(ExtensionRecord):
     """A weighted sum over named objects, held to one or more right-hand sides."""
 
-    # PyPSA GlobalConstraint.type, for example primary_energy for an emission limit; PLEXOS
-    # names no type.
+    # PyPSA GlobalConstraint.type, primary_energy for an emission limit; renewable_share and
+    # reserve_margin are ours and no PyPSA type, so PyPSA builds no constraint from them.
     type: str | None = None
     # PyPSA GlobalConstraint.carrier_attribute: the quantity of each member that the sum
     # counts, which is the pollutant of an OSeMOSYS emission limit.
@@ -430,6 +434,9 @@ class TechnologyExtension(ExtensionRecord):
     """The values of a portfolio technology. A yearly value is keyed by the year as a string.
 
     PyPSA keys a value of a multi-period network by its investment period, which is the year.
+    The fields take the PyPSA names, such as overnight_cost and fom_cost, where the older
+    fields of the other kinds keep the names that they had before, such as
+    overnight_cost_per_mw.
     """
 
     # $/MW of electricity; PyPSA Generator.overnight_cost; OSeMOSYS CapitalCost.
@@ -452,12 +459,13 @@ class TechnologyExtension(ExtensionRecord):
     max_growth: dict[str, float] | None = None
     # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
     min_growth: dict[str, float] | None = None
-    # Per unit of the capacity of the year before; PyPSA states it as
-    # Carrier.max_relative_growth; OSeMOSYS CapacityAdditionalMaxGrowthRate.
-    max_relative_growth: dict[str, float] | None = None
-    # Per unit of the capacity of the year before; no PyPSA field; OSeMOSYS
+    # Per unit of the total capacity of the year before; no PyPSA field, because
+    # Carrier.max_relative_growth weighs the new capacity of the period before; OSeMOSYS
+    # CapacityAdditionalMaxGrowthRate.
+    max_growth_rate: dict[str, float] | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field; OSeMOSYS
     # CapacityAdditionalMinGrowthRate.
-    min_relative_growth: dict[str, float] | None = None
+    min_growth_rate: dict[str, float] | None = None
     # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
     # CapacityAdditionalMaxFloor.
     max_growth_floor: dict[str, float] | None = None
@@ -475,7 +483,11 @@ class TechnologyExtension(ExtensionRecord):
 
 
 class ConversionExtension(ActivityExtension):
-    """A technology that turns electricity into electricity, or takes it out of the model."""
+    """A technology or a trade route that moves electricity, or takes it out of the model.
+
+    For an OSeMOSYS trade route, `bus0` and `bus1` name the region and the fuel as
+    `<region>/<fuel>`, not a Sienna bus, because a route joins regions and not locations.
+    """
 
     carrier: str | None = None  # PyPSA Link.carrier; the OSeMOSYS category of the technology
     bus0: str | None = None  # PyPSA Link.bus0: the location of the electricity that goes in
@@ -489,6 +501,12 @@ class ConversionExtension(ActivityExtension):
     marginal_cost: float | None = None
     # Per unit of p_nom; PyPSA Link.p_max_pu; OSeMOSYS AvailabilityFactor.
     p_max_pu: float | None = None
+    # The fuel that goes in and the fuel that comes out; no PyPSA field, as PyPSA states a fuel
+    # by its bus.
+    input_fuel: str | None = None
+    output_fuel: str | None = None
+    # PyPSA Link.active, keyed by the investment period; OSeMOSYS TradeRoute.
+    active: dict[str, bool] | None = None
 
 
 class Extensions(BaseModel):

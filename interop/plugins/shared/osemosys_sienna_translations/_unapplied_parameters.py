@@ -54,7 +54,8 @@ from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 log = logging.getLogger(__name__)
 
-# Each parameter that a part of the operations step applies to the system.
+# Each parameter that a part of the operations step applies to the system as a whole; a
+# parameter of a technology is applied row by row, by the component that holds the technology.
 OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
     {
         *CalendarParameter,
@@ -64,12 +65,6 @@ OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
         FlowParameter.OUTPUT_ACTIVITY_RATIO,
         FlowParameter.TECHNOLOGY_TO_STORAGE,
         FlowParameter.TECHNOLOGY_FROM_STORAGE,
-        SupplyParameter.RESIDUAL_CAPACITY,
-        SupplyParameter.CAPACITY_FACTOR,
-        SupplyParameter.AVAILABILITY_FACTOR,
-        SupplyParameter.VARIABLE_OPERATION_COST,
-        SupplyParameter.FIXED_COST,
-        SupplyParameter.EMISSION_RATE,
         SupplyParameter.EMISSION_PENALTY,
     }
 )

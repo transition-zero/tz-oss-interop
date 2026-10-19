@@ -34,9 +34,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     IS_BUILDABLE,
     MAX_CAPACITY_INVESTMENT_MW,
     MAX_GROWTH_FLOOR_MW,
-    MAX_RELATIVE_GROWTH,
+    MAX_GROWTH_RATE,
     MIN_GROWTH_MW,
-    MIN_RELATIVE_GROWTH,
+    MIN_GROWTH_RATE,
     RATING_RATIO,
     RESIDUAL_CAPACITY_MW,
     UNIT_SIZE_MW,
@@ -139,8 +139,8 @@ def enrich_yearly_units(
     return table.with_columns(
         *capacity,
         *_build_energy_columns(table, units),
-        pl.col(GrowthParameter.MAX_GROWTH_RATE).alias(MAX_RELATIVE_GROWTH),
-        pl.col(GrowthParameter.MIN_GROWTH_RATE).alias(MIN_RELATIVE_GROWTH),
+        pl.col(GrowthParameter.MAX_GROWTH_RATE).alias(MAX_GROWTH_RATE),
+        pl.col(GrowthParameter.MIN_GROWTH_RATE).alias(MIN_GROWTH_RATE),
         (
             express_converted(table, InvestmentParameter.CAPITAL_COST, cost) / pl.col(RATING_RATIO)
         ).alias(CAPITAL_COST_MW),

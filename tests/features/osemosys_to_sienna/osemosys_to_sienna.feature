@@ -565,7 +565,10 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       leaves it out. So does a row whose values a record of extensions.json holds: the
       capital cost of the gas plant, the discount rate of its region and the days of each day
       type. A parameter with no member column gets one event for each region, and a parameter
-      with no region column gets one event that counts its rows. A parameter with no year
+      with no region column gets one event that counts its rows, as the trade route of gas
+      does: the translation keeps a trade route of electricity only. A residual capacity that
+      no component holds is reported too, and so is the cost of a fuel producer that prices no
+      fuel that a plant burns. A parameter with no year
       column holds in every year. A reserve margin with no tag binds nothing, so no record holds
       it.
       Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
@@ -588,14 +591,17 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
         | S1     | 1       | 2030 | 91    |
         | S2     | 1       | 2030 | 91    |
       And the otoole parameter "TradeRoute" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
-        | REGION | _REGION | FUEL   | YEAR | VALUE |
-        | R1     | R1      | ATELEC | 2030 | 1     |
+        | REGION | _REGION | FUEL  | YEAR | VALUE |
+        | R1     | R1      | ATGAS | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "osemosys-to-sienna: capital_cost states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/ATGASWELL"
       And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
       And the log contains "osemosys-to-sienna: depreciation_method states 1 row(s) for every year that no step of the pipeline applies or keeps, for 1 region(s): R1"
       And the log contains "osemosys-to-sienna: transport_route states 1 row(s) for 2030 that no step of the pipeline applies or keeps"
+      And the log contains "osemosys-to-sienna: residual_capacity states 4 row(s) for 2030 that no step of the pipeline applies or keeps, for 4 technology(ies): R1/ATBATT, R1/ATBIO, R1/ATDEGASCC and 1 more"
+      And the log contains "osemosys-to-sienna: variable_operation_cost states 3 row(s) for 2030 that no step of the pipeline applies or keeps, for 3 technology(ies): R1/ATGASLNG, R1/DEATPIPE, R1/DEGASWELL"
+      And the log does not contain "fixed_cost states"
       And the log does not contain "discount_rate states"
       And the log does not contain "days_in_day_type states"
       And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASWELL` = 50.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter, and no record of extensions.json holds it"
@@ -639,17 +645,40 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "OperationalLife" keyed by "REGION TECHNOLOGY" with default 1 has the rows:
         | REGION | TECHNOLOGY | VALUE |
         | R1     | ATGASCC    | 30    |
+      And the otoole parameter "TotalTechnologyModelPeriodActivityLowerLimit" keyed by "REGION TECHNOLOGY" with default 0 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATOILCT    | 4     |
+      And the otoole parameter "TotalAnnualMinCapacityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 0.3   |
+      And the otoole parameter "TechnologyMinProductionTarget" keyed by "REGION TECHNOLOGY FUEL YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | YEAR | VALUE |
+        | R1     | ATGASCC    | ATELEC | 2030 | 0.2   |
+      And the otoole parameter "TechnologyActivityByModeLowerLimit" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | 1                 | 2030 | 1     |
+      And the otoole parameter "TechnologyActivityDecreaseByModeLimit" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | 1                 | 2030 | 0.1   |
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | CO2      | 1                 | 2030 | 100   |
+        | R1     | ATGASCC    | CO2      | 2                 | 2030 | 50    |
+        | R1     | ATGASWELL  | CO2      | 1                 | 2030 | 250   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "unit_size_mw" set to 5.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "p_nom_max" set to 2000.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth" set to 500.0
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_relative_growth" set to 0.1
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "e_sum_max_horizon" set to 5000.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "capacity_to_activity_unit" set to 8760.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "production_share_max" set to {"ATELEC": 0.4}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "lifetime_years" set to 30.0
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "operating_modes" set to [{"mode": "1", "activity_max": {"2030": 3000.0, "2035": 2000.0}}, {"mode": "2", "variable_cost": 4.0, "input_ratios": {"ATOIL": 2.5}, "output_ratios": {"ATELEC": 0.5}}]
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "operating_modes" set to [{"mode": "1", "activity_max": {"2030": 3000.0, "2035": 2000.0}, "activity_min": {"2030": 1000.0}, "activity_decrease_max": {"2030": 0.1}}, {"mode": "2", "variable_cost": 4.0, "input_ratios": {"ATOIL": 2.5}, "output_ratios": {"ATELEC": 0.5}, "emission_rates": {"CO2": 0.05}}]
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "e_sum_min_horizon" set to 2000.0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "capacity_factor_min" set to 0.3
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "production_share_min" set to {"ATELEC": 0.2}
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth_rate" set to 0.1
       And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATGASCC` = 8760.0 | `sienna.ThermalStandard.ATGASCC.extensions.capacity_to_activity_unit` = 8760.0 MWh/MW"
       And the log does not contain "capacity_to_activity_unit states"
       And the log does not contain "technology_activity_by_mode_upper_limit states"
@@ -703,6 +732,26 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log does not contain "generation_fraction_requirement states"
       And the log does not contain "reserve_margin states"
       And the log does not contain "reserve_margin_tag_fuel states"
+
+    Scenario: The emission limit of a region group becomes a constraint record whose members are its regions
+      Given the otoole set "REGIONGROUP" holds "G1"
+      And the otoole parameter "RegionGroupTagRegion" keyed by "REGIONGROUP REGION YEAR" with default 0 has the rows:
+        | REGIONGROUP | REGION | YEAR | VALUE |
+        | G1          | R1     | 2030 | 1     |
+      And the otoole parameter "AnnualEmissionLimitRegionGroup" keyed by "REGIONGROUP EMISSION YEAR" with default -1 has the rows:
+        | REGIONGROUP | EMISSION | YEAR | VALUE |
+        | G1          | CO2      | 2030 | 700   |
+      And the otoole parameter "AnnualExogenousEmissionRegionGroup" keyed by "REGIONGROUP EMISSION YEAR" with default 0 has the rows:
+        | REGIONGROUP | EMISSION | YEAR | VALUE |
+        | G1          | CO2      | 2030 | 50    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "limits" set to [{"period": "year", "value": 650.0, "unit": "t", "investment_period": 2030}]
+      And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "members" set to [{"name": "R1", "member_class": "region"}]
+      And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "type" set to "primary_energy"
+      And the file "decisions.md" contains "`osemosys.annual_emission_limit_region_group.G1/CO2.year 2030` | `sienna.constraint.G1/CO2.extensions.limits.year 2030` = 650.0 t"
+      And the log does not contain "annual_emission_limit_region_group states"
+      And the log does not contain "region_group_tag_region states"
 
     Scenario: Two producers at one price go to the first name
       Given the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
@@ -957,6 +1006,15 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "StorageBalanceDay" keyed by "REGION STORAGE" with default 0 has the rows:
         | REGION | STORAGE | VALUE |
         | R1     | ATPHSS  | 1     |
+      And the otoole parameter "StorageBalanceSeason" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 1     |
+      And the otoole parameter "StorageBalanceYear" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 0     |
+      And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "overnight_cost_per_mw" set to 1.25
@@ -964,9 +1022,63 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "lifetime_years" set to 60.0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "duration_max_hours" set to 8.0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "cyclic_state_of_charge_per_day" set to true
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "cyclic_state_of_charge_per_season" set to true
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "cyclic_state_of_charge_per_period" set to false
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "e_sum_max" set to {"2030": 800.0}
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" without field "operating_modes"
       And the log does not contain "storage_balance_day states"
       And the log does not contain "energy_capital_cost states"
+
+    Scenario: A storage that a technology of its own charges keeps the fixed cost of that technology, and the report names its capacity factor
+      ATPUMP charges ATPHSS at mode 1, and ATPHS discharges it at mode 2. The emission of
+      ATPHS at the mode that discharges the storage has no field of a storage, so the modes of
+      the record hold it, with the cost of mode 1 of ATPHS, which the storage does not run.
+      Given the otoole set "TECHNOLOGY" holds "ATPHS ATPUMP ATBATT ATFLY ATIDLE ATSUN HTHEAT ATNOOUT ATNOIN"
+      And the otoole set "EMISSION" holds "CO2"
+      And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.1   |
+        | R1     | ATPUMP     | 2030 | 0.1   |
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPUMP     | ATELEC | 1                 | 2030 | 1.25  |
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPUMP     | ATWATER | 1                 | 2030 | 1     |
+        | R1     | ATPHS      | ATELEC  | 2                 | 2030 | 0.8   |
+      And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPUMP     | ATPHSS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+      And the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPUMP     | 2030 | 50000 |
+      And the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
+        | R1     | ATPUMP     | S1B1      | 2030 | 0.5   |
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | CO2      | 2                 | 2030 | 10    |
+      And a file "user_mappings.yaml" containing the lines:
+        | line                                                                                                       |
+        | osemosys: {                                                                                                |
+        | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                           |
+        | objects: {                                                                                                 |
+        | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},               |
+        | {match: "^ATWATER$", carrier: water, location: AT}, {match: "^HTHEATF$", carrier: heat, location: HT}],   |
+        | technologies: [{match: "PHS$", category: pumped-storage}, {match: "PUMP$", category: pumped-storage}]}}   |
+        | carriers: [                                                                                                |
+        | {osemosys_category: pumped-storage, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: PS}] |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 1 component of type "EnergyReservoirStorage"
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "charge_fom_cost" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "operating_modes" set to [{"mode": "1", "variable_cost": 0.5}, {"mode": "2", "emission_rates": {"CO2": 0.01}}]
+      And the log contains "osemosys-to-sienna: capacity_factor states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/ATPUMP"
+      And the log does not contain "emission_rate states"
+      And the log does not contain "fixed_cost states"
 
     Scenario: Each storage that the operations system cannot hold is left out, and the report names its reason
       When I translate the otoole model to Sienna for the year "2030"
@@ -1076,6 +1188,83 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDEODD" having "p_max_pu_series" set to "controllable_lines.parquet"
       And the parquet file "outputs/controllable_lines.parquet" has columns "snapshot, name, p_max_pu"
 
+    Scenario: The values of a line that Sienna has no field for reach extensions.json, rated on the electricity that it sends
+      ATDELINK takes in 1.25 units of electricity for each unit of its activity, so a fixed cost
+      of 1 $/MW of activity is 0.8 $/MW sent, and a bound of 10 GWh of activity is 12500 MWh.
+      Given the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATDELINK   | 2030 | 1000  |
+      And the otoole parameter "OperationalLife" keyed by "REGION TECHNOLOGY" with default 1 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATDELINK   | 40    |
+      And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATDELINK   | 2030 | 10    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "fom_charge_per_mw_year" set to 0.8
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "lifetime_years" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "e_sum_max" set to {"2030": 12500.0}
+      And the log does not contain "fixed_cost states"
+      And the log does not contain "total_technology_annual_activity_upper_limit states"
+
+    Scenario: A trade route of electricity becomes a conversion record between two region and fuel pairs
+      A trade route joins two regions and not two locations, so its ends name a region and a
+      fuel rather than a bus.
+      Given the otoole set "REGION" holds "R1 R2"
+      And the otoole parameter "TradeRoute" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 1     |
+      And the otoole parameter "ResidualTradeCapacity" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 0.5   |
+      And the otoole parameter "TradeLossBetweenRegions" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 0.02  |
+      And the otoole parameter "AvailabilityFactorTrade" keyed by "REGION _REGION FUEL YEAR" with default 1 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 0.9   |
+      And the otoole parameter "CapitalCostTrade" keyed by "REGION _REGION FUEL YEAR" with default 0.00001 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 1000  |
+      And the otoole parameter "OperationalLifeTrade" keyed by "REGION _REGION FUEL YEAR" with default 1 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 40    |
+      And the otoole parameter "DiscountRateTrade" keyed by "REGION _REGION FUEL" with default 0.1 has the rows:
+        | REGION | _REGION | FUEL   | VALUE |
+        | R1     | R2      | ATELEC | 0.06  |
+      And the otoole parameter "TotalAnnualMaxTradeInvestment" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 0.2   |
+      And the otoole parameter "TotalTradeAnnualActivityUpperLimit" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 100   |
+        | R1     | R2      | ATELEC | 2035 | 120   |
+      And the otoole parameter "TotalAnnualMinCapacityFactorTrade" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | _REGION | FUEL   | YEAR | VALUE |
+        | R1     | R2      | ATELEC | 2030 | 0.1   |
+      And the otoole parameter "TradeCapacityToActivityUnit" keyed by "REGION _REGION FUEL" with default 1 has the rows:
+        | REGION | _REGION | FUEL   | VALUE |
+        | R1     | R2      | ATELEC | 8760  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "bus0" set to "R1/ATELEC"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "bus1" set to "R2/ATELEC"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "p_nom" set to 500.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "efficiency" set to 0.98
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "p_max_pu" set to 0.9
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "overnight_cost_per_mw" set to 1.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "lifetime_years" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "discount_rate" set to 0.06
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "max_growth" set to 200.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "e_sum_max" set to {"2030": 100000.0, "2035": 120000.0}
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "capacity_factor_min" set to 0.1
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "capacity_to_activity_unit" set to 8760.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "active" set to {"2030": true}
+      And the log does not contain "transport_route states"
+      And the log does not contain "line_loss states"
+      And the log does not contain "residual_transport_capacity states"
+
     Scenario: A transport technology with no residual capacity is left out and reported
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
@@ -1116,6 +1305,9 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the otoole parameter "OperationalLife" keyed by "REGION TECHNOLOGY" with default 1 has the rows:
         | REGION | TECHNOLOGY | VALUE |
         | R1     | ATSTEPDOWN | 40    |
+      And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATSTEPDOWN | 2030 | 2     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "bus0" set to "AT"
@@ -1124,6 +1316,9 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "efficiency" set to 0.99
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "marginal_cost" set to 0.5
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "lifetime_years" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "e_sum_max" set to {"2030": 2000.0}
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "input_fuel" set to "ATELEC"
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATSTEPDOWN" having "output_fuel" set to "ATELECLV"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "bus0" set to "AT"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" without field "bus1"
       And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATELECTROLYSER"

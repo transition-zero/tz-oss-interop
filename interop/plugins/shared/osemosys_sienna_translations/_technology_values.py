@@ -19,6 +19,7 @@ from interop.core.extensions import ExtensionKind
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MW,
@@ -32,6 +33,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
+    TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_LIMIT,
@@ -39,6 +41,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     GrowthParameter,
     InvestmentParameter,
     StorageBalanceParameter,
+    SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
@@ -63,11 +66,13 @@ EXTENSIONS_PREFIX = "extensions."
 _STATED_PREFIX = "stated."
 _VALUE_SCALED = "value_scaled"
 _FALLBACK = "fallback"
+_APPLIED_SCOPE = "applied"
 _DETAIL = "detail"
 _STATED = "stated"
 _VALUE = "value"
 _NO_BOUND = 0.0
 _FLAG_SET = 1.0
+_WHOLE = 1.0
 
 
 class Scale(Enum):
@@ -80,6 +85,7 @@ class Scale(Enum):
     COST_PER_ENERGY = "cost_per_energy"
     ENERGY_PER_CAPACITY = "energy_per_capacity"
     FLAG = "flag"
+    COMPLEMENT = "complement"
 
 
 class TechnologyValue(NamedTuple):
@@ -87,6 +93,7 @@ class TechnologyValue(NamedTuple):
 
     `detail` names a key column whose members key the field, which is then a dict. A
     `fallback` is a parameter keyed by region that gives the value where the member states none.
+    A value of every year reads each year in scope rather than the operations year.
     """
 
     parameter: str
@@ -96,6 +103,7 @@ class TechnologyValue(NamedTuple):
     binds: pl.Expr | None = None
     detail: str | None = None
     fallback: str | None = None
+    is_every_year: bool = False
 
     @property
     def column(self) -> str:
@@ -111,14 +119,14 @@ class ValueOwners:
     """The kind of the records, and the columns that name each component and its member.
 
     `component_col` holds the Sienna type that an event names, or the kind where none.
-    `member` is the set of the member that the values are keyed by.
+    `keys` are the key columns that the values of a component are keyed by.
     """
 
     kind: ExtensionKind
     name_col: str
     report_col: str
     component_col: str
-    member: str = TECHNOLOGY
+    keys: tuple[str, ...] = (REGION, TECHNOLOGY)
 
 
 _STATED_VALUE = pl.col(VALUE_COL)
@@ -137,12 +145,8 @@ _GROWTH_VALUES = (
         UNIT_MW,
         _STATED_VALUE > _NO_BOUND,
     ),
-    TechnologyValue(
-        GrowthParameter.MAX_GROWTH_RATE, "max_relative_growth", Scale.NONE, UNIT_PER_UNIT
-    ),
-    TechnologyValue(
-        GrowthParameter.MIN_GROWTH_RATE, "min_relative_growth", Scale.NONE, UNIT_PER_UNIT
-    ),
+    TechnologyValue(GrowthParameter.MAX_GROWTH_RATE, "max_growth_rate", Scale.NONE, UNIT_PER_UNIT),
+    TechnologyValue(GrowthParameter.MIN_GROWTH_RATE, "min_growth_rate", Scale.NONE, UNIT_PER_UNIT),
     TechnologyValue(GrowthParameter.MAX_FLOOR, "max_growth_floor", Scale.CAPACITY, UNIT_MW),
 )
 # The values of a technology that a portfolio candidate holds beside its yearly values.
@@ -229,6 +233,31 @@ _LIFE_VALUES = (
 )
 # A generator, a line and a conversion state their own life and discount rate.
 COMPONENT_VALUES: tuple[TechnologyValue, ...] = (*_TECHNOLOGY_VALUES, *_LIFE_VALUES)
+# A line and a conversion state their fixed cost here too, as no Sienna field holds it.
+LINK_VALUES: tuple[TechnologyValue, ...] = (
+    *COMPONENT_VALUES,
+    TechnologyValue(
+        SupplyParameter.FIXED_COST,
+        "fom_charge_per_mw_year",
+        Scale.COST_PER_CAPACITY,
+        UNIT_DOLLARS_PER_MW_YEAR,
+    ),
+)
+# The technology that charges a storage, where it does not also discharge it.
+CHARGE_VALUES: tuple[TechnologyValue, ...] = (
+    TechnologyValue(
+        SupplyParameter.FIXED_COST,
+        "charge_fom_cost",
+        Scale.COST_PER_CAPACITY,
+        UNIT_DOLLARS_PER_MW_YEAR,
+    ),
+)
+# The parameters of a technology whose rows the component that holds it applies or keeps.
+RATED_PARAMETERS: tuple[str, ...] = (
+    SupplyParameter.RESIDUAL_CAPACITY,
+    SupplyParameter.AVAILABILITY_FACTOR,
+    SupplyParameter.VARIABLE_OPERATION_COST,
+)
 # A storage takes the values of the technology that discharges it, and states its own life.
 DISCHARGE_TECHNOLOGY_VALUES: tuple[TechnologyValue, ...] = _TECHNOLOGY_VALUES
 STORAGE_VALUES: tuple[TechnologyValue, ...] = (
@@ -262,17 +291,16 @@ def enrich_technology_values(
     operations: OperationsYear,
     members: pl.DataFrame,
     values: Sequence[TechnologyValue],
-    member: str = TECHNOLOGY,
+    keys: Sequence[str] = (REGION, TECHNOLOGY),
 ) -> pl.DataFrame:
     """One column for each value, and its stated value, beside each member.
 
-    `members` holds `region`, the member column and `rating_ratio`.
+    `members` holds the key columns and `rating_ratio`.
     """
     table = members
     for value in values:
-        table = table.join(
-            _read_value(state, operations, members, value, member), on=[REGION, member], how="left"
-        )
+        read = _read_value(state, operations, members, value, list(keys))
+        table = table.join(read, on=list(keys), how="left")
     return table
 
 
@@ -289,15 +317,26 @@ def build_value_events(
     return [event for value in values for event in _build_events(row, value, owners)]
 
 
+def set_applied_rows(
+    state: State, owners: ValueOwners, members: pl.DataFrame, parameters: Sequence[str]
+) -> None:
+    """Note that the components of `owners.kind` apply or keep each row of `members`."""
+    for parameter in parameters:
+        scope = f"{_APPLIED_SCOPE}-{owners.report_col}"
+        set_persisted_rows(state, owners.kind, parameter, [members.select(owners.keys)], scope)
+
+
 def set_values_persisted(
     state: State, owners: ValueOwners, members: pl.DataFrame, values: Sequence[TechnologyValue]
 ) -> None:
     """Note that the records of `owners.kind` hold each value of `members`."""
-    keys = members.select(REGION, owners.member)
+    keys = members.select(owners.keys)
     for value in values:
-        set_persisted_rows(state, owners.kind, value.parameter, [keys])
+        set_persisted_rows(state, owners.kind, value.parameter, [keys], value.field)
         if value.fallback is not None:
-            set_persisted_rows(state, owners.kind, value.fallback, [keys.select(REGION)])
+            set_persisted_rows(
+                state, owners.kind, value.fallback, [keys.select(REGION)], value.field
+            )
 
 
 # --- the read of one value ---------------------------------------------------------------------
@@ -308,12 +347,9 @@ def _read_value(
     operations: OperationsYear,
     members: pl.DataFrame,
     value: TechnologyValue,
-    member: str,
+    keys: list[str],
 ) -> pl.DataFrame:
-    keys = [REGION, member]
-    rows = read_parameter(state, value.parameter, operations.year).join(
-        members.select(keys), on=keys, how="semi"
-    )
+    rows = _read_rows(state, operations, members.select(keys).unique(), value)
     if value.binds is not None:
         rows = rows.filter(value.binds)
     rows = rows.join(members.select(*keys, RATING_RATIO), on=keys).with_columns(
@@ -332,6 +368,17 @@ def _read_value(
     if value.fallback is None:
         return table
     return _fill_fallback(state, operations, members.select(keys), table, value)
+
+
+def _read_rows(
+    state: State, operations: OperationsYear, keys: pl.DataFrame, value: TechnologyValue
+) -> pl.DataFrame:
+    """A value of every year reads the lazy table of every year; another reads the year."""
+    table = state.source_time_series.get((TableKind.PARAMETER, value.parameter))
+    if not value.is_every_year or table is None:
+        rows = read_parameter(state, value.parameter, operations.year)
+        return rows.join(keys, on=keys.columns, how="semi")
+    return table.join(keys.lazy(), on=keys.columns, how="semi").collect()
 
 
 def _group_details(rows: pl.DataFrame, value: TechnologyValue, keys: list[str]) -> pl.DataFrame:
@@ -384,6 +431,8 @@ def _express_scaled(rows: pl.DataFrame, scale: Scale, units: ModelUnits) -> pl.E
         return express_converted(rows, VALUE_COL, _build_energy_per_capacity(units))
     if scale is Scale.FLAG:
         return _STATED_VALUE == _FLAG_SET
+    if scale is Scale.COMPLEMENT:
+        return _WHOLE - _STATED_VALUE
     return _STATED_VALUE
 
 
@@ -460,4 +509,5 @@ _DERIVATIONS: dict[Scale, str] = {
     Scale.COST_PER_ENERGY: "the value of the operations year, in $/MWh; no Sienna field holds it",
     Scale.ENERGY_PER_CAPACITY: "the value, in MWh for each MW; no Sienna field holds it",
     Scale.FLAG: "1 sets the flag; no Sienna field holds it",
+    Scale.COMPLEMENT: "1 - the value of the operations year; no Sienna field holds it",
 }

@@ -233,7 +233,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capacity_to_activity_unit" set to 8760.0
     And the log does not contain "capacity_to_activity_unit states"
     And the log does not contain "total_technology_annual_activity_upper_limit states"
-    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "max_relative_growth" set to {"2030": 0.2, "2035": 0.3}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "max_growth_rate" set to {"2030": 0.2, "2035": 0.3}
     And the log does not contain "total_annual_min_capacity_investment states"
     And the log does not contain "capacity_additional_max_growth_rate states"
 
@@ -299,13 +299,14 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CO2/2035" having "max_mtons" set to 0.25
 
   Scenario: A pollutant that only some technologies emit goes to extensions.json, and the report names it
-    The operations step writes one constraint record for each pollutant with a limit, and the
-    portfolio step writes no second one.
+    The operations step writes one constraint record for each pollutant with a limit. The
+    portfolio step takes out the record of CO2, whose yearly limits become CarbonCaps and which
+    states no limit over the model period.
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as a portfolio with no component "CarbonCaps" named "ATNOX/2030"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "limits" set to [{"period": "year", "value": 100.0, "unit": "t", "investment_period": 2030}]
-    And the file "outputs/extensions.json" parses as JSON constraint extension record for "CO2" having "type" set to "primary_energy"
+    And the file "outputs/extensions.json" parses as JSON with no constraint extension record for "CO2"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "sense" set to "<="
     And the log contains "R1/ATNOX"
     And the file "decisions.md" contains "so the limits go to extensions.json as a constraint record"

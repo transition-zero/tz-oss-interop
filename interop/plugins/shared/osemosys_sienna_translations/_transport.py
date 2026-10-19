@@ -44,6 +44,13 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     WHOLE_CAPACITY,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    LOWER_BOUND,
+    UPPER_BOUND,
+    build_yearly_limits,
+    enrich_activity_limits,
+    set_bounds_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
@@ -69,6 +76,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    LINK_RUN_PARAMETERS,
     build_operating_mode_field,
     build_operating_modes,
     set_mode_bounds_persisted,
@@ -82,11 +90,13 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    COMPONENT_VALUES,
+    LINK_VALUES,
+    RATED_PARAMETERS,
     RATING_RATIO,
     ValueOwners,
     build_value_fields,
     enrich_technology_values,
+    set_applied_rows,
     set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
@@ -136,6 +146,8 @@ _SERIES_FILE = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
 
 # The records of the lines, and the columns that name each line and its technology.
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
+# The rows of a line technology that the line applies, beside those its record keeps.
+_APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
 
 
 @dataclass(frozen=True)
@@ -239,9 +251,11 @@ def has_series(line: dict[str, Any]) -> bool:
 
 
 def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
-    """Note that the line records hold the values of each line technology."""
-    set_values_persisted(state, LINE_OWNERS, lines, COMPONENT_VALUES)
+    """Note the rows of each line technology that the lines apply or keep."""
+    set_values_persisted(state, LINE_OWNERS, lines, LINK_VALUES)
     set_mode_bounds_persisted(state, LINE_OWNERS, lines)
+    set_bounds_persisted(state, LINE_OWNERS, lines)
+    set_applied_rows(state, LINE_OWNERS, lines, _APPLIED_PARAMETERS)
 
 
 def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
@@ -251,7 +265,9 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
         p_max_pu=row[AVAILABILITY] if row[AVAILABILITY] != WHOLE_CAPACITY else None,
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         operating_modes=build_operating_mode_field(row),
-        **build_value_fields(row, COMPONENT_VALUES),
+        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
+        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
+        **build_value_fields(row, LINK_VALUES),
     )
 
 
@@ -263,9 +279,12 @@ def _enrich_extension_values(
         pl.col(INPUT_RATIO).alias(RATING_RATIO),
         pl.lit(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value).alias(SIENNA_TYPE),
     )
-    table = enrich_technology_values(state, operations, rated, COMPONENT_VALUES)
+    table = enrich_technology_values(state, operations, rated, LINK_VALUES)
     held = lines.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
-    return build_operating_modes(state, operations, held).enrich(table)
+    bounds = enrich_activity_limits(state, operations, held, FlowParameter.INPUT_ACTIVITY_RATIO)
+    table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
+    modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
+    return modes.enrich(table)
 
 
 def warn_one_way_lines(lines: pl.DataFrame) -> None:

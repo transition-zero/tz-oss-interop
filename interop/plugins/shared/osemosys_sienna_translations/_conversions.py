@@ -1,31 +1,64 @@
-"""An OSeMOSYS conversion or export of electricity -> a conversion record in extensions.json.
+"""OSeMOSYS conversion, export and trade of electricity -> conversion records in extensions.json.
 
-The system has no component for such a technology, because the electricity fuels of one
-location share one bus and the system takes no energy out of the model. A PyPSA Link states
-it: electricity goes in at `bus0`, and comes out at `bus1` with the share `efficiency`, or
-leaves the model where there is no `bus1`. Its capacity and its cost rate on the electricity
-that goes in at the operations mode.
+The system has no component for these, because the electricity fuels of one location share one
+bus, the system takes no energy out of the model, and a trade route joins regions and not
+locations. A PyPSA Link states each one: electricity goes in at `bus0`, and comes out at `bus1`
+with the share `efficiency`, or leaves the model where there is no `bus1`.
+
+- A technology rates its capacity and its cost on the electricity that goes in at the
+  operations mode, and its buses are locations.
+- A trade route of an electricity fuel names its ends as `<region>/<fuel>`, so no location has
+  to be chosen. Its capacity is its residual trade capacity, and its efficiency is 1 less its
+  loss.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 import polars as pl
 
 from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
-from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW_YEAR, UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.plugins.shared.constants import (
+    UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MWH,
+    UNIT_MW,
+    UNIT_MWH,
+    UNIT_MWH_PER_MW,
+    UNIT_PER_UNIT,
+    UNIT_YEARS,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
+    END_REGION,
+    FUEL,
     OPERATING_MODE,
     REGION,
+    START_REGION,
     TECHNOLOGY,
+    VALUE_COL,
+    YEAR,
     AnnotationColumn,
     FlowParameter,
+    TableKind,
     TechnologyKind,
 )
-from interop.plugins.shared.osemosys_sienna_constants import WHOLE_CAPACITY, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    REGION_NAME_SEPARATOR,
+    WHOLE_CAPACITY,
+    SupplyParameter,
+    TradeParameter,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    LOWER_BOUND,
+    UPPER_BOUND,
+    build_bound_events,
+    build_yearly_limits,
+    enrich_activity_limits,
+    set_bounds_persisted,
+)
+from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -40,6 +73,7 @@ from interop.plugins.shared.osemosys_sienna_translations._left_out import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
+    LINK_RUN_PARAMETERS,
     build_mode_events,
     build_operating_mode_field,
     build_operating_modes,
@@ -54,7 +88,8 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    COMPONENT_VALUES,
+    LINK_VALUES,
+    RATED_PARAMETERS,
     RATING_RATIO,
     Scale,
     TechnologyValue,
@@ -62,13 +97,16 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
     build_value_events,
     build_value_fields,
     enrich_technology_values,
+    set_applied_rows,
     set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
+    FROM_FUEL,
     FROM_LOCATION,
     INPUT_RATIO,
     OUTPUT_RATIO,
+    TO_FUEL,
     TO_LOCATION,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
@@ -80,21 +118,75 @@ _P_NOM = "p_nom"
 _EFFICIENCY = "efficiency"
 _MARGINAL_COST = "marginal_cost"
 _KEYS = [REGION, TECHNOLOGY]
+_ROUTE_KEYS = (START_REGION, END_REGION, FUEL)
 _KINDS = (TechnologyKind.CONVERSION, TechnologyKind.EXPORT)
 
 CONVERSION_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, TECHNOLOGY_NAME, _COMPONENT
 )
-# A conversion states its fixed cost here, as no Sienna translation of it states one.
-CONVERSION_VALUES: tuple[TechnologyValue, ...] = (
-    *COMPONENT_VALUES,
+ROUTE_OWNERS = ValueOwners(
+    ExtensionKind.CONVERSION, CONVERSION_NAME, CONVERSION_NAME, _COMPONENT, _ROUTE_KEYS
+)
+_STATED = pl.col(VALUE_COL)
+# The values of a trade route, which a route states in its own parameters.
+ROUTE_VALUES: tuple[TechnologyValue, ...] = (
+    TechnologyValue(TradeParameter.RESIDUAL_CAPACITY, _P_NOM, Scale.CAPACITY, UNIT_MW),
+    TechnologyValue(TradeParameter.LOSS, _EFFICIENCY, Scale.COMPLEMENT, UNIT_PER_UNIT),
     TechnologyValue(
-        SupplyParameter.FIXED_COST,
-        "fom_charge_per_mw_year",
+        TradeParameter.AVAILABILITY_FACTOR,
+        "p_max_pu",
+        Scale.NONE,
+        UNIT_PER_UNIT,
+        _STATED != WHOLE_CAPACITY,
+    ),
+    TechnologyValue(
+        TradeParameter.CAPITAL_COST,
+        "overnight_cost_per_mw",
         Scale.COST_PER_CAPACITY,
-        UNIT_DOLLARS_PER_MW_YEAR,
+        UNIT_DOLLARS_PER_MW,
+    ),
+    TechnologyValue(TradeParameter.LIFETIME, "lifetime_years", Scale.NONE, UNIT_YEARS),
+    TechnologyValue(TradeParameter.DISCOUNT_RATE, "discount_rate", Scale.NONE, UNIT_PER_UNIT),
+    TechnologyValue(TradeParameter.MAX_INVESTMENT, "max_growth", Scale.CAPACITY, UNIT_MW),
+    TechnologyValue(
+        TradeParameter.ACTIVITY_LOWER_LIMIT,
+        "e_sum_min",
+        Scale.ENERGY,
+        UNIT_MWH,
+        _STATED > 0,
+        detail=YEAR,
+        is_every_year=True,
+    ),
+    TechnologyValue(
+        TradeParameter.ACTIVITY_UPPER_LIMIT,
+        "e_sum_max",
+        Scale.ENERGY,
+        UNIT_MWH,
+        _STATED >= 0,
+        detail=YEAR,
+        is_every_year=True,
+    ),
+    TechnologyValue(
+        TradeParameter.MIN_CAPACITY_FACTOR, "capacity_factor_min", Scale.NONE, UNIT_PER_UNIT
+    ),
+    TechnologyValue(
+        TradeParameter.CAPACITY_TO_ACTIVITY_UNIT,
+        "capacity_to_activity_unit",
+        Scale.ENERGY_PER_CAPACITY,
+        UNIT_MWH_PER_MW,
+    ),
+    TechnologyValue(
+        TradeParameter.ROUTE, "active", Scale.FLAG, None, detail=YEAR, is_every_year=True
     ),
 )
+
+
+@dataclass
+class ConversionRecords:
+    """The conversion records, and the events of each value that they hold."""
+
+    records: list[ConversionExtension] = field(default_factory=list)
+    events: list[TranslationEvent] = field(default_factory=list)
 
 
 def build_conversions_source(state: State, operations: OperationsYear) -> pl.DataFrame:
@@ -112,30 +204,55 @@ def build_conversions_source(state: State, operations: OperationsYear) -> pl.Dat
         return conversions
     conversions = _enrich_link(state, operations, conversions)
     rated = conversions.with_columns(pl.col(INPUT_RATIO).alias(RATING_RATIO))
-    table = enrich_technology_values(state, operations, rated, CONVERSION_VALUES)
+    table = enrich_technology_values(state, operations, rated, LINK_VALUES)
     held = conversions.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
-    return build_operating_modes(state, operations, held).enrich(table).sort(CONVERSION_NAME)
+    bounds = enrich_activity_limits(state, operations, held, FlowParameter.INPUT_ACTIVITY_RATIO)
+    table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
+    modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
+    return modes.enrich(table).sort(CONVERSION_NAME)
 
 
-def build_conversion_extensions(conversions: pl.DataFrame) -> list[ConversionExtension]:
-    """One record for each conversion."""
-    return [_build_extension(row) for row in conversions.iter_rows(named=True)]
+def build_routes_source(state: State, operations: OperationsYear) -> pl.DataFrame:
+    """One row for each trade route of an electricity fuel that a trade parameter states."""
+    routes = _read_routes(state)
+    if routes.height == 0:
+        return routes
+    named = routes.with_columns(
+        pl.concat_str(*_ROUTE_KEYS, separator=REGION_NAME_SEPARATOR).alias(CONVERSION_NAME),
+        pl.lit(ExtensionKind.CONVERSION.value).alias(_COMPONENT),
+        pl.lit(WHOLE_CAPACITY).alias(RATING_RATIO),
+    )
+    table = enrich_technology_values(state, operations, named, ROUTE_VALUES, _ROUTE_KEYS)
+    return table.sort(CONVERSION_NAME)
 
 
-def record_conversion_events(conversions: pl.DataFrame, recorder: ScopedRecorder) -> None:
-    """Record one VALUE_DERIVED for each value of each conversion record."""
+def build_conversion_records(conversions: pl.DataFrame, routes: pl.DataFrame) -> ConversionRecords:
+    """One record for each conversion and each trade route, each built once with its events."""
+    built = ConversionRecords()
     for row in conversions.iter_rows(named=True):
-        for event in _build_events(row):
-            recorder.append(event)
+        record = _build_extension(row)
+        built.records.append(record)
+        built.events.extend(_build_events(row, record))
+    for row in routes.iter_rows(named=True):
+        built.records.append(_build_route(row))
+        built.events.extend(build_value_events(row, ROUTE_VALUES, ROUTE_OWNERS))
+    return built
 
 
-def set_conversion_values_persisted(state: State, conversions: pl.DataFrame) -> None:
-    """Note that the conversion records hold the values of each conversion technology."""
-    set_values_persisted(state, CONVERSION_OWNERS, conversions, CONVERSION_VALUES)
-    set_mode_bounds_persisted(state, CONVERSION_OWNERS, conversions)
+def set_conversion_values_persisted(
+    state: State, conversions: pl.DataFrame, routes: pl.DataFrame
+) -> None:
+    """Note the rows of each conversion technology and each route that the records keep."""
+    if conversions.height > 0:
+        set_values_persisted(state, CONVERSION_OWNERS, conversions, LINK_VALUES)
+        set_mode_bounds_persisted(state, CONVERSION_OWNERS, conversions)
+        set_bounds_persisted(state, CONVERSION_OWNERS, conversions)
+        set_applied_rows(state, CONVERSION_OWNERS, conversions, RATED_PARAMETERS)
+    if routes.height > 0:
+        set_values_persisted(state, ROUTE_OWNERS, routes, ROUTE_VALUES)
 
 
-# --- the link ----------------------------------------------------------------------------------
+# --- the technologies ---------------------------------------------------------------------------
 
 
 def _enrich_link(
@@ -144,7 +261,7 @@ def _enrich_link(
     """The ends, the capacity, the efficiency, the cost and the availability of each Link."""
     keys = conversions.select(_KEYS)
     ends = read_transport_ends(state, operations.year, operations.mode).select(
-        *_KEYS, FROM_LOCATION, TO_LOCATION, INPUT_RATIO, OUTPUT_RATIO
+        *_KEYS, FROM_LOCATION, TO_LOCATION, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
     )
     costs = read_variable_costs(
         state, operations.year, keys.with_columns(pl.lit(operations.mode).alias(OPERATING_MODE))
@@ -173,42 +290,94 @@ def _build_extension(row: dict[str, Any]) -> ConversionExtension:
         carrier=row[AnnotationColumn.CATEGORY],
         bus0=row[FROM_LOCATION],
         bus1=row[TO_LOCATION],
+        input_fuel=row[FROM_FUEL],
+        output_fuel=row[TO_FUEL],
         p_nom=row[_P_NOM],
         efficiency=row[_EFFICIENCY],
         marginal_cost=row[_MARGINAL_COST] or None,
-        p_max_pu=_find_derate(row),
+        p_max_pu=_find_derate(row[AVAILABILITY_FACTOR]),
         operating_modes=build_operating_mode_field(row),
-        **build_value_fields(row, CONVERSION_VALUES),
+        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
+        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
+        **build_value_fields(row, LINK_VALUES),
     )
 
 
-def _find_derate(row: dict[str, Any]) -> float | None:
+def _find_derate(factor: float | None) -> float | None:
     """The availability factor, or None where it is the whole capacity, as PyPSA defaults it."""
-    factor = row[AVAILABILITY_FACTOR]
     return None if factor == WHOLE_CAPACITY else factor
+
+
+# --- the trade routes ---------------------------------------------------------------------------
+
+
+def _read_routes(state: State) -> pl.DataFrame:
+    """Each start region, end region and electricity fuel that a trade parameter states."""
+    schema = dict.fromkeys(_ROUTE_KEYS, pl.Utf8)
+    tables = [
+        table.select(_ROUTE_KEYS).unique().collect()
+        for parameter in TradeParameter
+        if (table := state.source_time_series.get((TableKind.PARAMETER, parameter))) is not None
+    ]
+    if not tables:
+        return pl.DataFrame(schema=schema)
+    electricity = read_electricity_fuels(state).select(pl.col(REGION).alias(START_REGION), FUEL)
+    return (
+        pl.concat(tables)
+        .unique()
+        .join(electricity, on=[START_REGION, FUEL], how="semi")
+        .sort(_ROUTE_KEYS)
+    )
+
+
+def _build_route(row: dict[str, Any]) -> ConversionExtension:
+    return ConversionExtension(
+        name=row[CONVERSION_NAME],
+        bus0=f"{row[START_REGION]}{REGION_NAME_SEPARATOR}{row[FUEL]}",
+        bus1=f"{row[END_REGION]}{REGION_NAME_SEPARATOR}{row[FUEL]}",
+        input_fuel=row[FUEL],
+        output_fuel=row[FUEL],
+        **build_value_fields(row, ROUTE_VALUES),
+    )
 
 
 # --- the events --------------------------------------------------------------------------------
 
 
-def _build_events(row: dict[str, Any]) -> list[TranslationEvent]:
+def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[TranslationEvent]:
     link = [
-        _build_link_event(row, field, value, unit, sources, derivation)
-        for field, value, unit, sources, derivation in _list_link_values(row)
+        _build_link_event(row, name, value, unit, sources, derivation)
+        for name, value, unit, sources, derivation in _list_link_values(record)
         if value is not None
     ]
     return [
         *link,
-        *build_value_events(row, CONVERSION_VALUES, CONVERSION_OWNERS),
+        *build_value_events(row, LINK_VALUES, CONVERSION_OWNERS),
         *build_mode_events(row, CONVERSION_OWNERS),
+        *build_bound_events(row, CONVERSION_OWNERS, FlowParameter.INPUT_ACTIVITY_RATIO),
     ]
 
 
-def _list_link_values(row: dict[str, Any]) -> list[tuple[str, Any, str | None, list[str], str]]:
-    record = _build_extension(row)
+def _list_link_values(
+    record: ConversionExtension,
+) -> list[tuple[str, Any, str | None, list[str], str]]:
     return [
         ("bus0", record.bus0, None, [FlowParameter.INPUT_ACTIVITY_RATIO], _BUS0_DERIVATION),
         ("bus1", record.bus1, None, [FlowParameter.OUTPUT_ACTIVITY_RATIO], _BUS1_DERIVATION),
+        (
+            "input_fuel",
+            record.input_fuel,
+            None,
+            [FlowParameter.INPUT_ACTIVITY_RATIO],
+            _INPUT_FUEL_DERIVATION,
+        ),
+        (
+            "output_fuel",
+            record.output_fuel,
+            None,
+            [FlowParameter.OUTPUT_ACTIVITY_RATIO],
+            _OUTPUT_FUEL_DERIVATION,
+        ),
         (
             _P_NOM,
             record.p_nom,
@@ -242,7 +411,7 @@ def _list_link_values(row: dict[str, Any]) -> list[tuple[str, Any, str | None, l
 
 def _build_link_event(
     row: dict[str, Any],
-    field: str,
+    name: str,
     value: Any,
     unit: str | None,
     parameters: list[str],
@@ -256,7 +425,7 @@ def _build_link_event(
         ],
         destinations=[
             build_sienna_field(
-                ExtensionKind.CONVERSION, row[CONVERSION_NAME], f"extensions.{field}", value, unit
+                ExtensionKind.CONVERSION, row[CONVERSION_NAME], f"extensions.{name}", value, unit
             )
         ],
         derivation=derivation,
@@ -268,6 +437,8 @@ _BUS0_DERIVATION = "the location of the electricity fuel that the technology tak
 _BUS1_DERIVATION = (
     "the location of the electricity fuel that the technology puts out; an export puts out none"
 )
+_INPUT_FUEL_DERIVATION = "the electricity fuel that the technology takes in"
+_OUTPUT_FUEL_DERIVATION = "the electricity fuel that the technology puts out"
 _P_NOM_DERIVATION = (
     "residual_capacity of the operations year, in MW, × the electricity input_activity_ratio"
 )

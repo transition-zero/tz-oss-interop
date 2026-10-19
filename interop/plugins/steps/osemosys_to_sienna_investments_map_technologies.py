@@ -30,11 +30,13 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     LOADS_SOURCE,
     STORAGE_FIELDS,
     STORAGE_SCHEMA,
+    SUPPLY_APPLIED,
     SUPPLY_FIELDS,
     SUPPLY_SCHEMA,
     TECHNOLOGY_KEYS,
     TRANSPORT_FIELDS,
     TRANSPORT_SCHEMA,
+    CandidateFamily,
     FleetFamily,
     InvestmentPlan,
     StorageCandidates,
@@ -55,6 +57,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     build_technology_extensions,
     build_transport_candidates,
     build_transport_translations,
+    drop_capped_limits,
     find_investment_plan,
     find_region_discount_rate,
     set_portfolio_series,
@@ -249,9 +252,15 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         )
 
     def _map_carbon_caps(self, state: State, plan: InvestmentPlan, numbering: _Numbering) -> None:
+        """The caps, and the constraint records that the operations step wrote without them."""
+        caps = build_carbon_caps(state, plan, self._recorder)
+        constraints = state.destination_extensions.get(ExtensionKind.CONSTRAINT, [])
+        state.destination_extensions[ExtensionKind.CONSTRAINT] = drop_capped_limits(
+            constraints, caps.pollutants
+        )
         self._map_table(
             state,
-            build_carbon_caps(state, plan, self._recorder),
+            caps.table,
             build_carbon_cap_translations,
             CARBON_CAPS_DESTINATION_SCHEMA,
             SiennaInvestmentsComponent.CARBON_CAPS,
@@ -366,7 +375,18 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             )
             append_extensions(state.destination_extensions, ExtensionKind.TECHNOLOGY, records)
         set_technology_extensions_persisted(
-            state, [(table, fields, keys) for _, table, _, fields, keys in families]
+            state,
+            [
+                CandidateFamily(
+                    table,
+                    fields,
+                    keys,
+                    SUPPLY_APPLIED
+                    if component == SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
+                    else (),
+                )
+                for component, table, _, fields, keys in families
+            ],
         )
 
     def _map_financial_data(self, state: State, plan: InvestmentPlan) -> None:

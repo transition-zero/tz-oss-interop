@@ -11,10 +11,12 @@ emissions that a limit holds, so the cap is the limit less that emission.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import ConstraintExtension, ConstraintPeriod, ExtensionRecord
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_MEGATONNES, UNIT_YEARS, Framework
@@ -99,11 +101,18 @@ SCOPED_POLLUTANT_SKIP = POLLUTANT_SOURCE.skip(
 _PERIOD_NOTE = (
     "CarbonCaps holds the emissions of one year, so a limit over the whole model period has no "
     "field; the annual limits of the pollutant reach CarbonCaps, and the constraint record of "
-    "extensions.json holds the limit over the period"
+    "extensions.json keeps the limit over the period only"
 )
 
 
-def build_carbon_caps(state: State, plan: InvestmentPlan, recorder: ScopedRecorder) -> pl.DataFrame:
+class CarbonCaps(NamedTuple):
+    """One row for each `CarbonCaps`, and the name of each pollutant that the caps hold."""
+
+    table: pl.DataFrame
+    pollutants: frozenset[str]
+
+
+def build_carbon_caps(state: State, plan: InvestmentPlan, recorder: ScopedRecorder) -> CarbonCaps:
     """One row for each `CarbonCaps`: a pollutant that covers the whole model, in one year."""
     pollutants = _read_pollutants(state, plan)
     yearly = read_annual_limits(state, plan.years, plan.units, pollutants)
@@ -111,7 +120,26 @@ def build_carbon_caps(state: State, plan: InvestmentPlan, recorder: ScopedRecord
     limited = drop_unlimited(pollutants, yearly)
     covering, _ = filter_component(limited, pl.col(COVERS_MODEL), SCOPED_POLLUTANT_SKIP, recorder)
     _report_period_limits(covering, recorder)
-    return _build_caps_table(covering, yearly)
+    names = frozenset(covering[CANDIDATE_NAME].to_list())
+    return CarbonCaps(_build_caps_table(covering, yearly), names)
+
+
+def drop_capped_limits(
+    records: Sequence[ExtensionRecord], pollutants: frozenset[str]
+) -> list[ExtensionRecord]:
+    """The constraint records without the yearly limits that a `CarbonCaps` holds.
+
+    The limit over the model period of a capped pollutant stays, as no `CarbonCaps` holds it.
+    """
+    kept: list[ExtensionRecord] = []
+    for record in records:
+        if not isinstance(record, ConstraintExtension) or record.name not in pollutants:
+            kept.append(record)
+            continue
+        horizon = [limit for limit in record.limits if limit.period == ConstraintPeriod.HORIZON]
+        if horizon:
+            kept.append(record.model_copy(update={"limits": horizon}))
+    return kept
 
 
 def build_carbon_cap_translations(start: int) -> list[Translation]:

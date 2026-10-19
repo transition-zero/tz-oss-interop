@@ -3,8 +3,9 @@
 A component runs the modes that it holds: a generator and a line the operations mode, a
 storage its charge mode and its discharge mode. The cost, the flows and the emissions of each
 other mode, in the operations year, go to the `operating_modes` field of the extension record.
-So do the bounds of each mode, held or not, in every year. Each value is for one MWh of the
-activity of the mode.
+So do the bounds of each mode, held or not, in every year, and the emissions of a mode that a
+storage, a line or a conversion runs, which no field of those holds. Each value is for one MWh
+of the activity of the mode.
 """
 
 from __future__ import annotations
@@ -130,6 +131,17 @@ _MODE_VALUES = (
         is_bound=True,
     ),
 )
+# The values of a mode that a generator runs, which the generator holds itself.
+GENERATOR_RUN_PARAMETERS = frozenset(
+    {
+        SupplyParameter.VARIABLE_OPERATION_COST,
+        FlowParameter.INPUT_ACTIVITY_RATIO,
+        FlowParameter.OUTPUT_ACTIVITY_RATIO,
+        SupplyParameter.EMISSION_RATE,
+    }
+)
+# The values of a mode that a storage, a line or a conversion runs: it states no emission rate.
+LINK_RUN_PARAMETERS = GENERATOR_RUN_PARAMETERS - {SupplyParameter.EMISSION_RATE}
 # The bounds of a mode, whose rows a record holds for each technology that it names.
 MODE_BOUND_PARAMETERS: tuple[str, ...] = tuple(
     value.parameter for value in _MODE_VALUES if value.is_bound
@@ -150,15 +162,22 @@ class OperatingModes:
 
 
 def build_operating_modes(
-    state: State, operations: OperationsYear, held: pl.DataFrame
+    state: State,
+    operations: OperationsYear,
+    held: pl.DataFrame,
+    run_parameters: frozenset[str] = GENERATOR_RUN_PARAMETERS,
 ) -> OperatingModes:
     """The mode values of each technology in `held`, which lists the modes that it runs.
 
-    `held` holds `region`, `technology` and `operating_mode`.
+    `held` holds `region`, `technology` and `operating_mode`. A mode that the component runs
+    keeps out each value of `run_parameters`, which the component holds itself.
     """
     technologies = held.select(_KEYS).unique()
     rows = pl.concat(
-        [_read_mode_rows(state, operations, technologies, held, value) for value in _MODE_VALUES]
+        [
+            _read_mode_rows(state, operations, technologies, held, value, run_parameters)
+            for value in _MODE_VALUES
+        ]
     )
     listed = rows.group_by(_KEYS).agg(
         pl.struct(_PARAMETER, OPERATING_MODE, _FIELD, _DETAIL, _STATED, _SCALED, _UNIT).alias(
@@ -187,9 +206,11 @@ def build_mode_events(row: dict[str, Any], owners: ValueOwners) -> list[Translat
 
 
 def set_mode_bounds_persisted(state: State, owners: ValueOwners, members: pl.DataFrame) -> None:
-    """Note that the records of `owners.kind` hold the mode bounds of each technology."""
-    for parameter in MODE_BOUND_PARAMETERS:
-        set_persisted_rows(state, owners.kind, parameter, [members.select(REGION, TECHNOLOGY)])
+    """Note that the records of `owners.kind` hold the mode bounds and the emission rates."""
+    for parameter in (*MODE_BOUND_PARAMETERS, SupplyParameter.EMISSION_RATE):
+        set_persisted_rows(
+            state, owners.kind, parameter, [members.select(REGION, TECHNOLOGY)], OPERATING_MODES
+        )
 
 
 # --- the rows ----------------------------------------------------------------------------------
@@ -201,9 +222,10 @@ def _read_mode_rows(
     technologies: pl.DataFrame,
     held: pl.DataFrame,
     value: ModeValue,
+    run_parameters: frozenset[str],
 ) -> pl.DataFrame:
     rows = _read_rows(state, operations, technologies, value)
-    if not value.is_bound:
+    if value.parameter in run_parameters:
         rows = rows.join(held, on=[*_KEYS, OPERATING_MODE], how="anti")
     rows = rows.filter(pl.col(VALUE_COL) != _NO_VALUE).with_columns(
         pl.col(VALUE_COL).cast(pl.Float64)

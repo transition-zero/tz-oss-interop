@@ -30,9 +30,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     FIXED_COST_MW_YEAR,
     MAX_CAPACITY_INVESTMENT_MW,
     MAX_GROWTH_FLOOR_MW,
-    MAX_RELATIVE_GROWTH,
+    MAX_GROWTH_RATE,
     MIN_GROWTH_MW,
-    MIN_RELATIVE_GROWTH,
+    MIN_GROWTH_RATE,
     REPORT_NAME,
     RESIDUAL_CAPACITY_MW,
     VARIABLE_COST_MWH,
@@ -68,8 +68,8 @@ TECHNOLOGY_FIELDS: dict[str, YearlyField] = {
         MAX_CAPACITY_INVESTMENT_MW, InvestmentParameter.MAX_CAPACITY_INVESTMENT
     ),
     "min_growth": YearlyField(MIN_GROWTH_MW, GrowthParameter.MIN_CAPACITY_INVESTMENT),
-    "max_relative_growth": YearlyField(MAX_RELATIVE_GROWTH, GrowthParameter.MAX_GROWTH_RATE),
-    "min_relative_growth": YearlyField(MIN_RELATIVE_GROWTH, GrowthParameter.MIN_GROWTH_RATE),
+    "max_growth_rate": YearlyField(MAX_GROWTH_RATE, GrowthParameter.MAX_GROWTH_RATE),
+    "min_growth_rate": YearlyField(MIN_GROWTH_RATE, GrowthParameter.MIN_GROWTH_RATE),
     "max_growth_floor": YearlyField(MAX_GROWTH_FLOOR_MW, GrowthParameter.MAX_FLOOR),
     "e_sum_min": YearlyField(E_SUM_MIN_MWH, SupplyParameter.ACTIVITY_LOWER_LIMIT),
     "e_sum_max": YearlyField(E_SUM_MAX_MWH, SupplyParameter.ACTIVITY_UPPER_LIMIT),
@@ -140,19 +140,36 @@ def _select_candidate_values(candidates: pl.DataFrame, component: str) -> pl.Dat
     )
 
 
-def set_technology_extensions_persisted(
-    state: State, families: Sequence[tuple[pl.DataFrame, Mapping[str, YearlyField], Sequence[str]]]
-) -> None:
-    """Note the candidates whose yearly values the technology records hold, by parameter.
+class CandidateFamily(NamedTuple):
+    """The candidates of one technology type, their record fields and the key columns of one.
 
-    Each family is its candidates, its record fields and the key columns of a candidate.
+    `applied` names the parameters that the portfolio applies to each candidate beside them.
     """
+
+    candidates: pl.DataFrame
+    fields: Mapping[str, YearlyField]
+    keys: Sequence[str]
+    applied: tuple[str, ...] = ()
+
+
+# The parameters of a supply candidate that its availability and its variable cost apply.
+SUPPLY_APPLIED: tuple[str, ...] = (
+    SupplyParameter.CAPACITY_FACTOR,
+    SupplyParameter.AVAILABILITY_FACTOR,
+    SupplyParameter.EMISSION_RATE,
+)
+
+
+def set_technology_extensions_persisted(state: State, families: Sequence[CandidateFamily]) -> None:
+    """Note the candidates whose values the portfolio or the technology records hold."""
     by_parameter: dict[str, list[pl.DataFrame]] = {}
-    for candidates, fields, keys in families:
-        members = [candidates.select(*keys), candidates.select(REGION, TECHNOLOGY)]
+    for family in families:
+        candidates = family.candidates
+        members = [candidates.select(*family.keys), candidates.select(REGION, TECHNOLOGY)]
         parameters = [
-            *(field.parameter for field in fields.values()),
+            *(field.parameter for field in family.fields.values()),
             *(value.parameter for value in CANDIDATE_VALUES),
+            *family.applied,
         ]
         for parameter in parameters:
             by_parameter.setdefault(parameter, []).extend(members)
