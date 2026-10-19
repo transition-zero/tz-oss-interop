@@ -108,7 +108,7 @@ The type is implied by the key, so the objects stay **pure SiennaSchemas** — n
 
 **The sidecar is an optional input to every source.** Only this translator writes one, so a SiennaSchemas system from a partner is `system.json` plus its HDF5 companion and nothing more, and it stages with no sidecar at all. A staged record that no mapping in the hop consumes is dropped and reported, not relayed into the next sidecar: a concept survives a chain exactly as far as the frameworks along it understand it.
 
-> **Open question: companion file references.** The reader takes each companion as an explicit path: `system_json_path` (the system document), `time_series_h5_path` (the HDF5 value store), and the optional `extensions_json_path`. The writer embeds pointer keys in the document (`time_series_storage_filename` and `extensions_filename`), but the reader does not consult them. Whether embedded pointer keys, a naming convention, or something NLR specifies is the agreed mechanism is still to be confirmed with NLR.
+> **Open question: companion file references.** The document names the time-series sidecar in `time_series_storage_file`, as a basename beside the document. It does not name `extensions.json`, because SiennaSchemas 0.2 has no key for it. The reader takes each companion as an explicit path: `system_json_path`, `time_series_h5_path` and the optional `extensions_json_path`. Whether a naming convention, or something NLR specifies, replaces the explicit paths is still to be confirmed with NLR.
 
 > **Open question — HDF5 layout.** SiennaSchemas does not define the internal HDF5 layout for the value arrays (only that `time_series_uuid` points at an external store). The layout is still to be agreed with NLR; we reuse `/time_series/<uuid>/data` for now.
 
