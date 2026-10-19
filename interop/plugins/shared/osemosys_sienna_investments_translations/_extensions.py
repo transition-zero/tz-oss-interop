@@ -26,6 +26,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     CAPITAL_COST_MW,
     E_SUM_MAX_MWH,
     E_SUM_MIN_MWH,
+    EMISSION_COST_MWH,
     ENERGY_CAPITAL_COST_MWH,
     FIXED_COST_MW_YEAR,
     MAX_CAPACITY_INVESTMENT_MW,
@@ -41,6 +42,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
+    list_fuel_producers,
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
@@ -86,12 +90,14 @@ STORAGE_FIELDS = {
 }
 TRANSPORT_FIELDS = {
     **TECHNOLOGY_FIELDS,
+    "marginal_cost": YearlyField(VARIABLE_COST_MWH, SupplyParameter.VARIABLE_OPERATION_COST),
     "p_nom_min": YearlyField(CAPACITY_LIMITS_MIN_MW, InvestmentParameter.CAPACITY_LIMITS_MIN),
     "p_nom_max": YearlyField(CAPACITY_LIMITS_MAX_MW, InvestmentParameter.CAPACITY_LIMITS_MAX),
 }
 
 _EXTENSIONS_FIELD = "extensions.technology"
 _COMPONENT = "component"
+_PRODUCERS = "producers"
 _OWNERS = ValueOwners(ExtensionKind.TECHNOLOGY, CANDIDATE_NAME, REPORT_NAME, _COMPONENT)
 _DERIVATION = (
     "the value of each year of the plan in Sienna units, keyed by the year, because no Sienna "
@@ -175,6 +181,19 @@ def set_technology_extensions_persisted(state: State, families: Sequence[Candida
             by_parameter.setdefault(parameter, []).extend(members)
     for parameter, tables in by_parameter.items():
         set_persisted_rows(state, ExtensionKind.TECHNOLOGY, parameter, tables)
+
+
+def set_producers_persisted(state: State, supply_yearly: pl.DataFrame) -> None:
+    """Note the fuel producers whose cost, and emission rate under a penalty, a supply
+    candidate's variable cost reads in some year."""
+    penalised = supply_yearly.filter(pl.col(EMISSION_COST_MWH) > 0)
+    noted = (
+        (SupplyParameter.VARIABLE_OPERATION_COST, supply_yearly),
+        (SupplyParameter.EMISSION_RATE, penalised),
+    )
+    for parameter, yearly in noted:
+        producers = list_fuel_producers(yearly)
+        set_persisted_rows(state, ExtensionKind.TECHNOLOGY, parameter, [producers], _PRODUCERS)
 
 
 def _build_record(row: dict[str, Any], fields: Mapping[str, YearlyField]) -> TechnologyExtension:

@@ -98,10 +98,11 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    VARIABLE_COST_MWH as OPERATIONS_VARIABLE_COST_MWH,
+    FUEL_TERMS,
+    enrich_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    enrich_variable_costs,
+    VARIABLE_COST_MWH as OPERATIONS_VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     enrich_emission_rates,
@@ -292,6 +293,7 @@ def _read_variable_costs(
         pl.col(OPERATION_COST_MWH).alias(VARIABLE_COST_MWH),
         pl.col(OPERATIONS_VARIABLE_COST_MWH).alias(OWN_AND_FUEL_COST_MWH),
         pl.col(OPERATIONS_EMISSION_COST_MWH).alias(EMISSION_COST_MWH),
+        pl.col(FUEL_TERMS),
     )
 
 

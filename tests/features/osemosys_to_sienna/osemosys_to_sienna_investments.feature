@@ -212,6 +212,28 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASNEW` = 1000000000.0 |  |  |"
     And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
 
+  Scenario: The cost of a fuel producer that only a candidate burns, and the cost of a transport candidate, count as kept
+    Only the candidate ATGASNEW burns gas, so the cost of the gas well reaches its variable
+    cost, and the report does not name it. The interconnector ATDELINK costs 1 $/MWh sent in
+    2030, and its technology record keeps the cost of each year.
+    Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASNEW   | ATGAS  | 1                 | 2030 | 2     |
+      | R1     | ATGASNEW   | ATGAS  | 1                 | 2035 | 1.5   |
+      | R1     | ATDELINK   | ATELEC | 1                 | 2030 | 1     |
+    And the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASNEW   | 1                 | 2030 | 1000  |
+      | R1     | ATGASNEW   | 1                 | 2035 | 1000  |
+      | R1     | ATGASWELL  | 1                 | 2030 | 3000  |
+      | R1     | ATGASWELL  | 1                 | 2035 | 4000  |
+      | R1     | ATDELINK   | 1                 | 2030 | 1000  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "marginal_cost" set to {"2030": 7.0, "2035": 7.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATDELINK" having "marginal_cost" set to {"2030": 1.0, "2035": 0.0}
+    And the log does not contain "variable_operation_cost states"
+
   Scenario: The bounds on the growth and the energy of a candidate reach its technology record
     Given the otoole parameter "TotalAnnualMinCapacityInvestment" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
@@ -307,6 +329,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as a portfolio with no component "CarbonCaps" named "ATNOX/2030"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "limits" set to [{"period": "year", "value": 100.0, "unit": "t", "investment_period": 2030}]
     And the file "outputs/extensions.json" parses as JSON with no constraint extension record for "CO2"
+    And the file "decisions.md" contains "`sienna.constraint.CO2.extensions.limits.year 2030` = 500000.0 t | `sienna.CarbonCaps.CO2/2030.max_mtons` = 0.5 Mt"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "ATNOX" having "sense" set to "<="
     And the log contains "R1/ATNOX"
     And the file "decisions.md" contains "so the limits go to extensions.json as a constraint record"

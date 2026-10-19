@@ -364,7 +364,7 @@ network keys a value by its investment period:
 | `max_growth_rate`, `min_growth_rate` | | `capacity_additional_max_growth_rate`, `capacity_additional_min_growth_rate` | none |
 | `max_growth_floor` | MW | `capacity_additional_max_floor` | none |
 | `e_sum_min`, `e_sum_max` | MWh | `total_technology_annual_activity_lower_limit` above 0, `total_technology_annual_activity_upper_limit` not -1, × the electricity ratio | `e_sum_min`, `e_sum_max` |
-| `marginal_cost` | $/MWh | The variable cost with the fuel cost and the emission penalty (supply only) | `marginal_cost` |
+| `marginal_cost` | $/MWh | Supply: the variable cost with the fuel cost and the emission penalty. Transport: `variable_operation_cost` at the operations mode / the electricity input ratio, for each MWh sent. | `marginal_cost` |
 | `energy_overnight_cost` | $/MWh | `energy_capital_cost` (storage only) | `Store.overnight_cost` |
 | `p_nom_min`, `p_nom_max` | MW | The capacity limits (transport only) | `p_nom_min`, `p_nom_max` |
 
@@ -435,7 +435,7 @@ the leg reads and what the solve loses.
 | `DepreciationMethod`, the salvage value | Not translated. |
 | The fixed and the variable cost of the years after the first year | `extensions.json` holds them. |
 | The capacity limits of a transport candidate after the first year | `extensions.json` holds them. |
-| The variable cost of a storage or a transport candidate | Not translated. |
+| The variable cost of a storage candidate | Not translated. A transport candidate keeps its variable cost in its `technology` record. |
 | A limit on the energy capacity of a storage | The canonical stage states none. |
 | The representative days of the years after the first year | Each series uses them, and `extensions.json` holds no record for them. |
 | A plant of the base system that is not a candidate | It is in no technology. |

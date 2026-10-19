@@ -29,6 +29,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._extensions
     CandidateFamily,
     YearlyField,
     build_technology_extensions,
+    set_producers_persisted,
     set_technology_extensions_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._financials import (
@@ -95,6 +96,7 @@ __all__ = [
     "TransportCandidates",
     "YearlyField",
     "set_portfolio_series",
+    "set_producers_persisted",
     "set_technology_extensions_persisted",
     "build_availability_series",
     "build_carbon_cap_translations",

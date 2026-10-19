@@ -93,7 +93,8 @@ class TechnologyValue(NamedTuple):
 
     `detail` names a key column whose members key the field, which is then a dict. A
     `fallback` is a parameter keyed by region that gives the value where the member states none.
-    A value of every year reads each year in scope rather than the operations year.
+    A value of every year reads each year in scope rather than the operations year. A
+    `derivation` replaces the text that the scale gives the event.
     """
 
     parameter: str
@@ -104,6 +105,7 @@ class TechnologyValue(NamedTuple):
     detail: str | None = None
     fallback: str | None = None
     is_every_year: bool = False
+    derivation: str | None = None
 
     @property
     def column(self) -> str:
@@ -478,7 +480,7 @@ def _build_events(
                     value.unit,
                 )
             ],
-            derivation=_DERIVATIONS[value.scale],
+            derivation=value.derivation or _DERIVATIONS[value.scale],
         )
         for entry in entries
     ]

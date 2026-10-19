@@ -71,9 +71,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     FIXED_COST_MW_YEAR,
-    FUEL_TERMS,
     enrich_fixed_costs,
     enrich_variable_costs,
+    list_fuel_producers,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
@@ -238,14 +238,7 @@ def set_generator_values_persisted(state: State, generators: pl.DataFrame) -> No
     set_mode_bounds_persisted(state, GENERATOR_OWNERS, generators)
     set_bounds_persisted(state, GENERATOR_OWNERS, generators)
     set_applied_rows(state, GENERATOR_OWNERS, generators, _APPLIED_PARAMETERS)
-    set_applied_rows(state, _PRODUCER_OWNERS, _list_producers(generators), _PRODUCER_PARAMETERS)
-
-
-def _list_producers(generators: pl.DataFrame) -> pl.DataFrame:
-    """The fuel_supply technology that prices a fuel that some generator burns."""
-    terms = generators.select(REGION, pl.col(FUEL_TERMS)).explode(FUEL_TERMS, empty_as_null=True)
-    producer = pl.col(FUEL_TERMS).struct.field(PRODUCER)
-    return terms.select(REGION, producer.alias(TECHNOLOGY)).drop_nulls().unique()
+    set_applied_rows(state, _PRODUCER_OWNERS, list_fuel_producers(generators), _PRODUCER_PARAMETERS)
 
 
 # --- the generators of the year -----------------------------------------------------

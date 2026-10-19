@@ -59,6 +59,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
     set_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
+from interop.plugins.shared.osemosys_sienna_translations._canonical import find_parameter_default
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -120,6 +121,7 @@ _MARGINAL_COST = "marginal_cost"
 _KEYS = [REGION, TECHNOLOGY]
 _ROUTE_KEYS = (START_REGION, END_REGION, FUEL)
 _KINDS = (TechnologyKind.CONVERSION, TechnologyKind.EXPORT)
+_CLOSED = "is_closed"
 
 CONVERSION_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, TECHNOLOGY_NAME, _COMPONENT
@@ -128,9 +130,23 @@ ROUTE_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, CONVERSION_NAME, _COMPONENT, _ROUTE_KEYS
 )
 _STATED = pl.col(VALUE_COL)
+_ROUTE_CAPACITY_DERIVATION = (
+    "the value of the operations year, in MW of the fuel that the route moves; no Sienna field "
+    "holds it"
+)
+_ROUTE_ENERGY_DERIVATION = (
+    "the value of each year, in MWh of the fuel that the route moves, keyed by the year; no "
+    "Sienna field holds it"
+)
 # The values of a trade route, which a route states in its own parameters.
 ROUTE_VALUES: tuple[TechnologyValue, ...] = (
-    TechnologyValue(TradeParameter.RESIDUAL_CAPACITY, _P_NOM, Scale.CAPACITY, UNIT_MW),
+    TechnologyValue(
+        TradeParameter.RESIDUAL_CAPACITY,
+        _P_NOM,
+        Scale.CAPACITY,
+        UNIT_MW,
+        derivation=_ROUTE_CAPACITY_DERIVATION,
+    ),
     TechnologyValue(TradeParameter.LOSS, _EFFICIENCY, Scale.COMPLEMENT, UNIT_PER_UNIT),
     TechnologyValue(
         TradeParameter.AVAILABILITY_FACTOR,
@@ -147,7 +163,13 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
     ),
     TechnologyValue(TradeParameter.LIFETIME, "lifetime_years", Scale.NONE, UNIT_YEARS),
     TechnologyValue(TradeParameter.DISCOUNT_RATE, "discount_rate", Scale.NONE, UNIT_PER_UNIT),
-    TechnologyValue(TradeParameter.MAX_INVESTMENT, "max_growth", Scale.CAPACITY, UNIT_MW),
+    TechnologyValue(
+        TradeParameter.MAX_INVESTMENT,
+        "max_growth",
+        Scale.CAPACITY,
+        UNIT_MW,
+        derivation=_ROUTE_CAPACITY_DERIVATION,
+    ),
     TechnologyValue(
         TradeParameter.ACTIVITY_LOWER_LIMIT,
         "e_sum_min",
@@ -156,6 +178,7 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
         _STATED > 0,
         detail=YEAR,
         is_every_year=True,
+        derivation=_ROUTE_ENERGY_DERIVATION,
     ),
     TechnologyValue(
         TradeParameter.ACTIVITY_UPPER_LIMIT,
@@ -165,6 +188,7 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
         _STATED >= 0,
         detail=YEAR,
         is_every_year=True,
+        derivation=_ROUTE_ENERGY_DERIVATION,
     ),
     TechnologyValue(
         TradeParameter.MIN_CAPACITY_FACTOR, "capacity_factor_min", Scale.NONE, UNIT_PER_UNIT
@@ -312,21 +336,44 @@ def _find_derate(factor: float | None) -> float | None:
 
 
 def _read_routes(state: State) -> pl.DataFrame:
-    """Each start region, end region and electricity fuel that a trade parameter states."""
+    """Each route of an electricity fuel that a trade parameter states a value other than its
+    default for, and that `transport_route` does not close in every year it states."""
     schema = dict.fromkeys(_ROUTE_KEYS, pl.Utf8)
-    tables = [
-        table.select(_ROUTE_KEYS).unique().collect()
-        for parameter in TradeParameter
-        if (table := state.source_time_series.get((TableKind.PARAMETER, parameter))) is not None
-    ]
-    if not tables:
+    tables = [_read_stated_routes(state, parameter) for parameter in TradeParameter]
+    stated = [table for table in tables if table is not None]
+    if not stated:
         return pl.DataFrame(schema=schema)
     electricity = read_electricity_fuels(state).select(pl.col(REGION).alias(START_REGION), FUEL)
     return (
-        pl.concat(tables)
+        pl.concat(stated)
         .unique()
+        .join(_read_closed_routes(state), on=list(_ROUTE_KEYS), how="anti")
         .join(electricity, on=[START_REGION, FUEL], how="semi")
         .sort(_ROUTE_KEYS)
+    )
+
+
+def _read_stated_routes(state: State, parameter: str) -> pl.DataFrame | None:
+    table = state.source_time_series.get((TableKind.PARAMETER, parameter))
+    if table is None:
+        return None
+    default = find_parameter_default(state, parameter)
+    if default is not None:
+        table = table.filter(pl.col(VALUE_COL) != default)
+    return table.select(_ROUTE_KEYS).unique().collect()
+
+
+def _read_closed_routes(state: State) -> pl.DataFrame:
+    """The routes whose `transport_route` is 0 in each year that states it."""
+    table = state.source_time_series.get((TableKind.PARAMETER, TradeParameter.ROUTE))
+    if table is None:
+        return pl.DataFrame(schema=dict.fromkeys(_ROUTE_KEYS, pl.Utf8))
+    return (
+        table.group_by(_ROUTE_KEYS)
+        .agg((pl.col(VALUE_COL) == 0).all().alias(_CLOSED))
+        .filter(pl.col(_CLOSED))
+        .select(_ROUTE_KEYS)
+        .collect()
     )
 
 

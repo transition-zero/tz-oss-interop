@@ -95,6 +95,16 @@ def enrich_variable_costs(
     )
 
 
+def list_fuel_producers(technologies: pl.DataFrame) -> pl.DataFrame:
+    """The fuel_supply technology that prices each fuel that a technology of the table burns.
+
+    `technologies` holds `region` and the fuel terms of each technology.
+    """
+    terms = technologies.select(REGION, pl.col(FUEL_TERMS)).explode(FUEL_TERMS, empty_as_null=True)
+    producer = pl.col(FUEL_TERMS).struct.field(PRODUCER)
+    return terms.select(REGION, producer.alias(TECHNOLOGY)).drop_nulls().unique()
+
+
 def enrich_fixed_costs(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:

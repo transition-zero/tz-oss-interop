@@ -563,7 +563,8 @@ A trade route moves a fuel from one region to another: OSeMOSYS states it with `
 (`transport_route`) and the other trade parameters. A trade route of an electricity fuel gets
 a `conversion` record too. A route joins regions and not locations, so `bus0` and `bus1` name
 the region and the fuel as `<region>/<fuel>`, and not a Sienna bus. No location has to be
-chosen. A route is in the record when any trade parameter states a row for it.
+chosen. A route gets a record when a trade parameter states a value other than its default for
+it, unless `TradeRoute` is 0 in each year that it states, which closes the route.
 
 | Field | Unit | From |
 | --- | --- | --- |

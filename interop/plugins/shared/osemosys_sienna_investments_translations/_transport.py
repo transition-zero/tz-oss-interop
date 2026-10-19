@@ -20,7 +20,9 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     ELECTRICITY_CARRIER,
+    OPERATING_MODE,
     TECHNOLOGY,
+    YEAR,
     AnnotationColumn,
     FlowParameter,
     TechnologyKind,
@@ -28,6 +30,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     TECHNOLOGIES_LABEL,
     InvestmentParameter,
+    SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CAPACITY_LIMITS_MAX_MW,
@@ -39,6 +42,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     REPORT_NAME,
     UNIT_SIZE,
     UNIT_SIZE_MW,
+    VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import (
     BASE_YEAR,
@@ -66,6 +70,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
     enrich_yearly_units,
     read_technology_years,
 )
+from interop.plugins.shared.osemosys_sienna_translations._canonical import read_yearly_values
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
@@ -76,6 +81,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATION,
     TO_LOCATIONS,
 )
+from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.pypsa_sienna_investments_translations import capital_cost_struct
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     capacity_limits_struct,
@@ -156,12 +162,32 @@ def build_transport_candidates(
         technologies, _express_has_areas(_list_area_names(state)), NO_AREA_SKIP, recorder
     )
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
+    yearly = _enrich_variable_costs(state, plan, yearly)
     table = enrich_base_year_values(technologies, yearly, plan)
     base = build_year_values(yearly, plan.base_year).select(
         *TECHNOLOGY_KEYS, CAPACITY_LIMITS_MIN_MW, CAPACITY_LIMITS_MAX_MW
     )
     table = enrich_financial_values(state, plan, table.join(base, on=TECHNOLOGY_KEYS, how="left"))
     return TransportCandidates(table, yearly)
+
+
+def _enrich_variable_costs(
+    state: State, plan: InvestmentPlan, yearly: pl.DataFrame
+) -> pl.DataFrame:
+    """The cost of each MWh sent in each year: the cost of the operations mode / the input
+    ratio, which no field of the type holds."""
+    keys = (
+        yearly.select(TECHNOLOGY_KEYS)
+        .unique()
+        .with_columns(pl.lit(plan.mode).alias(OPERATING_MODE))
+    )
+    costs = read_yearly_values(
+        state, SupplyParameter.VARIABLE_OPERATION_COST, keys, plan.years
+    ).drop(OPERATING_MODE)
+    table = yearly.join(costs, on=[*TECHNOLOGY_KEYS, YEAR], how="left")
+    convert = plan.units.convert_cost_per_energy_to_dollars_per_mwh
+    cost = express_converted(table, SupplyParameter.VARIABLE_OPERATION_COST, convert)
+    return table.with_columns((cost / pl.col(RATING_RATIO)).alias(VARIABLE_COST_MWH))
 
 
 def build_transport_translations(cost_year: int, start: int) -> list[Translation]:

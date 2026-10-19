@@ -61,6 +61,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     find_investment_plan,
     find_region_discount_rate,
     set_portfolio_series,
+    set_producers_persisted,
     set_technology_extensions_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations import (
@@ -255,9 +256,10 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         """The caps, and the constraint records that the operations step wrote without them."""
         caps = build_carbon_caps(state, plan, self._recorder)
         constraints = state.destination_extensions.get(ExtensionKind.CONSTRAINT, [])
-        state.destination_extensions[ExtensionKind.CONSTRAINT] = drop_capped_limits(
-            constraints, caps.pollutants
-        )
+        capped = drop_capped_limits(constraints, caps.pollutants)
+        state.destination_extensions[ExtensionKind.CONSTRAINT] = capped.records
+        for event in capped.events:
+            self._recorder.append(event)
         self._map_table(
             state,
             caps.table,
@@ -374,6 +376,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
                 component, valued, yearly, fields, keys, self._recorder
             )
             append_extensions(state.destination_extensions, ExtensionKind.TECHNOLOGY, records)
+        set_producers_persisted(state, candidates.supply.yearly)
         set_technology_extensions_persisted(
             state,
             [

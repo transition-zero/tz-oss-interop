@@ -12,11 +12,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ConstraintExtension, ConstraintPeriod, ExtensionRecord
+from interop.core.extensions import (
+    ConstraintExtension,
+    ConstraintLimit,
+    ConstraintPeriod,
+    ExtensionKind,
+    ExtensionRecord,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_MEGATONNES, UNIT_YEARS, Framework
@@ -56,7 +63,11 @@ from interop.plugins.shared.osemosys_sienna_translations._emission_limits import
     read_annual_limits,
     read_pollutants,
 )
-from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
+from interop.plugins.shared.osemosys_sienna_translations._events import (
+    build_osemosys_field,
+    build_sienna_field,
+    build_sienna_source,
+)
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
@@ -98,6 +109,11 @@ SCOPED_POLLUTANT_SKIP = POLLUTANT_SOURCE.skip(
     ),
 )
 
+_LIMITS_ATTRIBUTE = "extensions.limits"
+_CAPPED_DERIVATION = (
+    "the CarbonCaps of the year holds this limit, in Mt, so the constraint record of "
+    "extensions.json drops it"
+)
 _PERIOD_NOTE = (
     "CarbonCaps holds the emissions of one year, so a limit over the whole model period has no "
     "field; the annual limits of the pollutant reach CarbonCaps, and the constraint record of "
@@ -126,20 +142,59 @@ def build_carbon_caps(state: State, plan: InvestmentPlan, recorder: ScopedRecord
 
 def drop_capped_limits(
     records: Sequence[ExtensionRecord], pollutants: frozenset[str]
-) -> list[ExtensionRecord]:
+) -> CappedConstraints:
     """The constraint records without the yearly limits that a `CarbonCaps` holds.
 
     The limit over the model period of a capped pollutant stays, as no `CarbonCaps` holds it.
+    Each limit taken out gets an event, as the operations step recorded it in the record.
     """
-    kept: list[ExtensionRecord] = []
+    capped = CappedConstraints()
     for record in records:
         if not isinstance(record, ConstraintExtension) or record.name not in pollutants:
-            kept.append(record)
+            capped.records.append(record)
             continue
         horizon = [limit for limit in record.limits if limit.period == ConstraintPeriod.HORIZON]
+        capped.events.extend(
+            _build_capped_event(record.name, limit)
+            for limit in record.limits
+            if limit.period != ConstraintPeriod.HORIZON
+        )
         if horizon:
-            kept.append(record.model_copy(update={"limits": horizon}))
-    return kept
+            capped.records.append(record.model_copy(update={"limits": horizon}))
+    return capped
+
+
+@dataclass
+class CappedConstraints:
+    """The constraint records that stay, and one event for each yearly limit taken out."""
+
+    records: list[ExtensionRecord] = field(default_factory=list)
+    events: list[TranslationEvent] = field(default_factory=list)
+
+
+def _build_capped_event(name: str, limit: ConstraintLimit) -> TranslationEvent:
+    return TranslationEvent(
+        kind=EventKind.VALUE_DERIVED,
+        sources=[
+            build_sienna_source(
+                ExtensionKind.CONSTRAINT,
+                name,
+                f"{_LIMITS_ATTRIBUTE}.{YEAR} {limit.investment_period}",
+                limit.value,
+                limit.unit,
+            )
+        ],
+        destinations=[
+            build_sienna_field(
+                _COMPONENT,
+                f"{name}{_CAP_NAME_SEPARATOR}{limit.investment_period}",
+                C.MAX_MTONS,
+                limit.value / TONNES_PER_MEGATONNE,
+                UNIT_MEGATONNES,
+            )
+        ],
+        derivation=_CAPPED_DERIVATION,
+    )
 
 
 def build_carbon_cap_translations(start: int) -> list[Translation]:
