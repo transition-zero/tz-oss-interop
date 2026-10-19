@@ -173,8 +173,9 @@ chose one bus for each electricity fuel, so that each conversion becomes a line 
   builds at no cost, rates at what the whole fleet of the year can put out, so that it never
   binds. The `conversion` record of such a technology is not written. An `export` keeps its
   record.
-- The results count a line inside one area neither as production nor as trade, as the
-  published results leave a conversion out of production.
+- The results count a conversion line, which its `controllable_line` record marks with
+  `is_conversion`, neither as production nor as trade, as the published results leave a
+  conversion out of production.
 - A technology on a fuel that is not electricity is left out and reported.
 - A thermal plant takes its fuel cost and its emission rate from the cheapest `fuel_supply`
   technology that makes its input fuel at its location. A pipeline is not a `fuel_supply`

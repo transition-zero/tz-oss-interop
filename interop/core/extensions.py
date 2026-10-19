@@ -330,6 +330,9 @@ class ControllableLineExtension(ActivityExtension):
     # Ours: the companion parquet holding the OSeMOSYS CapacityFactor of each snapshot, which
     # multiplies the static p_max_pu, as Sienna states one rating for a line and no series.
     p_max_pu_series: str | None = None
+    # No PyPSA field: the line converts one electricity fuel into another at one location, so
+    # the results count it neither as production nor as trade.
+    is_conversion: bool | None = None
 
 
 class StorageExtension(ActivityExtension):

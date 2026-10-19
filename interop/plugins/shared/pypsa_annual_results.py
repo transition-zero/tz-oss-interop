@@ -26,6 +26,7 @@ from interop.plugins.shared.annual_results import (
     build_emissions,
 )
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
+from interop.plugins.shared.conversion_lines import build_conversion_lines
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_NAME_COLUMN,
     REVERSE_LINK_SUFFIX,
@@ -35,7 +36,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATable,
     PyPSATimeSeriesCol,
 )
-from interop.plugins.shared.pypsa_conversion_links import build_conversion_links
 from interop.plugins.shared.pypsa_fuel_components import FuelComponents, build_fuel_components
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_results_constants import AnnualCol
@@ -73,13 +73,13 @@ _PRODUCTION_DERIVATION = (
     "link adds to the production of the two-way link; a solved network gives 0 to a rated "
     "component with no p, as PyPSA's netCDF export leaves out a series that is 0 in each "
     "snapshot; a generator and a link on the bus of a fuel make no electricity, so they have no "
-    "row, and a plant link makes the electricity that it delivers at bus1; a link between two "
-    "buses of electricity at one location converts electricity, so it has no row"
+    "row, and a plant link makes the electricity that it delivers at bus1; a link that its "
+    "extensions record marks as a conversion has no row"
 )
 _INSTALLED_CAPACITY_DERIVATION = (
     "p_nom, the nameplate, for a generator; p_nom × p_max_pu for a storage unit or a link, and "
     "once for a two-way link and its reverse link; p_nom × efficiency for a plant link; no row "
-    "for a link between two buses of electricity at one location → installed_capacity at 1 "
+    "for a link that its extensions record marks as a conversion → installed_capacity at 1 "
     "January of the year"
 )
 
@@ -124,7 +124,8 @@ class PypsaAnnualResultsMapper:
         if weights is None or not _is_annual(state, weights):
             return []
         fuels = build_fuel_components(state)
-        conversions = build_conversion_links(state, fuels)
+        conversions = build_conversion_lines(state.source_extensions)
+        self._reporter.report_conversions(PyPSAComponent.LINK, conversions)
         activity = _build_all_production(state, weights, fuels)
         production = activity.drop_fuels(fuels).drop_links(conversions)
         capacity = _build_capacity(state, _build_years(weights), fuels, conversions)

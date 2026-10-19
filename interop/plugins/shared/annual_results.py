@@ -44,6 +44,15 @@ EMISSIONS_DERIVATION = (
 _UNPRODUCED_NOTE = (
     "the solve states no output for the component, so it has installed_capacity and no production"
 )
+_CONVERSION_NOTE = (
+    "the extensions record marks the line as a conversion between two electricity fuels of one "
+    "location, which is neither production nor trade, so it has no production or "
+    "installed_capacity row"
+)
+_CONVERSION_WARNING = (
+    "%d line(s) convert electricity at one location, so they have no production or "
+    "installed_capacity row: %s"
+)
 _UNPRODUCED_WARNING = (
     "%d component(s) have a rating, but the solve states no output for them, so they have no "
     "production: %s"
@@ -147,6 +156,22 @@ class AnnualReporter:
                 derivation=derivation,
             )
         )
+
+    def report_conversions(self, component_type: str, names: frozenset[str]) -> None:
+        """Record each conversion line that has no annual row, and name a few."""
+        for name in sorted(names):
+            self._recorder.append(
+                TranslationEvent(
+                    kind=EventKind.NOT_MAPPED,
+                    sources=[
+                        SourceField(framework=self._framework, component=component_type, name=name)
+                    ],
+                    destinations=[build_results_destination(ResultsVariable.PRODUCTION)],
+                    note=_CONVERSION_NOTE,
+                )
+            )
+        if names:
+            log.warning(_CONVERSION_WARNING, len(names), name_a_few(sorted(names)))
 
     def report_unproduced(self, capacity: pl.DataFrame) -> None:
         """Report each component that has a rating and no output in the solve."""

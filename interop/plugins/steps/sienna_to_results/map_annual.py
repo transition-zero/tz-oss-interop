@@ -6,9 +6,9 @@ each period's hours and weight, so the hourly rows of the solve sum to the energ
 With no such records, the solve covers the hours it states and nothing more, so no annual row
 is written.
 
-A TwoTerminalGenericHVDCLine between two buses of one area converts one electricity fuel into
-another at one location. It is neither production nor trade, so it has no production and no
-installed capacity row.
+A TwoTerminalGenericHVDCLine whose `controllable_line` record marks it as a conversion between
+two electricity fuels of one location is neither production nor trade, so it has no production
+and no installed capacity row.
 """
 
 from __future__ import annotations
@@ -35,10 +35,11 @@ from interop.plugins.shared.annual_results import (
     build_emissions,
 )
 from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
+from interop.plugins.shared.conversion_lines import build_conversion_lines
 from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
-    SiennaACBusCol,
+    SiennaComponent,
     SiennaGeneratorCol,
     SiennaLinkCol,
     SiennaStorageCol,
@@ -55,8 +56,6 @@ from interop.ports.outbound.reporting import (
 )
 
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
-_AREA0 = "area0"
-_AREA1 = "area1"
 
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
@@ -64,12 +63,12 @@ _PRODUCTION_DERIVATION = (
     "period that holds the hour → production at 1 January of the year. The dispatch of a "
     "RenewableNonDispatch is its ActivePowerTimeSeriesParameter. The solve models the HVDC "
     "line as lossless, so the energy that it delivers equals the energy that it sends. A line "
-    "between two buses of one area converts electricity, so it has no row."
+    "that its extensions record marks as a conversion has no row."
 )
 _INSTALLED_CAPACITY_DERIVATION = (
     "base_power × rating for a generator, base_power × output_active_power_limits.max for a "
-    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine between two "
-    "areas → installed_capacity at 1 January of the year"
+    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine that is not a "
+    "conversion → installed_capacity at 1 January of the year"
 )
 _PRODUCTION_SOURCES = [
     SourceField(
@@ -156,12 +155,15 @@ class AnnualResultsMapper:
         weights = self._build_weights(reader, hourly)
         if weights.is_empty():
             return []
-        conversions = _build_conversion_lines(state)
+        conversions = build_conversion_lines(state.source_extensions)
+        self._reporter.report_conversions(
+            SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE, conversions
+        )
         production = _build_all_production(hourly, weights).drop_links(conversions)
         produced = production.build_table()
-        capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
-        if not capacity.is_empty():
-            capacity = capacity.filter(~pl.col(ResultsCol.COMPONENT).is_in(list(conversions)))
+        capacity = _drop_components(
+            _build_capacity(state, carrier_lookup, _build_years(weights)), conversions
+        )
         return [
             *self._map_production(produced),
             *self._map_installed_capacity(capacity, produced),
@@ -212,20 +214,10 @@ class AnnualResultsMapper:
         return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
 
 
-def _build_conversion_lines(state: State) -> frozenset[str]:
-    """Each HVDC line whose two buses are in one area, which converts electricity there."""
-    links = state.source_topology.get(SiennaTable.LINKS)
-    buses = state.source_topology.get(SiennaTable.BUSES)
-    if links is None or buses is None:
-        return frozenset()
-    areas = buses.select(SiennaACBusCol.ID, SiennaACBusCol.AREA).collect()
-    ends = links.select(SiennaLinkCol.NAME, SiennaLinkCol.BUS0, SiennaLinkCol.BUS1).collect()
-    for end, area in ((SiennaLinkCol.BUS0, _AREA0), (SiennaLinkCol.BUS1, _AREA1)):
-        ends = ends.join(
-            areas.rename({SiennaACBusCol.ID: end, SiennaACBusCol.AREA: area}), on=end, how="left"
-        )
-    inside = ends.filter(pl.col(_AREA0).is_not_null() & (pl.col(_AREA0) == pl.col(_AREA1)))
-    return frozenset(inside[SiennaLinkCol.NAME].to_list())
+def _drop_components(table: pl.DataFrame, names: frozenset[str]) -> pl.DataFrame:
+    if table.is_empty():
+        return table
+    return table.filter(~pl.col(ResultsCol.COMPONENT).is_in(list(names)))
 
 
 def _build_all_production(hourly: HourlyResults, weights: pl.DataFrame) -> Production:

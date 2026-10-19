@@ -14,9 +14,8 @@ A technology rates its capacity in units of activity. One unit of capacity runs
 `capacity_to_activity_unit` / 8760 h, in MW of activity. A model that declares no
 `capacity_to_activity_unit` takes the canonical default of 1, so its capacity is the activity
 of a year. Only a canonical stage with no default converts with the capacity unit. Each mode can
-run at
-the whole capacity, where OSeMOSYS shares the capacity among the modes. A technology that the
-model builds at no cost in the year is extendable, up to the limit that `_free_build` gives.
+run at the whole capacity, where OSeMOSYS shares the capacity among the modes. A technology that
+the model builds at no cost in the year is extendable, up to the limit that `_free_build` gives.
 """
 
 from __future__ import annotations

@@ -31,6 +31,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSADestinationTable,
     PyPSALinkCol,
 )
+from interop.plugins.shared.sienna_pypsa_translations.link_bounds import report_link_bounds
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     CONVERSION_MAPPED_FIELDS,
 )
@@ -44,12 +45,6 @@ _TAKEN_NAME_WARNING = (
     "%d conversion record(s) join two buses under the name of a link of the network, so each "
     "travels on to extensions.json and becomes no link: %s"
 )
-_BOUND_WARNING = (
-    "%d annual energy bound(s) of a link stay in extensions.json and bind nothing, because a "
-    "PyPSA Link has no e_sum_min or e_sum_max: %s"
-)
-# Each annual bound of a conversion record, which a PyPSA Link has no attribute for.
-_BOUND_FIELDS = ("e_sum_min", "e_sum_max")
 
 # PyPSA's own Link defaults, for a record that states no capacity or no efficiency.
 _DEFAULT_P_NOM = 0.0
@@ -122,25 +117,12 @@ class SiennaToPypsaMapConversions(TranslationStep):
             lookup.get_fields(record.name, CONVERSION_MAPPED_FIELDS)
             _record_link(reporter, record)
             rows.append(_build_link_row(record))
-        self._report_bounds(reporter, linked)
+        report_link_bounds(linked, reporter.record_bound_unmapped)
         new = pl.DataFrame(rows, schema=LINKS_DESTINATION_SCHEMA)
         existing = state.destination_tables.get(PyPSADestinationTable.LINKS)
         state.destination_tables[PyPSADestinationTable.LINKS] = (
             new if existing is None else pl.concat([existing, new])
         )
-
-    def _report_bounds(
-        self, reporter: ConversionReporter, linked: list[ConversionExtension]
-    ) -> None:
-        """Record each annual bound that a link of the network does not hold, and name a few."""
-        labels = []
-        for record in linked:
-            for field_name in _BOUND_FIELDS:
-                if getattr(record, field_name):
-                    reporter.record_bound_unmapped(record.name, field_name)
-                    labels.append(f"{record.name}.{field_name}")
-        if labels:
-            log.warning(_BOUND_WARNING, len(labels), name_a_few(labels))
 
 
 def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:

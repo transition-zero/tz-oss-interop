@@ -22,6 +22,7 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
+    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
@@ -92,11 +93,14 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     FROM_BUS,
     IMPORT_FLOWS,
+    IS_UNLIMITED,
+    LINE_CAPACITY,
     LINE_NAME,
     TO_BUS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
+from interop.plugins.shared.translation_runner import SkipReport, filter_component
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
@@ -115,6 +119,21 @@ _NAME_INFIX = f"{IMPORT_NAME_SEPARATOR}{IMPORT_NAME_PART}{IMPORT_NAME_SEPARATOR}
 _HELD_PARAMETERS = frozenset(
     {SupplyParameter.VARIABLE_OPERATION_COST, SupplyParameter.EMISSION_RATE}
 )
+_MODE_NAME = "mode_name"
+_MODE_INFIX = f"{IMPORT_NAME_SEPARATOR}mode"
+
+UNLIMITED_IMPORT_SKIP = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=TECHNOLOGY,
+    name_col=_MODE_NAME,
+    reason="import on a line that the model builds at no cost with no limit",
+    counted_noun="import mode(s)",
+    note=(
+        "the line has no capacity that limits it, so the import has no rating; the line record "
+        "keeps the values of the mode"
+    ),
+)
 
 
 def read_import_modes(
@@ -122,15 +141,20 @@ def read_import_modes(
 ) -> pl.DataFrame:
     """Each mode of a line that puts out electricity at one end of it, and takes in none.
 
-    `lines` holds the name and the ends of each line. Each row holds the bus of the end, the
-    electricity fuels that the mode puts out there, and the sum of their output ratios. An
-    output to an electricity fuel with no location is reported, because no bus can hold it.
+    `lines` holds the name, the ends and the capacity of each line. Each row holds the bus of
+    the end, the electricity fuels that the mode puts out there, and the sum of their output
+    ratios. An output to an electricity fuel with no location is reported, because no bus can
+    hold it, and so is an import of a line that no limit binds, as it has no rating.
     """
-    ends = lines.select(*_KEYS, TECHNOLOGY_NAME, FROM_BUS, TO_BUS)
+    ends = lines.select(*_KEYS, TECHNOLOGY_NAME, FROM_BUS, TO_BUS, IS_UNLIMITED)
     outputs = _read_unfed_outputs(state, operations).join(ends, on=_KEYS)
     has_bus = pl.col(ELECTRICITY_BUS).is_not_null()
     _report_unplaced_outputs(outputs.filter(~has_bus), recorder)
-    return _build_import_modes(outputs.filter(has_bus))
+    modes = _build_import_modes(outputs.filter(has_bus)).with_columns(
+        pl.concat_str(TECHNOLOGY_NAME, pl.lit(_MODE_INFIX), OPERATING_MODE).alias(_MODE_NAME)
+    )
+    modes, _ = filter_component(modes, ~pl.col(IS_UNLIMITED), UNLIMITED_IMPORT_SKIP, recorder)
+    return modes.drop(IS_UNLIMITED, TECHNOLOGY_NAME, _MODE_NAME)
 
 
 def enrich_import_flows(lines: pl.DataFrame, imports: pl.DataFrame) -> pl.DataFrame:
@@ -160,11 +184,11 @@ def build_imports_source(
     """One row for each import mode, with what its ThermalStandard and its record read, and the
     availability of each hour of each import whose hours differ.
 
-    `lines` holds the name and the residual capacity of each line.
+    `lines` holds the name and the capacity of each line.
     """
     if imports.height == 0:
         return GeneratorSources(imports, pl.DataFrame())
-    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, RESIDUAL_CAPACITY)
+    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, RESIDUAL_CAPACITY, LINE_CAPACITY)
     table = _enrich_capacity(operations, imports.join(held, on=_KEYS))
     availability = build_availability(state, operations, table, GENERATOR_NAME)
     table = _enrich_own_costs(state, operations, availability.table)
@@ -203,6 +227,8 @@ def _build_import_modes(outputs: pl.DataFrame) -> pl.DataFrame:
             bus.n_unique().alias(_BUSES),
             pl.col(FROM_BUS).first(),
             pl.col(TO_BUS).first(),
+            pl.col(IS_UNLIMITED).first(),
+            pl.col(TECHNOLOGY_NAME).first(),
             pl.col(FUEL).sort().alias(IMPORT_FUELS),
             pl.col(VALUE_COL).cast(pl.Float64).sum().alias(ELECTRICITY_OUTPUT_RATIO),
         )
@@ -256,7 +282,7 @@ def _read_flows(
 
 def _enrich_capacity(operations: OperationsYear, imports: pl.DataFrame) -> pl.DataFrame:
     name = pl.concat_str(LINE_NAME, pl.lit(_NAME_INFIX), OPERATING_MODE)
-    capacity = operations.units.convert_capacity_to_mw(pl.col(RESIDUAL_CAPACITY))
+    capacity = express_converted(imports, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
     return imports.with_columns(
         name.alias(GENERATOR_NAME),
         pl.lit(SiennaComponent.THERMAL_STANDARD.value).alias(SIENNA_TYPE),

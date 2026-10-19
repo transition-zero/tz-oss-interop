@@ -537,8 +537,14 @@ each flow that OSeMOSYS lets through. Where neither limit binds, OSeMOSYS builds
 flow needs. Sienna has no line without a rating, so the line takes the electricity that the
 whole fleet of the year can put out: Σ over every technology of its `residual_capacity` in MW ×
 its largest electricity `output_activity_ratio` at any mode. That capacity is divided by the
-smallest ratio of the line, so that no limit of the line is below it. No flow can exceed it, so
-it never binds, and it stays finite. `decisions.md` records it as `TRANSLATOR_DEFAULT_APPLIED`.
+smallest ratio of the line, so that no limit of the line is below it. No flow of the operations
+system can exceed it, so it never binds in that system, and it stays finite. `decisions.md`
+records it as `TRANSLATOR_DEFAULT_APPLIED` on both limits of the line. The line writes no
+`p_max_pu` and no `p_max_pu_series`, because its availability limits nothing, and
+`decisions.md` records the factors that it leaves out as `NOT_MAPPED`. When the fleet puts out
+no electricity, the rating is 0 MW, and the log warns. An import mode of such a line has no
+rating, so it is left out and reported. An import mode of a line that the model builds up to a
+limit rates at that limit.
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
@@ -552,6 +558,10 @@ it never binds, and it stays finite. `decisions.md` records it as `TRANSLATOR_DE
 | `reactive_power_limits_from` / `_to` | MVAR | `(0.0, 0.0)` | `default` |
 | `active_power_flow` | MW | `0.0` | `default` |
 | `available` | | `true` | `default` |
+
+The `controllable_line` record of a conversion line states `is_conversion: true`. No PyPSA
+attribute has this meaning. The results pipelines read it, and count the line neither as
+production nor as trade.
 
 A `variable_operation_cost` above 0 goes to the `controllable_line` record of
 `extensions.json`, as `marginal_cost` in $/MWh sent: the cost / the electricity input ratio. A
@@ -752,8 +762,8 @@ out, or the fuel that goes in at `bus0` of a link. The rating ratio is the
 `CapacityToActivityUnit` converts the capacity, because the capacity of a fuel technology is
 often in units of energy a year rather than in the capacity unit of the mappings file. A model
 that declares no `CapacityToActivityUnit` takes the canonical default of 1, so its capacity is
-the energy of a year. Each mode can run at
-the whole capacity of the technology, where OSeMOSYS shares the capacity among the modes. The
+the energy of a year. Each mode can run at the whole capacity of the technology, where OSeMOSYS
+shares the capacity among the modes. The
 annual limit of a technology of two modes holds their sum, so no mode states it, and the report
 of the parameters that no step applies names it. An extendable mode applies `CapitalCost`,
 `FixedCost`, `TotalAnnualMaxCapacityInvestment` and `TotalAnnualMaxCapacity`, so the report does

@@ -122,8 +122,10 @@ _BUS_DERIVATION = (
     "one end of the line"
 )
 _BASE_POWER_DERIVATION = (
-    "residual_capacity of the transport technology in the operations year, in MW, × the "
-    "electricity output_activity_ratio of the import mode"
+    "the capacity of the line in MW × the electricity output_activity_ratio of the import mode; "
+    "the capacity is residual_capacity of the operations year, or, for a line with none that the "
+    "model builds at no cost, min(total_annual_max_capacity, "
+    "total_annual_max_capacity_investment)"
 )
 _VARIABLE_COST_DERIVATION = (
     "variable_operation_cost of the import mode, in $/MWh, / the electricity "

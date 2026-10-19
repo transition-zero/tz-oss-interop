@@ -129,8 +129,10 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     FROM_FUEL,
     FROM_LOCATION,
     FROM_LOCATIONS,
+    HAS_DROPPED_DERATE,
     INPUT_RATIO,
     IS_BUILT_FREE,
+    IS_CONVERSION,
     IS_UNLIMITED,
     LINE_CAPACITY,
     LINE_NAME,
@@ -269,15 +271,7 @@ def build_transport_source(
     lines = _enrich_costs(state, operations, lines)
     lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
-    series = build_capacity_factor_series(
-        state,
-        operations,
-        lines.select(REGION, TECHNOLOGY, pl.col(LINE_NAME).alias(CompanionSeriesCol.NAME)),
-        ControllableLineCompanionCol.P_MAX_PU,
-    )
-    lines = lines.with_columns(
-        express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS)
-    )
+    lines, series = _enrich_capacity_factors(state, operations, lines)
     import_sources = build_imports_source(state, operations, imports, lines)
     return TransportSources(lines.sort(LINE_NAME), series, import_sources)
 
@@ -311,13 +305,42 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
     return ControllableLineExtension(
         name=row[LINE_NAME],
         marginal_cost=row[COST_MWH] if row[COST_MWH] != _NO_COST else None,
-        p_max_pu=row[AVAILABILITY] if row[AVAILABILITY] != WHOLE_CAPACITY else None,
+        p_max_pu=_find_derate(row),
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
+        is_conversion=True if row[IS_CONVERSION] else None,
         operating_modes=build_operating_mode_field(row),
         e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
         e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
         **build_value_fields(row, LINK_VALUES),
     )
+
+
+def _enrich_capacity_factors(
+    state: State, operations: OperationsYear, lines: pl.DataFrame
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """The capacity factor of each hour of each line that has a limit, and whether a line with
+    no limit leaves out a derate that the model states."""
+    limited = lines.filter(~pl.col(IS_UNLIMITED))
+    series = build_capacity_factor_series(
+        state,
+        operations,
+        limited.select(REGION, TECHNOLOGY, pl.col(LINE_NAME).alias(CompanionSeriesCol.NAME)),
+        ControllableLineCompanionCol.P_MAX_PU,
+    )
+    stated = read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
+    has_factors = pl.struct(_KEYS).is_in(stated.select(_KEYS).unique().to_struct().implode())
+    is_derated = has_factors | (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
+    return lines.with_columns(
+        express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS),
+        (pl.col(IS_UNLIMITED) & is_derated).alias(HAS_DROPPED_DERATE),
+    ), series
+
+
+def _find_derate(row: dict[str, Any]) -> float | None:
+    """The availability factor, or None where it is the whole capacity or no limit binds."""
+    if row[IS_UNLIMITED] or row[AVAILABILITY] == WHOLE_CAPACITY:
+        return None
+    return float(row[AVAILABILITY])
 
 
 def _enrich_extension_values(
@@ -431,7 +454,8 @@ def _read_line_technologies(state: State, operations: OperationsYear) -> pl.Data
     )
     technologies = read_annotations(state, TECHNOLOGY)
     transport = technologies.filter(kind == TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
-    return pl.concat([transport, technologies.join(conversions, on=_KEYS, how="semi")])
+    lines = pl.concat([transport, technologies.join(conversions, on=_KEYS, how="semi")])
+    return lines.with_columns(kind.eq_missing(TechnologyKind.CONVERSION).alias(IS_CONVERSION))
 
 
 def _express_has_ends() -> pl.Expr:
@@ -499,9 +523,24 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
 def _find_unlimited_mw(
     state: State, operations: OperationsYear, lines: pl.DataFrame
 ) -> float | None:
-    if not lines[IS_UNLIMITED].any():
+    unlimited = lines.filter(pl.col(IS_UNLIMITED))
+    if unlimited.height == 0:
         return None
-    return read_fleet_output_mw(state, operations)
+    fleet_mw = read_fleet_output_mw(state, operations)
+    if fleet_mw <= 0:
+        _warn_no_fleet(unlimited[TECHNOLOGY_NAME].sort().to_list())
+    return fleet_mw
+
+
+def _warn_no_fleet(names: list[str]) -> None:
+    log.warning(
+        "%s: the fleet of the operations year puts out no electricity, so %d line "
+        "technology(ies) that the model builds at no cost with no limit rate at 0 MW. "
+        "Technologies: %s",
+        OSEMOSYS_TO_SIENNA_PIPELINE,
+        len(names),
+        name_a_few(names),
+    )
 
 
 def _express_smallest_ratio() -> pl.Expr:

@@ -167,3 +167,17 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     Then the PyPSA network "outputs/network.nc" generator "gas" is extendable
     And the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
     And the PyPSA network "outputs/network.nc" has no link "gas"
+
+  Scenario: An annual bound of a controllable line travels on, and the log says so
+    The HVDC line step_down states an annual bound in its record, which a PyPSA Link has no
+    attribute for.
+    Given the system contains an HVDC line "step_down" from "AT" to "DE" with p_nom 300 efficiency 0.99
+    And the system has a controllable_line extension record "step_down" with "e_sum_max" set to {"2020": 1000.0}
+    And the system has a controllable_line extension record "step_down" with "is_conversion" set to true
+    And the system is saved as "inputs/bounded_line.json"
+    When I run translate against "inputs/bounded_line.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "step_down" has bus0 "AT"
+    And the log contains "1 annual energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: step_down.e_sum_max"
+    And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "step_down" having "e_sum_max" set to {"2020": 1000.0}
+    And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "step_down" having "is_conversion" set to true
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down.extensions.e_sum_max` |"

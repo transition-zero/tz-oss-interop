@@ -72,6 +72,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_yearly_values
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
+from interop.plugins.shared.osemosys_sienna_translations._technologies import list_area_names
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     FROM_LOCATION,
@@ -87,7 +88,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     capacity_limits_struct,
 )
 from interop.plugins.shared.sienna_constants import (
-    SIENNA_NAME_COLUMN,
     SiennaComponent,
 )
 from interop.plugins.shared.sienna_investments_constants import (
@@ -159,7 +159,7 @@ def build_transport_candidates(
         technologies, pl.col(RATING_RATIO) > 0, NO_RATING_SKIP, recorder
     )
     technologies, _ = filter_component(
-        technologies, _express_has_areas(_list_area_names(state)), NO_AREA_SKIP, recorder
+        technologies, _express_has_areas(list_area_names(state)), NO_AREA_SKIP, recorder
     )
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     yearly = _enrich_variable_costs(state, plan, yearly)
@@ -204,11 +204,6 @@ def _enrich_ends(state: State, plan: InvestmentPlan, technologies: pl.DataFrame)
     return technologies.join(ends, on=TECHNOLOGY_KEYS, how="left").with_columns(
         pl.col(INPUT_RATIO).fill_null(0.0).alias(RATING_RATIO)
     )
-
-
-def _list_area_names(state: State) -> list[str]:
-    areas = state.destination_tables.get(SiennaComponent.AREA)
-    return [] if areas is None else areas[SIENNA_NAME_COLUMN].to_list()
 
 
 def _express_has_areas(areas: list[str]) -> pl.Expr:

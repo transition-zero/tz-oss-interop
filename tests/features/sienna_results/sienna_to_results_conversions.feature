@@ -1,9 +1,9 @@
 @slow @fork_unsafe
-Feature: sienna-to-results counts a line inside one area neither as production nor as trade
-  A conversion between two electricity fuels of one location becomes an HVDC line between two
-  buses of one area. The published results leave a conversion out of production, and trade is
-  the production of a line between two areas. So a line inside one area has an hourly flow and
-  no production or installed capacity row.
+Feature: sienna-to-results counts a conversion line neither as production nor as trade
+  A conversion between two electricity fuels of one location becomes an HVDC line whose
+  controllable_line record states is_conversion. The published results leave a conversion out
+  of production. So a conversion line has an hourly flow and no production or installed
+  capacity row.
 
   The invented system below has a gas plant at the high-voltage bus of AT, the line step_down
   to the low-voltage bus of AT, and the line export from AT to DE. The solve covers two hours
@@ -20,6 +20,7 @@ Feature: sienna-to-results counts a line inside one area neither as production n
     And the ThermalStandard "gas" has ext carrier "gas"
     And the system contains an HVDC line "step_down" from "at_high" to "at_low" with p_nom 300 efficiency 1
     And the system contains an HVDC line "export" from "at_high" to "de" with p_nom 20 efficiency 1
+    And the system has a controllable_line extension record "step_down" with "is_conversion" set to true
     And Sienna solve results
     And the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00
     And the results have ThermalStandard dispatch for "gas" of 30 40
@@ -28,7 +29,7 @@ Feature: sienna-to-results counts a line inside one area neither as production n
     And the results are saved in "results"
     And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
 
-  Scenario: A line inside one area has an hourly flow, and no production or installed capacity
+  Scenario: A conversion line has an hourly flow, and no production or installed capacity
     Given the system is saved as "inputs/system.json"
     When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
     Then the pipeline exit code is 0
@@ -43,4 +44,6 @@ Feature: sienna-to-results counts a line inside one area neither as production n
     And the results parquet "outputs/results.parquet" holds these "flow" rows among others:
       | variable | component | category | timestamp           | value |
       | flow     | step_down |          | 2030-01-01T00:00:00 | 20    |
-    And the file "decisions.md" contains "A line between two buses of one area converts electricity, so it has no row."
+    And the file "decisions.md" contains "A line that its extensions record marks as a conversion has no row."
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down` | `results.results.production.variable` MWh |  | the extensions record marks the line as a conversion"
+    And the log contains "1 line(s) convert electricity at one location, so they have no production or installed_capacity row: step_down"

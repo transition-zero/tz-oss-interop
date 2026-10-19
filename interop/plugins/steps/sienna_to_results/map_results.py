@@ -284,7 +284,10 @@ class SiennaResultsToResultsFormat(TranslationStep):
 
 def _build_carrier_lookup(state: State) -> pl.LazyFrame | None:
     """The carrier of each generator and storage unit of the mapped network, and of each link,
-    as a plant that draws its fuel from a bus becomes a link that keeps its carrier."""
+    as a plant that draws its fuel from a bus becomes a link that keeps its carrier.
+
+    Only the rows of a generator and a storage join the lookup, so a line keeps no category.
+    """
     frames = [
         table.lazy().select(
             pl.col(name).alias(StagedTimeSeriesCol.COMPONENT),

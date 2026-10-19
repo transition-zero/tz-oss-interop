@@ -4,8 +4,9 @@ A line rates at its residual capacity, which is the fleet of the year. A technol
 no residual capacity and that the model builds at no cost uses the capacity that `_free_build`
 gives it, as a line of 0 MW would block every flow that OSeMOSYS lets through. Where no limit
 binds such a technology, OSeMOSYS builds whatever the flow of the year needs. No flow of
-electricity can exceed what the whole fleet can put out, so such a line rates at that: a finite
-rating that never binds.
+electricity in the operations system can exceed what its fleet can put out, so such a line
+rates at that: a finite rating that never binds in that system. The same rating can bind in a
+system with a larger fleet.
 """
 
 from __future__ import annotations

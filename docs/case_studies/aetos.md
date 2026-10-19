@@ -275,9 +275,9 @@ names each component and gives the reason. These warnings tell you the most:
   plan can build in a later year.
 - 91 line technologies have no residual capacity in 2021, and the model builds none at no cost.
   The 156 conversions state no capacity and no cost, so the model builds what they need at no
-  cost. Each becomes a line that never binds: its rating is what the whole fleet can put out,
-  about 1,548 GW, divided by its smallest ratio. `decisions.md` records each one as
-  `TRANSLATOR_DEFAULT_APPLIED`.
+  cost. Each becomes a line that never binds in this system: its rating is what the whole
+  fleet can put out, about 1,548 GW, divided by its smallest ratio. `decisions.md` records each
+  one as `TRANSLATOR_DEFAULT_APPLIED`.
 - 119 modes of technologies of a fuel that is not electricity have no residual capacity, and
   the model builds none at no cost, for example `ATNGBACKSTOP`. The other technologies of those
   fuels become records of `extensions.json`. Refer to
@@ -647,9 +647,10 @@ These are the 2021 totals:
 | Unserved energy in the 96 hours | none | 1,141.06 MWh | 2,367.51 MWh |
 
 The installed capacity of each of the 835 components and the 113 transport lines is the same
-in the two dispatches. It includes the 21 import generators, 37.8 GW. A conversion line joins
-two buses of one country, so the results give it no production and no installed capacity, as
-the published results do. The Sienna solve is `copperplate` with a lossless HVDC formulation,
+in the two dispatches. It includes the 21 import generators, 37.8 GW. The record of a
+conversion line marks it with `is_conversion`, so the results give it no production and no
+installed capacity, as the published results do, and each results run warns once about the
+156 lines. The Sienna solve is `copperplate` with a lossless HVDC formulation,
 so the conversion lines change nothing in it: its production is the same as before each
 conversion became a line.
 

@@ -13,6 +13,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
     TECHNOLOGY,
+    AnnotationColumn,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
@@ -51,7 +52,9 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     COST_MWH,
     FROM_BUS,
     FROM_FUEL,
+    HAS_DROPPED_DERATE,
     INPUT_RATIO,
+    IS_CONVERSION,
     IS_UNLIMITED,
     LINE_NAME,
     LOSS,
@@ -79,7 +82,7 @@ from interop.plugins.shared.translation_runner import (
     default_translation,
     row_position_id_translation,
 )
-from interop.ports.outbound.reporting import SourceField, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _dest = partial(build_sienna_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE)
 _build_value = ComputedValues(_dest, LINE_NAME).build_translation
@@ -95,6 +98,15 @@ _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
 _P_MAX_PU_ATTRIBUTE = "extensions.p_max_pu"
+_IS_CONVERSION_ATTRIBUTE = "extensions.is_conversion"
+_DROPPED_DERATE_NOTE = (
+    "the model builds the line at no cost and no limit binds it, so the availability_factor and "
+    "the capacity_factor of the line limit nothing, and neither p_max_pu nor its series is written"
+)
+_CONVERSION_DERIVATION = (
+    "the technology is of kind conversion and its fuels are all electricity, so it converts one "
+    "electricity fuel into another; the results count it neither as production nor as trade"
+)
 _P_MAX_PU_SERIES_ATTRIBUTE = "extensions.p_max_pu_series"
 _COMPANION = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
 _EACH_TIMESLICE = "each timeslice"
@@ -130,7 +142,7 @@ _UNLIMITED_NOTE = (
     "the model builds the technology at no cost and no limit binds it, so the capacity is the "
     "electricity that the whole fleet of the year can put out (Σ residual_capacity in MW × the "
     "largest electricity output_activity_ratio of each technology) / the smallest ratio of the "
-    "line; no flow can exceed it, so it never binds"
+    "line; no flow of the operations system can exceed it, so it never binds there"
 )
 _LOSS_DERIVATION = (
     "a linear curve with the proportional term 1 - the electricity output_activity_ratio / the "
@@ -220,18 +232,30 @@ def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
 
 
 def _build_unlimited_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
+    """The default on each field that the rating of a line with no limit fills."""
     if not old[IS_UNLIMITED]:
         return []
-    limits = new[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM]
+    filled = (SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.ACTIVE_POWER_LIMITS_TO)
     return build_defaulted(
-        [_dest(old[LINE_NAME], SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, limits, UNIT_MW)],
+        [_dest(old[LINE_NAME], field, new[field], UNIT_MW) for field in filled],
         _UNLIMITED_NOTE,
+    )
+
+
+def _build_conversion_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    if not old[IS_CONVERSION]:
+        return []
+    return build_derived(
+        [_build_source(TECHNOLOGY, old, AnnotationColumn.KIND, old[AnnotationColumn.KIND])],
+        [_dest(old[LINE_NAME], _IS_CONVERSION_ATTRIBUTE, True)],
+        _CONVERSION_DERIVATION,
     )
 
 
 def _build_reports() -> list[Translation]:
     return [
         Translation(exprs=[], make_events=_build_unlimited_events),
+        Translation(exprs=[], make_events=lambda old, _new: _build_conversion_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
         Translation(
@@ -247,8 +271,10 @@ def _build_reports() -> list[Translation]:
 
 def _build_availability_events(old: dict[str, Any]) -> list[TranslationEvent]:
     """The availability factor, and the capacity factor of each hour, as the Link states them."""
+    if old[HAS_DROPPED_DERATE]:
+        return _build_dropped_derate_events(old)
     events = []
-    if old[AVAILABILITY] != WHOLE_CAPACITY:
+    if old[AVAILABILITY] != WHOLE_CAPACITY and not old[IS_UNLIMITED]:
         events.extend(
             build_derived(
                 [_build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])],
@@ -265,6 +291,19 @@ def _build_availability_events(old: dict[str, Any]) -> list[TranslationEvent]:
             )
         )
     return events
+
+
+def _build_dropped_derate_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    return [
+        TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=[
+                _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
+                _build_source(SupplyParameter.CAPACITY_FACTOR, old, _EACH_TIMESLICE),
+            ],
+            note=_DROPPED_DERATE_NOTE,
+        )
+    ]
 
 
 def _build_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:

@@ -204,7 +204,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         self, state: State, capacity: _CapacityByCarrier | None, fuels: FuelComponents
     ) -> list[pl.LazyFrame]:
         """What the whole system could still cover: all its capacity less the load on it."""
-        loads = _build_electricity_loads(state, fuels)
+        loads = _find_electricity_loads(state, fuels)
         if capacity is None or loads is None:
             return []
         piece = capacity.total().join(_total_by_snapshot(loads), how="cross", suffix=_LOAD_SUFFIX)
@@ -267,7 +267,7 @@ class PypsaToResultsMapObservations(TranslationStep):
 
         A load of a fuel takes no electricity, so it has no row.
         """
-        ts = _build_electricity_loads(state, fuels)
+        ts = _find_electricity_loads(state, fuels)
         if ts is None:
             return []
         self._emit(
@@ -465,7 +465,7 @@ def _installed_capacities(
             )
         )
         sources.append(_build_capacity_source(spec.component, spec.p_nom_col))
-    plants = _build_plant_capacity(state, fuels)
+    plants = _find_plant_capacity(state, fuels)
     if plants is not None:
         capacities.append(plants)
         sources.append(_build_capacity_source(PyPSAComponent.LINK, PyPSALinkCol.P_NOM))
@@ -482,7 +482,7 @@ def _build_capacity_source(component: str, attribute: str) -> SourceField:
     )
 
 
-def _build_plant_capacity(state: State, fuels: FuelComponents) -> pl.LazyFrame | None:
+def _find_plant_capacity(state: State, fuels: FuelComponents) -> pl.LazyFrame | None:
     """The electricity that each plant link can put out, p_nom × efficiency, by carrier."""
     links = state.source_topology.get(PyPSATable.LINKS)
     if links is None or not fuels.plant_links:
@@ -563,7 +563,7 @@ def _fill_idle_plant_dispatch(state: State, plants: frozenset[str]) -> pl.LazyFr
     return _fill_idle(state, output, names)
 
 
-def _build_electricity_loads(state: State, fuels: FuelComponents) -> pl.LazyFrame | None:
+def _find_electricity_loads(state: State, fuels: FuelComponents) -> pl.LazyFrame | None:
     loads = state.source_time_series.get((PyPSATable.LOADS, PyPSALoadCol.P_SET))
     return None if loads is None else _drop_components(loads, fuels.loads)
 

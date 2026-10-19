@@ -1011,6 +1011,12 @@ class LinkReporter(_Reporter):
             SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE, name, attribute, value, unit
         )
 
+    def record_bound_unmapped(self, name: str, field_name: str) -> None:
+        self._not_mapped(
+            sources=[self._source(name, f"{EXTENSIONS_PREFIX}{field_name}", None)],
+            note=_LINK_BOUND_NOTE,
+        )
+
     def record_endpoints(self, name: str, arc_id: int, bus0_name: str, bus1_name: str) -> None:
         self._derived(
             sources=[self._source(name, SiennaLinkCol.ARC, arc_id)],

@@ -18,6 +18,10 @@ TO_BUSES = "to_buses"
 LINE_CAPACITY = "line_capacity"
 IS_BUILT_FREE = "is_built_free"
 IS_UNLIMITED = "is_unlimited"
+# Whether a line with no limit leaves out an availability or a capacity factor that it states.
+HAS_DROPPED_DERATE = "has_dropped_derate"
+# Whether the line is a conversion between two electricity fuels, which its record marks.
+IS_CONVERSION = "is_conversion"
 INPUT_RATIO = "electricity_input_ratio"
 OUTPUT_RATIO = "electricity_output_ratio"
 AVAILABILITY = "availability"
