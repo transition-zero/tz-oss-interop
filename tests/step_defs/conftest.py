@@ -129,6 +129,15 @@ def assert_select_offered_default(message: str, value: str) -> None:
     assert value in defaults, f"select {message!r} defaults were {defaults}, expected {value!r}"
 
 
+@then(parsers.parse('the select prompt "{message}" offered no default'))
+def assert_select_offered_no_default(message: str) -> None:
+    defaults = [record["default"] for record in _recorded_selects if record["message"] == message]
+    assert defaults, f"select {message!r} was never asked; asked: {_recorded_selects}"
+    assert all(default is None for default in defaults), (
+        f"select {message!r} defaults were {defaults}, expected none"
+    )
+
+
 @then(parsers.parse('the select prompt "{message}" offered exactly "{choices}"'))
 def assert_select_offered_exactly(message: str, choices: str) -> None:
     expected = [choice.strip() for choice in choices.split(",")]
@@ -197,6 +206,14 @@ def prompt_defaults() -> Iterator[list[tuple[str, str]]]:
 def assert_prompt_offered_default(message: str, value: str) -> None:
     defaults = [d for m, d in _recorded_prompt_defaults if m.startswith(message)]
     assert value in defaults, f"prompt {message!r} defaults were {defaults}, expected {value!r}"
+
+
+@then(parsers.parse('the prompt "{message}" was asked'))
+def assert_prompt_asked(message: str) -> None:
+    asked = [prompt for prompt, _default in _recorded_prompt_defaults]
+    assert any(prompt.startswith(message) for prompt in asked), (
+        f"no prompt starts with {message!r}; asked: {asked}"
+    )
 
 
 def _stub_questionary_text_by_prompt(
@@ -325,6 +342,7 @@ STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "solar-rooftop": ("RenewableNonDispatch", "PVe"),
     "hydro": ("HydroDispatch", "HY"),
     "PHS": ("EnergyReservoirStorage", "PS"),
+    "li-ion": ("EnergyReservoirStorage", "BA"),
 }
 
 
@@ -411,6 +429,7 @@ def invoke_solve(
     output_dir: str = "solved",
     model_type: str = "sienna",
     download_consent: bool = True,
+    unserved_energy: str = "refused",
     unit_commitment: str = "exact",
     solver: str = "simplex",
     presolve: str = "choose",
@@ -422,10 +441,54 @@ def invoke_solve(
     stub_questionary_attr(
         monkeypatch,
         "select",
-        iter([model_type, network_model, unit_commitment, solver, presolve, run_crossover]),
+        iter(
+            [
+                model_type,
+                network_model,
+                unserved_energy,
+                unit_commitment,
+                solver,
+                presolve,
+                run_crossover,
+            ]
+        ),
     )
     stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
     stub_questionary_attr(monkeypatch, "text", iter([time_limit_seconds]))
+    _dispatch(Command.SOLVE, make_container())
+
+
+def invoke_expand(
+    monkeypatch: pytest.MonkeyPatch,
+    portfolio_json_path: str,
+    balance_model: str = "multi-region",
+    output_dir: str = "expanded",
+    download_consent: bool = True,
+    investment_treatment: str = "continuous",
+    discount_rate: str = "",
+    solver: str = "simplex",
+    presolve: str = "choose",
+    run_crossover: str = "choose",
+    time_limit_seconds: str = "",
+) -> None:
+    """Stub every expansion prompt, then dispatch solve with the investments model type."""
+    stub_questionary_attr(monkeypatch, "path", iter([portfolio_json_path, output_dir]))
+    stub_questionary_attr(
+        monkeypatch,
+        "select",
+        iter(
+            [
+                "sienna-investments",
+                balance_model,
+                investment_treatment,
+                solver,
+                presolve,
+                run_crossover,
+            ]
+        ),
+    )
+    stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
+    stub_questionary_attr(monkeypatch, "text", iter([discount_rate, time_limit_seconds]))
     _dispatch(Command.SOLVE, make_container())
 
 
@@ -438,9 +501,13 @@ def invoke_solve_pypsa(
     unit_commitment: str = "exact",
     window: str = "month",
     look_ahead_days: str = "",
+    unserved_energy: str = "refused",
 ) -> None:
-    """Stub the pypsa solve prompts (model type, paths, dates, UC, window), then dispatch."""
-    stub_questionary_attr(monkeypatch, "select", iter(["pypsa", unit_commitment, window]))
+    """Stub the pypsa solve prompts (model type, paths, dates, UC, window, unserved energy),
+    then dispatch."""
+    stub_questionary_attr(
+        monkeypatch, "select", iter(["pypsa", unit_commitment, window, unserved_energy])
+    )
     stub_questionary_attr(monkeypatch, "path", iter([network_path, output_dir]))
     stub_questionary_attr(monkeypatch, "text", iter([start, end, look_ahead_days]))
     _dispatch(Command.SOLVE, make_container())
@@ -493,12 +560,15 @@ def invoke_compare_run(
     framework_a: str,
     framework_b: str,
     path_answers: dict[str, str],
+    text_answers: Mapping[str, str] | None = None,
 ) -> None:
     """Run compare from the REPL main menu, recording prompt defaults."""
     stub_questionary_attr(
         monkeypatch, "select", iter([Command.COMPARE, framework_a, framework_b, Command.QUIT])
     )
     _stub_questionary_path_by_prompt(monkeypatch, path_answers)
+    if text_answers is not None:
+        _stub_questionary_text_by_prompt(monkeypatch, text_answers)
     run(make_container())
 
 
@@ -706,7 +776,16 @@ def assert_written_into_project_once(caplog: pytest.LogCaptureFixture, filename:
 
 @given(parsers.parse('adapters.yaml binds solver to "{name}"'))
 def given_solver_binding(name: str) -> None:
-    write_adapters_config(f"bindings:\n  solver: {name}\nadapters: {{}}\n")
+    _write_binding("solver", name)
+
+
+@given(parsers.parse('adapters.yaml binds expansion to "{name}"'))
+def given_expansion_binding(name: str) -> None:
+    _write_binding("expansion", name)
+
+
+def _write_binding(port: str, name: str) -> None:
+    write_adapters_config(f"bindings:\n  {port}: {name}\nadapters: {{}}\n")
 
 
 @given(parsers.parse('I have run init at "{target}"'))
@@ -851,6 +930,44 @@ def run_solve_pypsa_with_unit_commitment(
     invoke_solve_pypsa(
         monkeypatch, network_path, output_dir, start, end, unit_commitment=unit_commitment
     )
+
+
+@when(
+    parsers.parse(
+        'I run solve on "{network_path}" from "{start}" to "{end}" '
+        'with unserved energy "{unserved_energy}" into "{output_dir}"'
+    )
+)
+def run_solve_pypsa_with_unserved_energy(
+    monkeypatch: pytest.MonkeyPatch,
+    network_path: str,
+    start: str,
+    end: str,
+    unserved_energy: str,
+    output_dir: str,
+) -> None:
+    invoke_solve_pypsa(
+        monkeypatch, network_path, output_dir, start, end, unserved_energy=unserved_energy
+    )
+
+
+@then(parsers.parse('the solved network "{path}" has no generator "{name}"'))
+def assert_solved_network_has_no_generator(path: str, name: str) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    assert name not in network.generators.index, f"expected no generator {name!r} in {path}"
+
+
+@then(
+    parsers.parse('the solved network "{path}" records {mwh:g} MWh of unserved energy at "{bus}"')
+)
+def assert_solved_network_records_unserved_energy(path: str, mwh: float, bus: str) -> None:
+    import pypsa
+
+    network = pypsa.Network(path)
+    recorded = network.meta.get("unserved_energy_mwh", {})
+    assert abs(recorded.get(bus, 0.0) - mwh) < 1e-6, f"expected {mwh} MWh at {bus}, got {recorded}"
 
 
 @then(parsers.parse('the solved network "{path}" has dispatch for {count:d} snapshots'))

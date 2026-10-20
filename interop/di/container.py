@@ -26,7 +26,7 @@ from interop.core.reporting import MultiReport
 from interop.core.use_cases.compare import CompareUsingPort
 from interop.core.use_cases.init_project import InitializeProjectDirectory
 from interop.core.use_cases.pipeline_catalog import PipelineCatalog
-from interop.core.use_cases.solve import SolveUsingPort
+from interop.core.use_cases.solve import SolvePorts, SolveUsingPort
 from interop.core.use_cases.translate import (
     LegFactories,
     RunFilesystems,
@@ -54,6 +54,7 @@ from interop.ports.inbound.solve import SolveUseCase
 from interop.ports.inbound.translate import TranslateUseCase
 from interop.ports.inbound.validate import ValidateUseCase
 from interop.ports.outbound.comparison_report import ComparisonReportPort
+from interop.ports.outbound.expansion import ExpansionPort
 from interop.ports.outbound.filesystem import FilesystemPort
 from interop.ports.outbound.network_solver import NetworkSolverPort
 from interop.ports.outbound.reporting import ReportingPort
@@ -271,8 +272,26 @@ class PluginProvider(Provider):
         return HighsNetworkSolver()
 
     @provide
-    def solve_use_case(self, solver: SolverPort, network_solver: NetworkSolverPort) -> SolveUseCase:
-        return SolveUsingPort(solver, network_solver)
+    def expansion(self, registry: Registry, adapters_config: AdaptersConfig) -> ExpansionPort:
+        binding_key = "expansion"
+        name = adapters_config.bindings.get(binding_key, "julia_expansion")
+        bucket = registry.adapter_bucket(ExpansionPort)
+        if name not in bucket:
+            raise UnknownAdapterBindingError(ExpansionPort, binding_key, name, list(bucket))
+        return make_adapter_factory(
+            registry,
+            ExpansionPort,  # type: ignore[type-abstract]
+            adapters_config.adapter_configs,
+        )(name)
+
+    @provide
+    def solve_use_case(
+        self,
+        solver: SolverPort,
+        network_solver: NetworkSolverPort,
+        expansion: ExpansionPort,
+    ) -> SolveUseCase:
+        return SolveUsingPort(SolvePorts(solver, network_solver, expansion))
 
     @provide
     def comparison_report(self, fs: FilesystemPort) -> ComparisonReportPort:

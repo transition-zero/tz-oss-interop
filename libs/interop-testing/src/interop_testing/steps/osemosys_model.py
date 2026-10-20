@@ -67,6 +67,11 @@ def given_otoole_parameter_without_file(
     otoole_model_builder.set_parameter(name, key.split(), default, [], has_file=False)
 
 
+@given(parsers.parse('the otoole parameter "{name}" is not declared'))
+def given_otoole_parameter_undeclared(otoole_model_builder: OtooleModelBuilder, name: str) -> None:
+    otoole_model_builder.drop_parameter(name)
+
+
 @given(parsers.parse('the otoole parameter "{name}" has the short name "{short_name}"'))
 def given_otoole_short_name(
     otoole_model_builder: OtooleModelBuilder, name: str, short_name: str

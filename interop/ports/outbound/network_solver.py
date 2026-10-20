@@ -7,6 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, NamedTuple, Protocol, runtime_checkable
 
+from interop.ports.outbound.solver import DispatchOutcome, UnservedEnergy
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 
@@ -44,12 +45,13 @@ class NetworkSolverPort(Protocol):
         output_path: Path,
         windows: list[SolveWindow],
         unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT,
-    ) -> tuple[str, float]:
+        unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
+    ) -> DispatchOutcome:
         """Solve the network once per window, writing the solved network to output_path.
 
         Each window is solved on its own, so nothing carries between them, and each
-        window's results past its own ``keep_to`` are discarded. Returns (status,
-        objective); the caller interprets the exact status "optimal" as success.
+        window's results past its own ``keep_to`` are discarded. The caller interprets the
+        exact status "optimal" as success.
         """
 
     def snapshot_bounds(self, network_path: Path) -> tuple[datetime, datetime] | None:

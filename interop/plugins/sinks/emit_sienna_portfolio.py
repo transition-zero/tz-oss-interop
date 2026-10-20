@@ -17,21 +17,37 @@ from interop.plugins.shared.sienna_constants import (
     SIENNA_REGION_NAME_COLUMN,
     SiennaCompanionFilename,
     SiennaComponent,
+    SiennaTimeSeriesAssociationCol,
 )
 from interop.plugins.shared.sienna_investments_constants import (
+    CAPACITY_LIMITS_BY_KEY_DTYPE,
     PORTFOLIO_AGGREGATION,
     PORTFOLIO_FINANCIAL_DATA_TABLE,
     PORTFOLIO_JSON_FILENAME,
+    PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE,
+    PORTFOLIO_TIME_SERIES_FILENAME,
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE,
     SUPPLEMENTAL_ATTRIBUTE_ORDER,
+    MinMaxByKeyField,
     NamedYearField,
     PortfolioDocument,
+    SiennaAggregateTransportTechnologyCol,
     SiennaInvestmentsComponent,
     SiennaRetirementPotentialCol,
     SiennaSupplementalAttributeAssociationCol,
 )
-from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
-from interop.ports.outbound.filesystem import FilesystemPort, Location
+from interop.plugins.sinks._sienna_files import (
+    SYSTEM_JSON_FILENAME,
+    drop_absent_fields,
+    validate_refs,
+)
+from interop.plugins.sinks.emit_sienna_h5_sidecar import EmitSiennaH5Sidecar
+from interop.ports.outbound.filesystem import (
+    FilesystemPort,
+    Location,
+    build_sibling_location,
+    location_name,
+)
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
 
@@ -43,8 +59,30 @@ _NAMED_YEAR_FIELDS: tuple[str, ...] = (
 _COMPONENT_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
     SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
     SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
     SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
     SiennaInvestmentsComponent.CARBON_CAPS,
+)
+
+# Each column that holds an area name, and the field that states the id of that area.
+_AREA_REFERENCES: dict[str, str] = {
+    SIENNA_REGION_NAME_COLUMN: SIENNA_REGION_COLUMN,
+    SiennaAggregateTransportTechnologyCol.START_REGION_NAME: (
+        SiennaAggregateTransportTechnologyCol.START_REGION
+    ),
+    SiennaAggregateTransportTechnologyCol.END_REGION_NAME: (
+        SiennaAggregateTransportTechnologyCol.END_REGION
+    ),
+}
+
+# The association columns that locate a staged series for the HDF5 sink, which no reader needs.
+_INTERNAL_SERIES_COLUMNS = frozenset(
+    [
+        SiennaTimeSeriesAssociationCol.COMPONENT_NAME,
+        SiennaTimeSeriesAssociationCol.SOURCE_TABLE,
+        SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE,
+        SiennaTimeSeriesAssociationCol.SCALING_FACTOR,
+    ]
 )
 
 
@@ -59,9 +97,26 @@ class EmitSiennaPortfolioParams(BaseModel):
     )
     time_series_storage_file: str = Field(
         default=SiennaCompanionFilename.TIME_SERIES_H5,
-        description="basename of the HDF5 companion holding the base system's time series",
+        description=(
+            "basename of the HDF5 companion holding the base system's time series, which the "
+            "portfolio names when it holds no time series of its own"
+        ),
+    )
+    output_time_series_path: Location | None = Field(
+        default=None,
+        description=(
+            "the HDF5 companion holding the time series of the portfolio, when it has any; "
+            "empty writes it beside the portfolio"
+        ),
     )
     indent: int = Field(default=2, description="JSON indent width")
+
+    @property
+    def time_series_path(self) -> Location:
+        """The HDF5 companion of the portfolio, which is beside it unless a path is given."""
+        if self.output_time_series_path is not None:
+            return self.output_time_series_path
+        return build_sibling_location(self.output_path, PORTFOLIO_TIME_SERIES_FILENAME)
 
 
 class EmitSiennaPortfolio(Sink):
@@ -80,8 +135,20 @@ class EmitSiennaPortfolio(Sink):
         payload = self.build_payload(
             state, params.base_system_file, params.time_series_storage_file
         )
+        associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
+        if associations is not None and not associations.is_empty():
+            self._write_series_companion(params.time_series_path, state, payload)
         serialised = json.dumps(payload, indent=params.indent, default=str).encode("utf-8")
         self._fs.write_bytes(params.output_path, serialised)
+
+    def _write_series_companion(
+        self, path: Location, state: State, payload: dict[str, Any]
+    ) -> None:
+        """Write the series of the portfolio, and name their companion in the document."""
+        associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
+        with self._fs.open_write(path) as stream:
+            EmitSiennaH5Sidecar.write_associated_h5(state, associations, stream)
+        payload[PortfolioDocument.TIME_SERIES_STORAGE_FILE] = location_name(path)
 
     @staticmethod
     def build_payload(
@@ -108,13 +175,15 @@ class EmitSiennaPortfolio(Sink):
                 component_ids,
                 attribute_ids,
             ),
-            PortfolioDocument.TIME_SERIES_ASSOCIATIONS: [],
+            PortfolioDocument.TIME_SERIES_ASSOCIATIONS: _build_time_series_associations(
+                state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
+            ),
             PortfolioDocument.BASE_SYSTEM_FILE: base_system_file,
             PortfolioDocument.TIME_SERIES_STORAGE_FILE: time_series_storage_file,
         }
         financial_data = state.destination_tables.get(PORTFOLIO_FINANCIAL_DATA_TABLE)
         if financial_data is not None and not financial_data.is_empty():
-            payload[PortfolioDocument.FINANCIAL_DATA] = _stated(
+            payload[PortfolioDocument.FINANCIAL_DATA] = drop_absent_fields(
                 next(financial_data.iter_rows(named=True))
             )
         return payload
@@ -129,25 +198,62 @@ def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
 
 
 def _build_components(table: pl.DataFrame | None, area_ids: dict[str, int]) -> list[dict[str, Any]]:
-    """One object per row, with the region name resolved to the area ids it stands for."""
+    """One object per row, with each area name resolved to the id of that area."""
     if table is None or table.is_empty():
         return []
-    holds_region = SIENNA_REGION_NAME_COLUMN in table.columns
-    if holds_region:
+    references = {name: field for name, field in _AREA_REFERENCES.items() if name in table.columns}
+    for name in references:
         validate_refs(
-            SIENNA_REGION_NAME_COLUMN,
-            table[SIENNA_REGION_NAME_COLUMN].drop_nulls().unique().to_list(),
+            name,
+            table[name].drop_nulls().unique().to_list(),
             set(area_ids),
             "technologies -> areas",
         )
-    objects: list[dict[str, Any]] = []
-    for row in table.iter_rows(named=True):
-        component = _stated({k: v for k, v in row.items() if k != SIENNA_REGION_NAME_COLUMN})
-        area_name = row.get(SIENNA_REGION_NAME_COLUMN) if holds_region else None
+    by_key = [name for name, dtype in table.schema.items() if dtype == CAPACITY_LIMITS_BY_KEY_DTYPE]
+    return [
+        _build_component(row, references, by_key, area_ids) for row in table.iter_rows(named=True)
+    ]
+
+
+def _build_component(
+    row: dict[str, Any],
+    references: dict[str, str],
+    by_key: list[str],
+    area_ids: dict[str, int],
+) -> dict[str, Any]:
+    fields = {k: _build_by_key(v) if k in by_key else v for k, v in row.items()}
+    component = drop_absent_fields({k: v for k, v in fields.items() if k not in references})
+    for name, field in references.items():
+        area_name = row[name]
         if area_name is not None:
-            component[SIENNA_REGION_COLUMN] = [area_ids[area_name]]
-        objects.append(component)
-    return objects
+            area_id = area_ids[area_name]
+            component[field] = [area_id] if field == SIENNA_REGION_COLUMN else area_id
+    return component
+
+
+def _build_by_key(entries: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """A list of key, min and max entries, as the object keyed by `key` that the schema states."""
+    if entries is None:
+        return None
+    return {
+        entry[MinMaxByKeyField.KEY]: drop_absent_fields(
+            {field: value for field, value in entry.items() if field != MinMaxByKeyField.KEY}
+        )
+        for entry in entries
+    }
+
+
+def _build_time_series_associations(table: pl.DataFrame | None) -> list[dict[str, Any]]:
+    """One row for each series of the portfolio, with its features as an object."""
+    if table is None or table.is_empty():
+        return []
+    columns = [name for name in table.columns if name not in _INTERNAL_SERIES_COLUMNS]
+    rows = table.select(columns).with_row_index(name=SiennaTimeSeriesAssociationCol.ID, offset=1)
+    features = SiennaTimeSeriesAssociationCol.FEATURES
+    return [
+        drop_absent_fields({**row, features: json.loads(row[features])})
+        for row in rows.iter_rows(named=True)
+    ]
 
 
 def _build_attributes(state: State) -> tuple[list[dict[str, Any]], set[int]]:
@@ -160,7 +266,7 @@ def _build_attributes(state: State) -> tuple[list[dict[str, Any]], set[int]]:
             continue
         for row in table.iter_rows(named=True):
             ids.add(row[SIENNA_ID_COLUMN])
-            attributes.append(_stated({k: _named_years(k, v) for k, v in row.items()}))
+            attributes.append(drop_absent_fields({k: _named_years(k, v) for k, v in row.items()}))
     return attributes, ids
 
 
@@ -200,18 +306,3 @@ def _build_associations(
             }
         )
     return rows
-
-
-def _stated(row: dict[str, Any]) -> dict[str, Any]:
-    """The fields a row actually holds, at every depth of a nested struct.
-
-    A field no table wrote is absent rather than null, so the schema's own default applies
-    to it rather than a null a consumer would have to read as one. A cost struct carries
-    every variant's fields, so this is also what leaves a renewable technology's cost
-    without the two a thermal one alone states.
-    """
-    return {
-        key: _stated(value) if isinstance(value, dict) else value
-        for key, value in row.items()
-        if value is not None
-    }

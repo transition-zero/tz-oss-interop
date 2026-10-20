@@ -19,7 +19,8 @@ only conversions are at the file edge, where the document is written and read ba
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import logging
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
@@ -30,6 +31,8 @@ from pydantic import BaseModel, ConfigDict
 from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 
 class ExtensionKind(StrEnum):
@@ -53,6 +56,14 @@ class ExtensionKind(StrEnum):
     # survive a hop through it. Sienna has no equivalent either.
     CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
+    # OSeMOSYS only: a span of hours that occurs a number of times in a year.
+    REPRESENTATIVE_PERIOD = "representative_period"
+    # OSeMOSYS only: the values of a portfolio technology that change from year to year.
+    TECHNOLOGY = "technology"
+    # A PyPSA Link that turns energy at one bus into energy at another bus, or out of the
+    # model; OSeMOSYS states it as a conversion or an export technology; Sienna has no
+    # component for it, so the whole record lives here.
+    CONVERSION = "conversion"
 
 
 class ReserveDirection(StrEnum):
@@ -123,6 +134,9 @@ class BusExtension(ExtensionRecord):
     # rather than the bus. PyPSA has no field for it at all, so a chain through PyPSA needs
     # this to keep the price a shortfall is charged at.
     value_of_lost_load: float | None = None
+    # PyPSA Bus.location; the OSeMOSYS location of a fuel that is not electricity, whose bus
+    # Sienna does not hold.
+    location: str | None = None
 
 
 class ExpansionExtension(ExtensionRecord):
@@ -154,7 +168,81 @@ class ExpansionExtension(ExtensionRecord):
     build_year: int | None = None
 
 
-class GeneratorExtension(ExpansionExtension):
+class OperatingMode(BaseModel):
+    """One OSeMOSYS operating mode of a technology, for each MWh of the activity of the mode.
+
+    A Sienna component and a PyPSA component each run one mode, so the values of every other
+    mode, and the bounds of every mode, have no field there.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: str  # OSeMOSYS MODE_OF_OPERATION
+    variable_cost: float | None = None  # $/MWh of activity; OSeMOSYS VariableCost.
+    # MWh of each fuel for each MWh of activity, by fuel; OSeMOSYS InputActivityRatio.
+    input_ratios: dict[str, float] | None = None
+    # MWh of each fuel for each MWh of activity, by fuel; OSeMOSYS OutputActivityRatio.
+    output_ratios: dict[str, float] | None = None
+    # t for each MWh of activity, by pollutant; OSeMOSYS EmissionActivityRatio.
+    emission_rates: dict[str, float] | None = None
+    # MWh of activity in each year, by year; OSeMOSYS TechnologyActivityByModeUpperLimit.
+    activity_max: dict[str, float] | None = None
+    # MWh of activity in each year, by year; OSeMOSYS TechnologyActivityByModeLowerLimit.
+    activity_min: dict[str, float] | None = None
+    # Per unit, by year: the most the activity can fall from the year before; OSeMOSYS
+    # TechnologyActivityDecreaseByModeLimit.
+    activity_decrease_max: dict[str, float] | None = None
+
+
+class ActivityExtension(ExpansionExtension):
+    """What a technology states about its energy, its growth and its modes. OSeMOSYS only."""
+
+    # MWh in each year, by year, of electricity or of the fuel that rates the component; PyPSA
+    # Generator.e_sum_min, keyed by the investment period; OSeMOSYS
+    # TotalTechnologyAnnualActivityLowerLimit.
+    e_sum_min: dict[str, float] | None = None
+    # MWh in each year, by year, of electricity or of the fuel that rates the component; PyPSA
+    # Generator.e_sum_max, keyed by the investment period; OSeMOSYS
+    # TotalTechnologyAnnualActivityUpperLimit.
+    e_sum_max: dict[str, float] | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_min over the horizon;
+    # OSeMOSYS TotalTechnologyModelPeriodActivityLowerLimit.
+    e_sum_min_horizon: float | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_max over the horizon;
+    # OSeMOSYS TotalTechnologyModelPeriodActivityUpperLimit.
+    e_sum_max_horizon: float | None = None
+    # MW of new capacity in a year; PyPSA states it as Carrier.max_growth; OSeMOSYS
+    # TotalAnnualMaxCapacityInvestment.
+    max_growth: float | None = None
+    # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
+    min_growth: float | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field, because
+    # Carrier.max_relative_growth weighs the new capacity of the period before; OSeMOSYS
+    # CapacityAdditionalMaxGrowthRate.
+    max_growth_rate: float | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMinGrowthRate.
+    min_growth_rate: float | None = None
+    # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMaxFloor.
+    max_growth_floor: float | None = None
+    # Per unit of a whole year at full capacity; no PyPSA field; OSeMOSYS
+    # TotalAnnualMinCapacityFactor.
+    capacity_factor_min: float | None = None
+    # Per unit of the production of each fuel, by fuel; no PyPSA field; OSeMOSYS
+    # TechnologyMinProductionTarget.
+    production_share_min: dict[str, float] | None = None
+    # Per unit of the production of each fuel, by fuel; no PyPSA field; OSeMOSYS
+    # TechnologyMaxProductionTarget.
+    production_share_max: dict[str, float] | None = None
+    # MWh of activity that one MW runs in a year, 8760 where the units of the model agree.
+    # No PyPSA field; OSeMOSYS CapacityToActivityUnit.
+    capacity_to_activity_unit: float | None = None
+    # Each mode whose values the component does not run; no PyPSA field.
+    operating_modes: list[OperatingMode] | None = None
+
+
+class GeneratorExtension(ActivityExtension):
     # PyPSA Generator.carrier. Sienna states fuel and prime mover instead, and several PyPSA
     # carriers share one (prime_mover, fuel) pair, so the reverse cannot recover this.
     carrier: str | None = None
@@ -170,6 +258,32 @@ class GeneratorExtension(ExpansionExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
+    # t for each MWh that the generator puts out, by pollutant, with the emissions of the fuel
+    # that a plant burns; OSeMOSYS only, as PyPSA states Carrier.co2_emissions instead.
+    emission_rates_t_per_mwh: dict[str, float] | None = None
+    # PyPSA Generator.bus, for a generator of a fuel that is not electricity, which Sienna does
+    # not hold; OSeMOSYS fuel_supply.
+    bus: str | None = None
+    # MW of the fuel; PyPSA Generator.p_nom, for a generator that Sienna does not hold.
+    p_nom: float | None = None
+    # $/MWh of the fuel; PyPSA Generator.marginal_cost, for a generator that Sienna does not hold.
+    marginal_cost: float | None = None
+    # PyPSA Generator.p_max_pu, for a generator that Sienna does not hold; OSeMOSYS
+    # AvailabilityFactor.
+    p_max_pu: float | None = None
+    # MWh of each fuel for each MWh of electricity, by the bus of the fuel; no PyPSA field, as
+    # PyPSA states it as Link.bus0 and Link.efficiency; OSeMOSYS InputActivityRatio.
+    fuel_buses: dict[str, float] | None = None
+    # $/MWh of electricity without the price of the fuels that fuel_buses names; no PyPSA
+    # field, as PyPSA states it as Link.marginal_cost for each MWh of fuel.
+    own_marginal_cost: float | None = None
+    # t/MWh of electricity, by pollutant, without the emissions of the fuels that fuel_buses
+    # names; no PyPSA field; OSeMOSYS EmissionActivityRatio of the plant only.
+    own_emission_rates_t_per_mwh: dict[str, float] | None = None
+    # OSeMOSYS only: the technology and the operating mode that the generator stands for, when
+    # it is a mode of a technology that is not a generator, such as an import mode of a line.
+    source_technology: str | None = None
+    source_mode: str | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -178,6 +292,12 @@ class LoadExtension(ExtensionRecord):
     # PyPSA Load.sign, -1 by convention. Sienna PowerLoad is positive-consumption by
     # definition, so it has nothing to state here.
     sign: float | None = None
+    # PyPSA Load.bus, for a demand for a fuel that is not electricity, which Sienna does not hold.
+    bus: str | None = None
+    # MW of the fuel in each snapshot; PyPSA Load.p_set, for a load that Sienna does not hold.
+    p_set: float | None = None
+    # Ours: the companion parquet holding p_set at each snapshot, where the demand changes.
+    p_set_series: str | None = None
 
 
 class LineExtension(ExtensionRecord):
@@ -190,7 +310,7 @@ class LineExtension(ExtensionRecord):
     s_nom_extendable: bool | None = None  # PyPSA only
 
 
-class ControllableLineExtension(ExtensionRecord):
+class ControllableLineExtension(ActivityExtension):
     carrier: str | None = None  # PyPSA Link.carrier
     # $/MWh. PyPSA Link.marginal_cost, which PLEXOS states as a Wheeling Charge. Sienna
     # prices no flow over a branch, so the charge has no field there.
@@ -207,9 +327,17 @@ class ControllableLineExtension(ExtensionRecord):
     has_time_varying_efficiency: bool | None = None
     has_time_varying_p_max_pu: bool | None = None
     has_time_varying_p_min_pu: bool | None = None
+    # Ours: the companion parquet holding the OSeMOSYS CapacityFactor of each snapshot, which
+    # multiplies the static p_max_pu, as Sienna states one rating for a line and no series.
+    p_max_pu_series: str | None = None
+    # No PyPSA field: the line converts one electricity fuel into another at one location, so
+    # the results count it neither as production nor as trade.
+    is_conversion: bool | None = None
 
 
-class StorageExtension(ExpansionExtension):
+class StorageExtension(ActivityExtension):
+    # PyPSA StorageUnit.carrier, or the OSeMOSYS category of the discharging technology.
+    carrier: str | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
     # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,
     # so a hydro unit loses it without this.
@@ -225,6 +353,21 @@ class StorageExtension(ExpansionExtension):
     # Ours: the companion parquet holding the share of its rating the unit reaches at each
     # snapshot. Sienna states one rating and names no series against it.
     rating_series: str | None = None
+    # $/MWh of energy capacity; PyPSA states it as Store.overnight_cost; OSeMOSYS
+    # CapitalCostStorage.
+    energy_overnight_cost: float | None = None
+    # h at full power in one timeslice; no PyPSA field, because StorageUnit.max_hours is the
+    # energy over the power; OSeMOSYS StorageMaxHours.
+    duration_max_hours: float | None = None
+    # PyPSA StorageUnit.cyclic_state_of_charge_per_period; OSeMOSYS StorageBalanceYear.
+    cyclic_state_of_charge_per_period: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceSeason.
+    cyclic_state_of_charge_per_season: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceDay.
+    cyclic_state_of_charge_per_day: bool | None = None
+    # $/MW/yr of the technology that charges the storage, where it does not also discharge it;
+    # no PyPSA field, as PyPSA states it as fom_cost of the charging Link.
+    charge_fom_cost: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -285,11 +428,19 @@ class ConstraintLimit(BaseModel):
     period: ConstraintPeriod
     value: float
     unit: str | None = None  # the unit the source stated the limit in
+    # PyPSA GlobalConstraint.investment_period: the year of a yearly limit; OSeMOSYS YEAR.
+    investment_period: int | None = None
 
 
 class ConstraintExtension(ExtensionRecord):
     """A weighted sum over named objects, held to one or more right-hand sides."""
 
+    # PyPSA GlobalConstraint.type, primary_energy for an emission limit; renewable_share and
+    # reserve_margin are ours and no PyPSA type, so PyPSA builds no constraint from them.
+    type: str | None = None
+    # PyPSA GlobalConstraint.carrier_attribute: the quantity of each member that the sum
+    # counts, which is the pollutant of an OSeMOSYS emission limit.
+    carrier_attribute: str | None = None
     sense: ConstraintSense | None = None
     limits: list[ConstraintLimit] = []
     members: list[ConstraintMember] = []
@@ -306,6 +457,111 @@ class NetworkExtension(ExtensionRecord):
     objective: float | None = None
 
 
+class RepresentativePeriodExtension(ExtensionRecord):
+    """A span of consecutive hours of the series, and how many times it occurs in the year."""
+
+    # ISO 8601. The timestamp of the first hour of the span.
+    first_timestamp: str | None = None
+    hours: int | None = None
+    # How many times the span occurs in the year.
+    weight: float | None = None
+    # OSeMOSYS SEASON and DAYTYPE, absent for a span of one timeslice hour.
+    season: str | None = None
+    day_type: str | None = None
+    # Days of the day type in one week of the season; OSeMOSYS DaysInDayType.
+    days_in_day_type: float | None = None
+
+
+class TechnologyExtension(ExtensionRecord):
+    """The values of a portfolio technology. A yearly value is keyed by the year as a string.
+
+    PyPSA keys a value of a multi-period network by its investment period, which is the year.
+    The fields take the PyPSA names, such as overnight_cost and fom_cost, where the older
+    fields of the other kinds keep the names that they had before, such as
+    overnight_cost_per_mw.
+    """
+
+    # $/MW of electricity; PyPSA Generator.overnight_cost; OSeMOSYS CapitalCost.
+    overnight_cost: dict[str, float] | None = None
+    # $/MWh of energy capacity; PyPSA states it as Store.overnight_cost; OSeMOSYS
+    # CapitalCostStorage.
+    energy_overnight_cost: dict[str, float] | None = None
+    # $/MW/yr; PyPSA Generator.fom_cost; OSeMOSYS FixedCost.
+    fom_cost: dict[str, float] | None = None
+    # $/MWh, with the fuel cost and the emission penalty; PyPSA Generator.marginal_cost.
+    marginal_cost: dict[str, float] | None = None
+    # MW that already runs; PyPSA Generator.p_nom; OSeMOSYS ResidualCapacity.
+    p_nom: dict[str, float] | None = None
+    # MW of total capacity; PyPSA Generator.p_nom_min and p_nom_max; OSeMOSYS
+    # TotalAnnualMinCapacity and TotalAnnualMaxCapacity.
+    p_nom_min: dict[str, float] | None = None
+    p_nom_max: dict[str, float] | None = None
+    # MW of new capacity in a year; PyPSA states it as Carrier.max_growth; OSeMOSYS
+    # TotalAnnualMaxCapacityInvestment.
+    max_growth: dict[str, float] | None = None
+    # MW of new capacity in a year; no PyPSA field; OSeMOSYS TotalAnnualMinCapacityInvestment.
+    min_growth: dict[str, float] | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field, because
+    # Carrier.max_relative_growth weighs the new capacity of the period before; OSeMOSYS
+    # CapacityAdditionalMaxGrowthRate.
+    max_growth_rate: dict[str, float] | None = None
+    # Per unit of the total capacity of the year before; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMinGrowthRate.
+    min_growth_rate: dict[str, float] | None = None
+    # MW that a year can add above its relative growth; no PyPSA field; OSeMOSYS
+    # CapacityAdditionalMaxFloor.
+    max_growth_floor: dict[str, float] | None = None
+    # MWh of electricity in each year; PyPSA Generator.e_sum_min and e_sum_max, keyed by the
+    # investment period, from OSeMOSYS TotalTechnologyAnnualActivityLowerLimit and UpperLimit.
+    e_sum_min: dict[str, float] | None = None
+    e_sum_max: dict[str, float] | None = None
+    # MWh of electricity over the model period; PyPSA Generator.e_sum_min and e_sum_max over
+    # the horizon; OSeMOSYS TotalTechnologyModelPeriodActivityLowerLimit and UpperLimit.
+    e_sum_min_horizon: float | None = None
+    e_sum_max_horizon: float | None = None
+    # MWh of activity that one MW runs in a year; no PyPSA field; OSeMOSYS
+    # CapacityToActivityUnit.
+    capacity_to_activity_unit: float | None = None
+
+
+class ConversionExtension(ActivityExtension):
+    """A technology or a trade route that moves or converts energy, or takes it out of the model.
+
+    A bus of electricity is its location. A bus of another fuel, and each end of an OSeMOSYS
+    trade route, is `<region>/<fuel>`, because a fuel balances in a region.
+    """
+
+    carrier: str | None = None  # PyPSA Link.carrier; the OSeMOSYS category of the technology
+    bus0: str | None = None  # PyPSA Link.bus0: the bus of the energy that goes in
+    # PyPSA Link.bus1: the bus of the energy that comes out, absent for an export.
+    bus1: str | None = None
+    # PyPSA Link.bus2 and Link.efficiency2, Link.bus3 and Link.efficiency3: a third and a fourth
+    # fuel, with a negative efficiency for a fuel that goes in.
+    bus2: str | None = None
+    efficiency2: float | None = None
+    bus3: str | None = None
+    efficiency3: float | None = None
+    # MW in at bus0; PyPSA Link.p_nom; OSeMOSYS ResidualCapacity × the input ratio.
+    p_nom: float | None = None
+    # Per unit: energy out at bus1 for each MWh in at bus0; PyPSA Link.efficiency.
+    efficiency: float | None = None
+    # $/MWh in at bus0; PyPSA Link.marginal_cost; OSeMOSYS VariableCost.
+    marginal_cost: float | None = None
+    # PyPSA Link.p_nom_extendable: OSeMOSYS adds the capacity that the link needs at no cost.
+    p_nom_extendable: bool | None = None
+    # t for each MWh in at bus0, by pollutant, from OSeMOSYS EmissionActivityRatio, as PyPSA
+    # states Carrier.co2_emissions instead.
+    emission_rates_t_per_mwh: dict[str, float] | None = None
+    # Per unit of p_nom; PyPSA Link.p_max_pu; OSeMOSYS AvailabilityFactor.
+    p_max_pu: float | None = None
+    # The fuel that goes in and the fuel that comes out; no PyPSA field, as PyPSA states a fuel
+    # by its bus.
+    input_fuel: str | None = None
+    output_fuel: str | None = None
+    # PyPSA Link.active, keyed by the investment period; OSeMOSYS TradeRoute.
+    active: dict[str, bool] | None = None
+
+
 class Extensions(BaseModel):
     """The sidecar document. Each field name is a kind, and holds that kind's records."""
 
@@ -320,6 +576,9 @@ class Extensions(BaseModel):
     reserve: list[ReserveExtension] = []
     constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
+    representative_period: list[RepresentativePeriodExtension] = []
+    technology: list[TechnologyExtension] = []
+    conversion: list[ConversionExtension] = []
 
 
 EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
@@ -332,6 +591,9 @@ EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
     ExtensionKind.RESERVE: ReserveExtension,
     ExtensionKind.CONSTRAINT: ConstraintExtension,
     ExtensionKind.NETWORK: NetworkExtension,
+    ExtensionKind.REPRESENTATIVE_PERIOD: RepresentativePeriodExtension,
+    ExtensionKind.TECHNOLOGY: TechnologyExtension,
+    ExtensionKind.CONVERSION: ConversionExtension,
 }
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
@@ -430,11 +692,23 @@ class GeneratorCompanionCol(StrEnum):
     MARGINAL_COST = "marginal_cost"
 
 
+class LoadCompanionCol(StrEnum):
+    """Value columns of the load companion parquet, named for the field each holds."""
+
+    P_SET = "p_set"
+
+
 class StorageCompanionCol(StrEnum):
     """Value columns of the storage companion parquet, each named for the field it holds."""
 
     INFLOW_MW = "inflow_mw"
     RATING_PU = "rating_pu"
+
+
+class ControllableLineCompanionCol(StrEnum):
+    """Value columns of the controllable line companion parquet."""
+
+    P_MAX_PU = "p_max_pu"
 
 
 class Companion(NamedTuple):
@@ -449,8 +723,10 @@ class Companion(NamedTuple):
 # column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
     ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
+    ExtensionKind.LOAD: Companion("loads.parquet", ("p_set_series",)),
     ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
     ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
+    ExtensionKind.CONTROLLABLE_LINE: Companion("controllable_lines.parquet", ("p_max_pu_series",)),
 }
 
 
@@ -485,6 +761,15 @@ _UNCONSUMED_NOTE = (
     "no mapping in this translation reads this extension record, so it is dropped rather "
     "than carried into the next sidecar"
 )
+_UNHANDLED_FIELD_NOTE = (
+    "a mapping in this translation reads this extension record, but no mapping maps this "
+    "field and none relays it, so it is dropped rather than carried into the next sidecar"
+)
+_UNHANDLED_FIELD_WARNING = (
+    "%d field(s) of extension records reach no mapping and no relay, so each is dropped: %s"
+)
+# How many dropped fields a warning names before it counts the rest.
+_NAMED_FIELDS = 3
 
 
 def report_dropped(staged: StagedExtensions, framework: str, recorder: EventRecorder) -> None:
@@ -498,6 +783,18 @@ def report_dropped(staged: StagedExtensions, framework: str, recorder: EventReco
                     note=_UNCONSUMED_NOTE,
                 )
             )
+
+
+def build_stated_fields(record: ExtensionRecord) -> dict[str, Any]:
+    """The fields a record states a value for, other than its name, by field name."""
+    return {
+        field_name: getattr(record, field_name)
+        for field_name in record.model_dump(exclude={"name"}, exclude_none=True, exclude_unset=True)
+    }
+
+
+def _is_scalar(value: Any) -> bool:
+    return isinstance(value, str | int | float | bool)
 
 
 @overload
@@ -536,6 +833,18 @@ def record_for(
 def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD], name: str
+) -> RepresentativePeriodExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.TECHNOLOGY], name: str
+) -> TechnologyExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.CONVERSION], name: str
+) -> ConversionExtension | None: ...
 
 
 def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
@@ -547,6 +856,24 @@ def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
     return next((record for record in staged.get(kind, []) if record.name == name), None)
 
 
+@dataclass
+class KindConsumption:
+    """The records of one kind that readers took whole, and the fields handled in the rest."""
+
+    whole: set[str] = field(default_factory=set)
+    fields: dict[str, set[str]] = field(default_factory=dict)
+
+    def list_unhandled_fields(self, record: ExtensionRecord) -> list[str]:
+        """The stated fields of a record taken field by field that nothing handles."""
+        if record.name in self.whole or record.name not in self.fields:
+            return []
+        handled = self.fields[record.name]
+        return [name for name in build_stated_fields(record) if name not in handled]
+
+    def is_unread(self, record: ExtensionRecord) -> bool:
+        return record.name not in self.whole and record.name not in self.fields
+
+
 class ExtensionLookup(Generic[RecordT]):
     """One kind's staged records, by name.
 
@@ -555,24 +882,48 @@ class ExtensionLookup(Generic[RecordT]):
     record whose every field is unset, which is what "the source said nothing" means.
     """
 
-    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: set[str]):
+    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: KindConsumption):
         self._model = model
         self._records = {record.name: record for record in records}
         self._consumed = consumed
 
     def get(self, name: str) -> RecordT:
-        self._consumed.add(name)
-        return self._records.get(name) or self._model(name=name)
+        self._consumed.whole.add(name)
+        return self._find_or_build(name)
+
+    def get_fields(self, name: str, mapped: Collection[str]) -> RecordT:
+        """One record, of which the caller maps only the ``mapped`` fields."""
+        self._consumed.fields.setdefault(name, set()).update(mapped)
+        return self._find_or_build(name)
+
+    def relay(self, name: str) -> RecordT:
+        """A record of the stated fields of ``name`` that no mapping maps, marked as relayed."""
+        handled = self._consumed.fields.setdefault(name, set())
+        left = {
+            field_name: value
+            for field_name, value in build_stated_fields(self._find_or_build(name)).items()
+            if field_name not in handled
+        }
+        handled.update(left)
+        return self._model.model_validate({"name": name, **left})
+
+    def list_records(self) -> list[RecordT]:
+        """Every staged record of this kind, none of them marked as read."""
+        return list(self._records.values())
 
     def read_all(self) -> list[RecordT]:
         """Every staged record of this kind, each one marked as read."""
-        self._consumed.update(self._records)
+        self._consumed.whole.update(self._records)
         return list(self._records.values())
+
+    def _find_or_build(self, name: str) -> RecordT:
+        return self._records.get(name) or self._model(name=name)
 
 
 @dataclass
 class ExtensionConsumption:
-    """The names every reader of one hop has read, and the step to report a drop against.
+    """The records and fields every reader of one hop has read, and the step to report a drop
+    against.
 
     A hop may split its mappings across more than one step, so the readers those steps build
     share one of these and the run reports what none of them asked for once the last step
@@ -581,16 +932,60 @@ class ExtensionConsumption:
     """
 
     recorder: EventRecorder
-    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+    by_kind: dict[ExtensionKind, KindConsumption] = field(
+        default_factory=lambda: {kind: KindConsumption() for kind in ExtensionKind}
+    )
 
-    def names_for(self, kind: ExtensionKind) -> set[str]:
-        return self.by_kind.setdefault(kind, set())
+    def get_kind(self, kind: ExtensionKind) -> KindConsumption:
+        return self.by_kind[kind]
 
     def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
+        """Report each record no reader read, and each field nothing maps or relays."""
         for kind, records in staged.items():
-            consumed = self.by_kind.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
+            unread = [record for record in records if self.by_kind[kind].is_unread(record)]
             report_dropped({kind: unread}, framework, self.recorder)
+        dropped = self._list_dropped_fields(staged)
+        for kind, record, field_name in dropped:
+            self._record_dropped_field(kind, record, field_name, framework)
+        if dropped:
+            labels = [f"{kind} {record.name}.{field_name}" for kind, record, field_name in dropped]
+            log.warning(_UNHANDLED_FIELD_WARNING, len(labels), _build_few_names(labels))
+
+    def _list_dropped_fields(
+        self, staged: StagedExtensions
+    ) -> list[tuple[ExtensionKind, ExtensionRecord, str]]:
+        return [
+            (kind, record, field_name)
+            for kind, records in staged.items()
+            for record in records
+            for field_name in self.by_kind[kind].list_unhandled_fields(record)
+        ]
+
+    def _record_dropped_field(
+        self, kind: ExtensionKind, record: ExtensionRecord, field_name: str, framework: str
+    ) -> None:
+        value = getattr(record, field_name)
+        self.recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[
+                    SourceField(
+                        framework=framework,
+                        component=kind,
+                        name=record.name,
+                        attribute=field_name,
+                        value=value if _is_scalar(value) else None,
+                    )
+                ],
+                note=_UNHANDLED_FIELD_NOTE,
+            )
+        )
+
+
+def _build_few_names(labels: list[str]) -> str:
+    named = ", ".join(labels[:_NAMED_FIELDS])
+    rest = len(labels) - _NAMED_FIELDS
+    return named if rest <= 0 else f"{named}, and {rest} more"
 
 
 class ExtensionReader:
@@ -629,14 +1024,26 @@ class ExtensionReader:
     ) -> ExtensionLookup[ConstraintExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD]
+    ) -> ExtensionLookup[RepresentativePeriodExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.TECHNOLOGY]
+    ) -> ExtensionLookup[TechnologyExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.CONVERSION]
+    ) -> ExtensionLookup[ConversionExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.get_kind(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumption.names_for(kind).update(record.name for record in records)
+        self._consumption.get_kind(kind).whole.update(record.name for record in records)
         return records

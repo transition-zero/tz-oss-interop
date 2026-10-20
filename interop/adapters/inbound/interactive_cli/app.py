@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
@@ -23,15 +24,22 @@ from interop.ports.inbound.pipeline_catalog import PipelineCatalogUseCase, Pipel
 from interop.ports.inbound.solve import (
     DEFAULT_LOOK_AHEAD_DAYS,
     ModelType,
+    SolveExpansionRequest,
     SolveNetworkRequest,
     SolveSiennaRequest,
     SolveUseCase,
 )
 from interop.ports.inbound.translate import TranslateUseCase
 from interop.ports.inbound.validate import ValidateUseCase
+from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.filesystem import Location, to_location
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 from interop.ports.outbound.validation_report import DEFAULT_VALIDATION_REPORT_PATH
@@ -164,8 +172,15 @@ class _MappingsCancelled:
 _MAPPINGS_CANCELLED = _MappingsCancelled()
 
 
+_USER_MAPPINGS_PROMPT = "User mappings file?"
+_SIDE_USER_MAPPINGS_PROMPT = "User mappings file for {framework}?"
+
+
 def _prompt_user_mappings(
-    needed: bool, replay: dict[str, Any], details: dict[str, Any]
+    needed: bool,
+    replay: dict[str, Any],
+    details: dict[str, Any],
+    prompt: str = _USER_MAPPINGS_PROMPT,
 ) -> Location | None | _MappingsCancelled:
     """Prompt for a user-mappings file when the pipeline needs one.
 
@@ -177,7 +192,7 @@ def _prompt_user_mappings(
     if not needed:
         return None
     mapping_path_str = questionary.path(
-        f"User mappings file?  {PATH_PROMPT_HINT}",
+        f"{prompt}  {PATH_PROMPT_HINT}",
         default=replay.get(DetailKey.USER_MAPPINGS_PATH, "inputs/user_mappings.yaml"),
     ).ask()
     if mapping_path_str is None:
@@ -354,7 +369,21 @@ _SOLVER_ALGORITHMS = [s.value for s in HiGHSSolver]
 _PRESOLVE_OPTIONS = [s.value for s in HiGHSPresolve]
 _CROSSOVER_OPTIONS = [s.value for s in HiGHSCrossover]
 _UNIT_COMMITMENT_TREATMENTS = [t.value for t in UnitCommitmentTreatment]
+_UNSERVED_ENERGY_OPTIONS = [u.value for u in UnservedEnergy]
 _SOLVE_WINDOWS = [w.value for w in SolveWindowLength]
+_BALANCE_MODELS = [b.value for b in BalanceModel]
+_INVESTMENT_TREATMENTS = [t.value for t in InvestmentTreatment]
+
+# ContinuousInvestment builds any amount of capacity; IntegerInvestment builds whole units
+# only, which is a mixed-integer problem and much slower.
+_BALANCE_MODEL_PROMPT = (
+    "Balance model? (single-region = one zone; multi-region = zone by zone; nodal = bus by bus)"
+)
+
+_INVESTMENT_TREATMENT_PROMPT = (
+    "Investment treatment? (continuous = build any amount of capacity; integer = build "
+    "whole units only, which is slower)"
+)
 
 # PowerSimulations has no relaxed unit commitment formulation, so the two answers mean
 # something different here from what they mean on the PyPSA path.
@@ -362,6 +391,12 @@ _SIENNA_UNIT_COMMITMENT_PROMPT = (
     "Unit commitment treatment? (exact = on/off as true binary decisions, applying the "
     "start-up cost and the minimum up and down times; linearised = economic dispatch, "
     "which is faster and applies neither)"
+)
+
+
+_UNSERVED_ENERGY_PROMPT = (
+    "Unserved energy? (refused = every load is met, so one short hour makes the solve "
+    "infeasible; penalised = a shortfall goes unserved at a high penalty cost)"
 )
 
 
@@ -376,23 +411,11 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
         return None
     if model_type == ModelType.PYPSA:
         return _run_solve_pypsa(container, replay)
+    if model_type == ModelType.SIENNA_INVESTMENTS:
+        return _run_solve_expansion(container, replay, model_type)
 
-    try:
-        with container() as scope:
-            solver_is_provisioned = scope.get(SolveUseCase).is_provisioned()
-    except UserInputError as exc:
-        _print_user_error(exc)
+    if not _prompt_download_consent(container, _POWER_SIMULATIONS_PACKAGES, dispatch=True):
         return None
-    if not solver_is_provisioned:
-        questionary.print(
-            "Julia and the PowerSimulations.jl solver packages will be downloaded and "
-            "compiled before solving. This needs an internet connection; progress is "
-            "printed as it runs."
-        )
-        download_accepted = questionary.confirm("Download and continue?").ask()
-        if not download_accepted:
-            questionary.print("Solve cancelled.")
-            return None
 
     raw_path = questionary.path(
         f"Path to PowerSimulations.jl system JSON?  {PATH_PROMPT_HINT}",
@@ -414,6 +437,14 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if network_model is None:
         return None
 
+    unserved_energy = questionary.select(
+        _UNSERVED_ENERGY_PROMPT,
+        choices=_UNSERVED_ENERGY_OPTIONS,
+        default=_select_default(replay.get(DetailKey.UNSERVED_ENERGY), _UNSERVED_ENERGY_OPTIONS),
+    ).ask()
+    if unserved_energy is None:
+        return None
+
     unit_commitment = questionary.select(
         _SIENNA_UNIT_COMMITMENT_PROMPT,
         choices=_UNIT_COMMITMENT_TREATMENTS,
@@ -422,43 +453,13 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     if unit_commitment is None:
         return None
 
-    solver = questionary.select(
-        "HiGHS solver algorithm?",
-        choices=_SOLVER_ALGORITHMS,
-        default=_select_default(replay.get(DetailKey.SOLVER), _SOLVER_ALGORITHMS),
-    ).ask()
-    if solver is None:
+    highs = _prompt_highs_options(replay)
+    if highs is None:
         return None
-
-    presolve = questionary.select(
-        "Presolve? (choose = HiGHS decides automatically)",
-        choices=_PRESOLVE_OPTIONS,
-        default=_select_default(replay.get(DetailKey.PRESOLVE), _PRESOLVE_OPTIONS),
-    ).ask()
-    if presolve is None:
-        return None
-
-    run_crossover = questionary.select(
-        "Run crossover after IPM? (choose = HiGHS decides automatically)",
-        choices=_CROSSOVER_OPTIONS,
-        default=_select_default(replay.get(DetailKey.RUN_CROSSOVER), _CROSSOVER_OPTIONS),
-    ).ask()
-    if run_crossover is None:
-        return None
-
-    raw_time_limit = questionary.text(
-        "Time limit in seconds? (blank = no limit)",
-        default=str(replay.get(DetailKey.TIME_LIMIT_SECONDS, "")),
-    ).ask()
-    if raw_time_limit is None:
-        return None
-    time_limit_seconds: float | None = None
-    if raw_time_limit.strip():
-        try:
-            time_limit_seconds = float(raw_time_limit.strip())
-        except ValueError:
-            _print_user_error(UserInputError(f"invalid time limit: {raw_time_limit!r}"))
-            return None
+    solver = highs.solver
+    presolve = highs.presolve
+    run_crossover = highs.run_crossover
+    time_limit_seconds = highs.time_limit_seconds
 
     default_output = str(replay.get(DetailKey.OUTPUT_DIR) or sienna_json_path.parent / "solved")
     raw_output = questionary.path(
@@ -472,6 +473,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
         DetailKey.MODEL_TYPE: model_type,
         DetailKey.SIENNA_JSON_PATH: str(sienna_json_path),
         DetailKey.NETWORK_MODEL: network_model,
+        DetailKey.UNSERVED_ENERGY: unserved_energy,
         DetailKey.UNIT_COMMITMENT: unit_commitment,
         DetailKey.SOLVER: solver,
         DetailKey.PRESOLVE: presolve,
@@ -490,6 +492,7 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
                     sienna_json_path=sienna_json_path,
                     network_model=network_model,
                     output_dir=output_dir,
+                    unserved_energy=UnservedEnergy(unserved_energy),
                     unit_commitment=UnitCommitmentTreatment(unit_commitment),
                     solver=HiGHSSolver(solver),
                     presolve=HiGHSPresolve(presolve),
@@ -504,6 +507,220 @@ def _run_solve(container: Container, replay: dict[str, Any] | None = None) -> di
     style = "fg:green" if result.is_success() else "fg:red"
     questionary.print(result.summary(), style=style)
     return details
+
+
+@dataclass(frozen=True)
+class _HiGHSAnswers:
+    """What the solver is told about how to run, which both Sienna paths ask for alike."""
+
+    solver: str
+    presolve: str
+    run_crossover: str
+    time_limit_seconds: float | None
+
+
+def _prompt_highs_options(replay: dict[str, Any]) -> _HiGHSAnswers | None:
+    """The four HiGHS answers, or None where the user cancelled or typed an unreadable limit."""
+    solver = questionary.select(
+        "HiGHS solver algorithm?",
+        choices=_SOLVER_ALGORITHMS,
+        default=_select_default(replay.get(DetailKey.SOLVER), _SOLVER_ALGORITHMS),
+    ).ask()
+    presolve = questionary.select(
+        "Presolve? (choose = HiGHS decides automatically)",
+        choices=_PRESOLVE_OPTIONS,
+        default=_select_default(replay.get(DetailKey.PRESOLVE), _PRESOLVE_OPTIONS),
+    ).ask()
+    run_crossover = questionary.select(
+        "Run crossover after IPM? (choose = HiGHS decides automatically)",
+        choices=_CROSSOVER_OPTIONS,
+        default=_select_default(replay.get(DetailKey.RUN_CROSSOVER), _CROSSOVER_OPTIONS),
+    ).ask()
+    raw_time_limit = questionary.text(
+        "Time limit in seconds? (blank = no limit)",
+        default=str(replay.get(DetailKey.TIME_LIMIT_SECONDS, "")),
+    ).ask()
+    if None in (solver, presolve, run_crossover, raw_time_limit):
+        return None
+    time_limit_seconds = _parse_time_limit(raw_time_limit)
+    if time_limit_seconds is _UNREADABLE:
+        return None
+    return _HiGHSAnswers(solver, presolve, run_crossover, time_limit_seconds)
+
+
+_UNREADABLE = object()
+"""What a time limit nobody can read parses to, told apart from a blank answer."""
+
+
+def _parse_time_limit(raw: str) -> Any:
+    if not raw.strip():
+        return None
+    try:
+        return float(raw.strip())
+    except ValueError:
+        _print_user_error(UserInputError(f"invalid time limit: {raw!r}"))
+        return _UNREADABLE
+
+
+_POWER_SIMULATIONS_PACKAGES = "the PowerSimulations.jl solver packages"
+_POWER_SYSTEMS_INVESTMENTS_PACKAGES = "the PowerSystemsInvestments.jl packages"
+
+
+def _prompt_download_consent(container: Container, packages: str, *, dispatch: bool) -> bool:
+    """Warn before a first run downloads Julia, and ask whether to go on.
+
+    A run whose packages are already installed asks nothing.
+    """
+    try:
+        with container() as scope:
+            use_case = scope.get(SolveUseCase)
+            provisioned = (
+                use_case.is_provisioned() if dispatch else use_case.is_expansion_provisioned()
+            )
+    except UserInputError as exc:
+        _print_user_error(exc)
+        return False
+    if provisioned:
+        return True
+    questionary.print(
+        f"Julia and {packages} will be downloaded and compiled before solving. This needs "
+        "an internet connection; progress is printed as it runs."
+    )
+    if questionary.confirm("Download and continue?").ask():
+        return True
+    questionary.print("Solve cancelled.")
+    return False
+
+
+def _run_solve_expansion(
+    container: Container, replay: dict[str, Any], model_type: str
+) -> dict[str, Any] | None:
+    """Expand a Sienna portfolio, asking only what the portfolio itself does not state."""
+    if not _prompt_download_consent(container, _POWER_SYSTEMS_INVESTMENTS_PACKAGES, dispatch=False):
+        return None
+    answers = _prompt_expansion_answers(replay)
+    if answers is None:
+        return None
+    details = _build_expansion_details(model_type, answers)
+    try:
+        with container() as scope:
+            result = scope.get(SolveUseCase)(_build_expansion_request(answers))
+    except UserInputError as exc:
+        _print_user_error(exc)
+        return details
+    questionary.print(result.summary(), style="fg:green" if result.is_success() else "fg:red")
+    return details
+
+
+@dataclass(frozen=True)
+class _ExpansionAnswers:
+    """Everything the expansion prompts collected, past what the portfolio states itself."""
+
+    portfolio_json_path: Path
+    balance_model: str
+    investment_treatment: str
+    discount_rate: float | None
+    highs: _HiGHSAnswers
+    output_dir: Path
+
+
+def _prompt_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | None:
+    portfolio_json_path = _prompt_portfolio_path(replay)
+    if portfolio_json_path is None:
+        return None
+    balance_model = questionary.select(
+        _BALANCE_MODEL_PROMPT,
+        choices=_BALANCE_MODELS,
+        default=_select_default(replay.get(DetailKey.BALANCE_MODEL), _BALANCE_MODELS),
+    ).ask()
+    investment_treatment = questionary.select(
+        _INVESTMENT_TREATMENT_PROMPT,
+        choices=_INVESTMENT_TREATMENTS,
+        default=_select_default(replay.get(DetailKey.INVESTMENT_TREATMENT), _INVESTMENT_TREATMENTS),
+    ).ask()
+    raw_discount_rate = questionary.text(
+        "Discount rate? (blank = the rate the portfolio states)",
+        default=str(replay.get(DetailKey.DISCOUNT_RATE, "")),
+    ).ask()
+    if None in (balance_model, investment_treatment, raw_discount_rate):
+        return None
+    discount_rate = _parse_discount_rate(raw_discount_rate)
+    if discount_rate is _UNREADABLE:
+        return None
+    highs = _prompt_highs_options(replay)
+    if highs is None:
+        return None
+    output_dir = _prompt_output_dir(replay, portfolio_json_path.parent / "expanded")
+    if output_dir is None:
+        return None
+    return _ExpansionAnswers(
+        portfolio_json_path, balance_model, investment_treatment, discount_rate, highs, output_dir
+    )
+
+
+def _prompt_portfolio_path(replay: dict[str, Any]) -> Path | None:
+    raw_path = questionary.path(
+        f"Path to the PowerSystemsInvestments portfolio JSON?  {PATH_PROMPT_HINT}",
+        default=str(replay.get(DetailKey.PORTFOLIO_JSON_PATH, "")),
+    ).ask()
+    if raw_path is None:
+        return None
+    portfolio_json_path = Path(raw_path.strip()).expanduser()
+    if not portfolio_json_path.is_file():
+        _print_user_error(UserInputError(f"file not found: {portfolio_json_path}"))
+        return None
+    return portfolio_json_path
+
+
+def _prompt_output_dir(replay: dict[str, Any], fallback: Path) -> Path | None:
+    default_output = str(replay.get(DetailKey.OUTPUT_DIR) or fallback)
+    raw_output = questionary.path(
+        f"Output directory?  {PATH_PROMPT_HINT}", default=default_output
+    ).ask()
+    return None if raw_output is None else Path(raw_output.strip()).expanduser()
+
+
+def _parse_discount_rate(raw: str) -> Any:
+    if not raw.strip():
+        return None
+    try:
+        return float(raw.strip())
+    except ValueError:
+        _print_user_error(UserInputError(f"invalid discount rate: {raw!r}"))
+        return _UNREADABLE
+
+
+def _build_expansion_request(answers: _ExpansionAnswers) -> SolveExpansionRequest:
+    return SolveExpansionRequest(
+        portfolio_json_path=answers.portfolio_json_path,
+        balance_model=BalanceModel(answers.balance_model),
+        output_dir=answers.output_dir,
+        investment_treatment=InvestmentTreatment(answers.investment_treatment),
+        discount_rate=answers.discount_rate,
+        solver=HiGHSSolver(answers.highs.solver),
+        presolve=HiGHSPresolve(answers.highs.presolve),
+        run_crossover=HiGHSCrossover(answers.highs.run_crossover),
+        time_limit_seconds=answers.highs.time_limit_seconds,
+    )
+
+
+def _build_expansion_details(model_type: str, answers: _ExpansionAnswers) -> dict[str, Any]:
+    return {
+        DetailKey.MODEL_TYPE: model_type,
+        DetailKey.PORTFOLIO_JSON_PATH: str(answers.portfolio_json_path),
+        DetailKey.BALANCE_MODEL: answers.balance_model,
+        DetailKey.INVESTMENT_TREATMENT: answers.investment_treatment,
+        DetailKey.DISCOUNT_RATE: _serialise_optional_number(answers.discount_rate),
+        DetailKey.SOLVER: answers.highs.solver,
+        DetailKey.PRESOLVE: answers.highs.presolve,
+        DetailKey.RUN_CROSSOVER: answers.highs.run_crossover,
+        DetailKey.TIME_LIMIT_SECONDS: _serialise_optional_number(answers.highs.time_limit_seconds),
+        DetailKey.OUTPUT_DIR: str(answers.output_dir),
+    }
+
+
+def _serialise_optional_number(value: float | None) -> str:
+    return "" if value is None else str(value)
 
 
 def _parse_optional_date(raw: str) -> date | None:
@@ -585,6 +802,14 @@ def _run_solve_pypsa(
     if window is None:
         return None
 
+    unserved_energy = questionary.select(
+        _UNSERVED_ENERGY_PROMPT,
+        choices=_UNSERVED_ENERGY_OPTIONS,
+        default=_select_default(replay.get(DetailKey.UNSERVED_ENERGY), _UNSERVED_ENERGY_OPTIONS),
+    ).ask()
+    if unserved_energy is None:
+        return None
+
     raw_look_ahead = questionary.text(
         "Days to solve past the end of each window and then discard? (stops storage being "
         "emptied into a window's last hours)",
@@ -606,6 +831,7 @@ def _run_solve_pypsa(
         DetailKey.END_DATE: str(end) if end is not None else "",
         DetailKey.UNIT_COMMITMENT: unit_commitment,
         DetailKey.SOLVE_WINDOW: window,
+        DetailKey.UNSERVED_ENERGY: unserved_energy,
         DetailKey.LOOK_AHEAD_DAYS: str(look_ahead_days),
     }
 
@@ -621,6 +847,7 @@ def _run_solve_pypsa(
                     unit_commitment=UnitCommitmentTreatment(unit_commitment),
                     window=SolveWindowLength(window),
                     look_ahead_days=look_ahead_days,
+                    unserved_energy=UnservedEnergy(unserved_energy),
                 )
             )
     except UserInputError as exc:
@@ -632,32 +859,85 @@ def _run_solve_pypsa(
     return details
 
 
-def _collect_compare_side(
-    container: Container,
-    framework: str,
-    pipelines: list[str],
-    replay_pipeline: Any,
-    replay_params: dict[str, Any] | None,
-) -> CompareSide | None:
-    """Pick the framework's results pipeline (when it has more than one) and its source params."""
-    if len(pipelines) == 1:
-        pipeline_name = pipelines[0]
-    else:
-        pipeline_name = questionary.select(
-            f"Which {framework} results pipeline?",
-            choices=sorted(pipelines),
-            default=_select_default(replay_pipeline, pipelines),
-        ).ask()
-        if pipeline_name is None:
-            return None
+@dataclass(frozen=True)
+class _SideReplay:
+    """What a history replay gives one side of a comparison."""
 
+    pipeline: Any
+    params: dict[str, Any] | None
+    user_mappings_path: Any
+
+
+def _build_side_replay(replay: dict[str, Any], keys: tuple[DetailKey, ...]) -> _SideReplay:
+    pipeline_key, params_key, mappings_key = keys
+    return _SideReplay(replay.get(pipeline_key), replay.get(params_key), replay.get(mappings_key))
+
+
+_SIDE_A_REPLAY_KEYS = (
+    DetailKey.SIDE_A_PIPELINE,
+    DetailKey.SIDE_A_PARAMS,
+    DetailKey.SIDE_A_USER_MAPPINGS_PATH,
+)
+_SIDE_B_REPLAY_KEYS = (
+    DetailKey.SIDE_B_PIPELINE,
+    DetailKey.SIDE_B_PARAMS,
+    DetailKey.SIDE_B_USER_MAPPINGS_PATH,
+)
+
+
+def _build_compare_side(
+    container: Container, framework: str, pipelines: list[str], replay: _SideReplay
+) -> CompareSide | None:
+    """Pick the framework's results pipeline (when it has more than one), its source params,
+    and its user mappings file when the pipeline needs one."""
+    pipeline_name = _choose_results_pipeline(framework, pipelines, replay.pipeline)
+    if pipeline_name is None:
+        return None
     with container() as scope:
         catalog = scope.get(PipelineCatalogUseCase)
         structure = catalog.get_structure(pipeline_name)
     source_params = collect_node_params(
-        structure.source.params_schema, {}, framework, replay_params=replay_params
+        structure.source.params_schema, {}, framework, replay_params=replay.params
     )
-    return CompareSide(framework=framework, pipeline=pipeline_name, source_params=source_params)
+    user_mappings_path = _prompt_side_user_mappings(
+        framework, structure.needs_user_mappings, replay
+    )
+    if isinstance(user_mappings_path, _MappingsCancelled):
+        return None
+    return CompareSide(
+        framework=framework,
+        pipeline=pipeline_name,
+        source_params=source_params,
+        user_mappings_path=user_mappings_path,
+    )
+
+
+def _choose_results_pipeline(framework: str, pipelines: list[str], replay: Any) -> str | None:
+    if len(pipelines) == 1:
+        return pipelines[0]
+    answer: str | None = questionary.select(
+        f"Which {framework} results pipeline?",
+        choices=sorted(pipelines),
+        default=_select_default(replay, pipelines),
+    ).ask()
+    return answer
+
+
+def _prompt_side_user_mappings(
+    framework: str, needed: bool, replay: _SideReplay
+) -> Location | None | _MappingsCancelled:
+    side_replay: dict[str, Any] = (
+        {}
+        if replay.user_mappings_path is None
+        else {DetailKey.USER_MAPPINGS_PATH: replay.user_mappings_path}
+    )
+    prompt = _SIDE_USER_MAPPINGS_PROMPT.format(framework=framework)
+    return _prompt_user_mappings(needed, side_replay, {}, prompt)
+
+
+def _build_mappings_details(side: CompareSide, key: DetailKey) -> dict[str, str]:
+    """A side with no user mappings file records nothing, as translate does."""
+    return {} if side.user_mappings_path is None else {key: str(side.user_mappings_path)}
 
 
 def _run_compare(
@@ -689,21 +969,19 @@ def _run_compare(
     if framework_b is None:
         return None
 
-    side_a = _collect_compare_side(
+    side_a = _build_compare_side(
         container,
         framework_a,
         pipelines_by_framework[framework_a],
-        replay.get(DetailKey.SIDE_A_PIPELINE),
-        replay.get(DetailKey.SIDE_A_PARAMS),
+        _build_side_replay(replay, _SIDE_A_REPLAY_KEYS),
     )
     if side_a is None:
         return None
-    side_b = _collect_compare_side(
+    side_b = _build_compare_side(
         container,
         framework_b,
         pipelines_by_framework[framework_b],
-        replay.get(DetailKey.SIDE_B_PIPELINE),
-        replay.get(DetailKey.SIDE_B_PARAMS),
+        _build_side_replay(replay, _SIDE_B_REPLAY_KEYS),
     )
     if side_b is None:
         return None
@@ -724,6 +1002,8 @@ def _run_compare(
         DetailKey.SIDE_B_PIPELINE: side_b.pipeline,
         DetailKey.SIDE_B_PARAMS: side_b.source_params,
         DetailKey.OUTPUT_PATH: str(output_path),
+        **_build_mappings_details(side_a, DetailKey.SIDE_A_USER_MAPPINGS_PATH),
+        **_build_mappings_details(side_b, DetailKey.SIDE_B_USER_MAPPINGS_PATH),
     }
 
     try:
