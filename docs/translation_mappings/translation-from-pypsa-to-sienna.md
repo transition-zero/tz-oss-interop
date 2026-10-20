@@ -652,6 +652,10 @@ The translator emits each PHS unit as a single `EnergyReservoirStorage` componen
 
 In this example, `storage_capacity = 125.9` (pu-hours = `max_hours`); on result export PSI multiplies by `base_power = 4241.3` MVA to give the natural unit `533991 MWh`. Likewise the power limit `max = 1.0` (pu) becomes `4241.3 MW` on export.
 
+The `storage` record of `extensions.json` keeps the `carrier` and `p_nom_extendable` of each
+unit. Several carriers share one prime mover, so the hop back to PyPSA reads the carrier from
+the record, not from the prime mover.
+
 #### StorageUnit fields with no `EnergyReservoirStorage` mapping
 
 | PyPSA StorageUnit field | Notes |

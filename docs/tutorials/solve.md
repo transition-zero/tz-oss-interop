@@ -45,14 +45,22 @@ Select **solve** from the menu. The first prompt, **Model type?**, chooses betwe
    - `dcp` (default): DC power flow with voltage-angle variables and KVL constraints; closest to PyPSA's Kirchhoff formulation.
    - `ptdf`: PTDF approximation of AC flows; faster than DCP on large networks.
    - `copperplate`: single-bus per AC subnetwork; fastest, ignores line flows.
-3. **Unit commitment treatment?** Choose one of:
+
+   A system with no AC line must use `copperplate`, because `dcp` needs AC branches. A system
+   that tz-oss-interop translates from OSeMOSYS is an example: each connection between two
+   locations is a `TwoTerminalGenericHVDCLine`. Each bus is then its own AC subnetwork, and the
+   HVDC lines join them.
+3. **Unserved energy?** Choose one of:
+   - `refused` (default): every load is met in every hour. If one location cannot meet its load in one hour, the whole solve is infeasible.
+   - `penalised`: the network model gets the PowerSimulations network balance slacks (`NetworkModel(<model>; use_slacks = true)`), so a shortfall goes unserved at a penalty. See [Unserved energy](#unserved-energy).
+4. **Unit commitment treatment?** Choose one of:
    - `exact` (default): each thermal generator's on/off state is a true binary decision, so the solve is a mixed-integer program. It applies the start-up cost and the minimum up and down times that the translation carries. It stops at a relative gap of 1%.
    - `linearised`: economic dispatch. It has no on/off variable, so it applies neither the start-up cost nor the time limits, and it solves much faster. PowerSimulations has no relaxed unit commitment formulation, so this answer means something different from the same answer on the PyPSA path.
-4. **HiGHS solver algorithm?** `simplex` (default), `ipm`, or `pdlp`.
-5. **Presolve?** `on`, `off`, or `choose` (default; lets HiGHS decide).
-6. **Run crossover after IPM?** `on`, `off`, or `choose` (default); only applies to `ipm`.
-7. **Time limit in seconds?** Leave blank for no limit.
-8. **Output directory?** Where results will be written. Defaults to `solved/` alongside the input JSON.
+5. **HiGHS solver algorithm?** `simplex` (default), `ipm`, or `pdlp`.
+6. **Presolve?** `on`, `off`, or `choose` (default; lets HiGHS decide).
+7. **Run crossover after IPM?** `on`, `off`, or `choose` (default); only applies to `ipm`.
+8. **Time limit in seconds?** Leave blank for no limit.
+9. **Output directory?** Where results will be written. Defaults to `solved/` alongside the input JSON.
 
 If Julia or the solver packages are not installed yet, a notice and a
 **Download and continue?** confirmation appear right after the model type prompt;
@@ -72,6 +80,36 @@ The command prints the solve status and objective value on completion:
 
 A non-`SUCCESSFULLY` status is printed in red and indicates the solver did not converge.
 
+#### Unserved energy
+
+A system can hold less capacity at one location than the peak load at that location. With
+`refused`, that one shortfall makes the whole dispatch infeasible, and the solve gives no
+results.
+
+With `penalised`, PowerSimulations adds two slack variables to the power balance:
+
+- `SystemBalanceSlackUp` serves the load that no generator can serve. This is the unserved energy.
+- `SystemBalanceSlackDown` takes the generation that no load can take.
+
+The location of a slack depends on the network model:
+
+- `dcp` has one slack for each bus.
+- `copperplate` and `ptdf` have one slack for each AC subnetwork. The reference bus of the subnetwork names it.
+
+PowerSimulations adds `1e6` to the objective for each per-unit of slack power in each time
+step. The constant is `BALANCE_SLACK_COST` in PowerSimulations.jl. One per-unit is the system
+base power, usually 100 MW. Thus, for hourly steps on a 100 MW base, the penalty is 10,000
+for each MWh of slack. The objective that `solve` prints includes this penalty.
+
+After the solve, `solve` writes a warning for each slack that takes energy. The warning gives
+the total in MWh and the three locations with the most:
+
+```
+solve: 1234.5 MWh of load goes unserved at a penalty, the most at bus_a (900 MWh), bus_b (300 MWh), bus_c (34.5 MWh)
+```
+
+The values of each slack in each time step are in `results_wide/variables/`.
+
 For a worked end-to-end example (translate, solve, compare) see the
 [user tutorial](user-tutorial.md).
 
@@ -83,10 +121,12 @@ For a worked end-to-end example (translate, solve, compare) see the
 4. **End date?** `YYYY-MM-DD`, or blank to end at the network's own last snapshot.
 5. **Unit commitment treatment?** `exact` or `linearised` (see below).
 6. **How much of the range does one solve cover?** `day`, `week`, `month` or `year`.
-7. **Days to solve past the end of each window?** A whole number, blank for 14.
+7. **Unserved energy?** `refused` (the default) or `penalised`. See
+   [Unserved energy on the PyPSA path](#unserved-energy-on-the-pypsa-path).
+8. **Days to solve past the end of each window?** A whole number, blank for 14.
 
 The date range is cut into windows of the length chosen at prompt 6. Each window is solved
-on its own, extended by the look-ahead from prompt 7 so storage does not empty out just
+on its own, extended by the look-ahead from prompt 8 so storage does not empty out just
 because the window ends; only the window's own snapshots are kept in the output, and the
 look-ahead's results are zeroed rather than dropped. The solved network's
 `meta["reported_snapshots"]` lists exactly the snapshots that are genuine output, as
@@ -117,11 +157,40 @@ and nothing in the solve reads them, so contributing units are free to run at fu
 and dispatch is looser than in the source model, which tightens it by carrying reserves.
 State this wherever a number from this pipeline is published.
 
-An hour where capacity cannot cover load makes that window's solve **infeasible** rather
-than producing a measured shortfall, for a network translated by `plexos-to-pypsa`. The
-pipeline adds no load-shedding resource, so loads keep a fixed `p_set`, and an hour short of
-capacity fails to solve instead of reporting the energy it could not serve. No pipeline adds
-a load-shedding resource. State this wherever a number from this pipeline is published.
+#### Unserved energy on the PyPSA path
+
+A PyPSA load has a fixed `p_set`. With `refused`, an hour where the capacity at a bus cannot
+cover the load makes the solve of that window infeasible.
+
+With `penalised`, the solve gives each bus two generators before it optimises:
+
+- One generator serves the load that nothing else can serve. Its output is the unserved energy.
+- One generator takes the generation that no load can take. Its output is negative.
+
+Both cost 10,000 for each MWh, which is the penalty of the Sienna balance slack for hourly
+steps on a 100 MW base. Thus a model solved by both paths pays the same penalty. The
+objective that `solve` prints includes the penalty.
+
+After the solve, `solve` takes the two generators out of the network again, so the solved
+network holds the components of the input network and nothing more. It writes the unserved
+energy at each bus to `meta["unserved_energy_mwh"]` of the solved network. It counts each
+snapshot once, for its length, as the Sienna path counts it. It writes a warning that gives
+the total and the three buses with the most:
+
+```
+solve: 60 MWh of load goes unserved at a penalty, the most at bus_1 (60 MWh)
+```
+
+These are the words of the Sienna path. The summary line gives the total as
+`unserved_energy=60 MWh`.
+
+#### Annual energy bounds and windows
+
+PyPSA applies the `e_sum_min` and the `e_sum_max` of a generator to the snapshots of each solve.
+A network whose generators state such a bound, solved in more than one window, applies the
+bound to each window. `solve` writes a warning that names three such generators. Choose one
+window that holds all the snapshots, for example `year`, for a network over representative
+periods.
 
 #### Unit commitment
 
