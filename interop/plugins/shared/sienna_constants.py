@@ -6,6 +6,8 @@ from enum import StrEnum
 
 import polars as pl
 
+from interop.plugins.shared.constants import UNIT_MW
+
 
 class SiennaTable:
     """Sienna table keys used by the reverse pipeline (State.source_topology)."""
@@ -63,7 +65,7 @@ class InfraStoreSeriesLabel:
     """What a stored power series states about its values."""
 
     UNIT_SYSTEM_NATURAL = "natural_units"
-    UNITS_POWER = "MW"
+    UNITS_POWER = UNIT_MW
     QUANTITY_ACTIVE_POWER = "ActivePower"
 
 

@@ -68,10 +68,15 @@ class EmitSiennaH5Sidecar(Sink):
             association_rows = _association_rows(state)
             capacity_by_owner = _capacity_by_owner(state, association_rows)
             with Store.create(str(path), catalog="memory") as store:
-                for source_key, rows in _rows_by_source_key(association_rows).items():
-                    _write_source_key(
-                        store, rows, _staged_series(state, source_key), sample, capacity_by_owner
-                    )
+                with store.transaction():
+                    for source_key, rows in _rows_by_source_key(association_rows).items():
+                        _write_source_key(
+                            store,
+                            rows,
+                            _staged_series(state, source_key),
+                            sample,
+                            capacity_by_owner,
+                        )
                 exported = json.loads(store.export_time_series_associations_openapi())
             with path.open("rb") as written:
                 shutil.copyfileobj(written, f)
