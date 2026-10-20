@@ -16,6 +16,7 @@ scenarios(
     "osemosys_to_sienna/generators.feature",
     "osemosys_to_sienna/storage.feature",
     "osemosys_to_sienna/transport.feature",
+    "osemosys_to_sienna/policies.feature",
 )
 
 _PIPELINE = "osemosys-csv-to-sienna"

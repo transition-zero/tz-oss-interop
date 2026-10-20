@@ -316,6 +316,15 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       Then the pipeline exit code is 0
       And the log contains "do not take in electricity at one bus and put it out at another at the operations mode, so each is left out. Technologies: R1/ATDESPARE, R1/ATSTEPUP"
 
+    Scenario: Each export of electricity that the system has no component for is named in the log and in decisions.md
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "take in electricity and put out nothing, so each is left out. Technologies: R1/ATEXPORT"
+      And the log does not contain "convert one electricity fuel into another"
+      And the log does not contain "supply a fuel that is not electricity"
+      And the log does not contain "have no kind"
+      And the file "decisions.md" contains "an export of electricity is a demand that the system does not hold; extensions.json holds it as a conversion record"
+
     Scenario: A conversion that states no capacity and that the model builds at no cost becomes a line that never binds
       No limit binds ATSTEPDOWN, so it can carry what the whole fleet can put out: 2 GW × 0.75
       for ATDELINK, 1 GW × 1 for ATDEODD and 1 GW × 1 for ATDESPARE, 3500 MW. Its smallest ratio
