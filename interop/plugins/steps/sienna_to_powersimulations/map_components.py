@@ -15,6 +15,7 @@ import uuid as _uuid
 from typing import Any, ClassVar
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
@@ -36,7 +37,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaGeneratorCol,
     SiennaLineCol,
     SiennaLinkCol,
-    SiennaOperationalState,
     SiennaRenewableGeneratorCol,
     SiennaStructField,
     SiennaTable,
@@ -708,7 +708,7 @@ def _map_bus_backed_component(
         if sienna_type == SiennaComponent.THERMAL_STANDARD:
             fuel = out.get(SiennaGeneratorCol.FUEL)
             status_state = out[SiennaGeneratorCol.STATUS]
-            out[SiennaGeneratorCol.STATUS] = status_state == SiennaOperationalState.ONLINE
+            out[SiennaGeneratorCol.STATUS] = status_state == OperationalStates.ONLINE.value
             recorder.append(
                 TranslationEvent(
                     kind=EventKind.VALUE_DERIVED,
