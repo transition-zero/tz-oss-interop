@@ -185,7 +185,7 @@ def _link_extension(
     )
 
 
-def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> dict[str, bool]:
+def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> dict[str, Any]:
     """The flag fields this link carries a dropped series for."""
     return {field: True for field, owners in time_varying_owners.items() if name in owners}
 

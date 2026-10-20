@@ -404,12 +404,25 @@ def given_snapshot_weightings(
     pypsa_network_builder.set_snapshot_weightings([float(v) for v in values.split()])
 
 
+@given(parsers.parse("the generator snapshot weightings are {values}"))
+def given_generator_snapshot_weightings(
+    pypsa_network_builder: PyPSANetworkBuilder,
+    values: str,
+) -> None:
+    pypsa_network_builder.set_generator_weightings([float(v) for v in values.split()])
+
+
 @given(parsers.parse("the network objective is {value:g}"))
 def given_network_objective(
     pypsa_network_builder: PyPSANetworkBuilder,
     value: float,
 ) -> None:
     pypsa_network_builder.set_objective(value)
+
+
+@given("the network states no objective")
+def given_no_network_objective(pypsa_network_builder: PyPSANetworkBuilder) -> None:
+    pypsa_network_builder.clear_objective()
 
 
 @given(parsers.parse("the network was written by PyPSA {version}"))

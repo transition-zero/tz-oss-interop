@@ -1,0 +1,71 @@
+"""The energy that the balance slacks of a dispatch take, and the warning that names it.
+
+The Sienna solve and the PyPSA solve each read their own slacks, and both warn in these words,
+so a user reads one message whichever path solved the model.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Iterable
+from typing import NamedTuple
+
+log = logging.getLogger(__name__)
+
+# A slack below this many MWh at a location is solver noise, not energy.
+SLACK_TOLERANCE_MWH = 1e-6
+
+# How many locations a warning names before it counts the rest.
+_NAMED_LOCATIONS = 3
+
+
+class LocationEnergy(NamedTuple):
+    """The energy one balance slack takes at one location over the whole solve."""
+
+    location: str
+    energy_mwh: float
+
+
+class SlackEnergy(NamedTuple):
+    """The energy one balance slack takes at each location, most first."""
+
+    locations: list[LocationEnergy]
+
+    @property
+    def total_mwh(self) -> float:
+        return sum(entry.energy_mwh for entry in self.locations)
+
+
+def build_slack_energy(totals: Iterable[tuple[str, float]]) -> SlackEnergy:
+    """The locations whose energy is above the tolerance, most first."""
+    locations = [LocationEnergy(str(location), float(energy)) for location, energy in totals]
+    kept = [entry for entry in locations if entry.energy_mwh > SLACK_TOLERANCE_MWH]
+    return SlackEnergy(sorted(kept, key=lambda entry: entry.energy_mwh, reverse=True))
+
+
+def warn_balance_slacks(unserved: SlackEnergy | None, surplus: SlackEnergy | None) -> None:
+    """Warn of the energy each balance slack takes, and skip a slack that has no reading."""
+    if unserved is not None:
+        warn_slack_energy(unserved, "of load goes unserved")
+    if surplus is not None:
+        warn_slack_energy(surplus, "of generation finds no load")
+
+
+def warn_slack_energy(slack: SlackEnergy, outcome: str) -> None:
+    """Write the total and the locations with the most, or say that the slack took nothing."""
+    if not slack.locations:
+        log.info("solve: no energy %s", outcome)
+        return
+    named = ", ".join(
+        f"{entry.location} ({entry.energy_mwh:.6g} MWh)"
+        for entry in slack.locations[:_NAMED_LOCATIONS]
+    )
+    rest = len(slack.locations) - _NAMED_LOCATIONS
+    counted = f" and {rest} more location(s)" if rest > 0 else ""
+    log.warning(
+        "solve: %.6g MWh %s at a penalty, the most at %s%s",
+        slack.total_mwh,
+        outcome,
+        named,
+        counted,
+    )

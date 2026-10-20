@@ -31,6 +31,13 @@ def location_name(loc: Location) -> str:
     return loc.name
 
 
+def build_sibling_location(loc: Location, name: str) -> Location:
+    """The location of the file `name` in the directory that holds `loc`."""
+    if isinstance(loc, str):
+        return f"{loc.rsplit('/', 1)[0]}/{name}"
+    return loc.with_name(name)
+
+
 class OutputDirectoryMarker:
     """Annotation marker for a pydantic ``Path`` field that names an output directory.
 

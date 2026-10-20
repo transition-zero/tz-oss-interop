@@ -48,19 +48,28 @@ class PyPSASolvedAttr:
 
     DISPATCH = "p"
     FLOW = "p0"
+    # The power a link withdraws at bus1, negative where it delivers there.
+    FAR_END_FLOW = "p1"
     MARGINAL_PRICE = "marginal_price"
     SNAPSHOT_WEIGHTING = "objective"
+    # The hours each snapshot counts for in a generator's energy sum.
+    GENERATOR_WEIGHTING = "generators"
 
 
 # NetCDF name for the per-snapshot objective weightings, which PyPSA does not expose as
 # a component (a ``*_i`` coordinate).
 PYPSA_SNAPSHOTS_OBJECTIVE_VAR = "snapshots_objective"
+PYPSA_SNAPSHOTS_GENERATORS_VAR = "snapshots_generators"
 
 # Prefix PyPSA's exporter gives every network-level attribute in ``ds.attrs``
 # (``ExporterNetCDF.save_attributes``): ``pypsa_version`` becomes
 # ``network_pypsa_version``, and a private attribute keeps its own underscore, so
 # ``_objective`` becomes ``network__objective``.
 PYPSA_NETWORK_ATTR_PREFIX = "network_"
+
+# The suffix of the link that carries the flow back of a two-way link that loses energy or
+# costs money, as PyPSA applies one efficiency and one cost to both directions of a link.
+REVERSE_LINK_SUFFIX = " reverse"
 
 # PyPSA states a load as a positive quantity and flips it with this sign, so every Load
 # carries the same value and Sienna's positive-consumption PowerLoad has nothing to state.
@@ -172,6 +181,7 @@ class PyPSALoadCol(PyPSAComponentCol):
     P_SET = "p_set"
     Q_SET = "q_set"
     TYPE = "type"
+    SIGN = "sign"
 
 
 class PyPSALineCol:
@@ -212,6 +222,16 @@ class PyPSALinkCol:
     BUS1 = "bus1"
     BUS2 = "bus2"
     BUS3 = "bus3"
+    EFFICIENCY2 = "efficiency2"
+    EFFICIENCY3 = "efficiency3"
+    COMMITTABLE = "committable"
+    START_UP_COST = "start_up_cost"
+    SHUT_DOWN_COST = "shut_down_cost"
+    MIN_UP_TIME = "min_up_time"
+    MIN_DOWN_TIME = "min_down_time"
+    UP_TIME_BEFORE = "up_time_before"
+    RAMP_LIMIT_UP = "ramp_limit_up"
+    RAMP_LIMIT_DOWN = "ramp_limit_down"
     P_NOM = "p_nom"
     P_NOM_OPT = "p_nom_opt"
     P_NOM_EXTENDABLE = "p_nom_extendable"
@@ -257,6 +277,8 @@ class PyPSAGeneratorCol(PyPSAComponentCol):
     LIFETIME = "lifetime"
     FOM_COST = "fom_cost"
     BUILD_YEAR = "build_year"
+    E_SUM_MIN = "e_sum_min"
+    E_SUM_MAX = "e_sum_max"
 
 
 class PyPSAStorageUnitCol(PyPSAComponentCol):
@@ -272,6 +294,7 @@ class PyPSAStorageUnitCol(PyPSAComponentCol):
     MARGINAL_COST = "marginal_cost"
     STATE_OF_CHARGE_INITIAL = "state_of_charge_initial"
     CYCLIC_STATE_OF_CHARGE = "cyclic_state_of_charge"
+    CYCLIC_STATE_OF_CHARGE_PER_PERIOD = "cyclic_state_of_charge_per_period"
     P_NOM_EXTENDABLE = "p_nom_extendable"
     P_NOM_OPT = "p_nom_opt"
     INFLOW = "inflow"
@@ -394,6 +417,11 @@ DEFAULT_BUS_V_NOM: float = 1.0
 # A bus whose source names no containing area or region carries no location label.
 UNSET_BUS_LOCATION: str = ""
 
+# The carriers of a bus of electricity.
+ELECTRICITY_BUS_CARRIERS: frozenset[str] = frozenset({PyPSACarrier.AC.value, PyPSACarrier.DC.value})
+# The carrier of a bus that states none, which PyPSA reads as AC.
+UNSET_BUS_CARRIER: str = ""
+
 # A component whose source has no availability input is translated as in service.
 DEFAULT_COMPONENT_ACTIVE: bool = True
 
@@ -424,6 +452,17 @@ class PyPSADestinationTable:
     LINES = "lines"
     LINKS = "links"
     TIME_SERIES_METADATA = "time_series_metadata"
+    # A key of ``State.destination_time_series``: one row for each snapshot.
+    SNAPSHOT_WEIGHTINGS = "snapshot_weightings"
+
+
+class PyPSASnapshotWeightingCol:
+    """Columns of the snapshot weightings table: PyPSA ``n.snapshot_weightings``, in hours."""
+
+    SNAPSHOT = "snapshot"
+    OBJECTIVE = "objective"
+    GENERATORS = "generators"
+    STORES = "stores"
 
 
 class ReverseTimeSeriesMetadataCol:
@@ -489,6 +528,9 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
+    # MWh over the snapshots, null where the source states no bound.
+    PyPSAGeneratorCol.E_SUM_MIN: pl.Float64,
+    PyPSAGeneratorCol.E_SUM_MAX: pl.Float64,
 }
 
 # Unit-commitment columns a non-committable generator leaves unset; the sink omits null
@@ -516,6 +558,7 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.MARGINAL_COST: pl.Float64,
     PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: pl.Float64,
     PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: pl.Boolean,
+    PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD: pl.Boolean,
     PyPSAStorageUnitCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSAStorageUnitCol.INFLOW: pl.Float64,
     # Expansion fields, null for a component whose capacity the source fixes. The sink
@@ -534,6 +577,7 @@ LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALoadCol.P_SET: pl.Float64,
     PyPSALoadCol.CARRIER: pl.Utf8,
     PyPSALoadCol.TYPE: pl.Utf8,
+    PyPSALoadCol.SIGN: pl.Float64,
 }
 
 LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -568,6 +612,34 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.CARRIER: pl.Utf8,
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSALinkCol.P_NOM_MIN: pl.Float64,
+    PyPSALinkCol.P_NOM_MAX: pl.Float64,
+    # A third and a fourth bus, null for a link of two buses; a negative efficiency draws.
+    PyPSALinkCol.BUS2: pl.Utf8,
+    PyPSALinkCol.EFFICIENCY2: pl.Float64,
+    PyPSALinkCol.BUS3: pl.Utf8,
+    PyPSALinkCol.EFFICIENCY3: pl.Float64,
+    # The commitment of a plant that draws its fuel from a bus, null for every other link.
+    PyPSALinkCol.COMMITTABLE: pl.Boolean,
+    PyPSALinkCol.START_UP_COST: pl.Float64,
+    PyPSALinkCol.SHUT_DOWN_COST: pl.Float64,
+    PyPSALinkCol.MIN_UP_TIME: pl.Float64,
+    PyPSALinkCol.MIN_DOWN_TIME: pl.Float64,
+    PyPSALinkCol.UP_TIME_BEFORE: pl.Float64,
+    PyPSALinkCol.RAMP_LIMIT_UP: pl.Float64,
+    PyPSALinkCol.RAMP_LIMIT_DOWN: pl.Float64,
+}
+
+# Each further bus of a link after bus0 and bus1, and the efficiency that goes with it.
+LINK_FURTHER_PORTS: tuple[tuple[str, str], ...] = (
+    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
+    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
+)
+
+SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    PyPSASnapshotWeightingCol.SNAPSHOT: pl.Datetime("us"),
+    PyPSASnapshotWeightingCol.OBJECTIVE: pl.Float64,
+    PyPSASnapshotWeightingCol.GENERATORS: pl.Float64,
+    PyPSASnapshotWeightingCol.STORES: pl.Float64,
 }
 
 REVERSE_TIME_SERIES_METADATA_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

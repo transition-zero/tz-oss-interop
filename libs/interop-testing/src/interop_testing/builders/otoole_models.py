@@ -69,6 +69,10 @@ class OtooleModelBuilder:
     ) -> None:
         self.parameters[name] = OtooleParameter(name, key, default, rows, has_file=has_file)
 
+    def drop_parameter(self, name: str) -> None:
+        """Leave the parameter out of the config and the CSV files."""
+        self.parameters.pop(name, None)
+
     def set_result(self, name: str, key: list[str]) -> None:
         self.results[name] = key
 

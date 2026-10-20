@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import h5py
+import pytest
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
@@ -358,6 +359,87 @@ def given_component_has_ext_carrier(
     sienna_system_builder.add_ext(sienna_type, name, {"carrier": carrier})
 
 
+@given(
+    parsers.parse(
+        'the {sienna_type} "{name}" has ext emission rate {rate:g} t/MWh of "{pollutant}"'
+    )
+)
+def given_component_has_ext_emission_rate(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    rate: float,
+    pollutant: str,
+) -> None:
+    sienna_system_builder.add_emission_rate(sienna_type, name, pollutant, rate)
+
+
+@given(
+    parsers.parse(
+        'the system has a representative period "{name}" from "{first_timestamp}" '
+        "of {hours:d} hours with weight {weight:g}"
+    )
+)
+def given_system_has_representative_period(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    first_timestamp: str,
+    hours: int,
+    weight: float,
+) -> None:
+    sienna_system_builder.add_representative_period(name, first_timestamp, hours, weight)
+
+
+@given(parsers.parse('the {sienna_type} "{name}" has ext "{field}" set to {value}'))
+def given_component_has_ext_field(
+    sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str, field: str, value: str
+) -> None:
+    """One field of a component's sidecar record, stated as JSON."""
+    sienna_system_builder.add_ext(sienna_type, name, {field: json.loads(value)})
+
+
+@given(
+    parsers.parse('the system has a {kind} extension record "{name}" with "{field}" set to {value}')
+)
+def given_system_has_extension_record(
+    sienna_system_builder: SiennaSystemBuilder, kind: str, name: str, field: str, value: str
+) -> None:
+    """One field of a sidecar record that no component owns, stated as JSON."""
+    sienna_system_builder.add_record(kind, name, {field: json.loads(value)})
+
+
+@given(
+    parsers.parse(
+        'the system has a load record "{name}" on bus "{bus}" with a p_set series {series}'
+    )
+)
+def given_system_has_load_record_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bus: str, series: str
+) -> None:
+    """A load that only the sidecar holds, whose MW in each hour sit in the companion parquet."""
+    sienna_system_builder.add_ext("PowerLoad", name, {"bus": bus})
+    sienna_system_builder.add_companion_series(
+        "PowerLoad",
+        name,
+        "p_set_series",
+        "loads.parquet",
+        [float(value) for value in series.split()],
+    )
+
+
+@given(parsers.parse('the HVDC line "{name}" has an ext p_max_pu series {series}'))
+def given_hvdc_line_has_ext_p_max_pu_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series: str
+) -> None:
+    sienna_system_builder.add_companion_series(
+        "TwoTerminalGenericHVDCLine",
+        name,
+        "p_max_pu_series",
+        "controllable_lines.parquet",
+        [float(value) for value in series.split()],
+    )
+
+
 @given(parsers.parse('the {sienna_type} "{name}" is committable in ext'))
 def given_component_committable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str
@@ -442,6 +524,22 @@ def assert_sienna_component_field(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == expected, (
         f"expected [{sienna_type}:{name}].{field_path!r} = {expected!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
+        ' having "{field_path}" close to {value:g}'
+    )
+)
+def assert_sienna_component_field_close(
+    path: str, sienna_type: str, name: str, field_path: str, value: float
+) -> None:
+    component = find_sienna_component(read_json(path), sienna_type, name)
+    actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
+    assert actual == pytest.approx(value), (
+        f"expected [{sienna_type}:{name}].{field_path!r} ≈ {value!r} in {path}, got {actual!r}"
     )
 
 
@@ -557,6 +655,25 @@ def assert_extension_record_field(path: str, kind: str, name: str, field: str, v
 
 
 @then(
+    parsers.parse(
+        'the file "{path}" parses as JSON {kind} extension record for "{name}"'
+        ' having "{field}" close to {value:g}'
+    )
+)
+def assert_extension_record_field_close(
+    path: str, kind: str, name: str, field: str, value: float
+) -> None:
+    """A number that a translation computes, equal to `value` within a relative 1e-6."""
+    matching = _find_extension_records(path, kind, name)
+    assert len(matching) == 1, (
+        f"expected 1 {kind} record for {name!r} in {path}, got {len(matching)}"
+    )
+    actual = matching[0].get(field)
+    assert isinstance(actual, int | float), f"expected a number in {field!r}, got {actual!r}"
+    assert math.isclose(actual, value, rel_tol=1e-6), f"expected {field}≈{value}, got {actual}"
+
+
+@then(
     parsers.parse('the file "{path}" parses as JSON with no {kind} extension record for "{name}"')
 )
 def assert_no_extension_record(path: str, kind: str, name: str) -> None:
@@ -605,6 +722,25 @@ def assert_ts_association_name(
 ) -> None:
     actual = _find_ts_association(path, owner_type, owner_id).get("name")
     assert actual == expected_name, f"expected series name {expected_name!r}, got {actual!r}"
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where component "{owner_type}" owner id {owner_id:d}'
+        ' has a TimeSeriesAssociation named "{expected_name}"'
+    )
+)
+def assert_ts_association_named(
+    path: str, owner_type: str, owner_id: int, expected_name: str
+) -> None:
+    """An owner can carry several series, so this looks at each of its associations."""
+    associations: list[dict[str, Any]] = read_json(path).get("time_series_associations", [])
+    names = [
+        a.get("name")
+        for a in associations
+        if a.get("owner_type") == owner_type and a.get("owner_id") == owner_id
+    ]
+    assert expected_name in names, f"expected a series named {expected_name!r}, got {names!r}"
 
 
 def _find_ts_association(path: str, owner_type: str, owner_id: int) -> dict[str, Any]:

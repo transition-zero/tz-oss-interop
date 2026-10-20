@@ -11,7 +11,10 @@ Nothing builds a PS.jl system as pipeline *input*, so there are no Given steps.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
+import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -239,37 +242,91 @@ def assert_arc_has_uuid_refs(path: str) -> None:
 def assert_h5_has_ts_association(
     h5_path: str, json_path: str, owner_type: str, component_name: str
 ) -> None:
-    import os
-    import tempfile
-
     system = read_power_simulations_system(json_path)
     component = find_power_simulations_component(system, owner_type, component_name)
     expected_uuid = component["internal"]["uuid"]["value"]
-
-    with h5py.File(h5_path, "r") as h5:
-        blob = bytes(h5["time_series_metadata"][:].tobytes())
-
-    fd, db_path = tempfile.mkstemp(suffix=".sqlite")
-    os.close(fd)
-    try:
-        with open(db_path, "wb") as fh:
-            fh.write(blob)
-        conn = sqlite3.connect(db_path)
-        try:
-            cur = conn.execute(
-                "SELECT owner_type, owner_uuid FROM time_series_associations "
-                "WHERE time_series_type = 'SingleTimeSeries'"
-            )
-            rows = cur.fetchall()
-        finally:
-            conn.close()
-    finally:
-        Path(db_path).unlink(missing_ok=True)
-
+    rows = read_time_series_associations(h5_path)
     assert len(rows) > 0, f"no SingleTimeSeries associations in {h5_path}"
-    matching = [(ot, uid) for ot, uid in rows if ot == owner_type and uid == expected_uuid]
+    matching = [row for row in rows if row[:2] == (owner_type, expected_uuid)]
     assert matching, (
         f"no SingleTimeSeries for owner_type={owner_type!r} uuid={expected_uuid!r} "
         f"({component_name!r}) in {h5_path}; "
         f"found associations: {rows}"
     )
+
+
+def read_time_series_associations(h5_path: str) -> list[tuple[str, str, str, str]]:
+    """Each SingleTimeSeries row of the sidecar: owner type, owner uuid, series name, uuid."""
+    with h5py.File(h5_path, "r") as h5:
+        blob = bytes(h5["time_series_metadata"][:].tobytes())
+    with tempfile.TemporaryDirectory() as scratch:
+        database = Path(scratch) / "metadata.sqlite"
+        database.write_bytes(blob)
+        connection = sqlite3.connect(database)
+        try:
+            return connection.execute(_ASSOCIATIONS_QUERY).fetchall()
+        finally:
+            connection.close()
+
+
+_ASSOCIATIONS_QUERY = (
+    "SELECT owner_type, owner_uuid, name, time_series_uuid FROM time_series_associations "
+    "WHERE time_series_type = 'SingleTimeSeries'"
+)
+
+
+def _convert_renewable_rating_to_megawatts(component: dict[str, Any]) -> float:
+    return float(component["rating"] * component["power_factor"] * component["base_power"])
+
+
+def _convert_limits_to_megawatts(component: dict[str, Any]) -> float:
+    return float(component["active_power_limits"]["max"] * component["base_power"])
+
+
+def _convert_load_to_megawatts(component: dict[str, Any]) -> float:
+    return float(component["max_active_power"] * component["base_power"])
+
+
+# PowerSystems get_max_active_power in MW for each type: the multiplier of a max_active_power
+# or hydro_budget series in PowerSimulations.
+_MEGAWATT_MULTIPLIERS: dict[str, Callable[[dict[str, Any]], float]] = {
+    "RenewableDispatch": _convert_renewable_rating_to_megawatts,
+    "RenewableNonDispatch": _convert_renewable_rating_to_megawatts,
+    "ThermalStandard": _convert_limits_to_megawatts,
+    "HydroDispatch": _convert_limits_to_megawatts,
+    "PowerLoad": _convert_load_to_megawatts,
+}
+
+
+@then(
+    parsers.parse(
+        'the PS.jl system "{json_path}" and its H5 sidecar "{h5_path}" give "{owner_type}" '
+        'component "{component_name}" a "{series}" of {values} MW'
+    )
+)
+def assert_series_in_megawatts(
+    json_path: str, h5_path: str, owner_type: str, component_name: str, series: str, values: str
+) -> None:
+    """The series times the multiplier that PowerSimulations applies, hour by hour."""
+    component = find_power_simulations_component(
+        read_power_simulations_system(json_path), owner_type, component_name
+    )
+    per_unit = read_component_series(h5_path, component, series)
+    actual = [value * _MEGAWATT_MULTIPLIERS[owner_type](component) for value in per_unit]
+    expected = [float(value) for value in values.split()]
+    assert len(actual) == len(expected), f"expected {expected} MW, got {actual} MW"
+    assert all(
+        math.isclose(a, e, rel_tol=1e-9, abs_tol=1e-9)
+        for a, e in zip(actual, expected, strict=True)
+    ), f"expected {expected} MW, got {actual} MW"
+
+
+def read_component_series(h5_path: str, component: dict[str, Any], series: str) -> list[float]:
+    """The stored values of the one series that a PS.jl component owns under `series`."""
+    owner = component["internal"]["uuid"]["value"]
+    uuids = [
+        row[3] for row in read_time_series_associations(h5_path) if row[1:3] == (owner, series)
+    ]
+    assert len(uuids) == 1, f"expected 1 {series!r} series for {component['name']!r}, got {uuids}"
+    with h5py.File(h5_path, "r") as h5:
+        return [float(value) for value in h5[f"time_series/{uuids[0]}/data"][:]]

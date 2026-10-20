@@ -134,11 +134,13 @@ def capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
     ).cast(CAPITAL_COST_DTYPE)
 
 
-def operation_cost_struct(fixed: pl.Expr, cost_type: pl.Expr) -> pl.Expr:
+def operation_cost_struct(
+    fixed: pl.Expr, cost_type: pl.Expr, variable: pl.Expr | None = None
+) -> pl.Expr:
     """A Sienna ``GenericOperationCost`` carrying the fixed O&M of new capacity.
 
     A candidate's variable cost belongs to the component the build becomes in the base
-    system, so the curve here is zero and only the fixed term carries a number. Only
+    system, so the curve is zero unless the caller states a variable cost in $/MWh. Only
     ``ThermalGenerationCost`` states a start-up and a shut-down cost, so the other two
     variants leave both null and the sink writes neither.
     """
@@ -152,8 +154,21 @@ def operation_cost_struct(fixed: pl.Expr, cost_type: pl.Expr) -> pl.Expr:
         fixed.alias(SiennaOperationCostField.FIXED),
         thermal_only.alias(SiennaOperationCostField.START_UP),
         thermal_only.alias(SiennaOperationCostField.SHUT_DOWN),
-        variable_cost_curve(pl.lit(0.0)).alias(SiennaOperationCostField.VARIABLE_OPERATION_COST),
+        variable_cost_curve(pl.lit(0.0) if variable is None else variable).alias(
+            SiennaOperationCostField.VARIABLE_OPERATION_COST
+        ),
     ).cast(GENERIC_OPERATION_COST_DTYPE)
+
+
+def express_cost_type(type_col: str) -> pl.Expr:
+    """The cost representation of the base system type that a build becomes."""
+    return (
+        pl.when(pl.col(type_col) == SiennaComponent.THERMAL_STANDARD)
+        .then(pl.lit(SiennaCostType.THERMAL))
+        .when(pl.col(type_col) == SiennaComponent.HYDRO_DISPATCH)
+        .then(pl.lit(SiennaCostType.HYDRO_GEN))
+        .otherwise(pl.lit(SiennaCostType.RENEWABLE))
+    )
 
 
 def _translations(source: InvestmentsSource) -> list[Translation]:
@@ -233,13 +248,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
         derivation="overnight_cost as the proportional term of a linear capital cost curve",
     )
 
-    _cost_type = (
-        pl.when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.THERMAL_STANDARD)
-        .then(pl.lit(SiennaCostType.THERMAL))
-        .when(pl.col(POWER_SYSTEMS_TYPE_COL) == SiennaComponent.HYDRO_DISPATCH)
-        .then(pl.lit(SiennaCostType.HYDRO_GEN))
-        .otherwise(pl.lit(SiennaCostType.RENEWABLE))
-    )
+    _cost_type = express_cost_type(POWER_SYSTEMS_TYPE_COL)
 
     supply_operation_costs = _direct(
         source_col=FOM_CHARGE_COL,
