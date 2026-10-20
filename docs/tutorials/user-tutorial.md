@@ -131,8 +131,8 @@ Answer the prompts:
 - **Pipeline?** `pypsa-to-sienna`
 - **source.path?** `inputs/pypsa_network.nc`
 - **sink[0].output_system_json_file_path?** `outputs/system.json`
-- **sink[0].output_h5_file_path?**  `outputs/system_time_series_storage.h5`
-- **sink[0].output_extensions_file_path?** `outputs/extensions.json`
+- **sink[0].output_h5_file_path?** (empty, so `outputs/system_time_series_storage.h5`)
+- **sink[0].output_extensions_file_path?** (empty, so `outputs/extensions.json`)
 - **sink[0].indent?** `2`
 - **User mappings file?** `inputs/user_mappings.yaml`
 
@@ -224,19 +224,22 @@ Next we must point the solve command at the PowerSimulations system from step 2,
 1. **Model type?** `sienna` (`pypsa` also exists, for solving a PyPSA network directly; see [`docs/tutorials/solve.md`](solve.md))
 2. **Path to PowerSimulations.jl system JSON?** `outputs/power_simulations_system.json`
 3. **Network model?** `copperplate` (options: `dcp`, `ptdf`, `copperplate`)
-4. **HiGHS solver algorithm?** `simplex` (options: `simplex`, `ipm`, `pdlp`)
-5. **Presolve?** `choose` (options: `on`, `off`, `choose`; `choose` lets HiGHS decide)
-6. **Run crossover after IPM?** `choose` (options: `on`, `off`, `choose`; only applies to `ipm`)
-7. **Time limit in seconds?** leave blank for no limit
-8. **Output directory?** `outputs/solved`
+4. **Unserved energy?** `refused` (options: `refused`, `penalised`; `penalised` lets a load go unserved at a penalty)
+5. **Unit commitment treatment?** `exact` (options: `exact`, `linearised`)
+6. **HiGHS solver algorithm?** `simplex` (options: `simplex`, `ipm`, `pdlp`)
+7. **Presolve?** `choose` (options: `on`, `off`, `choose`; `choose` lets HiGHS decide)
+8. **Run crossover after IPM?** `choose` (options: `on`, `off`, `choose`; only applies to `ipm`)
+9. **Time limit in seconds?** leave blank for no limit
+10. **Output directory?** `outputs/solved`
 
 If Julia and the solver packages are not installed yet, a notice and a
 **Download and continue?** confirmation appear right after the model type
 prompt; accept it to let interop set them up.
 
-Prompts 4 to 7 are HiGHS tuning knobs; the values above are safe defaults for
+Prompts 6 to 9 are HiGHS tuning knobs; the values above are safe defaults for
 this small problem, and `choose` hands the decision to HiGHS. Only the network
-model matters for whether the model builds and runs.
+model matters for whether the model builds and runs. The
+[solve tutorial](solve.md) explains the unserved energy and the unit commitment answers.
 
 Pick `copperplate` here because this example is a **single-bus** network: one
 bus, no lines or links, and (since PyPSA leaves the bus as `PQ`) no reference
@@ -391,6 +394,49 @@ item changes a path, for example `--override 'source.csv_dir=my/csv'`.
 
 The [OSeMOSYS mappings tutorial](osemosys-mappings.md) teaches you how to write the mappings
 file, with one lesson for each feature.
+
+### Translating an OSeMOSYS model into Sienna
+
+Four pipelines translate the canonical stage into Sienna:
+
+- `osemosys-csv-to-sienna` and `tz-osemosys-to-sienna` write a Sienna system: the fleet of one
+  model year.
+- `osemosys-csv-to-sienna-investments` and `tz-osemosys-to-sienna-investments` write the same
+  system and a Sienna Investments Portfolio over every model year in scope.
+
+The mappings file needs two more parts for a translation into Sienna:
+
+- `units:` in `osemosys:` gives the units of your values, for example
+  `{capacity: GW, energy: PJ, currency: million USD, emissions: Mt}`.
+- `carriers:` gives the Sienna type of each technology category. Refer to
+  [The carrier mappings file](../translation_mappings/translation-from-osemosys-to-sienna.md#the-carrier-mappings-file).
+
+Pick `translate`, then `osemosys`, `sienna` and `osemosys-csv-to-sienna`. These prompts are new:
+
+| Prompt | Answer |
+| --- | --- |
+| `step[0].locations` | The locations to keep, separated by commas, for example `DE, FR`. Leave it empty to keep every location. |
+| `step[0].years` | The years to keep, separated by commas, for example `2025, 2030`. Leave it empty to keep every year. |
+| `step[1].year` | The model year of the fleet, for example `2030`, or `earliest`. The prompt has no default. |
+
+In `headless_cli`, give each answer with `--override`:
+
+```bash
+INTEROP_LOG_LEVEL=WARNING interop headless_cli --pipeline osemosys-csv-to-sienna \
+  --override 'step[0].locations=DE, FR' --override 'step[1].year=2030' \
+  --user-mappings-path inputs/osemosys_mappings.yaml
+```
+
+The investments pipelines give `step[1].year` the value `earliest`, so the prompt shows
+`earliest` as its default. Keep it.
+
+To solve the system, run `sienna-to-power-simulations` and then `solve`, as for a PyPSA network.
+At the `Network model?` prompt, answer `copperplate`: a system from OSeMOSYS has no AC line, and
+`dcp` needs AC branches. The fleet of one year can be short of the peak at one location. Answer
+`penalised` at the `Unserved energy?` prompt to let the solve finish and report the shortfall.
+
+[Translation from OSeMOSYS to Sienna](../translation_mappings/translation-from-osemosys-to-sienna.md)
+gives what each part of your model becomes.
 
 ## Extending interop
 
