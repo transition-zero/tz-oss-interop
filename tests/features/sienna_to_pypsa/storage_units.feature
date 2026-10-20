@@ -48,6 +48,16 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.phs_1.input_active_power_limits.max` = 1.0 | `pypsa.StorageUnit.phs_1.p_min_pu` = -1.0 | negate(input_active_power_limits.max) |  | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.phs_1.prime_mover_type` = PS | `pypsa.StorageUnit.phs_1.carrier` = PHS | (sienna_type, prime_mover_type) -> carrier |  | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
 
+  Scenario: an EnergyReservoirStorage with an ext carrier keeps that carrier
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains an EnergyReservoirStorage "phs_1" on bus "node_a" with base_power 1000.0 storage_capacity 6.0 initial_level 0.5 rating 1.0 input_max 1.0 output_max 1.0 efficiency_in 0.9 efficiency_out 0.9 discharge_cost 3.0
+    And the EnergyReservoirStorage "phs_1" has ext "carrier" set to "pumped-storage"
+    And the system is saved as "inputs/phs_carrier.json"
+    When I run translate against "inputs/phs_carrier.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_1" has carrier "pumped-storage"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.phs_1.extensions.carrier` = pumped-storage | `pypsa.StorageUnit.phs_1.carrier` = pumped-storage | extensions.carrier (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
   Scenario: an EnergyReservoirStorage p_nom_extendable in ext round-trips to PyPSA
     Given a Sienna system
     And the system contains a bus "node_a"
