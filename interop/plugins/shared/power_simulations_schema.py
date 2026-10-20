@@ -2,9 +2,10 @@
 
 Column-name constants and the full suite of Pydantic output models live here.
 Each model mirrors the PS.jl JSON structure directly so that ``model_dump()``
-produces valid PS.jl output.  Field aliases rename Python field names (``metadata_``,
-``type_``, ``from_``, ``to_``) to their PS.jl JSON equivalents (``__metadata__``,
-``type``, ``from``, ``to``), and ``serialize_by_alias`` applies them on every dump.
+produces valid PS.jl output.  An alias generator renames Python field names
+(``metadata_``, ``type_``, ``from_``, ``to_``) to their PS.jl JSON equivalents
+(``__metadata__``, ``type``, ``from``, ``to``), and ``serialize_by_alias`` applies
+them on every dump.
 
 Component models expose a ``from_row(row)`` classmethod that injects the
 ``metadata_`` and ``internal`` envelope fields from the destination-table row.
@@ -26,8 +27,21 @@ from interop.plugins.shared.sienna_constants import ACBusType, SiennaComponent, 
 PS_MODULE = "PowerSystems"
 IS_MODULE = "InfrastructureSystems"
 DATA_FORMAT_VERSION = "5.0.0"
+METADATA_KEY = "__metadata__"
 
-_ALIAS_CONFIG = ConfigDict(validate_by_name=True, validate_by_alias=True, serialize_by_alias=True)
+
+def _build_json_name(field_name: str) -> str:
+    if field_name == "metadata_":
+        return METADATA_KEY
+    return field_name.removesuffix("_")
+
+
+_ALIAS_CONFIG = ConfigDict(
+    alias_generator=_build_json_name,
+    validate_by_name=True,
+    validate_by_alias=True,
+    serialize_by_alias=True,
+)
 
 
 def get_new_uuid() -> str:
@@ -102,7 +116,7 @@ class _PSMeta(BaseModel):
 
     model_config = _ALIAS_CONFIG
     module: str
-    type_: str = Field(validation_alias="type", serialization_alias="type")
+    type_: str
 
 
 class _PSParameterizedMeta(_PSMeta):
@@ -153,21 +167,13 @@ class _MetadataMixin:
 
 class _LinearFunctionDataMeta(_PSMeta):
     module: str = IS_MODULE
-    type_: str = Field(
-        default=PSOutputType.LINEAR_FUNCTION_DATA,
-        validation_alias="type",
-        serialization_alias="type",
-    )
+    type_: str = PSOutputType.LINEAR_FUNCTION_DATA
 
 
 class PSLinearFunctionData(_MetadataMixin, BaseModel):
     """PS.jl ``LinearFunctionData`` — bottom of the cost-curve hierarchy."""
 
-    metadata_: _LinearFunctionDataMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=_LinearFunctionDataMeta,
-    )
+    metadata_: _LinearFunctionDataMeta = Field(default_factory=_LinearFunctionDataMeta)
     constant_term: float
     proportional_term: float
 
@@ -179,19 +185,13 @@ def _zero_linear_func() -> PSLinearFunctionData:
 class _IOCurveMeta(_PSParameterizedMeta):
     parameters: list[str] = Field(default_factory=lambda: [str(PSOutputType.LINEAR_FUNCTION_DATA)])
     module: str = IS_MODULE
-    type_: str = Field(
-        default=PSOutputType.INPUT_OUTPUT_CURVE, validation_alias="type", serialization_alias="type"
-    )
+    type_: str = PSOutputType.INPUT_OUTPUT_CURVE
 
 
 class PSInputOutputCurve(_MetadataMixin, BaseModel):
     """PS.jl ``InputOutputCurve``."""
 
-    metadata_: _IOCurveMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=_IOCurveMeta,
-    )
+    metadata_: _IOCurveMeta = Field(default_factory=_IOCurveMeta)
     input_at_zero: float | None = None
     function_data: PSLinearFunctionData = Field(default_factory=_zero_linear_func)
 
@@ -203,19 +203,13 @@ def _zero_io_curve() -> PSInputOutputCurve:
 class _CostCurveMeta(_PSParameterizedMeta):
     parameters: list[str] = Field(default_factory=lambda: [str(PSOutputType.INPUT_OUTPUT_CURVE)])
     module: str = IS_MODULE
-    type_: str = Field(
-        default=PSOutputType.COST_CURVE, validation_alias="type", serialization_alias="type"
-    )
+    type_: str = PSOutputType.COST_CURVE
 
 
 class PSCostCurve(_MetadataMixin, BaseModel):
     """PS.jl ``CostCurve``."""
 
-    metadata_: _CostCurveMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=_CostCurveMeta,
-    )
+    metadata_: _CostCurveMeta = Field(default_factory=_CostCurveMeta)
     value_curve: PSInputOutputCurve = Field(default_factory=_zero_io_curve)
     power_units: SiennaUnitSystem
     vom_cost: PSInputOutputCurve = Field(default_factory=_zero_io_curve)
@@ -233,11 +227,9 @@ class PSThermalGenerationCost(_MetadataMixin, BaseModel):
     """PS.jl ``ThermalGenerationCost``."""
 
     metadata_: _PSMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
         default_factory=lambda: _PSMeta(
             module=PS_MODULE, type_=PSOutputType.THERMAL_GENERATION_COST
-        ),
+        )
     )
     fixed: float
     start_up: float
@@ -253,11 +245,9 @@ class PSRenewableGenerationCost(_MetadataMixin, BaseModel):
     """
 
     metadata_: _PSMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
         default_factory=lambda: _PSMeta(
             module=PS_MODULE, type_=PSOutputType.RENEWABLE_GENERATION_COST
-        ),
+        )
     )
     fixed: float
     variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
@@ -268,9 +258,7 @@ class PSHydroGenerationCost(_MetadataMixin, BaseModel):
     """PS.jl ``HydroGenerationCost``."""
 
     metadata_: _PSMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.HYDRO_GENERATION_COST),
+        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.HYDRO_GENERATION_COST)
     )
     fixed: float
     variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
@@ -280,9 +268,7 @@ class PSLoadCost(_MetadataMixin, BaseModel):
     """PS.jl ``LoadCost``, the price a solve pays for the load it serves."""
 
     metadata_: _PSMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.LOAD_COST),
+        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.LOAD_COST)
     )
     fixed: float
     variable: PSCostCurve = Field(default_factory=_zero_cost_curve)
@@ -292,9 +278,7 @@ class PSStorageCost(_MetadataMixin, BaseModel):
     """PS.jl ``StorageCost``."""
 
     metadata_: _PSMeta = Field(
-        validation_alias="__metadata__",
-        serialization_alias="__metadata__",
-        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.STORAGE_COST),
+        default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.STORAGE_COST)
     )
     fixed: float
     start_up: float
@@ -320,7 +304,7 @@ class PSComponentBase(_MetadataMixin, BaseModel):
     """
 
     ps_component_type: ClassVar[str]
-    metadata_: _PSMeta = Field(validation_alias="__metadata__", serialization_alias="__metadata__")
+    metadata_: _PSMeta
     internal: _PSInternal
 
     @classmethod
@@ -368,8 +352,8 @@ class PSArc(PSComponentBase):
     """PS.jl ``Arc`` component."""
 
     ps_component_type: ClassVar[str] = SiennaComponent.ARC
-    from_: _PSUuidRef = Field(validation_alias="from", serialization_alias="from")
-    to_: _PSUuidRef = Field(validation_alias="to", serialization_alias="to")
+    from_: _PSUuidRef
+    to_: _PSUuidRef
 
 
 class PSThermalStandard(PSComponentBase):
