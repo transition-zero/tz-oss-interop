@@ -40,6 +40,8 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
+    LINE_UNITS_NOTE,
+    LINK_UNITS_NOTE,
     SYSTEM_BASE_MVA,
     SiennaACBusCol,
     SiennaComponent,
@@ -61,10 +63,6 @@ NO_REACTIVE_LIMIT: float = 0.0
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
-_LINE_UNITS_NOTE = (
-    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
-)
-_LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
 _BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
 _SUSCEPTANCE_NOTE = "PLEXOS states no shunt susceptance or conductance; both default to 0.0"
@@ -272,7 +270,7 @@ def _derive_line(line: StagedLine, voltage: float) -> _LineMapping:
         b=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         g=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         rating=_rating(line),
-        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, _LINE_UNITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, LINE_UNITS_NOTE),
         base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         rating_b=Decision.default(
             PerColumn({SiennaLineCol.RATING_B: None, SiennaLineCol.RATING_C: None}), _RATING_B_NOTE
@@ -291,7 +289,7 @@ def _derive_link(line: StagedLine) -> _LinkMapping:
         active_power_flow=Decision.default(NO_FLOW, _FLOW_NOTE),
         ratings=_ratings(line),
         marginal_cost=_marginal_cost(line),
-        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _LINK_UNITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, LINK_UNITS_NOTE),
         base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         reactive_power_limits=Decision.default(
             {"min": NO_REACTIVE_LIMIT, "max": NO_REACTIVE_LIMIT}, _REACTIVE_LIMITS_NOTE
@@ -352,23 +350,23 @@ def _ratings(line: StagedLine) -> Decision:
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        no_ratings = {
-            SiennaLinkCol.RATING: 0.0,
-            SiennaLinkCol.RATING_FROM: 0.0,
-            SiennaLinkCol.RATING_TO: 0.0,
-        }
-        return Decision.default(PerColumn(no_ratings), note)
+        return Decision.default(_build_ratings(0.0, 0.0), note)
     rating_to = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
-    ratings = {
-        SiennaLinkCol.RATING: max(max_flow, rating_to),
-        SiennaLinkCol.RATING_FROM: max_flow,
-        SiennaLinkCol.RATING_TO: rating_to,
-    }
-    return Decision.derived(PerColumn(ratings), sources, _LIMITS_DERIVATION)
+    return Decision.derived(_build_ratings(max_flow, rating_to), sources, _LIMITS_DERIVATION)
+
+
+def _build_ratings(rating_from: float, rating_to: float) -> PerColumn:
+    return PerColumn(
+        {
+            SiennaLinkCol.RATING: max(rating_from, rating_to),
+            SiennaLinkCol.RATING_FROM: rating_from,
+            SiennaLinkCol.RATING_TO: rating_to,
+        }
+    )
 
 
 def _unrated_min_flow_note(min_flow: float) -> str:

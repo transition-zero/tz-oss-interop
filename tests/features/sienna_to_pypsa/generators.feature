@@ -264,12 +264,15 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
     And the log contains "Every TimeSeriesAssociation in one system has to cover the same snapshots"
     And the file "decisions.md" contains "the profile carries 2 values but the snapshot window holds 3, so the component keeps its static value instead"
 
-  Scenario: a ThermalStandard in COMPONENT_BASE stops the run, because the reader converts NATURAL_UNITS only
+  Scenario: a ThermalStandard in COMPONENT_BASE is left out, because the reader converts NATURAL_UNITS only
     Given a Sienna system
     And the system contains a bus "node_a"
     And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
     And the ThermalStandard "coal_1" states power_units COMPONENT_BASE
+    And the system contains a ThermalStandard "coal_2" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
     And the system is saved as "inputs/thermal_component_base.json"
     When I run translate against "inputs/thermal_component_base.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
-    Then the printed output contains "states power_units COMPONENT_BASE"
-    And the file "outputs/network.nc" does not exist
+    Then the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" has no generator "coal_1"
+    And the PyPSA network "outputs/network.nc" generator "coal_2" has bus "node_a"
+    And the log contains "1 generators state a power basis this reader does not convert, so each is left out"

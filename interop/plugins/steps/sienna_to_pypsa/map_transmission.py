@@ -31,13 +31,15 @@ from interop.plugins.shared.sienna_constants import (
     SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
     bus_id_to_v_nom,
+    express_power_units_kept,
     extendable_floor,
     reject_unsupported_parameter_units,
-    reject_unsupported_power_units,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line.
 _DEFAULT_LENGTH = 0.0
@@ -223,9 +225,16 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         extensions = self._extensions.read(ExtensionKind.LINE)
         reporter = LineReporter(self._recorder)
         rows: list[dict[str, Any]] = []
-        for row in source.collect().iter_rows(named=True):
+        supported, _ = filter_component(
+            source.collect(),
+            express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
+            build_power_units_skip_report(
+                "Line", "lines", SiennaLineCol.NAME, SiennaUnitSystem.COMPONENT_BASE
+            ),
+            self._recorder,
+        )
+        for row in supported.iter_rows(named=True):
             sienna_type = SiennaComponent(row[SiennaLineCol.SIENNA_TYPE])
-            reject_unsupported_power_units(row, SiennaUnitSystem.COMPONENT_BASE)
             reject_unsupported_parameter_units(row)
             name = row[SiennaLineCol.NAME]
             bus0_id = row[SiennaLineCol.BUS0]

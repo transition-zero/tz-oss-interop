@@ -20,9 +20,8 @@ from typing import Any
 
 import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
-from power_openapi_models.document import SystemDocument, write_document
-from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
+from interop.plugins.sinks._sienna_files import serialise_system_document
 from interop_testing.files import read_json
 
 TIME_SERIES_RESOLUTION_SECONDS = 3600
@@ -54,23 +53,8 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
     storage_file = sienna_h5_filename(path)
-    document = SystemDocument(
-        name=None,
-        description=None,
-        frequency=None,
-        components=components,
-        supplemental_attributes=[],
-        supplemental_attribute_associations=[],
-        plant_associations=[],
-        combined_cycle_associations=[],
-        service_associations=[],
-        time_series_associations=[
-            TimeSeriesAssociation.model_validate(row)
-            for row in _build_associations(
-                sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
-            )
-        ],
-        time_series_storage_file=storage_file,
+    rows = _build_associations(
+        sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
     )
 
     extensions_file = sienna_extensions_filename(path)
@@ -78,7 +62,7 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
         json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
     )
 
-    write_document(document, path, indent=2)
+    path.write_bytes(serialise_system_document(components, rows, storage_file, 2))
 
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
@@ -187,22 +171,23 @@ def _build_associations(
     megawatts: its values times the capacity of the component that owns it.
     """
     with Store.create(str(h5_path), catalog="memory", overwrite=True) as store:
-        for series in series_list:
-            store.add_time_series(
-                id_by_owner[(series["owner_type"], series["owner_name"])],
-                series["owner_type"],
-                OwnerCategory.Component,
-                SingleTimeSeries(
-                    datetime.fromisoformat(series["initial_time"]),
-                    f"PT{int(series['resolution_seconds'])}S",
-                    np.asarray(series["values"], dtype="float64")
-                    * _series_capacity(series, components),
-                    series["name"],
-                    units="MW",
-                    quantity_kind="ActivePower",
-                    unit_system="natural_units",
-                ),
-            )
+        with store.transaction():
+            for series in series_list:
+                store.add_time_series(
+                    id_by_owner[(series["owner_type"], series["owner_name"])],
+                    series["owner_type"],
+                    OwnerCategory.Component,
+                    SingleTimeSeries(
+                        datetime.fromisoformat(series["initial_time"]),
+                        f"PT{int(series['resolution_seconds'])}S",
+                        np.asarray(series["values"], dtype="float64")
+                        * _series_capacity(series, components),
+                        series["name"],
+                        units="MW",
+                        quantity_kind="ActivePower",
+                        unit_system="natural_units",
+                    ),
+                )
         rows: list[dict[str, Any]] = json.loads(store.export_time_series_associations_openapi())
     return sorted(rows, key=lambda row: int(row["association_id"]))
 

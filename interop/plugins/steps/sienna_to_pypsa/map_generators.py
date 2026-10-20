@@ -55,14 +55,16 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
     pypsa_carrier,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
+    express_power_units_kept,
     extendable_floor,
     per_unit_of,
     rated_per_unit,
-    reject_unsupported_power_units,
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit
 # multiplier that reconstructs p_max_pu is the component's get_max_active_power divided by
@@ -82,6 +84,13 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
         PyPSAGeneratorCol.MARGINAL_COST,
     ),
 )
+
+
+_POWER_UNIT_TYPES = [
+    SiennaComponent.THERMAL_STANDARD,
+    SiennaComponent.RENEWABLE_DISPATCH,
+    SiennaComponent.RENEWABLE_NON_DISPATCH,
+]
 
 
 class SiennaToPypsaMapGenerators(TranslationStep):
@@ -110,7 +119,18 @@ class SiennaToPypsaMapGenerators(TranslationStep):
         rows: list[dict[str, Any]] = []
         p_max_pu_scale_by_name: dict[str, float] = {}
 
-        for row in source.collect().iter_rows(named=True):
+        supported, _ = filter_component(
+            source.collect(),
+            express_power_units_kept(SiennaUnitSystem.NATURAL_UNITS, _POWER_UNIT_TYPES),
+            build_power_units_skip_report(
+                "Generator",
+                "generators",
+                SiennaGeneratorCol.NAME,
+                SiennaUnitSystem.NATURAL_UNITS,
+            ),
+            self._recorder,
+        )
+        for row in supported.iter_rows(named=True):
             match SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]):
                 case SiennaComponent.THERMAL_STANDARD:
                     thermal = _derive_thermal(row, bus_names, extensions, dt_minutes)
@@ -278,7 +298,6 @@ def _derive_thermal(
     extensions: ExtensionLookup[GeneratorExtension],
     dt_minutes: float,
 ) -> _ThermalMapping:
-    reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     active_power_max = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MAX])
@@ -511,7 +530,6 @@ def _derive_renewable(
     *,
     has_cost: bool,
 ) -> _RenewableMapping:
-    reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
     active_power = float(row[SiennaGeneratorCol.ACTIVE_POWER])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])

@@ -48,6 +48,7 @@ from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
+    LOAD_UNITS_NOTE,
     TIME_SERIES_ASSOCIATION_SCHEMA,
     UNIT_SYSTEM_DTYPE,
     LoadConformity,
@@ -99,7 +100,6 @@ _PARTICIPATION_REGIONS_MINIMUM = 2
 
 _ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no Load availability; every load is available"
-_POWER_UNITS_NOTE = "load power values are in MW, so the units are NATURAL_UNITS"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; reactive_power defaults to 0.0"
 _MAX_REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; max_reactive_power defaults to 0.0"
@@ -735,7 +735,7 @@ LOAD_POWER_UNITS = Translation(
     ],
     make_events=lambda old, new: defaulted(
         [_load_dest(new[LOAD_NAME], SiennaLoadCol.POWER_UNITS, new[SiennaLoadCol.POWER_UNITS])],
-        _POWER_UNITS_NOTE,
+        LOAD_UNITS_NOTE,
     ),
 )
 
