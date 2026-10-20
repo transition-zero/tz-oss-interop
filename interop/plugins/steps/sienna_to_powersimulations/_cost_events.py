@@ -33,21 +33,6 @@ from interop.ports.outbound.reporting import (
 )
 
 _VARIABLE_COST_PATH = f"operation_cost.{SiennaStructField.VARIABLE_OPERATION_COST}"
-_PS_VARIABLE_FIELD = "variable"
-
-
-def _as_ps_cost(cost: dict[str, Any]) -> dict[str, Any]:
-    """The cost dict with the SiennaSchemas variable cost under the PS.jl key.
-
-    A cost without ``variable_operation_cost`` raises ``KeyError``: SiennaSchemas requires it.
-    """
-    ps_cost = {
-        key: value
-        for key, value in cost.items()
-        if key != SiennaStructField.VARIABLE_OPERATION_COST
-    }
-    ps_cost[_PS_VARIABLE_FIELD] = cost[SiennaStructField.VARIABLE_OPERATION_COST]
-    return ps_cost
 
 
 class PSCostType(StrEnum):
@@ -86,10 +71,10 @@ def build_operation_cost(
 
     match cost_type:
         case PSCostType.THERMAL:
-            result = PSThermalGenerationCost.model_validate(_as_ps_cost(cost)).model_dump()
+            result = PSThermalGenerationCost.model_validate(cost).model_dump()
             _record_thermal_cost_events(cost, recorder, sienna_type, comp_name)
         case PSCostType.RENEWABLE:
-            result = PSRenewableGenerationCost.model_validate(_as_ps_cost(cost)).model_dump()
+            result = PSRenewableGenerationCost.model_validate(cost).model_dump()
             _record_single_variable_cost_events(
                 cost,
                 recorder,
@@ -100,7 +85,7 @@ def build_operation_cost(
                 derivation="Sienna RENEWABLE -> PS.jl RenewableGenerationCost __metadata__",
             )
         case PSCostType.HYDRO_GEN:
-            result = PSHydroGenerationCost.model_validate(_as_ps_cost(cost)).model_dump()
+            result = PSHydroGenerationCost.model_validate(cost).model_dump()
             _record_single_variable_cost_events(
                 cost,
                 recorder,
@@ -111,7 +96,7 @@ def build_operation_cost(
                 derivation="Sienna HYDRO_GEN -> PS.jl HydroGenerationCost __metadata__",
             )
         case PSCostType.LOAD:
-            result = PSLoadCost.model_validate(_as_ps_cost(cost)).model_dump()
+            result = PSLoadCost.model_validate(cost).model_dump()
             _record_single_variable_cost_events(
                 cost,
                 recorder,
