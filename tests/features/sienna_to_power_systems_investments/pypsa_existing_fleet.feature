@@ -26,6 +26,11 @@ Feature: the existing fleet of a PyPSA network reaches PowerSystemsInvestments
     When I translate "inputs/candidate.nc" into a Sienna portfolio
     And I run the investments solver translation writing "psi/portfolio.json"
 
+  Scenario: The minimum of a technology loses the rating of its existing devices
+    Then the series document "psi/portfolio_series.json" gives "SupplyTechnology" "REZ_Solar" the existing devices "REZ_Solar"
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "REZ_Solar" has field "capacity_limits" equal to {"min": 0.0, "max": 500.0}
+    And the file "decisions.md" contains "so min loses the rating of the existing devices, down to 0"
+
   Scenario: An existing renewable plant with no profile that no technology names runs at full availability
     Then the series document "psi/portfolio_series.json" gives "SupplyTechnology" "Ridge" the existing devices "Ridge"
     And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "Ridge" in the representative day 1 of the year "2020" starts at "2020-01-01T00:00:00" with weight 365 and holds 24 values that peak at 1
