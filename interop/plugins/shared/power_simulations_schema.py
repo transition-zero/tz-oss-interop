@@ -20,11 +20,24 @@ import uuid as _uuid
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_serializer,
+    model_validator,
+)
 
-from interop.plugins.shared.sienna_constants import ACBusType, SiennaComponent, SiennaUnitSystem
+from interop.plugins.shared.sienna_constants import (
+    ACBusType,
+    SiennaComponent,
+    SiennaStructField,
+    SiennaUnitSystem,
+)
 
 PS_MODULE = "PowerSystems"
+_VARIABLE_COST_ALIAS = AliasChoices("variable", SiennaStructField.VARIABLE_OPERATION_COST)
 IS_MODULE = "InfrastructureSystems"
 DATA_FORMAT_VERSION = "5.0.0"
 
@@ -235,7 +248,7 @@ class PSThermalGenerationCost(_MetadataMixin, BaseModel):
     fixed: float
     start_up: float
     shut_down: float
-    variable: PSCostCurve
+    variable: PSCostCurve = Field(validation_alias=_VARIABLE_COST_ALIAS)
 
 
 class PSRenewableGenerationCost(_MetadataMixin, BaseModel):
@@ -251,7 +264,7 @@ class PSRenewableGenerationCost(_MetadataMixin, BaseModel):
         )
     )
     fixed: float
-    variable: PSCostCurve
+    variable: PSCostCurve = Field(validation_alias=_VARIABLE_COST_ALIAS)
     curtailment_cost: PSCostCurve = Field(default_factory=_zero_cost_curve)
 
 
@@ -262,7 +275,7 @@ class PSHydroGenerationCost(_MetadataMixin, BaseModel):
         default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.HYDRO_GENERATION_COST)
     )
     fixed: float
-    variable: PSCostCurve
+    variable: PSCostCurve = Field(validation_alias=_VARIABLE_COST_ALIAS)
 
 
 class PSLoadCost(_MetadataMixin, BaseModel):
@@ -272,7 +285,7 @@ class PSLoadCost(_MetadataMixin, BaseModel):
         default_factory=lambda: _PSMeta(module=PS_MODULE, type_=PSOutputType.LOAD_COST)
     )
     fixed: float
-    variable: PSCostCurve
+    variable: PSCostCurve = Field(validation_alias=_VARIABLE_COST_ALIAS)
 
 
 class PSStorageCost(_MetadataMixin, BaseModel):
