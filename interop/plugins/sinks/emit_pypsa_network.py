@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.pypsa_constants import (
+    LINK_FURTHER_PORTS,
     PYPSA_OUTPUT_DECIMAL_PLACES,
     UNROUNDED_OUTPUT_COLUMNS,
     PyPSABusCol,
@@ -20,6 +21,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALineCol,
     PyPSALinkCol,
     PyPSALoadCol,
+    PyPSASnapshotWeightingCol,
     PyPSAStorageUnitCol,
     ReverseTimeSeriesMetadataCol,
 )
@@ -99,6 +101,7 @@ def build_network(
             (loads, [PyPSALoadCol.BUS]),
             (lines, [PyPSALineCol.BUS0, PyPSALineCol.BUS1]),
             (links, [PyPSALinkCol.BUS0, PyPSALinkCol.BUS1]),
+            (links, _list_named_ports(links)),
         ]
     )
     _add_buses(network, buses, referenced)
@@ -110,7 +113,23 @@ def build_network(
     cache = series_cache if series_cache is not None else {}
     if metadata is not None and metadata.height > 0:
         _attach_time_series(network, metadata, state, sample, cache)
+    _set_snapshot_weightings(network, state.destination_time_series)
     return network
+
+
+def _set_snapshot_weightings(network: pypsa.Network, tables: dict[str, pl.LazyFrame]) -> None:
+    """Write the hours each snapshot counts for, where a mapping derived them."""
+    weightings = tables.get(PyPSADestinationTable.SNAPSHOT_WEIGHTINGS)
+    if weightings is None:
+        return
+    table = weightings.collect().to_pandas().set_index(PyPSASnapshotWeightingCol.SNAPSHOT)
+    held = table.index.intersection(network.snapshots)
+    columns = [
+        PyPSASnapshotWeightingCol.OBJECTIVE,
+        PyPSASnapshotWeightingCol.GENERATORS,
+        PyPSASnapshotWeightingCol.STORES,
+    ]
+    network.snapshot_weightings.loc[held, columns] = table.loc[held, columns]
 
 
 def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
@@ -122,6 +141,13 @@ def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
     )
 
 
+def _list_named_ports(links: pl.DataFrame | None) -> list[str]:
+    """The further bus columns of the links, so a bus that only they name is still checked."""
+    if links is None:
+        return []
+    return [bus for bus, _ in _list_extra_ports(links)]
+
+
 def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -> set[str]:
     """Collect bus names referenced by component tables, one (table, bus columns) per entry."""
     names: set[str] = set()
@@ -129,7 +155,7 @@ def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -
         if frame is None:
             continue
         for column in columns:
-            names.update(frame[column].to_list())
+            names.update(frame[column].drop_nulls().to_list())
     return names
 
 
@@ -214,7 +240,7 @@ def _add_loads(network: pypsa.Network, loads: pl.DataFrame | None) -> None:
         loads,
         PyPSALoadCol.NAME,
         required=(PyPSALoadCol.BUS, PyPSALoadCol.P_SET),
-        optional=(PyPSALoadCol.CARRIER, PyPSALoadCol.TYPE),
+        optional=(PyPSALoadCol.CARRIER, PyPSALoadCol.TYPE, PyPSALoadCol.SIGN),
     )
 
 
@@ -252,10 +278,11 @@ def _add_lines(network: pypsa.Network, lines: pl.DataFrame | None) -> None:
 def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
     if links is None:
         return
+    ports = _list_extra_ports(links)
     _add_in_bulk(
         network,
         PyPSAComponent.LINK,
-        links,
+        _fill_extra_ports(links, ports),
         PyPSALinkCol.NAME,
         required=(
             PyPSALinkCol.BUS0,
@@ -264,6 +291,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_MIN_PU,
             PyPSALinkCol.EFFICIENCY,
             PyPSALinkCol.ACTIVE,
+            *[column for port in ports for column in port],
         ),
         # Null round-trip fields are absent from the Sienna source; let PyPSA default them.
         optional=(
@@ -272,7 +300,36 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.P_MAX_PU,
             PyPSALinkCol.MARGINAL_COST,
             PyPSALinkCol.P_NOM_MIN,
+            PyPSALinkCol.P_NOM_MAX,
+            PyPSALinkCol.COMMITTABLE,
+            PyPSALinkCol.START_UP_COST,
+            PyPSALinkCol.SHUT_DOWN_COST,
+            PyPSALinkCol.MIN_UP_TIME,
+            PyPSALinkCol.MIN_DOWN_TIME,
+            PyPSALinkCol.UP_TIME_BEFORE,
+            PyPSALinkCol.RAMP_LIMIT_UP,
+            PyPSALinkCol.RAMP_LIMIT_DOWN,
         ),
+    )
+
+
+# PyPSA's own value for a link that names no further bus: no bus, and an efficiency of 1.
+_NO_BUS = ""
+_NO_LOSS = 1.0
+
+
+def _list_extra_ports(links: pl.DataFrame) -> list[tuple[str, str]]:
+    return [
+        port
+        for port in LINK_FURTHER_PORTS
+        if port[0] in links.columns and links[port[0]].is_not_null().any()
+    ]
+
+
+def _fill_extra_ports(links: pl.DataFrame, ports: list[tuple[str, str]]) -> pl.DataFrame:
+    return links.with_columns(
+        *[pl.col(bus).fill_null(_NO_BUS) for bus, _ in ports],
+        *[pl.col(efficiency).fill_null(_NO_LOSS) for _, efficiency in ports],
     )
 
 
@@ -312,6 +369,8 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.DISCOUNT_RATE,
             PyPSAGeneratorCol.LIFETIME,
             PyPSAGeneratorCol.BUILD_YEAR,
+            PyPSAGeneratorCol.E_SUM_MIN,
+            PyPSAGeneratorCol.E_SUM_MAX,
         ),
     )
 
@@ -348,6 +407,7 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.DISCOUNT_RATE,
             PyPSAStorageUnitCol.LIFETIME,
             PyPSAStorageUnitCol.BUILD_YEAR,
+            PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD,
         ),
     )
 
@@ -363,6 +423,7 @@ def _attach_time_series(
         PyPSADestinationTable.GENERATORS: network.generators_t,
         PyPSADestinationTable.STORAGE_UNITS: network.storage_units_t,
         PyPSADestinationTable.LOADS: network.loads_t,
+        PyPSADestinationTable.LINKS: network.links_t,
     }
     for (table, attribute), by_component in _columns_by_attribute(
         metadata, state, sample, series_cache

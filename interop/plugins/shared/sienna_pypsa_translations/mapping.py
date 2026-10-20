@@ -17,6 +17,13 @@ def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
     return rated if is_extendable else None
 
 
+def choose_p_nom_min(
+    stated: float | None, rated: float, is_extendable: bool | None
+) -> float | None:
+    """The floor that the sidecar states, else the rating of an extendable component."""
+    return stated if stated is not None else extendable_floor(rated, is_extendable)
+
+
 def per_unit_of(value: float, base_power: float) -> float:
     """Express ``value`` (MW) as a per-unit fraction of ``base_power``.
 

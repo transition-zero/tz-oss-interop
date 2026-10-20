@@ -9,12 +9,19 @@ thin ``_source`` (which fills in the Sienna component, fixed or passed per call)
 
 from __future__ import annotations
 
+from typing import Any, NamedTuple
+
+from interop.core.extensions import ExtensionKind
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
+    UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
     UNIT_KM,
     UNIT_KV,
     UNIT_MVA,
     UNIT_MW,
+    UNIT_MWH,
     UNIT_OHM,
     UNIT_SIEMENS,
     Framework,
@@ -47,30 +54,36 @@ from interop.plugins.shared.sienna_constants import (
 from interop.ports.outbound.reporting import SourceField
 
 _ACTIVE_POWER_LIMITS_MIN = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MIN}"
+_ACTIVE_POWER_LIMITS_MAX = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
+_THERMAL_P_MAX_PU_DERIVATION = "min(active_power_limits.max / base_power, rating)"
 _ACTIVE_POWER_LIMITS_FROM_MAX = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MAX}"
 _ACTIVE_POWER_LIMITS_FROM_MIN = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MIN}"
 # How the report names a value that reached this hop in the extensions sidecar rather than
 # in the system JSON, which has no column for any of them.
-_EXTENSIONS = "extensions"
-_EXT_P_MAX_PU_ATTR = f"{_EXTENSIONS}.p_max_pu"
+_EXT_P_MAX_PU_ATTR = f"{EXTENSIONS_PREFIX}p_max_pu"
 _P_MAX_PU_FROM_EXT = f"{_EXT_P_MAX_PU_ATTR} (PyPSA round-trip)"
-_EXT_P_MIN_PU_ATTR = f"{_EXTENSIONS}.p_min_pu"
+_EXT_P_MIN_PU_ATTR = f"{EXTENSIONS_PREFIX}p_min_pu"
 _P_MIN_PU_FROM_EXT = f"{_EXT_P_MIN_PU_ATTR} (PyPSA round-trip)"
-_EXT_LENGTH_ATTR = f"{_EXTENSIONS}.length"
+_EXT_LENGTH_ATTR = f"{EXTENSIONS_PREFIX}length"
 _LENGTH_FROM_EXT = f"{_EXT_LENGTH_ATTR} (PyPSA round-trip)"
-_EXT_NUM_PARALLEL_ATTR = f"{_EXTENSIONS}.num_parallel"
+_EXT_NUM_PARALLEL_ATTR = f"{EXTENSIONS_PREFIX}num_parallel"
 _NUM_PARALLEL_FROM_EXT = f"{_EXT_NUM_PARALLEL_ATTR} (PyPSA round-trip)"
 _INPUT_LIMITS_MAX = f"{SiennaStorageCol.INPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 _CARRIER_FROM_PRIME_MOVER = "(sienna_type, prime_mover_type) -> carrier"
-_EXT_CARRIER_ATTR = f"{_EXTENSIONS}.carrier"
+_EXT_CARRIER_ATTR = f"{EXTENSIONS_PREFIX}carrier"
 _CARRIER_FROM_EXT = f"{_EXT_CARRIER_ATTR} (PyPSA round-trip)"
-_EXT_LOAD_TYPE_ATTR = f"{_EXTENSIONS}.type"
+_EXT_LOAD_TYPE_ATTR = f"{EXTENSIONS_PREFIX}type"
 _LOAD_TYPE_FROM_EXT = f"{_EXT_LOAD_TYPE_ATTR} (PyPSA round-trip)"
-_EXT_COMMITTABLE_ATTR = f"{_EXTENSIONS}.committable"
+_EXT_COMMITTABLE_ATTR = f"{EXTENSIONS_PREFIX}committable"
 _COMMITTABLE_FROM_EXT = f"{_EXT_COMMITTABLE_ATTR} (PyPSA round-trip)"
-_EXT_S_NOM_EXTENDABLE_ATTR = f"{_EXTENSIONS}.s_nom_extendable"
+_EXT_S_NOM_EXTENDABLE_ATTR = f"{EXTENSIONS_PREFIX}s_nom_extendable"
 _S_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_S_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
-_EXT_P_NOM_EXTENDABLE_ATTR = f"{_EXTENSIONS}.p_nom_extendable"
+_EXT_OVERNIGHT_COST_ATTR = f"{EXTENSIONS_PREFIX}overnight_cost_per_mw"
+_UNPRICED_OVERNIGHT_COST_NOTE = (
+    "the record states no discount_rate, and PyPSA cannot annualise an overnight_cost without "
+    "one, so the network leaves the cost out; extensions.json keeps it"
+)
+_EXT_P_NOM_EXTENDABLE_ATTR = f"{EXTENSIONS_PREFIX}p_nom_extendable"
 _P_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_P_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
 _AVAILABLE_TO_ACTIVE = "available -> active"
 _ANGLE_LIMITS_MIN = f"{SiennaLineCol.ANGLE_LIMITS}.{SiennaStructField.MIN}"
@@ -101,9 +114,9 @@ _OPERATION_COST_SHUT_DOWN = f"{SiennaGeneratorCol.OPERATION_COST}.{SiennaStructF
 _START_UP_COST_DERIVATION = "operation_cost.start_up -> start_up_cost"
 _SHUT_DOWN_COST_DERIVATION = "operation_cost.shut_down -> shut_down_cost"
 _P_NOM_EXTENDABLE_DEFAULT = "no ext.p_nom_extendable; p_nom_extendable defaults to False"
-_EXT_MARGINAL_COST_ATTR = f"{_EXTENSIONS}.marginal_cost"
+_EXT_MARGINAL_COST_ATTR = f"{EXTENSIONS_PREFIX}marginal_cost"
 _MARGINAL_COST_FROM_EXT = f"{_EXT_MARGINAL_COST_ATTR} (PyPSA round-trip)"
-_EXT_INFLOW_ATTR = f"{_EXTENSIONS}.inflow_mw"
+_EXT_INFLOW_ATTR = f"{EXTENSIONS_PREFIX}inflow_mw"
 _INFLOW_FROM_EXT = f"{_EXT_INFLOW_ATTR} (PyPSA round-trip)"
 _INFLOW_DEFAULT = "the unit states no inflow, so it refills at nothing"
 # A Line states its capacity as s_nom, so each floor derivation names its own component's
@@ -138,6 +151,36 @@ class _Reporter(DestinationReporter):
 
     source_framework = Framework.SIENNA
     destination_framework = Framework.PYPSA
+
+    def record_carried(
+        self,
+        sienna_type: str,
+        name: str,
+        field_name: str,
+        column: str,
+        value: object,
+        unit: str | None = None,
+    ) -> None:
+        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
+        attribute = f"{EXTENSIONS_PREFIX}{field_name}"
+        self._derived(
+            sources=[self._source_field(sienna_type, name, attribute, value, unit)],
+            destinations=[self._destination(name, column, value, unit)],
+            derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
+    def record_overnight_cost_unpriced(
+        self, sienna_type: str, name: str, overnight_cost: float
+    ) -> None:
+        """An overnight cost the network leaves out, as the record states no discount rate."""
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    sienna_type, name, _EXT_OVERNIGHT_COST_ATTR, overnight_cost, UNIT_DOLLARS_PER_MW
+                )
+            ],
+            note=_UNPRICED_OVERNIGHT_COST_NOTE,
+        )
 
 
 class ProfileReporter(_Reporter):
@@ -190,6 +233,20 @@ class BusReporter(_Reporter):
             derivation=_AREA_TO_LOCATION,
         )
 
+    def record_fuel_bus(self, name: str, carrier: str | None, location: str | None) -> None:
+        """A bus of a fuel that is not electricity, whose record states it whole."""
+        self.record_carried(ExtensionKind.BUS, name, "carrier", PyPSABusCol.CARRIER, carrier)
+        if location is not None:
+            self.record_carried(ExtensionKind.BUS, name, "location", PyPSABusCol.LOCATION, location)
+
+
+class ThermalLimit(NamedTuple):
+    """The output limit of a thermal plant, its rating, and the p_max_pu they give."""
+
+    active_power_max: float
+    rating: float
+    p_max_pu: float
+
 
 class GeneratorReporter(_Reporter):
     """Records translation events for Sienna generator -> PyPSA Generator decisions."""
@@ -229,6 +286,19 @@ class GeneratorReporter(_Reporter):
             sources=[self._source(sienna_type, name, SiennaGeneratorCol.RATING, rating)],
             destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, rating)],
             derivation="direct",
+        )
+
+    def record_p_max_pu_from_limits(self, name: str, limit: ThermalLimit) -> None:
+        sienna_type = SiennaComponent.THERMAL_STANDARD
+        self._derived(
+            sources=[
+                self._source(
+                    sienna_type, name, _ACTIVE_POWER_LIMITS_MAX, limit.active_power_max, UNIT_MW
+                ),
+                self._source(sienna_type, name, SiennaGeneratorCol.RATING, limit.rating),
+            ],
+            destinations=[self._destination(name, PyPSAGeneratorCol.P_MAX_PU, limit.p_max_pu)],
+            derivation=_THERMAL_P_MAX_PU_DERIVATION,
         )
 
     def record_p_min_pu_from_limits(
@@ -455,21 +525,27 @@ class GeneratorReporter(_Reporter):
             note=_P_NOM_EXTENDABLE_DEFAULT,
         )
 
-    def record_carried(
+    def record_energy_bound(
         self,
-        sienna_type: SiennaComponent,
+        sienna_type: str,
         name: str,
-        field_name: str,
+        attribute: str,
         column: str,
-        value: object,
-        unit: str | None = None,
+        value: float,
+        derivation: str,
     ) -> None:
-        """A value Sienna states nowhere, read back from the sidecar into its PyPSA column."""
-        attribute = f"{_EXTENSIONS}.{field_name}"
+        """The bound of one year of an annual energy bound that the sidecar states."""
         self._derived(
-            sources=[self._source(sienna_type, name, attribute, value, unit)],
-            destinations=[self._destination(name, column, value, unit)],
-            derivation=f"{attribute} (PyPSA round-trip)",
+            sources=[self._source_field(sienna_type, name, attribute, value, UNIT_MWH)],
+            destinations=[self._destination(name, column, value, UNIT_MWH)],
+            derivation=derivation,
+        )
+
+    def record_energy_bound_unmapped(
+        self, sienna_type: str, name: str, attribute: str, note: str
+    ) -> None:
+        self._not_mapped(
+            sources=[self._source_field(sienna_type, name, attribute, None)], note=note
         )
 
 
@@ -519,6 +595,17 @@ class StorageUnitReporter(_Reporter):
             ],
             destinations=[self._destination(name, PyPSAStorageUnitCol.CARRIER, carrier)],
             derivation=_CARRIER_FROM_PRIME_MOVER,
+        )
+
+    def record_carrier_from_ext(self, name: str, carrier: str) -> None:
+        self._derived(
+            sources=[
+                self._source(
+                    SiennaComponent.ENERGY_RESERVOIR_STORAGE, name, _EXT_CARRIER_ATTR, carrier
+                )
+            ],
+            destinations=[self._destination(name, PyPSAStorageUnitCol.CARRIER, carrier)],
+            derivation=_CARRIER_FROM_EXT,
         )
 
     def record_p_max_pu(
@@ -924,6 +1011,12 @@ class LinkReporter(_Reporter):
             SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE, name, attribute, value, unit
         )
 
+    def record_bound_unmapped(self, name: str, field_name: str) -> None:
+        self._not_mapped(
+            sources=[self._source(name, f"{EXTENSIONS_PREFIX}{field_name}", None)],
+            note=_LINK_BOUND_NOTE,
+        )
+
     def record_endpoints(self, name: str, arc_id: int, bus0_name: str, bus1_name: str) -> None:
         self._derived(
             sources=[self._source(name, SiennaLinkCol.ARC, arc_id)],
@@ -1008,6 +1101,39 @@ class LinkReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
+    def record_split(
+        self, forward: dict[str, Any], reverse: dict[str, Any], p_min_pu: float
+    ) -> None:
+        """The flow back of a two-way link, as a one-way link from bus1 to bus0."""
+        name = forward[PyPSALinkCol.NAME]
+        reverse_name = reverse[PyPSALinkCol.NAME]
+        columns = (
+            PyPSALinkCol.BUS0,
+            PyPSALinkCol.BUS1,
+            PyPSALinkCol.P_NOM,
+            PyPSALinkCol.P_MAX_PU,
+            PyPSALinkCol.EFFICIENCY,
+            PyPSALinkCol.MARGINAL_COST,
+        )
+        self._derived(
+            sources=[
+                self._source(
+                    name,
+                    _ACTIVE_POWER_LIMITS_FROM_MIN,
+                    p_min_pu * forward[PyPSALinkCol.P_NOM],
+                    UNIT_MW,
+                )
+            ],
+            destinations=[
+                self._destination(name, PyPSALinkCol.P_MIN_PU, 0.0),
+                *(self._destination(reverse_name, column, reverse[column]) for column in columns),
+            ],
+            derivation=_SPLIT_DERIVATION,
+        )
+
+    def record_unsplit(self, name: str) -> None:
+        self._not_mapped(sources=[self._source(name, SiennaLinkCol.LOSS, None)], note=_UNSPLIT_NOTE)
+
     def record_marginal_cost_from_ext(self, name: str, marginal_cost: float) -> None:
         """Sienna prices no flow over a branch, so the price comes back from the sidecar."""
         self._derived(
@@ -1028,3 +1154,204 @@ class LinkReporter(_Reporter):
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
             derivation=_P_NOM_FLOOR_DERIVATION,
         )
+
+
+_SPLIT_DERIVATION = (
+    "a link that flows both ways and loses energy or costs money becomes two one-way links, "
+    "as PyPSA applies one efficiency and one cost to both directions: the forward link keeps "
+    "p_min_pu 0, and the reverse link runs from bus1 to bus0 with p_max_pu = -p_min_pu"
+)
+_UNSPLIT_NOTE = (
+    "the link can extend, so it stays one two-way link, as two links would not share one "
+    "p_nom; its flow back gains what its forward flow loses"
+)
+_RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
+
+
+class ExtensionRelayReporter(_Reporter):
+    """Records each field of a sidecar record that the hop carries on to the PyPSA sidecar."""
+
+    def __init__(self, recorder: ScopedRecorder, kind: str) -> None:
+        super().__init__(recorder)
+        self.destination_component = kind
+
+    def record_relayed(self, name: str, field_name: str, value: object) -> None:
+        attribute = f"{EXTENSIONS_PREFIX}{field_name}"
+        self._derived(
+            sources=[self._source_field(self.destination_component, name, attribute, value)],
+            destinations=[self._destination(name, attribute, value)],
+            derivation=_RELAYED_DERIVATION,
+        )
+
+
+_TAKEN_NAME_NOTE = (
+    "a link of the network has the name of the conversion record, so the record becomes no "
+    "link and travels on to extensions.json"
+)
+_DEFAULT_LINK_NOTE = "the conversion record states no {column}, so PyPSA's own default applies"
+
+
+class ConversionReporter(_Reporter):
+    """Records a conversion record of the sidecar that becomes a PyPSA Link."""
+
+    destination_component = PyPSAComponent.LINK
+
+    def record_from_record(
+        self, name: str, field_name: str, column: str, value: object, unit: str | None
+    ) -> None:
+        self.record_carried(ExtensionKind.CONVERSION, name, field_name, column, value, unit)
+
+    def record_name_taken(self, name: str) -> None:
+        self._not_mapped(
+            sources=[self._source_field(ExtensionKind.CONVERSION, name, None, None)],
+            note=_TAKEN_NAME_NOTE,
+        )
+
+    def record_default(self, name: str, column: str, value: float) -> None:
+        self._default_applied(
+            destinations=[self._destination(name, column, value)],
+            note=_DEFAULT_LINK_NOTE.format(column=column),
+        )
+
+    def record_p_nom_min(self, name: str, p_nom: float) -> None:
+        self._derived(
+            sources=[
+                self._source_field(
+                    ExtensionKind.CONVERSION, name, f"{EXTENSIONS_PREFIX}p_nom", p_nom, UNIT_MW
+                )
+            ],
+            destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
+            derivation=_P_NOM_FLOOR_DERIVATION,
+        )
+
+    def record_bound_unmapped(self, name: str, field_name: str) -> None:
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    ExtensionKind.CONVERSION, name, f"{EXTENSIONS_PREFIX}{field_name}", None
+                )
+            ],
+            note=_LINK_BOUND_NOTE,
+        )
+
+
+_LINK_BOUND_NOTE = (
+    "a PyPSA Link has no e_sum_min or e_sum_max, so the network does not bound the energy of the "
+    "link over the year; extensions.json keeps the bound"
+)
+_PLANT_LINK_NOTE = (
+    "the plant burns a fuel whose bus the network holds, so it draws the fuel from that bus as "
+    "a Link and pays the price that the network gives the fuel"
+)
+_PLANT_BUS0_DERIVATION = "the bus of the largest fuel of extensions.fuel_buses"
+_PLANT_EFFICIENCY_DERIVATION = "1 / the MWh of that fuel for each MWh of electricity"
+_PLANT_P_NOM_DERIVATION = "base_power × the MWh of that fuel for each MWh of electricity"
+_PLANT_MARGINAL_COST_DERIVATION = (
+    "extensions.own_marginal_cost, for each MWh of electricity, / the MWh of that fuel for each "
+    "MWh of electricity, as a Link prices the power that goes in at bus0"
+)
+_PLANT_MOVED_DERIVATION = (
+    "the Generator of the plant moves to the Link, which keeps the column for each MWh that goes "
+    "in at bus0"
+)
+_PLANT_FURTHER_DERIVATION = (
+    "a further fuel of extensions.fuel_buses -> the bus; - its MWh for each MWh of electricity / "
+    "the MWh of the fuel at bus0 -> the efficiency, negative as the Link draws it"
+)
+_PLANT_DROPPED_NOTE = (
+    "the Generator of the plant states the column, and the Link that replaces it does not hold it"
+)
+_BOUNDED_PLANT_NOTE = (
+    "the plant states an annual energy bound, and a PyPSA Link has no e_sum_min or e_sum_max, "
+    "so it stays a Generator that pays the Sienna price of its fuel and does not draw the fuel "
+    "from its bus"
+)
+
+
+class PlantLinkReporter(_Reporter):
+    """Records a Sienna ThermalStandard that becomes a PyPSA Link from the bus of its fuel."""
+
+    destination_component = PyPSAComponent.LINK
+
+    def record_link(self, name: str, row: dict[str, Any], base_power: float) -> None:
+        source = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
+        )
+        power = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, SiennaGeneratorCol.BASE_POWER, base_power
+        )
+        cost = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}own_marginal_cost", None
+        )
+        values = (
+            (PyPSALinkCol.BUS0, None, [source], _PLANT_BUS0_DERIVATION),
+            (PyPSALinkCol.EFFICIENCY, None, [source], _PLANT_EFFICIENCY_DERIVATION),
+            (PyPSALinkCol.P_NOM, UNIT_MW, [power, source], _PLANT_P_NOM_DERIVATION),
+            (
+                PyPSALinkCol.MARGINAL_COST,
+                UNIT_DOLLARS_PER_MWH,
+                [cost, source],
+                _PLANT_MARGINAL_COST_DERIVATION,
+            ),
+        )
+        for column, unit, sources, derivation in values:
+            self._derived(
+                sources=sources,
+                destinations=[self._destination(name, column, row[column], unit)],
+                derivation=derivation,
+            )
+        self._derived(
+            sources=[self._source_field(SiennaComponent.THERMAL_STANDARD, name, None, None)],
+            destinations=[self._destination(name, PyPSALinkCol.BUS1, row[PyPSALinkCol.BUS1])],
+            derivation=_PLANT_LINK_NOTE,
+        )
+
+    def record_moved(self, name: str, column: str, link_column: str, value: object) -> None:
+        """A column of the PyPSA Generator of the plant that the Link keeps."""
+        self._derived(
+            sources=[_build_generator_field(name, column, value)],
+            destinations=[self._destination(name, link_column, value)],
+            derivation=_PLANT_MOVED_DERIVATION,
+        )
+
+    def record_further_port(self, name: str, row: dict[str, Any], port: tuple[str, str]) -> None:
+        """A further fuel of the plant, which the Link draws at bus2 or bus3."""
+        bus_column, efficiency_column = port
+        source = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
+        )
+        self._derived(
+            sources=[source],
+            destinations=[
+                self._destination(name, bus_column, row[bus_column]),
+                self._destination(name, efficiency_column, row[efficiency_column]),
+            ],
+            derivation=_PLANT_FURTHER_DERIVATION,
+        )
+
+    def record_dropped(self, name: str, column: str, value: object) -> None:
+        """A column of the PyPSA Generator of the plant that a Link of this hop does not hold."""
+        self._not_mapped(
+            sources=[_build_generator_field(name, column, value)], note=_PLANT_DROPPED_NOTE
+        )
+
+    def record_bounded(self, name: str) -> None:
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
+                )
+            ],
+            note=_BOUNDED_PLANT_NOTE,
+        )
+
+
+def _build_generator_field(name: str, column: str, value: object) -> SourceField:
+    """A column of a PyPSA Generator that this hop built before it became a Link."""
+    return SourceField(
+        framework=Framework.PYPSA,
+        component=PyPSAComponent.GENERATOR,
+        name=name,
+        attribute=column,
+        value=value,
+    )

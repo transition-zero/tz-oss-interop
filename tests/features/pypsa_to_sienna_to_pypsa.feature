@@ -23,6 +23,7 @@ Feature: PyPSA out and back through Sienna
     And generator "built_ccgt" has p_nom_opt 400
     And the network contains line "line_1" from "bus_1" to "bus_2" with resistance 2.0 ohms reactance 8.0 ohms rating 500.0 MVA length 120.0 km 2.0 parallel circuits
     And the network contains link "link_1" from "bus_1" to "bus_2" with capacity 1000.0 MW efficiency 1.0 min dispatch fraction 0.2 max dispatch fraction 0.5 carrier "DC"
+    And the network contains storage unit "battery_1" on "bus_2" carrier "li-ion" p_nom 50.0 p_min_pu -1.0 max_hours 4.0
     And the network is saved as "inputs/round_trip.nc"
     And a user mappings file with all standard carriers
     When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
@@ -38,3 +39,25 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" link "link_1" has carrier "DC"
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_max_pu" is 0.5
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.2
+    And the PyPSA network "outputs/network.nc" storage unit "battery_1" has carrier "li-ion"
+
+  Scenario: a thermal plant with an availability series comes back with that series, and a static limit no higher than its peak
+    The forward hop writes rating = the static p_max_pu, and active_power_limits.max = p_nom ×
+    the series peak. The hop back writes the static p_max_pu as the smaller of the two, and
+    scales the series by the limit alone, as Sienna applies a max_active_power series to
+    active_power_limits.max and not to rating. PyPSA reads the series in place of the static
+    p_max_pu, so "gas_1" keeps its whole series, also above its static p_max_pu of 0.5.
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network has 2 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains load "load_1" on "bus_1" with static p_set 100.0 carrier "electricity" type "residential"
+    And the network contains generator "coal_1" on "bus_1" carrier "coal" p_nom 500.0 p_max_pu_series 0.4 0.8
+    And the network contains generator "gas_1" on "bus_1" carrier "CCGT" p_nom 200.0 p_max_pu 0.5 p_max_pu_series 0.6 0.9
+    And the network is saved as "inputs/round_trip_series.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip_series.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_max_pu" is 0.8
+    And the PyPSA network "outputs/network.nc" generator "coal_1" has a p_max_pu time series 0.4 0.8
+    And the PyPSA network "outputs/network.nc" generator "gas_1" attribute "p_max_pu" is 0.5
+    And the PyPSA network "outputs/network.nc" generator "gas_1" has a p_max_pu time series 0.6 0.9
