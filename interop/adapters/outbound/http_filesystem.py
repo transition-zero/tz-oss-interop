@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 CHUNK_BYTES = 1024 * 1024
+NETWORK_PATH_PREFIX = "//"
 
 
 class HttpFilesystemConfig(BaseModel):
@@ -86,7 +87,8 @@ class HttpFilesystem(FilesystemPort):
 
     def resolve(self, base: Location, relative: str) -> Location:
         # Join the relative reference onto the base URL's directory.
-        normalised = relative.replace("\\", "/")
+        # urljoin reads a leading "//" as another host, and a sibling stays on the base origin.
+        normalised = relative.replace("\\", "/").removeprefix(NETWORK_PATH_PREFIX)
         return urljoin(str(base), normalised)
 
     def locate(self, path: Location) -> Location:
