@@ -629,6 +629,16 @@ class SiennaUnitSystem(StrEnum):
     NATURAL_UNITS = "NATURAL_UNITS"
 
 
+LINE_UNITS_NOTE = (
+    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
+LOAD_UNITS_NOTE = "load power values are in MW, so the units are NATURAL_UNITS"
+STORAGE_UNITS_NOTE = (
+    "storage rating and limits are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+
+
 class SiennaCurveType(StrEnum):
     """Discriminator for Sienna value curve types."""
 
