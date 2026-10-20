@@ -4,6 +4,7 @@ source:
   name: stage_sienna_system_json
 steps:
   - name: sienna_to_pypsa_map_components
+  - name: sienna_to_pypsa_map_energy_limits
   - name: sienna_to_pypsa_relate_components
 sinks:
   - name: emit_pypsa_network

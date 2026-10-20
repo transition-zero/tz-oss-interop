@@ -5,11 +5,17 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import BusExtension, ExtensionKind, ExtensionReader
+from interop.core.extensions import (
+    BusExtension,
+    ExtensionKind,
+    ExtensionLookup,
+    ExtensionReader,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     BUSES_DESTINATION_SCHEMA,
+    ELECTRICITY_BUS_CARRIERS,
     UNSET_BUS_LOCATION,
     PyPSABusCol,
     PyPSABusControl,
@@ -18,6 +24,11 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.sienna_constants import ACBusType, SiennaACBusCol, SiennaTable
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_control
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    BUS_MAPPED_FIELDS,
+    FUEL_BUS_MAPPED_FIELDS,
+)
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import BusReporter
 
 
@@ -35,13 +46,46 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
     records = extensions.read(ExtensionKind.BUS)
     rows: list[dict[str, Any]] = []
     for row in source.collect().iter_rows(named=True):
-        mapping = _derive_bus(row, records.get(row[SiennaACBusCol.NAME]))
+        mapping = _derive_bus(row, records.get_fields(row[SiennaACBusCol.NAME], BUS_MAPPED_FIELDS))
         _record_bus(reporter, mapping)
         rows.append(_bus_row(mapping))
+    rows += _map_fuel_buses(reporter, records, {row[PyPSABusCol.NAME] for row in rows})
     if rows:
         state.destination_tables[PyPSADestinationTable.BUSES] = pl.DataFrame(
             rows, schema=BUSES_DESTINATION_SCHEMA
         )
+    relayed = [records.relay(row[PyPSABusCol.NAME]) for row in rows]
+    relay_records(state, ExtensionKind.BUS, relayed, recorder)
+
+
+def _map_fuel_buses(
+    reporter: BusReporter, records: ExtensionLookup[BusExtension], electricity: set[str]
+) -> list[dict[str, Any]]:
+    """A bus of a fuel that is not electricity, which Sienna does not hold, from its record."""
+    fuels = [record for record in records.list_records() if _is_fuel_bus(record, electricity)]
+    for record in fuels:
+        records.get_fields(record.name, FUEL_BUS_MAPPED_FIELDS)
+        reporter.record_fuel_bus(record.name, record.carrier, record.location)
+    return [_build_fuel_bus_row(record) for record in fuels]
+
+
+def _is_fuel_bus(record: BusExtension, electricity: set[str]) -> bool:
+    is_electricity = record.carrier in ELECTRICITY_BUS_CARRIERS
+    return record.name not in electricity and record.carrier is not None and not is_electricity
+
+
+# PyPSA's own nominal voltage, as a bus of a fuel has none.
+_FUEL_BUS_V_NOM = 1.0
+
+
+def _build_fuel_bus_row(record: BusExtension) -> dict[str, Any]:
+    return {
+        PyPSABusCol.NAME: record.name,
+        PyPSABusCol.V_NOM: _FUEL_BUS_V_NOM,
+        PyPSABusCol.CARRIER: record.carrier,
+        PyPSABusCol.CONTROL: PyPSABusControl.PQ,
+        PyPSABusCol.LOCATION: record.location or UNSET_BUS_LOCATION,
+    }
 
 
 @dataclass(frozen=True)
