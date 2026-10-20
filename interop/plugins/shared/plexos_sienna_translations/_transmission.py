@@ -40,6 +40,8 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
+    LINE_UNITS_NOTE,
+    LINK_UNITS_NOTE,
     SYSTEM_BASE_MVA,
     SiennaACBusCol,
     SiennaComponent,
@@ -61,10 +63,6 @@ NO_REACTIVE_LIMIT: float = 0.0
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
-_LINE_UNITS_NOTE = (
-    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
-)
-_LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
 _BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
 _SUSCEPTANCE_NOTE = "PLEXOS states no shunt susceptance or conductance; both default to 0.0"
@@ -273,7 +271,7 @@ def _derive_line(line: StagedLine, voltage: float) -> _LineMapping:
         b=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         g=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         rating=_rating(line),
-        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, _LINE_UNITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, LINE_UNITS_NOTE),
         base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         rating_b=Decision.default(
             PerColumn({SiennaLineCol.RATING_B: None, SiennaLineCol.RATING_C: None}), _RATING_B_NOTE
@@ -292,7 +290,7 @@ def _derive_link(line: StagedLine) -> _LinkMapping:
         active_power_flow=Decision.default(NO_FLOW, _FLOW_NOTE),
         active_power_limits=_active_power_limits(line),
         marginal_cost=_marginal_cost(line),
-        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _LINK_UNITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, LINK_UNITS_NOTE),
         base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         reactive_power_limits=Decision.default(
             {"min": NO_REACTIVE_LIMIT, "max": NO_REACTIVE_LIMIT}, _REACTIVE_LIMITS_NOTE
