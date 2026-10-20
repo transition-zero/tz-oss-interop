@@ -1,0 +1,3 @@
+from pytest_bdd import scenarios
+
+scenarios("power_systems_investments_results/power_systems_investments_to_results.feature")
