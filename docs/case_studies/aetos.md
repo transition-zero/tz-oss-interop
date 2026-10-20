@@ -12,6 +12,10 @@ the two-letter code of its country, for example `DZNGCCPH1` and `DZE1`.
 The size makes this model a good test of the canonical stage. The model has 224 CSV files, 3158
 technologies and 804 fuels.
 
+[How close the translation comes to the published results](aetos-comparison.md) gives the
+numbers of the runs on this page, and the cause of each difference. This page gives the
+commands.
+
 ## Get the input
 
 The authors publish AETOS version `v2.0.0` in two places: the
@@ -729,8 +733,9 @@ These causes remain:
 - **The emissions.** The emissions are 243.0 Mt higher than published. `coal` makes 756.3 TWh
   against 568.2 TWh published, and `oil-steam` and `other-gas` make less. The negative
   emissions of `UACO2` and `ALCO2`, which the gas pipelines from outside the model state, are
-  108.6 Mt smaller than published, for example `UACO2` is −51.54 Mt against −128.72 Mt. We did
-  not trace why the dispatch burns more coal than the published solve.
+  108.6 Mt smaller than published, for example `UACO2` is −51.54 Mt against −128.72 Mt.
+  [The comparison report](aetos-comparison.md#the-pypsa-dispatch) gives the two causes of the
+  extra coal and the extra emissions.
 - **The imports from outside the model.** The 21 import generators make 5.5 TWh in PyPSA and
   5.2 TWh in Sienna. The 21 lines that import from outside the model carry 69.4 TWh in the
   published results. `HUELUAPH1` alone carries 15.97 TWh.

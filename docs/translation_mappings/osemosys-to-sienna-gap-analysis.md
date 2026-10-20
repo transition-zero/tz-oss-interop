@@ -52,7 +52,8 @@ Each entry names one cause:
 
 An effect "on a large published model" comes from the benchmark run of a published OSeMOSYS
 model of 78 countries over 35 years. The case studies under [`docs/case_studies/`](../case_studies/)
-give the measured numbers.
+give the measured numbers. [The comparison of that model](../case_studies/aetos-comparison.md)
+gives each difference from the published results, and its cause.
 
 ## The short version
 
@@ -268,8 +269,10 @@ the Sienna system. The comparison measured three of them:
 - The emissions are about 1,702 Mt in the PyPSA dispatch, about 845 Mt in the Sienna dispatch
   and about 1,459 Mt published. Coal makes 756 TWh in the PyPSA dispatch against 568 TWh
   published, and oil and derived gas make less. The negative emissions of `UACO2` and `ALCO2`,
-  which the pipelines of gas state, are 109 Mt smaller than published. The cause of the coal
-  difference is not traced.
+  which the pipelines of gas state, are 109 Mt smaller than published. Two causes explain the
+  coal and the emissions: `TechnologyActivityDecreaseByModeLimit`, and the gas plants with an
+  annual lower bound. [The comparison of the case study](../case_studies/aetos-comparison.md#the-pypsa-dispatch)
+  measures each one.
 
 ## Losses that the report does not name
 
