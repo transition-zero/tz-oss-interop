@@ -203,22 +203,23 @@ def _build_associations(
     megawatts: its values times the capacity of the component that owns it.
     """
     with Store.create(str(h5_path), catalog="memory", overwrite=True) as store:
-        for series in series_list:
-            store.add_time_series(
-                id_by_owner[(series["owner_type"], series["owner_name"])],
-                series["owner_type"],
-                OwnerCategory.Component,
-                SingleTimeSeries(
-                    datetime.fromisoformat(series["initial_time"]),
-                    f"PT{int(series['resolution_seconds'])}S",
-                    np.asarray(series["values"], dtype="float64")
-                    * _series_capacity(series, components),
-                    series["name"],
-                    units="MW",
-                    quantity_kind="ActivePower",
-                    unit_system="natural_units",
-                ),
-            )
+        with store.transaction():
+            for series in series_list:
+                store.add_time_series(
+                    id_by_owner[(series["owner_type"], series["owner_name"])],
+                    series["owner_type"],
+                    OwnerCategory.Component,
+                    SingleTimeSeries(
+                        datetime.fromisoformat(series["initial_time"]),
+                        f"PT{int(series['resolution_seconds'])}S",
+                        np.asarray(series["values"], dtype="float64")
+                        * _series_capacity(series, components),
+                        series["name"],
+                        units="MW",
+                        quantity_kind="ActivePower",
+                        unit_system="natural_units",
+                    ),
+                )
         rows: list[dict[str, Any]] = json.loads(store.export_time_series_associations_openapi())
     return sorted(rows, key=lambda row: int(row["association_id"]))
 

@@ -115,29 +115,18 @@ _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
 
 
 def has_series_capacity(owner_type: str) -> bool:
-    """Whether ``get_series_capacity`` states a capacity for this owner type."""
+    """Whether a series capacity is defined for this owner type."""
     return owner_type in _CAPACITY_BY_OWNER_TYPE
-
-
-def get_series_capacity(owner_type: str, component: Mapping[str, Any]) -> float:
-    """The megawatts that one per-unit value of the component's series stands for.
-
-    A stored series holds megawatts, and the per-unit shape the pipeline works in is those
-    megawatts divided by this capacity.
-    """
-    if owner_type not in _CAPACITY_BY_OWNER_TYPE:
-        raise ValueError(f"no series capacity is defined for owner type {owner_type!r}")
-    return _CAPACITY_BY_OWNER_TYPE[owner_type](component)
 
 
 def build_capacity_by_owner(
     owners: Iterable[tuple[str, int]],
     components_by_type: Mapping[str, Iterable[Mapping[str, Any]]],
 ) -> dict[tuple[str, int], float]:
-    """The capacity of each owner that owns a series, keyed by ``(owner type, id)``."""
+    """The megawatts one per-unit value of each owner's series stands for, by ``(type, id)``."""
     wanted = set(owners)
     return {
-        (owner_type, component[SiennaACBusCol.ID]): get_series_capacity(owner_type, component)
+        (owner_type, component[SiennaACBusCol.ID]): _CAPACITY_BY_OWNER_TYPE[owner_type](component)
         for owner_type in {owner_type for owner_type, _ in wanted}
         for component in components_by_type.get(owner_type, [])
         if (owner_type, component[SiennaACBusCol.ID]) in wanted

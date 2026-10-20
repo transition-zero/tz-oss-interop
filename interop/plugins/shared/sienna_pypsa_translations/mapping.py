@@ -9,15 +9,21 @@ from __future__ import annotations
 
 from typing import Any
 
+import polars as pl
+
 from interop.core.pipeline import State
+from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.sienna_constants import (
     SiennaACBusCol,
+    SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
     SiennaStructField,
     SiennaTable,
     SiennaUnitSystem,
 )
+from interop.plugins.shared.sienna_pypsa_translations.constants import SIENNA_TO_PYPSA
+from interop.plugins.shared.translation_runner import SkipReport
 from interop.ports.errors import UserInputError
 
 
@@ -25,18 +31,35 @@ def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
     return rated if is_extendable else None
 
 
-def reject_unsupported_power_units(row: dict[str, Any], supported: SiennaUnitSystem) -> None:
-    """Raise when a component states a power basis that the reader does not convert.
+def build_power_units_skip_report(
+    component: str, plural: str, name_col: str, supported: SiennaUnitSystem
+) -> SkipReport:
+    return SkipReport(
+        pipeline=SIENNA_TO_PYPSA,
+        framework=Framework.SIENNA,
+        component=component,
+        name_col=name_col,
+        reason="state a power basis this reader does not convert",
+        counted_noun=plural,
+        note=(
+            lambda row: (
+                f"power_units is {row[SiennaStructField.POWER_UNITS]}; "
+                f"tz-oss-interop reads {supported.value} for this type"
+            )
+        ),
+        attribute_col=SiennaStructField.POWER_UNITS,
+    )
 
-    The reader has already checked the row against SiennaSchemas 0.2, which requires
-    power_units with a known value, so the key is present here.
-    """
-    stated = SiennaUnitSystem(row[SiennaStructField.POWER_UNITS])
-    if stated is not supported:
-        raise UserInputError(
-            f"{row[SiennaGeneratorCol.SIENNA_TYPE]} {row[SiennaGeneratorCol.NAME]!r} states "
-            f"power_units {stated.value}; tz-oss-interop reads {supported.value} for this type"
-        )
+
+def express_power_units_kept(
+    supported: SiennaUnitSystem, handled: list[SiennaComponent] | None = None
+) -> pl.Expr:
+    """Keep a row that states the supported basis. A row of a type outside handled stays."""
+    stated = pl.col(SiennaStructField.POWER_UNITS) == supported.value
+    if handled is None:
+        return stated
+    other_type = ~pl.col(SiennaGeneratorCol.SIENNA_TYPE).is_in([t.value for t in handled])
+    return other_type | stated
 
 
 def reject_unsupported_parameter_units(row: dict[str, Any]) -> None:

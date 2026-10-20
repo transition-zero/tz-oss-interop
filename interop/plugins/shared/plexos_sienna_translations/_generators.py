@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 from interop.core.extensions import ExtensionKind, GeneratorExtension, companion_filename
 from interop.core.pipeline import State
@@ -101,7 +102,6 @@ from interop.plugins.shared.sienna_constants import (
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
-    SiennaOperationalState,
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
@@ -689,7 +689,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         name=mapping.name,
         base_power=decide_generator(mapping).p_nom,
         available=Decision.default(True, _AVAILABLE_NOTE),
-        status=Decision.default(SiennaOperationalState.ONLINE.value, _STATUS_NOTE),
+        status=Decision.default(OperationalStates.ONLINE.value, _STATUS_NOTE),
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=_active_power(mapping),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),

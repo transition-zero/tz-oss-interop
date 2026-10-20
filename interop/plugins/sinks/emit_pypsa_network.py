@@ -35,9 +35,6 @@ from interop.ports.outbound.filesystem import FilesystemPort, Location
 log = logging.getLogger(__name__)
 
 
-# What a component with no staged values scales and compounds as.
-
-
 class EmitPypsaNetworkParams(BaseModel):
     output_path: Location = Field(description="the PyPSA network to write, as netCDF (.nc)")
 
