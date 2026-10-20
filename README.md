@@ -11,7 +11,7 @@ tz-oss-interop is beta software. It runs end to end on published models, and the
 
 ## Supported translations
 
-Sienna is the hub. Most built-in pipelines translate a model into Sienna, or translate Sienna into a different format. The two canonical pipelines stage an OSeMOSYS model only.
+Sienna is the hub. Most built-in pipelines translate a model into Sienna, or translate Sienna into a different format. The two canonical pipelines stage an OSeMOSYS model only. They write the canonical stage: the sets and the parameters of the model in one fixed schema, as Parquet files, which each OSeMOSYS translation reads.
 
 ```mermaid
 flowchart LR
@@ -52,7 +52,7 @@ flowchart LR
 
 A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. tz-oss-interop writes a portfolio, and the leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
 
-tz-oss-interop writes each value of a source model that a Sienna system has no field for to `extensions.json`, a sidecar file beside `system.json`. Thus the sidecar keeps what Sienna cannot hold, for example an annual energy limit, the cost of a line, and the fuels that are not electricity. The sidecar names each value with the PyPSA attribute of the same meaning, for example `e_sum_min`. Sienna does not read it. The Sienna → PyPSA leg, `sienna-to-pypsa`, reads it, and gives each value that PyPSA has an attribute for to that attribute. Each other value goes on, unchanged, to the `extensions.json` beside the PyPSA network.
+tz-oss-interop writes each value of a source model that a Sienna system has no field for to `extensions.json`, a sidecar file beside `system.json`. For example, it keeps an annual energy limit, the cost of a line, and the fuels that are not electricity. The sidecar names each value with the PyPSA attribute of the same meaning, for example `e_sum_min`. Sienna does not read it. The Sienna → PyPSA leg, `sienna-to-pypsa`, reads it, and gives each value that PyPSA has an attribute for to that attribute. Each other value goes on, unchanged, to the `extensions.json` beside the PyPSA network.
 
 A results pipeline turns a solve, or a set of published results, into the [results format](docs/results-format.md). `compare` runs one results pipeline for each side.
 
@@ -135,14 +135,14 @@ Each page below says where to download the model, and exactly what to answer at 
 | SEM 2024-2032 | SEM Committee | The peak demand of each year, and the rating of each of the four interconnectors, match the published report to the digit. The average wholesale price that we calculate is 8.9% below the report in 2026. In 2032 it is 10.9% below. | [sem-2024-2032.md](docs/case_studies/sem-2024-2032.md) |
 | CAISO 2026 Summer Assessment | CAISO | All five summer months reach an optimal solve. Four of the five hold each generator strictly on or off. May solves only when that rule relaxes. We also solved September with a network that can cut customer load at a price. It cut none, so the generators covered every hour of demand. | [caiso-sa26.md](docs/case_studies/caiso-sa26.md) |
 | AEMO 2024 ISP | AEMO | The translation changes no demand value. All 210,240 half-hourly values match the demand traces of the model exactly, in each of the three scenarios. The hydro does not translate: the model measures its reservoirs in water, and the translator reads energy. | [aemo-isp-2024.md](docs/case_studies/aemo-isp-2024.md) |
-| AETOS v2.0.0 | Kousoulos et al., RE-INTEGRATE project | In 2021, the PyPSA dispatch makes 4,140 TWh against 4,103 TWh published, and trades 377 TWh against 390 TWh. Its emissions are 243 Mt high. Two causes explain almost all of it: a limit between two years, and 24 gas plants outside the gas network. The Sienna dispatch makes 370 TWh less, because its solve ignores the loss of a line. | [aetos.md](docs/case_studies/aetos.md), [aetos-comparison.md](docs/case_studies/aetos-comparison.md) |
+| AETOS v2.0.0 | Kousoulos et al., RE-INTEGRATE project | In 2021, the PyPSA dispatch makes 4,140 TWh against 4,103 TWh published, and trades 377 TWh against 390 TWh. Its emissions are 243 Mt high. Two causes explain almost all of it: a limit between two years, and 24 gas plants outside the gas network. The Sienna dispatch makes 370 TWh less, because its solve ignores the loss of each conversion between two electricity fuels of one country. | [aetos.md](docs/case_studies/aetos.md), [aetos-comparison.md](docs/case_studies/aetos-comparison.md) |
 
 You can translate and solve these models from this repository. For the three PLEXOS models, we
-measured each figure that a publisher's own report gives on 2026-08-18, with the translator on
-branch `caiso-compare-dataset-v2`. The tooling that took those particular measurements is not in
+measured each figure that a publisher's own report gives on 2026-08-18. The tooling that took those particular measurements is not in
 this repository, so those exact figures are not reproducible here. No publisher's data is
 redistributed with tz-oss-interop: a case study page says where to download the model, and where a
-comparison needs the numbers from a report, which columns to write them out in.
+comparison needs the numbers from a report, which columns to write them out in. For AETOS, a
+script outside tz-oss-interop made the test copies, so their figures are not reproducible here.
 
 Two limits apply to the figures of the three PLEXOS models. The first limit also applies to AETOS.
 
@@ -360,10 +360,10 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/tutorials/user-tutorial.md` is the end-to-end walkthrough: `translate -> solve -> compare` against the network `interop init` scaffolds with its `pypsa` example.
 - `docs/tutorials/developer-tutorial.md` extends that example with a custom pipeline step (writing your own translation logic).
 - `docs/tutorials/solve.md` covers the `solve` command (Julia and PowerSimulations.jl install automatically on first run).
-- `docs/case_studies/` holds one page per published model tz-oss-interop has been run against: where to download it, what to answer at the prompts, and what the run measured.
+- `docs/case_studies/` holds the pages for each published model that tz-oss-interop ran against: where to download it, what to answer at the prompts, and what the run measured.
 - `docs/case_studies/aetos-comparison.md` measures how close the OSeMOSYS → Sienna → PyPSA translation of AETOS comes to the published results, and gives the cause of each difference.
 - `docs/results-format.md` defines the results table that each results pipeline writes and that `compare` reads.
-- `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three case study models and over synthetic PyPSA networks.
+- `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three PLEXOS case study models and over synthetic PyPSA networks.
 - `docs/developer_documentation/capacity-expansion.md` covers running a Sienna portfolio as a capacity expansion in PowerSystemsInvestments.jl.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
@@ -381,7 +381,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 
 ## Community
 
-- [Discussions](https://github.com/transition-zero/tz-oss-interop/discussions) — questions, ideas, and showing what you have run tz-oss-interop against. Start here rather than with an issue if you are not sure something is a bug.
+- [Discussions](https://github.com/transition-zero/tz-oss-interop/discussions): questions, ideas, and showing what you have run tz-oss-interop against. Start here rather than with an issue if you are not sure something is a bug.
 - [Issues](https://github.com/transition-zero/tz-oss-interop/issues) — bug reports and feature requests.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to set up, what a change needs, and how it gets merged.
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — the Contributor Covenant, and how to report a problem.

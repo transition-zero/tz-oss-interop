@@ -272,11 +272,14 @@ where the load is. The other 14 buses are the `E1` of countries outside the mode
 The 269 lines are the 113 transport lines and the 156 conversions from `E1` to `E2` and from
 `E2` to `E3`. The 21 import modes are 21 of the 588 `ThermalStandard`.
 
-The console shows 29 warnings. Each warning names three components at most. `decisions.md`
+The console shows 22 warnings. Each warning names three components at most. `decisions.md`
 names each component and gives the reason. These warnings tell you the most:
 
 - 1165 supply technologies have no residual capacity in 2021. Most of them are plants that the
   plan can build in a later year.
+- 46 storages have no residual storage capacity in 2021, so each is left out.
+- 53 storages have a discharging technology with no residual capacity in 2021, so each is left
+  out.
 - 91 line technologies have no residual capacity in 2021, and the model builds none at no cost.
   The 156 conversions state no capacity and no cost, so the model builds what they need at no
   cost. Each becomes a line that never binds in this system: its rating is what the whole
@@ -286,10 +289,12 @@ names each component and gives the reason. These warnings tell you the most:
   the model builds none at no cost, for example `ATNGBACKSTOP`. The other technologies of those
   fuels become records of `extensions.json`. Refer to
   [The fuels that are not electricity](#the-fuels-that-are-not-electricity).
-- 21 transport technologies have a mode that imports from outside the model. Each import mode
-  becomes a `ThermalStandard` named `<line>/import/<mode>`, about 37.8 GW in total.
-- 17 warnings each name one parameter that no step applies, for example `capital_cost` and
+- 15 warnings each name one parameter that no step applies, for example `capital_cost` and
   `variable_operation_cost`.
+
+21 transport technologies have a mode that imports from outside the model. Each import mode
+becomes a `ThermalStandard` named `<line>/import/<mode>`, about 37.8 GW in total. The console
+gives no warning for them.
 
 ### The fuels that are not electricity
 
