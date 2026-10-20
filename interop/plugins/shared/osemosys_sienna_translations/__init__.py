@@ -67,6 +67,15 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     add_series,
     append_per_unit_series,
 )
+from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    build_storage_extensions,
+    build_storages_source,
+    read_storage_links,
+    set_storage_values_persisted,
+)
+from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
+    STORAGE_TRANSLATIONS,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CANDIDATE_VALUES,
     enrich_technology_values,
@@ -81,6 +90,7 @@ __all__ = [
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
     "SIENNA_TYPE",
+    "STORAGE_TRANSLATIONS",
     "Calendar",
     "GeneratorSources",
     "GeneratorTypeMapping",
@@ -103,11 +113,14 @@ __all__ = [
     "build_load_series",
     "build_loads_source",
     "build_representative_periods",
+    "build_storage_extensions",
+    "build_storages_source",
     "enrich_technology_values",
     "list_model_years",
     "read_operations_mode",
     "parse_units",
     "read_electricity_fuels",
+    "read_storage_links",
     "report_calendar",
     "report_left_out_technologies",
     "report_unread_defaults",
@@ -115,4 +128,5 @@ __all__ = [
     "set_days_persisted",
     "set_generator_values_persisted",
     "set_operations_year",
+    "set_storage_values_persisted",
 ]

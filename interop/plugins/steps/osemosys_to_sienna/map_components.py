@@ -29,6 +29,7 @@ from interop.plugins.steps.osemosys_to_sienna.map_generators import (
     OsemosysToSiennaMapGenerators,
 )
 from interop.plugins.steps.osemosys_to_sienna.map_loads import OsemosysToSiennaMapLoads
+from interop.plugins.steps.osemosys_to_sienna.map_storage import OsemosysToSiennaMapStorage
 
 # The calendar and the unread defaults concern the whole model, so each names a step of its own.
 _BUILD_CALENDAR = "osemosys_to_sienna_build_calendar"
@@ -64,6 +65,10 @@ class OsemosysToSiennaMapComponents(TranslationStep):
             OsemosysToSiennaMapLoads(_scoped(recorder, OsemosysToSiennaMapLoads.step_name)),
             OsemosysToSiennaMapGenerators(
                 _scoped(recorder, OsemosysToSiennaMapGenerators.step_name),
+                osemosys_sienna_mappings,
+            ),
+            OsemosysToSiennaMapStorage(
+                _scoped(recorder, OsemosysToSiennaMapStorage.step_name),
                 osemosys_sienna_mappings,
             ),
         )
