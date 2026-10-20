@@ -40,7 +40,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
-from interop.plugins.shared.pypsa_sienna_translations._units import STORAGE_UNIT_TRANSLATIONS
+from interop.plugins.shared.pypsa_sienna_translations._units import STORAGE_POWER_UNITS
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     CYCLIC_ENERGY_PENALTY,
@@ -397,7 +397,7 @@ STORAGE_CYCLE_LIMITS = _default(
 )
 
 ENERGY_RESERVOIR_STORAGE_TRANSLATIONS: list[Translation] = [
-    *STORAGE_UNIT_TRANSLATIONS,
+    STORAGE_POWER_UNITS,
     STORAGE_ID,
     STORAGE_NAME,
     STORAGE_AVAILABLE,
