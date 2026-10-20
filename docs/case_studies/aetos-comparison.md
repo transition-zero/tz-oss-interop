@@ -10,9 +10,9 @@ runs. This page gives the numbers and their causes only.
 For the year 2021, we compared three results:
 
 - **The published results.** The AETOS authors publish the results of their scenario `UNNZ` in
-  `AETOS_Runner/results/20260123_UNNZv2.csv`. The commands file of the model,
-  `commands_AETOS.txt`, solves the model with CPLEX. This is the run of the authors.
-  tz-oss-interop did not solve the OSeMOSYS model itself.
+  `AETOS_Runner/results/20260123_UNNZv2.csv`. This page calls the run of the authors the
+  published run. tz-oss-interop did not solve the OSeMOSYS model itself. The commands file of
+  the model, `commands_AETOS.txt`, states a solve with CPLEX.
 - **The Sienna dispatch.** `osemosys-csv-to-sienna` writes a Sienna system of the 2021 fleet.
   PowerSimulations.jl dispatches it with HiGHS.
 - **The PyPSA dispatch.** `sienna-to-pypsa` turns the same Sienna system and its
@@ -51,7 +51,7 @@ for the whole year. The unserved energy is the total of the 96 hours, with no we
 | Emissions | 1,459.1 Mt | 845.5 Mt | 1,702.1 Mt |
 | Unserved energy in the 96 hours | none | 1,141.06 MWh | 2,367.51 MWh |
 | Objective | 1.00476 × 10¹³ USD | 1.53338 × 10⁹ USD | 5.54311 × 10⁹ USD |
-| Solve time | not measured | 3 min 5 s | 26.6 s |
+| Solve time | not measured | 3 min 5 s | 26.7 s |
 | Solve peak memory | not measured | 2.27 GB | 1.78 GB |
 
 The three objectives do not compare:
@@ -128,7 +128,7 @@ supply technologies: coal, lignite, gas extraction, LNG and gas pipelines. The e
 - Each PJ of coal in 2021 forces 0.85 PJ in 2022. The CO2 penalty of 2022 is 88 USD/t, against
   66 USD/t in 2021. Thus coal of 2021 has a future cost in OSeMOSYS, which a one-year dispatch
   does not have.
-- The published solve runs dearer plants and leaves cheaper coal idle. For example, `DELIELH1`
+- The published run runs dearer plants and leaves cheaper coal idle. For example, `DELIELH1`
   (lignite, 104.6 USD/MWh) runs at a capacity factor of 0.06 in the published results and 0.54
   in PyPSA.
 - `decisions.md` of the translation records `technology_activity_decrease_by_mode_limit` with
@@ -166,7 +166,7 @@ The year-to-year limit also holds gas extraction, LNG and the gas pipelines. Thi
 part of the `gas-steam` difference. We did not test it.
 
 **5. The residual fleet.** The system holds the residual capacity of 2021 only. The published
-solve builds 3.06 GW of power plants in 2021, of which 2.5 GW is `ZAWINDPN1`. `MR` and `GW` are
+run builds 3.06 GW of power plants in 2021, of which 2.5 GW is `ZAWINDPN1`. `MR` and `GW` are
 short of their peak load, so the dispatch leaves 2,367.51 MWh unserved in the 96 hours. Of this,
 2,307.86 MWh is at `REGION1/MRE3`. These countries must also cover their conversion loss.
 
@@ -187,7 +187,8 @@ fuel that enters a country. Two transit countries state negative emissions: `UAC
 
 **2. The line cost and the line loss: 425.2 TWh of trade.** A `TwoTerminalGenericHVDCLine` has no
 cost field. The solve uses `HVDCTwoTerminalLossless`, which ignores the loss of a line. Thus trade
-is free. In PyPSA, the line cost and the line loss lower the trade by 467.6 TWh.
+is free. In the `compare3` test copies of the PyPSA network with the annual bounds, the line
+cost and the line loss lower the trade by 475.4 TWh.
 
 **3. The conversion loss: 370.3 TWh of production.** Each conversion is a line with its loss.
 The Sienna solve ignores the loss, so the plants do not make the 398.1 TWh that the conversions
@@ -195,8 +196,9 @@ lose in PyPSA.
 
 **4. The annual energy limits: 330.6 TWh of `gas-combined-cycle`.** A Sienna system has no field
 for a limit on the energy of a year. The 24 bounded gas plants make 73.8 TWh, against their lower
-limit of 450.59 TWh. In PyPSA, the annual bounds add 295.8 TWh of `gas-combined-cycle`, remove
-225.0 TWh of `coal`, and lower the emissions by 101.4 Mt.
+limit of 450.59 TWh. In the `compare3` test copies of the PyPSA network with the line cost and
+the line loss, the annual bounds add 295.7 TWh of `gas-combined-cycle`, remove 213.9 TWh of
+`coal`, and lower the emissions by 97.9 Mt.
 
 **5. The storage: 8.8 TWh of pumped storage.** Pumped storage makes 8.87 TWh, against 0.05 TWh
 published. The dispatch runs the days in time order and carries the level from one day to the
@@ -247,7 +249,7 @@ are those of the same components:
 | Production | 2030 | 2,042.3 TWh | 1,942.4 TWh |
 | Production | 2035 | 2,158.4 TWh | 2,068.6 TWh |
 
-Over the three years, the published solve builds 64.8 GW of onshore wind and 64.8 GW of solar in
+Over the three years, the published run builds 64.8 GW of onshore wind and 64.8 GW of solar in
 the five countries. The expansion builds 25.3 GW and 8.9 GW of two biomass technologies, and
 almost nothing else. These causes apply:
 
@@ -259,7 +261,7 @@ almost nothing else. These causes apply:
 - The years between two periods carry no operations.
 - Trade has no loss, and a line flows both ways.
 
-We did not measure the effect of each cause by itself. The published solve optimises all 78
+We did not measure the effect of each cause by itself. The published run optimises all 78
 countries over 35 years. Thus these totals are an observation, and not a test of the
 translation. The full model did not solve in 16 GB of memory.
 [Running a capacity expansion](../developer_documentation/capacity-expansion.md#what-does-not-work)
@@ -286,8 +288,8 @@ Two decisions remain open. Each one removes one difference of the PyPSA dispatch
 - **Representative days.** The dispatch covers four days of 24 hours, one for each season. The
   model states 16 timeslices.
 - **The residual fleet.** The system holds the residual capacity of 2021. It holds no capacity
-  that the published solve builds.
+  that the published run builds.
 - **No OSeMOSYS solve of our own.** tz-oss-interop did not solve the OSeMOSYS model. Each
-  published value comes from the run of the authors.
+  published value comes from the published run.
 - **Test copies.** The measured effect of each cause comes from a test copy of the network. A
   script outside tz-oss-interop made each copy.

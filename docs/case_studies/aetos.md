@@ -580,7 +580,7 @@ The run gives this result:
 | Status | `optimal` |
 | Objective | 5,543,113,030 USD, which is 5.54311 × 10⁹ |
 | Unserved energy | 2,367.51 MWh: 2,307.86 MWh at `REGION1/MRE3` and 59.66 MWh at `REGION1/GWE3` |
-| Time | 26.6 s |
+| Time | 26.7 s |
 | Peak memory | 1.78 GB |
 
 The summary line is `[OK]  status=optimal  objective=5.54311e+09  unserved_energy=2367.51 MWh`.
@@ -729,7 +729,8 @@ These causes remain:
 
 - **The residual fleet.** `MR` and `GW` have unserved energy: 1,141.06 MWh in the 96 hours in
   Sienna, and 2,367.51 MWh in PyPSA, which must also cover the conversion losses. The
-  published solve builds `ZAWINDPN1`, 2.50 GW of onshore wind, in 2021.
+  published solve builds 3.06 GW of power plants in 2021. Of this, 2.50 GW is `ZAWINDPN1`,
+  onshore wind.
 - **The emissions.** The emissions are 243.0 Mt higher than published. `coal` makes 756.3 TWh
   against 568.2 TWh published, and `oil-steam` and `other-gas` make less. The negative
   emissions of `UACO2` and `ALCO2`, which the gas pipelines from outside the model state, are
@@ -739,7 +740,7 @@ These causes remain:
 - **The imports from outside the model.** The 21 import generators make 5.5 TWh in PyPSA and
   5.2 TWh in Sienna. The 21 lines that import from outside the model carry 69.4 TWh in the
   published results. `HUELUAPH1` alone carries 15.97 TWh.
-- **The storage cycle.** Pumped storage makes 1.49 TWh in PyPSA, 8.87 TWh in Sienna and
+- **The storage cycle.** Pumped storage makes 0.60 TWh in PyPSA, 8.87 TWh in Sienna and
   0.05 TWh in the published results. Its capacity is 42.87 GW in each dispatch against
   51.65 GW published. The storage units are not cyclic, so the dispatch can empty the level
   that they hold at the start. The results then multiply each hour of that output by the
@@ -911,14 +912,14 @@ are the entries that explain the large differences above:
   from outside the model do not happen in either dispatch. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices)
   and [Operating modes](../translation_mappings/osemosys-to-sienna-gap-analysis.md#operating-modes).
-- **The emissions are 612 Mt lower in the dispatch.** The published emissions also count the
+- **The emissions are 613.7 Mt lower in the Sienna dispatch.** The published emissions also count the
   CO2 of the gas that enters a country, and two transit countries have negative emissions. The
   Sienna emissions are those of the power plants only. Refer to
   [Differences that are not a loss](../translation_mappings/osemosys-to-sienna-gap-analysis.md#differences-that-are-not-a-loss).
 - **Pumped storage has 8.8 GW less capacity and makes 8.8 TWh more.** Sienna rates a storage on
   its electricity output, and the dispatch runs the days in time order. Refer to
   [Storage](../translation_mappings/osemosys-to-sienna-gap-analysis.md#storage).
-- **Two countries have unserved energy.** The published solve builds about 3 GW in 2021. The
+- **Two countries have unserved energy.** The published solve builds 3.06 GW in 2021. The
   system holds the residual capacity of 2021 only, so `MR` and `GW` are short of their peak.
   Refer to [The four structural losses](../translation_mappings/osemosys-to-sienna-gap-analysis.md#the-four-structural-losses).
 - **The expansion builds biomass, and the published solve builds wind and solar.** The package
@@ -942,18 +943,18 @@ The time of a solve does not include the download and the compilation of the Jul
 | Run | Status | Objective | Time | Peak memory |
 | --- | --- | --- | --- | --- |
 | `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 3.0 s | 0.39 GB |
-| `osemosys-csv-to-sienna`, year 2021 | exit 0, 22 warnings | none | 4.4 s | 0.43 GB |
+| `osemosys-csv-to-sienna`, year 2021 | exit 0, 22 warnings | none | 4.1 s | 0.42 GB |
 | `osemosys-csv-to-sienna-investments`, every year | exit 0, 21 warnings | none | 20.4 s | 0.54 GB |
-| `sienna-to-power-simulations` | exit 0 | none | 5.1 s | 0.26 GB |
+| `sienna-to-power-simulations` | exit 0 | none | 4.0 s | 0.27 GB |
 | Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.53338 × 10⁹ USD | 3 min 5 s | 2.27 GB |
 | `sienna-to-results` | exit 0, 3 warnings | none | 1.9 s | 0.32 GB |
 | `aetos-to-results` | exit 0, 7 warnings | none | 4.5 s | 0.70 GB |
-| Compare of the dispatch | exit 0, 1,931 differences | none | 5.3 s | 0.75 GB |
+| Compare of the dispatch | exit 0, 1,931 differences | none | 4.6 s | 0.70 GB |
 | `sienna-to-pypsa` | exit 0, 2 warnings | none | 4.6 s | 0.46 GB |
-| PyPSA dispatch solve | `optimal` | 5.54311 × 10⁹ USD | 26.6 s | 1.78 GB |
+| PyPSA dispatch solve | `optimal` | 5.54311 × 10⁹ USD | 26.7 s | 1.78 GB |
 | `pypsa-to-results` | exit 0, 1 warning | none | 1.9 s | 0.32 GB |
-| Compare of the published results and PyPSA | exit 0, 1,931 differences | none | 4.8 s | 0.70 GB |
-| Compare of Sienna and PyPSA | exit 0, 115,440 differences | none | 3.3 s | 0.34 GB |
+| Compare of the published results and PyPSA | exit 0, 1,931 differences | none | 4.8 s | 0.73 GB |
+| Compare of Sienna and PyPSA | exit 0, 115,440 differences | none | 3.3 s | 0.36 GB |
 | `sienna-to-power-systems-investments`, full model | exit 0, 8 warnings | none | 53.5 s | 1.58 GB |
 | Expansion solve, full model | stopped at 14.5 GB, HiGHS did not start | none | 55 min 9 s | 15.1 GB |
 | `osemosys-csv-to-sienna-investments`, subset | exit 0, 16 warnings | none | 4.6 s | 0.42 GB |
@@ -962,9 +963,11 @@ The time of a solve does not include the download and the compilation of the Jul
 | `power-systems-investments-to-results`, subset | exit 0 | none | 0.8 s | 0.14 GB |
 | Compare of the expansion | exit 0, 1,899 differences | none | 4.1 s | 0.72 GB |
 
-The time of each REPL run includes the start of tz-oss-interop. We measured the five PyPSA rows
-on 2026-10-19. The solve and the two compares of those rows called the same use cases from a
-script, and each time includes the start of `uv run`. The time changes from one run to the
+The time of each REPL run includes the start of tz-oss-interop. We measured 11 rows on
+2026-10-19, in one run: `osemosys-csv-to-sienna`, `sienna-to-power-simulations`, the two
+dispatch solves, `sienna-to-results`, `sienna-to-pypsa`, `pypsa-to-results` and the three
+compares of the dispatch. The solves and the compares of those rows called the same use cases
+from a script, and each time includes the start of `uv run`. The time changes from one run to the
 next on the same input. Two dispatch solves of the same system took 3 min 47 s and
 3 min 16 s. The canonical stage is 1.6 MB on disk. The `decisions.md` of the operations
 translation is 12 MB. The `decisions.md` of the full expansion leg is 18 MB.
