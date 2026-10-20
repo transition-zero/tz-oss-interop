@@ -40,7 +40,6 @@ _SDK_MODULES: tuple[ModuleType, ...] = (
 )
 
 _READABLE_OUTCOMES = ("current", "upgradable")
-_SCHEMA_VERSION = "schema_version"
 
 
 def find_sdk_model(type_name: str) -> type[BaseModel] | None:
@@ -62,8 +61,8 @@ def read_system_document(stream: IO[bytes]) -> dict[str, Any]:
     outcome = check_schema_version(raw)
     if outcome not in _READABLE_OUTCOMES:
         raise UserInputError(
-            f"Cannot read the system document: schema_version {raw.get(_SCHEMA_VERSION)!r} "
-            f"is {outcome}."
+            "Cannot read the system document: schema_version "
+            f"{raw.get(SiennaSchemasSystem.SCHEMA_VERSION)!r} is {outcome}."
         )
     _reject_bad_envelope(raw)
 

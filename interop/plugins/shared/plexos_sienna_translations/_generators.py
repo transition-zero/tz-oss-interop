@@ -228,6 +228,7 @@ class _ThermalMapping:
     active_power_limits: Decision = declares(_LIMITS_MIN_COLUMN)
     reactive_power_limits: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER_LIMITS)
     ramp_limits: Decision = declares(_RAMP_UP_COLUMN)
+    ramp_down: Decision = declares(_RAMP_DOWN_COLUMN)
     time_limits: Decision = declares(_TIME_UP_COLUMN)
     start_up: Decision = declares(_START_UP_COLUMN)
     operation_cost: Decision = declares(_THERMAL_COST_COLUMN)
@@ -650,7 +651,6 @@ def _row_for(translated: _Translated, reporter: SiennaComponentReporter) -> dict
     if translated.sienna_type == SiennaComponent.THERMAL_STANDARD:
         thermal = _derive_thermal(translated)
         reporter.record_mapping(name, thermal)
-        _record_ramp_down_default(reporter, translated)
         row = destination_row(thermal, SiennaThermalGeneratorCol.NAME, name)
         row[SiennaThermalGeneratorCol.OPERATION_COST] = thermal_cost_value(
             mapping.cost.marginal_cost, _start_up_cost(mapping)
@@ -698,6 +698,7 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         active_power_limits=_minimum_decision(translated),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         ramp_limits=_ramp_decision(translated),
+        ramp_down=_ramp_down_decision(translated),
         time_limits=_time_decision(translated),
         start_up=_start_up_decision(translated),
         operation_cost=_cost_decision(translated),
@@ -780,13 +781,15 @@ def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
     }
 
 
-def _record_ramp_down_default(reporter: SiennaComponentReporter, translated: _Translated) -> None:
+def _ramp_down_decision(translated: _Translated) -> Decision:
+    """The rate the unit may ramp down at, reported only where the generator states none."""
     struct = _ramp_struct(translated)
     commitment = translated.mapping.unit_commitment
-    if struct is None or commitment is None or commitment.ramp_limit_down is not None:
-        return
-    decision = Decision.default(struct["down"], _RAMP_DOWN_NOTE)
-    reporter.record(translated.mapping.name, _RAMP_DOWN_COLUMN, decision)
+    if struct is None or commitment is None:
+        return Decision.unreported(None)
+    if commitment.ramp_limit_down is None:
+        return Decision.default(struct["down"], _RAMP_DOWN_NOTE)
+    return Decision.unreported(struct["down"])
 
 
 def _ramp_decision(translated: _Translated) -> Decision:

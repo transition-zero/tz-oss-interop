@@ -21,9 +21,9 @@ from typing import Any
 
 import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
-from power_openapi_models.document import SystemDocument, write_document
-from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
+from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
+from interop.plugins.sinks._sienna_files import serialise_system_document
 from interop_testing.files import read_json
 
 TIME_SERIES_RESOLUTION_SECONDS = 3600
@@ -82,29 +82,18 @@ def write_system_document(
 ) -> None:
     """Write ``components`` and association rows as a SiennaSchemas system document.
 
-    The rows are not validated, so a fixture can state a bad one. ``schema_version`` replaces
-    the SDK's own version in the written file.
+    The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
+    replaces the SDK's own version in the written file.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    document = SystemDocument(
-        name=None,
-        description=None,
-        frequency=None,
-        components=components,
-        supplemental_attributes=[],
-        supplemental_attribute_associations=[],
-        plant_associations=[],
-        combined_cycle_associations=[],
-        service_associations=[],
-        time_series_associations=[
-            TimeSeriesAssociation.model_validate(row) for row in time_series_associations
-        ],
-        time_series_storage_file=sienna_h5_filename(path),
+    path.write_bytes(
+        serialise_system_document(
+            components, list(time_series_associations), sienna_h5_filename(path), 2
+        )
     )
-    write_document(document, path, indent=2)
     if schema_version is not None:
         written = read_json(path)
-        written["schema_version"] = schema_version
+        written[SiennaSchemasSystem.SCHEMA_VERSION] = schema_version
         path.write_text(json.dumps(written, indent=2), encoding="utf-8")
 
 
