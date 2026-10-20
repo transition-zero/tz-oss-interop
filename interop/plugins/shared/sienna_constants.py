@@ -6,6 +6,7 @@ import uuid as _uuid
 from enum import StrEnum
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 _TS_NS = _uuid.uuid5(_uuid.NAMESPACE_OID, "transitionzero.interop")
 
@@ -600,15 +601,6 @@ class SiennaCostType(StrEnum):
     LOAD = "LOAD"
 
 
-class SiennaOperationalState(StrEnum):
-    """Sienna ``OperationalStates`` enum: the operating state of a unit at the start of a run."""
-
-    OFFLINE = "OFFLINE"
-    ONLINE = "ONLINE"
-    STARTUP = "STARTUP"
-    SHUTDOWN = "SHUTDOWN"
-
-
 class SiennaStorageTech(StrEnum):
     """Sienna ``StorageTech`` enum (source: ``SiennaSchemas/Core/common.json``)."""
 
@@ -637,6 +629,16 @@ class SiennaUnitSystem(StrEnum):
 
     COMPONENT_BASE = "COMPONENT_BASE"
     NATURAL_UNITS = "NATURAL_UNITS"
+
+
+LINE_UNITS_NOTE = (
+    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
+LOAD_UNITS_NOTE = "load power values are in MW, so the units are NATURAL_UNITS"
+STORAGE_UNITS_NOTE = (
+    "storage rating and limits are per unit on the base_power, so the units are COMPONENT_BASE"
+)
 
 
 class SiennaCurveType(StrEnum):
@@ -788,7 +790,7 @@ FUNCTION_TYPE_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaFunctionType]
 CURVE_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCurveType])
 VARIABLECOST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaVariableCostType])
 COST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCostType])
-OPERATIONAL_STATE_DTYPE: pl.DataType = pl.Enum([s.value for s in SiennaOperationalState])
+OPERATIONAL_STATE_DTYPE: pl.DataType = pl.Enum([state.value for state in OperationalStates])
 
 LINEAR_FUNC_DTYPE: pl.DataType = pl.Struct(
     {

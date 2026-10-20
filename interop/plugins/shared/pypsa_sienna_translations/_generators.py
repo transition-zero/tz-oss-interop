@@ -10,6 +10,7 @@ from functools import partial
 from typing import Any
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 from interop.core.extensions import ExtensionKind, GeneratorExtension
 from interop.plugins.shared.constants import UNIT_MW, Framework
@@ -51,7 +52,6 @@ from interop.plugins.shared.sienna_constants import (
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
     SiennaCostType,
-    SiennaOperationalState,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
 )
@@ -273,7 +273,7 @@ GENERATOR_AVAILABLE = _default(
 
 GENERATOR_STATUS = _default(
     dest_col=T.STATUS,
-    value=SiennaOperationalState.ONLINE.value,
+    value=OperationalStates.ONLINE.value,
     note="PyPSA has no separate initial on/off state; defaulted to ONLINE",
     dtype=OPERATIONAL_STATE_DTYPE,
 )
