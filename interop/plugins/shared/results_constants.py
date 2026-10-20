@@ -37,6 +37,8 @@ class ResultsUnit(StrEnum):
     """Fixed unit of a variable's value; the format doc, not the manifest, sets these."""
 
     MEGAWATT = "MW"
+    MEGAWATT_HOUR = "MWh"
+    TONNE = "t"
     HOUR = "h"
     COST = "cost"
     COST_PER_MEGAWATT_HOUR = "cost/MWh"
@@ -51,6 +53,10 @@ VARIABLE_UNIT: dict[ResultsVariable, ResultsUnit] = {
     ResultsVariable.PRICE: ResultsUnit.COST_PER_MEGAWATT_HOUR,
     ResultsVariable.SNAPSHOT_WEIGHT: ResultsUnit.HOUR,
     ResultsVariable.OBJECTIVE: ResultsUnit.COST,
+    ResultsVariable.INSTALLED_CAPACITY: ResultsUnit.MEGAWATT,
+    ResultsVariable.NEW_CAPACITY: ResultsUnit.MEGAWATT,
+    ResultsVariable.PRODUCTION: ResultsUnit.MEGAWATT_HOUR,
+    ResultsVariable.EMISSIONS: ResultsUnit.TONNE,
 }
 
 # A row's variable is drawn from the closed vocabulary, so the column is a
