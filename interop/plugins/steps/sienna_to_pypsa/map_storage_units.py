@@ -49,14 +49,16 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
     pypsa_carrier,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
+    express_power_units_kept,
     extendable_floor,
     per_unit_of,
     rated_per_unit,
-    reject_unsupported_power_units,
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 
@@ -92,7 +94,20 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
         generators = state.source_topology.get(SiennaTable.GENERATORS)
         if generators is not None:
-            for row in generators.collect().iter_rows(named=True):
+            hydro_supported, _ = filter_component(
+                generators.collect(),
+                express_power_units_kept(
+                    SiennaUnitSystem.NATURAL_UNITS, [SiennaComponent.HYDRO_DISPATCH]
+                ),
+                build_power_units_skip_report(
+                    "Hydro generator",
+                    "hydro generators",
+                    SiennaGeneratorCol.NAME,
+                    SiennaUnitSystem.NATURAL_UNITS,
+                ),
+                self._recorder,
+            )
+            for row in hydro_supported.iter_rows(named=True):
                 if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) is (
                     SiennaComponent.HYDRO_DISPATCH
                 ):
@@ -104,7 +119,20 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         storage = state.source_topology.get(SiennaTable.STORAGE)
         if storage is not None:
             extensions = self._extensions.read(ExtensionKind.STORAGE)
-            for row in storage.collect().iter_rows(named=True):
+            storage_supported, _ = filter_component(
+                storage.collect(),
+                express_power_units_kept(
+                    SiennaUnitSystem.COMPONENT_BASE, [SiennaComponent.ENERGY_RESERVOIR_STORAGE]
+                ),
+                build_power_units_skip_report(
+                    "Storage",
+                    "storage units",
+                    SiennaStorageCol.NAME,
+                    SiennaUnitSystem.COMPONENT_BASE,
+                ),
+                self._recorder,
+            )
+            for row in storage_supported.iter_rows(named=True):
                 if SiennaComponent(row[SiennaStorageCol.SIENNA_TYPE]) is (
                     SiennaComponent.ENERGY_RESERVOIR_STORAGE
                 ):
@@ -211,7 +239,6 @@ class _HydroMapping:
 def _derive_hydro(
     row: dict[str, Any], bus_names: dict[int, str], extensions: ExtensionReader
 ) -> _HydroMapping:
-    reject_unsupported_power_units(row, SiennaUnitSystem.NATURAL_UNITS)
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
     carried = extensions.read(ExtensionKind.STORAGE).get(str(row[SiennaGeneratorCol.NAME]))
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
@@ -323,7 +350,6 @@ def _derive_phs(
     bus_names: dict[int, str],
     extensions: ExtensionLookup[StorageExtension],
 ) -> _PhsMapping:
-    reject_unsupported_power_units(row, SiennaUnitSystem.COMPONENT_BASE)
     base_power = float(row[SiennaStorageCol.BASE_POWER])
     ext = extensions.get(row[SiennaStorageCol.NAME])
     storage_capacity = float(row[SiennaStorageCol.STORAGE_CAPACITY])
