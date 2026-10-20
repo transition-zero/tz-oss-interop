@@ -352,23 +352,23 @@ def _ratings(line: StagedLine) -> Decision:
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        no_ratings = {
-            SiennaLinkCol.RATING: 0.0,
-            SiennaLinkCol.RATING_FROM: 0.0,
-            SiennaLinkCol.RATING_TO: 0.0,
-        }
-        return Decision.default(PerColumn(no_ratings), note)
+        return Decision.default(_build_ratings(0.0, 0.0), note)
     rating_to = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
-    ratings = {
-        SiennaLinkCol.RATING: max(max_flow, rating_to),
-        SiennaLinkCol.RATING_FROM: max_flow,
-        SiennaLinkCol.RATING_TO: rating_to,
-    }
-    return Decision.derived(PerColumn(ratings), sources, _LIMITS_DERIVATION)
+    return Decision.derived(_build_ratings(max_flow, rating_to), sources, _LIMITS_DERIVATION)
+
+
+def _build_ratings(rating_from: float, rating_to: float) -> PerColumn:
+    return PerColumn(
+        {
+            SiennaLinkCol.RATING: max(rating_from, rating_to),
+            SiennaLinkCol.RATING_FROM: rating_from,
+            SiennaLinkCol.RATING_TO: rating_to,
+        }
+    )
 
 
 def _unrated_min_flow_note(min_flow: float) -> str:
