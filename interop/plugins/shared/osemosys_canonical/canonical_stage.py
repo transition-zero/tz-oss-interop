@@ -33,6 +33,7 @@ from interop.plugins.shared.osemosys_canonical.set_mapping import map_sets
 _TIME_SERIES_KINDS = frozenset({TableKind.PARAMETER, TableKind.EXTENSION})
 # The annotations read the written sets and parameters, so no parameter plan computes twice.
 _ANNOTATED_KINDS = frozenset({TableKind.SET, TableKind.PARAMETER})
+_TABLE_KINDS = frozenset(TableKind)
 
 
 class CanonicalTable(NamedTuple):
@@ -114,11 +115,15 @@ def build_table_path(canonical: CanonicalTable) -> Path:
 def _build_state(tables: list[CanonicalTable], staging_dir: Path) -> State:
     state = State(staging_dir=staging_dir)
     for canonical in tables:
-        if canonical.kind in _TIME_SERIES_KINDS:
-            state.source_time_series[(canonical.kind, canonical.name)] = canonical.table
-        else:
-            state.source_topology[build_table_key(canonical.kind, canonical.name)] = canonical.table
+        set_canonical_table(state, canonical)
     return state
+
+
+def set_canonical_table(state: State, canonical: CanonicalTable) -> None:
+    if canonical.kind in _TIME_SERIES_KINDS:
+        state.source_time_series[(canonical.kind, canonical.name)] = canonical.table
+    else:
+        state.source_topology[build_table_key(canonical.kind, canonical.name)] = canonical.table
 
 
 def build_table_key(kind: TableKind, name: str) -> str:
@@ -133,8 +138,14 @@ def list_canonical_tables(state: State) -> list[CanonicalTable]:
     time_series = [
         CanonicalTable(TableKind(kind), name, table)
         for (kind, name), table in state.source_time_series.items()
+        if _is_table_kind(kind)
     ]
     return [*topology, *time_series]
+
+
+def _is_table_kind(kind: str) -> bool:
+    """A later step stages its own series under a key that is not a canonical kind."""
+    return kind in _TABLE_KINDS
 
 
 def _parse_table_key(key: str) -> tuple[TableKind, str]:

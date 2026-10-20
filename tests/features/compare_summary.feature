@@ -33,3 +33,72 @@ Feature: compare joins two results tables and reports what differs
     Then the file "outputs/summary.md" contains "- `alpha`: 3 rows"
     And the file "outputs/summary.md" contains "- `beta`: 5 rows"
     And the file "outputs/summary.md" contains "| dispatch | 1 | 2 | 1 | - | gen_b |"
+
+  Scenario: annual rows are compared at the annual grain when both sides state them
+    # Each annual row has the timestamp of 1 January of its year, so the hourly dispatch at
+    # that same timestamp stays a variable of its own.
+    Given a results source plugin "gamma_results" stating the rows:
+      | variable   | component | category | timestamp           | value  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0  |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 1000.0 |
+      | production | gen_a     | coal     | 2031-01-01T00:00:00 | 1200.0 |
+      | emissions  | CO2       |          | 2030-01-01T00:00:00 | 50.0   |
+    And a results source plugin "delta_results" stating the rows:
+      | variable   | component | category | timestamp           | value |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0 |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 900.0 |
+      | production | gen_a     | coal     | 2031-01-01T00:00:00 | 900.0 |
+      | emissions  | CO2       |          | 2030-01-01T00:00:00 | 20.0  |
+    And a results pipeline "gamma-to-results" for framework "gamma" with source "gamma_results"
+    And a results pipeline "delta-to-results" for framework "delta" with source "delta_results"
+    When I run from the menu a compare of gamma against delta writing "outputs/summary.md"
+    Then the file "outputs/summary.md" contains "| production | coal | 2 | 200 | 223.6 |"
+    And the file "outputs/summary.md" contains "| emissions | - | 1 | 30 | 30 |"
+    And the file "outputs/summary.md" contains "| dispatch | coal | 1 | 0 | 0 |"
+
+  Scenario: a side that states only hourly rows compares its hourly rows as before
+    Given a results source plugin "gamma_results" stating the rows:
+      | variable   | component | category | timestamp           | value  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0  |
+      | dispatch   | gen_a     | coal     | 2030-01-01T01:00:00 | 110.0  |
+      | production | gen_a     | coal     | 2030-01-01T00:00:00 | 1000.0 |
+    And a results source plugin "delta_results" stating the rows:
+      | variable | component | category | timestamp           | value |
+      | dispatch | gen_a     | coal     | 2030-01-01T00:00:00 | 100.0 |
+      | dispatch | gen_a     | coal     | 2030-01-01T01:00:00 | 130.0 |
+    And a results pipeline "gamma-to-results" for framework "gamma" with source "gamma_results"
+    And a results pipeline "delta-to-results" for framework "delta" with source "delta_results"
+    When I run from the menu a compare of gamma against delta writing "outputs/summary.md"
+    Then the file "outputs/summary.md" contains "| dispatch | coal | 2 | 10 | 14.14 |"
+    And the file "outputs/summary.md" contains "| production | 1 | 0 | 0 | gen_a | - |"
+    And the file "outputs/summary.md" does not contain "| production | coal |"
+
+  Scenario: compare gives a results pipeline that needs one its user mappings file
+    # aetos-to-results stages an otoole model, which needs the units and the fuel carriers
+    # of the user mappings file. GASCC makes 10 GWh in 2030 and holds 2 GW.
+    Given an otoole model
+    And the otoole set "REGION" holds "R1"
+    And the otoole set "TECHNOLOGY" holds "GASCC"
+    And the otoole set "FUEL" holds "ATELEC"
+    And the otoole set "MODE_OF_OPERATION" holds "1"
+    And the otoole set "YEAR" holds "2030"
+    And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC | 1                 | 2030 | 1     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                                                                                                                     |
+      | osemosys: {units: {capacity: GW, energy: GWh, currency: million USD, emissions: kt}, objects: {fuels: [{match: "ELEC$", carrier: electricity}], technologies: [{match: "^GASCC$", category: gas-combined-cycle}]}} |
+    And a results CSV with one column for each year
+    And the results CSV has the row "TotalCapacityAnnual" in "R1" for "GASCC" with the values "2"
+    And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "GASCC 1" with the values "10"
+    And the results CSV is written to "results/results.csv"
+    And a results source plugin "gamma_results" stating the rows:
+      | variable           | component | category           | timestamp           | value   |
+      | installed_capacity | GASCC     | gas-combined-cycle | 2030-01-01T00:00:00 | 2000.0  |
+      | production         | GASCC     | gas-combined-cycle | 2030-01-01T00:00:00 | 11000.0 |
+    And a results pipeline "gamma-to-results" for framework "gamma" with source "gamma_results"
+    When I run from the menu a compare of aetos against gamma, giving aetos its model, its results CSV and its user mappings file, into "outputs/summary.md"
+    Then the printed output does not contain "compare failed"
+    And the file "outputs/summary.md" contains "| installed_capacity | gas-combined-cycle | 1 | 0 | 0 |"
+    And the file "outputs/summary.md" contains "| production | gas-combined-cycle | 1 | 1,000 | 1,000 |"
