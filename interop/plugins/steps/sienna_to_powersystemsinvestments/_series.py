@@ -32,7 +32,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaTable,
 )
-from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
+from interop.plugins.shared.sienna_investments_constants import (
+    SiennaInvestmentsComponent,
+    SiennaSupplyTechnologyCol,
+)
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_default,
@@ -53,6 +56,9 @@ log = logging.getLogger(__name__)
 
 # The series a SiennaSchemas system states a component's profile under.
 _SOURCE_SERIES = SiennaSeriesName.MAX_ACTIVE_POWER.value
+
+# A supply technology and a demand requirement both name their Sienna type in this column.
+_POWER_SYSTEMS_TYPE = SiennaSupplyTechnologyCol.POWER_SYSTEMS_TYPE
 
 # How many snapshots the slice of a year holds.
 _SLICE_LENGTH = 24
@@ -107,15 +113,15 @@ def derive_series(state: State, recorder: ScopedRecorder) -> None:
     )
 
 
-def _build_series_owners(state: State) -> dict[str, tuple[str, str]]:
-    """Which staged frame holds each component's profile, keyed by the component's name."""
-    index: dict[str, tuple[str, str]] = {}
+def _build_series_owners(state: State) -> dict[tuple[str, str], tuple[str, str]]:
+    """Which staged frame holds each component's profile, keyed by its Sienna type and name."""
+    index: dict[tuple[str, str], tuple[str, str]] = {}
     for key, frame in state.source_time_series.items():
         if key[1] != _SOURCE_SERIES:
             continue
         names = frame.select(StagedTimeSeriesCol.COMPONENT).unique().collect()
         for name in names[StagedTimeSeriesCol.COMPONENT].to_list():
-            index[name] = key
+            index[(key[0], name)] = key
     return index
 
 
@@ -145,7 +151,7 @@ def _list_technology_records(
     state: State,
     component: SiennaInvestmentsComponent,
     series_name: InvestmentsSeriesName,
-    owners: dict[str, tuple[str, str]],
+    owners: dict[tuple[str, str], tuple[str, str]],
     peak_by_load: dict[str, float],
     recorder: ScopedRecorder,
 ) -> _TypeRecords:
@@ -157,8 +163,10 @@ def _list_technology_records(
     without: list[str] = []
     unprofiled: list[str] = []
     supply_types = build_supply_types(state)
-    for name in table[SIENNA_NAME_COLUMN].to_list():
-        key = owners.get(name)
+    for name, power_systems_type in zip(
+        table[SIENNA_NAME_COLUMN].to_list(), table[_POWER_SYSTEMS_TYPE].to_list(), strict=True
+    ):
+        key = owners.get((power_systems_type, name))
         is_read = name not in supply_types or supply_types[name] in PROFILED_SUPPLY_TYPES
         if not is_read:
             if key is not None:

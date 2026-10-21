@@ -198,9 +198,10 @@ def _add_slack_generators(network: pypsa.Network, slack: _Slack) -> list[str]:
 
 
 def _read_slack_energy(network: pypsa.Network, slacks: list[str]) -> SlackEnergy:
-    """The MWh that the slacks take at each bus, each snapshot counted once for its length."""
+    """The MWh that the slacks take at each bus, each snapshot counted for the hours that its
+    generator weighting gives."""
     dispatch = network.generators_t.p.reindex(columns=slacks).fillna(0.0).abs()
-    energy = dispatch.multiply(network.snapshot_weightings.stores, axis=0).sum()
+    energy = dispatch.multiply(network.snapshot_weightings.generators, axis=0).sum()
     by_bus = energy.groupby(network.generators.bus.reindex(slacks).to_numpy()).sum()
     return build_slack_energy((str(bus), float(mwh)) for bus, mwh in by_bus.items())
 

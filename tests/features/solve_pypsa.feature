@@ -214,6 +214,21 @@ Feature: Solve a PyPSA network
     And the solved network "outputs/solved/short.nc" has generator "gen" dispatch 50 50
     And the log contains "solve: 60 MWh of load goes unserved at a penalty, the most at bus_1 (60 MWh)"
 
+  Scenario: unserved energy counts each snapshot for the hours of its generator weighting
+    Each of the two snapshots stands for three hours of generator energy, so the 30 MW that
+    goes unserved in each one is 90 MWh, and 180 MWh in all.
+    Given a PyPSA network
+    And the network has 2 snapshots starting 2026-09-01 at 60 minute intervals
+    And the generator snapshot weightings are 3.0 3.0
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "gen" on "bus_1" carrier "gas" p_nom 50.0 marginal_cost 10.0
+    And the network contains load "load_1" on "bus_1" with static p_set 80.0
+    And the network is saved as "inputs/weighted.nc"
+    When I run solve on "inputs/weighted.nc" from "2026-09-01" to "2026-09-01" with unserved energy "penalised" into "outputs/solved"
+    Then the solve reported success
+    And the printed output contains "unserved_energy=180 MWh"
+    And the solved network "outputs/solved/weighted.nc" records 180 MWh of unserved energy at "bus_1"
+
   Scenario: the same shortfall with unserved energy refused does not solve
     Given a PyPSA network
     And the network has 2 snapshots starting 2026-09-01 at 60 minute intervals
