@@ -103,6 +103,20 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | production | step_down |          | 2030-01-01T00:00:00 | 300   |
     And the log contains "1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json: step_down"
 
+  Scenario: A plant link that states no carrier still reports its dispatch
+    A link that burns the fuel of a gas bus and puts out electricity at node_a is a plant. No
+    link of the network states a carrier, so the file holds no carrier column for links.
+    Given the network contains bus "fuel" carrier "gas" v_nom 1.0
+    And the network contains generator "gas supply" on "fuel" carrier "gas" p_nom 1000.0
+    And the network contains link "ccgt" from "fuel" to "node_a" with capacity 50.0 MW efficiency 0.5
+    And the link "ccgt" carries flow 10 10 10 10
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "dispatch" rows among others:
+      | variable | component | category | timestamp           | value |
+      | dispatch | ccgt      |          | 2030-01-01T00:00:00 | 5     |
+
   Scenario: The hourly flow of a two-way line is the flow of its link less the flow of its reverse link
     The reverse link sends 3 MW from node_b to node_a in the second hour, which is a flow of
     -3 MW of the line from node_a to node_b.
