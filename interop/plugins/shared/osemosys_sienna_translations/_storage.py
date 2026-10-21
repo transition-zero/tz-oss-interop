@@ -169,6 +169,9 @@ _COUNTED_NOUN = "storage(s)"
 _LISTED = SkippedNames(column=STORAGE_REPORT_NAME, label="Storages")
 _ONE_LINK = 1
 _ONE_STORAGE = 1
+_TECHNOLOGY_STORAGES = "technology_storages"
+_CHARGE_TECHNOLOGY_STORAGES = "charge_technology_storages"
+_DISCHARGE_TECHNOLOGY_STORAGES = "discharge_technology_storages"
 _AVAILABILITY = "availability"
 _EMPTY = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
@@ -348,6 +351,8 @@ def build_storages_source(
     """One row for each storage that the operations system holds, with its ratings."""
     storages = _read_storages(state, operations)
     storages = _drop_skipped(storages, _build_link_rules(), recorder)
+    storages = _enrich_technology_storages(storages)
+    storages = _drop_skipped(storages, _build_sharing_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
     storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
     report_storage_buses(storages, recorder)
@@ -550,12 +555,39 @@ def _build_link_rules() -> list[SkipRule]:
             SEVERAL_LINKS_SKIP,
         ),
         SkipRule(pl.col(ENERGY) > 0, NO_ENERGY_SKIP),
+    ]
+
+
+def _build_sharing_rules() -> list[SkipRule]:
+    return [
         SkipRule(
-            (pl.len().over(REGION, CHARGE_TECHNOLOGY) == _ONE_STORAGE)
-            & (pl.len().over(REGION, DISCHARGE_TECHNOLOGY) == _ONE_STORAGE),
+            (pl.col(_CHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE)
+            & (pl.col(_DISCHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE),
             SHARED_TECHNOLOGY_SKIP,
         ),
     ]
+
+
+def _enrich_technology_storages(storages: pl.DataFrame) -> pl.DataFrame:
+    """Add how many storages each linked technology charges or discharges, in either role."""
+    counts = _build_technology_storage_counts(storages)
+    for technology, storages_col in (
+        (CHARGE_TECHNOLOGY, _CHARGE_TECHNOLOGY_STORAGES),
+        (DISCHARGE_TECHNOLOGY, _DISCHARGE_TECHNOLOGY_STORAGES),
+    ):
+        renamed = counts.rename({TECHNOLOGY: technology, _TECHNOLOGY_STORAGES: storages_col})
+        storages = storages.join(renamed, on=[REGION, technology], how="left")
+    return storages
+
+
+def _build_technology_storage_counts(storages: pl.DataFrame) -> pl.DataFrame:
+    links = pl.concat(
+        [
+            storages.select(REGION, STORAGE, pl.col(CHARGE_TECHNOLOGY).alias(TECHNOLOGY)),
+            storages.select(REGION, STORAGE, pl.col(DISCHARGE_TECHNOLOGY).alias(TECHNOLOGY)),
+        ]
+    )
+    return links.unique().group_by(_TECHNOLOGY_KEYS).agg(pl.len().alias(_TECHNOLOGY_STORAGES))
 
 
 def _build_technology_rules(bus_names: list[str]) -> list[SkipRule]:

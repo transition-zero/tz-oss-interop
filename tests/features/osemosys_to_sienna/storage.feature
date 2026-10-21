@@ -315,6 +315,21 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the log contains "share a technology that charges or discharges another storage, so each is left out. Storages: R1/ATLONES, R1/ATPHSS"
       And the file "decisions.md" contains "R1/ATPHS charges or discharges another storage too"
 
+    Scenario: Two storages that one technology charges and discharges in turn are each left out
+      ATPHS charges ATPHSS and discharges ATLONES, so both storages would take its whole power.
+      Given the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 1                 | 0.9   |
+        | R1     | ATFLY      | ATLONES | 1                 | 1     |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATBATT     | ATPHSS  | 2                 | 1     |
+        | R1     | ATPHS      | ATLONES | 2                 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 0 component of type "EnergyReservoirStorage"
+      And the log contains "share a technology that charges or discharges another storage, so each is left out. Storages: R1/ATLONES, R1/ATPHSS"
+
     Scenario: A storage sits on the bus of its discharge, and the report names a charge from another bus
       ATPHS discharges to AT and charges from DE, and a Sienna storage charges at its own bus.
       Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
