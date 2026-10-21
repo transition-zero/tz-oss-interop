@@ -110,8 +110,21 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | gas       |          | 2030-01-01T00:00:00 | 8775  |
-    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5"
-    And the file "decisions.md" contains "the slice holds an hour that the slice 2 also holds"
+    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5 of 2030"
+    And the file "decisions.md" contains "the slice holds an hour that the slice 2 of 2030 also holds"
+
+  Scenario: A slice that is left out takes no slice of another year that has the same number
+    Given the series document has the representative day 5 of the year "2030" from "2030-01-02T01:00:00" of 2 hours with weight 50
+    And the series document has the representative day 5 of the year "2035" from "2035-01-03T00:00:00" of 1 hours with weight 10
+    And the expansion solve wrote the variable "ActivePowerVariable__SupplyTechnology__RenewableDispatch__BasicDispatch" with the rows:
+      | DateTime              | name  | value |
+      | 2035-01-03T00:00:00.0 | solar | 2     |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | solar     |          | 2035-01-01T00:00:00 | 20    |
+    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5 of 2030"
 
   Scenario: A name that two technology types share is left out, because the results cannot tell the two apart
     Given the expansion solve wrote the variable "ActivePowerVariable__SupplyTechnology__RenewableDispatch__BasicDispatch" with the rows:

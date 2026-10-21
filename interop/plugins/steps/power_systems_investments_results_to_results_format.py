@@ -50,6 +50,7 @@ log = logging.getLogger(__name__)
 _FIRST_MONTH = 1
 _FIRST_DAY = 1
 _RESULTS_COMPONENT = "results"
+_SLICE_KEYS = [StagedResultCol.YEAR, StagedResultCol.REPRESENTATIVE_DAY]
 _SIGNED_VALUE = "signed_value"
 
 _UNWEIGHTED_WARNING = (
@@ -76,6 +77,17 @@ _UNKNOWN_PERIOD_WARNING = (
     "power-systems-investments-to-results: %d investment period(s) of the solve are not "
     "periods of the series document, so their capacity rows are left out: %s"
 )
+
+
+class Slice(NamedTuple):
+    """One slice of the series document, which its year and its number name together."""
+
+    year: int
+    representative_day: int
+
+    @property
+    def name(self) -> str:
+        return f"{self.representative_day} of {self.year}"
 
 
 class Derivation(NamedTuple):
@@ -154,18 +166,18 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
 
     def _choose_hour_weights(self, weights: pl.DataFrame) -> pl.DataFrame:
         """The hours of each slice that holds no hour of an earlier slice; it reports the rest."""
-        holders: dict[datetime, int] = {}
-        left_out: dict[int, int] = {}
-        slice_keys = [StagedResultCol.YEAR, StagedResultCol.REPRESENTATIVE_DAY]
-        for (_year, representative_day), hours in weights.group_by(slice_keys, maintain_order=True):
+        holders: dict[datetime, Slice] = {}
+        left_out: dict[Slice, Slice] = {}
+        for (year, representative_day), hours in weights.group_by(_SLICE_KEYS, maintain_order=True):
+            one = Slice(int(year), int(representative_day))
             snapshots = hours[StagedResultCol.SNAPSHOT].to_list()
             earlier = next((holders[hour] for hour in snapshots if hour in holders), None)
             if earlier is None:
-                holders.update(dict.fromkeys(snapshots, int(representative_day)))
+                holders.update(dict.fromkeys(snapshots, one))
             else:
-                left_out[int(representative_day)] = earlier
+                left_out[one] = earlier
         self._report_overlapping_slices(left_out)
-        return weights.filter(~pl.col(StagedResultCol.REPRESENTATIVE_DAY).is_in(list(left_out)))
+        return weights.join(_build_slice_keys(list(left_out)), on=_SLICE_KEYS, how="anti")
 
     def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.DataFrame:
         weighted = operations.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
@@ -258,8 +270,8 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         if shared:
             log.warning(_SHARED_NAME_WARNING, len(shared), name_a_few(shared))
 
-    def _report_overlapping_slices(self, left_out: dict[int, int]) -> None:
-        for representative_day, earlier in left_out.items():
+    def _report_overlapping_slices(self, left_out: dict[Slice, Slice]) -> None:
+        for one, earlier in left_out.items():
             self._recorder.append(
                 TranslationEvent(
                     kind=EventKind.COMPONENT_SKIPPED,
@@ -267,15 +279,15 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                         SourceField(
                             framework=Framework.POWER_SYSTEMS_INVESTMENTS,
                             component=SeriesDocument.REPRESENTATIVE_DAY,
-                            name=str(representative_day),
+                            name=one.name,
                         )
                     ],
-                    note=_OVERLAPPING_SLICE_NOTE.format(earlier=earlier),
+                    note=_OVERLAPPING_SLICE_NOTE.format(earlier=earlier.name),
                 )
             )
         if left_out:
             log.warning(
-                _OVERLAPPING_SLICE_WARNING, len(left_out), name_a_few(str(day) for day in left_out)
+                _OVERLAPPING_SLICE_WARNING, len(left_out), name_a_few(one.name for one in left_out)
             )
 
     def _warn_unknown_periods(self, dated: pl.DataFrame) -> None:
@@ -313,6 +325,14 @@ def _list_shared_names(investment: pl.DataFrame, operations: pl.LazyFrame) -> di
         row[StagedResultCol.COMPONENT]: row[StagedResultCol.TECHNOLOGY]
         for row in shared.iter_rows(named=True)
     }
+
+
+def _build_slice_keys(slices: list[Slice]) -> pl.DataFrame:
+    return pl.DataFrame(
+        slices,
+        schema={StagedResultCol.YEAR: pl.Int32, StagedResultCol.REPRESENTATIVE_DAY: pl.Int64},
+        orient="row",
+    )
 
 
 def _express_unshared(shared: list[str]) -> pl.Expr:
