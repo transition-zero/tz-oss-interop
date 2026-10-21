@@ -49,6 +49,7 @@ class StagedResultCol:
     SNAPSHOT = "snapshot"
     VALUE = "value"
     YEAR = "year"
+    REPRESENTATIVE_DAY = "rep_day"
     WEIGHT = "weight"
     HOURS = "hours"
 
@@ -158,7 +159,7 @@ PERIOD_YEARS_KEY = "period_years"
 """``State.source_topology`` key of the year of each investment period."""
 
 HOUR_WEIGHTS_KEY = "hour_weights"
-"""``State.source_topology`` key of each hour of the solve, its year, its weight and its length."""
+"""``State.source_topology`` key of each hour of each slice, its year, its weight and its length."""
 
 OBJECTIVE_KEY = "objective"
 """``State.source_topology`` key of the one-row objective table."""
