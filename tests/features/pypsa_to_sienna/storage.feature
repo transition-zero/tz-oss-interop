@@ -98,3 +98,15 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit PHS to Sien
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "built_phs" having "base_power" set to 800.0
     And the log contains "1 StorageUnit(s) are extendable and a solve built none of them"
     And the file "decisions.md" contains "p_nom_opt is 0, so the plan refused this build and no capacity stands here for an operations model to dispatch"
+
+  Scenario: a reservoir stating no charge efficiency translates beside a pumped-storage unit
+    A reservoir takes water from its catchment and never charges, so it states efficiency_store 0.0.
+    Given a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains storage unit "reservoir_1" on "bus_1" carrier "hydro" p_nom 100.0 p_min_pu 0.0 efficiency_store 0.0 efficiency_dispatch 0.9 inflow 10.0 20.0 30.0
+    And the network contains storage unit "phs_1" on "bus_1" carrier "PHS" p_nom 1000.0 p_min_pu -1.0 max_hours 6.0 efficiency_store 0.866 efficiency_dispatch 0.866
+    And the network is saved as "inputs/reservoir.nc"
+    When I run translate against "inputs/reservoir.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "HydroDispatch"
+    And the file "outputs/system.json" parses as JSON with 1 component of type "EnergyReservoirStorage"

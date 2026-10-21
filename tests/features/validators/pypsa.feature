@@ -62,7 +62,7 @@ Feature: the pypsa-to-sienna pipeline validates the source network before transl
       | attribute           | value | severity | message                                   |
       | p_nom               | -50.0 | CRITICAL | p_nom must be non-negative                |
       | max_hours           | -1.0  | CRITICAL | max_hours must be non-negative            |
-      | efficiency_store    | 0.0   | CRITICAL | efficiency_store must be within (0, 1]    |
+      | efficiency_store    | -0.5  | CRITICAL | efficiency_store must be within [0, 1]    |
       | efficiency_dispatch | 1.5   | CRITICAL | efficiency_dispatch must be within (0, 1] |
       | standing_loss       | 2.0   | CRITICAL | standing_loss must be within [0, 1]       |
 
