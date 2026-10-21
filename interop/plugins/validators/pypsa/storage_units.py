@@ -72,8 +72,7 @@ class PypsaStorageUnits(Validator):
     efficiencies, self-discharge, and that the initial state of charge sits within the energy
     envelope (p_nom * max_hours). Each violation is CRITICAL. The round-trip efficiency
     (efficiency_store * efficiency_dispatch <= 1) is implied by the individual bounds,
-    so it is not checked separately. A reservoir states efficiency_store 0 because it never
-    charges, so zero is valid.
+    so it is not checked separately. A reservoir never charges, so it states efficiency_store 0.
     """
 
     name: ClassVar[str] = "pypsa_storage_units"
