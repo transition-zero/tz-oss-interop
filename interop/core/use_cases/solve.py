@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 
 from interop.core.use_cases.solve_network import SolveNetworkUsingPort
@@ -63,7 +64,7 @@ class SolveUsingPort(SolveUseCase):
             request.time_limit_seconds,
         )
         _reject_non_positive_time_limit(request.time_limit_seconds)
-        _reject_non_positive_discount_rate(request.discount_rate)
+        _reject_unusable_discount_rate(request.discount_rate)
         status, objective = self._expansion.solve_expansion(
             request.portfolio_json_path,
             request.balance_model,
@@ -115,8 +116,8 @@ def _reject_non_positive_time_limit(time_limit_seconds: float | None) -> None:
         raise UserInputError(f"time limit must be a positive number, got {time_limit_seconds}")
 
 
-def _reject_non_positive_discount_rate(discount_rate: float | None) -> None:
-    if discount_rate is not None and not (discount_rate > 0):
+def _reject_unusable_discount_rate(discount_rate: float | None) -> None:
+    if discount_rate is not None and not (math.isfinite(discount_rate) and discount_rate > 0):
         raise UserInputError(
-            f"discount rate given on the run must be a positive number, got {discount_rate}"
+            f"discount rate given on the run must be a positive, finite number, got {discount_rate}"
         )

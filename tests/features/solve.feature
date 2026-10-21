@@ -169,7 +169,15 @@ Feature: solve command runs the Sienna solver on a translated model
     And adapters.yaml binds expansion to "fake_expansion"
     And a file "outputs/portfolio.json" exists
     When I dispatch the expand command for "outputs/portfolio.json" with balance model "multi-region" output directory "expanded" investment treatment "continuous" discount rate "0" solver "simplex" presolve "choose" crossover "choose" time limit ""
-    Then a user error is printed containing "discount rate given on the run must be a positive number, got 0.0"
+    Then a user error is printed containing "discount rate given on the run must be a positive, finite number, got 0.0"
+    And the file "outputs/expansion-call.txt" does not exist
+
+  Scenario: an expansion refuses an infinite discount rate given on the run before the port is reached
+    Given a fake expansion adapter in project plugins
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I dispatch the expand command for "outputs/portfolio.json" with balance model "multi-region" output directory "expanded" investment treatment "continuous" discount rate "inf" solver "simplex" presolve "choose" crossover "choose" time limit ""
+    Then a user error is printed containing "discount rate given on the run must be a positive, finite number, got inf"
     And the file "outputs/expansion-call.txt" does not exist
 
   Scenario: an expansion asks nothing more after the user cancels the solver prompt
