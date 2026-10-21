@@ -60,7 +60,13 @@ class StageAetosResultsCsv(StageOsemosysCsv, StagedSource):
     def _read_results_csv(self, results_csv_path: Path | str) -> bytes:
         if not self._fs.can_read(results_csv_path):
             raise MissingInputError(self.name, _RESULTS_CSV_DESCRIPTION, f"{results_csv_path}")
-        return self._fs.read_bytes(results_csv_path)
+        raw = self._fs.read_bytes(results_csv_path)
+        if not raw.strip():
+            raise UserInputError(
+                f"Source node {self.name!r} read an empty {_RESULTS_CSV_DESCRIPTION}: "
+                f"{results_csv_path}. Check that the solve wrote its results to this file."
+            )
+        return raw
 
 
 def _require_results_params(params: BaseModel | None) -> StageAetosResultsCsvParams:
