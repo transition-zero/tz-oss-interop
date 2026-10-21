@@ -1,8 +1,7 @@
 @slow @fork_unsafe
 Feature: the scaffolded osemosys example runs through the OSeMOSYS pipelines
   The osemosys example that `interop init` scaffolds is the base model of the OSeMOSYS mappings
-  tutorial. Each pipeline reads it from its default paths. The Sienna pipeline also needs the
-  model year of its operations step, so its run gives `step[1].year`.
+  tutorial. Each pipeline reads it from its default paths, so a run needs no override.
 
   Scenario: the OSeMOSYS to Sienna pipeline writes a Sienna system with no components
     Given I have scaffolded the osemosys example at "my-model"
