@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import NamedTuple
 
 import polars as pl
@@ -28,6 +28,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.events import SourceName, record_source_event
 from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ log = logging.getLogger(__name__)
 LOCATED_SETS = (TECHNOLOGY, FUEL, STORAGE)
 # The temporary column of the group that tells if a member has a row in scope.
 _IS_IN_SCOPE_COL = "__is_in_scope"
+_LOCATIONS_PARAMETER = "locations"
+_YEARS_PARAMETER = "years"
 
 
 class Scope(NamedTuple):
@@ -51,6 +54,45 @@ class Scope(NamedTuple):
     @property
     def has_years(self) -> bool:
         return bool(self.years)
+
+
+def reject_scope_outside_model(state: State, scope: Scope) -> None:
+    """Raise when the scope names a location or a year that the model does not hold."""
+    _reject_unknown(_LOCATIONS_PARAMETER, scope.locations, _list_model_locations(state))
+    _reject_unknown(_YEARS_PARAMETER, _list_year_names(scope), _list_model_years(state))
+
+
+def _reject_unknown(parameter: str, requested: Sequence[str], known: list[str]) -> None:
+    unknown = [one for one in requested if one not in known]
+    if unknown:
+        raise UserInputError(
+            f"The parameter `{parameter}` names {', '.join(unknown)}, which the model does not "
+            f"hold. The model {parameter} are: {', '.join(known) or 'none'}."
+        )
+
+
+def _list_model_locations(state: State) -> list[str]:
+    """Each location part that an annotation states, in order."""
+    annotations = [
+        state.source_topology.get(build_table_key(TableKind.ANNOTATION, set_name))
+        for set_name in LOCATED_SETS
+    ]
+    location = pl.col(AnnotationColumn.LOCATION)
+    parts = [
+        annotation.select(location.str.split(LOCATION_SEPARATOR).explode())
+        for annotation in annotations
+        if annotation is not None
+    ]
+    if not parts:
+        return []
+    return pl.concat(parts).drop_nulls().unique().sort(location).collect().to_series().to_list()
+
+
+def _list_model_years(state: State) -> list[str]:
+    years = state.source_topology.get(build_table_key(TableKind.SET, YEAR))
+    if years is None:
+        return []
+    return years.select(pl.col(VALUE_COL).cast(pl.String)).collect().to_series().to_list()
 
 
 def set_scoped_tables(state: State, dropped: Mapping[str, list[str]]) -> None:
@@ -90,12 +132,10 @@ def _express_is_in_scope(scope: Scope) -> pl.Expr:
 
 
 def _list_years_outside_scope(state: State, scope: Scope) -> list[str]:
-    years = state.source_topology.get(build_table_key(TableKind.SET, YEAR))
-    if years is None or not scope.has_years:
+    if not scope.has_years:
         return []
-    members = years.select(pl.col(VALUE_COL).cast(pl.String)).collect().to_series().to_list()
     kept = _list_year_names(scope)
-    return [member for member in members if member not in kept]
+    return [member for member in _list_model_years(state) if member not in kept]
 
 
 def _list_year_names(scope: Scope) -> list[str]:
