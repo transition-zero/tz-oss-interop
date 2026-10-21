@@ -11,6 +11,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.scope import (
     Scope,
     build_dropped_members,
+    reject_scope_outside_model,
     report_dropped,
     set_scoped_tables,
 )
@@ -53,6 +54,7 @@ class OsemosysCanonicalDropOutsideScope(TranslationStep):
                 f"{OsemosysCanonicalDropOutsideScopeParams.__name__}, got {type(params).__name__}"
             )
         scope = Scope(tuple(params.locations), tuple(params.years))
+        reject_scope_outside_model(state, scope)
         dropped = build_dropped_members(state, scope)
         set_scoped_tables(state, dropped)
         report_dropped(dropped, self._recorder)

@@ -120,3 +120,15 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | R1     | ATDELINK   | 2030 | 14    |
       | R1     | ATFRLINK   | 2030 | 15    |
     And the log does not contain "outside the scope"
+
+  Scenario: A location that the model does not hold stops the run, and the message lists the model locations
+    Given a pipeline "scoped" that stages an otoole model and keeps the locations "AT Germany" and the years ""
+    When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "The parameter `locations` names Germany, which the model does not hold. The model locations are: AT, DE, FR."
+
+  Scenario: A year that the model does not hold stops the run, and the message lists the model years
+    Given a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years "2030 2040"
+    When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 1
+    And the log contains "The parameter `years` names 2040, which the model does not hold. The model years are: 2030, 2031."
