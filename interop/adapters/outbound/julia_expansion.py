@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -369,7 +370,7 @@ def _set_discount_rate(jl: Any, stated: float | None) -> float:
     discount_rate = (
         float(jl.seval("PSIP.get_discount_rate(portfolio)")) if stated is None else stated
     )
-    if not discount_rate > 0.0:
+    if not (math.isfinite(discount_rate) and discount_rate > 0.0):
         raise UserInputError(
             "the portfolio states a discount rate of "
             f"{discount_rate}, and the capital recovery factor divides by it. "
