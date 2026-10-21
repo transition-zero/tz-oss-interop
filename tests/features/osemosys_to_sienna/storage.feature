@@ -211,8 +211,8 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
         | R1     | ATPHS      | S1B1      | 2030 | 0.5   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 0.625
-      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "output_active_power_limits.max" set to 0.25
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 0.78125
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "output_active_power_limits.max" set to 0.2
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "fom_charge_per_mw_year" set to 50.0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "rating_series" set to "storage.parquet"
       And the parquet file "outputs/storage.parquet" has 48 rows
@@ -299,6 +299,21 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "decisions.md" contains "no technology names the storage in technology_to_storage, so nothing charges it; no technology names the storage in technology_from_storage, so nothing discharges it"
       And the file "decisions.md" contains "`osemosys.storage.R1/ATIDLES.residual_capacity` = 0.0"
       And the file "decisions.md" contains "the residual_capacity of R1/ATIDLE, which discharges the storage, holds none"
+
+    Scenario: Two storages that one technology charges and discharges are each left out, so its power is not counted twice
+      Given the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 1                 | 0.9   |
+        | R1     | ATPHS      | ATLONES | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+        | R1     | ATPHS      | ATLONES | 2                 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 0 component of type "EnergyReservoirStorage"
+      And the log contains "share a technology that charges or discharges another storage, so each is left out. Storages: R1/ATLONES, R1/ATPHSS"
+      And the file "decisions.md" contains "R1/ATPHS charges or discharges another storage too"
 
     Scenario: A storage sits on the bus of its discharge, and the report names a charge from another bus
       ATPHS discharges to AT and charges from DE, and a Sienna storage charges at its own bus.

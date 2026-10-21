@@ -159,11 +159,13 @@ _BASE_POWER_DERIVATION = (
 _INPUT_LIMITS_DERIVATION = (
     "min = 0; max = the lower of residual_capacity of the charging technology, in MW, × its "
     "electricity input_activity_ratio at the charge mode × its availability_factor, and "
-    "storage_max_charge_rate, in MWh / 8760 h when it is above 0; per unit of base_power"
+    "storage_max_charge_rate, in MWh / 8760 h when it is above 0, × that input_activity_ratio / "
+    "technology_to_storage; per unit of base_power"
 )
 _OUTPUT_LIMITS_DERIVATION = (
     "min = 0; max = the lower of base_power × availability_factor of the discharging technology, "
-    "and storage_max_discharge_rate, in MWh / 8760 h when it is above 0; per unit of base_power"
+    "and storage_max_discharge_rate, in MWh / 8760 h when it is above 0, × the electricity "
+    "output_activity_ratio at the discharge mode / technology_from_storage; per unit of base_power"
 )
 _EFFICIENCY_DERIVATION = (
     "in = technology_to_storage / the electricity input_activity_ratio at the charge mode; out = "
