@@ -135,7 +135,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       | S2B2      | 2030 | 0     |
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "fall in a timeslice whose year_split is zero"
+    And the log contains "in 2030 fall in a timeslice whose year_split is zero"
     And the log contains "ATELEC/S2B2"
     And the file "decisions.md" contains "has a year_split of zero"
 
