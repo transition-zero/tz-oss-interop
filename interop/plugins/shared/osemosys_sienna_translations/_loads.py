@@ -314,7 +314,7 @@ def _build_series(
     state: State, operations: OperationsYear, demands: pl.DataFrame, recorder: ScopedRecorder
 ) -> pl.DataFrame:
     specified = _build_specified_demand(state, operations, demands)
-    _report_demand_without_hours(specified, recorder)
+    _report_demand_without_hours(specified, operations.year, recorder)
     hourly = specified.select(LOAD_NAME, TIMESLICE, _HOURLY_MW)
     return pl.concat(
         [_reshape_to_series(operations, hourly), _build_accumulated_series(operations, demands)]
@@ -340,15 +340,17 @@ def _build_specified_demand(
     )
 
 
-def _report_demand_without_hours(specified: pl.DataFrame, recorder: ScopedRecorder) -> None:
+def _report_demand_without_hours(
+    specified: pl.DataFrame, year: int, recorder: ScopedRecorder
+) -> None:
     """A profile above zero in a timeslice with no share of the year reaches no hour."""
     lost = specified.filter((pl.col(_YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0))
     for row in lost.iter_rows(named=True):
         recorder.append(_build_lost_demand_event(row))
-    _warn_lost_demand(lost)
+    _warn_lost_demand(lost, year)
 
 
-def _warn_lost_demand(lost: pl.DataFrame) -> None:
+def _warn_lost_demand(lost: pl.DataFrame, year: int) -> None:
     if lost.is_empty():
         return
     names = sorted(
@@ -356,10 +358,11 @@ def _warn_lost_demand(lost: pl.DataFrame) -> None:
         for load, timeslice in lost.select(LOAD_NAME, TIMESLICE).iter_rows()
     )
     log.warning(
-        "%s: %d demand profile value(s) above zero fall in a timeslice whose year_split is "
-        "zero, so that demand reaches no hour and is left out. Each one: %s",
+        "%s: %d demand profile value(s) above zero in %d fall in a timeslice whose year_split "
+        "is zero, so that demand reaches no hour and is left out. Each one: %s",
         OSEMOSYS_TO_SIENNA_PIPELINE,
         lost.height,
+        year,
         name_a_few(names),
     )
 
