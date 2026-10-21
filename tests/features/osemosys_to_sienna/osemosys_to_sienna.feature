@@ -184,7 +184,7 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
     And the log contains "The model years are: 2030, 2035."
 
   Scenario: The REPL asks for the model year, because the pipeline states none
-    When I translate the otoole model to Sienna in the REPL and answer the year "2030" and the locations "AT, FR"
+    When I translate the otoole model to Sienna in the REPL and answer the year "2030" and the locations "AT"
     Then the prompt "step[1].year" was asked
     And the file "outputs/system.json" parses as JSON with 1 component of type "ACBus"
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
