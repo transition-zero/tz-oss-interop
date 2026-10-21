@@ -121,13 +121,12 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
         return document
 
     def _reject_results_dir_without_results(self, results_dir: Path) -> None:
-        """Raise when the directory holds none of the files that the solve writes."""
-        relatives = [
-            relative
+        """Raise when the directory holds no investment or operations result of the solve."""
+        paths = [
+            results_dir / relative
             for result_csvs in (*INVESTMENT_RESULT_CSVS, *OPERATIONS_RESULT_CSVS)
             for _technology, relative in result_csvs.list_paths()
         ]
-        paths = [results_dir / OPTIMIZER_STATS_CSV, *(results_dir / path for path in relatives)]
         if not any(self._fs.can_read(path) for path in paths):
             raise MissingInputError(self.name, _RESULTS_DIR_DESCRIPTION, f"{results_dir}")
 
