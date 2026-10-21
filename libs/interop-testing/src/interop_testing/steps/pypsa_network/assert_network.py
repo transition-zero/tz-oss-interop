@@ -29,10 +29,23 @@ from interop_testing.steps.pypsa_network._written_network import (
 
 _EMPTY = ""
 
+# The checks that fail the step; a written network declares no carriers, so that check only logs.
+_STRICT_CONSISTENCY_CHECKS = (
+    "unknown_buses",
+    "time_series",
+    "static_power_attrs",
+    "time_series_power_attrs",
+    "cost_consistency",
+    "investment_periods",
+    "shapes",
+    "zero_impedances",
+    "generators",
+)
+
 
 @then(parsers.parse('the PyPSA network "{path}" passes the PyPSA consistency check'))
 def assert_consistent(path: str) -> None:
-    read_network(path).consistency_check()
+    read_network(path).consistency_check(strict=list(_STRICT_CONSISTENCY_CHECKS))
 
 
 # ---------- Buses ----------

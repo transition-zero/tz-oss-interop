@@ -44,8 +44,7 @@ def assert_results_rows(path: str, variable: str, datatable: list[list[str]]) ->
     is in ISO form, such as `2030-01-01T00:00:00`."""
     header, *expected_rows = datatable
     assert tuple(header) == (*_RESULTS_KEY_COLUMNS, _VALUE_COLUMN), header
-    table = pl.read_parquet(Path(path)).filter(pl.col(_VARIABLE_COLUMN).cast(pl.Utf8) == variable)
-    actual = {_build_results_key(row): row[_VALUE_COLUMN] for row in table.iter_rows(named=True)}
+    actual = _read_results_values(path, variable)
     expected = {tuple(row[:-1]): float(row[-1]) for row in expected_rows}
     assert actual.keys() == expected.keys(), f"expected {variable} rows {expected}, got {actual}"
     for key, value in expected.items():
@@ -59,13 +58,22 @@ def assert_results_rows_among_others(path: str, variable: str, datatable: list[l
     """Find each row of one variable. The parquet can hold other rows of that variable."""
     header, *expected_rows = datatable
     assert tuple(header) == (*_RESULTS_KEY_COLUMNS, _VALUE_COLUMN), header
-    table = pl.read_parquet(Path(path)).filter(pl.col(_VARIABLE_COLUMN).cast(pl.Utf8) == variable)
-    actual = {_build_results_key(row): row[_VALUE_COLUMN] for row in table.iter_rows(named=True)}
+    actual = _read_results_values(path, variable)
     for *key, value in expected_rows:
         assert tuple(key) in actual, f"no {variable} row {key}; got {sorted(actual)}"
         assert math.isclose(actual[tuple(key)], float(value), rel_tol=_RELATIVE_TOLERANCE), (
             f"expected {value} for {key}, got {actual[tuple(key)]}"
         )
+
+
+def _read_results_values(path: str, variable: str) -> dict[tuple[str, ...], float]:
+    """The value of each row of one variable, by its key, failing on a key that two rows hold."""
+    table = pl.read_parquet(Path(path)).filter(pl.col(_VARIABLE_COLUMN).cast(pl.Utf8) == variable)
+    actual = {_build_results_key(row): row[_VALUE_COLUMN] for row in table.iter_rows(named=True)}
+    assert len(actual) == table.height, (
+        f"{table.height} {variable} rows in {path} hold only {len(actual)} keys: {sorted(actual)}"
+    )
+    return actual
 
 
 def _build_results_key(row: dict[str, object]) -> tuple[str, ...]:

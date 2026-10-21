@@ -194,7 +194,8 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
         self._map_existing_fleet(state, rows_by_type)
         report_unmodelled(rows_by_type, self._recorder)
         for sienna_type, rows in rows_by_type.items():
-            state.destination_tables[sienna_type] = pl.DataFrame(rows)
+            # The rows of one type state different cost fields, and Polars reads 100 by default.
+            state.destination_tables[sienna_type] = pl.DataFrame(rows, infer_schema_length=None)
         context.limits.warn_lost()
         context.links.warn_lost()
         report_carbon_caps(state, self._recorder)

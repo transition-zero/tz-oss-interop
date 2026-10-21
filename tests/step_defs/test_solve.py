@@ -1,7 +1,16 @@
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 from pytest_bdd import parsers, scenarios, then, when
 
-from tests.step_defs.conftest import invoke_expand, invoke_solve, join_printed_messages
+from tests.step_defs.conftest import (
+    invoke_expand,
+    invoke_expand_cancelling,
+    invoke_solve,
+    join_printed_messages,
+)
 
 scenarios("../features/solve.feature")
 
@@ -102,3 +111,21 @@ def when_dispatch_expand_with_every_answer(
         run_crossover=crossover,
         time_limit_seconds=time_limit,
     )
+
+
+@when(
+    parsers.parse('I dispatch the expand command for "{path}" and cancel the balance model prompt')
+)
+def when_expand_cancelling_balance_model(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    invoke_expand_cancelling(monkeypatch, path, [])
+
+
+@when(parsers.parse('I dispatch the expand command for "{path}" and cancel the solver prompt'))
+def when_expand_cancelling_solver(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    invoke_expand_cancelling(monkeypatch, path, ["multi-region", "continuous"])
+
+
+@then(parsers.parse('no prompt follows the select prompt "{message}"'))
+def assert_last_prompt(recorded_selects: list[dict[str, Any]], message: str) -> None:
+    asked = [record["message"] for record in recorded_selects]
+    assert asked and asked[-1] == message, f"expected {message!r} as the last prompt, got {asked}"

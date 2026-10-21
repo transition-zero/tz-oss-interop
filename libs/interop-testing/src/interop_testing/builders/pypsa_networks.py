@@ -190,6 +190,15 @@ class PyPSANetworkBuilder:
         self._check_not_saved(f"generator {name!r} attribute {attribute!r}")
         self._network.generators.loc[name, attribute] = value
 
+    def add_generator_copies(self, name: str, count: int) -> None:
+        """Add `count` generators named `<name> 1` to `<name> <count>`, each stating every static
+        attribute of the generator `name`."""
+        self._check_not_saved(f"copies of generator {name!r}")
+        generators = self._network.generators
+        copies = pd.concat([generators.loc[[name]]] * count)
+        copies.index = pd.Index([f"{name} {number}" for number in range(1, count + 1)])
+        self._network.generators = pd.concat([generators, copies])
+
     def add_storage_unit(
         self,
         name: str,

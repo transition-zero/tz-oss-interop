@@ -18,6 +18,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel
 
 from interop.adapters.outbound.julia_packages import declare_julia_packages
+from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.plugins.shared.power_systems_investments_schema import (
     MODELLED_TECHNOLOGIES,
     SERIES_JSON_SUFFIX,
@@ -55,10 +56,6 @@ _TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = tuple(
 
 # How far from proven optimality a mixed-integer run may stop, matching the dispatch path.
 _MILP_REL_GAP = 0.01
-
-
-def _julia_str(path: Path) -> str:
-    return str(path).replace("\\", "/").replace('"', '\\"')
 
 
 @dataclass(frozen=True)
@@ -247,7 +244,8 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
         const PSIP = PowerSystemsInvestmentsPortfolios
         const PSIN = PowerSystemsInvestments
     """)
-    jl.seval(f'global portfolio = PSIP.Portfolio("{_julia_str(request.portfolio_json_path)}")')
+    portfolio_path = build_julia_path_text(request.portfolio_json_path)
+    jl.seval(f'global portfolio = PSIP.Portfolio("{portfolio_path}")')
 
     log.info("=== 2. Attaching the time series the portfolio cannot carry ===")
     _attach_series(jl, request.document)
@@ -267,7 +265,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
             portfolio_to_file = false,
             store_variable_names = true,
         )
-        PSIN.build!(model; output_dir = "{_julia_str(request.output_dir)}")
+        PSIN.build!(model; output_dir = "{build_julia_path_text(request.output_dir)}")
     """)
 
     log.info("=== 5. Solving ===")
@@ -371,7 +369,7 @@ def _set_discount_rate(jl: Any, stated: float | None) -> float:
     discount_rate = (
         float(jl.seval("PSIP.get_discount_rate(portfolio)")) if stated is None else stated
     )
-    if discount_rate <= 0.0:
+    if not discount_rate > 0.0:
         raise UserInputError(
             "the portfolio states a discount rate of "
             f"{discount_rate}, and the capital recovery factor divides by it. "
@@ -426,7 +424,7 @@ def _write_results(jl: Any, output_dir: Path) -> None:
     """One CSV per decision and per stored expression, and the optimizer's statistics."""
     jl.seval(f"""
         let
-            out = "{_julia_str(output_dir)}"
+            out = "{build_julia_path_text(output_dir)}"
             for (folder, names, read) in (
                     ("variables", IS.Optimization.list_variable_names(results),
                      PSIN.read_variable),
