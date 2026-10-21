@@ -115,3 +115,9 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=not_expanded source.series_json_path=psi/portfolio_series.json"
     Then the pipeline exit code is 1
     And the log contains "Source node 'stage_power_systems_investments_results' cannot read the expansion results directory it was given: not_expanded"
+
+  Scenario: A results directory that holds only the solve statistics stops the run, because it holds no result
+    Given a results directory "stats_only" that holds only the file "results/optimizer_stats.csv"
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=stats_only source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 1
+    And the log contains "Source node 'stage_power_systems_investments_results' cannot read the expansion results directory it was given: stats_only"
