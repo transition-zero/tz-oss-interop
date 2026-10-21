@@ -19,8 +19,8 @@ table, because Sienna is the hub.
 
 | Pipeline | Steps | Writes |
 | --- | --- | --- |
-| `osemosys-csv-to-sienna` | scope, operations | `system.json`, its HDF5 companion, `extensions.json` |
-| `osemosys-csv-to-sienna-investments` | scope, operations, portfolio | the same three files, and `portfolio.json` |
+| `osemosys-csv-to-sienna` | scope, operations, report | `system.json`, its HDF5 companion, `extensions.json` |
+| `osemosys-csv-to-sienna-investments` | scope, operations, portfolio, report | the same three files, and `portfolio.json` |
 | `tz-osemosys-to-sienna` | as `osemosys-csv-to-sienna` | as `osemosys-csv-to-sienna` |
 | `tz-osemosys-to-sienna-investments` | as `osemosys-csv-to-sienna-investments` | as `osemosys-csv-to-sienna-investments` |
 
@@ -34,6 +34,7 @@ steps:
   - name: osemosys_to_sienna_map_components
   - name: sienna_relate_components
   - name: osemosys_to_sienna_investments_map_technologies   # investments only
+  - name: osemosys_to_sienna_report_unapplied_parameters
 sinks:
   - name: emit_sienna_files
   - name: emit_sienna_portfolio                            # investments only
@@ -65,8 +66,9 @@ not a member of `set/year`, the run stops and lists the model years. The fleet i
 out, and `decisions.md` names it.
 
 In the investments pipeline, the base system is the fleet at the start of the plan. So the two
-investments manifests give the operations step `year: earliest`, which is the earliest year in
-scope after step 6. The word is in the manifest, so it is not a hidden default. The portfolio
+investments manifests give the operations step `year: earliest`. The step reads the word as the
+earliest `set/year` member in scope after step 6, so the membership check above does not apply
+to it. The word is in the manifest, so it is not a hidden default. The portfolio
 step takes the same year as its base system year.
 
 ### 3. A mappings row gives the Sienna operations type of a category
