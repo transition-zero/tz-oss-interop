@@ -43,6 +43,23 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     And the file "outputs/system.json" parses as JSON with 1 component of type "Area"
     And the file "decisions.md" contains "this is capacity the plan may build rather than capacity an operations model may dispatch, so the portfolio holds it and the base system does not"
 
+  Scenario: unbuilt candidates leave the base system, and the log names them
+    Given a Plexos model
+    And the model states "Build Cost" in "$/kW"
+    And the model states "FO&M Charge" in "$/kW/yr"
+    And the model states "WACC" in "%"
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains generator "REZ_Solar_A" with "node=North_Node, category=Solar, Max Capacity=100, Units=0, Max Units Built=5, Build Cost=1200, WACC=7, Economic Life=25, Technical Life=30, FO&M Charge=15"
+    And the model contains generator "REZ_Solar_B" with "node=North_Node, category=Solar, Max Capacity=100, Units=0, Max Units Built=4, Build Cost=1200, WACC=7, Economic Life=25, Technical Life=30, FO&M Charge=15"
+    And the model is saved as "inputs/two_candidates.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | category       | Solar       | RenewableDispatch     |                  | PVe                     |
+    When I run plexos-to-sienna-investments against "inputs/two_candidates.xml" writing "outputs/portfolio.json"
+    Then the file "outputs/system.json" parses as JSON with 0 components of type "RenewableDispatch"
+    And the log contains "2 plant(s) nobody has built are left out of the base system: REZ_Solar_A, REZ_Solar_B"
+
   Scenario: a candidate Battery becomes a StorageTechnology
     Given a Plexos model
     And the model contains region "North"
