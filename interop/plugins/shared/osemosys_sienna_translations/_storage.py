@@ -168,6 +168,7 @@ _TECHNOLOGY_KEYS = [REGION, TECHNOLOGY]
 _COUNTED_NOUN = "storage(s)"
 _LISTED = SkippedNames(column=STORAGE_REPORT_NAME, label="Storages")
 _ONE_LINK = 1
+_ONE_STORAGE = 1
 _AVAILABILITY = "availability"
 _EMPTY = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
@@ -256,6 +257,14 @@ SEVERAL_LINKS_SKIP = _build_skip(
         f"{row[CHARGE_LINKS]} rows of technology_to_storage and {row[DISCHARGE_LINKS]} rows of "
         "technology_from_storage name the storage, and a Sienna storage takes its power from "
         "one of each"
+    ),
+)
+SHARED_TECHNOLOGY_SKIP = _build_skip(
+    "share a technology that charges or discharges another storage",
+    lambda row: (
+        f"{row[REGION]}/{row[DISCHARGE_TECHNOLOGY]} or {row[REGION]}/{row[CHARGE_TECHNOLOGY]} "
+        "charges or discharges another storage too, and each Sienna storage would take the whole "
+        "power of that technology"
     ),
 )
 NO_ENERGY_SKIP = _build_skip(
@@ -541,6 +550,11 @@ def _build_link_rules() -> list[SkipRule]:
             SEVERAL_LINKS_SKIP,
         ),
         SkipRule(pl.col(ENERGY) > 0, NO_ENERGY_SKIP),
+        SkipRule(
+            (pl.len().over(REGION, CHARGE_TECHNOLOGY) == _ONE_STORAGE)
+            & (pl.len().over(REGION, DISCHARGE_TECHNOLOGY) == _ONE_STORAGE),
+            SHARED_TECHNOLOGY_SKIP,
+        ),
     ]
 
 
@@ -671,12 +685,14 @@ def _enrich_ratings(
     )
     drawn = units.convert_capacity_to_mw(pl.col(CHARGE_CAPACITY)) * pl.col(CHARGE_RATIO)
     given = pl.col(POWER_MW) * pl.col(DISCHARGE_AVAILABILITY)
+    # A rate caps the storage side, so each cap takes the grid side of that rate.
+    drawn_cap = pl.col(CHARGE_RATE_MW) * pl.col(CHARGE_RATIO) / pl.col(CHARGE_LINK_VALUE)
+    given_cap = pl.col(DISCHARGE_RATE_MW) * pl.col(DISCHARGE_RATIO) / pl.col(DISCHARGE_LINK_VALUE)
     return table.with_columns(
         (
-            pl.min_horizontal(drawn * pl.col(CHARGE_AVAILABILITY), CHARGE_RATE_MW)
-            / pl.col(POWER_MW)
+            pl.min_horizontal(drawn * pl.col(CHARGE_AVAILABILITY), drawn_cap) / pl.col(POWER_MW)
         ).alias(INPUT_LIMIT),
-        (pl.min_horizontal(given, DISCHARGE_RATE_MW) / pl.col(POWER_MW)).alias(OUTPUT_LIMIT),
+        (pl.min_horizontal(given, given_cap) / pl.col(POWER_MW)).alias(OUTPUT_LIMIT),
         (pl.col(ENERGY_MWH) / pl.col(POWER_MW)).alias(STORAGE_HOURS),
         (pl.col(CHARGE_LINK_VALUE) / pl.col(CHARGE_RATIO)).alias(EFFICIENCY_IN),
         (pl.col(DISCHARGE_RATIO) / pl.col(DISCHARGE_LINK_VALUE)).alias(EFFICIENCY_OUT),
