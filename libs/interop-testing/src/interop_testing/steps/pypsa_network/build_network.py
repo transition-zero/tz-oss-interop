@@ -205,6 +205,13 @@ def given_generator_has_attribute(
     pypsa_network_builder.set_generator_attribute(name, attribute, value)
 
 
+@given(parsers.parse('the network contains {count:d} copies of generator "{name}"'))
+def given_generator_copies(
+    pypsa_network_builder: PyPSANetworkBuilder, count: int, name: str
+) -> None:
+    pypsa_network_builder.add_generator_copies(name, count)
+
+
 @given(
     parsers.re(
         r'the network contains storage unit "(?P<name>[^"]+)" on "(?P<bus>[^"]+)" '

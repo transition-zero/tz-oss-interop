@@ -40,10 +40,14 @@ from interop.plugins.shared.power_systems_investments_schema import (
     SeriesDocument,
     build_component_metadata,
 )
+from interop.plugins.shared.sienna_constants import SYSTEM_BASE_MVA
 from interop.plugins.shared.sienna_investments_constants import PORTFOLIO_FINANCIAL_DATA_TABLE
 from interop.plugins.sinks._sienna_files import drop_absent_fields
 from interop.plugins.sinks.emit_power_simulations_h5_sidecar import EmitPowerSimulationsH5Sidecar
-from interop.plugins.sinks.emit_power_simulations_system_json import EmitPowerSimulationsSystemJson
+from interop.plugins.sinks.emit_power_simulations_system_json import (
+    EmitPowerSimulationsSystemJson,
+    reject_other_base_power,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -62,7 +66,7 @@ class EmitPowerSystemsInvestmentsFilesParams(BaseModel):
     portfolio_name: str = Field(
         default="InteropPortfolio", description="name recorded on the portfolio"
     )
-    base_power: float = Field(default=100.0, description="base system base power in MVA")
+    base_power: float = Field(default=SYSTEM_BASE_MVA, description="base system base power in MVA")
     frequency: float = Field(default=50.0, description="base system frequency in Hz")
     indent: int = Field(default=2, description="JSON indent width")
 
@@ -81,6 +85,7 @@ class EmitPowerSystemsInvestmentsFiles(Sink):
                 f"{EmitPowerSystemsInvestmentsFilesParams.__name__}, "
                 f"got {type(params).__name__}"
             )
+        reject_other_base_power(params.base_power)
         with self._fs.open_write(params.h5_output_path) as handle:
             EmitPowerSimulationsH5Sidecar.write_h5(state, handle)
         self._write_json(

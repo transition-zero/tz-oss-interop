@@ -526,21 +526,27 @@ def _prompt_highs_options(replay: dict[str, Any]) -> _HiGHSAnswers | None:
         choices=_SOLVER_ALGORITHMS,
         default=_select_default(replay.get(DetailKey.SOLVER), _SOLVER_ALGORITHMS),
     ).ask()
+    if solver is None:
+        return None
     presolve = questionary.select(
         "Presolve? (choose = HiGHS decides automatically)",
         choices=_PRESOLVE_OPTIONS,
         default=_select_default(replay.get(DetailKey.PRESOLVE), _PRESOLVE_OPTIONS),
     ).ask()
+    if presolve is None:
+        return None
     run_crossover = questionary.select(
         "Run crossover after IPM? (choose = HiGHS decides automatically)",
         choices=_CROSSOVER_OPTIONS,
         default=_select_default(replay.get(DetailKey.RUN_CROSSOVER), _CROSSOVER_OPTIONS),
     ).ask()
+    if run_crossover is None:
+        return None
     raw_time_limit = questionary.text(
         "Time limit in seconds? (blank = no limit)",
         default=str(replay.get(DetailKey.TIME_LIMIT_SECONDS, "")),
     ).ask()
-    if None in (solver, presolve, run_crossover, raw_time_limit):
+    if raw_time_limit is None:
         return None
     time_limit_seconds = _parse_time_limit(raw_time_limit)
     if time_limit_seconds is _UNREADABLE:
@@ -633,16 +639,20 @@ def _prompt_expansion_answers(replay: dict[str, Any]) -> _ExpansionAnswers | Non
         choices=_BALANCE_MODELS,
         default=_select_default(replay.get(DetailKey.BALANCE_MODEL), _BALANCE_MODELS),
     ).ask()
+    if balance_model is None:
+        return None
     investment_treatment = questionary.select(
         _INVESTMENT_TREATMENT_PROMPT,
         choices=_INVESTMENT_TREATMENTS,
         default=_select_default(replay.get(DetailKey.INVESTMENT_TREATMENT), _INVESTMENT_TREATMENTS),
     ).ask()
+    if investment_treatment is None:
+        return None
     raw_discount_rate = questionary.text(
         "Discount rate? (blank = the rate the portfolio states)",
         default=str(replay.get(DetailKey.DISCOUNT_RATE, "")),
     ).ask()
-    if None in (balance_model, investment_treatment, raw_discount_rate):
+    if raw_discount_rate is None:
         return None
     discount_rate = _parse_discount_rate(raw_discount_rate)
     if discount_rate is _UNREADABLE:

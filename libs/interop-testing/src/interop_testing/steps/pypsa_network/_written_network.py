@@ -115,6 +115,7 @@ class WrittenComponent:
 
     def assert_unstated(self, attribute: str) -> None:
         frame = read_frame(self.path, self.kind)
+        assert self.name in frame.index, f"no {self.kind} {self.name!r} in {self.path}"
         value = frame.at[self.name, attribute] if attribute in frame.columns else math.nan
         assert pd.isna(value), (
             f"expected {self.kind} {self.name} to state no {attribute}, got {value!r}"

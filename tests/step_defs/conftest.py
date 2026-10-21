@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import itertools
 import shlex
 import sys
 from collections.abc import Callable, Iterator, Mapping
@@ -489,6 +490,21 @@ def invoke_expand(
     )
     stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
     stub_questionary_attr(monkeypatch, "text", iter([discount_rate, time_limit_seconds]))
+    _dispatch(Command.SOLVE, make_container())
+
+
+def invoke_expand_cancelling(
+    monkeypatch: pytest.MonkeyPatch, portfolio_json_path: str, selects_before_cancel: list[str]
+) -> None:
+    """Answer the expansion selects in order, then cancel every select that follows them."""
+    stub_questionary_attr(monkeypatch, "path", iter([portfolio_json_path, "expanded"]))
+    stub_questionary_attr(
+        monkeypatch,
+        "select",
+        itertools.chain(["sienna-investments", *selects_before_cancel], itertools.repeat(None)),
+    )
+    stub_questionary_attr(monkeypatch, "confirm", itertools.repeat(True))
+    stub_questionary_attr(monkeypatch, "text", itertools.repeat(""))
     _dispatch(Command.SOLVE, make_container())
 
 

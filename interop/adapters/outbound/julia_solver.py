@@ -13,6 +13,7 @@ from interop.adapters.outbound.balance_slacks import (
     warn_balance_slacks,
 )
 from interop.adapters.outbound.julia_packages import declare_julia_packages
+from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import (
     DispatchOutcome,
@@ -25,10 +26,6 @@ from interop.ports.outbound.solver import (
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 log = logging.getLogger(__name__)
-
-
-def _julia_str(path: Path) -> str:
-    return str(path).replace("\\", "/").replace('"', '\\"')
 
 
 # PowerSimulations reads a thermal availability forecast and a fuel price series under these
@@ -352,7 +349,7 @@ def _run_pipeline(
     """Build and solve the Sienna system in Julia, re-raising Julia errors as user errors."""
     from juliacall import JuliaError  # noqa: PLC0415
 
-    sienna_json_str = _julia_str(sienna_json_path)
+    sienna_json_str = build_julia_path_text(sienna_json_path)
     try:
         return _run_pipeline_inner(
             jl,
@@ -462,7 +459,7 @@ def _run_pipeline_inner(
         """)
 
     log.info("=== 3. Building DecisionModel ===")
-    out_dir_str = _julia_str(output_dir)
+    out_dir_str = build_julia_path_text(output_dir)
     highs_args = _build_highs_args(
         solver, presolve, run_crossover, time_limit_seconds, unit_commitment
     )
@@ -493,7 +490,7 @@ def _run_pipeline_inner(
     warn_balance_slacks(unserved, _read_slack_energy(jl, _SURPLUS_SLACK))
 
     log.info("=== 5. Exporting results ===")
-    wide_dir_str = _julia_str(output_dir / "results_wide")
+    wide_dir_str = build_julia_path_text(output_dir / "results_wide")
     jl.seval("""
         let
             try

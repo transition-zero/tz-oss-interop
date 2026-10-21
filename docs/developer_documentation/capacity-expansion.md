@@ -119,7 +119,7 @@ the component that came off disk. Each record names:
 | `series_name` | `ops_variable_cap_factor` on a supply technology, `ops_demand` on a demand requirement |
 | `year` | the calendar year of the slice, which the model looks the series up by |
 | `rep_day` | the index of the slice among the slices of every year, in order from 1, which the model looks the series up by |
-| `weight` | how many days of the year the slice stands for |
+| `weight` | how many times the slice occurs in the year |
 
 The names are the package's own, one per technology type, so a document stating any other
 name reaches a model that finds nothing. The model reads `ops_variable_cap_factor` for a
@@ -205,8 +205,9 @@ This applies to a portfolio that states no series of its own. A SiennaSchemas sy
 profile per component over the whole snapshot window, and no representative days at all. A
 `RenewableDispatch` or `HydroDispatch` technology that the system states no profile for gets
 1.0 for every hour of the slice, and the step warns. The step therefore takes **the first 24 snapshots** as
-representative day 1 and weights it 365 days, and derives one investment period per year the
-slices fall in, running that whole year. Clustering a real year into several representative
+representative day 1. The weight is 8760 over the hours that the slice covers, so an hourly
+slice weighs 365 and a half-hourly slice weighs 730. The step derives one investment period per
+year the slices fall in, running that whole year. Clustering a real year into several representative
 days is not done here.
 
 A demand profile is multiplied by the load's own `max_active_power`, because a SiennaSchemas

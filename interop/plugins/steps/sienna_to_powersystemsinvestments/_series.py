@@ -20,6 +20,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.power_systems_investments_schema import (
+    HOURS_PER_YEAR,
     PORTFOLIO_PERIODS_TABLE,
     PORTFOLIO_SERIES_TABLE,
     InvestmentsSeriesName,
@@ -53,9 +54,9 @@ log = logging.getLogger(__name__)
 # The series a SiennaSchemas system states a component's profile under.
 _SOURCE_SERIES = SiennaSeriesName.MAX_ACTIVE_POWER.value
 
-# How long one representative day is, and how many days of a year it stands for.
+# How many snapshots the slice of a year holds.
 _SLICE_LENGTH = 24
-_DAYS_IN_YEAR = 365.0
+_SECONDS_PER_HOUR = 3600.0
 
 # The package indexes a year's slices from one, and this derives a single slice per year.
 _FIRST_SLICE = 1
@@ -227,6 +228,8 @@ def _find_first_day_record(
         return None
     snapshots = frame[StagedTimeSeriesCol.SNAPSHOT].to_list()
     values = [value * scale for value in frame[StagedTimeSeriesCol.VALUE].to_list()]
+    resolution_seconds = _build_resolution_seconds(snapshots)
+    weight = _build_slice_weight(len(values), resolution_seconds)
     record_translation(
         recorder,
         component=str(component),
@@ -237,7 +240,7 @@ def _find_first_day_record(
         destination_value=str(series_name),
         derivation=(
             f"the first {_SLICE_LENGTH} snapshots -> representative day {_FIRST_SLICE}, "
-            f"weighted {_DAYS_IN_YEAR:g} days"
+            f"weighted {weight:g} so that its hours fill the year"
         ),
     )
     return {
@@ -246,17 +249,22 @@ def _find_first_day_record(
         SeriesDocument.SERIES_NAME: str(series_name),
         SeriesDocument.YEAR: str(snapshots[0].year),
         SeriesDocument.REPRESENTATIVE_DAY: _FIRST_SLICE,
-        SeriesDocument.WEIGHT: _DAYS_IN_YEAR,
+        SeriesDocument.WEIGHT: weight,
         SeriesDocument.INITIAL_TIMESTAMP: snapshots[0].isoformat(),
-        SeriesDocument.RESOLUTION_SECONDS: _build_resolution_seconds(snapshots),
+        SeriesDocument.RESOLUTION_SECONDS: resolution_seconds,
         SeriesDocument.VALUES: values,
     }
+
+
+def _build_slice_weight(snapshot_count: int, resolution_seconds: float) -> float:
+    """How many times the slice occurs in a year: the hours of a year over the hours it covers."""
+    return HOURS_PER_YEAR / (snapshot_count * resolution_seconds / _SECONDS_PER_HOUR)
 
 
 def _build_resolution_seconds(snapshots: list[datetime]) -> float:
     """How far apart two snapshots sit, in seconds, from the first pair the slice holds."""
     if len(snapshots) < 2:
-        return float(60 * 60)
+        return _SECONDS_PER_HOUR
     return (snapshots[1] - snapshots[0]).total_seconds()
 
 
