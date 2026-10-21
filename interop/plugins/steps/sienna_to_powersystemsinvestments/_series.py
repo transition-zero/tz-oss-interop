@@ -44,7 +44,6 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
 from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
     PROFILED_SUPPLY_TYPES,
-    build_supply_types,
     report_unprofiled,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_days import (
@@ -162,12 +161,14 @@ def _list_technology_records(
     records: list[dict[str, Any]] = []
     without: list[str] = []
     unprofiled: list[str] = []
-    supply_types = build_supply_types(state)
     for name, power_systems_type in zip(
         table[SIENNA_NAME_COLUMN].to_list(), table[_POWER_SYSTEMS_TYPE].to_list(), strict=True
     ):
         key = owners.get((power_systems_type, name))
-        is_read = name not in supply_types or supply_types[name] in PROFILED_SUPPLY_TYPES
+        is_read = (
+            component is not SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
+            or power_systems_type in PROFILED_SUPPLY_TYPES
+        )
         if not is_read:
             if key is not None:
                 unprofiled.append(name)
