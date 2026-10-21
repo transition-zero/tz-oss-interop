@@ -19,6 +19,7 @@ from interop.plugins.shared.osemosys_canonical.canonical_stage import (
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     LOCATION_SEPARATOR,
+    REGION,
     STORAGE,
     TECHNOLOGY,
     VALUE_COL,
@@ -96,13 +97,34 @@ def _list_model_years(state: State) -> list[str]:
 
 
 def set_scoped_tables(state: State, scope: Scope, dropped: Mapping[str, list[str]]) -> None:
-    """Replace each canonical table with the table that holds no dropped member, and each
-    annotation with the rows whose location is in scope."""
+    """Replace each canonical table with the table that holds no dropped member, and no row of
+    a region where the annotation places its member outside the scope."""
+    pairs = _build_pairs_outside_locations(state, scope)
     for canonical in list_canonical_tables(state):
-        table = _drop_from_table(canonical, dropped)
-        if canonical.kind == TableKind.ANNOTATION and scope.has_locations:
-            table = table.filter(_express_is_in_scope(scope))
+        table = _drop_pairs(_drop_from_table(canonical, dropped), pairs)
         set_canonical_table(state, canonical._replace(table=table))
+
+
+def _build_pairs_outside_locations(state: State, scope: Scope) -> dict[str, pl.LazyFrame]:
+    """The region and the member of each annotation row outside the scope, by set."""
+    if not scope.has_locations:
+        return {}
+    pairs: dict[str, pl.LazyFrame] = {}
+    for set_name in LOCATED_SETS:
+        annotation = state.source_topology.get(build_table_key(TableKind.ANNOTATION, set_name))
+        if annotation is not None:
+            outside = annotation.filter(~_express_is_in_scope(scope))
+            pairs[set_name] = outside.select(REGION, set_name)
+    return pairs
+
+
+def _drop_pairs(table: pl.LazyFrame, pairs: Mapping[str, pl.LazyFrame]) -> pl.LazyFrame:
+    schema = table.collect_schema()
+    for set_name, outside in pairs.items():
+        if REGION in schema and set_name in schema:
+            keys = {REGION: schema[REGION], set_name: schema[set_name]}
+            table = table.join(outside.cast(pl.Schema(keys)), on=list(keys), how="anti")
+    return table
 
 
 def build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
