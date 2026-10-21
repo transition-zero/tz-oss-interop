@@ -193,8 +193,9 @@ def build_load_series(
 ) -> pl.DataFrame:
     """The hourly MW of each load of the year, for a caller that reports the loads it needs.
 
-    A demand that is not a load leaves no report here, so a caller that reads many years does
-    not repeat one report for each year.
+    A demand row that does not become a load leaves no report here, so a caller that reads many
+    years does not repeat one report for each year. A demand that falls in a timeslice with no
+    share of the year is still reported, because that loss belongs to this year alone.
     """
     fuels = _read_located_electricity_fuels(state)
     return _build_loads(state, operations, _LoadInputs(fuels, _drop_silently, recorder)).series
