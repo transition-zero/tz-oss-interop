@@ -156,12 +156,13 @@ class PypsaToResultsMapObservations(TranslationStep):
             topology = state.source_topology.get(table)
             if ts is None or topology is None:
                 continue
-            pieces.append(_build_dispatch_piece(ts, topology, carrier_col))
+            pieces.append(_build_dispatch_piece(ts, topology, pl.col(carrier_col)))
             sources.append(_build_dispatch_source(component, PyPSASolvedAttr.DISPATCH))
         plants = _fill_idle_plant_dispatch(state, fuels.plant_links)
         links = state.source_topology.get(PyPSATable.LINKS)
         if plants is not None and links is not None:
-            pieces.append(_build_dispatch_piece(plants, links, PyPSALinkCol.CARRIER))
+            carrier = express_link_attribute(links, PyPSALinkCol.CARRIER)
+            pieces.append(_build_dispatch_piece(plants, links, carrier))
             sources.append(
                 _build_dispatch_source(PyPSAComponent.LINK, PyPSASolvedAttr.FAR_END_FLOW)
             )
@@ -575,9 +576,9 @@ def _drop_components(frame: pl.LazyFrame, names: frozenset[str]) -> pl.LazyFrame
 
 
 def _build_dispatch_piece(
-    dispatch: pl.LazyFrame, topology: pl.LazyFrame, carrier_col: str
+    dispatch: pl.LazyFrame, topology: pl.LazyFrame, carrier: pl.Expr
 ) -> pl.LazyFrame:
-    carriers = topology.select([pl.col("name"), pl.col(carrier_col).alias(ResultsCol.CATEGORY)])
+    carriers = topology.select([pl.col("name"), carrier.alias(ResultsCol.CATEGORY)])
     return dispatch.join(
         carriers, left_on=PyPSATimeSeriesCol.COMPONENT, right_on="name", how="left"
     ).select(_build_piece_columns(ResultsVariable.DISPATCH, category=pl.col(ResultsCol.CATEGORY)))
