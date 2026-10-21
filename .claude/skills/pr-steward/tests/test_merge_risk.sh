@@ -14,6 +14,7 @@ assert_eq "add merge-risk:low" "$(risk "$(walkthrough "$(rated '🔵 Low' "$head
 assert_eq "add merge-risk:moderate" "$(risk "$(walkthrough "$(rated '🟡 Moderate' "$head")")" '[{"name":"PR Ready"}]')" "merge-risk: the level's word names the label"
 assert_eq "" "$(risk "$(walkthrough "$(rated '⚪ Minimal' "$head")")" '[{"name":"merge-risk:minimal"}]')" "merge-risk: a label already set is left alone"
 assert_eq $'add merge-risk:high\nremove merge-risk:low' "$(risk "$(walkthrough "$(rated '🟠 High' "$head")")" '[{"name":"merge-risk:low"}]')" "merge-risk: a changed rating replaces the old label"
+assert_eq $'add merge-risk:high\nremove merge-risk:low' "$(risk "$(walkthrough "$(rated '🟠 High' "$head")")" '["PR Ready","merge-risk:low"]')" "merge-risk: label names work as well as label objects"
 assert_eq "add merge-risk:critical" "$(risk "$(walkthrough "$(rated '🔴 Critical' "$head")")" '[]')" "merge-risk: a level not seen before still names its label"
 assert_eq "stale 4076962" "$(risk "$(walkthrough "$(rated '🔵 Low' "$older")")" '[]')" "merge-risk: a rating of an older commit is reported stale"
 assert_eq "stale 4076962" "$(risk "$(walkthrough "$(rated '🔵 Low' "$older")")" '[{"name":"merge-risk:high"}]')" "merge-risk: a rating of an older commit changes no label"

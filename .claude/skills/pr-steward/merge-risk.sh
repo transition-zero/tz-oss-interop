@@ -15,7 +15,7 @@ jq -r '
 	| (max_by(.updated_at) // null) as $walkthrough
 	| ($walkthrough.body // "" | capture("\\*\\*Merge Risk:\\*\\* (?<mark>_|\\*\\*)(?:[^ _*]+ )?(?<level>[A-Za-z]+)\\k<mark>")?) as $rating
 	| ($walkthrough.body // "" | capture("\"coveredCommitId\":\"(?<sha>[0-9a-f]{7,40})\"")?) as $covered
-	| [$pr.labels[].name | select(startswith("merge-risk:"))] as $held
+	| [$pr.labels[] | (.name? // .) | select(startswith("merge-risk:"))] as $held
 	| $pr.head as $head
 	| if $rating == null then empty
 	  elif $covered != null and ($head | startswith($covered.sha) | not) then "stale \($covered.sha[0:7])"

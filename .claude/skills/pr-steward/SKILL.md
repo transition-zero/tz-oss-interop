@@ -383,8 +383,9 @@ sub-step 1 is the only gate, and skipping here would leave an hour's slot unused
 ### 8. Merge risk
 
 For each PR in the `queued`, `in-review`, `reviewed`, `needs-owner` or `done` lane, read its
-issue comments, and pipe `{comments, labels: <the PR's labels>, head: <the PR's head sha>}`
-to `bash .claude/skills/pr-steward/merge-risk.sh`. It prints one change per line:
+issue comments, and pipe `{comments, labels, head}` to
+`bash .claude/skills/pr-steward/merge-risk.sh`. `labels` is the PR's `labels` array as the
+API returns it, and `head` is the PR's head sha. The script prints one change per line:
 
 - `add merge-risk:<level>` and `remove merge-risk:<old>`: make both. A label the repo
   lacks goes under "Problems", and that PR's change is skipped.
