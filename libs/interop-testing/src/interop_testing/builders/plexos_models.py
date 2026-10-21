@@ -44,12 +44,15 @@ from interop_testing.builders.plexos_vocabulary import (
     HORIZON_CLASS,
     HORIZONS_COLLECTION,
     IS_SLACK_BUS_PROPERTY,
+    LOAD_CLASS,
     LOAD_PROPERTY,
+    LOADS_COLLECTION,
     MARKET_CLASS,
     MARKETS_COLLECTION,
     MODEL_CLASS,
     MODELS_COLLECTION,
     NODE_CLASS,
+    NODE_COLLECTION,
     NODES_COLLECTION,
     OLE_EPOCH,
     PERIODS_PER_DAY_ATTRIBUTE,
@@ -135,6 +138,16 @@ class PlexosModelBuilder(ResourceBuilder):
         """Any other Region property, named as PLEXOS spells it."""
         self._check_not_saved(f"property {property_name!r} on region {region!r}")
         self._add_system_property(REGION_CLASS, region, REGIONS_COLLECTION, property_name, value)
+
+    def add_load_object(
+        self, name: str, node: str, load: float, data_file: str | None = None
+    ) -> None:
+        """A Load object on a Node, which states demand as an object of its own class."""
+        self._check_not_saved(f"Load object {name!r}")
+        self._membership_id(LOAD_CLASS, name, NODE_CLASS, node, NODE_COLLECTION)
+        self._add_system_property(
+            LOAD_CLASS, name, LOADS_COLLECTION, LOAD_PROPERTY, load, data_file=data_file
+        )
 
     def add_data_file(self, name: str, path: str, hourly_values: list[float]) -> None:
         """Register a Data File object with its Filename, and its CSV to write on save."""

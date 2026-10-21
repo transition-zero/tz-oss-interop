@@ -203,6 +203,18 @@ def given_model_contains_data_file(
     )
 
 
+@given(
+    parsers.parse(
+        'the model contains Load object "{name}" on node "{node}" with load {load:g} '
+        'from data file "{data_file}"'
+    )
+)
+def given_model_contains_load_object_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, node: str, load: float, data_file: str
+) -> None:
+    plexos_model_builder.add_load_object(name, node, load, data_file=data_file)
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g} from data file "{name}"'))
 def given_model_contains_load_from_data_file(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str

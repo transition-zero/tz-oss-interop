@@ -103,6 +103,10 @@ HORIZONS_COLLECTION = "Horizons"
 HORIZON_CLASS = "Horizon"
 MARKETS_COLLECTION = "Markets"
 MARKET_CLASS = "Market"
+LOADS_COLLECTION = "Loads"
+LOAD_CLASS = "Load"
+# The collection a Load object names its Node through.
+NODE_COLLECTION = "Node"
 # The OLE Automation epoch PLEXOS stores "Chrono Date From" relative to.
 OLE_EPOCH = date(1899, 12, 30)
 PERIODS_PER_DAY_ATTRIBUTE = "Periods per Day"

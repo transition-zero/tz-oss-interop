@@ -53,6 +53,26 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "contributing_generators" set to ["GasPlant"]
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "direction" set to "up"
 
+  Scenario: a property on a class the translator does not read leaves the run complete
+    A model can state demand on a class the translator reads nothing from, such as Load.
+    Reading the reserves looks for the demand profiles of Regions and Nodes, and must pass
+    over that class rather than stop on it.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "GasPlant"
+    And the model contains data file "Demand" at "demand.csv" with hourly values "100, 120, 110"
+    And the model contains Load object "Customers" on node "North_Node" with load 120 from data file "Demand"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
+    And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "requirement_mw" set to 60.0
+
   Scenario: a reserve whose requirement varies writes its companion beside the sidecar
     A requirement that changes each snapshot is too big for the record, so it travels in a
     parquet beside the sidecar. The record points at that file by name, so the run has to
