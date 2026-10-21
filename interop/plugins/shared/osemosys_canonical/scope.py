@@ -95,10 +95,14 @@ def _list_model_years(state: State) -> list[str]:
     return years.select(pl.col(VALUE_COL).cast(pl.String)).collect().to_series().to_list()
 
 
-def set_scoped_tables(state: State, dropped: Mapping[str, list[str]]) -> None:
-    """Replace each canonical table with the table that holds no dropped member."""
+def set_scoped_tables(state: State, scope: Scope, dropped: Mapping[str, list[str]]) -> None:
+    """Replace each canonical table with the table that holds no dropped member, and each
+    annotation with the rows whose location is in scope."""
     for canonical in list_canonical_tables(state):
-        set_canonical_table(state, canonical._replace(table=_drop_from_table(canonical, dropped)))
+        table = _drop_from_table(canonical, dropped)
+        if canonical.kind == TableKind.ANNOTATION and scope.has_locations:
+            table = table.filter(_express_is_in_scope(scope))
+        set_canonical_table(state, canonical._replace(table=table))
 
 
 def build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:

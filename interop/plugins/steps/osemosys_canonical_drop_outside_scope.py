@@ -56,6 +56,6 @@ class OsemosysCanonicalDropOutsideScope(TranslationStep):
         scope = Scope(tuple(params.locations), tuple(params.years))
         reject_scope_outside_model(state, scope)
         dropped = build_dropped_members(state, scope)
-        set_scoped_tables(state, dropped)
+        set_scoped_tables(state, scope, dropped)
         report_dropped(dropped, self._recorder)
         return state
