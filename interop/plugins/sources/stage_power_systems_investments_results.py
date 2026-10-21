@@ -197,7 +197,7 @@ def _build_period_years(series: dict[str, Any]) -> list[pl.DataFrame]:
 
 
 def _build_hour_weights(series: dict[str, Any]) -> list[pl.DataFrame]:
-    """Each hour of each slice that the solve ran, with its year, its weight and its length."""
+    """Each hour of each slice that the solve ran, with its year, its slice, weight and length."""
     slices: dict[tuple[str, int], dict[str, Any]] = {}
     for record in series.get(SeriesDocument.RECORDS, []):
         key = (record[SeriesDocument.YEAR], record[SeriesDocument.REPRESENTATIVE_DAY])
@@ -209,6 +209,7 @@ def _build_hour_weights(series: dict[str, Any]) -> list[pl.DataFrame]:
             schema={
                 StagedResultCol.SNAPSHOT: pl.Datetime("us"),
                 StagedResultCol.YEAR: pl.Int32,
+                StagedResultCol.REPRESENTATIVE_DAY: pl.Int64,
                 StagedResultCol.WEIGHT: pl.Float64,
                 StagedResultCol.HOURS: pl.Float64,
             },
@@ -217,14 +218,15 @@ def _build_hour_weights(series: dict[str, Any]) -> list[pl.DataFrame]:
     ]
 
 
-def _list_slice_hours(record: dict[str, Any]) -> list[tuple[datetime, int, float, float]]:
+def _list_slice_hours(record: dict[str, Any]) -> list[tuple[datetime, int, int, float, float]]:
     first = datetime.fromisoformat(record[SeriesDocument.INITIAL_TIMESTAMP])
     seconds = float(record[SeriesDocument.RESOLUTION_SECONDS])
     step = timedelta(seconds=seconds)
     year = int(record[SeriesDocument.YEAR])
+    representative_day = int(record[SeriesDocument.REPRESENTATIVE_DAY])
     weight = float(record[SeriesDocument.WEIGHT])
     return [
-        (first + step * index, year, weight, seconds / _SECONDS_PER_HOUR)
+        (first + step * index, year, representative_day, weight, seconds / _SECONDS_PER_HOUR)
         for index in range(len(record[SeriesDocument.VALUES]))
     ]
 

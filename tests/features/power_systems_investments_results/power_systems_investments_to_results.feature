@@ -103,6 +103,35 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
       | production | solar     |          | 2030-01-01T00:00:00 | 100   |
     And the log contains "1 hour(s) of the solve fall in no slice of the series document, so production leaves them out: 2030-03-01T00:00:00"
 
+  Scenario: A slice that holds an hour an earlier slice holds is left out, so production counts the hour once
+    Given the series document has the representative day 5 of the year "2030" from "2030-01-02T01:00:00" of 2 hours with weight 50
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | gas       |          | 2030-01-01T00:00:00 | 8775  |
+    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5"
+    And the file "decisions.md" contains "the slice holds an hour that the slice 2 also holds"
+
+  Scenario: A name that two technology types share is left out, because the results cannot tell the two apart
+    Given the expansion solve wrote the variable "ActivePowerVariable__SupplyTechnology__RenewableDispatch__BasicDispatch" with the rows:
+      | DateTime              | name | value |
+      | 2030-01-01T00:00:00.0 | gas  | 1     |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "production" rows:
+      | variable   | component | category | timestamp           | value |
+      | production | battery   |          | 2030-01-01T00:00:00 | 500   |
+      | production | link      |          | 2030-01-01T00:00:00 | 1000  |
+    And the results parquet "outputs/results.parquet" has these "new_capacity" rows:
+      | variable     | component | category | timestamp           | value |
+      | new_capacity | battery   |          | 2030-01-01T00:00:00 | 50    |
+      | new_capacity | battery   |          | 2035-01-01T00:00:00 | 0     |
+      | new_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
+      | new_capacity | link      |          | 2035-01-01T00:00:00 | 0     |
+    And the log contains "1 component name(s) belong to more than one technology type of the solve, so the rows of each are left out: gas"
+    And the file "decisions.md" contains "SupplyTechnology__RenewableDispatch and SupplyTechnology__ThermalStandard"
+
   Scenario: The objective is the objective value of the solve
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
     Then the pipeline exit code is 0
