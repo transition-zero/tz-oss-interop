@@ -96,7 +96,7 @@ Feature: The scope step leaves out the locations and the years that a run does n
     And the file "decisions.md" contains "1 fuel member(s) outside the scope, so each is left out"
     And the log contains "Left out 2 technology, 1 fuel member(s) that are outside the scope: ATFRLINK, FRGAS, FRE1"
 
-  Scenario: A member at a location in scope in one region leaves out its rows of a region outside the scope
+  Scenario: A member at a location in scope in one region leaves out each of its rows of a region outside the scope
     Given the otoole set "REGION" holds "R1 R2"
     And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
@@ -105,6 +105,16 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | R1     | DEGAS      | DEE1 | 1                 | 2030 | 1     |
       | R1     | ATDELINK   | DEE1 | 1                 | 2030 | 0.95  |
       | R1     | ATFRLINK   | FRE1 | 1                 | 2030 | 0.95  |
+    And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATDELINK   | ATE1 | 1                 | 2030 | 1     |
+      | R1     | ATFRLINK   | ATE1 | 1                 | 2030 | 1     |
+      | R2     | ATGAS      | ATE1 | 1                 | 2030 | 2     |
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGAS      | 2030 | 10    |
+      | R2     | ATGAS      | 2030 | 20    |
+      | R1     | DEGAS      | 2030 | 12    |
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a pipeline "scoped" that stages an otoole model and keeps the locations "AT DE" and the years ""
     When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
@@ -114,6 +124,13 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | R1     | ATGAS      | SupplyTechnology             |          | AT       |
       | R1     | DEGAS      | SupplyTechnology             |          | DE       |
       | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+    And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
+      | region | technology | year | value |
+      | R1     | ATGAS      | 2030 | 10    |
+      | R1     | DEGAS      | 2030 | 12    |
+    And the canonical table "canonical/parameters/input_activity_ratio.parquet" has the rows:
+      | region | technology | fuel | operating_mode | year | value |
+      | R1     | ATDELINK   | ATE1 | 1              | 2030 | 1     |
 
   Scenario: Empty lists keep the whole stage
     Given a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years ""
