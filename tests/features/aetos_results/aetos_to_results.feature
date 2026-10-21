@@ -273,3 +273,8 @@ Feature: aetos-to-results reads a published results CSV into the results format
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 1
     And the log contains "states no `units: capacity`"
+
+  Scenario: An empty results CSV stops the run with one line that names the file
+    When I read an empty results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 1
+    And the log contains "Source node 'stage_aetos_results_csv' read an empty results CSV: results/results.csv"
