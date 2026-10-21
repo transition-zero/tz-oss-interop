@@ -109,3 +109,9 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     And the results parquet "outputs/results.parquet" has these "objective" rows:
       | variable  | component | category | timestamp | value  |
       | objective |           |          |           | 1234.5 |
+
+  Scenario: A results directory that holds no result file stops the run with one line that names it
+    Given an empty results directory "not_expanded"
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=not_expanded source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 1
+    And the log contains "Source node 'stage_power_systems_investments_results' cannot read the expansion results directory it was given: not_expanded"

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import polars as pl
-from pydantic import BaseModel, DirectoryPath, Field
+from pydantic import BaseModel, Field
 
 from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.power_systems_investments_results_constants import (
@@ -35,9 +35,10 @@ from interop.plugins.shared.power_systems_investments_results_constants import (
 )
 from interop.plugins.shared.power_systems_investments_schema import SeriesDocument
 from interop.ports.errors import MissingInputError
-from interop.ports.outbound.filesystem import FilesystemPort, InputFile
+from interop.ports.outbound.filesystem import FilesystemPort, InputDirectory, InputFile
 
 _STAGING_SUBDIR = "power_systems_investments_results"
+_RESULTS_DIR_DESCRIPTION = "expansion results directory"
 _FIRST_PERIOD = 1
 _SECONDS_PER_HOUR = 3600.0
 _DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%.f"
@@ -59,7 +60,7 @@ _OPERATIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 
 
 class StagePowerSystemsInvestmentsResultsParams(BaseModel):
-    results_dir: DirectoryPath = Field(description="the directory that the expansion solve wrote")
+    results_dir: InputDirectory = Field(description="the directory that the expansion solve wrote")
     series_json_path: InputFile = Field(
         description="the series document beside the portfolio that the solve read"
     )
@@ -81,6 +82,7 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
                 f"got {type(params).__name__}"
             )
         series = self._read_series_document(params.series_json_path)
+        self._reject_results_dir_without_results(params.results_dir)
         directory = staging_dir / _STAGING_SUBDIR
         directory.mkdir(parents=True, exist_ok=True)
         topology = {
@@ -117,6 +119,17 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
             raise MissingInputError(self.name, "series document", f"{path}")
         document: dict[str, Any] = json.loads(self._fs.read_bytes(path))
         return document
+
+    def _reject_results_dir_without_results(self, results_dir: Path) -> None:
+        """Raise when the directory holds none of the files that the solve writes."""
+        relatives = [
+            relative
+            for result_csvs in (*INVESTMENT_RESULT_CSVS, *OPERATIONS_RESULT_CSVS)
+            for _technology, relative in result_csvs.list_paths()
+        ]
+        paths = [results_dir / OPTIMIZER_STATS_CSV, *(results_dir / path for path in relatives)]
+        if not any(self._fs.can_read(path) for path in paths):
+            raise MissingInputError(self.name, _RESULTS_DIR_DESCRIPTION, f"{results_dir}")
 
     def _read_results(
         self,
