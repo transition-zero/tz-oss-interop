@@ -477,6 +477,7 @@ One technology can do both. These checks leave a storage out, in this order:
 | No technology charges it, or no technology discharges it | A Sienna storage takes its power from one of each. |
 | Two or more technologies or modes charge it, or discharge it | The same. |
 | Its `ResidualStorageCapacity` (`residual_storage_capacity`) in the operations year is 0 or less | It holds no energy. |
+| The technology that charges it, or the one that discharges it, also charges or discharges another storage | Each Sienna storage would take the whole power of that technology. |
 | The discharging technology, or the charging technology, has no residual capacity | It cannot discharge, or it cannot charge. |
 | The category of the discharging technology has no carriers row | Nothing gives it a Sienna type. |
 | That row is not `EnergyReservoirStorage` | The storage cannot become that type. |
@@ -492,8 +493,8 @@ One technology can do both. These checks leave a storage out, in this order:
 | `storage_technology_type` | | `OTHER_MECH`, because OSeMOSYS states no storage technology | `default` |
 | `base_power` | MVA | `residual_capacity` of the discharging technology in MW × its electricity `output_activity_ratio` at the discharge mode | `derived` |
 | `rating` | pu | `1.0` | `default` |
-| `output_active_power_limits` | pu | min = 0. max = the lower of `base_power` × the `availability_factor` of the discharging technology, and `StorageMaxDischargeRate` (`storage_max_discharge_rate`) in MWh / 8760 h. Then / `base_power`. | `derived` |
-| `input_active_power_limits` | pu | min = 0. max = the lower of `residual_capacity` of the charging technology in MW × its electricity `input_activity_ratio` at the charge mode × its `availability_factor`, and `StorageMaxChargeRate` (`storage_max_charge_rate`) in MWh / 8760 h. Then / `base_power`. | `derived` |
+| `output_active_power_limits` | pu | min = 0. max = the lower of `base_power` × the `availability_factor` of the discharging technology, and `StorageMaxDischargeRate` (`storage_max_discharge_rate`) in MWh / 8760 h × the electricity `output_activity_ratio` at the discharge mode / `technology_from_storage`. Then / `base_power`. | `derived` |
+| `input_active_power_limits` | pu | min = 0. max = the lower of `residual_capacity` of the charging technology in MW × its electricity `input_activity_ratio` at the charge mode × its `availability_factor`, and `StorageMaxChargeRate` (`storage_max_charge_rate`) in MWh / 8760 h × that `input_activity_ratio` / `technology_to_storage`. Then / `base_power`. | `derived` |
 | `efficiency.in` | | `technology_to_storage` / the electricity `input_activity_ratio` at the charge mode | `derived` |
 | `efficiency.out` | | The electricity `output_activity_ratio` at the discharge mode / `technology_from_storage` | `derived` |
 | `storage_capacity` | h | `residual_storage_capacity` of the operations year in MWh / `base_power` | `derived` |
