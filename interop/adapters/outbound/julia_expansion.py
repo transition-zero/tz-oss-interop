@@ -282,14 +282,27 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
     return str(run_status), float(objective)
 
 
+# Two components of one type can share a name when their PowerSystems types differ.
+_DEFINE_GET_ONE_COMPONENT = """
+    function get_one_component(portfolio, type_name, component_name)
+        technology_type = getproperty(PSIP, Symbol(type_name))
+        matches = collect(IS.get_components(
+            x -> PSIP.get_name(x) == component_name, technology_type, portfolio.data))
+        length(matches) == 1 || error(
+            "the portfolio holds $(length(matches)) $(type_name) components named " *
+            "$(component_name), so a record that names it has no single owner")
+        return only(matches)
+    end
+"""
+
+
 def _attach_series(jl: Any, document: dict[str, Any]) -> None:
     """Put each record on the component that came off disk, under the features it is read by."""
+    jl.seval(_DEFINE_GET_ONE_COMPONENT)
     attach = jl.seval("""
         function (portfolio, type_name, component_name, series_name, year, rep_day,
                   timestamps, values)
-            technology_type = getproperty(PSIP, Symbol(type_name))
-            component = first(IS.get_components(
-                x -> PSIP.get_name(x) == component_name, technology_type, portfolio.data))
+            component = get_one_component(portfolio, type_name, component_name)
             stamps = [DateTime(String(t)) for t in timestamps]
             data = TimeSeries.TimeArray(stamps, [Float64(v) for v in values])
             PSIP.add_time_series!(portfolio, component,
@@ -314,11 +327,10 @@ def _attach_series(jl: Any, document: dict[str, Any]) -> None:
 
 def _attach_existing_devices(jl: Any, document: dict[str, Any]) -> None:
     """Give each technology the base system components that it already holds."""
+    jl.seval(_DEFINE_GET_ONE_COMPONENT)
     attach = jl.seval("""
         function (portfolio, type_name, component_name, attribute_id, devices)
-            technology_type = getproperty(PSIP, Symbol(type_name))
-            component = first(IS.get_components(
-                x -> PSIP.get_name(x) == component_name, technology_type, portfolio.data))
+            component = get_one_component(portfolio, type_name, component_name)
             PSIP.add_supplemental_attribute!(portfolio, component,
                 PSIP.ExistingDevices(; id = Int(attribute_id),
                                      existing_devices = String[String(d) for d in devices]))
