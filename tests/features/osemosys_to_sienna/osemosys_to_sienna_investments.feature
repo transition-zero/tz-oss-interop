@@ -485,6 +485,40 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the file "outputs/portfolio.json" parses as JSON with 0 component of type "StorageTechnology"
       And the log contains "may be built and share a technology that charges or discharges another storage, so each is left out"
 
+    Scenario: A storage candidate whose charging technology also charges a storage that is not a candidate is left out
+      ATCHG charges ATPHSS and ATBATS. ATBAT discharges ATBATS, and no capital cost prices it,
+      so ATBATS is not a candidate, but it still uses the charge power of ATCHG.
+      Given the otoole set "TECHNOLOGY" holds "ATPHS ATCHG ATBAT"
+      And the otoole set "STORAGE" holds "ATPHSS ATBATS"
+      And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.1   |
+        | R1     | ATCHG      | 2030 | 0.1   |
+        | R1     | ATBAT      | 2030 | 0.1   |
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATCHG      | ATELEC | 1                 | 2030 | 1.25  |
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | ATELEC | 2                 | 2030 | 0.8   |
+        | R1     | ATBAT      | ATELEC | 2                 | 2030 | 0.8   |
+      And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATCHG      | ATPHSS  | 1                 | 0.9   |
+        | R1     | ATCHG      | ATBATS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+        | R1     | ATBAT      | ATBATS  | 2                 | 1     |
+      And the otoole parameter "ResidualStorageCapacity" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
+        | REGION | STORAGE | YEAR | VALUE |
+        | R1     | ATPHSS  | 2030 | 0.8   |
+        | R1     | ATBATS  | 2030 | 0.8   |
+      When I translate the otoole model to a Sienna investments portfolio
+      Then the pipeline exit code is 0
+      And the file "outputs/portfolio.json" parses as JSON with 0 component of type "StorageTechnology"
+      And the log contains "may be built and share a technology that charges or discharges another storage, so each is left out"
+
     Scenario: A storage candidate that states no discount rate takes the default of storage_discount_rate
       The region states 0.07, but OSeMOSYS gives a storage with no row the default of
       DiscountRateStorage, as the operations translation does.
