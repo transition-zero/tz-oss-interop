@@ -1131,14 +1131,22 @@ class LinkReporter(_Reporter):
             derivation=_SPLIT_DERIVATION,
         )
 
-    def record_unsplit(self, name: str) -> None:
-        self._not_mapped(sources=[self._source(name, SiennaLinkCol.LOSS, None)], note=_UNSPLIT_NOTE)
+    def record_unsplit(self, row: dict[str, Any]) -> None:
+        self._not_mapped(sources=[self._build_split_source(row)], note=_UNSPLIT_NOTE)
 
-    def record_reverse_name_taken(self, name: str, reverse_name: str) -> None:
+    def record_reverse_name_taken(self, row: dict[str, Any], reverse_name: str) -> None:
         self._not_mapped(
-            sources=[self._source(name, SiennaLinkCol.LOSS, None)],
+            sources=[self._build_split_source(row)],
             note=_TAKEN_NOTE.format(reverse_name=reverse_name),
         )
+
+    def _build_split_source(self, row: dict[str, Any]) -> SourceField:
+        """The value that would split the link: its loss, else its marginal cost."""
+        name = row[PyPSALinkCol.NAME]
+        if row[PyPSALinkCol.EFFICIENCY] < _NO_LOSS:
+            return self._source(name, SiennaLinkCol.LOSS, None)
+        marginal_cost = row[PyPSALinkCol.MARGINAL_COST]
+        return self._source(name, _EXT_MARGINAL_COST_ATTR, marginal_cost, UNIT_DOLLARS_PER_MWH)
 
     def record_marginal_cost_from_ext(self, name: str, marginal_cost: float) -> None:
         """Sienna prices no flow over a branch, so the price comes back from the sidecar."""
@@ -1171,6 +1179,8 @@ _UNSPLIT_NOTE = (
     "the link can extend, so it stays one two-way link, as two links would not share one "
     "p_nom; its flow back gains what its forward flow loses"
 )
+# An efficiency of 1 loses nothing, so a link that splits at it splits for its cost.
+_NO_LOSS = 1.0
 _TAKEN_NOTE = (
     "another link holds the name {reverse_name}, so the link stays one two-way link; its flow "
     "back gains what its forward flow loses, and the PyPSA results count {reverse_name} with it"

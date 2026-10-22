@@ -224,6 +224,17 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the log contains "1 link(s) flow both ways and lose energy or cost money, but another link holds the name of their flow back, so each stays one link whose flow back gains what its forward flow loses: line"
     And the file "decisions.md" contains "another link holds the name line reverse"
 
+  Scenario: A two-way line that costs money and whose reverse name another line holds reports its cost
+    The line loses nothing, so its cost is what a split would carry in each direction.
+    Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
+    And the TwoTerminalGenericHVDCLine "line" has ext "marginal_cost" set to 10.0
+    And the TwoTerminalGenericHVDCLine "line" has ext "p_min_pu" set to -0.8
+    And the system contains an HVDC line "line reverse" from "node_b" to "node_a" with p_nom 100.0 efficiency 1.0
+    And the system is saved as "inputs/costly_reverse_taken.json"
+    When I run translate against "inputs/costly_reverse_taken.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 links
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.extensions.marginal_cost` = 10.0 \$/MWh |  |  | another link holds the name line reverse"
+
   Scenario: A conversion under the name of a link travels on, and the log says so
     Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
     And the system has a conversion extension record "line" with "bus0" set to "node_a"
