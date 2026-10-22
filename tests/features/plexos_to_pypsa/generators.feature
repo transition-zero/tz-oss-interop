@@ -265,13 +265,14 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/oneway.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "ramp_limit_up" equal to 1
     And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "min_up_time" equal to 4
-    And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has no "ramp_limit_down"
+    And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "ramp_limit_down" equal to 1
     And the PyPSA generator "OneWayPlant" in "outputs/network.nc" has "min_down_time" equal to 0
     # The rate PLEXOS states survives into Sienna, and leg two turns it into a fraction.
     And the decisions report contains "| `plexos.Generator.OneWayPlant.Max Ramp Up` = 2.0 MW/min | `sienna.ThermalStandard.OneWayPlant.ramp_limits.up` = 2.0 MW/min | Max Ramp Up, capped at the rate that covers p_nom in one snapshot |  | $source_leg$ | $source_generator_step$ |"
-    And the decisions report contains "| `sienna.ThermalStandard.OneWayPlant.ramp_limits.up` = 2.0<br>`sienna.ThermalStandard.OneWayPlant.ramp_limits.down` | `pypsa.Generator.OneWayPlant.ramp_limit_up` = 1.0 | ramp_limits (MW/min) * resolution / base_power -> ramp_limit (pu/snapshot) |  | $destination_leg$ | $destination_generator_step$ |"
-    # The limit the model never states carries no value, so nothing invents one.
-    And the file "decisions.md" contains "`pypsa.Generator.OneWayPlant.ramp_limit_down` |"
+    And the decisions report contains "| `sienna.ThermalStandard.OneWayPlant.ramp_limits.up` = 2.0<br>`sienna.ThermalStandard.OneWayPlant.ramp_limits.down` = 2.0 | `pypsa.Generator.OneWayPlant.ramp_limit_up` = 1.0 | ramp_limits (MW/min) * resolution / base_power -> ramp_limit (pu/snapshot) |  | $destination_leg$ | $destination_generator_step$ |"
+    # A direction the model does not state takes the rate that covers p_nom in one snapshot.
+    And the file "decisions.md" contains "`pypsa.Generator.OneWayPlant.ramp_limit_down` = 1.0"
+    And the decisions report contains "|  | `sienna.ThermalStandard.OneWayPlant.ramp_limits.down` = 2.0 MW/min |"
     # A generator with a flat Heat Rate is attributed to that property, not Heat Rate Incr.
     And the file "decisions.md" contains "`plexos.Generator.OneWayPlant.Heat Rate` = 9.0 GJ/MWh"
 
