@@ -19,6 +19,8 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "available" set to true
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_flow" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "arc" set to 4
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "power_units" set to "NATURAL_UNITS"
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "base_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_from.min" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_from.max" set to 2000.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "active_power_limits_to.min" set to 0.0

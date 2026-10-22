@@ -11,6 +11,7 @@ from __future__ import annotations
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.pypsa_sienna_translations._units import AREA_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
     SIENNA_TYPE_ATTRIBUTE,
     SiennaACBusCol,
@@ -116,4 +117,9 @@ AREA_SIENNA_TYPE = Translation(
     ],
 )
 
-AREA_TRANSLATIONS: list[Translation] = [AREA_ID, AREA_NAME, AREA_SIENNA_TYPE]
+AREA_TRANSLATIONS: list[Translation] = [
+    *AREA_UNIT_TRANSLATIONS,
+    AREA_ID,
+    AREA_NAME,
+    AREA_SIENNA_TYPE,
+]
