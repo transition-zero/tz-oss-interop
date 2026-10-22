@@ -508,6 +508,26 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "marginal_cost" close to 0.16
       And the log does not contain "emission_penalty states"
 
+    Scenario: An export of four fuels is left out and reported, as a link of this translation holds three inputs
+      ATEXP takes in ATGAS, DEGAS, ATOIL and ATELEC and puts out nothing. An export has no bus1,
+      so bus0, bus2 and bus3 hold three of its inputs at most.
+      Given the otoole set "TECHNOLOGY" holds "ATGASCC ATGASWELL ATGASLNG DEGASWELL DEATPIPE ATREFINERY ATSHUT ATCOSTLY ATEXP"
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATGAS  | 1                 | 2030 | 2     |
+        | R1     | DEATPIPE   | DEGAS  | 1                 | 2030 | 1     |
+        | R1     | DEATPIPE   | ATGAS  | 2                 | 2030 | 1     |
+        | R1     | ATREFINERY | ATGAS  | 1                 | 2030 | 1     |
+        | R1     | ATREFINERY | ATELEC | 1                 | 2030 | 0.1   |
+        | R1     | ATEXP      | ATGAS  | 1                 | 2030 | 1     |
+        | R1     | ATEXP      | DEGAS  | 1                 | 2030 | 0.5   |
+        | R1     | ATEXP      | ATOIL  | 1                 | 2030 | 0.4   |
+        | R1     | ATEXP      | ATELEC | 1                 | 2030 | 0.1   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATEXP"
+      And the log contains "1 fuel technology mode(s) export more than 3 fuels, so each is left out. Technologies: R1/ATEXP"
+
     Scenario: A technology that takes in two fuels draws the second at bus2 with a negative efficiency
       The refinery takes in 1 unit of gas and 0.1 of electricity, and puts out 0.8 of oil.
       When I translate the otoole model to Sienna for the year "2030"
