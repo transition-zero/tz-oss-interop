@@ -104,7 +104,11 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     PRIME_MOVER,
     SIENNA_TYPE,
 )
-from interop.plugins.shared.osemosys_sienna_translations._storage import read_linked_storages
+from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    enrich_technology_storages,
+    express_has_own_technologies,
+    read_linked_storages,
+)
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_LINK_VALUE,
     CHARGE_LINKS,
@@ -214,6 +218,7 @@ def build_storage_candidates(
         keys=[REGION, TECHNOLOGY],
     )
     storages = _drop_skipped(storages, list_area_names(state), recorder)
+    yearly = yearly.join(storages.select(_STORAGE_KEYS), on=_STORAGE_KEYS, how="semi")
     discharge = _enrich_energy_costs(enrich_yearly_units(yearly, storages, plan.units), plan)
     return StorageCandidates(_enrich_values(state, plan, storages, discharge), discharge)
 
@@ -262,22 +267,52 @@ def _read_storage_years(state: State, plan: InvestmentPlan, storages: pl.DataFra
 def _drop_skipped(
     storages: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
 ) -> pl.DataFrame:
-    for rule in _build_skip_rules(areas):
+    """Take out the candidates that each rule drops, and count the sharing after the links."""
+    storages = _apply_rules(storages, _build_link_rules(), recorder)
+    storages = enrich_technology_storages(storages)
+    return _apply_rules(storages, _build_skip_rules(areas), recorder)
+
+
+def _apply_rules(
+    storages: pl.DataFrame, rules: list[SkipRule], recorder: ScopedRecorder
+) -> pl.DataFrame:
+    for rule in rules:
         storages, _ = filter_component(storages, rule.keep, rule.report, recorder)
     return storages
 
 
-def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
-    skip = TECHNOLOGY_SOURCE.skip
+def _build_link_rules() -> list[SkipRule]:
     one_link = (pl.col(CHARGE_LINKS) == _ONE_LINK) & (pl.col(DISCHARGE_LINKS) == _ONE_LINK)
     return [
         SkipRule(
             one_link,
-            skip(
+            TECHNOLOGY_SOURCE.skip(
                 name_col=REPORT_NAME,
                 reason="may be built and do not link one charging and one discharging "
                 "technology to their storage",
                 note="a StorageTechnology has one charge side and one discharge side",
+                listed=_LISTED,
+                attribute_col=STORAGE_REPORT_NAME,
+            ),
+        ),
+    ]
+
+
+def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
+    skip = TECHNOLOGY_SOURCE.skip
+    return [
+        SkipRule(
+            express_has_own_technologies(),
+            skip(
+                name_col=REPORT_NAME,
+                reason="may be built and share a technology that charges or discharges another "
+                "storage",
+                note=lambda row: (
+                    f"{row[REGION]}/{row[DISCHARGE_TECHNOLOGY]} or "
+                    f"{row[REGION]}/{row[CHARGE_TECHNOLOGY]} charges or discharges another "
+                    "storage too, and each StorageTechnology would take the whole power of that "
+                    "technology"
+                ),
                 listed=_LISTED,
                 attribute_col=STORAGE_REPORT_NAME,
             ),
