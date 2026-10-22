@@ -35,7 +35,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.fuel_type` = NATURAL_GAS |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.prime_mover_type` = CC |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # TRANSLATOR_DEFAULT_APPLIED decisions
-    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.id` = 1 |  | assigned by 1-based row position in thermal generators DataFrame | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.id` = 2 |  | assigned by row position in thermal generators DataFrame, after the ids of earlier components | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.available` = True |  | PyPSA Generator has no active field; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.status` = True |  | PyPSA has no separate initial on/off state; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.reactive_power` = 0.0 |  | PyPSA networks rarely model reactive power for generators | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -82,9 +82,9 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "nuclear_1" attribute "max_active_power" with length 3
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "nuclear_1" attribute "max_active_power" with values 0.9782608695652174 0.9239130434782608 1.0
-    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 1 is named "max_active_power"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 is named "max_active_power"
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
-    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 1 has resolution "PT1H"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 has resolution "PT1H"
 
   Scenario: generator with static p_max_pu below 1.0 produces derated active_power_limits
     Given a PyPSA network

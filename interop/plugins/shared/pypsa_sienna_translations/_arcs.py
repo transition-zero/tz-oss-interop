@@ -18,7 +18,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaArcCol,
     SiennaComponent,
 )
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -83,12 +83,12 @@ def _arc_dest(
 
 
 ARC_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaArcCol.ID)],
+    exprs=[express_document_id().alias(SiennaArcCol.ID)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[_arc_dest(old, SiennaArcCol.ID, new[SiennaArcCol.ID])],
-            note="assigned by 1-based row position in arcs DataFrame",
+            note="assigned by row position in arcs DataFrame, after the ids of earlier components",
         )
     ],
 )

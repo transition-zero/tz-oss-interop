@@ -60,10 +60,10 @@ from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
     fill_defaults,
-    row_position_id_translation,
     row_source_translation,
 )
 from interop.ports.outbound.reporting import (
@@ -248,7 +248,7 @@ def _renewable_translations(
     )
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
-        row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
+        build_document_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
         direct(source_col=PyPSAGeneratorCol.NAME, dest_col=R.NAME),
         default(
             dest_col=R.AVAILABLE,
@@ -369,7 +369,10 @@ def _renewable_cost_loss(dest: DestinationFieldFactory) -> Translation:
 RENEWABLE_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
     _dest,
     sienna_component=SiennaComponent.RENEWABLE_DISPATCH,
-    id_note="assigned by 1-based row position in renewable generators DataFrame",
+    id_note=(
+        "assigned by row position in renewable generators DataFrame, "
+        "after the ids of earlier components"
+    ),
     sienna_type_derivation="renewable carrier -> RenewableDispatch",
     active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
     active_power_derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
@@ -379,7 +382,10 @@ RENEWABLE_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
 RENEWABLE_NON_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
     _dest_nd,
     sienna_component=SiennaComponent.RENEWABLE_NON_DISPATCH,
-    id_note="assigned by 1-based row position in renewable non-dispatch generators DataFrame",
+    id_note=(
+        "assigned by row position in renewable non-dispatch generators DataFrame, "
+        "after the ids of earlier components"
+    ),
     sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
     active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
     active_power_derivation=(
