@@ -125,6 +125,8 @@ class SiennaToPypsaMapFuels(TranslationStep):
         varying = {record.name: UNSCALED for record in records if record.p_set_series}
         if varying:
             stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
+        relayed = [lookup.relay(record.name) for record in records]
+        relay_records(state, ExtensionKind.LOAD, relayed, self._recorder)
 
 
 def _build_names(state: State, table: str, column: str) -> set[str]:

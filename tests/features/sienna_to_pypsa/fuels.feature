@@ -62,6 +62,15 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" has carrier "gas"
     And the PyPSA network "outputs/network.nc" load "DEGAS" has a p_set time series 10 20 30 40
 
+  Scenario: The fields of a fuel load record that PyPSA has no column for travel on unchanged
+    Given the system has a load extension record "ATGAS/accumulated" with "bus" set to "R1/ATGAS"
+    And the system has a load extension record "ATGAS/accumulated" with "p_set" set to 100.0
+    And the system has a load extension record "ATGAS/accumulated" with "type" set to "industry"
+    And the system is saved as "inputs/load_type.json"
+    When I run translate against "inputs/load_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" attribute "p_set" is 100.0
+    And the file "outputs/extensions.json" parses as JSON load extension record for "ATGAS/accumulated" having "type" set to "industry"
+
   Scenario: A conversion record between the buses of fuels becomes a link, with a third bus that it draws from
     Given the system has a conversion extension record "pipe" with "bus0" set to "R1/DEGAS"
     And the system has a conversion extension record "pipe" with "bus1" set to "R1/ATGAS"
