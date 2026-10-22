@@ -144,7 +144,8 @@ pipeline writes them when one of these conditions holds:
 The definitions are those of `sienna-to-results`, with the PyPSA fields:
 
 - `production` of a generator or a storage unit is the sum over the snapshots of the positive
-  part of `p`, multiplied by the `generators` snapshot weighting.
+  part of `p`, multiplied by the `generators` snapshot weighting, or by the `objective`
+  weighting where the network states no `generators` weighting.
 - PyPSA's netCDF export leaves out a series that is 0 in every snapshot. So if the network
   states an objective, a component with a rating and no `p` gets a `production` of 0. If the
   network states no objective, the component gets no `production` row, and the log warns.
