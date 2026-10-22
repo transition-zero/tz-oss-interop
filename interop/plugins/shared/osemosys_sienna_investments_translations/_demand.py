@@ -26,6 +26,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
 from interop.plugins.shared.osemosys_sienna_investments_translations._series import (
     PORTFOLIO_SERIES_NAME,
     PortfolioSeries,
+    list_series_components,
 )
 from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
@@ -102,25 +103,25 @@ def build_demand_series(
     return series
 
 
-def _read_base_series(state: State) -> pl.DataFrame:
+def _read_base_series(state: State) -> pl.LazyFrame:
     """The series in MW that the operations step staged for its loads."""
     key = StagedSeries(SiennaComponent.POWER_LOAD, PORTFOLIO_SERIES_NAME, _EMPTY_SERIES).key
     staged = state.source_time_series.get(key)
-    return _EMPTY_SERIES if staged is None else staged.collect()
+    return _EMPTY_SERIES.lazy() if staged is None else staged
 
 
 def _build_year_series(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
-) -> pl.DataFrame:
+) -> pl.LazyFrame:
     step = f"{DEMAND_SERIES_STEP}{SERIES_YEAR_SEPARATOR}{operations.year}"
-    return build_load_series(state, operations, ScopedRecorder(recorder, step=step))
+    return build_load_series(state, operations, ScopedRecorder(recorder, step=step)).lazy()
 
 
 def _build_kept_series(
-    year: int, table: pl.DataFrame, loads: Sequence[str], recorder: ScopedRecorder
+    year: int, table: pl.LazyFrame, loads: Sequence[str], recorder: ScopedRecorder
 ) -> PortfolioSeries:
     """The series of the base system loads, and a report of each load that the year lacks."""
-    named = set(table[StagedTimeSeriesCol.COMPONENT].to_list())
+    named = set(list_series_components(table))
     _report_missing_loads(year, sorted(set(loads) - named), recorder)
     _report_new_loads(year, sorted(named - set(loads)), recorder)
     kept = table.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(list(loads)))
