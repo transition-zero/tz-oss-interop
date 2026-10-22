@@ -12,6 +12,7 @@ from pytest_bdd import parsers, then
 from interop_testing.builders.pypsa_networks import read_network
 from interop_testing.steps.pypsa_network._written_network import (
     BUS,
+    CARRIER,
     COMPONENTS,
     GENERATOR,
     LINE,
@@ -23,6 +24,7 @@ from interop_testing.steps.pypsa_network._written_network import (
     WrittenComponent,
     assert_component_count,
     assert_no_components,
+    read_frame,
 )
 
 _EMPTY = ""
@@ -76,6 +78,27 @@ def assert_bus_location(path: str, name: str, location: str) -> None:
 @then(parsers.parse('the PyPSA network "{path}" bus "{name}" has empty location'))
 def assert_bus_location_empty(path: str, name: str) -> None:
     WrittenComponent(path, BUS, name).assert_label("location", _EMPTY)
+
+
+# ---------- Carriers ----------
+
+
+@then(parsers.parse('the PyPSA network "{path}" has {count:d} carrier'))
+@then(parsers.parse('the PyPSA network "{path}" has {count:d} carriers'))
+def assert_carrier_count(path: str, count: int) -> None:
+    assert_component_count(path, CARRIER, count)
+
+
+# Spelled out so this cannot also match "generator \"x\" has carrier \"y\"", whose path
+# a greedy "{path}" would swallow.
+@then(parsers.re('the PyPSA network "(?P<path>[^"]+)" has carrier "(?P<name>[^"]+)"'))
+def assert_network_has_carrier(path: str, name: str) -> None:
+    assert name in read_frame(path, CARRIER).index, f"no carrier {name!r} in {path}"
+
+
+@then(parsers.parse('the PyPSA network "{path}" has no unnamed carrier'))
+def assert_network_has_no_unnamed_carrier(path: str) -> None:
+    WrittenComponent(path, CARRIER, _EMPTY).assert_absent()
 
 
 # ---------- Generators ----------

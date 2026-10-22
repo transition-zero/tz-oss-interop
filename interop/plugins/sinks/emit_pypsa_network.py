@@ -15,6 +15,7 @@ from interop.plugins.shared.pypsa_constants import (
     UNROUNDED_OUTPUT_COLUMNS,
     PyPSABusCol,
     PyPSAComponent,
+    PyPSAComponentCol,
     PyPSADestinationTable,
     PyPSAGeneratorCol,
     PyPSALineCol,
@@ -37,6 +38,16 @@ log = logging.getLogger(__name__)
 
 # What a component with no staged values scales and compounds as.
 _NO_VALUES: FloatArray = np.empty(0, dtype=np.float64)
+
+
+_CARRIER_USERS = (
+    PyPSAComponent.BUS,
+    PyPSAComponent.GENERATOR,
+    PyPSAComponent.STORAGE_UNIT,
+    PyPSAComponent.LOAD,
+    PyPSAComponent.LINE,
+    PyPSAComponent.LINK,
+)
 
 
 class EmitPypsaNetworkParams(BaseModel):
@@ -107,6 +118,7 @@ def build_network(
     _add_loads(network, loads)
     _add_lines(network, lines)
     _add_links(network, links)
+    _add_carriers(network)
     cache = series_cache if series_cache is not None else {}
     if metadata is not None and metadata.height > 0:
         _attach_time_series(network, metadata, state, sample, cache)
@@ -350,6 +362,17 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.BUILD_YEAR,
         ),
     )
+
+
+def _add_carriers(network: pypsa.Network) -> None:
+    names = {
+        carrier
+        for component in _CARRIER_USERS
+        for carrier in network.components[component].static[PyPSAComponentCol.CARRIER]
+        if carrier
+    }
+    if names:
+        network.add(PyPSAComponent.CARRIER, sorted(names))
 
 
 def _attach_time_series(
