@@ -872,6 +872,8 @@ that states one. The investments pipelines write the same records.
 
 A limit of a year is a `limits` entry with `period: year` and `investment_period`, the year. A
 tag that changes from year to year keeps the value of the earliest year that states one.
+`decisions.md` records each value of a year with a limit that differs from it as `NOT_MAPPED`,
+and one warning names three tags.
 
 ---
 
@@ -976,6 +978,9 @@ OSeMOSYS charges `EmissionsPenalty` (`emission_penalty`) on each unit of a pollu
 activity emits. So the penalty is a cost of dispatch. For each pollutant, the variable cost adds
 the emission rate of the plant in t/MWh × the penalty of its region in $/t. A negative rate
 gives a credit, as in OSeMOSYS.
+
+A penalty of a region and pollutant that no component emits has no cost to add to. The report
+of the parameters that no step applies names it.
 
 ### Availability as a derate
 
