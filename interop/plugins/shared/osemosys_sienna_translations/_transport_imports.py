@@ -120,6 +120,8 @@ _HELD_PARAMETERS = frozenset(
     {SupplyParameter.VARIABLE_OPERATION_COST, SupplyParameter.EMISSION_RATE}
 )
 _MODE_NAME = "mode_name"
+_IMPORT_MODES = "import_modes"
+_ONE_IMPORT = 1
 _MODE_INFIX = f"{IMPORT_NAME_SEPARATOR}mode"
 
 UNLIMITED_IMPORT_SKIP = SkipReport(
@@ -154,6 +156,7 @@ def read_import_modes(
         pl.concat_str(TECHNOLOGY_NAME, pl.lit(_MODE_INFIX), OPERATING_MODE).alias(_MODE_NAME)
     )
     modes, _ = filter_component(modes, ~pl.col(IS_UNLIMITED), UNLIMITED_IMPORT_SKIP, recorder)
+    _report_shared_capacity(_build_shared_lines(modes, lines), recorder)
     return modes.drop(IS_UNLIMITED, TECHNOLOGY_NAME, _MODE_NAME)
 
 
@@ -251,6 +254,52 @@ def _report_unplaced_outputs(outputs: pl.DataFrame, recorder: ScopedRecorder) ->
         OSEMOSYS_TO_SIENNA_PIPELINE,
         len(names),
         name_a_few(names),
+    )
+
+
+def _build_shared_lines(modes: pl.DataFrame, lines: pl.DataFrame) -> pl.DataFrame:
+    """Each line with two or more import modes, with its capacity and those modes."""
+    capacities = lines.select(*_KEYS, CAPACITY_PARAMETER, LINE_CAPACITY)
+    return (
+        modes.group_by(*_KEYS, TECHNOLOGY_NAME)
+        .agg(pl.col(OPERATING_MODE).sort().alias(_IMPORT_MODES))
+        .filter(pl.col(_IMPORT_MODES).list.len() > _ONE_IMPORT)
+        .join(capacities, on=_KEYS)
+        .sort(TECHNOLOGY_NAME)
+    )
+
+
+def _report_shared_capacity(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:
+    """Record each line whose import generators each take its whole capacity, and name a few."""
+    if lines.height == 0:
+        return
+    for row in lines.iter_rows(named=True):
+        recorder.append(_build_shared_capacity_event(row))
+    names = lines[TECHNOLOGY_NAME].to_list()
+    log.warning(
+        "%s: %d line technology(ies) have two or more import modes, and each import generator "
+        "takes the whole capacity of the line, where OSeMOSYS shares it among the modes. "
+        "Technologies: %s",
+        OSEMOSYS_TO_SIENNA_PIPELINE,
+        len(names),
+        name_a_few(names),
+    )
+
+
+def _build_shared_capacity_event(row: dict[str, Any]) -> TranslationEvent:
+    modes = ", ".join(row[_IMPORT_MODES])
+    return TranslationEvent(
+        kind=EventKind.NOT_MAPPED,
+        sources=[
+            build_osemosys_field(
+                row[CAPACITY_PARAMETER], row[TECHNOLOGY_NAME], None, row[LINE_CAPACITY]
+            )
+        ],
+        note=(
+            f"the import modes {modes} each become a ThermalStandard at the whole capacity of "
+            "the line, and the system holds no limit on their sum, so together they can import "
+            "more than the line can carry"
+        ),
     )
 
 
