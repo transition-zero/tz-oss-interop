@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -30,7 +29,11 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaRetirementPotentialCol,
     SiennaSupplementalAttributeAssociationCol,
 )
-from interop.plugins.sinks._sienna_files import SYSTEM_JSON_FILENAME, validate_refs
+from interop.plugins.sinks._sienna_files import (
+    SYSTEM_JSON_FILENAME,
+    serialise_portfolio_document,
+    validate_refs,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -80,7 +83,7 @@ class EmitSiennaPortfolio(Sink):
         payload = self.build_payload(
             state, params.base_system_file, params.time_series_storage_file
         )
-        serialised = json.dumps(payload, indent=params.indent, default=str).encode("utf-8")
+        serialised = serialise_portfolio_document(payload, params.indent)
         self._fs.write_bytes(params.output_path, serialised)
 
     @staticmethod
@@ -108,6 +111,7 @@ class EmitSiennaPortfolio(Sink):
                 component_ids,
                 attribute_ids,
             ),
+            PortfolioDocument.REQUIREMENTS_ASSOCIATIONS: [],
             PortfolioDocument.TIME_SERIES_ASSOCIATIONS: [],
             PortfolioDocument.BASE_SYSTEM_FILE: base_system_file,
             PortfolioDocument.TIME_SERIES_STORAGE_FILE: time_series_storage_file,

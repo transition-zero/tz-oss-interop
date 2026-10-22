@@ -9,6 +9,7 @@ Feature: the scaffolded osemosys example runs through the OSeMOSYS pipelines
     When I run the pipeline "osemosys-csv-to-sienna" with user mappings "inputs/osemosys_mappings.yaml"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with "components" set to {}
+    And the written Sienna system has a valid SiennaSchemas 0.2 envelope
     And the file "decisions.md" contains "matched by name and key"
 
   Scenario: the canonical pipeline stages the example from its default paths

@@ -52,6 +52,7 @@ class PortfolioDocument:
     COMPONENTS = "components"
     SUPPLEMENTAL_ATTRIBUTES = "supplemental_attributes"
     SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS = "supplemental_attribute_associations"
+    REQUIREMENTS_ASSOCIATIONS = "requirements_associations"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
     BASE_SYSTEM_FILE = "base_system_file"
     TIME_SERIES_STORAGE_FILE = "time_series_storage_file"
