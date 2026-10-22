@@ -117,7 +117,7 @@ The pipeline writes three companion files alongside `outputs/system.json`:
 | File | Contents |
 | --- | --- |
 | `outputs/system.json` | SiennaSchemas component graph (integer refs, flat objects) |
-| `outputs/system_time_series_storage.h5` | HDF5 arrays for each `SingleTimeSeries`, keyed by UUID |
+| `outputs/system_time_series_storage.h5` | The values of each `SingleTimeSeries`, in the InfraStore sidecar that `time_series_storage_file` names. A row of `time_series_associations` in `system.json` locates each array by its `uri` |
 | `outputs/extensions.json` | PyPSA fields with no SiennaSchemas home (e.g. `carrier`), keyed by kind |
 
 The companion filenames are fixed — always `system_time_series_storage.h5` and `extensions.json` regardless of the `output_path` stem. The CSV reporter also writes `outputs/decisions.csv`.

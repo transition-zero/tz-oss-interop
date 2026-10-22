@@ -453,7 +453,7 @@ checked into the repo:
 | Builder | Writes |
 | --- | --- |
 | `PyPSANetworkBuilder` | a `pypsa.Network` as netCDF |
-| `SiennaSystemBuilder` | a SiennaSchemas system, its HDF5 time-series companion and its kind-keyed `extensions.json` sidecar |
+| `SiennaSystemBuilder` | a SiennaSchemas system, its InfraStore time-series sidecar and its kind-keyed `extensions.json` sidecar |
 | `SiennaResultsBuilder` | a PowerSimulations.jl solve output (wide CSVs plus `optimizer_stats.csv`) |
 | `PlexosModelBuilder` | a PLEXOS `<MasterDataSet>` XML |
 
@@ -503,7 +503,7 @@ register its words.
 | `interop_testing.steps.pipeline` | `When I run the pipeline …`, `Then the pipeline exit code is …`, and `Then the log contains …`. |
 | `interop_testing.steps.reports` | Assertions on the results parquet, its manifest, and the decisions report. |
 | `interop_testing.steps.pypsa_network` | Given: build and save a network. Then: assert on a written one. |
-| `interop_testing.steps.sienna_system` | Given: build and save a system. Then: assert on the system JSON, its HDF5 companion and its extensions sidecar. |
+| `interop_testing.steps.sienna_system` | Given: build and save a system. Then: assert on the system JSON, its InfraStore sidecar and its extensions sidecar. |
 | `interop_testing.steps.sienna_results` | Given: build a solve-results directory. |
 | `interop_testing.steps.plexos_model` | Given: build and save a PLEXOS model. |
 | `interop_testing.steps.power_simulations` | Then: assert on an emitted PowerSimulations.jl system and its H5 sidecar. |
@@ -525,7 +525,7 @@ without it.
 Behind each step module sits a plain-Python one under `interop_testing.builders`
 (`pypsa_networks`, `sienna_systems`, `sienna_documents`, `sienna_results`,
 `plexos_models`), holding that framework's builder and the readers its assertions use
-— `read_network`, `find_sienna_component`, `sienna_time_series_uuid`, and so on. A
+— `read_network`, `find_sienna_component`, `read_stored_series`, and so on. A
 project needing a check the vocabulary does not cover writes its own `@then` against
 those readers rather than parsing the artefact afresh. The PowerSimulations readers
 are the exception: nothing builds a PS.jl system as input, so they sit alongside their

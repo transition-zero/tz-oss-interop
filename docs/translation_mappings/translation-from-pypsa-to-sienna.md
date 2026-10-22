@@ -28,20 +28,22 @@ Concretely, versus `main` (≈280 insertions / 294 deletions):
 - **References are integers.** A cross-reference (`bus`, `area`, `arc`, a time series' `owner_id`) is the integer `id` of the referenced component, never a `{"value": "<uuid>"}` object.
 - **No serialisation envelope.** There is no `__metadata__`, `internal`, `ext`, `units_info`, or `services`. A component's type is given by which schema (or collection) it belongs to, not a `__metadata__.type` tag.
 - **Nested values are plain typed objects.** Limits (`{"min", "max"}`), costs (`ThermalGenerationCost` and its curves), and efficiencies follow their SiennaSchemas definitions directly, with no per-level `__metadata__`.
-- **Time series** are `Core/TimeSeries/TimeSeriesAssociation.json` records — integer `owner_id`, `time_series_uuid`, `name`, `resolution`, `initial_timestamp`, `scaling_factor_multiplier`. The value arrays live in an external store keyed by `time_series_uuid`.
+- **Time series** are rows of the `time_series_associations` list (`Core/TimeSeries`): `association_id`, integer `owner_id` and `owner_type`, `name`, `uri`, `resolution`, `initial_timestamp`, `length`, `time_series_type`, `element_type`, `element_shape` and `features`. The `infrastore` package writes the rows and the value arrays. The arrays live in the InfraStore sidecar that `time_series_storage_file` names, and `uri` is the locator of one array in that store.
 
 This is deliberately **not** the PowerSystems.jl `to_json` serialisation. Do **not** build a PowerSystems.jl `System` and serialise it: that produces UUID identities, `__metadata__`/`internal` envelopes, `{"value": "<uuid>"}` references, deeply nested cost objects each re-tagged with `__metadata__`, and an HDF5 sidecar with a SQLite association store — none of which is SiennaSchemas. The worked examples below show the SiennaSchemas JSON object to emit, not Julia construction.
 
 ### Time series
 
-A time series has two parts, and SiennaSchemas pins down only the first:
+A time series has two parts, and the InfraStore store holds both:
 
-- **Association (JSON, SiennaSchemas-defined).** One `TimeSeriesAssociation` record per (component, series): `owner_id` (the owning component's integer `id`) and `owner_type`, `time_series_uuid`, `name`, `resolution` (ISO 8601, e.g. `PT1H`), `initial_timestamp`, `length`, `time_series_type` (e.g. `SingleTimeSeries`), and optional `scaling_factor_multiplier` / `units`.
-- **Value array (not defined by SiennaSchemas).** Referenced by `time_series_uuid`. The schema's own field description says it "may reference inline data or an external store (e.g., HDF5)." **We use HDF5**, keyed by `time_series_uuid`.
+- **Association (JSON, SiennaSchemas-defined).** One row of `time_series_associations` for each (component, series): `association_id`, `owner_id` (the integer `id` of the owning component) and `owner_type`, `name`, `resolution` (ISO 8601, e.g. `PT1H`), `initial_timestamp`, `length`, `time_series_type` (e.g. `SingleTimeSeries`), `uri`, `element_type`, `element_shape` and `features`. The store assigns `association_id` and `uri`, and the sink copies the finished rows into `system.json`.
+- **Value array (InfraStore sidecar).** The `infrastore` package writes the arrays into one `.h5` file beside the document. `time_series_storage_file` names that file, and the `uri` of a row is the locator of its array in the store. The readers read the values through `infrastore`.
 
-**Store per-unit shapes, not absolute values.** The array is a per-unit profile (typically `[0, 1]`); `scaling_factor_multiplier` is a getter on the component (e.g. `"PowerSystems.get_max_active_power"`) that Sienna multiplies the profile by at read time. Keep the magnitude in the static field (`max_active_power`, `rating`, …) and the shape in the series. PyPSA renewable `p_max_pu` is already per-unit (store as-is); for loads, normalise `p_set` by its peak. A `null` multiplier (absolute values) is valid PowerSystems.jl but non-canonical and not used here.
+**The values are per-unit shapes.** The array is a per-unit profile (typically `[0, 1]`). The magnitude stays in the static field (`max_active_power`, `rating`, ...) and the shape in the series. PyPSA renewable `p_max_pu` is already per unit (stored as it is). For loads, the translator normalises `p_set` by its peak. A 0.2 row has no `scaling_factor_multiplier`, so the translator keeps the divisor in its own association table, and the PyPSA round trip does not change. A `NATURAL_UNITS` owner does not change the values, because the unit basis of a series is a declaration and nothing rescales it.
 
-So HDF5 is retained — it is the external store SiennaSchemas explicitly anticipates. Relative to a PowerSystems.jl `System`, **only the association layer changes**: out of the SQLite table embedded inside the `.h5` (keyed by the component's UUID) and into JSON `TimeSeriesAssociation` records keyed by the integer `owner_id`. The HDF5 value arrays (`/time_series/<uuid>/data`) are unchanged.
+> **Open question: the meaning of the values for a PowerSystems.jl 6 solve.** PowerSystems.jl 6 removed `scaling_factor_multiplier` and stores the actual quantity of each device in a series. A solve in PowerSystems.jl 6 would read these per-unit arrays as MW. The alternative is to write natural-unit values, to state `unit_system`, `quantity_kind` and `component_field` on each row, and to divide on read. The owner has not decided.
+
+Relative to a PowerSystems.jl `System`, the association layer is JSON rows from the store, and the value arrays live in the `infrastore` sidecar.
 
 ### Component extensions
 
@@ -89,28 +91,40 @@ A **non-extendable** component stating `p_nom` 0 stays. PyPSA carries such a com
 
 ### System container
 
-SiennaSchemas defines per-component schemas but not how a whole system is packaged, so we define the container: a **JSON object mapping each Sienna type name to a list of that type's component objects**.
+SiennaSchemas 0.2 defines the whole system as one JSON document, and the `power-openapi-models` package builds and writes it (`SystemDocument`). The translator writes these keys:
 
 ```json
 {
-  "ACBus": [ { "id": 1, "name": "bus_1", ... } ],
-  "PowerLoad": [ { "id": 3, "name": "load_1", ... } ],
-  "ThermalStandard": [ { "id": 4, "name": "ccgt_1", ... } ],
-  "Line": [ { "id": 5, ... } ]
+  "schema_version": "0.2.0",
+  "components": {
+    "ACBus": [ { "id": 1, "name": "bus_1", ... } ],
+    "Line": [ { "id": 5, ... } ],
+    "PowerLoad": [ { "id": 3, "name": "load_1", ... } ],
+    "ThermalStandard": [ { "id": 4, "name": "ccgt_1", ... } ]
+  },
+  "time_series_associations": [ ... ],
+  "time_series_storage_file": "system_time_series_storage.h5",
+  "supplemental_attributes": [],
+  "supplemental_attribute_associations": [],
+  "plant_associations": [],
+  "combined_cycle_associations": [],
+  "service_associations": []
 }
 ```
 
-The type is implied by the key, so the objects stay **pure SiennaSchemas** — no `type`/`__metadata__` discriminator on the objects themselves. Identity is `id`: every `id` is unique across all component lists of the document, and a reference resolves by matching `id` in the list of the type that the field names. This is how every cross-reference within the system document resolves — a bus's integer `bus`/`area`, and a `TimeSeriesAssociation`'s `owner_type`/`owner_id`. The extensions sidecar is the exception: it keys by `name`, because the frameworks either side of a hop share names and not integer ids.
+The type is implied by the key, so the objects stay **pure SiennaSchemas** — no `type`/`__metadata__` discriminator on the objects themselves. Identity is `id`: every `id` is unique across all component lists of the document, and a reference resolves by matching `id` in the list of the type that the field names. This is how every cross-reference within the system document resolves — a bus's integer `bus`/`area`, a line's `arc`, and the `owner_type`/`owner_id` of a `time_series_associations` row. The extensions sidecar is the exception: it keys by `name`, because the frameworks either side of a hop share names and not integer ids.
 
-`TimeSeriesAssociation` records sit alongside the components (a sibling key, e.g. `"TimeSeriesAssociation": [ ... ]`); the extensions document and the HDF5 value arrays are separate companion files.
+The SDK writes the keys of `components` in sorted order. Every `id` is unique across all lists of the document. Every component states the basis of its power fields in `power_units`, and a component that has a base states `base_power`. The translator states `NATURAL_UNITS` for generators, loads and HVDC lines. It states `COMPONENT_BASE` for storage and lines, and the `base_power` of a line is 100 MVA. The SDK forbids a document-level unit basis or base power.
+
+The `time_series_associations` rows sit in the document. The InfraStore sidecar that `time_series_storage_file` names holds the values, and the extensions document is a separate companion file. Neither the SDK nor the document has a key for the extensions file.
 
 **A value that varies over the horizon travels in a companion parquet** beside the sidecar, named for what it holds (`reserves.parquet`) and restated in the terms of the field that references it, so a consumer never has to know what the source framework called it.
 
-**The sidecar is an optional input to every source.** Only this translator writes one, so a SiennaSchemas system from a partner is `system.json` plus its HDF5 companion and nothing more, and it stages with no sidecar at all. A staged record that no mapping in the hop consumes is dropped and reported, not relayed into the next sidecar: a concept survives a chain exactly as far as the frameworks along it understand it.
+**The sidecar is an optional input to every source.** Only this translator writes one, so a SiennaSchemas system from a partner is `system.json` plus its time-series sidecar and nothing more, and it stages with no sidecar at all. A staged record that no mapping in the hop consumes is dropped and reported, not relayed into the next sidecar: a concept survives a chain exactly as far as the frameworks along it understand it.
 
 > **Open question: companion file references.** The document names the time-series sidecar in `time_series_storage_file`, as a basename beside the document. It does not name `extensions.json`, because SiennaSchemas 0.2 has no key for it. The reader takes each companion as an explicit path: `system_json_path`, `time_series_h5_path` and the optional `extensions_json_path`. Whether a naming convention, or something NLR specifies, replaces the explicit paths is still to be confirmed with NLR.
 
-> **Open question — HDF5 layout.** SiennaSchemas does not define the internal HDF5 layout for the value arrays (only that `time_series_uuid` points at an external store). The layout is still to be agreed with NLR; we reuse `/time_series/<uuid>/data` for now.
+> **Open question: the Julia read of the sidecar.** The file that `infrastore` 0.14.1 writes carries the data format version that the Julia InfraStore package 0.14 declares. No run of PowerSystems.jl has confirmed the read.
 
 ---
 
@@ -118,8 +132,8 @@ The type is implied by the key, so the objects stay **pure SiennaSchemas** — n
 
 **SiennaSchemas is the authoritative reference for all Sienna-side field names, types, required/optional status, and enum values.** Any drift between this document and the schema should be resolved in favour of the schema. This document is regenerated against the schema periodically.
 
-- **Repository:** `SiennaSchemas/` (cloned alongside this repo)
-- **Commit targeted:** `906001306e9d3063a8820e84fd2ca7f955bf455e`
+- **Version targeted:** SiennaSchemas 0.2.0, as the Python package `power-openapi-models` 0.2.0 ships it (`power_openapi_models/bundles/0.2.0/`).
+- **Repository:** `SiennaSchemas/` (cloned alongside this repo) holds the source of the schemas.
 
 | Sienna type | Schema file |
 | --- | --- |
@@ -251,7 +265,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 | `id` | `Int` | — | auto-assigned | defaulted | Auto-assigned by Sienna on ingestion; do not set |
 | `name` | `String` | `n.generators.index` | — | direct | Generator name from index |
 | `available` | `Bool` | `n.generators.active` | — | direct | Default `True` |
-| `status` | `Bool` | `n.generators.active` | — | defaulted | `True` — PyPSA has no separate initial on/off state; use `active` |
+| `status` | `OperationalStates` | `n.generators.active` | `ONLINE` | defaulted | PyPSA has no separate initial on/off state, so the unit starts `ONLINE` |
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived | Must resolve string bus name to instantiated `ACBus` object |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Initial dispatch point; use min operating point. If `committable=False` and `p_min_pu=0`, use `0.0` |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted | PyPSA networks rarely model Q for generators |
@@ -263,9 +277,9 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 | `operation_cost` | `ThermalGenerationCost` | `n.generators.marginal_cost`, `start_up_cost`, `shut_down_cost` | See cost pattern above | derived | `marginal_cost` ($/MWh) → `CostCurve(LinearCurve(marginal_cost))`. See cost notes below |
 | `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived | See convention discussion above |
 | `time_limits` | `Union{Nothing,UpDown}` (hours) | `n.generators.min_up_time`, `min_down_time` | `min_up_time × dt_h` | derived | PyPSA counts snapshots; multiply by snapshot duration in hours. If both `0` → `nothing` |
-| `must_run` | `Bool` | — | `false` | defaulted | No PyPSA equivalent; could be inferred from `p_min_pu ≈ p_max_pu` for must-run units |
+| `must_run` | — | — | not written | — | The SiennaSchemas 0.2 `ThermalStandard` has no `must_run` field. PyPSA has no such attribute, so the translator does not write it, and it does not go in `extensions.json` |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | from carrier mapping table | derived | Set per carrier: e.g. `CC` for CCGT, `ST` for coal/nuclear |
-| `fuel_type` | `ThermalFuels` | (carrier classification) | from carrier mapping table | derived | Set per carrier: e.g. `NATURAL_GAS`, `COAL`, `NUCLEAR` |
+| `fuel` | `ThermalFuels` | (carrier classification) | from carrier mapping table | derived | Set per carrier: e.g. `NATURAL_GAS`, `COAL`, `NUCLEAR` |
 | `time_at_status` | `Float64` (hours) | `n.generators.up_time_before`, `down_time_before` | `up_time_before × dt_h` | derived | Optional; tracks how long unit has been at current status before optimisation starts |
 | `dynamic_injector` | `Union{Nothing,DynamicInjection}` | — | `nothing` | defaulted | Dynamic stability models not in PyPSA |
 
@@ -276,19 +290,20 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
   "id": 1,
   "name": "coal_gen_1",
   "available": true,
-  "status": true,
+  "status": "ONLINE",
   "bus": 1,
   "active_power": 100.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 200.0,
   "active_power_limits": { "min": 50.0, "max": 200.0 },
   "base_power": 200.0,
+  "power_units": "NATURAL_UNITS",
   "operation_cost": {
     "cost_type": "THERMAL",
     "fixed": 5000.0,
     "start_up": 1000.0,
     "shut_down": 500.0,
-    "variable": {
+    "variable_operation_cost": {
       "variable_cost_type": "COST",
       "power_units": "NATURAL_UNITS",
       "value_curve": {
@@ -308,8 +323,8 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 
 | PyPSA time-varying attribute | Target | Sienna mechanism |
 | --- | --- | --- |
-| `n.generators_t.p_max_pu` | `max_active_power` | `TimeSeriesAssociation` on `max_active_power`: store the per-unit `p_max_pu` shape (no pre-multiplication), `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` |
-| `n.generators_t.marginal_cost` | `operation_cost` | Cannot attach a series to `ThermalGenerationCost.variable` directly; requires `MarketBidCost`. Flag as unsupported in simple translation; document as known gap |
+| `n.generators_t.p_max_pu` | `max_active_power` | A `time_series_associations` row on `max_active_power`: store the per-unit `p_max_pu` shape (no pre-multiplication) |
+| `n.generators_t.marginal_cost` | `operation_cost` | Cannot attach a series to `ThermalGenerationCost.variable_operation_cost` directly; requires `MarketBidCost`. Flag as unsupported in simple translation; document as known gap |
 
 ##### Unit commitment (`committable`)
 
@@ -360,13 +375,14 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
   "base_power": 100.0,
+  "power_units": "NATURAL_UNITS",
   "operation_cost": {
     "cost_type": "RENEWABLE",
-    "variable": {
+    "variable_operation_cost": {
       "variable_cost_type": "COST",
       "power_units": "NATURAL_UNITS",
       "value_curve": {
@@ -388,7 +404,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 | PyPSA attribute | Where | Target | Transform | Notes |
 | --- | --- | --- | --- | --- |
-| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | `TimeSeriesAssociation` on `max_active_power`, `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` | values = `p_max_pu_series` (pu of `base_power`, stored unchanged) | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
+| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | A `time_series_associations` row on `max_active_power` | values = `p_max_pu_series` (pu of `base_power`, stored unchanged) | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
 | `p_min_pu` | `n.generators_t.p_min_pu` | Not directly supported | — | `RenewableDispatch` has no time-varying lower limit. Use `0.0` for `active_power` |
 | `marginal_cost` | `n.generators_t.marginal_cost` | Not directly supported | — | Switch to `MarketBidCost` if time-varying marginal cost is needed |
 
@@ -429,16 +445,17 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 50.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
-  "base_power": 50.0
+  "base_power": 50.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
 ##### Time series for `RenewableNonDispatch`
 
-Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_active_power` (`scaling_factor_multiplier: "PowerSystems.get_max_active_power"`) whose values are `p_max_pu_series` in pu of `base_power` (no pre-multiplication by `p_nom`). The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
+Same mechanism as `RenewableDispatch`: emit a `time_series_associations` row on `max_active_power` whose values are `p_max_pu_series` in pu of `base_power` (no pre-multiplication by `p_nom`). The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
 
 ##### Note on `operation_cost`
 
@@ -479,13 +496,14 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
   "bus": 1,
   "active_power": 50.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "HY",
   "active_power_limits": { "min": 10.0, "max": 100.0 },
   "base_power": 100.0,
+  "power_units": "NATURAL_UNITS",
   "operation_cost": {
     "cost_type": "HYDRO_GEN",
-    "variable": {
+    "variable_operation_cost": {
       "variable_cost_type": "COST",
       "power_units": "NATURAL_UNITS",
       "value_curve": {
@@ -507,7 +525,7 @@ The translator emits `HydroDispatch` from PyPSA `StorageUnit` rows with carrier 
 
 | PyPSA attribute | Where | Target | Transform | Notes |
 | --- | --- | --- | --- | --- |
-| `p_max_pu` (static) | `n.storage_units.p_max_pu` | `TimeSeriesAssociation` on `max_active_power`, `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` | flat values = `p_max_pu` (pu of `base_power`) | Per-step active-power cap. Multiplier in PSI is `get_max_active_power(d) = p_max_pu × base_power`, so a flat `1.0` series allows the turbine to dispatch at rated power any hour. The formulation requires this TS to be present even when constant; PSI's `add_parameters!` errors on missing TS. |
+| `p_max_pu` (static) | `n.storage_units.p_max_pu` | A `time_series_associations` row on `max_active_power` | flat values = `p_max_pu` (pu of `base_power`) | Per-step active-power cap. Multiplier in PSI is `get_max_active_power(d) = p_max_pu × base_power`, so a flat `1.0` series allows the turbine to dispatch at rated power any hour. The formulation requires this TS to be present even when constant; PSI's `add_parameters!` errors on missing TS. |
 | `inflow` × `efficiency_dispatch` | `n.storage_units_t.inflow` × `n.storage_units.efficiency_dispatch` (`StorageUnit` carrier `hydro`) | `TimeSeriesAssociation` on `hydro_budget` | values = `inflow_mw × efficiency_dispatch / p_nom` (pu of `base_power`) | Energy budget over the horizon. PSI's `EnergyBudgetConstraint` enforces `sum(P[t]) <= sum(get_max_active_power(d) × budget[t])`, so summed in MW the right-hand side becomes `efficiency_dispatch × total_inflow_mwh`. This is the deliverable inflow energy. |
 
 **Why `max_active_power`, not `inflow`.** `HydroDispatch` (and its parent `HydroGen`) has no `inflow` struct field in either `SiennaSchemas/Operations/StaticInjection/HydroDispatch.json` or `PowerSystems.jl/src/models/generated/HydroDispatch.jl`. Only `HydroReservoir` carries an `inflow` field. Correspondingly, `HydroPowerSimulations.jl/src/hydro_generation.jl`'s `get_default_time_series_names(::HydroGen, HydroDispatchRunOfRiverBudget)` registers `ActivePowerTimeSeriesParameter => "max_active_power"` and `EnergyBudgetTimeSeriesParameter => "hydro_budget"`. A series named `"inflow"` attached to a `HydroDispatch` would be silently ignored.
@@ -562,12 +580,13 @@ The translator emits `HydroDispatch` from PyPSA `StorageUnit` rows with carrier 
   "bus": 1,
   "active_power": 50.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "active_power_limits": { "min": 10.0, "max": 100.0 },
   "base_power": 100.0,
+  "power_units": "NATURAL_UNITS",
   "operation_cost": {
     "cost_type": "HYDRO_GEN",
-    "variable": {
+    "variable_operation_cost": {
       "variable_cost_type": "COST",
       "power_units": "NATURAL_UNITS",
       "value_curve": {
@@ -618,6 +637,7 @@ The translator emits each PHS unit as a single `EnergyReservoirStorage` componen
 | `conversion_factor` | `Float64` | — | `1.0` | defaulted | No unit conversion between `storage_capacity` and energy variable |
 | `storage_target` | `Float64` (pu-hours of base_power) | `state_of_charge_initial`, `cyclic_state_of_charge` | `initial_storage_capacity_level * max_hours` if cyclic else `0.0` | derived | End-of-horizon energy target on the same internal scale as the energy variable (despite the schema docstring's "ratio" wording, `StorageDispatchWithReserves` reads it literally in `StateofChargeTargetConstraint`). Translator raises if `cyclic_state_of_charge` is mixed across PHS units, since the formulation attribute is per device-model |
 | `cycle_limits` | `Int` | — | `10000` | defaulted | Unused: pipeline disables the `cycling_limits` formulation attribute (`storage_target` covers the cyclic boundary) |
+| `power_units` | `UnitSystem` | — | `COMPONENT_BASE` | defaulted | `rating`, the power limits and `storage_capacity` are per unit on `base_power` |
 
 **Minimal valid JSON example (`EnergyReservoirStorage`):**
 
@@ -743,10 +763,10 @@ These are aggregation containers for buses. A bus references its `Area`/`LoadZon
 #### `Area`
 
 ```json
-{ "id": 1, "name": "Western Region" }
+{ "id": 1, "name": "Western Region", "power_units": "NATURAL_UNITS", "base_power": 100.0 }
 ```
 
-`name` is the bus location string. `peak_active_power`, `peak_reactive_power`, and `load_response` (MW/Hz load damping) are not in PyPSA and default to `0.0`.
+`name` is the bus location string. `peak_active_power`, `peak_reactive_power`, and `load_response` (MW/Hz load damping) are not in PyPSA and default to `0.0`. `power_units` is `NATURAL_UNITS`, and `base_power` is the system base of 100 MVA.
 
 #### `LoadZone`
 
@@ -960,14 +980,16 @@ g_sienna = g_pu_pypsa / S_base_MVA
 | `active_power_flow` | `Float64` (MW) | — | `0.0` | **defaulted** | PyPSA does not store initial branch flow as an input; `p0`/`p1` in `n.lines_t` are outputs |
 | `reactive_power_flow` | `Float64` (MVAR) | — | `0.0` | **defaulted** | Same — Q flow outputs only |
 | `arc` | `Arc` | `n.lines.bus0`, `n.lines.bus1` | look up ACBus by name → `Arc(from_bus, to_bus)` | **derived** | `bus0` → `from_id`, `bus1` → `to_id`. In the JSON schema, `Arc.from_id` and `Arc.to_id` are integer bus IDs; in the Julia API, pass ACBus objects. Requires the bus registry built in the bus translation step. |
-| `r` | `Float64` (pu, SYSTEM_BASE) | `n.lines.r` (Ohm) | `r_ohm × S_base / v_nom_kV²` | **derived** | PyPSA stores in Ohms. Use bus `v_nom` (kV). Sienna validates `r ∈ (0, 4)` — flag if outside range |
-| `x` | `Float64` (pu, SYSTEM_BASE) | `n.lines.x` (Ohm) | `x_ohm × S_base / v_nom_kV²` | **derived** | Same as `r`. Must be > 0 for linearised power flow; PyPSA requires this too |
-| `b` | `FromTo` (pu, SYSTEM_BASE) | `n.lines.b` (Siemens) | `b_total_sienna = b_S × v_nom_kV² / S_base`; split equally: `(from=b_total/2, to=b_total/2)` | **derived** | Optional in schema; PyPSA `b` is the total shunt susceptance (π-model). Sienna splits per end. Default `(from=0.0, to=0.0)` when `b=0` |
-| `rating` | `Float64` (pu, SYSTEM_BASE) | `n.lines.s_nom` (MVA), `n.lines.s_max_pu` (pu) | `(s_nom * s_max_pu) / S_base` | **derived** | PyPSA's effective AC line capacity is `s_nom * s_max_pu`. `s_max_pu` is a derating factor in `[0, 1]`; PyPSA-Eur applies a uniform `s_max_pu = 0.7` across all lines as an N-1 contingency margin. Ignoring `s_max_pu` causes Sienna to see every AC corridor as `1/s_max_pu` wider than PyPSA does, which lets cheaper imports replace expensive local generation. Stored in pu of `SYSTEM_BASE` (PowerSystems.jl multiplies by `base_power` on attachment to recover MVA). If `s_nom_extendable=True`, use `s_nom_opt` if available (post-LOPF); otherwise fall back to `s_nom`. See capacity expansion note. A line whose `s_max_pu` is a series in `n.lines_t` carries no static rating this field can hold, so that line is left out. |
+| `r` | `Float64` (pu, COMPONENT_BASE) | `n.lines.r` (Ohm) | `r_ohm × S_base / v_nom_kV²` | **derived** | PyPSA stores in Ohms. Use bus `v_nom` (kV). Sienna validates `r ∈ (0, 4)` — flag if outside range |
+| `x` | `Float64` (pu, COMPONENT_BASE) | `n.lines.x` (Ohm) | `x_ohm × S_base / v_nom_kV²` | **derived** | Same as `r`. Must be > 0 for linearised power flow; PyPSA requires this too |
+| `b` | `FromTo` (pu, COMPONENT_BASE) | `n.lines.b` (Siemens) | `b_total_sienna = b_S × v_nom_kV² / S_base`; split equally: `(from=b_total/2, to=b_total/2)` | **derived** | Optional in schema; PyPSA `b` is the total shunt susceptance (π-model). Sienna splits per end. Default `(from=0.0, to=0.0)` when `b=0` |
+| `rating` | `Float64` (pu, COMPONENT_BASE) | `n.lines.s_nom` (MVA), `n.lines.s_max_pu` (pu) | `(s_nom * s_max_pu) / S_base` | **derived** | PyPSA's effective AC line capacity is `s_nom * s_max_pu`. `s_max_pu` is a derating factor in `[0, 1]`; PyPSA-Eur applies a uniform `s_max_pu = 0.7` across all lines as an N-1 contingency margin. Ignoring `s_max_pu` causes Sienna to see every AC corridor as `1/s_max_pu` wider than PyPSA does, which lets cheaper imports replace expensive local generation. Stored in pu of `COMPONENT_BASE` (PowerSystems.jl multiplies by `base_power` on attachment to recover MVA). If `s_nom_extendable=True`, use `s_nom_opt` if available (post-LOPF); otherwise fall back to `s_nom`. See capacity expansion note. A line whose `s_max_pu` is a series in `n.lines_t` carries no static rating this field can hold, so that line is left out. |
+| `base_power` | `Float64` (MVA) | — | `100.0` | **defaulted** | PyPSA has no network power base, so the system base of 100 MVA applies. `r`, `x`, `b`, `g` and `rating` are per unit on it |
+| `power_units` | `UnitSystem` | — | `COMPONENT_BASE` | **defaulted** | `rating` is per unit on `base_power`. `parameter_units` is left out and defaults to `COMPONENT_BASE` |
 | `angle_limits` | `MinMax` (radians) | `n.lines.v_ang_min`, `v_ang_max` (degrees) | convert degrees → radians; use `(min=-π/2, max=π/2)` when ±∞ | **defaulted** | PyPSA `v_ang_min`/`v_ang_max` are documented placeholders not enforced by PyPSA. In all sample files they are ±∞. Apply default `(min=-1.5708, max=1.5708)` (±90°). If a finite value is explicitly set by the user, map it: `radians = degrees × π/180` |
 | `rating_b` | `Union{Nothing, Float64}` (MVA) | — | `nothing` | **defaulted** | No PyPSA equivalent for a second thermal rating |
 | `rating_c` | `Union{Nothing, Float64}` (MVA) | — | `nothing` | **defaulted** | No PyPSA equivalent |
-| `g` | `FromTo` (pu, SYSTEM_BASE) | `n.lines.g` (Siemens) | `g_total_sienna = g_S × v_nom_kV² / S_base`; split: `(from=g_total/2, to=g_total/2)` | **derived** | Same π-split as `b`. Default is `0.0` in PyPSA — most lines carry no shunt conductance |
+| `g` | `FromTo` (pu, COMPONENT_BASE) | `n.lines.g` (Siemens) | `g_total_sienna = g_S × v_nom_kV² / S_base`; split: `(from=g_total/2, to=g_total/2)` | **derived** | Same π-split as `b`. Default is `0.0` in PyPSA — most lines carry no shunt conductance |
 
 **Extensions sidecar.** Line attributes with no SiennaSchemas field go in the `extensions.json` companion (see Component extensions), as a `line` record identified by `name`:
 
@@ -1148,8 +1170,8 @@ A PyPSA `Link` represents a controllable directed power flow branch with no phys
 
 **Key translation decisions:**
 1. **Scope filter (v1):** Only Links where both `bus0` and `bus1` connect to AC or DC electricity buses are translated. Links involving non-electricity carriers (H₂, gas, heat) are deferred. In all tested sample files, cross-carrier Links do not appear.
-2. **Efficiency → loss:** PyPSA `efficiency ∈ (0, 1]` maps to Sienna `loss = InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0))`. Efficiency=1.0 (lossless) → proportional_term=0.0. Efficiency=0.97 → proportional_term=0.03.
-3. **Directionality:** PyPSA `p_min_pu` determines bidirectionality. `p_min_pu = 0` (the PyPSA default) → unidirectional; `p_min_pu = -1` (Breakthrough/elec_s_70) → bidirectional. The `active_power_limits_from.min` reflects this.
+2. **Efficiency → loss:** PyPSA `efficiency ∈ (0, 1]` maps to Sienna `loss = LossCurve(power_units=NATURAL_UNITS, value_curve=InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0)))`. Efficiency=1.0 (lossless) → proportional_term=0.0. Efficiency=0.97 → proportional_term=0.03.
+3. **Directionality:** PyPSA `p_min_pu` determines bidirectionality. `p_min_pu = 0` (the PyPSA default) → unidirectional; `p_min_pu = -1` (Breakthrough/elec_s_70) → bidirectional. `rating_to` reflects this.
 4. **No impedance conversion needed:** Links have no `r`/`x`/`b`/`g`; all power limits are in MW.
 5. **Multi-port Links (bus2, bus3, …)** are out of scope for v1. No tested sample file uses them.
 
@@ -1177,7 +1199,7 @@ Branch (abstract)
 
 ### Reference: Sienna `TwoTerminalGenericHVDCLine` Struct (from schema)
 
-Source: `SiennaSchemas/Operations/Branch/TwoTerminalGenericHVDCLine.json` (commit `906001306e9d3063a8820e84fd2ca7f955bf455e`)
+Source: `SiennaSchemas/Operations/Branch/TwoTerminalGenericHVDCLine.json` (version 0.2.0)
 
 ```json
 {
@@ -1186,19 +1208,25 @@ Source: `SiennaSchemas/Operations/Branch/TwoTerminalGenericHVDCLine.json` (commi
   "available": true,
   "active_power_flow": 0.0,
   "arc": 1,
-  "active_power_limits_from": { "min": -2500.0, "max": 2500.0 },
-  "active_power_limits_to": { "min": -2500.0, "max": 2500.0 },
+  "rating": 2500.0,
+  "rating_from": 2500.0,
+  "rating_to": 2500.0,
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
-    "input_at_zero": null
-  }
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
+  },
+  "base_power": 100.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
-Field notes: `arc` is the integer `id` of the `Arc` joining the from/to buses. `active_power_limits_*` / `reactive_power_limits_*` are `{min, max}` pairs in MW / MVAR. `loss` is a `TwoTerminalLoss` (here an `InputOutputCurve`): a linear loss of `proportional_term` MW per MW of flow, i.e. `1 - efficiency` (so `efficiency = 0.97` → `0.03`). `loss` is optional — a lossless link omits it or sets `proportional_term: 0.0`.
+Field notes: `arc` is the integer `id` of the `Arc` joining the from/to buses. `rating_from` and `rating_to` are the transfer ratings from the first bus to the second and the other way, in MW, and `rating` is the larger of the two. `reactive_power_limits_*` are `{min, max}` pairs in MVAR. `loss` is a `LossCurve`: its `value_curve` is an `InputOutputCurve` with a linear loss of `proportional_term` MW per MW of flow, i.e. `1 - efficiency` (so `efficiency = 0.97` → `0.03`). `loss` is optional — a lossless link omits it or sets `proportional_term: 0.0`. `power_units` is `NATURAL_UNITS`, so every power value is in MW, and `base_power` only labels the line.
 
 ---
 
@@ -1320,10 +1348,13 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
   "available": true,
   "active_power_flow": 0.0,
   "arc": 2,
-  "active_power_limits_from": { "min": 0.0, "max": 2000.0 },
-  "active_power_limits_to": { "min": 0.0, "max": 1940.0 },
+  "rating": 2000.0,
+  "rating_from": 2000.0,
+  "rating_to": 0.0,
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
-  "reactive_power_limits_to": { "min": 0.0, "max": 0.0 }
+  "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
+  "base_power": 100.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
@@ -1333,21 +1364,15 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 
 PyPSA Links are inherently directed: power flows from `bus0` toward `bus1`. Whether the flow can reverse depends on `p_min_pu`:
 
-| `p_min_pu` value | Interpretation | `active_power_limits_from` | Example source |
-| --- | --- | --- | --- |
-| `0.0` (default) | Unidirectional — no reverse flow | `(min=0.0, max=p_nom)` | `network.nc`, APG |
-| `-1.0` | Fully bidirectional — can flow either way | `(min=-p_nom, max=p_nom)` | Breakthrough elec_s_70, ac-dc-meshed |
-| `-0.9` | Bidirectional but asymmetric | `(min=-0.9×p_nom, max=p_nom)` | ac-dc-meshed |
+| `p_min_pu` value | Interpretation | `rating_from` | `rating_to` | Example source |
+| --- | --- | --- | --- | --- |
+| `0.0` (default) | Unidirectional — no reverse flow | `p_nom × p_max_pu` | `0.0` | `network.nc`, APG |
+| `-1.0` | Fully bidirectional — can flow either way | `p_nom × p_max_pu` | `p_nom` | Breakthrough elec_s_70, ac-dc-meshed |
+| `-0.9` | Bidirectional but asymmetric | `p_nom × p_max_pu` | `0.9 × p_nom` | ac-dc-meshed |
 
-Sienna `TwoTerminalGenericHVDCLine.active_power_limits_from` accepts negative min values to represent reverse flow capability. The convention is:
-- Positive flow = from bus0 to bus1 (consistent with PyPSA convention)
-- Negative flow = from bus1 to bus0 (reverse)
+Sienna `TwoTerminalGenericHVDCLine` states `rating_from` for flow from `bus0` to `bus1` and `rating_to` for the reverse flow. `rating_to` is `−p_nom × p_min_pu` when `p_min_pu < 0`, and `0.0` otherwise. `rating` is the larger of the two.
 
-**For `active_power_limits_to`:** The to-end limits reflect what arrives at `bus1` after losses:
-- `max = p_nom × p_max_pu × efficiency`
-- `min = p_nom × p_min_pu × efficiency` (negative if bidirectional)
-
-This preserves the physics that arriving power is less than (or equal to, if lossless) sent power.
+The ratings carry no efficiency. The `loss` curve carries it, so no rating is scaled by `efficiency`.
 
 ---
 
@@ -1355,19 +1380,19 @@ This preserves the physics that arriving power is less than (or equal to, if los
 
 PyPSA `efficiency` is a per-unit fraction: `p1 = efficiency × |p0|`. The inverse is `1 - efficiency` = fractional loss.
 
-Sienna `TwoTerminalGenericHVDCLine.loss` is typed `TwoTerminalLoss` (`InputOutputCurve | IncrementalCurve`). Use `InputOutputCurve(LinearFunctionData(proportional_term, constant_term=0.0))` where `proportional_term` is MW of loss per MW of flow.
+Sienna `TwoTerminalGenericHVDCLine.loss` is a `LossCurve`: a `power_units` and a `value_curve` (`InputOutputCurve | IncrementalCurve`). Use `InputOutputCurve(LinearFunctionData(proportional_term, constant_term=0.0))` as the `value_curve`, where `proportional_term` is MW of loss per MW of flow.
 
 **Mapping:**
 
 ```
-loss = InputOutputCurve(LinearFunctionData(proportional_term = 1.0 - efficiency, constant_term = 0.0))
+loss = LossCurve(power_units = NATURAL_UNITS, value_curve = InputOutputCurve(LinearFunctionData(proportional_term = 1.0 - efficiency, constant_term = 0.0)))
 ```
 
 | PyPSA `efficiency` | Sienna `loss` | Meaning |
 | --- | --- | --- |
-| `1.0` (lossless) | `InputOutputCurve(LinearFunctionData(proportional_term=0.0, constant_term=0.0))` | No losses |
-| `0.97` | `InputOutputCurve(LinearFunctionData(proportional_term=0.03, constant_term=0.0))` | 3% proportional loss |
-| `0.95` | `InputOutputCurve(LinearFunctionData(proportional_term=0.05, constant_term=0.0))` | 5% proportional loss |
+| `1.0` (lossless) | `LossCurve(NATURAL_UNITS, InputOutputCurve(LinearFunctionData(proportional_term=0.0, constant_term=0.0)))` | No losses |
+| `0.97` | `LossCurve(NATURAL_UNITS, InputOutputCurve(LinearFunctionData(proportional_term=0.03, constant_term=0.0)))` | 3% proportional loss |
+| `0.95` | `LossCurve(NATURAL_UNITS, InputOutputCurve(LinearFunctionData(proportional_term=0.05, constant_term=0.0)))` | 5% proportional loss |
 
 **Time-varying efficiency:** If `efficiency` appears in `n.links_t`, it varies per timestep. The `TwoTerminalLoss` (`InputOutputCurve`) is static — time-varying efficiency cannot be represented natively. For v1, use the static `efficiency` column value. If the time-varying series is present, store a flag in `ext["has_time_varying_efficiency"] = true` so downstream systems are aware.
 
@@ -1400,8 +1425,8 @@ In all tested sample files, `p_nom_extendable=True` is common (every link in `ne
 
 PyPSA allows `p_min_pu` and `p_max_pu` to be time series (in `n.links_t`). When present, they override the static values per timestep.
 
-Sienna `TwoTerminalGenericHVDCLine` stores fixed `active_power_limits_from/to` — no native time-varying limits. For v1:
-- Use the static `p_min_pu`/`p_max_pu` columns for power limit construction.
+Sienna `TwoTerminalGenericHVDCLine` stores fixed `rating_from`/`rating_to` — no native time-varying limits. For v1:
+- Use the static `p_min_pu`/`p_max_pu` columns for rating construction.
 - If time-varying versions exist in `n.links_t`, store a flag in `ext["has_time_varying_p_min_pu"]` / `ext["has_time_varying_p_max_pu"]`.
 - Do not attempt to attach `TimeSeriesData` to the power limits field; Sienna does not support this.
 
@@ -1475,19 +1500,25 @@ Sienna (SiennaSchemas JSON):
   "available": true,
   "active_power_flow": 0.0,
   "arc": 1,
-  "active_power_limits_from": { "min": 0.0, "max": 2500.0 },
-  "active_power_limits_to": { "min": 0.0, "max": 2425.0 },
+  "rating": 2500.0,
+  "rating_from": 2500.0,
+  "rating_to": 0.0,
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
-    "input_at_zero": null
-  }
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
+  },
+  "base_power": 100.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
-Capacity uses `p_nom_opt` (2500 MW). `arc` is the integer `id` of the `Arc` (GB→FR). `active_power_limits_to.max = 2500 × 0.97 = 2425`. `loss.proportional_term = 1 − efficiency = 0.03`.
+Capacity uses `p_nom_opt` (2500 MW). `arc` is the integer `id` of the `Arc` (GB→FR). `p_min_pu = 0`, so `rating_to = 0.0` and `rating = rating_from = 2500`. `loss.value_curve.function_data.proportional_term = 1 − efficiency = 0.03`.
 
 #### Bidirectional elec_s_70 HVDC Link (efficiency=1.0)
 
@@ -1514,19 +1545,25 @@ Sienna (SiennaSchemas JSON):
   "available": true,
   "active_power_flow": 0.0,
   "arc": 2,
-  "active_power_limits_from": { "min": -720.0, "max": 720.0 },
-  "active_power_limits_to": { "min": -720.0, "max": 720.0 },
+  "rating": 720.0,
+  "rating_from": 720.0,
+  "rating_to": 720.0,
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.0, "constant_term": 0.0 },
-    "input_at_zero": null
-  }
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.0, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
+  },
+  "base_power": 100.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
-Capacity uses `p_nom_opt` (720 MW). Bidirectional, so `active_power_limits_*.min = -720`. `efficiency = 1.0` → `loss.proportional_term = 0.0` (lossless).
+Capacity uses `p_nom_opt` (720 MW). Bidirectional, so `rating_to = −720 × (−1) = 720`. `efficiency = 1.0` → `loss.value_curve.function_data.proportional_term = 0.0` (lossless).
 
 ---
 
@@ -1548,10 +1585,10 @@ These PyPSA `Link` features are explicitly out of scope for v1 translation:
 
 ### Open Questions
 
-1. **`active_power_limits_to` with bidirectional + losses:** For a bidirectional Link with `efficiency < 1.0`, the loss applies asymmetrically depending on flow direction. Current mapping applies `efficiency` uniformly to both ends. Is this the correct Sienna interpretation of `TwoTerminalLoss` (`InputOutputCurve`) for reverse flow?
-2. **`p_set` Links:** Some PyPSA networks use non-extendable, non-optimised Links with `p_set` (fixed dispatch). These represent must-run injections. Should they translate to a `TwoTerminalGenericHVDCLine` with `active_power_limits_from = active_power_limits_to = (min=p_set, max=p_set)`, or should they be represented differently?
+1. **Losses with bidirectional flow:** For a bidirectional Link with `efficiency < 1.0`, the loss applies asymmetrically depending on flow direction. The ratings carry no efficiency, and one `loss` curve carries it for both directions. Is this the correct Sienna interpretation of `LossCurve` for reverse flow?
+2. **`p_set` Links:** Some PyPSA networks use non-extendable, non-optimised Links with `p_set` (fixed dispatch). These represent must-run injections. Should they translate to a `TwoTerminalGenericHVDCLine` with `rating_from = rating = p_set`, or should they be represented differently?
 3. **Bus carrier `"DC"`:** In Breakthrough-style networks, Links connect AC buses but carry carrier `"DC"`. The endpoint buses themselves have carrier `"AC"`. The `is_electricity_bus` filter accepts AC, DC, and empty — but what if there are pure DC bus nodes (`DCBus` in Sienna) that should connect to DC branches instead? Needs clarification on when `ACBus` vs `DCBus` is appropriate.
-4. **`p_nom = 0` and `p_nom_opt = 0`:** A Link with both values at zero produces a `TwoTerminalGenericHVDCLine` with `active_power_limits_from = (min=0.0, max=0.0)` — effectively non-functional. Should such Links be skipped or included as available=false?
+4. **`p_nom = 0` and `p_nom_opt = 0`:** A Link with both values at zero produces a `TwoTerminalGenericHVDCLine` with `rating = rating_from = rating_to = 0.0` — effectively non-functional. Should such Links be skipped or included as available=false?
 5. **Round-trip reconstruction:** When reconstructing PyPSA from Sienna, `efficiency` must be recovered from `1 - loss.proportional_term` (where `loss` is an `InputOutputCurve`). Is the `ext["carrier"]` field sufficient to reconstruct a PyPSA Link correctly, or do we need to also preserve `p_min_pu`/`p_max_pu` explicitly in `ext`?
 6. **`marginal_cost` in `ext`:** PowerSimulations.jl uses `OperationalCost` subtypes for dispatch cost. Should `marginal_cost` be written into a `ThermalGenerationCost`like wrapper attached to the component, or is `ext` the right home for v1?
 
@@ -1800,6 +1837,7 @@ No sign flip, no unit conversion needed for P and Q. Both frameworks treat posit
 | `max_active_power` | `Float64` (MW) | `n.loads.p_set` or `n.loads_t.p_set` | see below | **derived** | Peak demand ceiling. See time-series section |
 | `max_reactive_power` | `Float64` (MVAR) | `n.loads.q_set` or `n.loads_t.q_set` | direct or peak of ts | **derived** | Same logic as `max_active_power`. If `q_set` is always static and zero, set to `0.0` |
 | `conformity` | `LoadConformity` | — | `LoadConformity.UNDEFINED` | **defaulted** | PyPSA `Load` has no conformity concept |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | **defaulted** | The power fields of a load are in MW and MVAR |
 | `dynamic_injector` | `Union{Nothing, DynamicInjection}` | — | `nothing` | **defaulted** | Dynamics not relevant for PyPSA Load translation |
 
 **Extensions sidecar.** Load attributes with no SiennaSchemas field go in the `extensions.json` companion (see Component extensions), as a `load` record identified by `name`:
@@ -1876,7 +1914,7 @@ See Target format → Time series for the canonical form. The key points:
 
 - `name` is `"max_active_power"` (the field the series scales); `owner_type`/`owner_id` point at the load.
 - `resolution` is the ISO 8601 snapshot interval (e.g. `PT1H`).
-- The stored array is the **per-unit shape** (`p_set / peak`), with `scaling_factor_multiplier: "PowerSystems.get_max_active_power"`; the magnitude lives in `max_active_power`.
+- The stored array is the **per-unit shape** (`p_set / peak`), and no `scaling_factor_multiplier`; the magnitude lives in `max_active_power`.
 
 #### `q_set` — reactive power time series
 
@@ -1954,23 +1992,26 @@ Sienna (SiennaSchemas JSON):
 
 `active_power` is the first timestep (initial condition); `base_power` and `max_active_power` are the peak demand. `bus` is the integer `id` of the ACBus the load sits on (resolved from the PyPSA bus name during translation), not a name or UUID.
 
-The demand profile is a separate `TimeSeriesAssociation` record pointing at the load by `owner_id`; the value array lives in the external HDF5 store under `time_series_uuid`:
+The demand profile is a separate row of `time_series_associations` pointing at the load by `owner_id`. The store assigns `association_id` and `uri`, and the value array lives in the InfraStore sidecar:
 
 ```json
 {
+  "association_id": 1,
   "owner_type": "PowerLoad",
   "owner_id": 1,
   "name": "max_active_power",
-  "time_series_uuid": "<uuid>",
+  "uri": "<locator of the array in the store>",
   "time_series_type": "SingleTimeSeries",
   "initial_timestamp": "2020-01-01T00:00:00",
   "resolution": "P1D",
   "length": 365,
-  "scaling_factor_multiplier": "PowerSystems.get_max_active_power"
+  "element_type": "f64",
+  "element_shape": [],
+  "features": {}
 }
 ```
 
-The stored array is the **per-unit shape** (`p_set(t) / peak`, in `[0, 1]`); `scaling_factor_multiplier` makes Sienna multiply it by the load's `max_active_power` (the peak) at read time, recovering MW. Store the shape, keep the magnitude in `max_active_power`, multiply on read.
+The stored array is the **per-unit shape** (`p_set(t) / peak`, in `[0, 1]`). The magnitude stays in `max_active_power`, and the translator keeps the peak as the divisor in its own association table.
 
 #### Static load with q_set (solved_network style)
 
@@ -2017,7 +2058,7 @@ References resolve by `id`, so the serialised lists are unordered; assign `id`s 
 
 #### Time series (cross-reference)
 
-A load's demand profile is a `TimeSeriesAssociation` on `max_active_power` — a per-unit shape with `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` and the array in the HDF5 store. This is identical to the `max_active_power` association on a `RenewableDispatch` (see the Generator time-series section and Target format → Time series).
+A load's demand profile is a `time_series_associations` row on `max_active_power` — a per-unit shape with the array in the InfraStore sidecar. This is identical to the `max_active_power` association on a `RenewableDispatch` (see the Generator time-series section and Target format → Time series).
 
 ---
 
