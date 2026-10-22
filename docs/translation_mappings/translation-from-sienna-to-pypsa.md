@@ -632,6 +632,11 @@ states goes, unchanged, to the `extensions.json` that the pipeline writes beside
 network. The report gives one row for each field that travels on, with the rule
 `relayed unchanged to extensions.json, as PyPSA has no attribute for it`.
 
+These rules apply to a record that a step reads. A step of the fuels reads a `generator` or a
+`load` record only when the network holds its bus, and no other component holds its name. A
+record that no step reads does not travel on. The report gives it a `NOT_MAPPED` row, with the
+note that no mapping reads it.
+
 These fields become PyPSA attributes. `overnight_cost_per_mw` becomes one only if the record
 also states a `discount_rate`:
 
