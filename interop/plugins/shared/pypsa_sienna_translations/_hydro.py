@@ -339,7 +339,7 @@ HYDRO_COST = Translation(
     exprs=[
         pl.struct(
             cost_type=pl.lit(SiennaCostType.HYDRO_GEN),
-            variable=variable_cost_curve(pl.col(PyPSAStorageUnitCol.MARGINAL_COST)),
+            variable_operation_cost=variable_cost_curve(pl.col(PyPSAStorageUnitCol.MARGINAL_COST)),
             fixed=pl.lit(0.0),
         )
         .cast(HYDRO_GENERATION_COST_DTYPE)
@@ -359,7 +359,7 @@ HYDRO_COST = Translation(
                 _dest(
                     old[PyPSAStorageUnitCol.NAME],
                     f"{SiennaHydroGeneratorCol.OPERATION_COST}"
-                    ".variable.value_curve.function_data.proportional_term",
+                    ".variable_operation_cost.value_curve.function_data.proportional_term",
                     old[PyPSAStorageUnitCol.MARGINAL_COST],
                 )
             ],
