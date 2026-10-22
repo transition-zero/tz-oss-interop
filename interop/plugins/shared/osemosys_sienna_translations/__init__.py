@@ -78,6 +78,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import (
 from interop.plugins.shared.osemosys_sienna_translations._policies import (
     build_policies,
     set_policies_persisted,
+    warn_changed_tags,
 )
 from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
@@ -108,6 +109,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
     build_import_extensions,
+    set_import_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_translations import (
     TRANSPORT_MAPPING,
@@ -178,9 +180,11 @@ __all__ = [
     "set_conversion_values_persisted",
     "set_days_persisted",
     "set_generator_values_persisted",
-    "warn_lost_costs",
+    "set_import_values_persisted",
     "set_line_values_persisted",
     "set_operations_year",
     "set_policies_persisted",
     "set_storage_values_persisted",
+    "warn_changed_tags",
+    "warn_lost_costs",
 ]
