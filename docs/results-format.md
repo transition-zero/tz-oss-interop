@@ -150,7 +150,10 @@ The definitions are those of `sienna-to-results`, with the PyPSA fields:
 - `production` of a link is the same sum of the power that the link delivers at the end that
   receives it, `max(-p0, 0) + max(-p1, 0)`. A link that loses energy delivers less than it
   sends. Its `category` is null, as for a Sienna HVDC line. The `<name> reverse` link of a
-  two-way line adds to the `production` of `<name>`, so the row meets the one Sienna line.
+  two-way line adds to the `production` of `<name>`, so the row meets the one Sienna line. The
+  reader pairs the two links by the name alone. So a link of the network that has the name
+  `<name> reverse` for another reason also adds to `<name>`. The Sienna to PyPSA translation then
+  keeps `<name>` as one two-way link, and `decisions.md` records it.
 - `installed_capacity` is the nameplate. For a generator it is `p_nom`, because `p_max_pu` is
   what the generator can make, not what it has. For a storage unit or a link it is `p_nom` ×
   `p_max_pu`. A two-way line and its reverse link give one row. The Sienna to PyPSA
