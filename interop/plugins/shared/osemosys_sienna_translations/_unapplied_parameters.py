@@ -65,12 +65,16 @@ OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
         FlowParameter.OUTPUT_ACTIVITY_RATIO,
         FlowParameter.TECHNOLOGY_TO_STORAGE,
         FlowParameter.TECHNOLOGY_FROM_STORAGE,
-        SupplyParameter.EMISSION_PENALTY,
     }
 )
 # Each parameter that the operations step or the investments portfolio step applies.
 INVESTMENTS_PARAMETERS: frozenset[str] = frozenset(
-    {*OPERATIONS_PARAMETERS, *InvestmentParameter, *EmissionParameter}
+    {
+        *OPERATIONS_PARAMETERS,
+        *InvestmentParameter,
+        *EmissionParameter,
+        SupplyParameter.EMISSION_PENALTY,
+    }
 )
 
 _UNAPPLIED_NOTE = (

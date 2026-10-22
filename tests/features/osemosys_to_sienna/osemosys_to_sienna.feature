@@ -495,6 +495,19 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
 
+    Scenario: An emission penalty of a pollutant that no plant emits is reported
+      No plant emits NOX, so no component applies its penalty.
+      Given the otoole set "EMISSION" holds "CO2 NOX"
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 50    |
+        | R1     | NOX      | 2030 | 5     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 37.0
+      And the log contains "emission_penalty states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 pollutant(s): R1/NOX"
+      And the file "decisions.md" contains "`osemosys.emission_penalty.R1/NOX` = 5.0"
+
     Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
       The model states currency in million USD and emissions in kt. The gas plant emits 600
       kt of CO2 for each GWh, which is 600 t for each MWh. A penalty of 0.05 million USD for
@@ -660,6 +673,37 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the log does not contain "generation_fraction_requirement states"
       And the log does not contain "reserve_margin states"
       And the log does not contain "reserve_margin_tag_fuel states"
+
+    Scenario: A reserve margin tag that changes in a year with a limit is reported
+      ATGASCC counts 0.9 of its capacity in 2030 and 0.5 in 2035, and the margin holds in both
+      years. The record keeps 0.9.
+      Given the otoole parameter "ReserveMarginTagTechnology" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 0.9   |
+        | R1     | ATGASCC    | 2035 | 0.5   |
+        | R1     | ATSOLAR    | 2030 | 0.2   |
+        | R1     | ATSOLAR    | 2035 | 0.2   |
+      And the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
+        | REGION | YEAR | VALUE |
+        | R1     | 2030 | 1.2   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "ATSOLAR", "member_class": "technology", "coefficient": 0.2, "coefficient_property": "reserve_margin_tag_technology"}]
+      And the log contains "1 tag(s) of a renewable target or a reserve margin change in a year with a limit, and each constraint record keeps the value of the earliest year that tags the member. Tags: R1/ATGASCC"
+      And the file "decisions.md" contains "`osemosys.reserve_margin_tag_technology.R1/ATGASCC.year 2035` = 0.5"
+      And the file "decisions.md" contains "the constraint record R1/reserve_margin weights ATGASCC by 0.9 in each year"
+
+    Scenario: A renewable tag that changes only in a year with no target is not reported
+      Given the otoole parameter "REMinProductionTarget" keyed by "REGION YEAR" with default 0 has the rows:
+        | REGION | YEAR | VALUE |
+        | R1     | 2030 | 0.3   |
+      And the otoole parameter "RETagTechnology" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATSOLAR    | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "members" set to [{"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}]
+      And the log does not contain "tag(s) of a renewable target or a reserve margin change"
 
     Scenario: The emission limit of a region group becomes a constraint record whose members are its regions
       Given the otoole set "REGIONGROUP" holds "G1"
@@ -1599,6 +1643,12 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.fuel_type` = OTHER"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.operation_cost emission penalty of CO2` = 10.0"
       And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATDEBUY.operating_mode 2` = 80000.0"
+
+    Scenario: The emission penalty that an import applies is not reported
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "emission_rates_t_per_mwh" set to {"CO2": 0.5}
+      And the log does not contain "emission_penalty states"
 
     Scenario: A line keeps its flow back beside its import
       The flow back of ATDEBUY sends at most 2000 × 0.9 × 1 = 1800 MW from DE and delivers at
