@@ -1496,6 +1496,27 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "active_power_limits" set to {"min": 0.0, "max": 1440.0}
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/4" having "active_power_limits" set to {"min": 0.0, "max": 1260.0}
 
+    Scenario: A line of two import modes is reported, because each import takes the whole capacity of the line
+      ATDEBUY holds 2000 MW, and its two import generators can put out 1440 + 1260 = 2700 MW.
+      Given the otoole set "MODE_OF_OPERATION" holds "1 2 3 4"
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDEBUY    | DEELEC | 1                 | 2030 | 0.95  |
+        | R1     | ATDEBUY    | ATELEC | 2                 | 2030 | 0.8   |
+        | R1     | ATDEBUY    | ATELEC | 3                 | 2030 | 0.9   |
+        | R1     | ATDEBUY    | DEELEC | 4                 | 2030 | 0.7   |
+        | R1     | ATPEAKER   | ATELEC | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "1 line technology(ies) have two or more import modes, and each import generator takes the whole capacity of the line, where OSeMOSYS shares it among the modes. Technologies: R1/ATDEBUY"
+      And the file "decisions.md" contains "`osemosys.residual_capacity.R1/ATDEBUY` = 2.0"
+      And the file "decisions.md" contains "the import modes 2, 4 each become a ThermalStandard at the whole capacity of the line"
+
+    Scenario: A line of one import mode is not reported for its capacity
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log does not contain "have two or more import modes"
+
     Scenario: An import takes the capacity factor of its line in each hour
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
         | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
