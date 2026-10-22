@@ -80,7 +80,8 @@ instead of deriving it.
 
 `installed_capacity`, `new_capacity`, `production` and `emissions` are annual. An annual row
 takes the timestamp of 1 January of its year, at midnight. A capacity expansion model
-reports these variables, and an hourly dispatch does not.
+reports some or all of them, as each pipeline below states. A dispatch reports them only where
+its snapshots stand for a year, as the sections below say.
 
 - The `component` of a capacity or a `production` row is a technology. The `component` of an
   `emissions` row is a pollutant, and its `category` is null.
