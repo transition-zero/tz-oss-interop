@@ -1713,6 +1713,24 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE/mode2" having "bus1" set to "R1/DEGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE/mode2" having "efficiency" set to 0.98
 
+    Scenario: The emission penalty that only a pipeline applies is not reported
+      The pipeline emits 2 t of CH4 for each GWh that it moves, which is 0.002 t/MWh. At 30 $/t
+      that adds 0.06 $/MWh to its cost of 0.1 $/MWh. No plant emits CH4.
+      Given the otoole set "EMISSION" holds "CO2 CH4"
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | CO2      | 1                 | 2030 | 100   |
+        | R1     | ATGASWELL  | CO2      | 1                 | 2030 | 200   |
+        | R1     | DEATPIPE   | CH4      | 1                 | 2030 | 2     |
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 10    |
+        | R1     | CH4      | 2030 | 30    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" having "marginal_cost" close to 0.16
+      And the log does not contain "emission_penalty states"
+
     Scenario: A technology that takes in two fuels draws the second at bus2 with a negative efficiency
       The refinery takes in 1 unit of gas and 0.1 of electricity, and puts out 0.8 of oil.
       When I translate the otoole model to Sienna for the year "2030"

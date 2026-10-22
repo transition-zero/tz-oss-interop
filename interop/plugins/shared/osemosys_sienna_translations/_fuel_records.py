@@ -75,11 +75,17 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_LOCATION,
     IS_ELECTRICITY,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    PenaltyNote,
+    build_penalty_keys,
+    set_penalties_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 _NO_COST = 0.0
 _FUEL_SCOPE = "fuel"
+_FUEL_PENALTY_SCOPE = "fuel-penalties"
 # The ports after bus0 and bus1 of a link, and the fields that hold each.
 _EXTRA_PORTS = (("bus2", "efficiency2"), ("bus3", "efficiency3"))
 
@@ -143,6 +149,8 @@ def set_fuel_values_persisted(state: State, modes: pl.DataFrame) -> None:
         for parameters, rows in groups:
             for parameter in parameters:
                 _set_persisted(state, kind, parameter, rows)
+        note = PenaltyNote(kind, _FUEL_PENALTY_SCOPE)
+        set_penalties_persisted(state, note, build_penalty_keys(held, (RATES,)))
 
 
 def _set_persisted(state: State, kind: ExtensionKind, parameter: str, held: pl.DataFrame) -> None:
