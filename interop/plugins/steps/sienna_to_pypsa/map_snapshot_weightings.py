@@ -44,6 +44,8 @@ from interop.ports.outbound.reporting import (
 log = logging.getLogger(__name__)
 
 _SECONDS_PER_HOUR = 3600.0
+# A whole year is 365 or 366 days for any year, as a model that weights its year at 8760 h
+# states a leap year that way too.
 _HOURS_IN_SHORT_YEAR = 365 * 24.0
 _HOURS_IN_LEAP_YEAR = 366 * 24.0
 # A model that splits its year into fractions states weights whose sum misses the year by a
