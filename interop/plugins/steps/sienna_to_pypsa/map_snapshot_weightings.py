@@ -46,8 +46,7 @@ log = logging.getLogger(__name__)
 _SECONDS_PER_HOUR = 3600.0
 # A whole year is 365 or 366 days for any year, as a model that weights its year at 8760 h
 # states a leap year that way too.
-_HOURS_IN_SHORT_YEAR = 365 * 24.0
-_HOURS_IN_LEAP_YEAR = 366 * 24.0
+_HOURS_IN_WHOLE_YEARS = (365 * 24.0, 366 * 24.0)
 # A model that splits its year into fractions states weights whose sum misses the year by a
 # rounding of this relative size.
 _WHOLE_YEAR_TOLERANCE = 1e-3
@@ -116,9 +115,10 @@ class SnapshotSpan(NamedTuple):
 
     @property
     def is_whole_year(self) -> bool:
-        lowest = _HOURS_IN_SHORT_YEAR * (1 - _WHOLE_YEAR_TOLERANCE)
-        highest = _HOURS_IN_LEAP_YEAR * (1 + _WHOLE_YEAR_TOLERANCE)
-        return self.year is not None and lowest <= self.represented_hours <= highest
+        return self.year is not None and any(
+            abs(self.represented_hours - hours) <= hours * _WHOLE_YEAR_TOLERANCE
+            for hours in _HOURS_IN_WHOLE_YEARS
+        )
 
 
 def find_snapshot_window(state: State) -> SnapshotWindow | None:
