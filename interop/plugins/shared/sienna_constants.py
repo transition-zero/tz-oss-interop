@@ -196,6 +196,7 @@ class SiennaLineCol:
     RATING = "rating"
     RATING_B = "rating_b"
     RATING_C = "rating_c"
+    PARAMETER_UNITS = "parameter_units"
     POWER_UNITS = "power_units"
     BASE_POWER = "base_power"
     ANGLE_LIMITS = "angle_limits"
@@ -443,6 +444,7 @@ class SiennaThermalGeneratorCol:
     """Sienna ThermalStandard destination table column names."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     STATUS = "status"
@@ -466,6 +468,7 @@ class SiennaRenewableGeneratorCol:
     """Sienna RenewableDispatch destination table column names."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     BUS = "bus"
@@ -511,6 +514,7 @@ class SiennaHydroGeneratorCol:
     """Sienna HydroDispatch destination table column names (required fields only)."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     BUS = "bus"
@@ -844,6 +848,7 @@ THERMAL_GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaThermalGeneratorCol.RAMP_LIMITS: RAMP_LIMITS_DTYPE,
     SiennaThermalGeneratorCol.OPERATION_COST: THERMAL_GENERATION_COST_DTYPE,
     SiennaThermalGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaThermalGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaThermalGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
     SiennaThermalGeneratorCol.FUEL: THERMAL_FUELS_DTYPE,
     SiennaThermalGeneratorCol.TIME_LIMITS: TIME_LIMITS_DTYPE,
@@ -885,6 +890,7 @@ RENEWABLE_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaRenewableGeneratorCol.POWER_FACTOR: pl.Float64,
     SiennaRenewableGeneratorCol.OPERATION_COST: RENEWABLE_GENERATION_COST_DTYPE,
     SiennaRenewableGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaRenewableGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 HYDRO_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
@@ -908,6 +914,7 @@ HYDRO_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaHydroGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
     SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS: ACTIVE_POWER_LIMITS_DTYPE,
     SiennaHydroGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaHydroGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaHydroGeneratorCol.OPERATION_COST: HYDRO_GENERATION_COST_DTYPE,
 }
 
@@ -970,6 +977,7 @@ RENEWABLE_NON_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataT
     SiennaRenewableGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
     SiennaRenewableGeneratorCol.POWER_FACTOR: pl.Float64,
     SiennaRenewableGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaRenewableGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

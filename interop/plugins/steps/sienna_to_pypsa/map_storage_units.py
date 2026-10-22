@@ -36,6 +36,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStorageCol,
     SiennaStructField,
     SiennaTable,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
@@ -48,12 +49,16 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
     pypsa_carrier,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
+    express_power_units_kept,
     extendable_floor,
     per_unit_of,
+    rated_per_unit,
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 
@@ -89,7 +94,20 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
         generators = state.source_topology.get(SiennaTable.GENERATORS)
         if generators is not None:
-            for row in generators.collect().iter_rows(named=True):
+            hydro_supported, _ = filter_component(
+                generators.collect(),
+                express_power_units_kept(
+                    SiennaUnitSystem.NATURAL_UNITS, [SiennaComponent.HYDRO_DISPATCH]
+                ),
+                build_power_units_skip_report(
+                    "Hydro generator",
+                    "hydro generators",
+                    SiennaGeneratorCol.NAME,
+                    SiennaUnitSystem.NATURAL_UNITS,
+                ),
+                self._recorder,
+            )
+            for row in hydro_supported.iter_rows(named=True):
                 if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) is (
                     SiennaComponent.HYDRO_DISPATCH
                 ):
@@ -101,7 +119,20 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         storage = state.source_topology.get(SiennaTable.STORAGE)
         if storage is not None:
             extensions = self._extensions.read(ExtensionKind.STORAGE)
-            for row in storage.collect().iter_rows(named=True):
+            storage_supported, _ = filter_component(
+                storage.collect(),
+                express_power_units_kept(
+                    SiennaUnitSystem.COMPONENT_BASE, [SiennaComponent.ENERGY_RESERVOIR_STORAGE]
+                ),
+                build_power_units_skip_report(
+                    "Storage",
+                    "storage units",
+                    SiennaStorageCol.NAME,
+                    SiennaUnitSystem.COMPONENT_BASE,
+                ),
+                self._recorder,
+            )
+            for row in storage_supported.iter_rows(named=True):
                 if SiennaComponent(row[SiennaStorageCol.SIENNA_TYPE]) is (
                     SiennaComponent.ENERGY_RESERVOIR_STORAGE
                 ):
@@ -195,6 +226,7 @@ class _HydroMapping:
     carrier: PyPSACarrier
     base_power: float
     rating: float
+    p_max_pu: float
     active_power_min: float
     p_min_pu: float
     marginal_cost: float
@@ -220,6 +252,7 @@ def _derive_hydro(
         carrier=pypsa_carrier(SiennaComponent.HYDRO_DISPATCH, prime_mover, None),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
+        p_max_pu=rated_per_unit(float(row[SiennaGeneratorCol.RATING]), base_power),
         active_power_min=active_power_min,
         p_min_pu=per_unit_of(active_power_min, base_power),
         marginal_cost=variable_proportional_term(
@@ -244,7 +277,7 @@ def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
     reporter.record_p_max_pu(
-        sienna_type, m.name, SiennaGeneratorCol.RATING, m.rating, m.rating, "rating -> p_max_pu"
+        sienna_type, m.name, SiennaGeneratorCol.RATING, m.rating, m.p_max_pu, "rating / base_power"
     )
     reporter.record_p_min_pu_from_active_power_limits(m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
@@ -266,7 +299,7 @@ def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.CARRIER: m.carrier,
         PyPSAStorageUnitCol.P_NOM: m.base_power,
         PyPSAStorageUnitCol.P_MIN_PU: m.p_min_pu,
-        PyPSAStorageUnitCol.P_MAX_PU: m.rating,
+        PyPSAStorageUnitCol.P_MAX_PU: m.p_max_pu,
         PyPSAStorageUnitCol.MAX_HOURS: m.max_hours,
         PyPSAStorageUnitCol.EFFICIENCY_STORE: DEFAULT_STORAGE_EFFICIENCY,
         PyPSAStorageUnitCol.EFFICIENCY_DISPATCH: DEFAULT_STORAGE_EFFICIENCY,

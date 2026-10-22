@@ -15,9 +15,11 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Then the file "outputs/system.json" parses as JSON with 1 components of type "RenewableNonDispatch"
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "prime_mover_type" set to "PVe"
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "base_power" set to 50.0
+    And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "power_units" set to "NATURAL_UNITS"
+    And every "RenewableNonDispatch" component in the written Sienna system is valid SiennaSchemas 0.2
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "active_power" set to 50.0
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "reactive_power" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 1.0
+    And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 50.0
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "power_factor" set to 1.0
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" without field "operation_cost"
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" without field "reactive_power_limits"
@@ -50,7 +52,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the network is saved as "inputs/rooftop_derate.nc"
     When I run translate against "inputs/rooftop_derate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "active_power" set to 40.0
-    And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 0.8
+    And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 40.0
 
   Scenario: time-varying p_max_pu produces a max_active_power time series stored unchanged
     Given a PyPSA network

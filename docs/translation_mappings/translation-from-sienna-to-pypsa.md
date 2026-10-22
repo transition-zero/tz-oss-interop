@@ -89,9 +89,12 @@ it.
 
 - **The name is the identifier.** The translator matches a sidecar record to a component by
   name. It does not use the integer `id` for this.
-- **The system base is 100 MVA.** The translator uses this fixed value to convert each
-  per-unit rating and impedance. It does not read a base from your system. If your system
-  uses a different base, the ratings and the impedances will be wrong.
+- **Each component states its unit basis.** A `Line`, an `EnergyReservoirStorage`, a
+  `PowerLoad` and a generator carry `power_units`. The translator reads a `Line` and an
+  `EnergyReservoirStorage` in `COMPONENT_BASE`, and a `PowerLoad` and a generator in
+  `NATURAL_UNITS`. It converts a `Line` with the `base_power` of that `Line`, and a generator
+  `rating` (MVA) with the `base_power` of that generator. A component in another basis stops
+  the run, and the message names the component.
 - **The snapshot duration comes from the first series the system holds.** The translator
   needs it to convert a ramp rate and a run-time limit. Every series in one system covers
   the same snapshots, so any of them fixes the duration. With no series at all, it uses 60
@@ -160,7 +163,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `extensions.carrier` of the `generator` record. If absent, the `prime_mover_type` and `fuel_type` pair. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
 | `start_up_cost` | cost | `operation_cost.start_up` | `direct` |
@@ -199,7 +202,7 @@ placeholder, so the translator does not divide by it.
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `extensions.carrier` of the `generator` record. If absent, `prime_mover_type`. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
@@ -230,7 +233,7 @@ mapping where several PyPSA fields have no Sienna source.
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `hydro`, for every `HydroDispatch` | `default` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
 | `inflow` | MW | `hydro_budget` × `base_power` | `derived` |
@@ -324,18 +327,20 @@ carrier would put the generator in the wrong cost and emission group.
 ## `Line` and `MonitoredLine` → `Line`
 
 Both Sienna types become a PyPSA line. Sienna states the rating and the impedance as
-per-unit values on the system base, and PyPSA states them in physical units. Each formula
-below uses a base of 100 MVA and the `v_nom` of the `bus0` end.
+per-unit values on the `base_power` of the line, and PyPSA states them in physical units.
+Each formula below uses the `base_power` of the line and the `v_nom` of the `bus0` end. A
+line states `parameter_units` as `COMPONENT_BASE` or leaves it out. Any other value stops the
+run.
 
 | PyPSA field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `name` | | `name` | `direct` |
 | `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
-| `s_nom` | MVA | `rating` × 100 | `derived` |
-| `r` | Ω | `r` × `v_nom²` ÷ 100 | `derived` |
-| `x` | Ω | `x` × `v_nom²` ÷ 100 | `derived` |
-| `b` | S | (`b.from` + `b.to`) × 100 ÷ `v_nom²` | `derived` |
-| `g` | S | (`g.from` + `g.to`) × 100 ÷ `v_nom²` | `derived` |
+| `s_nom` | MVA | `rating` × `base_power` | `derived` |
+| `r` | Ω | `r` × `v_nom²` ÷ `base_power` | `derived` |
+| `x` | Ω | `x` × `v_nom²` ÷ `base_power` | `derived` |
+| `b` | S | (`b.from` + `b.to`) × `base_power` ÷ `v_nom²` | `derived` |
+| `g` | S | (`g.from` + `g.to`) × `base_power` ÷ `v_nom²` | `derived` |
 | `v_ang_min` | degrees | `angle_limits.min`, in radians, converted to degrees | `derived` |
 | `v_ang_max` | degrees | `angle_limits.max`, in radians, converted to degrees | `derived` |
 | `active` | | `available` | `direct` |
@@ -343,7 +348,7 @@ below uses a base of 100 MVA and the `v_nom` of the `bus0` end.
 | `length` | km | `extensions.length` of the `line` record. If absent, `0.0`. | `sidecar` or `default` |
 | `num_parallel` | | `extensions.num_parallel` of the `line` record. If absent, `1.0`. | `sidecar` or `default` |
 | `s_nom_extendable` | | `extensions.s_nom_extendable` of the `line` record | `sidecar` |
-| `s_nom_min` | MVA | `rating × the system base`, for an extendable line only. | `derived` |
+| `s_nom_min` | MVA | `rating` × `base_power`, for an extendable line only. | `derived` |
 
 Sienna splits the shunt susceptance and the shunt conductance between the two ends of the
 line. PyPSA holds one total for each. The translator adds the two ends together.
@@ -395,8 +400,8 @@ values in the HDF5 companion. The translator reads five series and leaves every 
 | Sienna owner and series | PyPSA target | Each value is multiplied by |
 | --- | --- | --- |
 | `PowerLoad` `max_active_power` | `loads.p_set` | The static `max_active_power` of the load, in MW |
-| `RenewableDispatch` `max_active_power` | `generators.p_max_pu` | `rating` |
-| `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` |
+| `RenewableDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
+| `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
 | `ThermalStandard` `active_power_limits` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
 

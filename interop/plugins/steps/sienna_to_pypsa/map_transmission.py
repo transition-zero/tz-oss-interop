@@ -16,7 +16,6 @@ from interop.core.extensions import (
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
-    DEFAULT_SYSTEM_BASE_MVA,
     LINES_DESTINATION_SCHEMA,
     LINKS_DESTINATION_SCHEMA,
     PyPSADestinationTable,
@@ -29,13 +28,18 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLinkCol,
     SiennaStructField,
     SiennaTable,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
     bus_id_to_v_nom,
+    express_power_units_kept,
     extendable_floor,
+    reject_unsupported_parameter_units,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line.
 _DEFAULT_LENGTH = 0.0
@@ -67,8 +71,8 @@ def _convert_line_impedance(
 ) -> _LineImpedance:
     """Undo the per-unit normalisation: rating -> s_nom (MVA), r/x -> Ohms, b/g -> Siemens."""
     rating = float(row[SiennaLineCol.RATING])
-    # rating is per-unit of the system base; PyPSA s_nom is the apparent power in MVA.
-    s_nom = rating * DEFAULT_SYSTEM_BASE_MVA
+    # rating is per-unit of the line's own base_power; PyPSA s_nom is the apparent power in MVA.
+    s_nom = rating * float(row[SiennaLineCol.BASE_POWER])
     # Sienna r/x are per-unit; PyPSA stores Ohms. Z_base = v_nom^2 / S_base.
     r_pu = float(row[SiennaLineCol.R])
     x_pu = float(row[SiennaLineCol.X])
@@ -221,14 +225,23 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         extensions = self._extensions.read(ExtensionKind.LINE)
         reporter = LineReporter(self._recorder)
         rows: list[dict[str, Any]] = []
-        for row in source.collect().iter_rows(named=True):
+        supported, _ = filter_component(
+            source.collect(),
+            express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
+            build_power_units_skip_report(
+                "Line", "lines", SiennaLineCol.NAME, SiennaUnitSystem.COMPONENT_BASE
+            ),
+            self._recorder,
+        )
+        for row in supported.iter_rows(named=True):
             sienna_type = SiennaComponent(row[SiennaLineCol.SIENNA_TYPE])
+            reject_unsupported_parameter_units(row)
             name = row[SiennaLineCol.NAME]
             bus0_id = row[SiennaLineCol.BUS0]
             bus0 = bus_names[bus0_id]
             bus1 = bus_names[row[SiennaLineCol.BUS1]]
             available = bool(row[SiennaLineCol.AVAILABLE])
-            z_base = bus_v_nom[bus0_id] ** 2 / DEFAULT_SYSTEM_BASE_MVA
+            z_base = bus_v_nom[bus0_id] ** 2 / float(row[SiennaLineCol.BASE_POWER])
             ext = extensions.get(name)
             reporter.record_endpoints(sienna_type, name, row[SiennaLineCol.ARC], bus0, bus1)
             reporter.record_available(sienna_type, name, available, available)
