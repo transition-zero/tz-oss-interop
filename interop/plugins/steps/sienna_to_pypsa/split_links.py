@@ -74,16 +74,14 @@ class LinkSplitter:
     def _report_taken(self, rows: list[dict[str, Any]]) -> None:
         names = [row[PyPSALinkCol.NAME] for row in rows]
         for row in rows:
-            self._reporter.record_reverse_name_taken(
-                row[PyPSALinkCol.NAME], _build_reverse_name(row)
-            )
+            self._reporter.record_reverse_name_taken(row, _build_reverse_name(row))
         if names:
             log.warning(_TAKEN_WARNING, len(names), name_a_few(names))
 
     def _report_unsplit(self, rows: list[dict[str, Any]]) -> None:
         names = [row[PyPSALinkCol.NAME] for row in rows]
-        for name in names:
-            self._reporter.record_unsplit(name)
+        for row in rows:
+            self._reporter.record_unsplit(row)
         if names:
             log.warning(_UNSPLIT_WARNING, len(names), name_a_few(names))
 
