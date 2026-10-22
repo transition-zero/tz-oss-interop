@@ -40,15 +40,9 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
     ``sienna_to_pypsa_relate_components``.
     """
     source = state.source_topology.get(SiennaTable.BUSES)
-    if source is None:
-        return
     reporter = BusReporter(recorder)
     records = extensions.read(ExtensionKind.BUS)
-    rows: list[dict[str, Any]] = []
-    for row in source.collect().iter_rows(named=True):
-        mapping = _derive_bus(row, records.get_fields(row[SiennaACBusCol.NAME], BUS_MAPPED_FIELDS))
-        _record_bus(reporter, mapping)
-        rows.append(_bus_row(mapping))
+    rows = [] if source is None else _map_electricity_buses(reporter, records, source)
     rows += _map_fuel_buses(reporter, records, {row[PyPSABusCol.NAME] for row in rows})
     if rows:
         state.destination_tables[PyPSADestinationTable.BUSES] = pl.DataFrame(
@@ -56,6 +50,18 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
         )
     relayed = [records.relay(row[PyPSABusCol.NAME]) for row in rows]
     relay_records(state, ExtensionKind.BUS, relayed, recorder)
+
+
+def _map_electricity_buses(
+    reporter: BusReporter, records: ExtensionLookup[BusExtension], source: pl.LazyFrame
+) -> list[dict[str, Any]]:
+    """A PyPSA bus for each Sienna ACBus."""
+    rows: list[dict[str, Any]] = []
+    for row in source.collect().iter_rows(named=True):
+        mapping = _derive_bus(row, records.get_fields(row[SiennaACBusCol.NAME], BUS_MAPPED_FIELDS))
+        _record_bus(reporter, mapping)
+        rows.append(_bus_row(mapping))
+    return rows
 
 
 def _map_fuel_buses(

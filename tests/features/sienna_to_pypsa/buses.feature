@@ -29,3 +29,12 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against Sienna system "inputs/no_area.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 bus
     And the PyPSA network "outputs/network.nc" bus "bus_1" has empty location
+
+  Scenario: A fuel bus of the sidecar becomes a PyPSA bus when the system holds no ACBus
+    Given a Sienna system
+    And the system has a bus extension record "R1/ATGAS" with "carrier" set to "gas"
+    And the system has a bus extension record "R1/ATGAS" with "location" set to "AT"
+    And the system is saved as "inputs/fuel_only.json"
+    When I run translate against Sienna system "inputs/fuel_only.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" bus "R1/ATGAS" has carrier "gas"
