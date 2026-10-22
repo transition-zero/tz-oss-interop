@@ -1480,6 +1480,22 @@ Feature: osemosys-csv-to-sienna translates one model year into a Sienna operatio
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_to" set to {"min": -1800.0, "max": 1710.0}
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 1600.0
 
+    Scenario: Each of two import modes of one line becomes one ThermalStandard
+      In mode 4 ATDEBUY also puts out 0.7 of a unit at DE and takes in no electricity.
+      Given the otoole set "MODE_OF_OPERATION" holds "1 2 3 4"
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDEBUY    | DEELEC | 1                 | 2030 | 0.95  |
+        | R1     | ATDEBUY    | ATELEC | 2                 | 2030 | 0.8   |
+        | R1     | ATDEBUY    | ATELEC | 3                 | 2030 | 0.9   |
+        | R1     | ATDEBUY    | DEELEC | 4                 | 2030 | 0.7   |
+        | R1     | ATPEAKER   | ATELEC | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 3 components of type "ThermalStandard"
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "active_power_limits" set to {"min": 0.0, "max": 1440.0}
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/4" having "active_power_limits" set to {"min": 0.0, "max": 1260.0}
+
     Scenario: An import takes the capacity factor of its line in each hour
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
         | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
