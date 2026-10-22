@@ -909,7 +909,7 @@ Each day becomes one `representative_period` record in `extensions.json`:
 | `name` | `<season>/<day_type>` |
 | `first_timestamp` | The first hour of the day |
 | `hours` | `24` |
-| `weight` | The number of days of the year that the day stands for |
+| `weight` | How many times the record occurs in the year: the number of days that a day stands for |
 | `season`, `day_type` | The members that the day is for |
 | `days_in_day_type` | `DaysInDayType` (`days_in_day_type`) of the day, or its default |
 
@@ -923,7 +923,8 @@ writes a warning. These conditions cause it:
 - two timeslices of one day share a bracket, or the brackets of a day do not make 24 h.
 
 Then each timeslice is one hour, in the order of the `timeslice` set. Each hour becomes one
-record named for its timeslice, with `hours` 1 and the weight `year_split × 8760`.
+record named for its timeslice, with `hours` 1 and the weight `year_split × 8760`. The weight of
+such a record is the number of hours that it stands for, not a number of days.
 
 In both cases, the sum of `hours × weight` over the records is about 8760.
 

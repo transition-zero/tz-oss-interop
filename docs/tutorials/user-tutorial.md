@@ -237,8 +237,10 @@ If Julia and the solver packages are not installed yet, a notice and a
 prompt; accept it to let interop set them up.
 
 Prompts 6 to 9 are HiGHS tuning knobs; the values above are safe defaults for
-this small problem, and `choose` hands the decision to HiGHS. Only the network
-model matters for whether the model builds and runs. The
+this small problem, and `choose` hands the decision to HiGHS. Of these answers, the
+network model decides whether the model builds. The unserved energy answer can decide
+whether the solve finds a solution: with too little capacity, `refused` leaves it
+infeasible, and `penalised` lets it finish. The
 [solve tutorial](solve.md) explains the unserved energy and the unit commitment answers.
 
 Pick `copperplate` here because this example is a **single-bus** network: one

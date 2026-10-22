@@ -43,8 +43,8 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
 
 ## The pipelines
 
-Two pipelines write the canonical stage to a directory, so that you can examine a user
-mappings file:
+Two pipelines write the canonical stage to a directory, so that you can examine the canonical
+stage:
 
 | Pipeline | Source | Sink |
 | --- | --- | --- |

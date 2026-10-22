@@ -213,12 +213,12 @@ charge side then states no bound and no price of its own.
 | `prime_mover_type` | | The same row | `mapped by you` |
 | `storage_tech` | | `OTHER_MECH`, because OSeMOSYS states no storage technology | `default` |
 | `region` | | The `Area` of the location of the discharging technology | `derived` |
-| `capacity_limits_discharge` | MW | The capacity limits of the discharging technology, in each year | `by year` |
-| `capacity_limits_charge` | MW | The capacity limits of a charging technology of its own, in each year | `by year` |
+| `capacity_limits_discharge` | MW | The capacity limits of the discharging technology, in each year, in MW × its electricity output ratio | `by year` |
+| `capacity_limits_charge` | MW | The capacity limits of a charging technology of its own, in each year, in MW × its electricity input ratio | `by year` |
 | `capital_costs.discharge_capital_cost` | $/MW | `capital_cost` of the discharging technology in the priced year / its electricity output ratio | `derived` |
 | `capital_costs.energy_capital_cost` | $/MWh | `CapitalCostStorage` (`energy_capital_cost`) of the priced year | `derived` |
-| `capital_costs.charge_capital_cost` | $/MW | `capital_cost` of a charging technology of its own, else a zero curve | `derived` |
-| `operation_costs.fixed` | $/MW/yr | `fixed_cost` of the discharging technology in the first year | `derived` |
+| `capital_costs.charge_capital_cost` | $/MW | `capital_cost` of a charging technology of its own in the priced year / its electricity input ratio, else a zero curve | `derived` |
+| `operation_costs.fixed` | $/MW/yr | `fixed_cost` of the discharging technology in the first year / its electricity output ratio | `derived` |
 | `operation_costs.cost_type` | | `STORAGE` | `default` |
 | `unit_size_discharge` | MW | `unit_size` of the discharging technology in MW of electricity output | `derived` |
 | `duration_limits.max` | min | `StorageMaxHours` (`duration_limits_max`) × 60, when the model states it | `derived` |
@@ -303,7 +303,7 @@ So the limits of each other pollutant are in that record:
 | `limits` | One entry for each year with a limit: `period` `year`, `value` in t (the limit less the exogenous emission), `unit` `t`, `investment_period`. One entry with `period` `horizon` from `ModelPeriodEmissionLimit` (`model_period_emission_limit`) − `ModelPeriodExogenousEmission` (`model_period_exogenous_emission`). |
 | `members` | Each technology that emits the pollutant |
 
-`decisions.md` records each such pollutant as `COMPONENT_SKIPPED`, and one warning names three.
+`decisions.md` records each such pollutant as `COMPONENT_SKIPPED`, and one warning names three pollutants.
 A pollutant that covers the whole model and states a `model_period_emission_limit` records that
 limit as `NOT_MAPPED`, because `CarbonCaps` holds one year. The portfolio step takes the yearly
 limits of such a pollutant out of its `constraint` record, because `CarbonCaps` holds them. The
