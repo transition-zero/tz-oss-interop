@@ -211,6 +211,19 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ELC" having "bus0" set to "R1/ELC"
     And the file "decisions.md" contains "| `sienna.conversion.a_to_b.extensions.efficiency` = 0.9 | `pypsa.Link.a_to_b.efficiency` = 0.9 | extensions.efficiency (PyPSA round-trip) |"
 
+  Scenario: A two-way line whose reverse name another line holds stays one link, and the log says so
+    The line "line reverse" already exists, so the flow back of "line" cannot take that name.
+    Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 0.95
+    And the TwoTerminalGenericHVDCLine "line" has ext "p_min_pu" set to -0.8
+    And the system contains an HVDC line "line reverse" from "node_b" to "node_a" with p_nom 100.0 efficiency 1.0
+    And the system is saved as "inputs/reverse_taken.json"
+    When I run translate against "inputs/reverse_taken.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 links
+    And the PyPSA network "outputs/network.nc" link "line" attribute "p_min_pu" is -0.8
+    And the PyPSA network "outputs/network.nc" link "line reverse" attribute "p_nom" is 100.0
+    And the log contains "1 link(s) flow both ways and lose energy or cost money, but another link holds the name of their flow back, so each stays one link whose flow back gains what its forward flow loses: line"
+    And the file "decisions.md" contains "another link holds the name line reverse"
+
   Scenario: A conversion under the name of a link travels on, and the log says so
     Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
     And the system has a conversion extension record "line" with "bus0" set to "node_a"

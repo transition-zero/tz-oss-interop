@@ -1134,6 +1134,12 @@ class LinkReporter(_Reporter):
     def record_unsplit(self, name: str) -> None:
         self._not_mapped(sources=[self._source(name, SiennaLinkCol.LOSS, None)], note=_UNSPLIT_NOTE)
 
+    def record_reverse_name_taken(self, name: str, reverse_name: str) -> None:
+        self._not_mapped(
+            sources=[self._source(name, SiennaLinkCol.LOSS, None)],
+            note=_TAKEN_NOTE.format(reverse_name=reverse_name),
+        )
+
     def record_marginal_cost_from_ext(self, name: str, marginal_cost: float) -> None:
         """Sienna prices no flow over a branch, so the price comes back from the sidecar."""
         self._derived(
@@ -1164,6 +1170,10 @@ _SPLIT_DERIVATION = (
 _UNSPLIT_NOTE = (
     "the link can extend, so it stays one two-way link, as two links would not share one "
     "p_nom; its flow back gains what its forward flow loses"
+)
+_TAKEN_NOTE = (
+    "another link holds the name {reverse_name}, so the link stays one two-way link; its flow "
+    "back gains what its forward flow loses, and the PyPSA results count {reverse_name} with it"
 )
 _RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
 
