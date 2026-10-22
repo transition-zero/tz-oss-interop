@@ -588,6 +588,12 @@ back. The generator exists only when the line exists, so the checks of the line 
 too. An output to an electricity fuel with no location has no bus. `decisions.md` records it as
 `NOT_MAPPED`, and one warning names three lines.
 
+OSeMOSYS shares the capacity of the line among all its modes. Each import generator rates at
+the whole capacity of the line, and the system has no component that limits the sum of two
+generators. So the import generators of a line of two or more import modes can together put out
+more than the line can carry. `decisions.md` records the capacity of each such line as
+`NOT_MAPPED`, and one warning names three lines.
+
 OSeMOSYS states no plant and no fuel for an import, so the generator takes a fixed type, a
 fixed prime mover and a fixed fuel. A carriers row does not apply, because the category of a
 transport technology names the line and not the import. `decisions.md` records each fixed
