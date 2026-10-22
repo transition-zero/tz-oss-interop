@@ -341,8 +341,9 @@ A pair that is not in the thermal table stops the run. A prime mover that is not
 renewable table stops it too. The translator does not guess a carrier, because a wrong
 carrier would put the generator in the wrong cost and emission group.
 
-`HydroDispatch` and `EnergyReservoirStorage` do not use these tables. They always get
-`hydro` and `PHS`.
+`HydroDispatch` and `EnergyReservoirStorage` do not use these tables. `HydroDispatch` always
+gets `hydro`. `EnergyReservoirStorage` gets the carrier of its `storage` record, else `battery`
+for the prime mover `BA`, and `PHS` for every other prime mover.
 
 ## `Line` and `MonitoredLine` → `Line`
 
@@ -625,7 +626,7 @@ component has one Sienna type and each type gives one series.
 `extensions.json` carries the fields that SiennaSchemas has no home for. The document is keyed
 by kind, and each record names the component it belongs to.
 
-**Each field of a record either becomes a PyPSA attribute or travels on.** A field that a
+**Each field of a record becomes a PyPSA attribute, travels on, or both.** A field that a
 table of this document names becomes that PyPSA attribute. Each other field that a record
 states goes, unchanged, to the `extensions.json` that the pipeline writes beside the
 network. The report gives one row for each field that travels on, with the rule
