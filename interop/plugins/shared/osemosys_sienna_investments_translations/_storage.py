@@ -105,6 +105,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    TECHNOLOGY_STORAGES_COLUMNS,
     enrich_technology_storages,
     express_has_own_technologies,
     read_linked_storages,
@@ -209,7 +210,7 @@ def build_storage_candidates(
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
 ) -> StorageCandidates:
-    storages = read_discharged_storages(state, base, mappings)
+    storages = _enrich_sharing(read_discharged_storages(state, base, mappings))
     yearly = _read_storage_years(state, plan, storages)
     storages = drop_non_candidates(
         storages,
@@ -264,12 +265,21 @@ def _read_storage_years(state: State, plan: InvestmentPlan, storages: pl.DataFra
     )
 
 
+def _enrich_sharing(storages: pl.DataFrame) -> pl.DataFrame:
+    """Add how many storages each technology links, counted over every storage of one link each.
+
+    A storage that is not a candidate still uses the power of a technology that it shares.
+    """
+    counted = enrich_technology_storages(storages.filter(_express_has_one_link()))
+    counts = counted.select(*_STORAGE_KEYS, *TECHNOLOGY_STORAGES_COLUMNS)
+    return storages.join(counts, on=_STORAGE_KEYS, how="left")
+
+
 def _drop_skipped(
     storages: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
 ) -> pl.DataFrame:
-    """Take out the candidates that each rule drops, and count the sharing after the links."""
+    """Take out the candidates that each rule drops; the link rule comes first."""
     storages = _apply_rules(storages, _build_link_rules(), recorder)
-    storages = enrich_technology_storages(storages)
     return _apply_rules(storages, _build_skip_rules(areas), recorder)
 
 
@@ -281,11 +291,14 @@ def _apply_rules(
     return storages
 
 
+def _express_has_one_link() -> pl.Expr:
+    return (pl.col(CHARGE_LINKS) == _ONE_LINK) & (pl.col(DISCHARGE_LINKS) == _ONE_LINK)
+
+
 def _build_link_rules() -> list[SkipRule]:
-    one_link = (pl.col(CHARGE_LINKS) == _ONE_LINK) & (pl.col(DISCHARGE_LINKS) == _ONE_LINK)
     return [
         SkipRule(
-            one_link,
+            _express_has_one_link(),
             TECHNOLOGY_SOURCE.skip(
                 name_col=REPORT_NAME,
                 reason="may be built and do not link one charging and one discharging "
