@@ -742,6 +742,7 @@ The step leaves out a mode, records it as `COMPONENT_SKIPPED` and warns once for
 | It uses an electricity fuel with no location | The fuel has no bus. |
 | It takes in nothing and puts out more than one fuel | A PyPSA `Generator` has one bus. |
 | It takes in and puts out more than four fuels | A link of this translation has four buses at most. |
+| It exports more than three fuels | An export puts out nothing, so its link leaves `bus1` empty and holds three inputs at most. |
 | It has no residual capacity, and the model builds none at no cost | The fleet of the year holds none of it. |
 | Its annual activity upper limit is 0 | It may not run in the year. |
 
