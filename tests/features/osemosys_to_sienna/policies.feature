@@ -116,6 +116,37 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the log does not contain "reserve_margin states"
     And the log does not contain "reserve_margin_tag_fuel states"
 
+  Scenario: A reserve margin tag that changes in a year with a limit is reported
+    ATGASCC counts 0.9 of its capacity in 2030 and 0.5 in 2035, and the margin holds in both
+    years. The record keeps 0.9.
+    Given the otoole parameter "ReserveMarginTagTechnology" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASCC    | 2030 | 0.9   |
+      | R1     | ATGASCC    | 2035 | 0.5   |
+      | R1     | ATSOLAR    | 2030 | 0.2   |
+      | R1     | ATSOLAR    | 2035 | 0.2   |
+    And the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
+      | REGION | YEAR | VALUE |
+      | R1     | 2030 | 1.2   |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "ATSOLAR", "member_class": "technology", "coefficient": 0.2, "coefficient_property": "reserve_margin_tag_technology"}]
+    And the log contains "1 tag(s) of a renewable target or a reserve margin change in a year with a limit, and each constraint record keeps the value of the earliest year that tags the member. Tags: R1/ATGASCC"
+    And the file "decisions.md" contains "`osemosys.reserve_margin_tag_technology.R1/ATGASCC.year 2035` = 0.5"
+    And the file "decisions.md" contains "the constraint record R1/reserve_margin weights ATGASCC by 0.9 in each year"
+
+  Scenario: A renewable tag that changes only in a year with no target is not reported
+    Given the otoole parameter "REMinProductionTarget" keyed by "REGION YEAR" with default 0 has the rows:
+      | REGION | YEAR | VALUE |
+      | R1     | 2030 | 0.3   |
+    And the otoole parameter "RETagTechnology" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATSOLAR    | 2030 | 1     |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "members" set to [{"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}]
+    And the log does not contain "tag(s) of a renewable target or a reserve margin change"
+
   Scenario: The emission limit of a region group becomes a constraint record whose members are its regions
     Given the otoole set "REGIONGROUP" holds "G1"
     And the otoole parameter "RegionGroupTagRegion" keyed by "REGIONGROUP REGION YEAR" with default 0 has the rows:

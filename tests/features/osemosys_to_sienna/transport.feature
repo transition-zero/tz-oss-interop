@@ -518,6 +518,12 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.operation_cost emission penalty of CO2` = 10.0"
       And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATDEBUY.operating_mode 2` = 80000.0"
 
+    Scenario: The emission penalty that an import applies is not reported
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "emission_rates_t_per_mwh" set to {"CO2": 0.5}
+      And the log does not contain "emission_penalty states"
+
     Scenario: A line keeps its flow back beside its import
       The flow back of ATDEBUY sends at most 2000 × 0.9 × 1 = 1800 MW from DE and delivers at
       most 2000 × 0.9 × 0.9 = 1620 MW at AT.

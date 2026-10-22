@@ -12,11 +12,13 @@ limit for each year in scope that states one, and names the members that the lim
 - A reserve margin: the ratio of the tagged capacity to the tagged peak demand, for each year.
   Its members are the tagged technologies and fuels.
 
-A tag keeps the value of the earliest year that states one.
+A tag keeps the value of the earliest year that states one. Each value of a year with a limit
+that differs from it is reported.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,6 +47,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     MEMBERSHIP_FLAG,
     NO_LIMIT,
+    OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
     EmissionParameter,
     PolicyParameter,
@@ -75,7 +78,10 @@ from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
     express_converted,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 _NAME = "name"
 _LIMIT = "limit"
@@ -95,17 +101,21 @@ _EMISSION_PARAMETERS = (
 
 @dataclass
 class Policies:
-    """The constraint records, their events, and the rows of each parameter that they hold."""
+    """The constraint records, their events, the rows of each parameter that they hold, and the
+    tags whose value of a year with a limit the records do not hold.
+    """
 
     records: list[ConstraintExtension] = field(default_factory=list)
     events: list[TranslationEvent] = field(default_factory=list)
     held: list[tuple[str, pl.DataFrame]] = field(default_factory=list)
+    changed_tags: list[str] = field(default_factory=list)
 
     def add(self, other: Policies) -> None:
-        """Add the records, the events and the held rows of another set of policies."""
+        """Add the records, the events, the held rows and the changed tags of other policies."""
         self.records.extend(other.records)
         self.events.extend(other.events)
         self.held.extend(other.held)
+        self.changed_tags.extend(other.changed_tags)
 
 
 def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Policies:
@@ -119,6 +129,20 @@ def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Pol
     policies.add(_build_group_renewable_policies(state, years))
     policies.add(_build_reserve_policies(state, years))
     return policies
+
+
+def warn_changed_tags(policies: Policies) -> None:
+    """Warn once when a tag changes in a year with a limit, and name a few of the tags."""
+    if not policies.changed_tags:
+        return
+    log.warning(
+        "%s: %d tag(s) of a renewable target or a reserve margin change in a year with a limit, "
+        "and each constraint record keeps the value of the earliest year that tags the member. "
+        "Tags: %s",
+        OSEMOSYS_TO_SIENNA_PIPELINE,
+        len(policies.changed_tags),
+        name_a_few(policies.changed_tags),
+    )
 
 
 def set_policies_persisted(state: State, policies: Policies) -> None:
@@ -287,7 +311,57 @@ def _build_tagged_policies(
         )
         policies.records.append(record)
         policies.events.extend(_build_limit_events(name, str(region), record.limits, parameter))
+    for tag, rows in zip(tags, tagged, strict=True):
+        policies.add(_build_tag_changes(state, limits, tag, rows, policy))
     return policies
+
+
+def _build_tag_changes(
+    state: State, limits: pl.DataFrame, tag: str, kept: pl.DataFrame, policy: PolicyType
+) -> Policies:
+    """An event for each value of `tag`, in a year with a limit, that is not the kept value."""
+    changes = _read_tag_changes(state, limits, tag, kept)
+    member = _choose_member_column(kept)
+    names = changes.select(
+        pl.concat_str(REGION, pl.lit(REGION_NAME_SEPARATOR), member).alias(_NAME)
+    ).unique(maintain_order=True)
+    return Policies(
+        events=[
+            _build_tag_change_event(row, member, tag, policy)
+            for row in changes.iter_rows(named=True)
+        ],
+        changed_tags=names[_NAME].to_list(),
+    )
+
+
+def _read_tag_changes(
+    state: State, limits: pl.DataFrame, tag: str, kept: pl.DataFrame
+) -> pl.DataFrame:
+    member = _choose_member_column(kept)
+    limited = limits.select(REGION, pl.col(YEAR).cast(pl.Int64)).unique()
+    years = sorted(limited[YEAR].to_list())
+    yearly = read_yearly_values(state, tag, kept.select(REGION, member), years)
+    return (
+        yearly.join(limited, on=[REGION, YEAR], how="semi")
+        .join(kept, on=[REGION, member])
+        .filter(pl.col(tag) != pl.col(VALUE_COL))
+        .sort(REGION, member, YEAR)
+    )
+
+
+def _build_tag_change_event(
+    row: dict[str, Any], member: str, tag: str, policy: PolicyType
+) -> TranslationEvent:
+    name = f"{row[REGION]}{REGION_NAME_SEPARATOR}{row[member]}"
+    record = f"{row[REGION]}{REGION_NAME_SEPARATOR}{policy}"
+    return TranslationEvent(
+        kind=EventKind.NOT_MAPPED,
+        sources=[build_osemosys_field(tag, name, f"{YEAR} {row[YEAR]}", row[tag])],
+        note=(
+            f"the constraint record {record} weights {row[member]} by {row[VALUE_COL]} in each "
+            "year, the value of the earliest year that tags it"
+        ),
+    )
 
 
 def _build_group_renewable_policies(state: State, years: Sequence[int]) -> Policies:
@@ -327,7 +401,7 @@ def _build_group_renewable_policies(state: State, years: Sequence[int]) -> Polic
 def _read_tags(state: State, years: Sequence[int], parameter: str) -> pl.DataFrame:
     """The members that a tag names, with the value of the earliest year that states one."""
     rows = read_parameter_for_years(state, parameter, years).filter(pl.col(VALUE_COL) != 0)
-    member = TECHNOLOGY if TECHNOLOGY in rows.columns else FUEL
+    member = _choose_member_column(rows)
     return (
         rows.sort(YEAR)
         .group_by(REGION, member, maintain_order=True)
@@ -337,13 +411,17 @@ def _read_tags(state: State, years: Sequence[int], parameter: str) -> pl.DataFra
 
 
 def _build_tag_members(tags: pl.DataFrame, region: str, parameter: str) -> list[ConstraintMember]:
-    member = TECHNOLOGY if TECHNOLOGY in tags.columns else FUEL
+    member = _choose_member_column(tags)
     return [
         ConstraintMember(
             name=name, member_class=member, coefficient=value, coefficient_property=parameter
         )
         for name, value in tags.filter(pl.col(REGION) == region).select(member, VALUE_COL).rows()
     ]
+
+
+def _choose_member_column(tags: pl.DataFrame) -> str:
+    return TECHNOLOGY if TECHNOLOGY in tags.columns else FUEL
 
 
 def _read_group_regions(state: State, years: Sequence[int]) -> pl.DataFrame:
