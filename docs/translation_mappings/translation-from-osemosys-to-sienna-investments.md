@@ -161,6 +161,7 @@ These checks then leave a candidate out, and `decisions.md` names each one:
 | Supply | Its category has no carriers row, or the row names a type that is not a generator. |
 | Supply | Its location holds no electricity bus, or it puts out no electricity at the operations mode. |
 | Storage | It does not link one charging technology and one discharging technology. |
+| Storage | The technology that charges it, or the one that discharges it, also charges or discharges another storage. Each `StorageTechnology` would take the whole power of that technology. |
 | Storage | The category of the discharging technology has no carriers row, or the row is not `EnergyReservoirStorage`. |
 | Storage | The location of the discharging technology holds no electricity bus, or the links take in or put out no electricity. |
 | Transport | It does not take in electricity at one location and put it out at another, at the operations mode. |
