@@ -173,8 +173,10 @@ objective that `solve` prints includes the penalty.
 
 After the solve, `solve` takes the two generators out of the network again, so the solved
 network holds the components of the input network and nothing more. It writes the unserved
-energy at each bus to `meta["unserved_energy_mwh"]` of the solved network. It counts each
-snapshot once, for its length, as the Sienna path counts it. It writes a warning that gives
+energy at each bus to `meta["unserved_energy_mwh"]` of the solved network. It multiplies the
+dispatch of each snapshot by the `generators` snapshot weighting of the network. On a network
+with representative periods, that weighting holds the weight of the period too, so it can
+differ from the length of the snapshot. It writes a warning that gives
 the total and the three buses with the most:
 
 ```
