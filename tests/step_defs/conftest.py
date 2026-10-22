@@ -74,8 +74,20 @@ def stub_questionary_attr(
     monkeypatch.setattr(questionary, attribute, stub)
 
 
+class RecordedTimeout(NamedTuple):
+    method: str
+    url: str
+    timeout: object
+
+
+NO_TIMEOUT_SENT = object()
+
+
 def stub_requests(
-    monkeypatch: pytest.MonkeyPatch, store: dict[str, bytes], gzip_encoded_urls: set[str]
+    monkeypatch: pytest.MonkeyPatch,
+    store: dict[str, bytes],
+    gzip_encoded_urls: set[str],
+    recorded_timeouts: list[RecordedTimeout],
 ) -> None:
     """In-memory GET/PUT stub for requests, keyed by URL. Mirrors the
     questionary stubs above: intercept the exact boundary the adapter
@@ -104,9 +116,15 @@ def stub_requests(
             pass
 
     def stub_get(url: str, **kwargs: Any) -> _StubResponse:
+        recorded_timeouts.append(
+            RecordedTimeout("GET", url, kwargs.get("timeout", NO_TIMEOUT_SENT))
+        )
         return _StubResponse(store[url], url in gzip_encoded_urls)
 
     def stub_put(url: str, data: Any = b"", **kwargs: Any) -> _StubResponse:
+        recorded_timeouts.append(
+            RecordedTimeout("PUT", url, kwargs.get("timeout", NO_TIMEOUT_SENT))
+        )
         store[url] = data.read() if hasattr(data, "read") else data
         return _StubResponse()
 
@@ -120,17 +138,36 @@ def http_gzip_encoded_urls() -> set[str]:
 
 
 @pytest.fixture
+def http_recorded_timeouts() -> list[RecordedTimeout]:
+    return []
+
+
+@pytest.fixture
 def http_store(
-    monkeypatch: pytest.MonkeyPatch, http_gzip_encoded_urls: set[str]
+    monkeypatch: pytest.MonkeyPatch,
+    http_gzip_encoded_urls: set[str],
+    http_recorded_timeouts: list[RecordedTimeout],
 ) -> dict[str, bytes]:
     store: dict[str, bytes] = {}
-    stub_requests(monkeypatch, store, http_gzip_encoded_urls)
+    stub_requests(monkeypatch, store, http_gzip_encoded_urls, http_recorded_timeouts)
     return store
 
 
 @given(parsers.parse('adapters.yaml binds filesystem to "{name}"'))
 def given_filesystem_binding(name: str) -> None:
     write_adapters_config(f"bindings:\n  filesystem: {name}\nadapters: {{}}\n")
+
+
+@given(
+    parsers.parse(
+        'adapters.yaml binds filesystem to "http_filesystem" with timeout_seconds {seconds:g}'
+    )
+)
+def given_http_filesystem_timeout(seconds: float) -> None:
+    write_adapters_config(
+        "bindings:\n  filesystem: http_filesystem\n"
+        f"adapters:\n  http_filesystem:\n    timeout_seconds: {seconds}\n"
+    )
 
 
 @given(parsers.parse('an http source at "{url}" containing "{content}"'))
@@ -150,6 +187,16 @@ def assert_http_destination_reads_back_as(
     assert url in http_store, f"expected {url!r} in stubbed HTTP store, got {list(http_store)!r}"
     actual = http_store[url].decode("utf-8")
     assert actual == expected, f"expected {expected!r} at {url}, got {actual!r}"
+
+
+@then(parsers.parse('every http {method} request to "{url}" carried timeout {seconds:g}'))
+def assert_http_request_timeout(
+    http_recorded_timeouts: list[RecordedTimeout], method: str, url: str, seconds: float
+) -> None:
+    matching = [r for r in http_recorded_timeouts if r.method == method and r.url == url]
+    assert matching, f"no {method} request to {url!r}; saw {http_recorded_timeouts!r}"
+    wrong = [r for r in matching if r.timeout != seconds]
+    assert not wrong, f"expected timeout {seconds} on every {method} to {url!r}, got {wrong!r}"
 
 
 @then(parsers.parse('the select prompt "{message}" offered default "{value}"'))

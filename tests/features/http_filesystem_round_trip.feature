@@ -25,3 +25,11 @@ Feature: http_filesystem outbound adapter round-trip
     And an http sibling round-trip pipeline "http_sibling_roundtrip" reading "//other.test/sibling.txt" beside "http://example.test/in/input.txt" to "http://example.test/output.txt"
     When I run translate with source "noop" destination "noop" pipeline "http_sibling_roundtrip"
     Then the http destination "http://example.test/output.txt" reads back as "hello sibling"
+
+  Scenario: every request carries the timeout that adapters.yaml configures
+    Given adapters.yaml binds filesystem to "http_filesystem" with timeout_seconds 7
+    And an http source at "http://example.test/input.txt" containing "hello timeout"
+    And an http round-trip pipeline "http_roundtrip" copying "http://example.test/input.txt" to "http://example.test/output.txt"
+    When I run translate with source "noop" destination "noop" pipeline "http_roundtrip"
+    Then every http GET request to "http://example.test/input.txt" carried timeout 7
+    And every http PUT request to "http://example.test/output.txt" carried timeout 7
