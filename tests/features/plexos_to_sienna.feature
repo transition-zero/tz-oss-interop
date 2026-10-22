@@ -177,6 +177,22 @@ Feature: PLEXOS to Sienna, in one hop
     And the PS.jl system "outputs/power_simulations_system.json" contains 1 component of type "ThermalStandard"
     And the PS.jl system "outputs/power_simulations_system.json" component "ThermalStandard" named "GasPlant" has field "time_limits" equal to {"up": 6.0, "down": 0.0}
     And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "ThermalStandard" component "GasPlant"
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
+
+  Scenario: a generator availability series is stored in megawatts and labelled as natural units
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains data file "OutageProfile" at "profiles/outage.csv" with hourly values "500, 400, 500"
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Rating=file:OutageProfile"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 has unit_system "NATURAL_UNITS"
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "GasPlant" attribute "max_active_power" with values 500 400 500
 
   Scenario: the units basis of each Sienna type is stated
     Given a Plexos model

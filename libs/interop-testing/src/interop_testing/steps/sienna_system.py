@@ -13,16 +13,20 @@ import math
 from pathlib import Path
 from typing import Any
 
-import h5py
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
     find_sienna_component,
+    read_stored_series,
     sienna_components_of_type,
-    sienna_time_series_uuid,
 )
 from interop_testing.builders.sienna_systems import SiennaSystemBuilder
 from interop_testing.files import navigate_json, read_json
+from interop_testing.steps.sienna_schema import (
+    SYSTEM_PATH,
+    assert_no_problems,
+    list_type_problems,
+)
 
 
 @given("a Sienna system", target_fixture="sienna_system_builder")
@@ -345,6 +349,14 @@ def given_power_load_max_active_power_series(
     sienna_system_builder.add_time_series("PowerLoad", name, "max_active_power", values)
 
 
+@given(parsers.parse('the EnergyReservoirStorage "{name}" has a {series_name} series {series}'))
+def given_energy_reservoir_storage_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series_name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_time_series("EnergyReservoirStorage", name, series_name, values)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
@@ -494,15 +506,8 @@ def assert_sienna_component_field_absent(
 def assert_h5_ts_length(
     path: str, sienna_type: str, name: str, attribute: str, length: int
 ) -> None:
-    uid = sienna_time_series_uuid(sienna_type, name, attribute)
-    with h5py.File(path, "r") as hf:
-        dataset_path = f"time_series/{uid}/data"
-        assert dataset_path in hf, (
-            f"expected dataset {dataset_path!r} in {path}, "
-            f"got keys: {list(hf.get('time_series', {}).keys())}"
-        )
-        actual = len(hf[dataset_path])
-        assert actual == length, f"expected length {length}, got {actual}"
+    actual = len(read_stored_series(path, sienna_type, name, attribute))
+    assert actual == length, f"expected length {length}, got {actual}"
 
 
 @then(
@@ -515,14 +520,7 @@ def assert_h5_ts_values(
     path: str, sienna_type: str, name: str, attribute: str, values: str
 ) -> None:
     expected = [float(v) for v in values.split()]
-    uid = sienna_time_series_uuid(sienna_type, name, attribute)
-    with h5py.File(path, "r") as hf:
-        dataset_path = f"time_series/{uid}/data"
-        assert dataset_path in hf, (
-            f"expected dataset {dataset_path!r} in {path}, "
-            f"got keys: {list(hf.get('time_series', {}).keys())}"
-        )
-        actual = list(hf[dataset_path][:])
+    actual = read_stored_series(path, sienna_type, name, attribute)
     assert len(actual) == len(expected), f"expected {expected}, got {actual}"
     for actual_value, expected_value in zip(actual, expected, strict=True):
         assert math.isclose(actual_value, expected_value, rel_tol=1e-9, abs_tol=1e-9), (
@@ -546,13 +544,28 @@ def assert_same_components(first: str, second: str) -> None:
     )
 )
 def assert_same_time_series_associations(first: str, second: str) -> None:
-    """One association table serves every companion, so the rows must be identical."""
+    """One association table serves every companion, so the rows must be identical.
+
+    The two fields a store derives from the values are the exception: replications hold
+    different values, so their ``uri`` and ``data_hash`` differ.
+    """
     key = "time_series_associations"
-    expected = read_json(first)[key]
+    expected = _without_value_hashes(read_json(first)[key])
     assert expected, f"expected {first} to state {key}"
-    assert read_json(second)[key] == expected, (
+    assert _without_value_hashes(read_json(second)[key]) == expected, (
         f"expected {first} and {second} to state the same {key}"
     )
+
+
+def _without_value_hashes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in row.items() if k not in ("uri", "data_hash")} for row in rows]
+
+
+@then("every time series association in the written Sienna system is valid SiennaSchemas 0.2")
+def assert_system_series_rows() -> None:
+    rows = read_json(SYSTEM_PATH).get("time_series_associations", [])
+    assert rows, f"{SYSTEM_PATH} holds no time series association"
+    assert_no_problems(list_type_problems("SingleTimeSeries", rows), SYSTEM_PATH)
 
 
 def _find_extension_records(path: str, kind: str, name: str) -> list[Any]:
@@ -612,6 +625,21 @@ def assert_ts_association_resolution(
     actual = _find_ts_association(path, owner_type, owner_id).get("resolution")
     assert actual == expected_resolution, (
         f"expected resolution {expected_resolution!r}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where TimeSeriesAssociation for component'
+        ' "{owner_type}" owner id {owner_id:d} has unit_system "{expected_unit_system}"'
+    )
+)
+def assert_ts_association_unit_system(
+    path: str, owner_type: str, owner_id: int, expected_unit_system: str
+) -> None:
+    actual = _find_ts_association(path, owner_type, owner_id).get("unit_system")
+    assert actual == expected_unit_system, (
+        f"expected unit_system {expected_unit_system!r}, got {actual!r}"
     )
 
 
