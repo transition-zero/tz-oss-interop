@@ -45,7 +45,7 @@ class PortfolioSeries:
 
     owner_type: str
     year: int
-    table: pl.DataFrame
+    table: pl.LazyFrame
 
     @property
     def attribute(self) -> str:
@@ -60,12 +60,18 @@ class PortfolioSeries:
         )
 
 
+def list_series_components(table: pl.LazyFrame) -> list[str]:
+    """The component that each series of `table` belongs to, once each."""
+    components = table.select(pl.col(StagedTimeSeriesCol.COMPONENT).unique()).collect()
+    return components[StagedTimeSeriesCol.COMPONENT].to_list()
+
+
 def set_portfolio_series(
     state: State, series: Iterable[PortfolioSeries], owner_ids: Mapping[str, int]
 ) -> None:
     """Stage each series and add one association row for each owner that it names."""
     for one in series:
-        state.source_time_series[one.key] = one.table.lazy()
+        state.source_time_series[one.key] = one.table
         _add_associations(state, _build_associations(one, owner_ids))
 
 
@@ -78,10 +84,10 @@ def _add_associations(state: State, rows: pl.DataFrame) -> None:
 
 def _build_associations(series: PortfolioSeries, owner_ids: Mapping[str, int]) -> pl.DataFrame:
     col = SiennaTimeSeriesAssociationCol
-    ts_info = collect_ts_info(series.table.lazy())
+    ts_info = collect_ts_info(series.table)
     source_table, source_attribute = series.key
     features = json.dumps({YEAR_FEATURE: str(series.year)})
-    names = sorted(series.table[StagedTimeSeriesCol.COMPONENT].unique().to_list())
+    names = sorted(list_series_components(series.table))
     rows = [
         {
             **ts_association_row(

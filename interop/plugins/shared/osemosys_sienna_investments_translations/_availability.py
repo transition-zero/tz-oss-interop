@@ -62,7 +62,7 @@ def build_availability_series(
         PortfolioSeries(
             str(_OWNER),
             year,
-            table.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(varying)),
+            table.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(varying)).lazy(),
         )
         for year, table in tables.items()
     ]
