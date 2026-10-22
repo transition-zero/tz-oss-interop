@@ -56,6 +56,16 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the log contains "1 annual energy bound(s) stay in extensions.json and bind nothing, because the snapshots count for 4.0 h, not one whole year: gas.e_sum_max"
     And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.e_sum_max` |  |  | the snapshots count for 4.0 h of 2020, not the whole year, so the annual bound does not apply to them; extensions.json keeps it |"
 
+  Scenario: An annual energy bound stays in extensions.json where the snapshots count for neither length of a year
+    The one period of four hours occurs 2192.5 times, so the snapshots count for 8770 h, which
+    is neither 8760 h nor 8784 h.
+    Given the system has a representative period "year" from "2020-01-01T00:00:00" of 4 hours with weight 2192.5
+    And the ThermalStandard "gas" has ext "e_sum_max" set to {"2020": 5000.0}
+    And the system is saved as "inputs/odd_year.json"
+    When I run translate against "inputs/odd_year.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "e_sum_max" is inf
+    And the log contains "because the snapshots count for 8770.0 h, not one whole year: gas.e_sum_max"
+
   Scenario: The fields of a generator record that PyPSA has no attribute for travel on unchanged
     Given the ThermalStandard "gas" has ext carrier "gas"
     And the ThermalStandard "gas" has ext emission rate 0.4 t/MWh of "CO2"
