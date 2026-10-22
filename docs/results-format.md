@@ -137,7 +137,8 @@ pipeline reports it. A solve with no `representative_period` records gives no an
 A PyPSA solve over representative periods gives the same annual rows. The `pypsa-to-results`
 pipeline writes them when one of these conditions holds:
 
-- a `generators` snapshot weighting of the network is not 1;
+- a `generators` snapshot weighting of the network is not 1, or the `objective` weighting is
+  not 1 where the network states no `generators` weighting;
 - the `extensions.json` beside the network holds `representative_period` records.
 
 The definitions are those of `sienna-to-results`, with the PyPSA fields:

@@ -586,7 +586,7 @@ bound. The report gives a `NOT_MAPPED` row for each bound, and the log names the
 `sienna_to_pypsa_map_energy_limits` writes the bounds. `sienna-to-results` reuses
 `sienna_to_pypsa_map_components` and not this step, as it writes no network.
 
-Both fields always travel on, with every year, to the PyPSA sidecar.
+For a generator of the network, both fields travel on, with every year, to the PyPSA sidecar.
 
 ## Time series
 
