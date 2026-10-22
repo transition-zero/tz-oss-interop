@@ -351,7 +351,7 @@ def build_storages_source(
     """One row for each storage that the operations system holds, with its ratings."""
     storages = _read_storages(state, operations)
     storages = _drop_skipped(storages, _build_link_rules(), recorder)
-    storages = _enrich_technology_storages(storages)
+    storages = enrich_technology_storages(storages)
     storages = _drop_skipped(storages, _build_sharing_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
     storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
@@ -560,15 +560,21 @@ def _build_link_rules() -> list[SkipRule]:
 
 def _build_sharing_rules() -> list[SkipRule]:
     return [
-        SkipRule(
-            (pl.col(_CHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE)
-            & (pl.col(_DISCHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE),
-            SHARED_TECHNOLOGY_SKIP,
-        ),
+        SkipRule(express_has_own_technologies(), SHARED_TECHNOLOGY_SKIP),
     ]
 
 
-def _enrich_technology_storages(storages: pl.DataFrame) -> pl.DataFrame:
+def express_has_own_technologies() -> pl.Expr:
+    """Whether the charging and the discharging technology each link this storage alone.
+
+    The table holds the counts that `enrich_technology_storages` adds.
+    """
+    return (pl.col(_CHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE) & (
+        pl.col(_DISCHARGE_TECHNOLOGY_STORAGES) == _ONE_STORAGE
+    )
+
+
+def enrich_technology_storages(storages: pl.DataFrame) -> pl.DataFrame:
     """Add how many storages each linked technology charges or discharges, in either role."""
     counts = _build_technology_storage_counts(storages)
     for technology, storages_col in (

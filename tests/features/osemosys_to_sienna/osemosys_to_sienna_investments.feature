@@ -460,6 +460,31 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       And the file "outputs/portfolio.json" parses as a portfolio where the "ExistingDevices" of "StorageTechnology" "ATPHSS" has "existing_devices" set to ["ATPHSS"]
       And the file "outputs/extensions.json" parses as JSON technology extension record for "ATPHSS" having "energy_overnight_cost" set to {"2030": 50000.0, "2035": 0.0}
 
+    Scenario: Two storage candidates that share one technology are each left out
+      ATPHS charges and discharges both ATPHSS and ATTWOS, so each StorageTechnology would take
+      its whole power.
+      Given the otoole set "STORAGE" holds "ATPHSS ATTWOS"
+      And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 1                 | 0.9   |
+        | R1     | ATPHS      | ATTWOS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+        | R1     | ATPHS      | ATTWOS  | 2                 | 1     |
+      And the otoole parameter "ResidualStorageCapacity" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
+        | REGION | STORAGE | YEAR | VALUE |
+        | R1     | ATPHSS  | 2030 | 0.8   |
+        | R1     | ATTWOS  | 2030 | 0.8   |
+      And the otoole parameter "CapitalCostStorage" keyed by "REGION STORAGE YEAR" with default 0 has the rows:
+        | REGION | STORAGE | YEAR | VALUE    |
+        | R1     | ATPHSS  | 2030 | 50000000 |
+        | R1     | ATTWOS  | 2030 | 50000000 |
+      When I translate the otoole model to a Sienna investments portfolio
+      Then the pipeline exit code is 0
+      And the file "outputs/portfolio.json" parses as JSON with 0 component of type "StorageTechnology"
+      And the log contains "may be built and share a technology that charges or discharges another storage, so each is left out"
+
     Scenario: A storage candidate that states no discount rate takes the default of storage_discount_rate
       The region states 0.07, but OSeMOSYS gives a storage with no row the default of
       DiscountRateStorage, as the operations translation does.
