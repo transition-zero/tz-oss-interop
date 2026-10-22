@@ -172,6 +172,8 @@ _ONE_STORAGE = 1
 _TECHNOLOGY_STORAGES = "technology_storages"
 _CHARGE_TECHNOLOGY_STORAGES = "charge_technology_storages"
 _DISCHARGE_TECHNOLOGY_STORAGES = "discharge_technology_storages"
+# The columns that `enrich_technology_storages` adds.
+TECHNOLOGY_STORAGES_COLUMNS = (_CHARGE_TECHNOLOGY_STORAGES, _DISCHARGE_TECHNOLOGY_STORAGES)
 _AVAILABILITY = "availability"
 _EMPTY = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
