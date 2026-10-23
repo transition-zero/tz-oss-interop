@@ -24,4 +24,5 @@ pytest_plugins = [
     "interop_testing.steps.osemosys_model",
     "interop_testing.steps.yearly_results_csv",
     "interop_testing.steps.power_systems_investments",
+    "interop_testing.steps.power_systems_investments_results",
 ]

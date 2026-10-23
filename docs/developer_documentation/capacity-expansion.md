@@ -302,6 +302,14 @@ It writes these rows, each at 1 January of its year:
 A component keeps the name of its technology in the portfolio, so `interop compare` joins the
 rows with those of the model that the portfolio came from. The solve states no category.
 
+The pipeline leaves out two kinds of input, and it records and warns each one:
+
+- **A name that two technology types share.** A row names a component by its name alone, so
+  the rows cannot tell the two apart. Each row of that name is left out.
+- **A slice that holds an hour of an earlier slice.** One hour would then take two weights. The
+  later slice is left out, and production leaves out each of its hours that no other slice
+  holds.
+
 ## What does not work
 
 - **A renewable candidate with no profile runs at full availability, and the step warns.**
