@@ -20,6 +20,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_import_translations,
     build_line_extensions,
     build_transport_source,
+    set_import_values_persisted,
     set_line_values_persisted,
     warn_one_way_lines,
 )
@@ -87,6 +88,7 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
             ExtensionKind.GENERATOR,
             build_import_extensions(imports.table),
         )
+        set_import_values_persisted(state, imports.table)
         if imports.series.height > 0:
             series = StagedSeries(
                 SiennaComponent.THERMAL_STANDARD, SiennaSeriesName.MAX_ACTIVE_POWER, imports.series
