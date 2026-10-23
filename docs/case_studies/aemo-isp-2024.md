@@ -238,6 +238,11 @@ these answers:
 | the SiennaSchemas portfolio document to read | `outputs/portfolio.json` |
 | the SiennaSchemas system.json | `outputs/system.json` |
 | the HDF5 companion | `outputs/system_time_series_storage.h5` |
+| the portfolio document, in the envelope Portfolio(path) reads | `psi/portfolio.json` |
+| the HDF5 time-series companion the base system references by UUID | `psi/portfolio_base_system_time_series.h5` |
+
+Keep the default at every other prompt. The default portfolio path is
+`outputs/portfolio.json`, which is the input of this run.
 
 That run writes `psi/portfolio.json`, the base system beside it, and
 `psi/portfolio_series.json` holding the profiles the envelope cannot carry.
