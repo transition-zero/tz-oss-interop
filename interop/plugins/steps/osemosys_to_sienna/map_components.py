@@ -25,6 +25,9 @@ from interop.plugins.shared.osemosys_sienna_translations import (
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.steps.osemosys_to_sienna.map_buses import OsemosysToSiennaMapBuses
+from interop.plugins.steps.osemosys_to_sienna.map_generators import (
+    OsemosysToSiennaMapGenerators,
+)
 from interop.plugins.steps.osemosys_to_sienna.map_loads import OsemosysToSiennaMapLoads
 
 # The calendar and the unread defaults concern the whole model, so each names a step of its own.
@@ -59,6 +62,10 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         self._mappings: tuple[OperationsMapping, ...] = (
             OsemosysToSiennaMapBuses(_scoped(recorder, OsemosysToSiennaMapBuses.step_name)),
             OsemosysToSiennaMapLoads(_scoped(recorder, OsemosysToSiennaMapLoads.step_name)),
+            OsemosysToSiennaMapGenerators(
+                _scoped(recorder, OsemosysToSiennaMapGenerators.step_name),
+                osemosys_sienna_mappings,
+            ),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:
