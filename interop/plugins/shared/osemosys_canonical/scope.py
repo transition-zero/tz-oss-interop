@@ -1,0 +1,197 @@
+"""Leaves out the part of a canonical stage that lies outside a scope of locations and years."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple
+
+import polars as pl
+
+from interop.core.pipeline import State
+from interop.core.reporting import EventRecorder
+from interop.plugins.shared.osemosys_canonical.canonical_stage import (
+    CanonicalTable,
+    build_table_key,
+    list_canonical_tables,
+    set_canonical_table,
+)
+from interop.plugins.shared.osemosys_canonical.constants import (
+    FUEL,
+    LOCATION_SEPARATOR,
+    REGION,
+    STORAGE,
+    TECHNOLOGY,
+    VALUE_COL,
+    YEAR,
+    AnnotationColumn,
+    TableKind,
+)
+from interop.plugins.shared.osemosys_canonical.events import SourceName, record_source_event
+from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.errors import UserInputError
+from interop.ports.outbound.reporting import EventKind
+
+log = logging.getLogger(__name__)
+
+# The sets whose members the annotations place at a location.
+LOCATED_SETS = (TECHNOLOGY, FUEL, STORAGE)
+# The temporary column of the group that tells if a member has a row in scope.
+_IS_IN_SCOPE_COL = "__is_in_scope"
+_LOCATIONS_PARAMETER = "locations"
+_YEARS_PARAMETER = "years"
+
+
+class Scope(NamedTuple):
+    """An empty `locations` or `years` keeps everything."""
+
+    locations: tuple[str, ...]
+    years: tuple[int, ...]
+
+    @property
+    def has_locations(self) -> bool:
+        return bool(self.locations)
+
+    @property
+    def has_years(self) -> bool:
+        return bool(self.years)
+
+
+def reject_scope_outside_model(state: State, scope: Scope) -> None:
+    """Raise when the scope names a location or a year that the model does not hold."""
+    _reject_unknown(_LOCATIONS_PARAMETER, scope.locations, _list_model_locations(state))
+    _reject_unknown(_YEARS_PARAMETER, _list_year_names(scope), _list_model_years(state))
+
+
+def _reject_unknown(parameter: str, requested: Sequence[str], known: list[str]) -> None:
+    unknown = [one for one in requested if one not in known]
+    if unknown:
+        raise UserInputError(
+            f"The parameter `{parameter}` names {', '.join(unknown)}, which the model does not "
+            f"hold. The model {parameter} are: {', '.join(known) or 'none'}."
+        )
+
+
+def _list_model_locations(state: State) -> list[str]:
+    """Each location part that an annotation states, in order."""
+    annotations = [
+        state.source_topology.get(build_table_key(TableKind.ANNOTATION, set_name))
+        for set_name in LOCATED_SETS
+    ]
+    location = pl.col(AnnotationColumn.LOCATION)
+    parts = [
+        annotation.select(location.str.split(LOCATION_SEPARATOR).explode())
+        for annotation in annotations
+        if annotation is not None
+    ]
+    if not parts:
+        return []
+    return pl.concat(parts).drop_nulls().unique().sort(location).collect().to_series().to_list()
+
+
+def _list_model_years(state: State) -> list[str]:
+    years = state.source_topology.get(build_table_key(TableKind.SET, YEAR))
+    if years is None:
+        return []
+    return years.select(pl.col(VALUE_COL).cast(pl.String)).collect().to_series().to_list()
+
+
+def set_scoped_tables(state: State, scope: Scope, dropped: Mapping[str, list[str]]) -> None:
+    """Replace each canonical table with the table that holds no dropped member, and no row of
+    a region where the annotation places its member outside the scope."""
+    pairs = _build_pairs_outside_locations(state, scope)
+    for canonical in list_canonical_tables(state):
+        table = _drop_pairs(_drop_from_table(canonical, dropped), pairs)
+        set_canonical_table(state, canonical._replace(table=table))
+
+
+def _build_pairs_outside_locations(state: State, scope: Scope) -> dict[str, pl.LazyFrame]:
+    """The region and the member of each annotation row outside the scope, by set."""
+    if not scope.has_locations:
+        return {}
+    pairs: dict[str, pl.LazyFrame] = {}
+    for set_name in LOCATED_SETS:
+        annotation = state.source_topology.get(build_table_key(TableKind.ANNOTATION, set_name))
+        if annotation is not None:
+            outside = annotation.filter(~_express_is_in_scope(scope))
+            pairs[set_name] = outside.select(REGION, set_name)
+    return pairs
+
+
+def _drop_pairs(table: pl.LazyFrame, pairs: Mapping[str, pl.LazyFrame]) -> pl.LazyFrame:
+    schema = table.collect_schema()
+    for set_name, outside in pairs.items():
+        if REGION in schema and set_name in schema:
+            keys = {REGION: schema[REGION], set_name: schema[set_name]}
+            table = table.join(outside.cast(pl.Schema(keys)), on=list(keys), how="anti")
+    return table
+
+
+def build_dropped_members(state: State, scope: Scope) -> dict[str, list[str]]:
+    """The members to leave out, by the set that holds them. A year is a member of `year`."""
+    dropped = {
+        set_name: _list_members_outside_locations(state, set_name, scope)
+        for set_name in LOCATED_SETS
+    }
+    dropped[YEAR] = _list_years_outside_scope(state, scope)
+    return {set_name: members for set_name, members in dropped.items() if members}
+
+
+def _list_members_outside_locations(state: State, set_name: str, scope: Scope) -> list[str]:
+    annotation = state.source_topology.get(build_table_key(TableKind.ANNOTATION, set_name))
+    if annotation is None or not scope.has_locations:
+        return []
+    has_row_in_scope = _express_is_in_scope(scope).any().alias(_IS_IN_SCOPE_COL)
+    outside = annotation.group_by(set_name).agg(has_row_in_scope).filter(~pl.col(_IS_IN_SCOPE_COL))
+    return outside.select(set_name).sort(set_name).collect().to_series().to_list()
+
+
+def _express_is_in_scope(scope: Scope) -> pl.Expr:
+    """A member with no location is in scope, and so is one whose every location part is."""
+    location = pl.col(AnnotationColumn.LOCATION)
+    parts_in_scope = (
+        location.str.split(LOCATION_SEPARATOR)
+        .list.eval(pl.element().is_in(list(scope.locations)))
+        .list.all()
+    )
+    return location.is_null() | parts_in_scope
+
+
+def _list_years_outside_scope(state: State, scope: Scope) -> list[str]:
+    if not scope.has_years:
+        return []
+    kept = _list_year_names(scope)
+    return [member for member in _list_model_years(state) if member not in kept]
+
+
+def _list_year_names(scope: Scope) -> list[str]:
+    return [str(year) for year in scope.years]
+
+
+def _drop_from_table(canonical: CanonicalTable, dropped: Mapping[str, list[str]]) -> pl.LazyFrame:
+    columns = canonical.table.collect_schema().names()
+    table = canonical.table
+    for set_name, members in dropped.items():
+        column = _find_set_column(canonical, set_name, columns)
+        if column is not None:
+            table = table.filter(~pl.col(column).cast(pl.String).is_in(members).fill_null(False))
+    return table
+
+
+def _find_set_column(canonical: CanonicalTable, set_name: str, columns: list[str]) -> str | None:
+    """The column that holds the members of `set_name`, or `None` where the table has none."""
+    if canonical.kind == TableKind.SET and canonical.name == set_name:
+        return VALUE_COL
+    return set_name if set_name in columns else None
+
+
+def report_dropped(dropped: Mapping[str, list[str]], recorder: EventRecorder) -> None:
+    for set_name, members in dropped.items():
+        note = f"{len(members)} {set_name} member(s) outside the scope, so each is left out"
+        record_source_event(
+            recorder, EventKind.COMPONENT_SKIPPED, SourceName(set_name, name_a_few(members)), note
+        )
+    if dropped:
+        counted = ", ".join(f"{len(members)} {set_name}" for set_name, members in dropped.items())
+        names = name_a_few(member for members in dropped.values() for member in members)
+        log.warning("Left out %s member(s) that are outside the scope: %s", counted, names)
