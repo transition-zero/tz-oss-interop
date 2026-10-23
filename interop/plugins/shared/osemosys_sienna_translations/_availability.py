@@ -64,11 +64,13 @@ class Availability:
 def build_availability(
     state: State, operations: OperationsYear, technologies: pl.DataFrame, name_col: str
 ) -> Availability:
-    """`technologies` holds `region`, `technology` and the Sienna name in `name_col`."""
-    annual = read_availability_factors(
-        state, operations.year, technologies.select(REGION, TECHNOLOGY)
-    )
-    factors = _read_timeslice_factors(state, operations, technologies, annual)
+    """`technologies` holds `region`, `technology` and the Sienna name in `name_col`.
+
+    Two names can share one technology.
+    """
+    keys = technologies.select(REGION, TECHNOLOGY).unique()
+    annual = read_availability_factors(state, operations.year, keys)
+    factors = _read_timeslice_factors(state, operations, keys, annual)
     series = _reshape_to_hours(operations, factors, technologies, name_col)
     table = _enrich_factor_range(
         technologies.join(annual, on=[REGION, TECHNOLOGY]), series, name_col
@@ -77,15 +79,20 @@ def build_availability(
 
 
 def _read_timeslice_factors(
-    state: State, operations: OperationsYear, technologies: pl.DataFrame, annual: pl.DataFrame
+    state: State, operations: OperationsYear, keys: pl.DataFrame, annual: pl.DataFrame
 ) -> pl.DataFrame:
-    """The share of the capacity in each timeslice: capacity_factor × availability_factor."""
+    """The share of the capacity in each timeslice: capacity_factor × availability_factor.
+
+    `keys` holds one row for each `region` and `technology`.
+    """
     timeslices = pl.DataFrame(
         {TIMESLICE: list(operations.calendar.year_split)}, schema={TIMESLICE: pl.Utf8}
     )
-    keys = technologies.select(REGION, TECHNOLOGY).join(timeslices, how="cross")
     stated = read_parameter_with_defaults(
-        state, SupplyParameter.CAPACITY_FACTOR, operations.year, keys
+        state,
+        SupplyParameter.CAPACITY_FACTOR,
+        operations.year,
+        keys.join(timeslices, how="cross"),
     )
     return stated.join(annual, on=[REGION, TECHNOLOGY]).select(
         REGION,
