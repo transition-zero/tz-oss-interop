@@ -1,0 +1,29 @@
+name: Stack mirrors
+
+# A fork PR cannot take a fork branch as its base, so each PR in a fork stack takes a copy under stack/<owner>/ instead.
+# It runs with a write token, so it must never check out or run PR code.
+on:
+  pull_request_target:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  update-mirror:
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Move the mirror of the PR branch to the new head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MIRROR: stack/${{ github.event.pull_request.head.repo.owner.login }}/${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$MIRROR" --silent 2>/dev/null; then
+            echo "::notice::No PR stacks on $MIRROR, so this run moves nothing."
+            exit 0
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/heads/$MIRROR" -f sha="$HEAD_SHA" -F force=true --silent
+          echo "::notice::$MIRROR now points at $HEAD_SHA."
