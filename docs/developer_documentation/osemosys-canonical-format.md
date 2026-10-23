@@ -41,17 +41,42 @@ source model ──source──▶ raw stage ──mappings engine + user mappin
 - **The mappings engine** is the shared code in `interop/plugins/shared/osemosys_canonical/`
   that turns the raw stage into the canonical stage.
 
-## The two pipelines
+## The pipelines
 
-No translation reads the canonical stage yet. Two pipelines write the canonical stage to a
-directory, so that you can examine a user mappings file before a translation exists:
+Two pipelines write the canonical stage to a directory, so that you can examine the canonical
+stage:
 
 | Pipeline | Source | Sink |
 | --- | --- | --- |
 | `osemosys-csv-to-canonical` | `stage_osemosys_csv` | `emit_osemosys_canonical_parquet` |
 | `tz-osemosys-to-canonical` | `stage_tz_osemosys_json` | `emit_osemosys_canonical_parquet` |
 
-Both sources declare the `OsemosysCanonicalMappings` schema, so each run needs a user
+Four pipelines translate the canonical stage into Sienna. Each step after the source reads the
+canonical stage in `State`, and not the files of the model, so the two source formats give the
+same result:
+
+| Pipeline | Source | Writes |
+| --- | --- | --- |
+| `osemosys-csv-to-sienna` | `stage_osemosys_csv` | A Sienna system |
+| `tz-osemosys-to-sienna` | `stage_tz_osemosys_json` | A Sienna system |
+| `osemosys-csv-to-sienna-investments` | `stage_osemosys_csv` | A Sienna system and a Sienna Investments Portfolio |
+| `tz-osemosys-to-sienna-investments` | `stage_tz_osemosys_json` | A Sienna system and a Sienna Investments Portfolio |
+
+[Translation from OSeMOSYS to Sienna](../translation_mappings/translation-from-osemosys-to-sienna.md)
+and [Translation from OSeMOSYS to a Sienna Investments Portfolio](../translation_mappings/translation-from-osemosys-to-sienna-investments.md)
+give the mapping of each canonical name. The Sienna translation also reads the `carriers:` part
+of the user mappings file, and needs the `units:` part for each value that it converts.
+
+Each step that reads the stage takes these rules from it:
+
+- A parameter table is lazy. A step filters it on `year` before it collects it.
+- A sparse parameter takes the default of `metadata/defaults` for an absent row.
+- A step writes its own tables into `State` under a key whose kind is not a `TableKind`, so
+  `list_canonical_tables` does not read them as canonical tables.
+- The step `osemosys_canonical_drop_outside_scope` removes members and years from the stage in
+  place, with `set_canonical_table`. Each later step then reads the subset.
+
+Each source declares the `OsemosysCanonicalMappings` schema, so each run needs a user
 mappings file. In `headless_cli`, give the file with `--user-mappings-path` or with the
 `INTEROP_USER_MAPPINGS_PATH` environment variable:
 

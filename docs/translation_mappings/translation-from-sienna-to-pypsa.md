@@ -3,9 +3,12 @@
 This document tells you what each part of your Sienna system becomes in the PyPSA network.
 It gives the source of each field.
 
-> **Scope:** the translator accepts a SiennaSchemas system, and only that. It accepts
-> electricity-only systems. It reads the system JSON, its HDF5 time series companion and an
-> optional `extensions.json` sidecar. Refer to
+> **Scope:** the translator accepts a SiennaSchemas system, and only that. The system holds
+> electricity only. The fuels that are not electricity reach the translator as records of the
+> optional `extensions.json` sidecar, and the translator builds them as PyPSA buses,
+> generators, links and loads. Refer to
+> [The fuels that are not electricity](#the-fuels-that-are-not-electricity). It reads the
+> system JSON, its HDF5 time series companion and the sidecar. Refer to
 > [What the translator reads](#what-the-translator-reads). Many Sienna systems come from the
 > opposite translation, so this document also tells you which values change when a PyPSA
 > network goes out to Sienna and comes back. Refer to
@@ -29,12 +32,16 @@ direction.
 | [`RenewableDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`RenewableNonDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`HydroDispatch`](#hydrodispatch--storageunit) | `StorageUnit` with the carrier `hydro` |
-| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier `PHS` |
+| [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else the carrier of its prime mover |
 | [`Line`](#line-and-monitoredline--line) | `Line` |
 | [`MonitoredLine`](#line-and-monitoredline--line) | `Line`, the same as a `Line` |
 | [`TwoTerminalGenericHVDCLine`](#twoterminalgenerichvdcline--link) | `Link` |
 | [`TimeSeriesAssociation`](#time-series) | No component. It gives a PyPSA time series. |
-| [`extensions.json`](#the-extensions-sidecar) | No component. It restores the PyPSA fields that Sienna cannot hold. |
+| [`extensions.json`](#the-extensions-sidecar) | No component. It restores the PyPSA fields that Sienna cannot hold, and the PyPSA sidecar keeps each other field. |
+| A [`representative_period` record](#snapshot-weightings) of `extensions.json` | The snapshot weightings. |
+| A [`conversion` record](#conversion-records--link) of `extensions.json` that joins two buses | `Link` |
+| A [`bus`, `generator` or `load` record](#the-fuels-that-are-not-electricity) of a fuel that is not electricity | `Bus`, `Generator` or `Load` |
+| A [`ThermalStandard` whose record names the bus of each fuel](#a-plant-that-draws-its-fuel-from-a-bus) | `Link` from the bus of its fuel |
 | Every other SiennaSchemas type | [Not translated](#not-translated) |
 
 ## Reading the tables
@@ -146,6 +153,7 @@ magnitude fields either. Refer to [Not translated](#not-translated).
 | `p_set` | MW | `max_active_power` | `direct` |
 | `carrier` | | `extensions.carrier` of the `load` record | `sidecar` |
 | `type` | | `extensions.type` of the `load` record | `sidecar` |
+| `sign` | | `extensions.sign` of the `load` record | `sidecar` |
 
 A `PowerLoad` can carry a `max_active_power` time series. Sienna holds that series as a
 shape whose peak is 1.0. The translator multiplies each value by the static
@@ -160,7 +168,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `extensions.carrier` of the `generator` record. If absent, the `prime_mover_type` and `fuel_type` pair. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `active_power_limits.max` ÷ `base_power`, but not more than `rating`. A plant of 0 MW gets `rating`. | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
 | `start_up_cost` | cost | `operation_cost.start_up` | `direct` |
@@ -172,8 +180,10 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `up_time_before` | snapshots | `time_at_status` × 60 ÷ the snapshot duration in minutes | `derived` |
 | `committable` | | `extensions.committable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `base_power`, for an extendable generator only. | `derived` |
-| `efficiency` | | The translator sets nothing, so PyPSA applies its own default of 1.0 | `default` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator only. | `sidecar` or `derived` |
+| `efficiency` | | `extensions.efficiency` of the `generator` record. If absent, PyPSA's own default of 1.0. | `sidecar` or `default` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
+| `e_sum_min`, `e_sum_max` | MWh | The value of the year of the snapshots in `extensions.e_sum_min` and `.e_sum_max`. Refer to [Annual energy bounds](#annual-energy-bounds). | `sidecar` |
 
 Sienna states a ramp rate in MW for each minute, and PyPSA states it as a share of `p_nom`
 for each snapshot. Sienna states a run-time limit in hours, and PyPSA states it in
@@ -203,8 +213,13 @@ placeholder, so the translator does not divide by it.
 | `p_min_pu` | per unit of `p_nom` | `active_power` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `base_power`, for an extendable generator only. | `derived` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator only. | `sidecar` or `derived` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | The same fields of the `generator` record as for a `ThermalStandard` | `sidecar` |
+| `e_sum_min`, `e_sum_max` | MWh | The same as for a `ThermalStandard` | `sidecar` |
 | `committable` | | `False` | `default` |
+
+The `committable` and the `efficiency` of a `generator` record do not apply to a renewable
+type. They travel on to the PyPSA sidecar.
 
 These two types differ from a thermal generator in three ways:
 
@@ -249,8 +264,10 @@ round-trip efficiency and no reservoir level, so the translator supplies a PyPSA
 each. The report gives one row for each of the six, so `decisions.md` names every hydro unit
 whose storage behaviour is a default rather than your data.
 
-The translator reads no sidecar record for a `HydroDispatch`. `p_nom_extendable` is always
-`False`, even where the sidecar holds a `generator` record of the same name.
+The `storage` record of the same name can give `max_hours`, `state_of_charge_initial` and
+`inflow`. The translator maps no other field of a sidecar record for a `HydroDispatch`.
+`p_nom_extendable` is always `False`. Each other field of the `storage` record, and each
+field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 
 ## `EnergyReservoirStorage` → `StorageUnit`
 
@@ -258,7 +275,7 @@ The translator reads no sidecar record for a `HydroDispatch`. `p_nom_extendable`
 | --- | --- | --- | --- |
 | `name` | | `EnergyReservoirStorage.name` | `direct` |
 | `bus` | | The bus that `bus` points at | `derived` |
-| `carrier` | | `PHS`, for every `EnergyReservoirStorage` | `default` |
+| `carrier` | | `extensions.carrier` of the `storage` record. If absent, `battery` for the prime mover `BA`, and `PHS` for every other prime mover. | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
 | `max_hours` | h | `storage_capacity` | `direct` |
 | `p_max_pu` | per unit of `p_nom` | `output_active_power_limits.max` | `direct` |
@@ -269,15 +286,21 @@ The translator reads no sidecar record for a `HydroDispatch`. `p_nom_extendable`
 | `state_of_charge_initial` | MWh | `initial_storage_capacity_level` × `base_power` × `storage_capacity` | `derived` |
 | `cyclic_state_of_charge` | | `True` where `operation_cost.energy_shortage_cost` is above zero. If not, `False`. | `derived` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `storage` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `base_power`, for an extendable storage unit only. | `derived` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `storage` record. If absent, `base_power`, for an extendable storage unit only. | `sidecar` or `derived` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
+| `cyclic_state_of_charge_per_period` | | `extensions.cyclic_state_of_charge_per_period` of the `storage` record | `sidecar` |
+| `inflow` | MW | `extensions.inflow_mw` of the `storage` record. If absent, `0.0`. | `sidecar` or `default` |
+
+PyPSA applies `cyclic_state_of_charge_per_period` only to a unit whose
+`cyclic_state_of_charge` is `True`.
 
 PyPSA states charge and discharge on one `p_nom`, with a negative `p_min_pu` for the charge
 side. Sienna states them as two separate limits. The translator changes the sign of the
 input limit to get `p_min_pu`.
 
-The translator does not read the `prime_mover_type`. Every `EnergyReservoirStorage` gets the
-carrier `PHS`, so a battery that reached Sienna through this type comes back as pumped
-storage.
+An `EnergyReservoirStorage` whose record states no `carrier` gets the carrier of its prime
+mover: `battery` for `BA`, and `PHS` for every other prime mover. So a flywheel that reached
+Sienna with no record comes back as pumped storage.
 
 A PyPSA storage unit has one `marginal_cost`, and Sienna has a charge cost and a discharge
 cost. The translator reads the discharge cost. Refer to [Not translated](#not-translated).
@@ -318,8 +341,9 @@ A pair that is not in the thermal table stops the run. A prime mover that is not
 renewable table stops it too. The translator does not guess a carrier, because a wrong
 carrier would put the generator in the wrong cost and emission group.
 
-`HydroDispatch` and `EnergyReservoirStorage` do not use these tables. They always get
-`hydro` and `PHS`.
+`HydroDispatch` and `EnergyReservoirStorage` do not use these tables. `HydroDispatch` always
+gets `hydro`. `EnergyReservoirStorage` gets the carrier of its `storage` record, else `battery`
+for the prime mover `BA`, and `PHS` for every other prime mover.
 
 ## `Line` and `MonitoredLine` → `Line`
 
@@ -370,8 +394,30 @@ either. Check the length of each line if you plan to use it.
 | `efficiency` | | 1 − the proportional term of `loss.function_data` | `derived` |
 | `active` | | `available` | `direct` |
 | `carrier` | | `extensions.carrier` of the `controllable_line` record | `sidecar` |
+| `marginal_cost` | cost for each MWh sent | `extensions.marginal_cost` of the `controllable_line` record | `sidecar` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `controllable_line` record | `sidecar` |
 | `p_nom_min` | MW | The derived `p_nom`, for an extendable link only. | `derived` |
+| `p_max_pu` in each snapshot | per unit of `p_nom` | The `p_max_pu` column of `controllable_lines.parquet`, that `extensions.p_max_pu_series` names, × the static `p_max_pu` | `sidecar` |
+
+Sienna states the loss of a line as the proportional term of `loss`, and the translator
+writes 1 minus that term as `efficiency`.
+
+**A two-way link that loses energy or costs money becomes two one-way links.** PyPSA applies
+one `efficiency` and one `marginal_cost` to both directions of a link, and its power balance is
+linear in the flow. On one link, a flow back takes `efficiency` × the power at `bus1` and gives
+the full power at `bus0`, and it earns the marginal cost instead of paying it. Thus, where
+`p_min_pu` is below zero and `efficiency` is below 1 or `marginal_cost` is not 0, the
+translator writes:
+
+| Link | `bus0` | `bus1` | `p_nom` | `p_min_pu` | `p_max_pu` | `efficiency`, `marginal_cost` |
+| --- | --- | --- | --- | --- | --- | --- |
+| `<name>` | `bus0` | `bus1` | `p_nom` | `0` | `p_max_pu` | The values of the line |
+| `<name> reverse` | `bus1` | `bus0` | `p_nom` | `0` | −`p_min_pu` of the line | The values of the line |
+
+The reverse link also gets the `p_max_pu` series of the line, multiplied by its own
+`p_max_pu`. The report gives one row for the split. The translator does not split an
+extendable link, because the two links would not share one `p_nom`. Such a link stays one
+two-way link, and the report and the log name it.
 
 Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
 `active_power_limits_from.max` as `p_nom` × `p_max_pu`. The translator undoes this in three
@@ -387,6 +433,161 @@ cases:
 Sienna forces the minimum at the from-end to zero for a link whose PyPSA `p_min_pu` was
 positive. A positive lower bound therefore survives only in the sidecar.
 
+## Conversion records → `Link`
+
+Sienna has no component that turns energy at one bus into energy at another bus, so the whole
+`conversion` record reaches the translator in the sidecar. A record becomes a PyPSA `Link` when
+all three conditions hold:
+
+- `bus0`, `bus1`, and `bus2` and `bus3` where the record states them, each name a bus of the
+  network. A bus of a fuel that is not electricity is a bus of the network when its `bus`
+  record built one.
+- `bus0` and `bus1` name two different buses.
+- No link of the network has the name of the record.
+
+| PyPSA field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The name of the record | `direct` |
+| `bus0` / `bus1` | | `bus0` and `bus1` | `sidecar` |
+| `bus2`, `efficiency2`, `bus3`, `efficiency3` | | The fields of the same name. A negative efficiency draws from the bus. | `sidecar` |
+| `carrier` | | `carrier` | `sidecar` |
+| `p_nom` | MW of the energy in | `p_nom`. If absent, `0.0`. | `sidecar` or `default` |
+| `p_nom_extendable`, `p_nom_max` | | The fields of the same name | `sidecar` |
+| `p_nom_min` | MW of the energy in | `p_nom`, for an extendable record with a capacity above 0, as PyPSA ignores the `p_nom` of an extendable link | `derived` |
+| `efficiency` | | `efficiency`. If absent, `1.0`. | `sidecar` or `default` |
+| `marginal_cost` | cost for each MWh in | `marginal_cost` | `sidecar` |
+| `p_max_pu` | per unit of `p_nom` | `p_max_pu` | `sidecar` |
+| `p_min_pu` | per unit of `p_nom` | `0.0` | `default` |
+| `active` | | `True` | `default` |
+
+Each other field of the record travels on to the PyPSA sidecar. A record that does not
+become a link travels on whole. A record that joins two buses under the name of a link of the
+network gets a `NOT_MAPPED` row and a warning. These records do not become a link:
+
+- An export, which has no `bus1`.
+- A record whose `bus0` and `bus1` are the same bus.
+- A trade route of electricity whose end `<region>/<fuel>` the network does not hold. A route
+  between two electricity buses of the network becomes a link.
+
+The emission rates of a record, `emission_rates_t_per_mwh`, travel on. `pypsa-to-results`
+reads them for each MWh that goes in at `bus0`.
+
+A PyPSA `Link` has no `e_sum_min` or `e_sum_max`. So the annual bounds of a record that becomes
+a link travel on and bind nothing. The report gives a `NOT_MAPPED` row for each bound, and one
+warning names three.
+
+## The fuels that are not electricity
+
+A Sienna system holds electricity only. An OSeMOSYS model also holds fuels such as gas and
+coal, and the technologies that supply, move and convert them. The OSeMOSYS hop writes them as
+records of `extensions.json`, in PyPSA terms. Refer to
+[translation-from-osemosys-to-sienna.md](translation-from-osemosys-to-sienna.md#the-fuels-that-are-not-electricity).
+The step `sienna_to_pypsa_map_components` builds them:
+
+| Record | Condition | PyPSA component |
+| --- | --- | --- |
+| `bus` | No `ACBus` has its name, and its `carrier` is not `AC` or `DC` | A `Bus` with the `carrier` and the `location` of the record, `v_nom` 1.0 and `control` `PQ` |
+| `generator` | It states a `bus` of the network, and no Sienna generator has its name | A `Generator` on that bus |
+| `load` | It states a `bus` of the network, and no Sienna load has its name | A `Load` on that bus |
+| `conversion` | As [Conversion records → `Link`](#conversion-records--link) states | A `Link` |
+
+| `Generator` field | From | If absent |
+| --- | --- | --- |
+| `bus`, `carrier`, `p_nom`, `marginal_cost`, `p_max_pu`, `p_nom_extendable`, `p_nom_max` | The field of the same name | `p_nom` 0, `marginal_cost` 0, `p_max_pu` 1, not extendable |
+| `p_nom_min` | `p_nom`, for an extendable generator with a capacity above 0 | None |
+| `e_sum_min`, `e_sum_max` | As [Annual energy bounds](#annual-energy-bounds) gives | None |
+
+| `Load` field | From | If absent |
+| --- | --- | --- |
+| `bus`, `carrier`, `p_set` | The field of the same name | `p_set` 0 |
+| The `p_set` time series | The column `p_set` of `loads.parquet`, where `p_set_series` names it | None |
+
+The emission rates and the annual bounds of a generator record travel on, so
+`pypsa-to-results` can count the emissions of each fuel. The solve gives each bus, of a fuel
+too, the slack generators of unserved and surplus energy.
+
+### A plant that draws its fuel from a bus
+
+A `ThermalStandard` pays the Sienna price of its fuel. Where the network holds the bus of the
+fuel, that price counts the fuel twice: once in the plant, and once in the generator that
+supplies the bus. So a `ThermalStandard` becomes a PyPSA `Link` when all of these hold:
+
+- its `generator` record states `fuel_buses`, and names three buses at most;
+- the network holds each bus that `fuel_buses` names;
+- the record states no annual energy bound;
+- the plant is not extendable, and its marginal cost is the same in every hour.
+
+
+| `Link` field | From |
+| --- | --- |
+| `bus0` | The bus of the largest fuel of `fuel_buses` |
+| `bus1` | The bus of the generator |
+| `p_nom` | `base_power` × the MWh of that fuel for each MWh of electricity |
+| `efficiency` | 1 / the MWh of that fuel for each MWh of electricity |
+| `marginal_cost` | `own_marginal_cost` / the MWh of that fuel for each MWh of electricity, as a link prices the power at `bus0` |
+| `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel) |
+| `p_min_pu`, `p_max_pu`, `carrier`, `committable`, `start_up_cost`, `shut_down_cost`, `min_up_time`, `min_down_time`, `up_time_before`, `ramp_limit_up`, `ramp_limit_down` | The value of the generator, per unit of the link |
+
+`decisions.md` gives a row for each column that moves from the generator to the link, and for
+each further bus and its efficiency. A column of the generator that the link does not hold
+(`p_nom_min`, `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year`) gets a
+`NOT_MAPPED` row where it states a value.
+
+The `p_max_pu` time series of the generator moves to the link. The record travels on whole,
+and `pypsa-to-results` counts the emissions of the plant with `own_emission_rates_t_per_mwh`,
+as the generator of the fuel emits for the fuel.
+
+A PyPSA `Link` has no `e_sum_min` or `e_sum_max`. So a plant whose record states an annual
+energy bound stays a `Generator`. It keeps the Sienna price and the emission rate of its fuel,
+and it does not draw the fuel from its bus. The report gives a `NOT_MAPPED` row for each one,
+and one warning names three. A plant whose fuel has no bus also stays a `Generator`.
+
+## Snapshot weightings
+
+A system over representative periods states each hour of a period once. The
+`representative_period` records of the sidecar say how many times each period occurs in the
+year. The translator writes this as the PyPSA snapshot weightings:
+
+| PyPSA weighting | A snapshot that a period holds | A snapshot that no period holds |
+| --- | --- | --- |
+| `objective` | `weight` × the snapshot length in h | The snapshot length in h |
+| `generators` | `weight` × the snapshot length in h | The snapshot length in h |
+| `stores` | The snapshot length in h | The snapshot length in h |
+
+A store counts each snapshot once, because its level changes from one snapshot to the next.
+
+The rules of [sienna-to-results](../results-format.md#annual-variables) choose the periods.
+A record that states no `first_timestamp`, `hours` or `weight`, or a value that is not
+correct, is left out. A period that holds a snapshot of an earlier period is left out. The
+report gives a row for each period that the translator leaves out, and the log names them.
+The report and the log also name each run of snapshots that no period holds.
+
+A system with no `representative_period` record keeps PyPSA's own weighting of 1 for each
+snapshot. The records travel on whole to the PyPSA sidecar.
+
+## Annual energy bounds
+
+A `generator` record can state `e_sum_min` and `e_sum_max` in MWh for each year in scope, keyed
+by the year. PyPSA states one bound over all the snapshots, which it weights by the
+`generators` snapshot weighting. The translator writes the value of the year of the
+snapshots when both conditions hold:
+
+- Every snapshot falls in one calendar year.
+- The `generators` weightings add up to that whole year: from 8,751 h to 8,793 h. The range
+  holds a year of 365 days or of 366 days, and a rounding of 0.1%.
+
+Where the snapshots count for less than a year, the translator writes no bound, because a
+bound for a year would ask a part of the year for the energy of all of it. The report gives
+a `NOT_MAPPED` row for each bound, and the log names them. A record that states no value for
+the year of the snapshots gets the same report.
+
+Where the system holds no series, the network has no snapshots, and the translator writes no
+bound. The report gives a `NOT_MAPPED` row for each bound, and the log names them. The step
+`sienna_to_pypsa_map_energy_limits` writes the bounds. `sienna-to-results` reuses
+`sienna_to_pypsa_map_components` and not this step, as it writes no network.
+
+For a generator of the network, both fields travel on, with every year, to the PyPSA sidecar.
+
 ## Time series
 
 Sienna holds a time series as a `TimeSeriesAssociation` record in the system JSON and its
@@ -399,6 +600,15 @@ values in the HDF5 companion. The translator reads five series and leaves every 
 | `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` |
 | `ThermalStandard` `active_power_limits` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
+
+A companion parquet beside `extensions.json` can hold a series too:
+
+| Companion and column | PyPSA target | Each value is multiplied by |
+| --- | --- | --- |
+| `generators.parquet` `marginal_cost` | `generators.marginal_cost` | 1 |
+| `storage.parquet` `inflow_mw` | `storage_units.inflow` | 1 |
+| `storage.parquet` `rating_pu` | `storage_units.p_max_pu` | 1 |
+| `controllable_lines.parquet` `p_max_pu` | `links.p_max_pu` | The static `p_max_pu` of the link |
 
 The snapshots of the network come from the first profile that reaches it: the start time,
 the resolution and the length of that profile.
@@ -413,41 +623,68 @@ component has one Sienna type and each type gives one series.
 
 ## The extensions sidecar
 
-`extensions.json` carries the PyPSA fields that SiennaSchemas has no home for. The document
-is keyed by kind, and each record names the component it belongs to.
+`extensions.json` carries the fields that SiennaSchemas has no home for. The document is keyed
+by kind, and each record names the component it belongs to.
 
-| Kind | Field | It restores | If the record or the field is absent |
-| --- | --- | --- | --- |
-| `bus` | `carrier` | `Bus.carrier` | The carrier is `AC`. |
-| `generator` | `carrier` | `Generator.carrier` | The translator derives the carrier. Refer to [Carriers](#carriers). |
-| `generator` | `committable` | `Generator.committable` | `False` |
-| `generator` | `p_nom_extendable` | `Generator.p_nom_extendable` | `False` |
-| `load` | `carrier` | `Load.carrier` | PyPSA's own default holds. |
-| `load` | `type` | `Load.type` | PyPSA's own default holds. |
-| `line` | `carrier` | `Line.carrier` | PyPSA's own default holds. |
-| `line` | `length` | `Line.length` | `0.0` |
-| `line` | `num_parallel` | `Line.num_parallel` | `1.0` |
-| `line` | `s_nom_extendable` | `Line.s_nom_extendable` | PyPSA's own default holds. |
-| `controllable_line` | `carrier` | `Link.carrier` | PyPSA's own default holds. |
-| `controllable_line` | `p_nom_extendable` | `Link.p_nom_extendable` | PyPSA's own default holds. |
-| `controllable_line` | `p_max_pu` | `Link.p_max_pu`, and the split of `p_nom` | PyPSA's own default of 1.0 holds, and `p_nom` is the stored maximum. |
-| `controllable_line` | `p_min_pu` | `Link.p_min_pu` | The translator derives it from the stored minimum. |
-| `storage` | `p_nom_extendable` | `StorageUnit.p_nom_extendable` | `False` |
+**Each field of a record becomes a PyPSA attribute, travels on, or both.** A field that a
+table of this document names becomes that PyPSA attribute. Each other field that a record
+states goes, unchanged, to the `extensions.json` that the pipeline writes beside the
+network. The report gives one row for each field that travels on, with the rule
+`relayed unchanged to extensions.json, as PyPSA has no attribute for it`.
 
-Two kinds have no reader in this direction:
+These rules apply to a record that a step reads. A step of the fuels reads a `generator` or a
+`load` record only when the network holds its bus, and no other component holds its name. A
+record that no step reads does not travel on. The report gives it a `NOT_MAPPED` row, with the
+note that no mapping reads it.
 
-- `reserve`, which a PLEXOS model puts there. PyPSA has no reserve component.
-- `network`, which holds the PyPSA version and the solved objective.
+These fields become PyPSA attributes. `overnight_cost_per_mw` becomes one only if the record
+also states a `discount_rate`:
 
-One field also has no reader: the `sign` of a `load` record, which is the PyPSA sign
-convention.
+| Kind | Fields |
+| --- | --- |
+| `bus` | `carrier`; `location` too, for a bus of a fuel |
+| `generator`, for a thermal type | `carrier`, `committable`, `efficiency`, `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `marginal_cost_series` |
+| `generator`, for a renewable type | The same fields, other than `committable` and `efficiency` |
+| `generator`, for both | `e_sum_min` and `e_sum_max` apply as [Annual energy bounds](#annual-energy-bounds) gives, and also travel on |
+| `load` | `carrier`, `type`, `sign`; `bus`, `p_set` and `p_set_series` too, for a load of a fuel |
+| `generator`, for a generator of a fuel | `bus`, `carrier`, `p_nom`, `p_nom_extendable`, `p_nom_max`, `marginal_cost`, `p_max_pu` |
+| `line` | `carrier`, `length`, `num_parallel`, `s_nom_extendable` |
+| `controllable_line` | `carrier`, `marginal_cost`, `p_nom_extendable`, `p_max_pu`, `p_min_pu`, `p_max_pu_series` |
+| `storage`, for an `EnergyReservoirStorage` | `carrier`, `p_nom_extendable`, `p_nom_min`, `p_nom_max`, `overnight_cost_per_mw`, `discount_rate`, `lifetime_years`, `build_year`, `inflow_mw`, `inflow_series`, `rating_series`, `cyclic_state_of_charge_per_period` |
+| `storage`, for a `HydroDispatch` | `max_hours`, `state_of_charge_initial`, `inflow_mw`, `inflow_series`, `rating_series` |
+| `conversion` | `bus0`, `bus1`, `bus2`, `efficiency2`, `bus3`, `efficiency3`, `carrier`, `p_nom`, `p_nom_extendable`, `p_nom_max`, `efficiency`, `marginal_cost`, `p_max_pu`, for a record that becomes a link. Refer to [Conversion records → `Link`](#conversion-records--link). |
+| `representative_period` | `weight`, `first_timestamp` and `hours` give the [snapshot weightings](#snapshot-weightings), and the whole record also travels on |
 
-**A record that no mapping reads is dropped, and the report says so.** The translator lists
-each unread record as `NOT_MAPPED` at the end of the mapping step. Thus a reserve that
-travelled from PLEXOS through Sienna stops here, and `decisions.md` names it.
+### Overnight cost
 
-The `storage` kind belongs to an `EnergyReservoirStorage` only. A `HydroDispatch` reads no
-record.
+PyPSA refuses a network in which a component states `overnight_cost` and no
+`discount_rate`, because it cannot annualise the cost. So if a `generator` or a `storage`
+record states `overnight_cost_per_mw` and no `discount_rate`, these things occur:
+
+1. The network leaves out `overnight_cost` of the component.
+2. The field travels on to `extensions.json`.
+3. The report gives a `NOT_MAPPED` row for the field.
+4. The log gives one warning, which names three components and counts the rest.
+
+Examples of fields that travel on: the emission rates, the operating modes, the growth
+limits, the fixed cost and the unit size of a technology, and the price of lost load of a
+bus.
+
+These kinds travel on whole: `reserve`, `constraint`, `network`, `representative_period` and
+`technology`. PyPSA has no reserve component, and a PyPSA `GlobalConstraint` cannot hold a
+constraint record. A `primary_energy` constraint of PyPSA weights the `co2_emissions` of a
+carrier for each MWh of fuel, and a record states the emission rate of each generator for
+each MWh of electricity.
+
+A record that names a companion parquet travels on with the parquet.
+
+**A record that no mapping reads is dropped, and the report says so.** The run lists each
+unread record as `NOT_MAPPED` at the end of the last step.
+
+**A field that a mapping reads a record for, but neither maps nor relays, is dropped, and the
+report says so.** The run lists each such field as `NOT_MAPPED`, and the log names at most
+three. The steps of this pipeline relay every field that they do not map, so this report
+finds a fault in a step, for example in a project plugin.
 
 ## Round-trip asymmetries
 
@@ -499,6 +736,13 @@ values stay in the HDF5 companion, and the report says nothing about them.
 charge cost and a discharge cost. The translator reads the discharge cost, and the charge
 cost does not reach the network. No report row records it.
 
+**A line that loses energy or costs money and flows both ways.** The translator writes it as
+two one-way links. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link).
+A PyPSA network that goes out to Sienna and comes back therefore comes back with two links in
+place of one. The reverse link loses and pays as the forward link does. A Sienna system from
+OSeMOSYS states the loss of the flow back in the `operating_modes` of the `controllable_line`
+record, and that record travels on to the PyPSA sidecar.
+
 **The cyclic state of charge.** Sienna has no cyclic flag, so the opposite direction states
 the state as a large `energy_shortage_cost`. This translator reads any
 `energy_shortage_cost` above zero as cyclic. A system that did not come from PyPSA can
@@ -524,7 +768,7 @@ name one.
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | `TwoTerminalGenericHVDCLine.active_power_limits_to`, and both reactive power limits | PyPSA holds one capacity on a link. The to-end limit is lost. |
 | A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
-| A reserve of any type | PyPSA has no reserve component. A reserve in the sidecar is reported as dropped. |
+| A reserve of any type | PyPSA has no reserve component. A reserve record in the sidecar travels on to the PyPSA sidecar. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
 
 ## What the report tells you
@@ -534,10 +778,11 @@ appear.
 
 | Kind | Meaning |
 | --- | --- |
-| `VALUE_DERIVED` | The translator wrote the value from your data. The row gives the formula. |
+| `VALUE_DERIVED` | The translator wrote the value from your data. The row gives the formula. A field of the sidecar that travels on to the PyPSA sidecar gets this kind too. |
 | `TRANSLATOR_DEFAULT_APPLIED` | Sienna held no such value. The row gives the default and says why. |
-| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, and a sidecar record that no mapping read. |
+| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, an annual energy bound that does not apply, a sidecar record that no mapping read, and a sidecar field that no mapping maps or relays. |
 
-`COMPONENT_SKIPPED` never appears in this direction. The translator leaves out no component.
+`COMPONENT_SKIPPED` appears only for a representative period that cannot weight its
+snapshots. The translator leaves out no component.
 A value that it cannot use stops the run instead.
 [Across all components](#across-all-components) names each such value.
