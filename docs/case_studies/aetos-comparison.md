@@ -97,8 +97,9 @@ that the pipelines wrote.
 | 4. PyPSA, with one bus for each electricity fuel and the import generators | 5.54311 × 10⁹ USD | 4,140.2 TWh | 376.9 TWh | 1,702.1 Mt | 546.0 TWh | 756.3 TWh | 2,367.5 MWh |
 | Published | none | 4,102.8 TWh | 389.5 TWh | 1,459.1 Mt | 547.9 TWh | 568.2 TWh | none |
 
-The Sienna dispatch of step 0 has no import generators. The Sienna dispatch of step 4 holds them
-too. It gives 1.53338 × 10⁹ USD, 3,732.6 TWh, 814.7 TWh of trade and 845.5 Mt.
+The Sienna dispatch of step 0 has no import generators. A Sienna dispatch of the whole
+translation, which holds the 21 import generators, gives 1.53338 × 10⁹ USD, 3,732.6 TWh,
+814.7 TWh of trade and 845.5 Mt.
 
 What each step shows:
 

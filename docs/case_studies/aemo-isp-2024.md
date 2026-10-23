@@ -243,7 +243,9 @@ That run writes `psi/portfolio.json`, the base system beside it, and
 `psi/portfolio_series.json` holding the profiles the envelope cannot carry.
 
 Then select `solve`, answer `sienna-investments` at the model type, and give it
-`psi/portfolio.json`. A PLEXOS model states no portfolio-wide discount rate, so give one at
+`psi/portfolio.json`. Answer `Balance model?` with `single-region`, `multi-region` or `nodal`,
+and `Investment treatment?` with `continuous` or `integer`. `integer` builds whole units only,
+which is slower. A PLEXOS model states no portfolio-wide discount rate, so give one at
 the discount rate prompt; a rate of zero is refused, because the capital recovery factor
 divides by it.
 
