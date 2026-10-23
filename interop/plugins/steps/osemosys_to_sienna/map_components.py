@@ -28,6 +28,7 @@ from interop.plugins.steps.osemosys_to_sienna.map_buses import OsemosysToSiennaM
 from interop.plugins.steps.osemosys_to_sienna.map_conversions import (
     OsemosysToSiennaMapConversions,
 )
+from interop.plugins.steps.osemosys_to_sienna.map_fuels import OsemosysToSiennaMapFuels
 from interop.plugins.steps.osemosys_to_sienna.map_generators import (
     OsemosysToSiennaMapGenerators,
 )
@@ -81,6 +82,7 @@ class OsemosysToSiennaMapComponents(TranslationStep):
             OsemosysToSiennaMapConversions(
                 _scoped(recorder, OsemosysToSiennaMapConversions.step_name)
             ),
+            OsemosysToSiennaMapFuels(_scoped(recorder, OsemosysToSiennaMapFuels.step_name)),
             OsemosysToSiennaMapPolicies(_scoped(recorder, OsemosysToSiennaMapPolicies.step_name)),
             OsemosysToSiennaReportLeftOut(
                 _scoped(recorder, OsemosysToSiennaReportLeftOut.step_name)

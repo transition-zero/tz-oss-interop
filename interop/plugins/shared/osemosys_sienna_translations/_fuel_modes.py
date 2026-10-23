@@ -112,6 +112,8 @@ LINK = "link"
 EXPORT = "export"
 # A PyPSA Link of this hop holds bus0, bus1, bus2 and bus3.
 MAX_LINK_FUELS = 4
+# An export puts out nothing, so its Link leaves bus1 empty.
+MAX_EXPORT_FUELS = MAX_LINK_FUELS - 1
 
 _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
@@ -154,6 +156,11 @@ MANY_FUELS_SKIP = _build_skip(
     f"take in and put out more than {MAX_LINK_FUELS} fuels",
     f"a link of this translation joins {MAX_LINK_FUELS} buses at most, so the mode has no "
     "component",
+)
+MANY_EXPORT_FUELS_SKIP = _build_skip(
+    f"export more than {MAX_EXPORT_FUELS} fuels",
+    f"an export puts out nothing, so a link of this translation holds {MAX_EXPORT_FUELS} of its "
+    "inputs at most, at bus0, bus2 and bus3, and the mode has no component",
 )
 NO_CAPACITY_SKIP = _build_skip(
     "have no residual capacity in the operations year, and the model builds none at no cost",
@@ -462,6 +469,10 @@ _SKIP_RULES = (
     SkipRule(_express_has_buses(), NO_BUS_SKIP),
     SkipRule((pl.col(ROLE) != SUPPLY) | (pl.col(OUTPUTS).list.len() == 1), SEVERAL_OUTPUTS_SKIP),
     SkipRule(_express_fuel_count() <= MAX_LINK_FUELS, MANY_FUELS_SKIP),
+    SkipRule(
+        (pl.col(ROLE) != EXPORT) | (_express_fuel_count() <= MAX_EXPORT_FUELS),
+        MANY_EXPORT_FUELS_SKIP,
+    ),
     SkipRule(_express_has_capacity(), NO_CAPACITY_SKIP),
     SkipRule(pl.col(E_MAX_MWH).is_null() | (pl.col(E_MAX_MWH) > 0), CLOSED_SKIP),
 )
