@@ -12,7 +12,7 @@ that is sink formatting.
 from __future__ import annotations
 
 import uuid as _uuid
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -26,6 +26,7 @@ from interop.plugins.shared.power_simulations_schema import (
     PSLinearFunctionData,
 )
 from interop.plugins.shared.sienna_constants import (
+    SYSTEM_BASE_MVA,
     ACBusType,
     SiennaACBusCol,
     SiennaArcCol,
@@ -53,12 +54,16 @@ _BUS_FK_DERIVATION = "integer bus id -> bus uuid"
 _ARC_FK_DERIVATION = "integer arc id -> arc uuid"
 _FUEL_RENAME_DERIVATION = "fuel_type -> fuel (field rename)"
 _PER_UNIT_SCALING_DERIVATION = "natural-unit MW / base_power MVA -> per-unit for PS.jl"
+_SYSTEM_BASE_SCALING_DERIVATION = (
+    f"natural-unit MW / system base {SYSTEM_BASE_MVA:g} MVA -> per-unit for PS.jl"
+)
 _THERMAL_MUST_RUN_DEFAULT = False
 _THERMAL_TIME_AT_STATUS_DEFAULT = 10000.0
 _RENEWABLE_POWER_FACTOR_DEFAULT = 1.0
 
 # Per-unit fields by component type: (scalar_fields, dict_fields).
 # PS.jl stores all :mva-tagged fields divided by the component's own base_power.
+# A generator rating is already per unit of base_power in SiennaSchemas, so it is not divided.
 _PER_UNIT_FIELDS: dict[SiennaComponent, tuple[tuple[str, ...], tuple[str, ...]]] = {
     SiennaComponent.POWER_LOAD: (
         ("active_power", "max_active_power", "reactive_power", "max_reactive_power"),
@@ -69,19 +74,19 @@ _PER_UNIT_FIELDS: dict[SiennaComponent, tuple[tuple[str, ...], tuple[str, ...]]]
         (),
     ),
     SiennaComponent.THERMAL_STANDARD: (
-        ("active_power", "reactive_power", "rating"),
+        ("active_power", "reactive_power"),
         ("active_power_limits", "reactive_power_limits", "ramp_limits"),
     ),
     SiennaComponent.RENEWABLE_DISPATCH: (
-        ("active_power", "reactive_power", "rating"),
+        ("active_power", "reactive_power"),
         ("reactive_power_limits",),
     ),
     SiennaComponent.RENEWABLE_NON_DISPATCH: (
-        ("active_power", "reactive_power", "rating"),
+        ("active_power", "reactive_power"),
         ("reactive_power_limits",),
     ),
     SiennaComponent.HYDRO_DISPATCH: (
-        ("active_power", "reactive_power", "rating"),
+        ("active_power", "reactive_power"),
         ("active_power_limits", "reactive_power_limits", "ramp_limits"),
     ),
     SiennaComponent.ENERGY_RESERVOIR_STORAGE: (
@@ -90,6 +95,19 @@ _PER_UNIT_FIELDS: dict[SiennaComponent, tuple[tuple[str, ...], tuple[str, ...]]]
         # per-unit of base_power (or hours) in SiennaSchemas — do NOT divide again.
         ("active_power", "reactive_power"),
         (),
+    ),
+}
+
+# PS.jl stores the :mva fields of an HVDC line per unit of the system base, which has no field.
+_SYSTEM_BASE_FIELDS: dict[SiennaComponent, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE: (
+        (SiennaLinkCol.ACTIVE_POWER_FLOW,),
+        (
+            SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
+            SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
+            SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM,
+            SiennaLinkCol.REACTIVE_POWER_LIMITS_TO,
+        ),
     ),
 }
 
@@ -224,19 +242,36 @@ def _assign_line_arc_uuids(state: State, registry: _UuidRegistry, table_key: str
 # ---------------------------------------------------------------------------
 
 
+class _ScaledValue(NamedTuple):
+    """One power field before and after the leg divides it by its base."""
+
+    natural: Any
+    per_unit: Any
+
+
+class _PowerBase(NamedTuple):
+    """The power fields of a component, the MVA they divide by, and the derivation that says so."""
+
+    fields: tuple[tuple[str, ...], tuple[str, ...]]
+    mva: float
+    derivation: str
+
+
 def _record_per_unit_event(
     recorder: ScopedRecorder,
     sienna_type: SiennaComponent,
     component_name: str,
     field: str,
-    natural_val: Any,
-    per_unit_val: Any,
+    value: _ScaledValue,
+    derivation: str,
 ) -> None:
     recorder.append(
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
             sources=[
-                SourceField(Framework.SIENNA, sienna_type.value, component_name, field, natural_val)
+                SourceField(
+                    Framework.SIENNA, sienna_type.value, component_name, field, value.natural
+                )
             ],
             destinations=[
                 DestinationField(
@@ -244,10 +279,10 @@ def _record_per_unit_event(
                     sienna_type.value,
                     component_name,
                     field,
-                    per_unit_val,
+                    value.per_unit,
                 )
             ],
-            derivation=_PER_UNIT_SCALING_DERIVATION,
+            derivation=derivation,
         )
     )
 
@@ -258,37 +293,66 @@ def _normalise_power_fields_to_per_unit(
     component_name: str,
     recorder: ScopedRecorder,
 ) -> None:
-    """Divide all :mva-tagged power fields by base_power before writing to the destination table.
-
-    PS.jl stores every field marked :mva in per-unit (divided by the component's own
-    base_power). SiennaSchemas carries those fields in natural units (MW/MVA), so we must
-    scale them here or PS.jl will multiply by base_power a second time on read, producing
-    values that are base_power× too large (e.g. 200 MW stored as 200 pu → read back as
-    200 × 200 = 40 000 MW).
-    """
+    """Divide the :mva-tagged power fields that SiennaSchemas states in MW by base_power."""
     if sienna_type not in _PER_UNIT_FIELDS:
         return
     base_power = float(dest_row.get(SiennaGeneratorCol.BASE_POWER) or 1.0)
-    scalars, dicts = _PER_UNIT_FIELDS[sienna_type]
+    base = _PowerBase(_PER_UNIT_FIELDS[sienna_type], base_power, _PER_UNIT_SCALING_DERIVATION)
+    _convert_power_fields_to_per_unit(dest_row, sienna_type, component_name, base, recorder)
+
+
+def _normalise_branch_power_fields_to_per_unit(
+    dest_row: dict[str, Any],
+    sienna_type: SiennaComponent,
+    component_name: str,
+    recorder: ScopedRecorder,
+) -> None:
+    """Divide the MW fields of an HVDC line by the system base."""
+    if sienna_type not in _SYSTEM_BASE_FIELDS:
+        return
+    base = _PowerBase(
+        _SYSTEM_BASE_FIELDS[sienna_type], SYSTEM_BASE_MVA, _SYSTEM_BASE_SCALING_DERIVATION
+    )
+    _convert_power_fields_to_per_unit(dest_row, sienna_type, component_name, base, recorder)
+
+
+def _convert_power_fields_to_per_unit(
+    dest_row: dict[str, Any],
+    sienna_type: SiennaComponent,
+    component_name: str,
+    base: _PowerBase,
+    recorder: ScopedRecorder,
+) -> None:
+    scalars, dicts = base.fields
     for field in scalars:
         v = dest_row.get(field)
         if v is None:
             continue
         natural_val = float(v)
-        per_unit_val = natural_val / base_power
+        per_unit_val = natural_val / base.mva
         dest_row[field] = per_unit_val
         _record_per_unit_event(
-            recorder, sienna_type, component_name, field, natural_val, per_unit_val
+            recorder,
+            sienna_type,
+            component_name,
+            field,
+            _ScaledValue(natural_val, per_unit_val),
+            base.derivation,
         )
     for field in dicts:
         v = dest_row.get(field)
         if not isinstance(v, dict):
             continue
         natural_dict = {k: float(w) for k, w in v.items()}
-        per_unit_dict = {k: w / base_power for k, w in natural_dict.items()}
+        per_unit_dict = {k: w / base.mva for k, w in natural_dict.items()}
         dest_row[field] = per_unit_dict
         _record_per_unit_event(
-            recorder, sienna_type, component_name, field, natural_dict, per_unit_dict
+            recorder,
+            sienna_type,
+            component_name,
+            field,
+            _ScaledValue(natural_dict, per_unit_dict),
+            base.derivation,
         )
 
 
@@ -921,6 +985,7 @@ def _map_arc_backed_component(
             out[PowerSimulationsCol.LOSS] = _convert_hvdc_loss(
                 out.get(SiennaLinkCol.LOSS), sienna_type.value, comp_name, recorder
             )
+        _normalise_branch_power_fields_to_per_unit(out, sienna_type, comp_name, recorder)
 
         record_arc_backed_translation(
             recorder, sienna_type.value, comp_name, comp_id, comp_uuid, arc_id, arc_uuid
