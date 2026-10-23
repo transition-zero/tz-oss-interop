@@ -2,10 +2,10 @@
 
 Column-name constants and the full suite of Pydantic output models live here.
 Each model mirrors the PS.jl JSON structure directly so that ``model_dump()``
-produces valid PS.jl output.  ``model_serializer`` on each model renames Python
-field names (``metadata_``, ``type_``, ``from_``, ``to_``) to their PS.jl JSON
-equivalents (``__metadata__``, ``type``, ``from``, ``to``), avoiding ``by_alias``
-throughout the pipeline.
+produces valid PS.jl output.  An alias generator renames Python field names
+(``metadata_``, ``type_``, ``from_``, ``to_``) to their PS.jl JSON equivalents
+(``__metadata__``, ``type``, ``from``, ``to``), and ``serialize_by_alias`` applies
+them on every dump.
 
 Component models expose a ``from_row(row)`` classmethod that injects the
 ``metadata_`` and ``internal`` envelope fields from the destination-table row.
@@ -20,13 +20,28 @@ import uuid as _uuid
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from interop.plugins.shared.sienna_constants import ACBusType, SiennaComponent, SiennaUnitSystem
 
 PS_MODULE = "PowerSystems"
 IS_MODULE = "InfrastructureSystems"
 DATA_FORMAT_VERSION = "5.0.0"
+METADATA_KEY = "__metadata__"
+
+
+def _build_json_name(field_name: str) -> str:
+    if field_name == "metadata_":
+        return METADATA_KEY
+    return field_name.removesuffix("_")
+
+
+_ALIAS_CONFIG = ConfigDict(
+    alias_generator=_build_json_name,
+    validate_by_name=True,
+    validate_by_alias=True,
+    serialize_by_alias=True,
+)
 
 
 def get_new_uuid() -> str:
@@ -99,15 +114,9 @@ class PSOutputType(StrEnum):
 class _PSMeta(BaseModel):
     """``__metadata__`` object for PS.jl components with a simple type tag."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = _ALIAS_CONFIG
     module: str
-    type_: str = Field(validation_alias="type")
-
-    @model_serializer(mode="wrap")
-    def _serialize(self, handler: Any, info: Any) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        data["type"] = data.pop("type_")
-        return data
+    type_: str
 
 
 class _PSParameterizedMeta(_PSMeta):
@@ -143,20 +152,12 @@ class _PSInternal(BaseModel):
 
 
 class _MetadataMixin:
-    """Mixin: serialises ``metadata_`` → ``__metadata__`` in ``model_dump()``.
+    """Mixin: applies the alias config so ``metadata_`` dumps as ``__metadata__``.
 
-    Mix in alongside ``BaseModel`` to get the rename for free; subclasses declare
-    their own typed ``metadata_`` field.  ``PSArc`` is the one exception — it
-    overrides ``_serialize`` to also rename ``from_``/``to_``.
+    Mix in alongside ``BaseModel``; subclasses declare their own typed ``metadata_`` field.
     """
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    @model_serializer(mode="wrap")
-    def _serialize(self, handler: Any, info: Any) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        data["__metadata__"] = data.pop("metadata_")
-        return data
+    model_config = ConfigDict(**_ALIAS_CONFIG, extra="ignore")
 
 
 # ---------------------------------------------------------------------------
@@ -351,16 +352,8 @@ class PSArc(PSComponentBase):
     """PS.jl ``Arc`` component."""
 
     ps_component_type: ClassVar[str] = SiennaComponent.ARC
-    from_: _PSUuidRef = Field(validation_alias="from")
-    to_: _PSUuidRef = Field(validation_alias="to")
-
-    @model_serializer(mode="wrap")
-    def _serialize(self, handler: Any, info: Any) -> dict[str, Any]:
-        data: dict[str, Any] = handler(self)
-        data["__metadata__"] = data.pop("metadata_")
-        data["from"] = data.pop("from_")
-        data["to"] = data.pop("to_")
-        return data
+    from_: _PSUuidRef
+    to_: _PSUuidRef
 
 
 class PSThermalStandard(PSComponentBase):
