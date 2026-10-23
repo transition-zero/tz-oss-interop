@@ -10,23 +10,25 @@ from interop.core.pipeline import State, Validator
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.validators.plexos._property_bounds import (
     PropertyBoundCheck,
-    check_property_bounds,
-    negative,
-    outside_percent,
+    build_non_negative_check,
+    build_percent_range_check,
+    report_property_bounds,
 )
 
 _BATTERY_CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(PlexosProperty.MAX_POWER, "it is a power"),
-    negative(PlexosProperty.CAPACITY, "it is an energy"),
-    outside_percent(PlexosProperty.CHARGE_EFFICIENCY, "it is a share of what goes in"),
-    outside_percent(PlexosProperty.DISCHARGE_EFFICIENCY, "it is a share of what comes out"),
-    outside_percent(PlexosProperty.INITIAL_SOC, "it is a share of the capacity"),
+    build_non_negative_check(PlexosProperty.MAX_POWER, "it is a power"),
+    build_non_negative_check(PlexosProperty.CAPACITY, "it is an energy"),
+    build_percent_range_check(PlexosProperty.CHARGE_EFFICIENCY, "it is a share of what goes in"),
+    build_percent_range_check(
+        PlexosProperty.DISCHARGE_EFFICIENCY, "it is a share of what comes out"
+    ),
+    build_percent_range_check(PlexosProperty.INITIAL_SOC, "it is a share of the capacity"),
 )
 
 _STORAGE_CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(PlexosProperty.MAX_VOLUME, "it is a volume"),
-    negative(PlexosProperty.INITIAL_VOLUME, "it is a volume"),
-    negative(PlexosProperty.NATURAL_INFLOW, "it is a rate"),
+    build_non_negative_check(PlexosProperty.MAX_VOLUME, "it is a volume"),
+    build_non_negative_check(PlexosProperty.INITIAL_VOLUME, "it is a volume"),
+    build_non_negative_check(PlexosProperty.NATURAL_INFLOW, "it is a rate"),
 )
 
 
@@ -43,5 +45,5 @@ class PlexosStorageUnits(Validator):
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def validate(self, state: State, params: BaseModel | None) -> None:
-        check_property_bounds(self, state, PlexosClass.BATTERY, _BATTERY_CHECKS)
-        check_property_bounds(self, state, PlexosClass.STORAGE, _STORAGE_CHECKS)
+        report_property_bounds(self, state, PlexosClass.BATTERY, _BATTERY_CHECKS)
+        report_property_bounds(self, state, PlexosClass.STORAGE, _STORAGE_CHECKS)

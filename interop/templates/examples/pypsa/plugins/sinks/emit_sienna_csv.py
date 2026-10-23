@@ -43,11 +43,11 @@ class EmitSiennaCsv(Sink):
         for component, table in state.destination_tables.items():
             if component in _AUX_TABLES or table.height == 0:
                 continue
-            csv = _flatten_structs(table).write_csv()
+            csv = _reshape_structs_into_columns(table).write_csv()
             self._fs.write_bytes(params.output_dir / f"{component}.csv", csv.encode("utf-8"))
 
 
-def _flatten_structs(table: pl.DataFrame) -> pl.DataFrame:
+def _reshape_structs_into_columns(table: pl.DataFrame) -> pl.DataFrame:
     """Recursively unnest struct columns into dotted column names until the frame is flat."""
     while True:
         struct_columns = [

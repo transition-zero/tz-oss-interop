@@ -85,14 +85,14 @@ def build_network(
     network = pypsa.Network()
     metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
     if metadata is not None and metadata.height > 0:
-        network.set_snapshots(list(_snapshots(metadata)))
+        network.set_snapshots(list(_build_snapshots(metadata)))
     buses = state.destination_tables.get(PyPSADestinationTable.BUSES)
     generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
     storage_units = state.destination_tables.get(PyPSADestinationTable.STORAGE_UNITS)
     loads = state.destination_tables.get(PyPSADestinationTable.LOADS)
     lines = state.destination_tables.get(PyPSADestinationTable.LINES)
     links = state.destination_tables.get(PyPSADestinationTable.LINKS)
-    referenced = _referenced_bus_names(
+    referenced = _build_referenced_bus_names(
         [
             (generators, [PyPSAGeneratorCol.BUS]),
             (storage_units, [PyPSAStorageUnitCol.BUS]),
@@ -109,11 +109,11 @@ def build_network(
     _add_links(network, links)
     cache = series_cache if series_cache is not None else {}
     if metadata is not None and metadata.height > 0:
-        _attach_time_series(network, metadata, state, sample, cache)
+        _add_time_series(network, metadata, state, sample, cache)
     return network
 
 
-def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
+def _build_snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
     first = metadata.row(0, named=True)
     return pd.date_range(
         start=pd.Timestamp(first[ReverseTimeSeriesMetadataCol.INITIAL_TIMESTAMP]),
@@ -122,7 +122,7 @@ def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
     )
 
 
-def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -> set[str]:
+def _build_referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -> set[str]:
     """Collect bus names referenced by component tables, one (table, bus columns) per entry."""
     names: set[str] = set()
     for frame, columns in tables:
@@ -352,7 +352,7 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
     )
 
 
-def _attach_time_series(
+def _add_time_series(
     network: pypsa.Network,
     metadata: pl.DataFrame,
     state: State,
@@ -364,14 +364,16 @@ def _attach_time_series(
         PyPSADestinationTable.STORAGE_UNITS: network.storage_units_t,
         PyPSADestinationTable.LOADS: network.loads_t,
     }
-    for (table, attribute), by_component in _columns_by_attribute(
+    for (table, attribute), by_component in _build_columns_by_attribute(
         metadata, state, sample, series_cache
     ).items():
         target: dict[str, Any] = accessor[table]
-        target[attribute] = _joined(target[attribute], by_component, network.snapshots, attribute)
+        target[attribute] = _build_table_with_columns(
+            target[attribute], by_component, network.snapshots, attribute
+        )
 
 
-def _columns_by_attribute(
+def _build_columns_by_attribute(
     metadata: pl.DataFrame,
     state: State,
     sample: str | None,
@@ -390,7 +392,7 @@ def _columns_by_attribute(
         component = row[ReverseTimeSeriesMetadataCol.COMPONENT_NAME]
         cache_key = (owner_type, series_name, sample)
         if cache_key not in series_cache:
-            series_cache[cache_key] = _collect_series_by_component(
+            series_cache[cache_key] = _build_series_by_component(
                 state.source_time_series[(owner_type, series_name)], sample
             )
         scaling = row[ReverseTimeSeriesMetadataCol.SCALING_FACTOR]
@@ -402,11 +404,11 @@ def _columns_by_attribute(
             row[ReverseTimeSeriesMetadataCol.ATTRIBUTE],
         )
         held = columns.setdefault(key, {}).get(component)
-        columns[key][component] = scaled if held is None else _compound(held, scaled)
+        columns[key][component] = scaled if held is None else _build_compounded_series(held, scaled)
     return columns
 
 
-def _joined(
+def _build_table_with_columns(
     frame: pd.DataFrame,
     by_component: dict[str, FloatArray],
     snapshots: pd.Index,
@@ -421,7 +423,9 @@ def _joined(
     decides whether the numbers round.
     """
     compounded = {
-        name: _compound(frame[name].to_numpy(), values) if name in frame.columns else values
+        name: _build_compounded_series(frame[name].to_numpy(), values)
+        if name in frame.columns
+        else values
         for name, values in by_component.items()
     }
     added = pd.DataFrame(compounded, index=snapshots)
@@ -431,13 +435,13 @@ def _joined(
     return added if kept.columns.empty else pd.concat([kept, added], axis=1)
 
 
-def _compound(held: FloatArray, scaled: FloatArray) -> FloatArray:
+def _build_compounded_series(held: FloatArray, scaled: FloatArray) -> FloatArray:
     if held.shape != scaled.shape:
         raise ValueError(f"cannot compound series of lengths {held.size} and {scaled.size}")
     return held * scaled
 
 
-def _collect_series_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, FloatArray]:
+def _build_series_by_component(frame: pl.LazyFrame, sample: str | None) -> dict[str, FloatArray]:
     """One sample's values of a staged series, one array per component, in snapshot order.
 
     Filtering to the sample first reads only the rows one network needs off disk, never the

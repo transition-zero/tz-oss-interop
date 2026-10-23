@@ -10,13 +10,13 @@ from interop.core.pipeline import State, Validator
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.validators.plexos._property_bounds import (
     PropertyBoundCheck,
-    check_property_bounds,
-    negative,
+    build_non_negative_check,
+    report_property_bounds,
 )
 
 _CHECKS: tuple[PropertyBoundCheck, ...] = (
-    negative(PlexosProperty.LOAD, "it is a demand"),
-    negative(PlexosProperty.VOLL, "it is a price"),
+    build_non_negative_check(PlexosProperty.LOAD, "it is a demand"),
+    build_non_negative_check(PlexosProperty.VOLL, "it is a price"),
 )
 
 
@@ -32,5 +32,5 @@ class PlexosLoads(Validator):
     params_schema: ClassVar[type[BaseModel] | None] = None
 
     def validate(self, state: State, params: BaseModel | None) -> None:
-        check_property_bounds(self, state, PlexosClass.REGION, _CHECKS)
-        check_property_bounds(self, state, PlexosClass.NODE, _CHECKS)
+        report_property_bounds(self, state, PlexosClass.REGION, _CHECKS)
+        report_property_bounds(self, state, PlexosClass.NODE, _CHECKS)

@@ -66,9 +66,9 @@ class EmitSiennaH5Sidecar(Sink):
         association row declares the length of one replication's series, not of all of them.
         """
         with h5py.File(f, "w") as hf:
-            ts_root = _create_time_series_root(hf)
-            for source_key, rows in _rows_by_source_key(state).items():
-                _write_source_key(ts_root, rows, _staged_series(state, source_key), sample)
+            ts_root = _add_time_series_root(hf)
+            for source_key, rows in _build_rows_by_source_key(state).items():
+                _write_source_key(ts_root, rows, _get_staged_series(state, source_key), sample)
 
 
 def _write_source_key(
@@ -77,7 +77,7 @@ def _write_source_key(
     """Write one staged series a batch of components at a time, so no batch outlives its write."""
     _reject_unsampled_ensemble(frame, sample)
     sampled = filter_to_sample(frame, sample)
-    pending = _rows_by_component_name(rows)
+    pending = _build_rows_by_component_name(rows)
     for batch in list_component_batches(sampled):
         by_component = read_batch_by_component(sampled, batch)
         batch_rows = [row for name in batch for row in pending.pop(name, [])]
@@ -86,14 +86,14 @@ def _write_source_key(
     _write_series_groups(ts_root, unmatched, {})
 
 
-def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def _build_rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     by_name: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         by_name.setdefault(row[SiennaTimeSeriesAssociationCol.COMPONENT_NAME], []).append(row)
     return by_name
 
 
-def _create_time_series_root(hf: h5py.File) -> h5py.Group:
+def _add_time_series_root(hf: h5py.File) -> h5py.Group:
     ts_root = hf.create_group(_H5_TIME_SERIES_ROOT)
     ts_root.attrs["data_format_version"] = _H5_DATA_FORMAT_VERSION
     ts_root.attrs["compression_enabled"] = _H5_COMPRESSION_ENABLED
@@ -103,7 +103,7 @@ def _create_time_series_root(hf: h5py.File) -> h5py.Group:
     return ts_root
 
 
-def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def _build_rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """The association rows a run writes, gathered under the staged series each one reads.
 
     One series is collected and held at a time, so a system with many source keys never has
@@ -111,12 +111,12 @@ def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, An
     """
     col = SiennaTimeSeriesAssociationCol
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for row in _association_rows(state):
+    for row in _list_association_rows(state):
         grouped.setdefault((row[col.SOURCE_TABLE], row[col.SOURCE_ATTRIBUTE]), []).append(row)
     return grouped
 
 
-def _association_rows(state: State) -> list[dict[str, Any]]:
+def _list_association_rows(state: State) -> list[dict[str, Any]]:
     assoc_df = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
     if assoc_df is None or len(assoc_df) == 0:
         return []
@@ -141,7 +141,7 @@ def _write_series_groups(
         )
 
 
-def _staged_series(state: State, source_key: tuple[str, str]) -> pl.LazyFrame:
+def _get_staged_series(state: State, source_key: tuple[str, str]) -> pl.LazyFrame:
     ts_lf = state.source_time_series.get(source_key)
     if ts_lf is None:
         raise ValueError(
