@@ -35,6 +35,7 @@ STORAGE_UNIT = "storage unit"
 STORE = "store"
 TRANSFORMER = "transformer"
 SHUNT_IMPEDANCE = "shunt impedance"
+CARRIER = "carrier"
 
 COMPONENTS: dict[str, Component] = {
     BUS: Component("buses", "buses"),
@@ -46,6 +47,7 @@ COMPONENTS: dict[str, Component] = {
     STORE: Component("stores", "stores"),
     TRANSFORMER: Component("transformers", "transformers"),
     SHUNT_IMPEDANCE: Component("shunt impedances", "shunt_impedances"),
+    CARRIER: Component("carriers", "carriers"),
 }
 
 PLURAL_FRAMES: dict[str, str] = {
