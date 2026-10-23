@@ -29,7 +29,7 @@ A model in the SiennaSchemas format, for an operational problem.
 _Avoid_: dispatch system, base system, operations system
 
 **Sienna Investments Portfolio**:
-A SiennaSchemas document for a capacity expansion problem. interop writes a Sienna Investments Portfolio. The leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it.
+A SiennaSchemas document for a capacity expansion problem. tz-oss-interop writes a Sienna Investments Portfolio. The leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it.
 _Avoid_: portfolio (alone), investments portfolio, expansion plan, long-term plan
 
 **PLEXOS model**:

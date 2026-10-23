@@ -210,8 +210,9 @@ tables stays as the model states it:
 Of the 213 technologies with no kind, 132 are solar, wind and hydro plants. Their names end in
 `SO00I00`, `WI00I00` and `HY00I00`. The other 81 are gas pipelines between two countries, for
 example `ATNGDEPI0`. A technology with no kind has no Sienna component, even when a row in
-`objects:` gives it a category. Each pipeline becomes `conversion` records of
-`extensions.json`, one for each direction, which the PyPSA network builds as links.
+`objects:` gives it a category. Each mode of a pipeline that passes the checks of the fuel
+modes, for example a capacity in the year, becomes a `conversion` record of `extensions.json`,
+which the PyPSA network builds as a link.
 
 ## Translate the model into a Sienna system
 
@@ -305,7 +306,7 @@ The system holds electricity only. The run of 2026-10-19 writes the other fuels 
 | --- | --- | --- |
 | `bus` named `REGION1/<fuel>` | 420 | One bus for each fuel that a supply, a pipeline or a demand uses: gas, coal, lignite, oil, biomass, uranium and the others |
 | `generator` with a `bus` | 423 | Gas production, LNG imports, coal, oil and uranium supply, and the 16 pipelines that import gas from outside the model in mode 1 |
-| `conversion` on the buses of fuels | 127 | The 66 pipelines with capacity in 2021, one record for each direction, and the 8 LNG export terminals with capacity |
+| `conversion` on the buses of fuels | 127 | One record for each mode of a pipeline or an LNG export terminal that passes the checks of the fuel modes, for example a capacity in 2021 |
 | `load` with a `bus` | 42 | The gas demand of each country that states one, 3,709 TWh in the year |
 
 A supply with no residual capacity and no capital cost, for example coal supply, is
