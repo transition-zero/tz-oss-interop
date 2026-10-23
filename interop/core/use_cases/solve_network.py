@@ -56,7 +56,7 @@ class SolveNetworkUsingPort:
         windows = solve_windows(start, end, request.window, request.look_ahead_days)
         log.info(
             "solving %s across %d %s window(s) with a %d-day look-ahead, requested "
-            "start=%s end=%s unit_commitment=%s",
+            "start=%s end=%s unit_commitment=%s unserved_energy=%s",
             network_path,
             len(windows),
             request.window,
@@ -64,15 +64,24 @@ class SolveNetworkUsingPort:
             request.start,
             request.end,
             request.unit_commitment,
+            request.unserved_energy,
         )
         output_path = request.output_dir / network_path.name
         try:
-            status, objective = self._solver.solve(
-                network_path, output_path, windows, request.unit_commitment
+            outcome = self._solver.solve(
+                network_path,
+                output_path,
+                windows,
+                request.unit_commitment,
+                request.unserved_energy,
             )
         except _UNSOLVABLE_NETWORK_ERRORS as error:
             return _failed_outcome(network_path, error)
-        return SolveResult(status=status, objective=objective)
+        return SolveResult(
+            status=outcome.status,
+            objective=outcome.objective,
+            unserved_energy_mwh=outcome.unserved_energy_mwh,
+        )
 
     def _resolve_bounds(
         self, network_path: Path, start: date | None, end: date | None
@@ -124,7 +133,10 @@ def _combine_outcomes(outcomes: list[SolveResult]) -> SolveResult:
     statuses = {outcome.status for outcome in outcomes}
     objective = sum(outcome.objective for outcome in outcomes)
     status = _OPTIMAL_STATUS if statuses == {_OPTIMAL_STATUS} else ", ".join(sorted(statuses))
-    return SolveResult(status=status, objective=objective)
+    unserved = [o.unserved_energy_mwh for o in outcomes if o.unserved_energy_mwh is not None]
+    return SolveResult(
+        status=status, objective=objective, unserved_energy_mwh=sum(unserved) if unserved else None
+    )
 
 
 def solve_windows(

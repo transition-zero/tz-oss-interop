@@ -6,8 +6,14 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import (
+    HiGHSCrossover,
+    HiGHSPresolve,
+    HiGHSSolver,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 # Sienna's SolverPort reports a run status containing this marker on success.
@@ -21,12 +27,14 @@ _PYPSA_SUCCESS_STATUS = "optimal"
 class ModelType(StrEnum):
     SIENNA = "sienna"
     PYPSA = "pypsa"
+    SIENNA_INVESTMENTS = "sienna-investments"
 
 
 @dataclass
 class SolveResult:
     status: str
     objective: float
+    unserved_energy_mwh: float | None = None
 
     def is_success(self) -> bool:
         normalized = self.status.strip()
@@ -37,7 +45,10 @@ class SolveResult:
 
     def summary(self) -> str:
         icon = "OK" if self.is_success() else "FAILED"
-        return f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        text = f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
+        if self.unserved_energy_mwh is None:
+            return text
+        return f"{text}  unserved_energy={self.unserved_energy_mwh:.6g} MWh"
 
 
 @dataclass
@@ -47,6 +58,7 @@ class SolveSiennaRequest:
     sienna_json_path: Path
     network_model: str = "dcp"
     output_dir: Path | None = None
+    unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
     solver: HiGHSSolver = HiGHSSolver.SIMPLEX
     presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
@@ -81,14 +93,37 @@ class SolveNetworkRequest:
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
     window: SolveWindowLength = SolveWindowLength.MONTH
     look_ahead_days: int = DEFAULT_LOOK_AHEAD_DAYS
+    unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
 
 
-SolveRequest = SolveSiennaRequest | SolveNetworkRequest
+@dataclass
+class SolveExpansionRequest:
+    """A Sienna portfolio expanded by PowerSystemsInvestments.jl.
+
+    ``discount_rate`` outranks the rate the portfolio states, which a portfolio written from
+    a source stating none leaves at zero.
+    """
+
+    portfolio_json_path: Path
+    balance_model: BalanceModel = BalanceModel.MULTI_REGION
+    output_dir: Path | None = None
+    investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS
+    discount_rate: float | None = None
+    solver: HiGHSSolver = HiGHSSolver.SIMPLEX
+    presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
+    run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE
+    time_limit_seconds: float | None = None
+
+
+SolveRequest = SolveSiennaRequest | SolveNetworkRequest | SolveExpansionRequest
 
 
 @runtime_checkable
 class SolveUseCase(Protocol):
     def is_provisioned(self) -> bool:
-        """Report whether the solver runtime is already installed (no side effects)."""
+        """Report whether the dispatch solver runtime is already installed (no side effects)."""
+
+    def is_expansion_provisioned(self) -> bool:
+        """Report whether the expansion runtime is already installed (no side effects)."""
 
     def __call__(self, request: SolveRequest) -> SolveResult: ...

@@ -213,7 +213,7 @@ def _retirement_translations(source: InvestmentsSource) -> list[Translation]:
                         new[R.PLANNED_RETIREMENT_YEAR],
                     )
                 ],
-                derivation="the retirement year the extensions sidecar carries, per device",
+                derivation=source.retirement_derivation,
             )
         ],
     )
@@ -228,10 +228,7 @@ def _retirement_translations(source: InvestmentsSource) -> list[Translation]:
                         old[TECHNOLOGY_NAME], R.RETIREMENT_COST, new[R.RETIREMENT_COST]
                     )
                 ],
-                note=(
-                    "RetirementPotential requires a retirement cost and PyPSA prices no "
-                    "retirement, so retiring a device costs nothing"
-                ),
+                note=source.retirement_cost_note,
             )
         ],
     )

@@ -7,10 +7,15 @@ document primitives it writes through in ``interop_testing.builders.sienna_docum
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import polars as pl
+
 from interop_testing.builders.sienna_documents import (
+    TIME_SERIES_INITIAL_TIME,
+    TIME_SERIES_RESOLUTION_SECONDS,
     ac_bus,
     hydro_generation_cost,
     renewable_generation_cost,
@@ -40,6 +45,8 @@ class SiennaSystemBuilder:
         self._links: list[dict[str, Any]] = []
         self._time_series: list[dict[str, Any]] = []
         self._ext: dict[tuple[str, str], dict[str, Any]] = {}
+        self._kind_records: dict[tuple[str, str], dict[str, Any]] = {}
+        self._companions: dict[str, list[dict[str, Any]]] = {}
         self._area_ids: dict[str, int] = {}
         self._bus_ids: dict[str, int] = {}
         self._arc_by_endpoints: dict[tuple[int, int], int] = {}
@@ -388,6 +395,45 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"ext for {owner_name!r}")
         self._ext.setdefault((owner_type, owner_name), {}).update(ext)
 
+    def add_emission_rate(
+        self, owner_type: str, owner_name: str, pollutant: str, rate: float
+    ) -> None:
+        """Add one pollutant to the generator's ``emission_rates_t_per_mwh`` record field."""
+        self._check_not_saved(f"emission rate for {owner_name!r}")
+        ext = self._ext.setdefault((owner_type, owner_name), {})
+        ext.setdefault("emission_rates_t_per_mwh", {})[pollutant] = rate
+
+    def add_representative_period(
+        self, name: str, first_timestamp: str, hours: int, weight: float
+    ) -> None:
+        """Add a ``representative_period`` record, which no component owns."""
+        self.add_record(
+            "representative_period",
+            name,
+            {"first_timestamp": first_timestamp, "hours": hours, "weight": weight},
+        )
+
+    def add_record(self, kind: str, name: str, fields: dict[str, Any]) -> None:
+        """Add (and merge) the fields of a sidecar record that no component owns."""
+        self._check_not_saved(f"{kind} record {name!r}")
+        self._kind_records.setdefault((kind, name), {}).update(fields)
+
+    def add_companion_series(
+        self, owner_type: str, owner_name: str, field: str, filename: str, values: list[float]
+    ) -> None:
+        """Name a companion parquet in a record, and write one value for each hour into it.
+
+        The value column takes the name of the field without its ``_series`` ending.
+        """
+        self.add_ext(owner_type, owner_name, {field: filename})
+        column = field.removesuffix("_series")
+        start = datetime.fromisoformat(TIME_SERIES_INITIAL_TIME)
+        step = timedelta(seconds=TIME_SERIES_RESOLUTION_SECONDS)
+        self._companions.setdefault(filename, []).extend(
+            {"snapshot": start + index * step, "name": owner_name, column: value}
+            for index, value in enumerate(values)
+        )
+
     def save(self, path: Path) -> None:
         if self._saved:
             raise RuntimeError("System already saved. Cannot call save() twice.")
@@ -409,10 +455,15 @@ class SiennaSystemBuilder:
             sections["links"] = self._links
         if self._time_series:
             sections["time_series"] = self._time_series
-        if self._ext:
+        if self._ext or self._kind_records:
             sections["ext"] = [
                 {"owner_type": owner_type, "owner_name": owner_name, "ext": ext}
                 for (owner_type, owner_name), ext in self._ext.items()
+            ] + [
+                {"kind": kind, "owner_name": name, "ext": ext}
+                for (kind, name), ext in self._kind_records.items()
             ]
         write_sienna_system(path, sections)
+        for filename, rows in self._companions.items():
+            pl.DataFrame(rows).write_parquet(path.parent / filename)
         self._saved = True

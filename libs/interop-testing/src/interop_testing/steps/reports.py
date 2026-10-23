@@ -8,6 +8,8 @@ on it is how a scenario shows a translation lost nothing on the way through.
 from __future__ import annotations
 
 import csv
+import math
+from datetime import datetime
 from pathlib import Path
 
 import polars as pl
@@ -16,6 +18,11 @@ from pytest_bdd import parsers, then
 from interop_testing.files import read_json
 
 _SECTION_PREFIX = "## "
+_VARIABLE_COLUMN = "variable"
+_VALUE_COLUMN = "value"
+_RESULTS_KEY_COLUMNS = ("variable", "component", "category", "timestamp")
+# Two values this close, as a share of the larger, are the same value.
+_RELATIVE_TOLERANCE = 1e-9
 
 
 @then(parsers.parse('the parquet file "{path}" has {count:d} rows'))
@@ -29,6 +36,56 @@ def assert_parquet_columns(path: str, columns: str) -> None:
     expected = [column.strip() for column in columns.split(",")]
     frame = pl.read_parquet(Path(path))
     assert frame.columns == expected, f"expected columns {expected} in {path}, got {frame.columns}"
+
+
+@then(parsers.parse('the results parquet "{path}" has these "{variable}" rows:'))
+def assert_results_rows(path: str, variable: str, datatable: list[list[str]]) -> None:
+    """Compare the rows of one variable in any order. An empty cell is a null, and a timestamp
+    is in ISO form, such as `2030-01-01T00:00:00`."""
+    header, *expected_rows = datatable
+    assert tuple(header) == (*_RESULTS_KEY_COLUMNS, _VALUE_COLUMN), header
+    actual = _read_results_values(path, variable)
+    expected = {tuple(row[:-1]): float(row[-1]) for row in expected_rows}
+    assert actual.keys() == expected.keys(), f"expected {variable} rows {expected}, got {actual}"
+    for key, value in expected.items():
+        assert math.isclose(actual[key], value, rel_tol=_RELATIVE_TOLERANCE), (
+            f"expected {value} for {key}, got {actual[key]}"
+        )
+
+
+@then(parsers.parse('the results parquet "{path}" holds these "{variable}" rows among others:'))
+def assert_results_rows_among_others(path: str, variable: str, datatable: list[list[str]]) -> None:
+    """Find each row of one variable. The parquet can hold other rows of that variable."""
+    header, *expected_rows = datatable
+    assert tuple(header) == (*_RESULTS_KEY_COLUMNS, _VALUE_COLUMN), header
+    actual = _read_results_values(path, variable)
+    for *key, value in expected_rows:
+        assert tuple(key) in actual, f"no {variable} row {key}; got {sorted(actual)}"
+        assert math.isclose(actual[tuple(key)], float(value), rel_tol=_RELATIVE_TOLERANCE), (
+            f"expected {value} for {key}, got {actual[tuple(key)]}"
+        )
+
+
+def _read_results_values(path: str, variable: str) -> dict[tuple[str, ...], float]:
+    """The value of each row of one variable, by its key, failing on a key that two rows hold."""
+    table = pl.read_parquet(Path(path)).filter(pl.col(_VARIABLE_COLUMN).cast(pl.Utf8) == variable)
+    actual = {_build_results_key(row): row[_VALUE_COLUMN] for row in table.iter_rows(named=True)}
+    assert len(actual) == table.height, (
+        f"{table.height} {variable} rows in {path} hold only {len(actual)} keys: {sorted(actual)}"
+    )
+    return actual
+
+
+def _build_results_key(row: dict[str, object]) -> tuple[str, ...]:
+    return tuple(_normalise_key_cell(row[column]) for column in _RESULTS_KEY_COLUMNS)
+
+
+def _normalise_key_cell(cell: object) -> str:
+    if cell is None:
+        return ""
+    if isinstance(cell, datetime):
+        return cell.isoformat()
+    return str(cell)
 
 
 @then(

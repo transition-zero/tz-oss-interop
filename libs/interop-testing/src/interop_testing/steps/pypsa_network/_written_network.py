@@ -113,6 +113,14 @@ class WrittenComponent:
             actual, expected, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE
         ), f"expected {self.kind} {self.name} {attribute} = {expected}, got {actual}"
 
+    def assert_unstated(self, attribute: str) -> None:
+        frame = read_frame(self.path, self.kind)
+        assert self.name in frame.index, f"no {self.kind} {self.name!r} in {self.path}"
+        value = frame.at[self.name, attribute] if attribute in frame.columns else math.nan
+        assert pd.isna(value), (
+            f"expected {self.kind} {self.name} to state no {attribute}, got {value!r}"
+        )
+
     def assert_flag_set(self, attribute: str) -> None:
         assert bool(self.read(attribute)), f"expected {self.kind} {self.name} {attribute} to be set"
 
