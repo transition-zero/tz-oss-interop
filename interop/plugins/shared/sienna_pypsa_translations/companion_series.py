@@ -28,7 +28,7 @@ from interop.plugins.shared.pypsa_time_series import (
 COMPANION_OWNER = "extensions_companion"
 
 # A companion states its values in the unit PyPSA reads, so a column rides with no scaling.
-_COMPANION_SCALING = 1.0
+UNSCALED = 1.0
 
 
 @dataclass(frozen=True)
@@ -49,13 +49,9 @@ def stage_companion_columns(
     state: State,
     kind: ExtensionKind,
     columns: tuple[CompanionColumn, ...],
-    written: set[str],
+    written: dict[str, float],
 ) -> None:
-    """Stage each column the companion holds, and point the components it names at it.
-
-    ``written`` is the components the hop wrote, so a column naming one it left out reaches
-    no metadata row.
-    """
+    """Stage each companion column, for each written component, times its scaling factor."""
     frame = state.source_extension_series.get(kind)
     if frame is None:
         return
@@ -82,7 +78,7 @@ def _staged_column(frame: pl.LazyFrame, column: str) -> pl.LazyFrame:
 
 
 def _companion_metadata(
-    staged: pl.LazyFrame, one: CompanionColumn, written: set[str]
+    staged: pl.LazyFrame, one: CompanionColumn, written: dict[str, float]
 ) -> list[dict[str, Any]]:
     """One metadata row for each component the column names that the hop wrote."""
     named = [name for name in series_components(staged) if name in written]
@@ -96,7 +92,7 @@ def _companion_metadata(
             attribute=one.attribute,
             source_owner_type=COMPANION_OWNER,
             source_series_name=one.column,
-            scaling_factor=_COMPANION_SCALING,
+            scaling_factor=written[name],
             timing=timing,
         )
         for name in named
