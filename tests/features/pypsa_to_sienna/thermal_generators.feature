@@ -21,7 +21,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "operation_cost.fixed" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "operation_cost.start_up" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "operation_cost.shut_down" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 30.0
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 30.0
     # VALUE_DERIVED decisions
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.name` = ccgt_1 | `sienna.ThermalStandard.ccgt_1.name` = ccgt_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.bus` = bus_1 | `sienna.ThermalStandard.ccgt_1.bus_name` = bus_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -29,7 +29,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power` = 100.0 MW | effective_p_nom * p_min_pu (initial dispatch = min operating point) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_max_pu` = 1.0 | `sienna.ThermalStandard.ccgt_1.rating` = 1.0 | p_max_pu (per-unit nameplate rating; typically 1.0) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power_limits` = {'min': 100.0, 'max': 500.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu (static) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.marginal_cost` = 30.0 | `sienna.ThermalStandard.ccgt_1.operation_cost.variable.value_curve.function_data.proportional_term` = 30.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.marginal_cost` = 30.0 | `sienna.ThermalStandard.ccgt_1.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 30.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # USER_CONFIG_DEFAULT_APPLIED decisions (carrier classification according to user defined mapping)
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.type` = ThermalStandard |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.carrier` = CCGT | `sienna.ThermalStandard.ccgt_1.fuel_type` = NATURAL_GAS |  | according to user defined mapping | pypsa-to-sienna | pypsa_to_sienna_map_components |"
