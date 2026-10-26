@@ -24,6 +24,7 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
     And the file "decisions.md" contains "|  | `sienna.ACBus.bus_AL.bustype` = PQ |  | n.buses.control absent; defaulted to PQ | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | sienna_relate_components |"
     And the file "decisions.md" contains "| `sienna.Area.AL` | `sienna.Area.AL.type` = Area | Area |  | pypsa-to-sienna | sienna_relate_components |"
+    And every "ACBus" component in the written Sienna system is valid SiennaSchemas 0.2
 
   Scenario: a classic NETCDF3 network reads back through the filesystem port
     Given a PyPSA network
@@ -50,6 +51,7 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
     When I run translate against "inputs/pv_control.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_1" having "bustype" set to "PV"
     And the file "decisions.md" contains "| `pypsa.Bus.bus_1.control` = PV | `sienna.ACBus.bus_1.bustype` = PV | n.buses.control -> ACBusType |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And every "ACBus" component in the written Sienna system is valid SiennaSchemas 0.2
 
   Scenario: unrecognised control value defaults bustype to PQ
     Given a PyPSA network
