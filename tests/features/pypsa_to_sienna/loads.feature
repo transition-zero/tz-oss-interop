@@ -34,6 +34,9 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
     Then the file "outputs/system.json" parses as JSON with component "PowerLoad" named "load_AL" having "active_power" set to 150.0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "load_AL" having "max_active_power" set to 150.0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "load_AL" having "base_power" set to 150.0
+    And every "PowerLoad" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "load_AL" having "power_units" set to "NATURAL_UNITS"
+    And the file "decisions.md" contains "|  | `sienna.PowerLoad.load_AL.power_units` = NATURAL_UNITS |  | load power values are in MW, so the units are NATURAL_UNITS | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.PowerLoad.load_AL.available` = True |  | PyPSA Load has no active input field; always True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "load_AL" having "bus" set to 1
     And the file "decisions.md" contains "| `pypsa.Load.load_AL.p_set` = 150.0 MW | `sienna.PowerLoad.load_AL.active_power` = 150.0 MW | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -94,5 +97,6 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
     When I run translate against "inputs/load_voll.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 1 components of type "InterruptiblePowerLoad"
     And the file "outputs/system.json" parses as JSON with 0 components of type "PowerLoad"
+    And the file "outputs/system.json" parses as JSON with component "InterruptiblePowerLoad" named "load_AL" having "power_units" set to "NATURAL_UNITS"
     And the file "outputs/system.json" parses as JSON with component "InterruptiblePowerLoad" named "load_AL" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 9000.0
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.value_of_lost_load` = 9000.0 \$/MWh | `sienna.InterruptiblePowerLoad.load_AL.operation_cost.variable.value_curve.function_data.proportional_term` = 9000.0 \$/MWh | the value of lost load its bus carries becomes the LoadCost variable cost curve, so cutting this load costs that much per MWh |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"

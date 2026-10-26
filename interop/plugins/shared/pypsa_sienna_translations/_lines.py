@@ -32,6 +32,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSATimeSeriesCol,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import pypsa_skip_report
+from interop.plugins.shared.pypsa_sienna_translations._units import LINE_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
     FROM_TO_DTYPE,
     MIN_MAX_DTYPE,
@@ -456,6 +457,7 @@ LINE_ANGLE_LIMITS = Translation(
 )
 
 LINE_TRANSLATIONS: list[Translation] = [
+    *LINE_UNIT_TRANSLATIONS,
     LINE_ID,
     LINE_NAME,
     LINE_AVAILABLE,
