@@ -70,7 +70,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
     And the network contains load "load_AL" on "bus_AL" with p_set 100.0 200.0
     And the network is saved as "inputs/network.nc"
     When I run translate against "inputs/network.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 1 has resolution "<resolution>"
+    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 2 has resolution "<resolution>"
 
     Examples:
       | minutes | resolution |

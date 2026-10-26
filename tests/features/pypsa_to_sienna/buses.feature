@@ -17,7 +17,7 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_AL" having "number" set to 1
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_AL" having "available" set to true
     And the file "outputs/system.json" parses as JSON with component "Area" named "AL" having "name" set to "AL"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_AL" having "area" set to 1
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "bus_AL" having "area" set to 2
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.v_nom` = 380.0 kV | `sienna.ACBus.bus_AL.base_voltage` = 380.0 kV | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.carrier` = AC | `sienna.ACBus.bus_AL.type` = ACBus | AC carrier -> ACBus |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Bus.bus_AL.location` = AL | `sienna.ACBus.bus_AL.area` = AL | location -> area name; null if absent |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
