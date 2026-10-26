@@ -88,7 +88,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.nuclear_1.p_nom` = 1000.0 MW | `sienna.ThermalStandard.nuclear_1.active_power_limits` = {'min': 0.0, 'max': 920.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*ts_peak_p_max_pu (time series) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "nuclear_1" attribute "max_active_power" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "nuclear_1" attribute "max_active_power" with values 0.9782608695652174 0.9239130434782608 1.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "nuclear_1" attribute "max_active_power" with values 900.0 850.0 920.0
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 is named "max_active_power"
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 has resolution "PT1H"

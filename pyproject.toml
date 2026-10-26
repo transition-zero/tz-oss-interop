@@ -34,6 +34,7 @@ dependencies = [
     "xarray>=2026.9.0",
     "netcdf4>=1.7.5",
     "h5py>=3.16.0",
+    "infrastore==0.14.1",
     "h5netcdf>=1.8.1",
     "requests>=2.34.2",
     "scipy>=1.11",

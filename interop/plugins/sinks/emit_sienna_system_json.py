@@ -18,20 +18,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaRenewableGeneratorCol,
     SiennaSchemasSystem,
     SiennaThermalGeneratorCol,
-    SiennaTimeSeriesAssociationCol,
 )
 from interop.plugins.sinks._sienna_files import serialise_system_document, validate_refs
 from interop.ports.outbound.filesystem import FilesystemPort, Location
-
-# Internal-only columns in TIME_SERIES_ASSOCIATION that are not part of the JSON schema.
-_TS_ASSOC_INTERNAL_COLS = frozenset(
-    [
-        SiennaTimeSeriesAssociationCol.COMPONENT_NAME,
-        SiennaTimeSeriesAssociationCol.SOURCE_TABLE,
-        SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE,
-        SiennaTimeSeriesAssociationCol.SCALING_FACTOR,
-    ]
-)
 
 
 class EmitSiennaSystemJsonParams(BaseModel):
@@ -53,7 +42,9 @@ class EmitSiennaSystemJson(Sink):
                 f"got {type(params).__name__}"
             )
         payload = self.build_payload(state)
-        serialised = serialise_system_document(payload, None, params.indent)
+        serialised = serialise_system_document(
+            payload[SiennaSchemasSystem.COMPONENTS], [], None, params.indent
+        )
         self._fs.write_bytes(params.output_path, serialised)
 
     @staticmethod
@@ -124,10 +115,6 @@ class EmitSiennaSystemJson(Sink):
             bus_ids,
             arc_ids,
         )
-        ts_associations = EmitSiennaSystemJson._build_time_series_associations(
-            state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
-        )
-
         components: dict[str, Any] = {}
         if area_components:
             components[SiennaComponent.AREA] = area_components
@@ -156,7 +143,6 @@ class EmitSiennaSystemJson(Sink):
 
         return {
             SiennaSchemasSystem.COMPONENTS: components,
-            SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS: ts_associations,
         }
 
     @staticmethod
@@ -272,12 +258,3 @@ class EmitSiennaSystemJson(Sink):
             component[SiennaLineCol.ARC] = arc_ids[endpoints]
             components.append(component)
         return components
-
-    @staticmethod
-    def _build_time_series_associations(
-        ts_df: pl.DataFrame | None,
-    ) -> list[dict[str, Any]]:
-        if ts_df is None:
-            return []
-        emit_cols = [c for c in ts_df.columns if c not in _TS_ASSOC_INTERNAL_COLS]
-        return list(ts_df.select(emit_cols).iter_rows(named=True))

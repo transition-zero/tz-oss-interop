@@ -6,21 +6,24 @@ it, so nothing here reads a source framework.
 
 from __future__ import annotations
 
-import uuid as _uuid
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 import polars as pl
 
-from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
+from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.sienna_constants import (
+    SiennaACBusCol,
     SiennaComponent,
+    SiennaHydroGeneratorCol,
+    SiennaLoadCol,
+    SiennaRenewableGeneratorCol,
+    SiennaStructField,
+    SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
-    time_series_uuid,
 )
-from interop.plugins.shared.translation_runner import Translation
-from interop.ports.outbound.reporting import DestinationField, EventKind, TranslationEvent
 
 # ISO 8601 duration strings for common snapshot intervals (seconds -> string).
 _RESOLUTION_MAP: dict[int, str] = {
@@ -32,37 +35,6 @@ _RESOLUTION_MAP: dict[int, str] = {
 
 DEFAULT_RESOLUTION: str = "PT1H"
 DEFAULT_RESOLUTION_MINUTES: float = 60.0
-
-
-def _build_association_id_events(
-    _old: dict[str, Any], new: dict[str, Any]
-) -> list[TranslationEvent]:
-    col = SiennaTimeSeriesAssociationCol
-    return [
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[
-                DestinationField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.TIME_SERIES_ASSOCIATION,
-                    name=f"{new[col.COMPONENT_NAME]}.{new[col.NAME]}",
-                    attribute=col.ASSOCIATION_ID,
-                    value=new[col.ASSOCIATION_ID],
-                )
-            ],
-            note="assigned by 1-based row position in the time-series association table",
-        )
-    ]
-
-
-TIME_SERIES_ASSOCIATION_ID = Translation(
-    exprs=[
-        pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(
-            SiennaTimeSeriesAssociationCol.ASSOCIATION_ID
-        )
-    ],
-    make_events=_build_association_id_events,
-)
 
 
 @dataclass
@@ -115,6 +87,52 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
     )
 
 
+def _thermal_capacity(component: Mapping[str, Any]) -> float:
+    limits = component[SiennaThermalGeneratorCol.ACTIVE_POWER_LIMITS]
+    return float(limits[SiennaStructField.MAX])
+
+
+def _renewable_capacity(component: Mapping[str, Any]) -> float:
+    return float(component[SiennaRenewableGeneratorCol.RATING])
+
+
+def _load_capacity(component: Mapping[str, Any]) -> float:
+    return float(component[SiennaLoadCol.MAX_ACTIVE_POWER])
+
+
+def _hydro_capacity(component: Mapping[str, Any]) -> float:
+    return float(component[SiennaHydroGeneratorCol.BASE_POWER])
+
+
+_CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
+    SiennaComponent.THERMAL_STANDARD: _thermal_capacity,
+    SiennaComponent.RENEWABLE_DISPATCH: _renewable_capacity,
+    SiennaComponent.RENEWABLE_NON_DISPATCH: _renewable_capacity,
+    SiennaComponent.POWER_LOAD: _load_capacity,
+    SiennaComponent.INTERRUPTIBLE_POWER_LOAD: _load_capacity,
+    SiennaComponent.HYDRO_DISPATCH: _hydro_capacity,
+}
+
+
+def has_series_capacity(owner_type: str) -> bool:
+    """Whether a series capacity is defined for this owner type."""
+    return owner_type in _CAPACITY_BY_OWNER_TYPE
+
+
+def build_capacity_by_owner(
+    owners: Iterable[tuple[str, int]],
+    components_by_type: Mapping[str, Iterable[Mapping[str, Any]]],
+) -> dict[tuple[str, int], float]:
+    """The megawatts one per-unit value of each owner's series stands for, by ``(type, id)``."""
+    wanted = set(owners)
+    return {
+        (owner_type, component[SiennaACBusCol.ID]): _CAPACITY_BY_OWNER_TYPE[owner_type](component)
+        for owner_type in {owner_type for owner_type, _ in wanted}
+        for component in components_by_type.get(owner_type, [])
+        if (owner_type, component[SiennaACBusCol.ID]) in wanted
+    }
+
+
 def ts_association_row(
     *,
     owner_type: str,
@@ -133,8 +151,6 @@ def ts_association_row(
     """
     col = SiennaTimeSeriesAssociationCol
     return {
-        col.TIME_SERIES_UUID: time_series_uuid(owner_type, component_name, series_name),
-        col.TIME_SERIES_TYPE: "SingleTimeSeries",
         col.INITIAL_TIMESTAMP: (
             ts_info.initial_timestamp.isoformat() if ts_info.initial_timestamp is not None else None
         ),
@@ -143,10 +159,6 @@ def ts_association_row(
         col.NAME: series_name,
         col.OWNER_ID: owner_id,
         col.OWNER_TYPE: owner_type,
-        col.OWNER_CATEGORY: "Component",
-        col.FEATURES: "[]",
-        col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-        col.METADATA_UUID: str(_uuid.uuid4()),
         col.COMPONENT_NAME: component_name,
         col.SOURCE_TABLE: source_table,
         col.SOURCE_ATTRIBUTE: source_attribute,

@@ -15,6 +15,9 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 
 FloatArray = NDArray[np.float64]
 
+# What a component with no staged values is written as.
+NO_VALUES: FloatArray = np.empty(0, dtype=np.float64)
+
 # Rows one batch of components holds in memory between its read and its write.
 ROWS_PER_BATCH = 1_000_000
 

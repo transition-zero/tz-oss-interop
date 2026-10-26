@@ -23,7 +23,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
     And the file "decisions.md" contains "| `pypsa.Load.load_AL.loads_t.p_set` | `sienna.PowerLoad.load_AL.max_active_power` = 200.0 MW | peak of n.loads_t.p_set time series |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "load_AL" attribute "max_active_power" with length 2
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "load_AL" attribute "max_active_power" with values 0.5 1.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "load_AL" attribute "max_active_power" with values 100.0 200.0
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
 
   Scenario: load with static p_set and no time series uses p_set for both active and max active power
     Given a PyPSA network
@@ -81,7 +82,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
       | 30      | PT30M      |
       | 60      | PT1H       |
       | 1440    | P1D        |
-      | 10      | PT600S     |
+      | 10      | PT10M      |
 
   Scenario: a load whose bus prices a shortfall becomes the load type a solve may cut
     PyPSA has no field for the price of a shortfall, so it reaches this leg on the bus's
