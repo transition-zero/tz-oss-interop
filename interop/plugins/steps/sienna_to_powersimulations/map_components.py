@@ -1,8 +1,8 @@
 """Step: assign PowerSystems.jl UUIDs and resolve integer FK columns.
 
 All SiennaSchemas integer IDs are replaced with UUID strings. Integer FK columns
-(bus, arc) become UUID columns. The fuel_type column is renamed to fuel on
-ThermalStandard rows. Arc components are derived from line/link topology.
+(bus, arc) become UUID columns. The ThermalStandard status becomes an on/off flag.
+Arc components are derived from line/link topology.
 Operation cost dicts and HVDC loss curves are converted from Sienna format to PS.jl
 format (including nested __metadata__ type tags) with full translation events.
 Top-level component __metadata__ and PS.jl envelope fields are not added here —
@@ -15,6 +15,7 @@ import uuid as _uuid
 from typing import Any, ClassVar
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
@@ -51,7 +52,10 @@ from interop.ports.outbound.reporting import (
 _FK_DERIVATION = "integer id -> uuid"
 _BUS_FK_DERIVATION = "integer bus id -> bus uuid"
 _ARC_FK_DERIVATION = "integer arc id -> arc uuid"
-_FUEL_RENAME_DERIVATION = "fuel_type -> fuel (field rename)"
+_FUEL_DERIVATION = "direct mapping"
+_STATUS_FLAG_DERIVATION = (
+    "operating state -> on/off flag: ONLINE is true; OFFLINE, STARTUP and SHUTDOWN are false"
+)
 _PER_UNIT_SCALING_DERIVATION = "natural-unit MW / base_power MVA -> per-unit for PS.jl"
 _THERMAL_MUST_RUN_DEFAULT = False
 _THERMAL_TIME_AT_STATUS_DEFAULT = 10000.0
@@ -532,7 +536,7 @@ def record_bus_backed_translation(
                 kind=EventKind.VALUE_DERIVED,
                 sources=[
                     SourceField(
-                        Framework.SIENNA, sienna_type, comp_name, SiennaGeneratorCol.FUEL_TYPE, fuel
+                        Framework.SIENNA, sienna_type, comp_name, SiennaGeneratorCol.FUEL, fuel
                     )
                 ],
                 destinations=[
@@ -544,7 +548,7 @@ def record_bus_backed_translation(
                         fuel,
                     )
                 ],
-                derivation=_FUEL_RENAME_DERIVATION,
+                derivation=_FUEL_DERIVATION,
             )
         )
 
@@ -702,8 +706,33 @@ def _map_bus_backed_component(
 
         fuel: str | None = None
         if sienna_type == SiennaComponent.THERMAL_STANDARD:
-            fuel = out.pop(SiennaGeneratorCol.FUEL_TYPE, None)
-            out[PowerSimulationsCol.FUEL] = fuel
+            fuel = out.get(SiennaGeneratorCol.FUEL)
+            status_state = out[SiennaGeneratorCol.STATUS]
+            out[SiennaGeneratorCol.STATUS] = status_state == OperationalStates.ONLINE.value
+            recorder.append(
+                TranslationEvent(
+                    kind=EventKind.VALUE_DERIVED,
+                    sources=[
+                        SourceField(
+                            Framework.SIENNA,
+                            SiennaComponent.THERMAL_STANDARD.value,
+                            comp_name,
+                            SiennaGeneratorCol.STATUS,
+                            status_state,
+                        )
+                    ],
+                    destinations=[
+                        DestinationField(
+                            Framework.POWER_SIMULATIONS,
+                            SiennaComponent.THERMAL_STANDARD.value,
+                            comp_name,
+                            SiennaGeneratorCol.STATUS,
+                            out[SiennaGeneratorCol.STATUS],
+                        )
+                    ],
+                    derivation=_STATUS_FLAG_DERIVATION,
+                )
+            )
             if "must_run" not in out:
                 out["must_run"] = _THERMAL_MUST_RUN_DEFAULT
                 recorder.append(
