@@ -37,6 +37,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import (
+    GENERATOR_UNITS_NOTE,
+    build_power_units_translation,
+)
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     FLAT_TIME_SERIES_EPSILON,
@@ -52,6 +56,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaPrimeMovers,
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
@@ -280,10 +285,18 @@ def _renewable_translations(
             value=0.0,
             note="PyPSA networks rarely model reactive power for generators",
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_MAX_PU,
+        rated(
             dest_col=R.RATING,
-            derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
+            expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
+            unit=UNIT_MW,
+            derivation="effective_p_nom * p_max_pu (nameplate rating, MVA)",
+        ),
+        build_power_units_translation(
+            dest,
+            name_col=PyPSAGeneratorCol.NAME,
+            dest_col=R.POWER_UNITS,
+            units=SiennaUnitSystem.NATURAL_UNITS,
+            note=GENERATOR_UNITS_NOTE,
         ),
         default(
             dest_col=R.POWER_FACTOR,

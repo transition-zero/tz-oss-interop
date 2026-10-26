@@ -98,3 +98,29 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     And the file "decisions.md" contains "| `sienna.Line.line_1.extensions.s_nom_extendable` = True | `pypsa.Line.line_1.s_nom_extendable` = True | extensions.s_nom_extendable (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
     And the file "decisions.md" contains "PyPSA ignores the s_nom of an extendable component"
     And the file "decisions.md" does not contain "PyPSA ignores the p_nom of an extendable component"
+
+  Scenario: a Line states its own base_power, which converts the rating and the impedance
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 10.0 r 0.01 x 0.1
+    And the Line "line_1" has base_power 50.0
+    And the system is saved as "inputs/line_base.json"
+    When I run translate against "inputs/line_base.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" line "line_1" attribute "s_nom" is 500.0
+    And the PyPSA network "outputs/network.nc" line "line_1" attribute "r" is 28.88
+    And the PyPSA network "outputs/network.nc" line "line_1" attribute "x" is 288.8
+
+  Scenario: a Line in NATURAL_UNITS is left out, because the reader converts COMPONENT_BASE only
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the Line "line_1" states power_units NATURAL_UNITS
+    And the system contains a Line "line_2" from "node_a" to "node_b" with rating 5.0
+    And the system is saved as "inputs/line_natural.json"
+    When I run translate against "inputs/line_natural.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 line
+    And the PyPSA network "outputs/network.nc" has no line "line_1"
+    And the PyPSA network "outputs/network.nc" line "line_2" has bus0 "node_a"
+    And the log contains "1 lines state a power basis this reader does not convert, so each is left out"
