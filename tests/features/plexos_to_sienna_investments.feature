@@ -27,6 +27,7 @@ Feature: a PLEXOS expansion plan becomes a Sienna investments portfolio
     When I run plexos-to-sienna-investments against "inputs/model.xml" writing "outputs/portfolio.json"
     Then the file "outputs/portfolio.json" parses as valid JSON
     And the file "outputs/portfolio.json" parses as JSON with 1 component of type "SupplyTechnology"
+    And the written Sienna system has a valid SiennaSchemas 0.2 envelope
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "available" set to true

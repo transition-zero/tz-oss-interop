@@ -25,6 +25,7 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
     And the file "decisions.md" contains "| `sienna.ACBus.bus_AL.area` = AL | `sienna.Area.AL` | one Area per distinct location |  | pypsa-to-sienna | sienna_relate_components |"
     And the file "decisions.md" contains "| `sienna.Area.AL` | `sienna.Area.AL.type` = Area | Area |  | pypsa-to-sienna | sienna_relate_components |"
     And every "ACBus" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the written Sienna system has a valid SiennaSchemas 0.2 envelope
 
   Scenario: a classic NETCDF3 network reads back through the filesystem port
     Given a PyPSA network

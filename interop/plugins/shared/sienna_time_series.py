@@ -13,11 +13,14 @@ from typing import Any
 
 import polars as pl
 
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.sienna_constants import (
+    SiennaComponent,
     SiennaTimeSeriesAssociationCol,
     time_series_uuid,
 )
+from interop.plugins.shared.translation_runner import Translation
+from interop.ports.outbound.reporting import DestinationField, EventKind, TranslationEvent
 
 # ISO 8601 duration strings for common snapshot intervals (seconds -> string).
 _RESOLUTION_MAP: dict[int, str] = {
@@ -29,6 +32,37 @@ _RESOLUTION_MAP: dict[int, str] = {
 
 DEFAULT_RESOLUTION: str = "PT1H"
 DEFAULT_RESOLUTION_MINUTES: float = 60.0
+
+
+def _build_association_id_events(
+    _old: dict[str, Any], new: dict[str, Any]
+) -> list[TranslationEvent]:
+    col = SiennaTimeSeriesAssociationCol
+    return [
+        TranslationEvent(
+            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
+            destinations=[
+                DestinationField(
+                    framework=Framework.SIENNA,
+                    component=SiennaComponent.TIME_SERIES_ASSOCIATION,
+                    name=f"{new[col.COMPONENT_NAME]}.{new[col.NAME]}",
+                    attribute=col.ASSOCIATION_ID,
+                    value=new[col.ASSOCIATION_ID],
+                )
+            ],
+            note="assigned by 1-based row position in the time-series association table",
+        )
+    ]
+
+
+TIME_SERIES_ASSOCIATION_ID = Translation(
+    exprs=[
+        pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(
+            SiennaTimeSeriesAssociationCol.ASSOCIATION_ID
+        )
+    ],
+    make_events=_build_association_id_events,
+)
 
 
 @dataclass
