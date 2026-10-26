@@ -171,7 +171,7 @@ class EmitSiennaSystemJson(Sink):
             name: str = row[SiennaAreaCol.NAME]
             area_id: int = row[SiennaAreaCol.ID]
             area_ids[name] = area_id
-            components.append({SiennaAreaCol.ID: area_id, SiennaAreaCol.NAME: name})
+            components.append(dict(row))
         return components, area_ids
 
     @staticmethod

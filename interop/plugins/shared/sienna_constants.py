@@ -125,6 +125,9 @@ class ACBusType(StrEnum):
 class SiennaAreaCol:
     """Sienna Area destination table column names."""
 
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
+
     ID = "id"
     NAME = "name"
 
@@ -143,6 +146,7 @@ class SiennaLoadCol:
     MAX_ACTIVE_POWER = "max_active_power"
     MAX_REACTIVE_POWER = "max_reactive_power"
     CONFORMITY = "conformity"
+    POWER_UNITS = "power_units"
     # InterruptiblePowerLoad only: the price the solve pays for the load it does serve, which
     # is the only field a PowerLoad does not also carry.
     OPERATION_COST = "operation_cost"
@@ -191,6 +195,8 @@ class SiennaLineCol:
     RATING = "rating"
     RATING_B = "rating_b"
     RATING_C = "rating_c"
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
     ANGLE_LIMITS = "angle_limits"
     BUS0 = "bus0"
     BUS1 = "bus1"
@@ -215,6 +221,8 @@ class SiennaLinkCol:
     REACTIVE_POWER_LIMITS_FROM = "reactive_power_limits_from"
     REACTIVE_POWER_LIMITS_TO = "reactive_power_limits_to"
     LOSS = "loss"
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
     BUS0 = "bus0"
     BUS1 = "bus1"
     SIENNA_TYPE = "sienna_type"
@@ -348,7 +356,7 @@ class LoadConformity(StrEnum):
 
     UNDEFINED = "UNDEFINED"
     CONFORMING = "CONFORMING"
-    NONCONFORMING = "NONCONFORMING"
+    NON_CONFORMING = "NON_CONFORMING"
 
 
 class PrimeMover(StrEnum):
@@ -407,7 +415,7 @@ class ThermalFuel(StrEnum):
     PROPANE = "PROPANE"
     SYNTHESIS_GAS_PETROLEUM_COKE = "SYNTHESIS_GAS_PETROLEUM_COKE"
     WASTE_OIL = "WASTE_OIL"
-    BLASTE_FURNACE_GAS = "BLASTE_FURNACE_GAS"
+    BLAST_FURNACE_GAS = "BLAST_FURNACE_GAS"
     NATURAL_GAS = "NATURAL_GAS"
     OTHER_GAS = "OTHER_GAS"
     AG_BYPRODUCT = "AG_BYPRODUCT"
@@ -419,10 +427,10 @@ class ThermalFuel(StrEnum):
     BLACK_LIQUOR = "BLACK_LIQUOR"
     WOOD_WASTE_LIQUIDS = "WOOD_WASTE_LIQUIDS"
     LANDFILL_GAS = "LANDFILL_GAS"
-    OTHEHR_BIOMASS_GAS = "OTHEHR_BIOMASS_GAS"
+    OTHER_BIOMASS_GAS = "OTHER_BIOMASS_GAS"
     NUCLEAR = "NUCLEAR"
     WASTE_HEAT = "WASTE_HEAT"
-    TIREDERIVED_FUEL = "TIREDERIVED_FUEL"
+    TIRE_DERIVED_FUEL = "TIRE_DERIVED_FUEL"
     COAL = "COAL"
     GEOTHERMAL = "GEOTHERMAL"
     OTHER = "OTHER"
@@ -494,6 +502,7 @@ class SiennaEnergyReservoirStorageCol:
     CONVERSION_FACTOR = "conversion_factor"
     STORAGE_TARGET = "storage_target"
     CYCLE_LIMITS = "cycle_limits"
+    POWER_UNITS = "power_units"
 
 
 class SiennaHydroGeneratorCol:
@@ -559,7 +568,7 @@ class SiennaThermalFuels(StrEnum):
     PROPANE = "PROPANE"
     SYNTHESIS_GAS_PETROLEUM_COKE = "SYNTHESIS_GAS_PETROLEUM_COKE"
     WASTE_OIL = "WASTE_OIL"
-    BLASTE_FURNACE_GAS = "BLASTE_FURNACE_GAS"
+    BLAST_FURNACE_GAS = "BLAST_FURNACE_GAS"
     NATURAL_GAS = "NATURAL_GAS"
     OTHER_GAS = "OTHER_GAS"
     AG_BYPRODUCT = "AG_BYPRODUCT"
@@ -571,10 +580,10 @@ class SiennaThermalFuels(StrEnum):
     BLACK_LIQUOR = "BLACK_LIQUOR"
     WOOD_WASTE_LIQUIDS = "WOOD_WASTE_LIQUIDS"
     LANDFILL_GAS = "LANDFILL_GAS"
-    OTHEHR_BIOMASS_GAS = "OTHEHR_BIOMASS_GAS"
+    OTHER_BIOMASS_GAS = "OTHER_BIOMASS_GAS"
     NUCLEAR = "NUCLEAR"
     WASTE_HEAT = "WASTE_HEAT"
-    TIREDERIVED_FUEL = "TIREDERIVED_FUEL"
+    TIRE_DERIVED_FUEL = "TIRE_DERIVED_FUEL"
     COAL = "COAL"
     GEOTHERMAL = "GEOTHERMAL"
     OTHER = "OTHER"
@@ -614,11 +623,20 @@ class SiennaVariableCostType(StrEnum):
 
 
 class SiennaUnitSystem(StrEnum):
-    """Sienna ``UnitSystem`` for cost curves."""
+    """Sienna ``UnitSystem`` (source: SiennaSchemas): the basis of a component's power fields."""
 
+    COMPONENT_BASE = "COMPONENT_BASE"
     NATURAL_UNITS = "NATURAL_UNITS"
-    SYSTEM_BASE = "SYSTEM_BASE"
-    DEVICE_BASE = "DEVICE_BASE"
+
+
+LINE_UNITS_NOTE = (
+    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
+LOAD_UNITS_NOTE = "load power values are in MW, so the units are NATURAL_UNITS"
+STORAGE_UNITS_NOTE = (
+    "storage rating and limits are per unit on the base_power, so the units are COMPONENT_BASE"
+)
 
 
 class SiennaCurveType(StrEnum):
@@ -650,6 +668,7 @@ FLAT_TIME_SERIES_EPSILON: float = 1e-9
 # Polars Enum dtypes
 BUSTYPE_DTYPE: pl.DataType = pl.Enum([t.value for t in ACBusType])
 LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])
+UNIT_SYSTEM_DTYPE: pl.DataType = pl.Enum([u.value for u in SiennaUnitSystem])
 PRIME_MOVERS_DTYPE: pl.DataType = pl.Enum([p.value for p in SiennaPrimeMovers])
 THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels])
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
@@ -677,6 +696,8 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLineCol.B: FROM_TO_DTYPE,
     SiennaLineCol.G: FROM_TO_DTYPE,
     SiennaLineCol.RATING: pl.Float64,
+    SiennaLineCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaLineCol.BASE_POWER: pl.Float64,
     SiennaLineCol.RATING_B: pl.Float64,
     SiennaLineCol.RATING_C: pl.Float64,
     SiennaLineCol.ANGLE_LIMITS: MIN_MAX_DTYPE,
@@ -712,6 +733,8 @@ SIENNA_SOURCE_BUSES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 AREAS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.ID: pl.Int64,
     SiennaAreaCol.NAME: pl.Utf8,
+    SiennaAreaCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaAreaCol.BASE_POWER: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -725,6 +748,7 @@ LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLoadCol.MAX_ACTIVE_POWER: pl.Float64,
     SiennaLoadCol.MAX_REACTIVE_POWER: pl.Float64,
     SiennaLoadCol.CONFORMITY: LOAD_CONFORMITY_DTYPE,
+    SiennaLoadCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 _SIENNA_COMPONENT_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaComponent])
@@ -763,7 +787,6 @@ TIME_LIMITS_DTYPE: pl.DataType = pl.Struct({"up": pl.Float64, "down": pl.Float64
 FUNCTION_TYPE_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaFunctionType])
 CURVE_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCurveType])
 VARIABLECOST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaVariableCostType])
-UNIT_SYSTEM_DTYPE: pl.DataType = pl.Enum([u.value for u in SiennaUnitSystem])
 COST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCostType])
 
 LINEAR_FUNC_DTYPE: pl.DataType = pl.Struct(
@@ -920,6 +943,7 @@ ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.Dat
     SiennaEnergyReservoirStorageCol.EFFICIENCY: EFFICIENCY_DTYPE,
     SiennaEnergyReservoirStorageCol.REACTIVE_POWER: pl.Float64,
     SiennaEnergyReservoirStorageCol.BASE_POWER: pl.Float64,
+    SiennaEnergyReservoirStorageCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaEnergyReservoirStorageCol.OPERATION_COST: STORAGE_COST_DTYPE,
     SiennaEnergyReservoirStorageCol.CONVERSION_FACTOR: pl.Float64,
     SiennaEnergyReservoirStorageCol.STORAGE_TARGET: pl.Float64,
@@ -953,4 +977,6 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
     SiennaLinkCol.LOSS: IO_CURVE_DTYPE,
+    SiennaLinkCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaLinkCol.BASE_POWER: pl.Float64,
 }

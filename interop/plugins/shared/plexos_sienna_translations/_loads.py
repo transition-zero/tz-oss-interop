@@ -49,11 +49,14 @@ from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
+    LOAD_UNITS_NOTE,
     TIME_SERIES_ASSOCIATION_SCHEMA,
+    UNIT_SYSTEM_DTYPE,
     LoadConformity,
     SiennaComponent,
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
+    SiennaUnitSystem,
     time_series_uuid,
 )
 from interop.plugins.shared.sienna_time_series import TimeSeriesInfo
@@ -734,10 +737,23 @@ LOAD_BASE_POWER = Translation(
     ),
 )
 
+LOAD_POWER_UNITS = Translation(
+    exprs=[
+        pl.lit(SiennaUnitSystem.NATURAL_UNITS, dtype=UNIT_SYSTEM_DTYPE).alias(
+            SiennaLoadCol.POWER_UNITS
+        )
+    ],
+    make_events=lambda old, new: defaulted(
+        [_load_dest(new[LOAD_NAME], SiennaLoadCol.POWER_UNITS, new[SiennaLoadCol.POWER_UNITS])],
+        LOAD_UNITS_NOTE,
+    ),
+)
+
 LOAD_TRANSLATIONS: list[Translation] = [
     LOAD_ID,
     LOAD_NAME_TRANSLATION,
     LOAD_AVAILABLE,
+    LOAD_POWER_UNITS,
     LOAD_BUS_NAME,
     LOAD_ACTIVE_POWER,
     LOAD_REACTIVE_POWER,
