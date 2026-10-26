@@ -21,6 +21,7 @@ Feature: A pull request mutates only the files that it changes
       | interop/di/container.py                      |         |
       | interop/core/__init__.py                     |         |
       | interop/plugins/steps/sienna_relate_components.py |    |
+      | interop/plugins/sinks/_sienna_files.py       |         |
 
   Scenario: no target makes a report that skips the run by choice
     Given a pull request run with no mutation target
