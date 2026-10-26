@@ -46,6 +46,8 @@ class SiennaSystemBuilder:
         self._next_area_id: int = 1
         self._next_bus_id: int = 1
         self._next_component_id: int = 1
+        self._unknown: list[dict[str, Any]] = []
+        self._schema_version: str | None = None
         self._saved: bool = False
 
     def _check_not_saved(self, component_desc: str) -> None:
@@ -62,7 +64,9 @@ class SiennaSystemBuilder:
         area_id = self._next_area_id
         self._next_area_id += 1
         self._area_ids[name] = area_id
-        self._areas.append({"id": area_id, "name": name})
+        self._areas.append(
+            {"id": area_id, "name": name, "base_power": 100.0, "power_units": "NATURAL_UNITS"}
+        )
 
     def add_bus(self, name: str, area: str | None = None) -> None:
         self._check_not_saved(f"bus {name!r}")
@@ -352,6 +356,8 @@ class SiennaSystemBuilder:
                 "rating": p_nom,
                 "rating_from": p_nom,
                 "rating_to": 0.0,
+                "base_power": 100.0,
+                "power_units": "NATURAL_UNITS",
                 "reactive_power_limits_from": {"min": 0.0, "max": 0.0},
                 "reactive_power_limits_to": {"min": 0.0, "max": 0.0},
                 "loss": {
@@ -401,6 +407,19 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"availability for HVDC line {name!r}")
         self._link_by_name(name)["available"] = available
 
+    def remove_generator_field(self, name: str, field: str) -> None:
+        self._check_not_saved(f"removal of {field!r} from {name!r}")
+        del self._generator_by_name(name)[field]
+
+    def add_unknown_component(self, type_name: str, name: str) -> None:
+        """Add a row under a type name that SiennaSchemas does not define."""
+        self._check_not_saved(f"{type_name} {name!r}")
+        self._unknown.append({"sienna_type": type_name, "id": self._next_id(), "name": name})
+
+    def set_schema_version(self, schema_version: str) -> None:
+        self._check_not_saved("a schema_version")
+        self._schema_version = schema_version
+
     def add_time_series(
         self, owner_type: str, owner_name: str, name: str, values: list[float]
     ) -> None:
@@ -431,6 +450,8 @@ class SiennaSystemBuilder:
             sections["lines"] = self._lines
         if self._links:
             sections["links"] = self._links
+        if self._unknown:
+            sections["unknown"] = self._unknown
         if self._time_series:
             sections["time_series"] = self._time_series
         if self._ext:
@@ -438,5 +459,5 @@ class SiennaSystemBuilder:
                 {"owner_type": owner_type, "owner_name": owner_name, "ext": ext}
                 for (owner_type, owner_name), ext in self._ext.items()
             ]
-        write_sienna_system(path, sections)
+        write_sienna_system(path, sections, schema_version=self._schema_version)
         self._saved = True

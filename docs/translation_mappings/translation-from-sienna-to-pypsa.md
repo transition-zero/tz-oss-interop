@@ -85,6 +85,12 @@ An `extensions.json` that a version before the kind-keyed format wrote is a list
 The translator refuses such a file and tells you to write it again. It does not read part of
 it.
 
+The translator checks the system JSON with the `power_openapi_models` SDK. It stops when the
+`schema_version` is on another line or newer than the SDK, or when the envelope breaks the schema.
+It checks each component row and each `time_series_associations` row against its SDK class. It
+leaves out a row that fails, and a whole type that SiennaSchemas does not define, and it names
+a few of them in one warning.
+
 ## Across all components
 
 - **The name is the identifier.** The translator matches a sidecar record to a component by

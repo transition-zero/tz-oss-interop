@@ -437,6 +437,27 @@ def given_thermal_start_stop_costs(
     sienna_system_builder.set_thermal_start_stop_costs(name, start_up, shut_down)
 
 
+@given(parsers.parse('the ThermalStandard "{name}" has no {field}'))
+def given_thermal_standard_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.remove_generator_field(name, field)
+
+
+@given(parsers.parse('the system has a component "{name}" of the unknown type "{type_name}"'))
+def given_system_has_unknown_component(
+    sienna_system_builder: SiennaSystemBuilder, name: str, type_name: str
+) -> None:
+    sienna_system_builder.add_unknown_component(type_name, name)
+
+
+@given(parsers.parse('the system states schema_version "{schema_version}"'))
+def given_system_states_schema_version(
+    sienna_system_builder: SiennaSystemBuilder, schema_version: str
+) -> None:
+    sienna_system_builder.set_schema_version(schema_version)
+
+
 @given(parsers.parse('the system is saved as "{json_path}"'))
 def given_system_is_saved_as(sienna_system_builder: SiennaSystemBuilder, json_path: str) -> None:
     sienna_system_builder.save(Path(json_path))

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from typing import Any
 import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
 
+from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
 from interop.plugins.sinks._sienna_files import serialise_system_document
 from interop_testing.files import read_json
 
@@ -39,9 +41,12 @@ _LINES = "lines"
 _LINKS = "links"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
+_UNKNOWN = "unknown"
 
 
-def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -> None:
+def write_sienna_system(
+    path: Path, sections: dict[str, list[dict[str, Any]]], *, schema_version: str | None = None
+) -> None:
     """Serialise builder sections as a SiennaSchemas system document.
 
     Components are grouped under a ``components`` sub-object mapping each Sienna type name
@@ -53,8 +58,13 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
     storage_file = sienna_h5_filename(path)
-    rows = _build_associations(
-        sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
+    write_system_document(
+        path,
+        components,
+        _build_associations(
+            sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
+        ),
+        schema_version=schema_version,
     )
 
     extensions_file = sienna_extensions_filename(path)
@@ -62,7 +72,29 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
         json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
     )
 
-    path.write_bytes(serialise_system_document(components, rows, storage_file, 2))
+
+def write_system_document(
+    path: Path,
+    components: dict[str, Any],
+    time_series_associations: Sequence[dict[str, Any]] = (),
+    *,
+    schema_version: str | None = None,
+) -> None:
+    """Write ``components`` and association rows as a SiennaSchemas system document.
+
+    The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
+    replaces the SDK's own version in the written file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        serialise_system_document(
+            components, list(time_series_associations), sienna_h5_filename(path), 2
+        )
+    )
+    if schema_version is not None:
+        written = read_json(path)
+        written[SiennaSchemasSystem.SCHEMA_VERSION] = schema_version
+        path.write_text(json.dumps(written, indent=2), encoding="utf-8")
 
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
@@ -119,13 +151,13 @@ def _build_container(
     id_by_owner: dict[tuple[str, str], int] = {}
 
     for area in sections.get(_AREAS, []):
-        components.setdefault("Area", []).append({"id": area["id"], "name": area["name"]})
+        components.setdefault("Area", []).append(area)
 
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS):
+    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]

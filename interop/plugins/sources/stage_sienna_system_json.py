@@ -29,6 +29,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaUnitSystem,
     TimeSeriesAssociationCol,
 )
+from interop.plugins.shared.sienna_document import read_system_document
 from interop.plugins.shared.sienna_time_series import build_capacity_by_owner, has_series_capacity
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import MissingInputError
@@ -82,7 +83,7 @@ class StageSiennaSystemJson(StagesExtensionsSidecar, StagedSource):
         if not self._fs.can_read(params.time_series_h5_path):
             raise MissingInputError(self.name, "HDF5 companion", f"{params.time_series_h5_path}")
         with self._fs.open_read(params.system_json_path) as system_file:
-            system = json.load(system_file)
+            system = read_system_document(system_file)
         with self._fs.open_read(params.time_series_h5_path) as h5_file:
             staged = stage_system(system, h5_file, staging_dir)
         extensions = self._stage_extensions_sidecar(params.extensions_json_path)
