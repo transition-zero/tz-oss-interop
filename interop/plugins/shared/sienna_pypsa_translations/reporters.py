@@ -47,8 +47,8 @@ from interop.plugins.shared.sienna_constants import (
 from interop.ports.outbound.reporting import SourceField
 
 _ACTIVE_POWER_LIMITS_MIN = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MIN}"
-_ACTIVE_POWER_LIMITS_FROM_MAX = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MAX}"
-_ACTIVE_POWER_LIMITS_FROM_MIN = f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.{SiennaStructField.MIN}"
+_RATING_FROM = SiennaLinkCol.RATING_FROM
+_RATING_TO = SiennaLinkCol.RATING_TO
 # How the report names a value that reached this hop in the extensions sidecar rather than
 # in the system JSON, which has no column for any of them.
 _EXTENSIONS = "extensions"
@@ -934,9 +934,9 @@ class LinkReporter(_Reporter):
 
     def record_p_nom(self, name: str, limit_max: float, p_nom: float) -> None:
         self._derived(
-            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW)],
+            sources=[self._source(name, _RATING_FROM, limit_max, UNIT_MW)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM, p_nom, UNIT_MW)],
-            derivation="active_power_limits_from.max",
+            derivation="rating_from",
         )
 
     def record_p_max_pu_from_ext(self, name: str, p_max_pu: float) -> None:
@@ -951,18 +951,18 @@ class LinkReporter(_Reporter):
     ) -> None:
         self._derived(
             sources=[
-                self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW),
+                self._source(name, _RATING_FROM, limit_max, UNIT_MW),
                 self._source(name, _EXT_P_MAX_PU_ATTR, p_max_pu),
             ],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM, p_nom, UNIT_MW)],
-            derivation="active_power_limits_from.max / p_max_pu",
+            derivation="rating_from / p_max_pu",
         )
 
-    def record_p_min_pu(self, name: str, limit_min: float, p_min_pu: float) -> None:
+    def record_p_min_pu(self, name: str, rating_to: float, p_min_pu: float) -> None:
         self._derived(
-            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MIN, limit_min, UNIT_MW)],
+            sources=[self._source(name, _RATING_TO, rating_to, UNIT_MW)],
             destinations=[self._destination(name, PyPSALinkCol.P_MIN_PU, p_min_pu)],
-            derivation="active_power_limits_from.min / p_nom",
+            derivation="-rating_to / p_nom",
         )
 
     def record_p_min_pu_from_ext(self, name: str, p_min_pu: float) -> None:
@@ -975,7 +975,7 @@ class LinkReporter(_Reporter):
     def record_p_min_pu_zero_capacity(self, name: str) -> None:
         self._default_applied(
             destinations=[self._destination(name, PyPSALinkCol.P_MIN_PU, 0.0)],
-            note="zero-capacity link (active_power_limits_from.max = 0); p_min_pu defaults to 0.0",
+            note="zero-capacity link (rating_from = 0); p_min_pu defaults to 0.0",
         )
 
     def record_efficiency(self, name: str, loss_term: float, efficiency: float) -> None:
@@ -1022,7 +1022,7 @@ class LinkReporter(_Reporter):
 
     def record_p_nom_min(self, name: str, limit_max: float, p_nom: float) -> None:
         self._derived(
-            sources=[self._source(name, _ACTIVE_POWER_LIMITS_FROM_MAX, limit_max, UNIT_MW)],
+            sources=[self._source(name, _RATING_FROM, limit_max, UNIT_MW)],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
             derivation=_P_NOM_FLOOR_DERIVATION,
         )
