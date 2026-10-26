@@ -539,7 +539,7 @@ def _generator_cost_events(old: dict[str, Any], _: dict[str, Any]) -> list[Trans
     return [
         cost_event(
             PyPSAGeneratorCol.MARGINAL_COST,
-            "variable.value_curve.function_data.proportional_term",
+            "variable_operation_cost.value_curve.function_data.proportional_term",
             old[PyPSAGeneratorCol.MARGINAL_COST],
             "flat marginal_cost ($/MWh) -> single-segment linear CostCurve",
         ),
@@ -565,7 +565,7 @@ GENERATOR_COST = Translation(
             fixed=pl.lit(0.0),
             shut_down=pl.col(PyPSAGeneratorCol.SHUT_DOWN_COST),
             start_up=pl.col(PyPSAGeneratorCol.START_UP_COST),
-            variable=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
+            variable_operation_cost=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
         )
         .cast(THERMAL_GENERATION_COST_DTYPE)
         .alias(SiennaThermalGeneratorCol.OPERATION_COST)

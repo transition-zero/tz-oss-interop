@@ -310,7 +310,9 @@ def _renewable_cost(dest: DestinationFieldFactory) -> Translation:
         exprs=[
             pl.struct(
                 cost_type=pl.lit(SiennaCostType.RENEWABLE),
-                variable=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
+                variable_operation_cost=variable_cost_curve(
+                    pl.col(PyPSAGeneratorCol.MARGINAL_COST)
+                ),
                 fixed=pl.lit(0.0),
             )
             .cast(RENEWABLE_GENERATION_COST_DTYPE)
@@ -329,7 +331,8 @@ def _renewable_cost(dest: DestinationFieldFactory) -> Translation:
                 destinations=[
                     dest(
                         old[PyPSAGeneratorCol.NAME],
-                        f"{R.OPERATION_COST}.variable.value_curve.function_data.proportional_term",
+                        f"{R.OPERATION_COST}.variable_operation_cost.value_curve"
+                        ".function_data.proportional_term",
                         old[PyPSAGeneratorCol.MARGINAL_COST],
                     )
                 ],
