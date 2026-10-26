@@ -32,7 +32,7 @@ what you get.
 | [`Generator`](#hydro--hydrodispatch), reservoir hydro | `HydroDispatch` |
 | [`Generator` and two `Storage`](#pumped-storage--energyreservoirstorage), pumped storage | One `EnergyReservoirStorage` |
 | [`Battery`](#battery--energyreservoirstorage) | `EnergyReservoirStorage` |
-| [`Fuel`](#fuel) | No component. It names the carrier your mappings file turns into `fuel_type` and `prime_mover_type`, and it sets part of `operation_cost`. |
+| [`Fuel`](#fuel) | No component. It names the carrier your mappings file turns into `fuel` and `prime_mover_type`, and it sets part of `operation_cost`. |
 | [`Emission`](#emission) | No component. It adds a carbon term to `operation_cost`. |
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
 | `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
@@ -67,9 +67,13 @@ what you get.
   dated value is the one in force during that year.
 - **Sienna keeps one value where PLEXOS keeps several.** Refer to
   [Special business rules](#special-business-rules).
-- **Profiles go into the HDF5 companion.** A `Rating` profile, an outage profile and a demand
-  profile all become a `TimeSeriesAssociation` record whose values live in
-  `system_time_series_storage.h5`.
+- **Profiles go into the time-series sidecar.** A `Rating` profile, an outage profile and a demand
+  profile all become a row of `time_series_associations` whose values live in the
+  InfraStore sidecar `system_time_series_storage.h5`.
+- **Each component states its unit basis.** A generator, a load and a `TwoTerminalGenericHVDCLine`
+  state `NATURAL_UNITS`, so each power value is in MW or MVA. A `Line` and an
+  `EnergyReservoirStorage` state `COMPONENT_BASE`, so each of their power values is per unit on
+  its `base_power`. A `Line` states a `base_power` of 100 MVA.
 - **A profile Sienna states no field for goes into a parquet beside the sidecar.** A
   reservoir inflow, a storage unit's units-out derate and the cost a dated `Fuel` makes have
   no Sienna field, static or varying, so each one rides a column of `storage.parquet` or
@@ -79,7 +83,7 @@ what you get.
 
 ## The carrier mappings file
 
-A Sienna generator states a `prime_mover_type`, and a thermal one also states a `fuel_type`.
+A Sienna generator states a `prime_mover_type`, and a thermal one also states a `fuel`.
 Both are closed lists. PLEXOS states neither, so you tell the translator what each of your
 own words becomes. You give one file, at the `User mappings file?` prompt.
 
@@ -203,10 +207,11 @@ connects nothing, so the translator leaves it out and records it.
 | --- | --- | --- | --- |
 | `name` | | `Line.name` | `direct` |
 | `arc` | | The `Arc` of `Node From` and `Node To` | `derived` |
-| `active_power_limits_from` | MW | `(Min Flow, Max Flow)` | `derived` |
-| `active_power_limits_to` | MW | `(Min Flow, Max Flow)` | `derived` |
+| `rating_from` | MW | `Max Flow` | `derived` |
+| `rating_to` | MW | `-Min Flow` where `Min Flow` is negative, else `0.0` | `derived` |
+| `rating` | MW | The larger of `rating_from` and `rating_to` | `derived` |
 | `reactive_power_limits_from` / `_to` | MVAR | `(0.0, 0.0)` | `default` |
-| `loss` | | A zero cost curve, so the line has no loss | `default` |
+| `loss` | | A `LossCurve` with a zero cost curve, so the line has no loss | `default` |
 | `available` | | `True` | `default` |
 | `Wheeling Charge` | | The HVDC type prices no flow. | `dropped` |
 
@@ -222,7 +227,7 @@ mappings file gives that fuel the type `ThermalStandard`.
 | --- | --- | --- | --- |
 | `name` | | `Generator.name` | `direct` |
 | `bus` | | The `Node` of the generator | `direct` |
-| `fuel_type` | | The `Fuel` of the generator, through your mappings file | `mapped by you` |
+| `fuel` | | The `Fuel` of the generator, through your mappings file | `mapped by you` |
 | `prime_mover_type` | | The `Fuel` of the generator, through your mappings file | `mapped by you` |
 | `base_power` | MVA | `Max Capacity × Units`, or the static `Rating` where that is higher | `derived` |
 | `rating` | MVA | `base_power` × the availability, which is 1.0 unless an outage or a `Rating` derates it | `derived` |
@@ -232,9 +237,9 @@ mappings file gives that fuel the type `ThermalStandard`.
 | `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot | `derived` |
 | `time_limits` | h | `Min Up Time` / `Min Down Time` | `direct` |
 | `time_at_status` | h | `10000.0`, because PLEXOS states no prior on-time | `default` |
-| `must_run` | | `False` | `default` |
-| `status` | | `True` | `default` |
-| `operation_cost.variable` | $/MWh | `fuel price × Heat Rate + VO&M Charge`, and the carbon term if there is one | `derived` |
+| `must_run` | | not written | `dropped` |
+| `status` | | `ONLINE` | `default` |
+| `operation_cost.variable_operation_cost` | $/MWh | `fuel price × Heat Rate + VO&M Charge`, and the carbon term if there is one | `derived` |
 | `operation_cost.start_up` | $ | `Start Cost`, the cold start band | `direct` |
 | `operation_cost.shut_down` | $ | `0.0`, because PLEXOS prices only starts | `default` |
 | `operation_cost.fixed` | $ | `0.0` | `default` |
@@ -274,7 +279,7 @@ its category the type `RenewableDispatch`.
 | `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power` | MW | The available capacity | `derived` |
 | `power_factor` | | `1.0` | `default` |
-| `operation_cost.variable` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `reactive_power` / `reactive_power_limits` | MVAR | PLEXOS states no reactive data. | `default` |
 
 A `Rating` profile or a `Rating Factor` profile becomes a `TimeSeriesAssociation` on
@@ -301,7 +306,7 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 | `rating` | MVA | `base_power` × the availability | `derived` |
 | `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power_limits` | MW | `(0, the available capacity)` | `derived` |
-| `operation_cost.variable` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `ramp_limits`, `time_limits`, `status`, `time_at_status` | | The type carries them, and the chain supplies none. | `dropped` |
 
 A `HydroDispatch` gets two time series: a flat `max_active_power`, which is its own limit,
@@ -329,7 +334,7 @@ The turbine, its head reservoir and its tail reservoir become **one**
 | `output_active_power_limits` | pu | `(0.0, the turbine capacity)` | `derived` |
 | `efficiency` | | `√(Pump Efficiency)` for the charge and for the discharge | `derived` |
 | `cycle_limits` | | `10000`, so the cycling limit never binds and the storage target does the work | `default` |
-| `operation_cost.variable` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 
 The head reservoir and the tail reservoir do not become components of their own. The
 elevation, an efficiency that changes with the level, and a `Max Volume` stated in water are
@@ -349,7 +354,7 @@ elevation, an efficiency that changes with the level, and a `Max Volume` stated 
 | `initial_storage_capacity_level` | pu | `Initial SoC % × Capacity` ÷ the energy capacity, held between 0 and 1 | `derived` |
 | `input_active_power_limits` / `output_active_power_limits` | pu | `(0.0, 1.0)` for each | `default` |
 | `efficiency` | | `√(Charge Efficiency)` for the charge and for the discharge | `derived` |
-| `operation_cost.variable` | $/MWh | `0.0` | `default` |
+| `operation_cost.variable_operation_cost` | $/MWh | `0.0` | `default` |
 
 `Min SoC`, `Max SoC` and `Discharge Efficiency` are `dropped`. The whole energy capacity is
 usable, and the round trip efficiency splits evenly across the two directions.
@@ -358,9 +363,9 @@ usable, and the round trip efficiency splits evenly across the two directions.
 
 A `Fuel` becomes no component. It does two things:
 
-- It names the carrier that your mappings file turns into `fuel_type` and
+- It names the carrier that your mappings file turns into `fuel` and
   `prime_mover_type`.
-- Its `Price` sets the fuel term of `operation_cost.variable`, which is `price × heat rate`.
+- Its `Price` sets the fuel term of `operation_cost.variable_operation_cost`, which is `price × heat rate`.
 
 The translator carries your fuel names as your model spells them, so two fuels that are one
 chemistry at two regional prices need two rows in your mappings file. Give both the same
@@ -372,7 +377,7 @@ A generator that burns more than one fuel keeps its first fuel. The rest are `dr
 ## `Emission`
 
 An `Emission` becomes no component. Its `Price` and the `Production Rate` of the fuel add a
-carbon term to `operation_cost.variable`, which is `price × production rate × heat rate`.
+carbon term to `operation_cost.variable_operation_cost`, which is `price × production rate × heat rate`.
 
 An emission cap is `dropped`. Only the price reaches the cost.
 
