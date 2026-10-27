@@ -69,6 +69,9 @@ from interop.plugins.shared.osemosys_sienna_translations._events import osemosys
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     FREE_BUILD_PARAMETERS,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    EMISSION_COST_MWH,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generators import GeneratorSources
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
@@ -79,7 +82,7 @@ from interop.plugins.shared.osemosys_sienna_translations._line_capacity import (
     read_fleet_output_mw,
 )
 from interop.plugins.shared.osemosys_sienna_translations._link_penalties import (
-    report_line_penalties,
+    enrich_link_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
@@ -137,6 +140,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     LINE_CAPACITY,
     LINE_NAME,
     LOSS,
+    MARGINAL_COST_MWH,
     OUTPUT_RATIO,
     RATING,
     RECEIVED_MW,
@@ -300,8 +304,8 @@ def _note_reverse_loss(row: dict[str, Any]) -> str:
 def _note_reverse_cost(row: dict[str, Any]) -> str:
     return (
         f"the flow back at the operating mode {row[REVERSE_MODE]} costs "
-        f"{row[REVERSE_COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent, and the line costs "
-        f"{row[COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent both ways; the operating_modes of its "
+        f"{row[REVERSE_COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent, and the variable cost of the line "
+        f"is {row[COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent both ways; the operating_modes of its "
         "record keep the cost"
     )
 
@@ -370,7 +374,6 @@ def build_transport_source(
     lines = _enrich_ratings(state, operations, _enrich_fleet_output(state, operations, lines))
     lines = _enrich_costs(state, operations, lines)
     _report_flow_back(lines, recorder)
-    report_line_penalties(state, operations, lines, recorder)
     lines = _enrich_extension_values(state, operations, lines)
     report_one_way_lines(lines, recorder)
     factored = _enrich_capacity_factors(state, operations, lines)
@@ -404,7 +407,7 @@ def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
 def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
     return ControllableLineExtension(
         name=row[LINE_NAME],
-        marginal_cost=row[COST_MWH] if row[COST_MWH] != NO_COST else None,
+        marginal_cost=row[MARGINAL_COST_MWH] if row[MARGINAL_COST_MWH] != NO_COST else None,
         p_max_pu=row[DERATE],
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         is_conversion=True if row[IS_CONVERSION] else None,
@@ -692,7 +695,7 @@ def _express_smallest_ratio() -> pl.Expr:
 
 def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
     """The cost of each MWh that the line sends, from the cost of each unit of activity, at the
-    operations mode and in the flow back."""
+    operations mode and in the flow back, and the emission penalties of the operations mode."""
     forward = lines.select(
         *_KEYS,
         pl.lit(operations.mode).alias(OPERATING_MODE),
@@ -707,7 +710,10 @@ def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame)
     reverse_costs = _read_mode_costs(
         state, operations, reverse, _CostColumns(REVERSE_COST, REVERSE_COST_MWH)
     )
-    return lines.join(forward_costs, on=_KEYS).join(reverse_costs, on=_KEYS, how="left")
+    table = lines.join(forward_costs, on=_KEYS).join(reverse_costs, on=_KEYS, how="left")
+    table = enrich_link_penalties(state, operations, table)
+    marginal = pl.col(COST_MWH) + pl.col(EMISSION_COST_MWH)
+    return table.with_columns(marginal.alias(MARGINAL_COST_MWH))
 
 
 def _read_mode_costs(

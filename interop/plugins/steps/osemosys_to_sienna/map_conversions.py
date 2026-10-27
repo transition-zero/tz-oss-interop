@@ -27,7 +27,7 @@ class OsemosysToSiennaMapConversions(OperationsMapping):
         self._recorder = recorder
 
     def map_components(self, state: State, operations: OperationsYear) -> None:
-        conversions = build_conversions_source(state, operations, self._recorder)
+        conversions = build_conversions_source(state, operations)
         routes = build_routes_source(state, operations)
         add_built_records(state, build_conversion_records(conversions, routes), self._recorder)
         set_conversion_values_persisted(state, conversions, routes)

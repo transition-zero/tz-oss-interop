@@ -22,7 +22,6 @@ import polars as pl
 
 from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
-from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
@@ -66,12 +65,17 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    EMISSION_COST_MWH,
+)
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
     read_left_out_technologies,
 )
 from interop.plugins.shared.osemosys_sienna_translations._link_penalties import (
-    report_conversion_penalties,
+    build_link_penalty_events,
+    build_penalty_cost_sources,
+    enrich_link_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -116,7 +120,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_FUEL,
 )
 from interop.plugins.shared.pypsa_constants import PyPSALinkCol
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 CONVERSION_NAME = "conversion_name"
 _COMPONENT = "component"
@@ -221,9 +225,7 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
 )
 
 
-def build_conversions_source(
-    state: State, operations: OperationsYear, recorder: ScopedRecorder
-) -> pl.DataFrame:
+def build_conversions_source(state: State, operations: OperationsYear) -> pl.DataFrame:
     """One row for each export whose fuels are all electricity."""
     kind = pl.col(AnnotationColumn.KIND)
     conversions = (
@@ -237,7 +239,6 @@ def build_conversions_source(
     if conversions.height == 0:
         return conversions
     conversions = _enrich_link(state, operations, conversions)
-    report_conversion_penalties(state, operations, conversions, recorder)
     rated = conversions.with_columns(
         pl.lit(operations.mode).alias(OPERATING_MODE), pl.col(INPUT_RATIO).alias(RATING_RATIO)
     )
@@ -301,13 +302,24 @@ def _enrich_link(
         .join(ends, on=_KEYS, how="left")
         .join(read_availability_factors(state, operations.year, keys), on=_KEYS, how="left")
     )
-    table = table.join(_read_costs(state, operations, table), on=_KEYS, how="left")
+    table = _enrich_marginal_costs(state, operations, table)
     table = enrich_capacity_to_activity(state, operations.year, table)
     capacity = express_activity_mw(table, RESIDUAL_CAPACITY, operations.units)
     return table.with_columns(
         (capacity * pl.col(INPUT_RATIO)).alias(PyPSALinkCol.P_NOM),
         (pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(PyPSALinkCol.EFFICIENCY),
     )
+
+
+def _enrich_marginal_costs(
+    state: State, operations: OperationsYear, conversions: pl.DataFrame
+) -> pl.DataFrame:
+    """The cost of each MWh that goes in: the variable cost of the operations mode and the
+    emission penalty of each pollutant that it emits."""
+    table = conversions.join(_read_costs(state, operations, conversions), on=_KEYS, how="left")
+    table = enrich_link_penalties(state, operations, table)
+    marginal = pl.col(RATED_COST_MWH) + pl.col(EMISSION_COST_MWH)
+    return table.with_columns(marginal.alias(PyPSALinkCol.MARGINAL_COST))
 
 
 def _read_costs(
@@ -319,9 +331,7 @@ def _read_costs(
         pl.lit(operations.mode).alias(OPERATING_MODE),
         pl.col(INPUT_RATIO).alias(RATING_RATIO),
     )
-    return read_rated_costs(state, operations, rated).select(
-        *_KEYS, VARIABLE_COST, pl.col(RATED_COST_MWH).alias(PyPSALinkCol.MARGINAL_COST)
-    )
+    return read_rated_costs(state, operations, rated).select(*_KEYS, VARIABLE_COST, RATED_COST_MWH)
 
 
 def _build_extension(row: dict[str, Any]) -> ConversionExtension:
@@ -416,7 +426,8 @@ class _LinkSource(NamedTuple):
 class _LinkValue(NamedTuple):
     """One field of a conversion record that the PyPSA Link states, and how it is derived.
 
-    `attribute` is the `extensions.<field>` of the event.
+    `attribute` is the `extensions.<field>` of the event. `sienna_sources` are the values of
+    other events that the field adds up.
     """
 
     attribute: str
@@ -424,9 +435,11 @@ class _LinkValue(NamedTuple):
     unit: str | None
     sources: list[_LinkSource]
     derivation: str
+    sienna_sources: tuple[SourceField, ...] = ()
 
 
 _require_attribute = partial(require_extension_attribute, ConversionExtension)
+_build_conversion_field = partial(build_sienna_field, ExtensionKind.CONVERSION)
 _BUS0_ATTRIBUTE = _require_attribute(PyPSALinkCol.BUS0)
 _BUS1_ATTRIBUTE = _require_attribute(PyPSALinkCol.BUS1)
 _INPUT_FUEL_ATTRIBUTE = _require_attribute("input_fuel")
@@ -440,13 +453,19 @@ _P_MAX_PU_ATTRIBUTE = _require_attribute(PyPSALinkCol.P_MAX_PU)
 def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[TranslationEvent]:
     link = [
         _build_link_event(row, value)
-        for value in _list_link_values(record)
+        for value in _list_link_values(row, record)
         if value.value is not None
     ]
-    return [*link, *CONVERSION_EXTRAS.build_events(row)]
+    penalties = build_link_penalty_events(
+        row, _build_conversion_field, row[CONVERSION_NAME], _MARGINAL_COST_ATTRIBUTE
+    )
+    return [*link, *penalties, *CONVERSION_EXTRAS.build_events(row)]
 
 
-def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
+def _list_link_values(row: dict[str, Any], record: ConversionExtension) -> list[_LinkValue]:
+    penalties = build_penalty_cost_sources(
+        row, ExtensionKind.CONVERSION, row[CONVERSION_NAME], _MARGINAL_COST_ATTRIBUTE
+    )
     return [
         _LinkValue(_BUS0_ATTRIBUTE, record.bus0, None, [_INPUT], _BUS0_DERIVATION),
         _LinkValue(_BUS1_ATTRIBUTE, record.bus1, None, [_OUTPUT], _BUS1_DERIVATION),
@@ -476,6 +495,7 @@ def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
             UNIT_DOLLARS_PER_MWH,
             [_COST, _INPUT],
             _MARGINAL_COST_DERIVATION,
+            tuple(penalties),
         ),
         _LinkValue(
             _P_MAX_PU_ATTRIBUTE, record.p_max_pu, None, [_AVAILABILITY], _P_MAX_PU_DERIVATION
@@ -487,19 +507,16 @@ def _build_link_event(row: dict[str, Any], value: _LinkValue) -> TranslationEven
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=[
-            build_osemosys_field(
-                source.parameter, row[TECHNOLOGY_NAME], source.attribute, row[source.column]
-            )
-            for source in value.sources
+            *(
+                build_osemosys_field(
+                    source.parameter, row[TECHNOLOGY_NAME], source.attribute, row[source.column]
+                )
+                for source in value.sources
+            ),
+            *value.sienna_sources,
         ],
         destinations=[
-            build_sienna_field(
-                ExtensionKind.CONVERSION,
-                row[CONVERSION_NAME],
-                value.attribute,
-                value.value,
-                value.unit,
-            )
+            _build_conversion_field(row[CONVERSION_NAME], value.attribute, value.value, value.unit)
         ],
         derivation=value.derivation,
     )
@@ -526,6 +543,7 @@ _EFFICIENCY_DERIVATION = (
     "the electricity output_activity_ratio / the electricity input_activity_ratio"
 )
 _MARGINAL_COST_DERIVATION = (
-    "variable_operation_cost, in $/MWh, / the electricity input_activity_ratio"
+    "variable_operation_cost, in $/MWh, / the electricity input_activity_ratio, plus the emission "
+    "penalty of each pollutant that the operations mode emits"
 )
 _P_MAX_PU_DERIVATION = "availability_factor of the operations year"

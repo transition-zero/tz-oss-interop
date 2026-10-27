@@ -38,6 +38,8 @@ RECEIVED_MW = "received_mw"
 LOSS = "loss"
 COST = "cost"
 COST_MWH = "cost_mwh"
+# The cost of each MWh that the line sends: the cost of the operations mode and its penalties.
+MARGINAL_COST_MWH = "marginal_cost_mwh"
 REVERSE_MODE = "reverse_mode"
 REVERSE_INPUT_RATIO = "reverse_input_ratio"
 REVERSE_OUTPUT_RATIO = "reverse_output_ratio"
