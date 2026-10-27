@@ -29,7 +29,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     StorageParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    CTAU,
     ELECTRICITY_OUTPUT_RATIO,
+    express_activity_mw,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
@@ -90,10 +92,8 @@ def enrich_ratings(
     discharge caps it.
     """
     units = operations.units
-    table = _enrich_rates(state, operations, storages)
+    table = _enrich_activity_mw(_enrich_rates(state, operations, storages), units)
     table = table.with_columns(
-        _express_activity_mw(table, units, side).alias(side.activity_mw) for side in STORAGE_SIDES
-    ).with_columns(
         (pl.col(DISCHARGE_SIDE.activity_mw) * pl.col(DISCHARGE_SIDE.ratio)).alias(POWER_MW),
         units.convert_energy_to_mwh(pl.col(ENERGY)).alias(ENERGY_MWH),
     )
@@ -151,23 +151,18 @@ def enrich_storage_fixed_costs(
     )
 
 
-def _express_activity_mw(table: pl.DataFrame, units: ModelUnits, side: StorageSide) -> pl.Expr:
-    """MW of activity: the capacity × its yearly activity over 8760 h, or the capacity in the
-    capacity unit where the model states no capacity_to_activity_unit."""
-    capacity = pl.col(side.capacity)
-    is_stated = pl.col(side.capacity_to_activity).is_not_null()
-    yearly = capacity * pl.col(side.capacity_to_activity)
-    stated = _convert_where(table, is_stated, yearly, units.convert_energy_to_mwh)
-    unstated = _convert_where(table, ~is_stated, capacity, units.convert_capacity_to_mw)
-    return pl.when(is_stated).then(stated / HOURS_PER_YEAR).otherwise(unstated)
+def _enrich_activity_mw(storages: pl.DataFrame, units: ModelUnits) -> pl.DataFrame:
+    """The MW of activity of the technology of each side, from its residual capacity.
 
-
-def _convert_where(
-    table: pl.DataFrame, rows: pl.Expr, value: pl.Expr, convert: Callable[[pl.Expr], pl.Expr]
-) -> pl.Expr:
-    """The value in Sienna units; a unit that no row of `rows` needs is not asked for."""
-    is_needed = table.select(rows.any()).item()
-    return convert(value) if is_needed else value
+    The shared expression reads the one `capacity_to_activity` column, so each side takes its
+    turn in that column.
+    """
+    table = storages
+    for side in STORAGE_SIDES:
+        sided = table.with_columns(pl.col(side.capacity_to_activity).alias(CTAU))
+        activity = express_activity_mw(sided, side.capacity, units)
+        table = sided.with_columns(activity.alias(side.activity_mw)).drop(CTAU)
+    return table
 
 
 def _express_limit(side: StorageSide) -> pl.Expr:
