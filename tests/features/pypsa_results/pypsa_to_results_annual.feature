@@ -211,3 +211,18 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
       | variable | component | category | timestamp | value |
     And the log contains "pypsa-to-results: 1 year(s) have snapshot weightings that sum to other than the hours of a year, so they have no production, installed_capacity or emissions row. Each one: 2030 (300 h)"
+
+  Scenario: An extendable component of a solved network is rated by the capacity that the solve built
+    The network states p_nom 0 for the candidate wind plant, which is the floor of the build,
+    and p_nom_opt 120, which is the capacity that the solve built.
+    Given the network contains generator "wind" on "node_b" carrier "wind" p_nom 0 p_nom_extendable True
+    And generator "wind" has p_nom_opt 120
+    And the generator "wind" dispatches 50 50 50 50
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | wind      | wind     | 2030-01-01T00:00:00 | 120   |
+      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
+    And the file "decisions.md" contains "p_nom_opt, the capacity that the solve built, for an extendable component of a solved network"
