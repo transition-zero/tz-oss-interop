@@ -100,6 +100,7 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
     And the file "outputs/extensions.json" parses as JSON load extension record for "GAS" without field "p_set"
     And the parquet file "outputs/loads.parquet" has columns "snapshot, name, p_set"
     And the parquet file "outputs/loads.parquet" has 48 rows
+    And the parquet file "outputs/loads.parquet" gives "GAS" a "p_set" of 100.0 in its first snapshot and 200.0 at its peak
 
   Rule: A supply technology with residual capacity becomes the Sienna generator that its category names
     The invented fleet below has a gas plant, a solar plant, a wind plant, a hydro plant and an
