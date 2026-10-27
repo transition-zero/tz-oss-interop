@@ -78,7 +78,6 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_columns imp
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
     build_storage_extensions,
     build_storages_source,
-    read_storage_links,
     set_storage_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
@@ -129,7 +128,6 @@ __all__ = [
     "read_operations_mode",
     "parse_units",
     "read_electricity_fuels",
-    "read_storage_links",
     "report_calendar",
     "report_left_out_technologies",
     "report_unread_defaults",
