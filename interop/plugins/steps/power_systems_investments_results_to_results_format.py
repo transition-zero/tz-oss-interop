@@ -124,7 +124,7 @@ _MISSING_VARIABLE_REPORT = SkipReport(
     framework=Framework.POWER_SYSTEMS_INVESTMENTS,
     component=_RESULTS_COMPONENT,
     name_col=_RESULT_NAMES,
-    reason="have no file in the directory that the solve wrote",
+    reason="have no file in the directory that the solve wrote, so each is left out",
     counted_noun="result variable(s)",
     note=_note_missing_variable,
     listed=SkippedNames(column=_LISTED_VARIABLE, label=DROPPED_NAMES_LABEL),
@@ -144,7 +144,10 @@ _UNSIZED_BUILD_REPORT = SkipReport(
     framework=Framework.POWER_SYSTEMS_INVESTMENTS,
     component=_RESULTS_COMPONENT,
     name_col=StagedResultCol.COMPONENT,
-    reason="of an integer solve name a technology whose unit size the portfolio does not state",
+    reason=(
+        "of an integer solve name a technology whose unit size the "
+        "portfolio does not state, so each is left out"
+    ),
     counted_noun="build row(s)",
     note=_note_unsized_build,
     attribute_col=StagedResultCol.VALUE,
@@ -177,7 +180,10 @@ _UNKNOWN_PERIOD_REPORT = SkipReport(
     framework=Framework.POWER_SYSTEMS_INVESTMENTS,
     component=_RESULTS_COMPONENT,
     name_col=StagedResultCol.COMPONENT,
-    reason="fall in an investment period that is not a period of the series document",
+    reason=(
+        "fall in an investment period that is not a period of the "
+        "series document, so each is left out"
+    ),
     counted_noun="capacity row(s)",
     note=_note_unknown_period,
     listed=SkippedNames(column=StagedResultCol.PERIOD, label="Periods"),
@@ -189,7 +195,10 @@ _UNWEIGHTED_HOUR_REPORT = SkipReport(
     framework=Framework.POWER_SYSTEMS_INVESTMENTS,
     component=ResultsCsvCol.DATE_TIME,
     name_col=_HOUR_NAME,
-    reason="fall in no slice of the series document and take no weight in production",
+    reason=(
+        "fall in no slice of the series document and take no weight "
+        "in production, so each is left out"
+    ),
     counted_noun="hour(s) of the solve",
     note="the hour falls in no slice of the series document, so production leaves it out",
     listed=SkippedNames(column=_HOUR_NAME, label="Hours"),
