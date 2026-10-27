@@ -5,12 +5,8 @@ from typing import Any
 import pytest
 from pytest_bdd import parsers, scenarios, then, when
 
-from tests.step_defs.conftest import (
-    invoke_expand,
-    invoke_expand_cancelling,
-    invoke_solve,
-    join_printed_messages,
-)
+from tests.step_defs.conftest import join_printed_messages
+from tests.step_defs.solve_steps import invoke_expand, invoke_expand_cancelling, invoke_solve
 
 scenarios("../features/solve.feature")
 

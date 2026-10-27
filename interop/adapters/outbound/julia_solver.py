@@ -17,9 +17,7 @@ from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import (
     DispatchOutcome,
-    HiGHSCrossover,
-    HiGHSPresolve,
-    HiGHSSolver,
+    HiGHSOptions,
     SolverPort,
     UnservedEnergy,
 )
@@ -104,11 +102,8 @@ class JuliaSolveAdapter(SolverPort):
         network_model: str,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
         unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
     ) -> DispatchOutcome:
         if not sienna_json_path.is_file():
@@ -130,10 +125,7 @@ class JuliaSolveAdapter(SolverPort):
             _build_network_model(julia_model, unserved_energy),
             resolved_output_dir,
             unit_commitment=unit_commitment,
-            solver=solver,
-            presolve=presolve,
-            run_crossover=run_crossover,
-            time_limit_seconds=time_limit_seconds,
+            highs=highs,
         )
 
     def _bootstrap_julia(self) -> Any:
@@ -312,25 +304,19 @@ def _warn_partly_covered(coverage: dict[str, _SeriesCoverage]) -> None:
         )
 
 
-def _build_highs_args(
-    solver: str,
-    presolve: str,
-    run_crossover: str,
-    time_limit_seconds: float | None,
-    unit_commitment: UnitCommitmentTreatment,
-) -> str:
+def _build_highs_args(highs: HiGHSOptions, unit_commitment: UnitCommitmentTreatment) -> str:
     attrs: list[tuple[str, str]] = [
         ('"log_to_console"', "true"),
         ('"mip_detect_symmetry"', "false"),
         ('"parallel"', '"off"'),
-        ('"solver"', f'"{solver}"'),
-        ('"presolve"', f'"{presolve}"'),
-        ('"run_crossover"', f'"{run_crossover}"'),
+        ('"solver"', f'"{highs.solver}"'),
+        ('"presolve"', f'"{highs.presolve}"'),
+        ('"run_crossover"', f'"{highs.run_crossover}"'),
     ]
     if unit_commitment is UnitCommitmentTreatment.EXACT:
         attrs.append(('"mip_rel_gap"', str(_MILP_REL_GAP)))
-    if time_limit_seconds is not None:
-        attrs.append(('"time_limit"', str(float(time_limit_seconds))))
+    if highs.time_limit_seconds is not None:
+        attrs.append(('"time_limit"', str(float(highs.time_limit_seconds))))
     return ", ".join(f"{k} => {v}" for k, v in attrs)
 
 
@@ -341,10 +327,7 @@ def _run_pipeline(
     output_dir: Path,
     *,
     unit_commitment: UnitCommitmentTreatment,
-    solver: str,
-    presolve: str,
-    run_crossover: str,
-    time_limit_seconds: float | None,
+    highs: HiGHSOptions,
 ) -> DispatchOutcome:
     """Build and solve the Sienna system in Julia, re-raising Julia errors as user errors."""
     from juliacall import JuliaError  # noqa: PLC0415
@@ -357,10 +340,7 @@ def _run_pipeline(
             network_model,
             output_dir,
             unit_commitment=unit_commitment,
-            solver=solver,
-            presolve=presolve,
-            run_crossover=run_crossover,
-            time_limit_seconds=time_limit_seconds,
+            highs=highs,
         )
     except JuliaError as exc:
         raise UserInputError(f"Julia solver error:\n{exc}") from exc
@@ -373,10 +353,7 @@ def _run_pipeline_inner(
     output_dir: Path,
     *,
     unit_commitment: UnitCommitmentTreatment,
-    solver: str,
-    presolve: str,
-    run_crossover: str,
-    time_limit_seconds: float | None,
+    highs: HiGHSOptions,
 ) -> DispatchOutcome:
 
     log.info("=== 1. Loading Sienna system from JSON ===")
@@ -460,9 +437,7 @@ def _run_pipeline_inner(
 
     log.info("=== 3. Building DecisionModel ===")
     out_dir_str = build_julia_path_text(output_dir)
-    highs_args = _build_highs_args(
-        solver, presolve, run_crossover, time_limit_seconds, unit_commitment
-    )
+    highs_args = _build_highs_args(highs, unit_commitment)
     jl.seval(f"""
         global problem = DecisionModel(
             template, sys;

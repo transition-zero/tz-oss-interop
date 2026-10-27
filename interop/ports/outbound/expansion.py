@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import ClassVar, NamedTuple, Protocol, runtime_checkable
 
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.solver import HiGHSOptions
 
 
 class BalanceModel(StrEnum):
@@ -32,6 +32,13 @@ class InvestmentTreatment(StrEnum):
     INTEGER = "integer"
 
 
+class ExpansionOutcome(NamedTuple):
+    """What one expansion solve reports."""
+
+    status: str
+    objective: float
+
+
 @runtime_checkable
 class ExpansionPort(Protocol):
     name: ClassVar[str]
@@ -49,16 +56,12 @@ class ExpansionPort(Protocol):
         balance_model: BalanceModel,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS,
         discount_rate: float | None = None,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
-    ) -> tuple[str, float]:
+    ) -> ExpansionOutcome:
         """Build and solve the expansion stated by the portfolio at ``portfolio_json_path``.
 
         ``discount_rate`` outranks the rate the portfolio states, for a portfolio that states
-        none. Returns (run_status_string, objective_value). The caller reads a status
-        containing "SUCCESSFULLY" as success.
+        none. The caller reads a status containing "SUCCESSFULLY" as success.
         """

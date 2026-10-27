@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import ClassVar, NamedTuple, Protocol, runtime_checkable
@@ -23,6 +24,19 @@ class HiGHSCrossover(StrEnum):
     ON = "on"
     OFF = "off"
     CHOOSE = "choose"  # HiGHS decides automatically based on problem characteristics
+
+
+@dataclass(frozen=True)
+class HiGHSOptions:
+    """How HiGHS runs, which a dispatch and an expansion state alike.
+
+    ``time_limit_seconds`` is None where the solve runs with no limit.
+    """
+
+    solver: HiGHSSolver = HiGHSSolver.SIMPLEX
+    presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
+    run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE
+    time_limit_seconds: float | None = None
 
 
 class UnservedEnergy(StrEnum):
@@ -62,11 +76,8 @@ class SolverPort(Protocol):
         network_model: str,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
         unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
     ) -> DispatchOutcome:
         """Run the solver on the Sienna JSON at sienna_json_path.

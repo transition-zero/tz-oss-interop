@@ -257,9 +257,7 @@ from typing import ClassVar
 from interop.ports.outbound.network_solver import UnitCommitmentTreatment
 from interop.ports.outbound.solver import (
     DispatchOutcome,
-    HiGHSCrossover,
-    HiGHSPresolve,
-    HiGHSSolver,
+    HiGHSOptions,
     SolverPort,
     UnservedEnergy,
 )
@@ -281,11 +279,8 @@ class FakeSolverAdapter(SolverPort):
         network_model: str,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
         unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
     ) -> DispatchOutcome:
         Path("outputs").mkdir(parents=True, exist_ok=True)
@@ -299,10 +294,10 @@ class FakeSolverAdapter(SolverPort):
                     f"network_model={{network_model}}",
                     f"output_dir={{recorded_output_dir}}",
                     f"unit_commitment={{unit_commitment}}",
-                    f"solver={{solver}}",
-                    f"presolve={{presolve}}",
-                    f"run_crossover={{run_crossover}}",
-                    f"time_limit_seconds={{time_limit_seconds}}",
+                    f"solver={{highs.solver}}",
+                    f"presolve={{highs.presolve}}",
+                    f"run_crossover={{highs.run_crossover}}",
+                    f"time_limit_seconds={{highs.time_limit_seconds}}",
                     f"unserved_energy={{unserved_energy}}",
                 ]
             ),
@@ -358,8 +353,13 @@ _FAKE_EXPANSION_TEMPLATE = """\
 from pathlib import Path
 from typing import ClassVar
 
-from interop.ports.outbound.expansion import BalanceModel, ExpansionPort, InvestmentTreatment
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.expansion import (
+    BalanceModel,
+    ExpansionOutcome,
+    ExpansionPort,
+    InvestmentTreatment,
+)
+from interop.ports.outbound.solver import HiGHSOptions
 
 
 class FakeExpansionAdapter(ExpansionPort):
@@ -375,13 +375,10 @@ class FakeExpansionAdapter(ExpansionPort):
         balance_model: BalanceModel,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS,
         discount_rate: float | None = None,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
-    ) -> tuple[str, float]:
+    ) -> ExpansionOutcome:
         Path("outputs").mkdir(parents=True, exist_ok=True)
         # Posix form, so a scenario can name a path the same way on every platform.
         recorded_portfolio_path = portfolio_json_path.as_posix()
@@ -394,15 +391,15 @@ class FakeExpansionAdapter(ExpansionPort):
                     f"output_dir={{recorded_output_dir}}",
                     f"investment_treatment={{investment_treatment}}",
                     f"discount_rate={{discount_rate}}",
-                    f"solver={{solver}}",
-                    f"presolve={{presolve}}",
-                    f"run_crossover={{run_crossover}}",
-                    f"time_limit_seconds={{time_limit_seconds}}",
+                    f"solver={{highs.solver}}",
+                    f"presolve={{highs.presolve}}",
+                    f"run_crossover={{highs.run_crossover}}",
+                    f"time_limit_seconds={{highs.time_limit_seconds}}",
                 ]
             ),
             encoding="utf-8",
         )
-        return ("SUCCESSFULLY_FINALIZED", 987.654)
+        return ExpansionOutcome("SUCCESSFULLY_FINALIZED", 987.654)
 """
 
 

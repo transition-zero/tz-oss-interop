@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
@@ -8,12 +8,7 @@ from typing import Protocol, runtime_checkable
 
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import (
-    HiGHSCrossover,
-    HiGHSPresolve,
-    HiGHSSolver,
-    UnservedEnergy,
-)
+from interop.ports.outbound.solver import HiGHSOptions, UnservedEnergy
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 # Sienna's SolverPort reports a run status containing this marker on success.
@@ -60,10 +55,7 @@ class SolveSiennaRequest:
     output_dir: Path | None = None
     unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED
     unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT
-    solver: HiGHSSolver = HiGHSSolver.SIMPLEX
-    presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
-    run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE
-    time_limit_seconds: float | None = None
+    highs: HiGHSOptions = field(default_factory=HiGHSOptions)
 
 
 DEFAULT_LOOK_AHEAD_DAYS = 14
@@ -109,10 +101,7 @@ class SolveExpansionRequest:
     output_dir: Path | None = None
     investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS
     discount_rate: float | None = None
-    solver: HiGHSSolver = HiGHSSolver.SIMPLEX
-    presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
-    run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE
-    time_limit_seconds: float | None = None
+    highs: HiGHSOptions = field(default_factory=HiGHSOptions)
 
 
 SolveRequest = SolveSiennaRequest | SolveNetworkRequest | SolveExpansionRequest

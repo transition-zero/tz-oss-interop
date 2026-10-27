@@ -27,8 +27,13 @@ from interop.plugins.shared.power_systems_investments_schema import (
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
-from interop.ports.outbound.expansion import BalanceModel, ExpansionPort, InvestmentTreatment
-from interop.ports.outbound.solver import HiGHSCrossover, HiGHSPresolve, HiGHSSolver
+from interop.ports.outbound.expansion import (
+    BalanceModel,
+    ExpansionOutcome,
+    ExpansionPort,
+    InvestmentTreatment,
+)
+from interop.ports.outbound.solver import HiGHSOptions
 
 log = logging.getLogger(__name__)
 
@@ -103,13 +108,10 @@ class JuliaExpansionAdapter(ExpansionPort):
         balance_model: BalanceModel,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         investment_treatment: InvestmentTreatment = InvestmentTreatment.CONTINUOUS,
         discount_rate: float | None = None,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
-    ) -> tuple[str, float]:
+    ) -> ExpansionOutcome:
         if not portfolio_json_path.is_file():
             raise UserInputError(f"file not found: {portfolio_json_path}")
         series_path = _build_series_path(portfolio_json_path)
@@ -125,9 +127,7 @@ class JuliaExpansionAdapter(ExpansionPort):
                 balance_model=balance_model,
                 investment_treatment=investment_treatment,
                 discount_rate=discount_rate,
-                highs_args=_build_highs_args(
-                    solver, presolve, run_crossover, time_limit_seconds, investment_treatment
-                ),
+                highs_args=_build_highs_args(highs, investment_treatment),
             ),
         )
 
@@ -205,27 +205,21 @@ def _build_timestamps(record: dict[str, Any]) -> list[str]:
     ]
 
 
-def _build_highs_args(
-    solver: str,
-    presolve: str,
-    run_crossover: str,
-    time_limit_seconds: float | None,
-    investment_treatment: InvestmentTreatment,
-) -> str:
+def _build_highs_args(highs: HiGHSOptions, investment_treatment: InvestmentTreatment) -> str:
     attributes: list[tuple[str, str]] = [
         ('"log_to_console"', "true"),
-        ('"solver"', f'"{solver}"'),
-        ('"presolve"', f'"{presolve}"'),
-        ('"run_crossover"', f'"{run_crossover}"'),
+        ('"solver"', f'"{highs.solver}"'),
+        ('"presolve"', f'"{highs.presolve}"'),
+        ('"run_crossover"', f'"{highs.run_crossover}"'),
     ]
     if investment_treatment is InvestmentTreatment.INTEGER:
         attributes.append(('"mip_rel_gap"', str(_MILP_REL_GAP)))
-    if time_limit_seconds is not None:
-        attributes.append(('"time_limit"', str(float(time_limit_seconds))))
+    if highs.time_limit_seconds is not None:
+        attributes.append(('"time_limit"', str(float(highs.time_limit_seconds))))
     return ", ".join(f"{key} => {value}" for key, value in attributes)
 
 
-def _run_expansion(jl: Any, request: _ExpansionRequest) -> tuple[str, float]:
+def _run_expansion(jl: Any, request: _ExpansionRequest) -> ExpansionOutcome:
     """Build and solve the expansion, re-raising a Julia error as a user error."""
     from juliacall import JuliaError  # noqa: PLC0415
 
@@ -235,7 +229,7 @@ def _run_expansion(jl: Any, request: _ExpansionRequest) -> tuple[str, float]:
         raise UserInputError(f"Julia expansion error:\n{exc}") from exc
 
 
-def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, float]:
+def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> ExpansionOutcome:
     log.info("=== 1. Loading the portfolio ===")
     jl.seval("""
         using PowerSystems, PowerSystemsInvestmentsPortfolios, PowerSystemsInvestments
@@ -279,7 +273,7 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> tuple[str, floa
     log.info("=== 6. Exporting the decisions ===")
     _write_results(jl, request.output_dir)
     log.info("Results written to %s", request.output_dir)
-    return str(run_status), float(objective)
+    return ExpansionOutcome(str(run_status), float(objective))
 
 
 # Two components of one type can share a name when their PowerSystems types differ.

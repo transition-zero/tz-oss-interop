@@ -52,56 +52,44 @@ class SolveUsingPort(SolveUseCase):
     def _solve_expansion(self, request: SolveExpansionRequest) -> SolveResult:
         log.debug(
             "expand path=%s balance_model=%s output_dir=%s investment_treatment=%s"
-            " discount_rate=%s solver=%s presolve=%s run_crossover=%s time_limit_seconds=%s",
+            " discount_rate=%s highs=%s",
             request.portfolio_json_path,
             request.balance_model,
             request.output_dir,
             request.investment_treatment,
             request.discount_rate,
-            request.solver,
-            request.presolve,
-            request.run_crossover,
-            request.time_limit_seconds,
+            request.highs,
         )
-        _reject_unusable_time_limit(request.time_limit_seconds)
+        _reject_unusable_time_limit(request.highs.time_limit_seconds)
         _reject_unusable_discount_rate(request.discount_rate)
-        status, objective = self._expansion.solve_expansion(
+        outcome = self._expansion.solve_expansion(
             request.portfolio_json_path,
             request.balance_model,
             request.output_dir,
+            highs=request.highs,
             investment_treatment=request.investment_treatment,
             discount_rate=request.discount_rate,
-            solver=request.solver,
-            presolve=request.presolve,
-            run_crossover=request.run_crossover,
-            time_limit_seconds=request.time_limit_seconds,
         )
-        return SolveResult(status=status, objective=objective)
+        return SolveResult(status=outcome.status, objective=outcome.objective)
 
     def _solve_sienna(self, request: SolveSiennaRequest) -> SolveResult:
         log.debug(
             "solve path=%s network_model=%s output_dir=%s unserved_energy=%s"
-            " unit_commitment=%s solver=%s presolve=%s run_crossover=%s time_limit_seconds=%s",
+            " unit_commitment=%s highs=%s",
             request.sienna_json_path,
             request.network_model,
             request.output_dir,
             request.unserved_energy,
             request.unit_commitment,
-            request.solver,
-            request.presolve,
-            request.run_crossover,
-            request.time_limit_seconds,
+            request.highs,
         )
-        _reject_unusable_time_limit(request.time_limit_seconds)
+        _reject_unusable_time_limit(request.highs.time_limit_seconds)
         outcome = self._solver.solve(
             request.sienna_json_path,
             request.network_model,
             request.output_dir,
+            highs=request.highs,
             unit_commitment=request.unit_commitment,
-            solver=request.solver,
-            presolve=request.presolve,
-            run_crossover=request.run_crossover,
-            time_limit_seconds=request.time_limit_seconds,
             unserved_energy=request.unserved_energy,
         )
         return SolveResult(
