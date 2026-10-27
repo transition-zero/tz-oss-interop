@@ -147,4 +147,4 @@ def _read_year_flows(state: State, operations: OperationsYear) -> pl.DataFrame:
             for parameter in _FLOWS
         ]
     )
-    return flows.unique().with_columns(pl.lit(True).alias(HAS_FLOWS))  # noqa: FBT003
+    return flows.unique().with_columns(pl.lit(True).alias(HAS_FLOWS)).collect()  # noqa: FBT003

@@ -47,9 +47,10 @@ def build_capacity_factor_series(
     factored = (
         read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
         .filter(pl.col(VALUE_COL) != WHOLE_CAPACITY)
-        .join(technologies.select(_KEYS), on=_KEYS, how="semi")
+        .join(technologies.select(_KEYS).lazy(), on=_KEYS, how="semi")
         .select(_KEYS)
         .unique()
+        .collect()
     )
     timeslices = pl.DataFrame(
         {TIMESLICE: list(operations.calendar.year_split)}, schema={TIMESLICE: pl.Utf8}

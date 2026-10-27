@@ -161,10 +161,11 @@ def _read_year_ratios(
     electricity = read_electricity_fuels(state).select(REGION, FUEL)
     return (
         read_parameter_for_years(state, flow, [int(year) for year in years])
-        .join(rated.select(*_KEYS, OPERATING_MODE), on=[*_KEYS, OPERATING_MODE], how="semi")
-        .join(electricity, on=[REGION, FUEL], how="semi")
+        .join(rated.select(*_KEYS, OPERATING_MODE).lazy(), on=[*_KEYS, OPERATING_MODE], how="semi")
+        .join(electricity.lazy(), on=[REGION, FUEL], how="semi")
         .group_by(*_KEYS, YEAR)
         .agg(pl.col(VALUE_COL).cast(pl.Float64).sum().alias(YEAR_RATIO))
+        .collect()
     )
 
 

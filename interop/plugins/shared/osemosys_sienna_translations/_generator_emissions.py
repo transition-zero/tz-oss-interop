@@ -109,8 +109,9 @@ def read_emission_rates(
     rates = (
         read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
         .filter(pl.col(VALUE_COL) != 0)
-        .join(modes.select(_MODE_KEYS).unique(), on=_MODE_KEYS, how="semi")
+        .join(modes.select(_MODE_KEYS).unique().lazy(), on=_MODE_KEYS, how="semi")
         .select(*_MODE_KEYS, POLLUTANT, pl.col(VALUE_COL).cast(pl.Float64).alias(STATED_RATE))
+        .collect()
     )
     convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
     return rates.with_columns(

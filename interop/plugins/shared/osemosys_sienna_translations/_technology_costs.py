@@ -58,8 +58,10 @@ def enrich_fixed_costs(
 
     `technologies` holds the electricity output ratio of each technology.
     """
-    stated = read_parameter(state, SupplyParameter.FIXED_COST, operations.year).select(
-        *_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(FIXED_COST)
+    stated = (
+        read_parameter(state, SupplyParameter.FIXED_COST, operations.year)
+        .select(*_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(FIXED_COST))
+        .collect()
     )
     table = technologies.join(stated, on=_KEYS, how="left")
     default = find_parameter_default(state, SupplyParameter.FIXED_COST)
