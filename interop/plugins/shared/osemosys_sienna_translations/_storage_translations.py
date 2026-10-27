@@ -9,6 +9,7 @@ import polars as pl
 
 from interop.core.extensions import ExtensionKind, companion_filename
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
@@ -148,10 +149,10 @@ _ACTIVE_POWER_NOTE = "OSeMOSYS states no initial dispatch; active_power defaults
 _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaults to 0.0"
 _CHARGE_DIRECTION = "charge"
 _DISCHARGE_DIRECTION = "discharge"
-_FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
-_CARRIER_ATTRIBUTE = "extensions.carrier"
+_FOM_ATTRIBUTE = f"{EXTENSIONS_PREFIX}fom_charge_per_mw_year"
+_CARRIER_ATTRIBUTE = f"{EXTENSIONS_PREFIX}carrier"
 _CARRIER_DERIVATION = "the category of the discharging technology, which names its carriers: row"
-_RATING_SERIES_ATTRIBUTE = "extensions.rating_series"
+_RATING_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}rating_series"
 _COMPANION = companion_filename(ExtensionKind.STORAGE)
 _EACH_TIMESLICE = "each timeslice"
 _RATING_SERIES_DERIVATION = (
