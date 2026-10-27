@@ -89,7 +89,7 @@ class SiennaToPypsaMapConversions(TranslationStep):
         relay_records(
             state,
             ExtensionKind.CONVERSION,
-            [lookup.relay(record.name) for record in records],
+            [lookup.build_relayed(record.name) for record in records],
             self._recorder,
         )
         return state

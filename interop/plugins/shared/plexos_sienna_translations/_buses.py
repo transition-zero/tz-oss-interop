@@ -28,6 +28,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
 from interop.plugins.shared.plexos_sienna_translations._shared import (
     plexos_field,
 )
+from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
     BUS_VOLTAGE_LIMIT_MAX,
     BUS_VOLTAGE_LIMIT_MIN,
@@ -37,7 +38,6 @@ from interop.plugins.shared.sienna_constants import (
     DEFAULT_BUS_MAGNITUDE,
     VOLTAGE_LIMIT_DTYPE,
     ACBusType,
-    BusCarrier,
     SiennaACBusCol,
     SiennaComponent,
 )
@@ -105,7 +105,7 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
 def build_bus_extensions(buses: pl.DataFrame) -> list[BusExtension]:
     """The carrier each bus carries, which Sienna's ACBus has no field for."""
     return [
-        BusExtension(name=name, carrier=BusCarrier.AC)
+        BusExtension(name=name, carrier=PyPSACarrier.AC)
         for name in buses[SiennaACBusCol.NAME].to_list()
     ]
 
@@ -357,7 +357,7 @@ BUS_CARRIER = Translation(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 "extensions.carrier",
-                BusCarrier.AC,
+                PyPSACarrier.AC,
             )
         ],
         _CARRIER_NOTE,
