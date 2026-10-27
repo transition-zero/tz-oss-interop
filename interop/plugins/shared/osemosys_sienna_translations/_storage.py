@@ -160,6 +160,8 @@ _DISCHARGE_APPLIED = (
     SupplyParameter.FIXED_COST,
     SupplyParameter.CAPACITY_FACTOR,
 )
+# The rows of a separate charging technology that the storage applies; its record holds no mode.
+_CHARGE_APPLIED = (SupplyParameter.RESIDUAL_CAPACITY, SupplyParameter.AVAILABILITY_FACTOR)
 STORAGE_OWNERS = ValueOwners(
     ExtensionKind.STORAGE, STORAGE_NAME, STORAGE_REPORT_NAME, SIENNA_TYPE, (REGION, STORAGE)
 )
@@ -250,7 +252,7 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     set_applied_rows(state, STORAGE_TECHNOLOGY_OWNERS, discharging, _DISCHARGE_APPLIED)
     charging = _select_chargers(storages).select(REGION, TECHNOLOGY)
     set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
-    set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, RATED_PARAMETERS)
+    set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
 
 
 def _build_extension(row: dict[str, Any]) -> StorageExtension:
