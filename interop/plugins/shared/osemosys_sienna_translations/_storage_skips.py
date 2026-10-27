@@ -6,17 +6,13 @@ from collections.abc import Callable
 from typing import Any
 
 from interop.plugins.shared.osemosys_canonical.constants import (
-    OSEMOSYS_FRAMEWORK,
     REGION,
     STORAGE,
     AnnotationColumn,
     FlowParameter,
 )
-from interop.plugins.shared.osemosys_sienna_constants import (
-    OSEMOSYS_TO_SIENNA_PIPELINE,
-    StorageParameter,
-    SupplyParameter,
-)
+from interop.plugins.shared.osemosys_sienna_constants import StorageParameter, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_SIDE,
     DISCHARGE_SIDE,
@@ -40,9 +36,7 @@ def _build_skip(
     attribute_col: str | None = None,
     attribute_name: str | None = None,
 ) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=STORAGE,
         name_col=STORAGE_REPORT_NAME,
         reason=reason,
