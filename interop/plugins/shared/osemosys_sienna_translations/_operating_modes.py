@@ -86,7 +86,7 @@ class ModeValue(NamedTuple):
     is_bound: bool = False
 
 
-def _no_conversion(_units: ModelUnits) -> None:
+def _build_no_conversion(_units: ModelUnits) -> None:
     return None
 
 
@@ -99,10 +99,18 @@ _MODE_VALUES = (
         lambda units: units.convert_cost_per_energy_to_dollars_per_mwh,
     ),
     ModeValue(
-        FlowParameter.INPUT_ACTIVITY_RATIO, "input_ratios", FUEL, UNIT_PER_UNIT, _no_conversion
+        FlowParameter.INPUT_ACTIVITY_RATIO,
+        "input_ratios",
+        FUEL,
+        UNIT_PER_UNIT,
+        _build_no_conversion,
     ),
     ModeValue(
-        FlowParameter.OUTPUT_ACTIVITY_RATIO, "output_ratios", FUEL, UNIT_PER_UNIT, _no_conversion
+        FlowParameter.OUTPUT_ACTIVITY_RATIO,
+        "output_ratios",
+        FUEL,
+        UNIT_PER_UNIT,
+        _build_no_conversion,
     ),
     ModeValue(
         SupplyParameter.EMISSION_RATE,
@@ -132,7 +140,7 @@ _MODE_VALUES = (
         "activity_decrease_max",
         YEAR,
         UNIT_PER_UNIT,
-        _no_conversion,
+        _build_no_conversion,
         is_bound=True,
     ),
 )
