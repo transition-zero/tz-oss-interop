@@ -10,7 +10,6 @@ storage has one capacity, so the charge side then states no bound and no price o
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import partial
 from typing import Any, NamedTuple
 
@@ -76,6 +75,13 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     build_priced_field,
     build_technology_field,
     build_yearly_field,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._extensions import (
+    STORAGE_FIELDS,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    CandidateKind,
+    Candidates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -153,6 +159,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaStorageCapitalCostField,
     SiennaStorageTechnologyCol,
 )
+from interop.plugins.shared.sienna_investments_sources import STORAGE_TYPES
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipRule,
@@ -197,25 +204,18 @@ _IDENTITY = Identity(
 )
 
 
-@dataclass(frozen=True)
-class StorageCandidates:
-    """One row for each candidate storage, and one row for each one and year of the plan.
-
-    The yearly rows are those of the discharging technology, with `energy_capital_cost` and
-    the storage name beside them.
-    """
-
-    table: pl.DataFrame
-    yearly: pl.DataFrame
-
-
 def build_storage_candidates(
     state: State,
     plan_years: Mapping[int, OperationsYear],
     plan: InvestmentPlan,
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
-) -> StorageCandidates:
+) -> Candidates:
+    """One row for each candidate storage, and one row for each one and year of the plan.
+
+    The yearly rows are those of the discharging technology, with `energy_capital_cost` and
+    the storage name beside them.
+    """
     base = plan_years[plan.base_year]
     storages = _enrich_sharing(read_discharged_storages(state, base, mappings))
     yearly = _read_storage_years(state, plan, storages)
@@ -227,7 +227,7 @@ def build_storage_candidates(
     storages = _drop_skipped(storages, list_area_names(state), recorder)
     yearly = yearly.join(storages.select(_STORAGE_KEYS), on=_STORAGE_KEYS, how="semi")
     discharge = _enrich_energy_costs(enrich_yearly_units(yearly, storages, plan.units), plan)
-    return StorageCandidates(_enrich_values(state, plan, storages, discharge), discharge)
+    return Candidates(STORAGE_KIND, _enrich_values(state, plan, storages, discharge), discharge)
 
 
 def build_storage_translations(cost_year: int, start: int) -> list[Translation]:
@@ -239,10 +239,16 @@ def build_storage_translations(cost_year: int, start: int) -> list[Translation]:
     ]
 
 
-def build_storage_technology_keys(storages: pl.DataFrame) -> pl.DataFrame:
-    """The region and the technology of each technology that charges or discharges a storage."""
-    chargers = storages.select(REGION, pl.col(CHARGE_TECHNOLOGY).alias(TECHNOLOGY))
-    return pl.concat([storages.select(REGION, TECHNOLOGY), chargers]).unique()
+STORAGE_KIND = CandidateKind(
+    component=_COMPONENT,
+    schema=STORAGE_SCHEMA,
+    build=build_storage_translations,
+    fields=STORAGE_FIELDS,
+    keys=_STORAGE_KEYS,
+    device_class=STORAGE,
+    base_types=STORAGE_TYPES,
+    technology_cols=(TECHNOLOGY, CHARGE_TECHNOLOGY),
+)
 
 
 # --- the candidates --------------------------------------------------------------------------

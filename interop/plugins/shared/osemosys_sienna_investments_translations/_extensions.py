@@ -6,7 +6,7 @@ Each goes to a `technology` record of extensions.json, keyed by the year as a st
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, NamedTuple
+from typing import Any
 
 import polars as pl
 
@@ -39,6 +39,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import EACH_YEAR
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    Candidates,
+    YearlyField,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -54,14 +58,6 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
     build_value_fields,
 )
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
-
-
-class YearlyField(NamedTuple):
-    """The yearly column that fills a record field, and the parameter that it comes from."""
-
-    column: str
-    parameter: str
-
 
 # The record fields that every candidate type fills.
 TECHNOLOGY_FIELDS: dict[str, YearlyField] = {
@@ -106,36 +102,34 @@ _DERIVATION = (
 
 
 def build_technology_extensions(
-    component: str,
-    candidates: pl.DataFrame,
-    yearly: pl.DataFrame,
-    fields: Mapping[str, YearlyField],
-    keys: Sequence[str],
-    recorder: ScopedRecorder,
+    candidates: Candidates, valued: pl.DataFrame, recorder: ScopedRecorder
 ) -> list[TechnologyExtension]:
     """One record for each candidate, from its yearly rows and the values of every year.
 
-    `keys` name a candidate in both tables. `candidates` holds its names, and the columns of
-    `CANDIDATE_VALUES` that `enrich_technology_values` adds.
+    `valued` is the table of the candidates, with the columns of `CANDIDATE_VALUES` that
+    `enrich_technology_values` adds.
     """
-    names = candidates.select(*keys, CANDIDATE_NAME, REPORT_NAME)
-    named = yearly.drop(CANDIDATE_NAME, REPORT_NAME, strict=False).join(names, on=list(keys))
+    kind = candidates.kind
+    names = valued.select(*kind.keys, CANDIDATE_NAME, REPORT_NAME)
+    named = candidates.yearly.drop(CANDIDATE_NAME, REPORT_NAME, strict=False).join(
+        names, on=list(kind.keys)
+    )
     grouped = (
         named.sort(YEAR)
         .group_by(CANDIDATE_NAME, REPORT_NAME, maintain_order=True)
-        .agg(pl.col(YEAR), *(pl.col(field.column) for field in fields.values()))
-        .join(_select_candidate_values(candidates, component), on=CANDIDATE_NAME, how="left")
+        .agg(pl.col(YEAR), *(pl.col(field.column) for field in kind.fields.values()))
+        .join(_build_candidate_values(valued, kind.component), on=CANDIDATE_NAME, how="left")
     )
     records: list[TechnologyExtension] = []
     for row in grouped.sort(CANDIDATE_NAME).iter_rows(named=True):
-        records.append(_build_record(row, fields))
-        recorder.append(_build_event(component, row, fields))
+        records.append(_build_record(row, kind.fields))
+        recorder.append(_build_event(kind.component, row, kind.fields))
         for event in build_value_events(row, CANDIDATE_VALUES, _OWNERS):
             recorder.append(event)
     return records
 
 
-def _select_candidate_values(candidates: pl.DataFrame, component: str) -> pl.DataFrame:
+def _build_candidate_values(candidates: pl.DataFrame, component: str) -> pl.DataFrame:
     columns = [
         column for value in CANDIDATE_VALUES for column in (value.column, value.stated_column)
     ]
@@ -146,18 +140,6 @@ def _select_candidate_values(candidates: pl.DataFrame, component: str) -> pl.Dat
     )
 
 
-class CandidateFamily(NamedTuple):
-    """The candidates of one technology type, their record fields and the key columns of one.
-
-    `applied` names the parameters that the portfolio applies to each candidate beside them.
-    """
-
-    candidates: pl.DataFrame
-    fields: Mapping[str, YearlyField]
-    keys: Sequence[str]
-    applied: tuple[str, ...] = ()
-
-
 # The parameters of a supply candidate that its availability and its variable cost apply.
 SUPPLY_APPLIED: tuple[str, ...] = (
     SupplyParameter.CAPACITY_FACTOR,
@@ -166,16 +148,16 @@ SUPPLY_APPLIED: tuple[str, ...] = (
 )
 
 
-def set_technology_extensions_persisted(state: State, families: Sequence[CandidateFamily]) -> None:
+def set_technology_extensions_persisted(state: State, families: Sequence[Candidates]) -> None:
     """Note the candidates whose values the portfolio or the technology records hold."""
     by_parameter: dict[str, list[pl.DataFrame]] = {}
     for family in families:
-        candidates = family.candidates
-        members = [candidates.select(*family.keys), candidates.select(REGION, TECHNOLOGY)]
+        kind = family.kind
+        members = [family.table.select(*kind.keys), family.table.select(REGION, TECHNOLOGY)]
         parameters = [
-            *(field.parameter for field in family.fields.values()),
+            *(field.parameter for field in kind.fields.values()),
             *(value.parameter for value in CANDIDATE_VALUES),
-            *family.applied,
+            *kind.applied,
         ]
         for parameter in parameters:
             by_parameter.setdefault(parameter, []).extend(members)
