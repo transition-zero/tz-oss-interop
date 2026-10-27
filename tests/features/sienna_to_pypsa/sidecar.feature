@@ -66,6 +66,28 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     Then the PyPSA network "outputs/network.nc" generator "gas" attribute "e_sum_max" is inf
     And the log contains "because the snapshots count for 8770.0 h, not one whole year: gas.e_sum_max"
 
+  Scenario: An energy bound that the network does not apply stays in extensions.json, and the log names it for each kind of component
+    A PyPSA StorageUnit and a PyPSA Link have no e_sum_min or e_sum_max, and a Generator takes
+    only the annual bounds.
+    Given the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 4 initial_level 0 rating 1 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
+    And the EnergyReservoirStorage "battery" has ext "e_sum_max" set to {"2020": 5.0}
+    And the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
+    And the HydroDispatch "hydro" has ext "e_sum_min" set to {"2020": 7.0}
+    And the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
+    And the TwoTerminalGenericHVDCLine "line" has ext "e_sum_max" set to {"2020": 9.0}
+    And the ThermalStandard "gas" has ext "e_sum_max_horizon" set to 5000.0
+    And the system is saved as "inputs/unapplied.json"
+    When I run translate against "inputs/unapplied.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the file "outputs/extensions.json" parses as JSON storage extension record for "battery" having "e_sum_max" set to {"2020": 5.0}
+    And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "e_sum_max_horizon" set to 5000.0
+    And the log contains "2 energy bound(s) of a storage unit stay in extensions.json and bind nothing, because a PyPSA StorageUnit has no e_sum_min or e_sum_max: battery.e_sum_max, hydro.e_sum_min"
+    And the log contains "1 energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: line.e_sum_max"
+    And the log contains "1 energy bound(s) over the horizon of a generator stay in extensions.json and bind nothing, because this hop maps only the annual bounds onto e_sum_min and e_sum_max: gas.e_sum_max_horizon"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.e_sum_max` |  |  | a PyPSA StorageUnit has no e_sum_min or e_sum_max, so the network does not bound the energy of the unit; extensions.json keeps the bound |"
+    And the file "decisions.md" contains "| `sienna.HydroDispatch.hydro.extensions.e_sum_min` |  |  | a PyPSA StorageUnit has no e_sum_min or e_sum_max, so the network does not bound the energy of the unit; extensions.json keeps the bound |"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.extensions.e_sum_max` |  |  | a PyPSA Link has no e_sum_min or e_sum_max, so the network does not bound the energy of the link; extensions.json keeps the bound |"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.e_sum_max_horizon` |  |  | this hop maps only the annual bounds onto e_sum_min and e_sum_max, so the bound over the horizon binds nothing; extensions.json keeps it |"
+
   Scenario: The fields of a generator record that PyPSA has no attribute for travel on unchanged
     Given the ThermalStandard "gas" has ext carrier "gas"
     And the ThermalStandard "gas" has ext emission rate 0.4 t/MWh of "CO2"

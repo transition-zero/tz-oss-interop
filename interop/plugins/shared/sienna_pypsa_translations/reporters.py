@@ -169,6 +169,15 @@ class _Reporter(DestinationReporter):
             derivation=f"{attribute} (PyPSA round-trip)",
         )
 
+    def record_bound_unapplied(
+        self, sienna_type: str, name: str, field_name: str, note: str
+    ) -> None:
+        """An energy bound of a sidecar record that the network does not apply."""
+        attribute = f"{EXTENSIONS_PREFIX}{field_name}"
+        self._not_mapped(
+            sources=[self._source_field(sienna_type, name, attribute, None)], note=note
+        )
+
     def record_overnight_cost_unpriced(
         self, sienna_type: str, name: str, overnight_cost: float
     ) -> None:
@@ -539,13 +548,6 @@ class GeneratorReporter(_Reporter):
             sources=[self._source_field(sienna_type, name, attribute, value, UNIT_MWH)],
             destinations=[self._destination(name, column, value, UNIT_MWH)],
             derivation=derivation,
-        )
-
-    def record_energy_bound_unmapped(
-        self, sienna_type: str, name: str, attribute: str, note: str
-    ) -> None:
-        self._not_mapped(
-            sources=[self._source_field(sienna_type, name, attribute, None)], note=note
         )
 
 
@@ -1011,12 +1013,6 @@ class LinkReporter(_Reporter):
             SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE, name, attribute, value, unit
         )
 
-    def record_bound_unmapped(self, name: str, field_name: str) -> None:
-        self._not_mapped(
-            sources=[self._source(name, f"{EXTENSIONS_PREFIX}{field_name}", None)],
-            note=_LINK_BOUND_NOTE,
-        )
-
     def record_endpoints(self, name: str, arc_id: int, bus0_name: str, bus1_name: str) -> None:
         self._derived(
             sources=[self._source(name, SiennaLinkCol.ARC, arc_id)],
@@ -1244,21 +1240,7 @@ class ConversionReporter(_Reporter):
             derivation=_P_NOM_FLOOR_DERIVATION,
         )
 
-    def record_bound_unmapped(self, name: str, field_name: str) -> None:
-        self._not_mapped(
-            sources=[
-                self._source_field(
-                    ExtensionKind.CONVERSION, name, f"{EXTENSIONS_PREFIX}{field_name}", None
-                )
-            ],
-            note=_LINK_BOUND_NOTE,
-        )
 
-
-_LINK_BOUND_NOTE = (
-    "a PyPSA Link has no e_sum_min or e_sum_max, so the network does not bound the energy of the "
-    "link over the year; extensions.json keeps the bound"
-)
 _PLANT_LINK_NOTE = (
     "the plant burns a fuel whose bus the network holds, so it draws the fuel from that bus as "
     "a Link and pays the price that the network gives the fuel"
