@@ -91,6 +91,9 @@ from interop.plugins.shared.osemosys_sienna_translations._line_capacity import (
     enrich_line_capacity,
     read_fleet_output_mw,
 )
+from interop.plugins.shared.osemosys_sienna_translations._link_penalties import (
+    report_line_penalties,
+)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -370,6 +373,7 @@ def build_transport_source(
     lines = _enrich_ratings(state, operations, _enrich_fleet_output(state, operations, lines))
     lines = _enrich_costs(state, operations, lines)
     _report_flow_back(lines, recorder)
+    report_line_penalties(state, operations, lines, recorder)
     lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
     report_one_way_lines(lines, recorder)
