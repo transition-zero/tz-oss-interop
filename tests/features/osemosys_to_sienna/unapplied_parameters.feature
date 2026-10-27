@@ -80,12 +80,14 @@ Feature: osemosys-csv-to-sienna reports each row of a parameter that no step of 
 
   Scenario: The heat that a combined heat and power plant puts out is reported
     The ThermalStandard ATGASCC holds the electricity output only, so the heat output reaches
-    no Sienna field and no record of extensions.json.
+    no Sienna field and no record of extensions.json. The generator reports it once, so the
+    report of the unapplied parameters does not name it again.
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "bus" set to 1
-    And the log contains "output_activity_ratio states"
-    And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC"
+    And the log contains "1 fuel output(s) of a supply technology are not electricity at the operations mode, so each is left out. Technologies: R1/ATGASCC"
+    And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC.fuel that is not electricity` = 0.8 |  |  | a Sienna generator puts out electricity only, so the output of ATHEAT at the operations mode is left out"
+    And the log does not contain "output_activity_ratio states"
 
   Scenario: A row that names a route and no region is reported by its route
     A trade route of the heat ATHEAT has no component in the operations system.
