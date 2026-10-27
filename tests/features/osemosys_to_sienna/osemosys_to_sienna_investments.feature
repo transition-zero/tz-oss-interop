@@ -541,6 +541,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with "time_series_storage_file" set to "portfolio_time_series_storage.h5"
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2030" with 48 values that peak at 200
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" with 48 values that peak at 400
+    And the file "decisions.md" contains "`osemosys.fuel.R1/ATELEC.specified_annual_demand` = {'2030': 876.0, '2035': 1752.0} GWh | `sienna.DemandRequirement.ATELEC.max_active_power time series, one for each year` MW"
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2030" with 48 values that peak at 0.8
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2035" with 48 values that peak at 0.9
     And the file "decisions.md" contains "`osemosys.capacity_factor.R1/ATSOLAR.each timeslice of each year`<br>`osemosys.availability_factor.R1/ATSOLAR.each year` = {'2030': 1.0, '2035': 1.0}"
