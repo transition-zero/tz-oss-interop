@@ -113,13 +113,42 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     When I run translate against "inputs/bounded.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "gas" has bus "AT"
     And the PyPSA network "outputs/network.nc" has no link "gas"
-    And the log contains "1 plant(s) burn a fuel whose bus the network holds, but each states an annual energy bound, which a PyPSA Link has no attribute for, so each stays a Generator that pays the Sienna price of its fuel: gas"
+    And the log contains "1 plant(s) state the buses of their fuels, but each states an annual energy bound, which a PyPSA Link has no attribute for, so each stays a Generator that pays the Sienna price of its fuel: gas"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.fuel_buses` = {'R1/ATGAS': 2.0} |  |  | the plant states an annual energy bound"
 
   Scenario: A plant whose fuel has no bus stays a Generator at its Sienna price
     Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATCOAL": 1.5}
     And the system is saved as "inputs/no_bus.json"
     When I run translate against "inputs/no_bus.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
+    And the PyPSA network "outputs/network.nc" has no link "gas"
+    And the log contains "1 plant(s) state the buses of their fuels, but each names a bus that the network does not hold, so each stays a Generator that pays the Sienna price of its fuel: gas"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.fuel_buses` = {'R1/ATCOAL': 1.5} |  |  | the plant names a bus that the network does not hold"
+
+  Scenario: A plant that burns four fuels stays a Generator, and the log says so
+    A Link of this hop draws a fuel at bus0, bus2 and bus3, and puts out electricity at bus1.
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0, "R1/DEGAS": 0.5, "AT": 0.1, "DE": 0.1}
+    And the system is saved as "inputs/four_fuels.json"
+    When I run translate against "inputs/four_fuels.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
+    And the PyPSA network "outputs/network.nc" has no link "gas"
+    And the log contains "1 plant(s) state the buses of their fuels, but each burns more than 3 fuels, and a Link of this hop draws at bus0, bus2 and bus3 only, so each stays a Generator that pays the Sienna price of its fuel: gas"
+
+  Scenario: A plant whose fuel ratio is not above zero stays a Generator, and the log says so
+    A ratio of 0 MWh of fuel for each MWh of electricity gives no efficiency for a Link.
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 0.0}
+    And the system is saved as "inputs/no_ratio.json"
+    When I run translate against "inputs/no_ratio.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
+    And the PyPSA network "outputs/network.nc" has no link "gas"
+    And the log contains "1 plant(s) state the buses of their fuels, but each states a fuel ratio that is not above zero, so each stays a Generator that pays the Sienna price of its fuel: gas"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.fuel_buses` = {'R1/ATGAS': 0.0} |  |  | the plant states a fuel ratio that is not above zero"
+
+  Scenario: A plant whose fuel ratio is negative stays a Generator
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": -2.0}
+    And the system is saved as "inputs/negative_ratio.json"
+    When I run translate against "inputs/negative_ratio.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "p_nom" is 200.0
     And the PyPSA network "outputs/network.nc" has no link "gas"
 
   Scenario: An annual bound of a conversion record that becomes a link travels on, and the log says so
@@ -176,6 +205,8 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     Then the PyPSA network "outputs/network.nc" generator "gas" is extendable
     And the PyPSA network "outputs/network.nc" generator "gas" attribute "marginal_cost" is 25.0
     And the PyPSA network "outputs/network.nc" has no link "gas"
+    And the log contains "1 plant(s) state the buses of their fuels, but each may build more capacity, which a Link of this hop does not, so each stays a Generator that pays the Sienna price of its fuel: gas"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.fuel_buses` = {'R1/ATGAS': 2.0} |  |  | the plant may build more capacity"
 
   Scenario: An annual bound of a controllable line travels on, and the log says so
     The HVDC line step_down states an annual bound in its record, which a PyPSA Link has no

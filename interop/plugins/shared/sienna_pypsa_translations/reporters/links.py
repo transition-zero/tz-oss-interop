@@ -232,11 +232,6 @@ _PLANT_FURTHER_DERIVATION = (
 _PLANT_DROPPED_NOTE = (
     "the Generator of the plant states the column, and the Link that replaces it does not hold it"
 )
-_BOUNDED_PLANT_NOTE = (
-    "the plant states an annual energy bound, and a PyPSA Link has no e_sum_min or e_sum_max, "
-    "so it stays a Generator that pays the Sienna price of its fuel and does not draw the fuel "
-    "from its bus"
-)
 
 
 class _PlantLinkValue(NamedTuple):
@@ -314,14 +309,18 @@ class PlantLinkReporter(SiennaToPypsaReporter):
             sources=[_build_generator_field(name, column, value)], note=_PLANT_DROPPED_NOTE
         )
 
-    def record_bounded(self, name: str) -> None:
+    def record_kept(self, name: str, fuel_buses: object, note: str) -> None:
+        """A plant that states the buses of its fuels and stays a Generator, and why."""
         self._not_mapped(
             sources=[
                 self._source_field(
-                    SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
+                    SiennaComponent.THERMAL_STANDARD,
+                    name,
+                    f"{EXTENSIONS_PREFIX}fuel_buses",
+                    fuel_buses,
                 )
             ],
-            note=_BOUNDED_PLANT_NOTE,
+            note=note,
         )
 
 
