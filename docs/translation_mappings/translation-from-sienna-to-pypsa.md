@@ -494,6 +494,7 @@ The step `sienna_to_pypsa_map_components` builds them:
 | `Generator` field | From | If absent |
 | --- | --- | --- |
 | `bus`, `carrier`, `p_nom`, `marginal_cost`, `p_max_pu`, `p_nom_extendable`, `p_nom_max` | The field of the same name | `p_nom` 0, `marginal_cost` 0, `p_max_pu` 1, not extendable |
+| `p_min_pu`, `committable` | None | `p_min_pu` 0, `committable` `False` |
 | `p_nom_min` | `p_nom`, for an extendable generator with a capacity above 0 | None |
 | `e_sum_min`, `e_sum_max` | As [Annual energy bounds](#annual-energy-bounds) gives | None |
 
@@ -501,6 +502,9 @@ The step `sienna_to_pypsa_map_components` builds them:
 | --- | --- | --- |
 | `bus`, `carrier`, `p_set` | The field of the same name | `p_set` 0 |
 | The `p_set` time series | The column `p_set` of `loads.parquet`, where `p_set_series` names it | None |
+
+`decisions.md` records each value that a generator or a load of a fuel takes from the "If
+absent" column as `TRANSLATOR_DEFAULT_APPLIED`.
 
 The emission rates and the annual bounds of a generator record travel on, so
 `pypsa-to-results` can count the emissions of each fuel. The solve gives each bus, of a fuel
@@ -510,12 +514,23 @@ too, the slack generators of unserved and surplus energy.
 
 A `ThermalStandard` pays the Sienna price of its fuel. Where the network holds the bus of the
 fuel, that price counts the fuel twice: once in the plant, and once in the generator that
-supplies the bus. So a `ThermalStandard` becomes a PyPSA `Link` when all of these hold:
+supplies the bus. So a `ThermalStandard` whose `generator` record states `fuel_buses` becomes a
+PyPSA `Link` from that bus. The sub-step `sienna_to_pypsa_map_plant_links` of
+`sienna_to_pypsa_map_components` does it. It runs after the sub-step
+`sienna_to_pypsa_map_fuels`, which adds the buses of the fuels to the network.
 
-- its `generator` record states `fuel_buses`, and names three buses at most;
-- the network holds each bus that `fuel_buses` names;
-- the record states no annual energy bound;
-- the plant is not extendable, and its marginal cost is the same in every hour.
+These reasons keep a plant with `fuel_buses` a `Generator` that pays the Sienna price of its
+fuel:
+
+- the network does not hold a bus that `fuel_buses` names;
+- a fuel ratio of `fuel_buses` is not above 0;
+- `fuel_buses` names more than three buses;
+- the network may build the plant, because it is extendable;
+- its marginal cost changes from hour to hour;
+- its record states an annual energy bound.
+
+`decisions.md` records `extensions.fuel_buses` of each such plant as `NOT_MAPPED`, with the
+reason. Each reason gets one warning that names three plants.
 
 
 | `Link` field | From |
@@ -539,8 +554,8 @@ as the generator of the fuel emits for the fuel.
 
 A PyPSA `Link` has no `e_sum_min` or `e_sum_max`. So a plant whose record states an annual
 energy bound stays a `Generator`. It keeps the Sienna price and the emission rate of its fuel,
-and it does not draw the fuel from its bus. The report gives a `NOT_MAPPED` row for each one,
-and one warning names three. A plant whose fuel has no bus also stays a `Generator`.
+and it does not draw the fuel from its bus. A plant whose record states no `fuel_buses` also
+stays a `Generator`.
 
 ## Snapshot weightings
 
