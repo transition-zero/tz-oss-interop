@@ -277,8 +277,12 @@ def _enrich_portfolio_cover(pollutants: pl.DataFrame, portfolio: pl.DataFrame) -
     all_emitters = emitted.select(REGION, TECHNOLOGY).unique().height
     held = emitted.group_by(_KEYS).agg(pl.col(TECHNOLOGY).sort().alias(_HELD_EMITTERS))
     covers = (pl.col(_HELD_EMITTERS).list.len() == all_emitters) & (all_emitters > 0)
-    return pollutants.drop(COVERS_MODEL).join(held, on=_KEYS, how="left").with_columns(
-        covers.fill_null(False).alias(COVERS_MODEL)  # noqa: FBT003
+    return (
+        pollutants.drop(COVERS_MODEL)
+        .join(held, on=_KEYS, how="left")
+        .with_columns(
+            covers.fill_null(False).alias(COVERS_MODEL)  # noqa: FBT003
+        )
     )
 
 

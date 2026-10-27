@@ -176,7 +176,9 @@ def build_supply_candidates(
     technologies = read_kind_technologies(state, TechnologyKind.SUPPLY_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
     prices = [InvestmentParameter.CAPITAL_COST]
-    technologies = enrich_rated_years(drop_non_candidates(technologies, yearly, prices), yearly, prices)
+    technologies = enrich_rated_years(
+        drop_non_candidates(technologies, yearly, prices), yearly, prices
+    )
     technologies = _enrich_ratings(state, plan, enrich_targets(technologies, mappings))
     technologies = _drop_skipped(technologies, list_area_names(state), recorder)
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
