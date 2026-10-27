@@ -53,14 +53,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
     TradeParameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    LOWER_BOUND,
-    UPPER_BOUND,
-    build_bound_events,
-    build_yearly_limits,
-    enrich_activity_limits,
-    set_bounds_persisted,
-)
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import find_parameter_default
 from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
@@ -78,10 +70,6 @@ from interop.plugins.shared.osemosys_sienna_translations._link_penalties import 
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     LINK_RUN_PARAMETERS,
-    build_mode_events,
-    build_operating_mode_field,
-    build_operating_modes,
-    set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
@@ -98,6 +86,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_costs impor
     RATED_COST_MWH,
     read_rated_costs,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_extras import TechnologyExtras
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,
     RATED_PARAMETERS,
@@ -138,6 +127,10 @@ _APPLIED_PARAMETERS = (
 
 CONVERSION_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, TECHNOLOGY_NAME, _COMPONENT
+)
+# A conversion rates on the electricity that it takes in, and runs the operations mode.
+CONVERSION_EXTRAS = TechnologyExtras(
+    CONVERSION_OWNERS, LINK_VALUES, LINK_RUN_PARAMETERS, FlowParameter.INPUT_ACTIVITY_RATIO
 )
 ROUTE_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, CONVERSION_NAME, _COMPONENT, _ROUTE_KEYS
@@ -240,13 +233,10 @@ def build_conversions_source(
         return conversions
     conversions = _enrich_link(state, operations, conversions)
     report_conversion_penalties(state, operations, conversions, recorder)
-    rated = conversions.with_columns(pl.col(INPUT_RATIO).alias(RATING_RATIO))
-    table = enrich_technology_values(state, operations, rated, LINK_VALUES)
-    held = conversions.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
-    bounds = enrich_activity_limits(state, operations, held, FlowParameter.INPUT_ACTIVITY_RATIO)
-    table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
-    modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
-    return modes.enrich(table).sort(CONVERSION_NAME)
+    rated = conversions.with_columns(
+        pl.lit(operations.mode).alias(OPERATING_MODE), pl.col(INPUT_RATIO).alias(RATING_RATIO)
+    )
+    return CONVERSION_EXTRAS.enrich(state, operations, rated).sort(CONVERSION_NAME)
 
 
 def build_routes_source(state: State, operations: OperationsYear) -> pl.DataFrame:
@@ -284,9 +274,7 @@ def set_conversion_values_persisted(
 ) -> None:
     """Note the rows of each conversion technology and each route that the records keep."""
     if conversions.height > 0:
-        set_values_persisted(state, CONVERSION_OWNERS, conversions, LINK_VALUES)
-        set_mode_bounds_persisted(state, CONVERSION_OWNERS, conversions)
-        set_bounds_persisted(state, CONVERSION_OWNERS, conversions)
+        CONVERSION_EXTRAS.set_persisted(state, conversions)
         set_applied_rows(state, CONVERSION_OWNERS, conversions, _APPLIED_PARAMETERS)
     if routes.height > 0:
         set_values_persisted(state, ROUTE_OWNERS, routes, ROUTE_VALUES)
@@ -342,10 +330,7 @@ def _build_extension(row: dict[str, Any]) -> ConversionExtension:
         efficiency=row[PyPSALinkCol.EFFICIENCY],
         marginal_cost=row[PyPSALinkCol.MARGINAL_COST] or None,
         p_max_pu=_find_derate(row[AVAILABILITY_FACTOR]),
-        operating_modes=build_operating_mode_field(row),
-        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
-        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
-        **build_value_fields(row, LINK_VALUES),
+        **CONVERSION_EXTRAS.build_fields(row),
     )
 
 
@@ -452,12 +437,7 @@ def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[Tran
         for value in _list_link_values(record)
         if value.value is not None
     ]
-    return [
-        *link,
-        *build_value_events(row, LINK_VALUES, CONVERSION_OWNERS),
-        *build_mode_events(row, CONVERSION_OWNERS),
-        *build_bound_events(row, CONVERSION_OWNERS, FlowParameter.INPUT_ACTIVITY_RATIO),
-    ]
+    return [*link, *CONVERSION_EXTRAS.build_events(row)]
 
 
 def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
