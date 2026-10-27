@@ -58,7 +58,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTable,
 )
 from interop.plugins.shared.sienna_results_constants import (
-    SNAPSHOT_HOURS,
     AnnualCol,
 )
 from interop.plugins.steps.sienna_to_results.hour_weights import HourWeighter
@@ -84,9 +83,10 @@ _EMISSIONS_DERIVATION = (
 )
 
 _PRODUCTION_DERIVATION = (
-    "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
-    "|flow| for a TwoTerminalGenericHVDCLine, × 1 h × the weight of the representative "
-    "period that holds the hour → production at 1 January of the year. The dispatch rows hold "
+    "Σ over the rows of the solve of max(dispatch, 0) for a generator or a storage, or "
+    "|flow| for a TwoTerminalGenericHVDCLine, × the hours between two rows of the solve, 1 h "
+    "for a solve of one row, × the weight of the representative period that holds the row → "
+    "production at 1 January of the year. The dispatch rows hold "
     "ActivePowerVariable, ActivePowerTimeSeriesParameter for a RenewableNonDispatch, and "
     "ActivePowerOutVariable - ActivePowerInVariable for a storage. The solve models the HVDC "
     "line as lossless, so the energy that it delivers equals the energy that it sends. A line "
@@ -240,10 +240,10 @@ def _build_years(weights: pl.DataFrame) -> pl.DataFrame:
 def _build_production(
     frames: list[pl.LazyFrame], weights: pl.DataFrame, power: pl.Expr
 ) -> pl.DataFrame:
-    """MWh in each year, by component: power × 1 h × the weight of the hour, summed."""
+    """MWh in each year, by component: power × the hours that each row stands for, summed."""
     if not frames:
         return pl.DataFrame(schema=PRODUCTION_SCHEMA)
-    energy = (power * SNAPSHOT_HOURS * pl.col(AnnualCol.WEIGHT)).sum().alias(ResultsCol.VALUE)
+    energy = (power * pl.col(AnnualCol.WEIGHT)).sum().alias(ResultsCol.VALUE)
     year = pl.col(ResultsCol.TIMESTAMP).dt.year().alias(AnnualCol.YEAR)
     return (
         pl.concat(frames)
