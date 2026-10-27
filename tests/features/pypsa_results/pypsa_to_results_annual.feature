@@ -1,13 +1,14 @@
 @slow @fork_unsafe
 Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand for many hours
   A network over representative periods weights each snapshot by the hours of the year that it
-  stands for. pypsa-to-results then also writes production, installed capacity and emissions,
-  each at 1 January of the year of the solve, with the definitions of sienna-to-results.
+  stands for. Where the weightings of a year sum to the hours of a year, pypsa-to-results also
+  writes production, installed capacity and emissions, each at 1 January of the year of the
+  solve, with the definitions of sienna-to-results.
 
   The invented network below has a gas plant, a battery and a line that loses a tenth of what
   it carries in each direction. The line is two one-way links, as sienna-to-pypsa writes it:
-  "link" from node_a to node_b, and "link reverse" from node_b to node_a. The solve covers four hours: the first two stand for 100 h each and the last two
-  for 50 h each. The gas plant emits 0.5 t of CO2 and 0.01 t of NOX for each MWh. A hydro
+  "link" from node_a to node_b, and "link reverse" from node_b to node_a. The solve covers four hours: the first two stand for 2920 h each and the last two
+  for 1460 h each, which is 8760 h in all. The gas plant emits 0.5 t of CO2 and 0.01 t of NOX for each MWh. A hydro
   plant, which PyPSA holds as a storage unit, emits 0.02 t of CO2 for each MWh.
 
   Background:
@@ -26,8 +27,8 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the storage unit "dam" dispatches 1 1 1 1
     And the link "link" carries flow 5 0 0 2
     And the link "link reverse" carries flow 0 3 0 0
-    And the snapshot weightings are 100 100 50 50
-    And the generator snapshot weightings are 100 100 50 50
+    And the snapshot weightings are 2920 2920 1460 1460
+    And the generator snapshot weightings are 2920 2920 1460 1460
     And the network objective is 1000.0
 
   Scenario: Production weights each snapshot, and a line delivers what reaches its far end
@@ -43,10 +44,10 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" has these "production" rows:
       | variable   | component | category | timestamp           | value |
-      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
-      | production | battery   | battery  | 2030-01-01T00:00:00 | 400   |
-      | production | dam       | hydro    | 2030-01-01T00:00:00 | 300   |
-      | production | link      |          | 2030-01-01T00:00:00 | 810   |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 189800 |
+      | production | battery   | battery  | 2030-01-01T00:00:00 | 11680  |
+      | production | dam       | hydro    | 2030-01-01T00:00:00 | 8760   |
+      | production | link      |          | 2030-01-01T00:00:00 | 23652  |
     And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
       | variable           | component | category | timestamp           | value |
       | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
@@ -55,8 +56,8 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | installed_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
     And the results parquet "outputs/results.parquet" has these "emissions" rows:
       | variable  | component | category | timestamp           | value |
-      | emissions | CO2       |          | 2030-01-01T00:00:00 | 3256  |
-      | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
+      | emissions | CO2       |          | 2030-01-01T00:00:00 | 95075.2 |
+      | emissions | NOX       |          | 2030-01-01T00:00:00 | 1898    |
     And the file "decisions.md" contains "max(-p0, 0) + max(-p1, 0)"
 
   Scenario: A link that its record marks as a conversion has no production and no installed capacity
@@ -76,10 +77,10 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" has these "production" rows:
       | variable   | component | category | timestamp           | value |
-      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
-      | production | battery   | battery  | 2030-01-01T00:00:00 | 400   |
-      | production | dam       | hydro    | 2030-01-01T00:00:00 | 300   |
-      | production | link      |          | 2030-01-01T00:00:00 | 810   |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 189800 |
+      | production | battery   | battery  | 2030-01-01T00:00:00 | 11680  |
+      | production | dam       | hydro    | 2030-01-01T00:00:00 | 8760   |
+      | production | link      |          | 2030-01-01T00:00:00 | 23652  |
     And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
       | variable           | component | category | timestamp           | value |
       | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
@@ -100,7 +101,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
-      | production | step_down |          | 2030-01-01T00:00:00 | 300   |
+      | production | step_down |          | 2030-01-01T00:00:00 | 8760   |
     And the log contains "pypsa-to-results: 1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json. Each one: step_down"
 
   Scenario: A plant link that states no carrier still reports its dispatch
@@ -159,7 +160,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | peaker    | oil      | 2030-01-01T00:00:00 | 0     |
-      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 189800 |
     And the results parquet "outputs/results.parquet" holds these "dispatch" rows among others:
       | variable | component | category | timestamp           | value |
       | dispatch | peaker    | oil      | 2030-01-01T00:00:00 | 0     |
@@ -196,3 +197,17 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" has these "production" rows:
       | variable | component | category | timestamp | value |
+
+  Scenario: A weighted network whose snapshots do not stand for a year has no annual rows, and the report says so
+    The four snapshots stand for 300 h, such as one week at a coarse step, so a row dated
+    1 January would hold part of a year.
+    Given the snapshot weightings are 100 100 50 50
+    And the generator snapshot weightings are 100 100 50 50
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "production" rows:
+      | variable | component | category | timestamp | value |
+    And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
+      | variable | component | category | timestamp | value |
+    And the log contains "pypsa-to-results: 1 year(s) have snapshot weightings that sum to other than the hours of a year, so they have no production, installed_capacity or emissions row. Each one: 2030 (300 h)"
