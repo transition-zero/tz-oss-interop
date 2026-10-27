@@ -9,16 +9,16 @@ and each hour its weight.
 from __future__ import annotations
 
 import io
-import json
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import ClassVar, NamedTuple
 
 import polars as pl
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from interop.core.pipeline import StagedSource, State
+from interop.plugins.shared.constants import SECONDS_PER_HOUR
 from interop.plugins.shared.power_systems_investments_results_constants import (
     HOUR_WEIGHTS_KEY,
     INVESTMENT_RESULT_CSVS,
@@ -33,14 +33,14 @@ from interop.plugins.shared.power_systems_investments_results_constants import (
     ResultsCsvCol,
     StagedResultCol,
 )
-from interop.plugins.shared.power_systems_investments_schema import SeriesDocument
-from interop.ports.errors import MissingInputError
+from interop.ports.errors import MissingInputError, UserInputError
+from interop.ports.outbound.expansion import OperationalSlice, PortfolioSeries
 from interop.ports.outbound.filesystem import FilesystemPort, InputDirectory, InputFile
 
 _STAGING_SUBDIR = "power_systems_investments_results"
 _RESULTS_DIR_DESCRIPTION = "expansion results directory"
+_SERIES_DESCRIPTION = "series document"
 _FIRST_PERIOD = 1
-_SECONDS_PER_HOUR = 3600.0
 _DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%.f"
 
 _INVESTMENT_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -82,16 +82,19 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
                 f"got {type(params).__name__}"
             )
         series = self._read_series_document(params.series_json_path)
-        self._reject_results_dir_without_results(params.results_dir)
+        investment = self._read_results(
+            params.results_dir, INVESTMENT_RESULT_CSVS, _reshape_investment_rows
+        )
+        operations = self._read_results(
+            params.results_dir, OPERATIONS_RESULT_CSVS, _reshape_operations_rows
+        )
+        if not investment and not operations:
+            raise MissingInputError(self.name, _RESULTS_DIR_DESCRIPTION, f"{params.results_dir}")
         directory = staging_dir / _STAGING_SUBDIR
         directory.mkdir(parents=True, exist_ok=True)
         topology = {
             INVESTMENT_RESULTS_KEY: _write(
-                self._read_results(
-                    params.results_dir, INVESTMENT_RESULT_CSVS, _reshape_investment_rows
-                ),
-                _INVESTMENT_SCHEMA,
-                directory / f"{INVESTMENT_RESULTS_KEY}.parquet",
+                investment, _INVESTMENT_SCHEMA, directory / f"{INVESTMENT_RESULTS_KEY}.parquet"
             ),
             PERIOD_YEARS_KEY: _write(
                 _build_period_years(series), None, directory / f"{PERIOD_YEARS_KEY}.parquet"
@@ -101,34 +104,25 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
             ),
             **self._stage_objective(params.results_dir, directory),
         }
-        operations = _write(
-            self._read_results(
-                params.results_dir, OPERATIONS_RESULT_CSVS, _reshape_operations_rows
-            ),
-            _OPERATIONS_SCHEMA,
-            directory / "operations.parquet",
-        )
         return State(
             staging_dir=staging_dir,
             source_topology=topology,
-            source_time_series={OPERATIONS_RESULTS_KEY: operations},
+            source_time_series={
+                OPERATIONS_RESULTS_KEY: _write(
+                    operations, _OPERATIONS_SCHEMA, directory / "operations.parquet"
+                )
+            },
         )
 
-    def _read_series_document(self, path: Path | str) -> dict[str, Any]:
+    def _read_series_document(self, path: Path | str) -> PortfolioSeries:
         if not self._fs.can_read(path):
-            raise MissingInputError(self.name, "series document", f"{path}")
-        document: dict[str, Any] = json.loads(self._fs.read_bytes(path))
-        return document
-
-    def _reject_results_dir_without_results(self, results_dir: Path) -> None:
-        """Raise when the directory holds no investment or operations result of the solve."""
-        paths = [
-            results_dir / relative
-            for result_csvs in (*INVESTMENT_RESULT_CSVS, *OPERATIONS_RESULT_CSVS)
-            for _technology, relative in result_csvs.list_paths()
-        ]
-        if not any(self._fs.can_read(path) for path in paths):
-            raise MissingInputError(self.name, _RESULTS_DIR_DESCRIPTION, f"{results_dir}")
+            raise MissingInputError(self.name, _SERIES_DESCRIPTION, f"{path}")
+        try:
+            return PortfolioSeries.model_validate_json(self._fs.read_bytes(path))
+        except ValidationError as exc:
+            raise UserInputError(
+                f"The file at {path} is not a {_SERIES_DESCRIPTION}:\n{exc}"
+            ) from exc
 
     def _read_results(
         self,
@@ -180,29 +174,39 @@ def _reshape_operations_rows(raw: pl.DataFrame, result: str, technology: str) ->
     )
 
 
-def _build_period_years(series: dict[str, Any]) -> list[pl.DataFrame]:
+def _build_period_years(series: PortfolioSeries) -> list[pl.DataFrame]:
     """The year of each investment period, which the solve indexes from one in order."""
-    periods = series.get(SeriesDocument.PERIODS, [])
     return [
         pl.DataFrame(
             {
-                StagedResultCol.PERIOD: [_FIRST_PERIOD + index for index in range(len(periods))],
-                StagedResultCol.YEAR: [
-                    date.fromisoformat(period[SeriesDocument.START]).year for period in periods
+                StagedResultCol.PERIOD: [
+                    _FIRST_PERIOD + index for index in range(len(series.periods))
                 ],
+                StagedResultCol.YEAR: [period.start.year for period in series.periods],
             },
             schema={StagedResultCol.PERIOD: pl.Int64, StagedResultCol.YEAR: pl.Int32},
         )
     ]
 
 
-def _build_hour_weights(series: dict[str, Any]) -> list[pl.DataFrame]:
-    """Each hour of each slice that the solve ran, with its year, its slice, weight and length."""
-    slices: dict[tuple[str, int], dict[str, Any]] = {}
-    for record in series.get(SeriesDocument.RECORDS, []):
-        key = (record[SeriesDocument.YEAR], record[SeriesDocument.REPRESENTATIVE_DAY])
-        slices.setdefault(key, record)
-    rows = [row for record in slices.values() for row in _list_slice_hours(record)]
+class SliceHour(NamedTuple):
+    """One hour of one slice that the solve ran, and the weight and length of its value."""
+
+    snapshot: datetime
+    year: int
+    representative_day: int
+    weight: float
+    hours: float
+
+
+def _build_hour_weights(series: PortfolioSeries) -> list[pl.DataFrame]:
+    """Each hour of each slice that the solve ran, in the order the solve reads the slices."""
+    value_hours = _list_value_hours(series)
+    rows = [
+        hour
+        for one in series.list_slices()
+        for hour in _list_slice_hours(one, value_hours[(one.year, one.rep_day)])
+    ]
     return [
         pl.DataFrame(
             rows,
@@ -218,16 +222,20 @@ def _build_hour_weights(series: dict[str, Any]) -> list[pl.DataFrame]:
     ]
 
 
-def _list_slice_hours(record: dict[str, Any]) -> list[tuple[datetime, int, int, float, float]]:
-    first = datetime.fromisoformat(record[SeriesDocument.INITIAL_TIMESTAMP])
-    seconds = float(record[SeriesDocument.RESOLUTION_SECONDS])
-    step = timedelta(seconds=seconds)
-    year = int(record[SeriesDocument.YEAR])
-    representative_day = int(record[SeriesDocument.REPRESENTATIVE_DAY])
-    weight = float(record[SeriesDocument.WEIGHT])
+def _list_value_hours(series: PortfolioSeries) -> dict[tuple[str, int], float]:
+    """The hours that one value of each slice lasts, from the first record of the slice."""
+    value_hours: dict[tuple[str, int], float] = {}
+    for record in series.records:
+        value_hours.setdefault(
+            (record.year, record.rep_day), record.resolution_seconds / SECONDS_PER_HOUR
+        )
+    return value_hours
+
+
+def _list_slice_hours(one: OperationalSlice, value_hours: float) -> list[SliceHour]:
     return [
-        (first + step * index, year, representative_day, weight, seconds / _SECONDS_PER_HOUR)
-        for index in range(len(record[SeriesDocument.VALUES]))
+        SliceHour(snapshot, int(one.year), one.rep_day, one.weight, value_hours)
+        for snapshot in one.timestamps
     ]
 
 
