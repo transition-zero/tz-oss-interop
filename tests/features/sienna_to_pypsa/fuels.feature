@@ -48,6 +48,11 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the file "outputs/extensions.json" parses as JSON generator extension record for "well" having "emission_rates_t_per_mwh" set to {"CO2": 0.2}
     And the file "outputs/extensions.json" parses as JSON generator extension record for "well" without field "bus"
     And the file "decisions.md" contains "| `sienna.generator.well.extensions.marginal_cost` = 4.0 \$/MWh | `pypsa.Generator.well.marginal_cost` = 4.0 \$/MWh | extensions.marginal_cost (PyPSA round-trip) |"
+    And the file "decisions.md" contains "| `pypsa.Generator.terminal.marginal_cost` = 0.0 |  | the sidecar record states no marginal_cost, so PyPSA's own default applies |"
+    And the file "decisions.md" contains "| `pypsa.Generator.terminal.committable` = False |  | the sidecar record states no committable, so PyPSA's own default applies |"
+    And the file "decisions.md" contains "| `pypsa.Generator.well.p_max_pu` = 1.0 |  | the sidecar record states no p_max_pu, so PyPSA's own default applies |"
+    And the file "decisions.md" contains "| `pypsa.Generator.well.p_nom` = 0.0 |  | the sidecar record states no p_nom, so PyPSA's own default applies |"
+    And the file "decisions.md" does not contain "| `pypsa.Generator.terminal.p_max_pu` = 1.0 |"
 
   Scenario: A load record on the bus of a fuel becomes a load, flat or with its series
     Given the system has a load extension record "ATGAS/accumulated" with "bus" set to "R1/ATGAS"
@@ -61,6 +66,14 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" attribute "p_set" is 100.0
     And the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" has carrier "gas"
     And the PyPSA network "outputs/network.nc" load "DEGAS" has a p_set time series 10 20 30 40
+    And the file "decisions.md" does not contain "| `pypsa.Load.DEGAS.p_set` = 0.0 |"
+
+  Scenario: A fuel load record that states no p_set takes PyPSA's own default, and decisions.md says so
+    Given the system has a load extension record "ATGAS/accumulated" with "bus" set to "R1/ATGAS"
+    And the system is saved as "inputs/empty_load.json"
+    When I run translate against "inputs/empty_load.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" attribute "p_set" is 0.0
+    And the file "decisions.md" contains "| `pypsa.Load.ATGAS/accumulated.p_set` = 0.0 |  | the sidecar record states no p_set, so PyPSA's own default applies |"
 
   Scenario: The fields of a fuel load record that PyPSA has no column for travel on unchanged
     Given the system has a load extension record "ATGAS/accumulated" with "bus" set to "R1/ATGAS"
