@@ -80,8 +80,8 @@ _EXT_S_NOM_EXTENDABLE_ATTR = f"{EXTENSIONS_PREFIX}s_nom_extendable"
 _S_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_S_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
 _EXT_OVERNIGHT_COST_ATTR = f"{EXTENSIONS_PREFIX}overnight_cost_per_mw"
 _UNPRICED_OVERNIGHT_COST_NOTE = (
-    "the record states no discount_rate, and PyPSA cannot annualise an overnight_cost without "
-    "one, so the network leaves the cost out; extensions.json keeps it"
+    "the record states no {missing_field}, and PyPSA annualises an overnight_cost only over a "
+    "discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it"
 )
 _EXT_P_NOM_EXTENDABLE_ATTR = f"{EXTENSIONS_PREFIX}p_nom_extendable"
 _P_NOM_EXTENDABLE_FROM_EXT = f"{_EXT_P_NOM_EXTENDABLE_ATTR} (PyPSA round-trip)"
@@ -179,16 +179,16 @@ class _Reporter(DestinationReporter):
         )
 
     def record_overnight_cost_unpriced(
-        self, sienna_type: str, name: str, overnight_cost: float
+        self, sienna_type: str, name: str, overnight_cost: float, missing_field: str
     ) -> None:
-        """An overnight cost the network leaves out, as the record states no discount rate."""
+        """An overnight cost the network leaves out, as the record states no rate or no life."""
         self._not_mapped(
             sources=[
                 self._source_field(
                     sienna_type, name, _EXT_OVERNIGHT_COST_ATTR, overnight_cost, UNIT_DOLLARS_PER_MW
                 )
             ],
-            note=_UNPRICED_OVERNIGHT_COST_NOTE,
+            note=_UNPRICED_OVERNIGHT_COST_NOTE.format(missing_field=missing_field),
         )
 
 

@@ -342,6 +342,15 @@ def assert_storage_unit_attribute(path: str, name: str, attr: str, value: float)
     WrittenComponent(path, STORAGE_UNIT, name).assert_close(attr, value)
 
 
+@then(
+    parsers.parse(
+        'the PyPSA network "{path}" storage unit "{name}" costs {value:g} a year for each MW'
+    )
+)
+def assert_storage_unit_yearly_capital_cost(path: str, name: str, value: float) -> None:
+    WrittenComponent(path, STORAGE_UNIT, name).assert_yearly_capital_cost(value)
+
+
 @then(parsers.parse('the PyPSA network "{path}" storage unit "{name}" states no "{attr}"'))
 def assert_storage_unit_unstated(path: str, name: str, attr: str) -> None:
     WrittenComponent(path, STORAGE_UNIT, name).assert_unstated(attr)
