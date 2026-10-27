@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
@@ -27,6 +28,9 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
     TableKind,
     TechnologyKind,
+)
+from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    find_parameter_default,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
@@ -63,7 +67,10 @@ from interop.ports.outbound.reporting import (
 
 log = logging.getLogger(__name__)
 
+# The pipeline name that each warning of the step starts with.
+_PIPELINE = "aetos-to-results"
 _REPORT_NAME = "report_name"
+_DEFAULT_ATTRIBUTE = "default"
 _FIRST_MONTH = 1
 _FIRST_DAY = 1
 
@@ -72,12 +79,21 @@ _NO_PRODUCTION_NOTE = (
     "give each electricity fuel `carrier: electricity` in the user mappings file"
 )
 _NO_PRODUCTION_WARNING = "The results CSV gives activity, but %s"
+_UNREAD_DEFAULT_NOTE = (
+    "a default other than zero would give every technology this ratio for every fuel and "
+    "every mode, so the results read only the rows that the model states, as the Sienna "
+    "translation does"
+)
+_UNREAD_DEFAULT_WARNING = (
+    "%s: %s has the default %g, which the results do not apply. They read only the rows that "
+    "the model states."
+)
 
 _CAPACITY_DERIVATION = "{variable} × the MW in one {unit} → {destination} at 1 January of the year"
 _PRODUCTION_DERIVATION = (
     "Σ over modes of TotalAnnualTechnologyActivityByMode × output_activity_ratio on each fuel "
-    "whose carrier is electricity (a fuel with no row takes the default of "
-    "output_activity_ratio), × the MWh in one {unit} → production at 1 January of the year"
+    "whose carrier is electricity that the model states, × the MWh in one {unit} → production "
+    "at 1 January of the year"
 )
 _EMISSIONS_DERIVATION = (
     "Σ over regions of AnnualEmissions × the t in one {unit} → emissions of the pollutant at "
@@ -185,6 +201,7 @@ class AetosResultsToResultsFormat(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
+        self._report_unread_ratio_default(state)
         stated = _read_stated_variables(state)
         inputs = MappingInputs(
             _reshape_variables(stated), read_results_model(state), parse_units(state)
@@ -325,6 +342,26 @@ class AetosResultsToResultsFormat(TranslationStep):
         if names:
             warning = report.warning.format(variable=variable)
             log.warning(warning, len(names), name_a_few(names))
+
+    def _report_unread_ratio_default(self, state: State) -> None:
+        default = find_parameter_default(state, FlowParameter.OUTPUT_ACTIVITY_RATIO)
+        if not default:
+            return
+        self._recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[
+                    replace(
+                        _OUTPUT_ACTIVITY_RATIO_SOURCE, attribute=_DEFAULT_ATTRIBUTE, value=default
+                    )
+                ],
+                destinations=[_build_results_destination(ResultsVariable.PRODUCTION)],
+                note=_UNREAD_DEFAULT_NOTE,
+            )
+        )
+        log.warning(
+            _UNREAD_DEFAULT_WARNING, _PIPELINE, FlowParameter.OUTPUT_ACTIVITY_RATIO, default
+        )
 
     def _report_no_production(self) -> None:
         self._recorder.append(

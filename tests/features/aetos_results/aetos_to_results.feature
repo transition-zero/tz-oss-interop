@@ -202,28 +202,32 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | emissions | CO2       |          | 2031-01-01T00:00:00 | 500   |
     And the file "decisions.md" contains "Σ over regions of AnnualEmissions"
 
-  Scenario: An electricity fuel with no output ratio row takes the default of the parameter
-    # With a default of 0.5, each electricity fuel with no row adds 0.5 to the ratio of a
-    # technology. GASCC mode 1 has 1 + 0.5 + 0.5 = 2, and mode 2 has 0.5 + 0.5 + 0.5 = 1.5.
-    # ATDE and GASX state no electricity row, so each has 3 × 0.5 = 1.5.
+  Scenario: A default output ratio is not applied, and the step reports it
+    # The Sienna translation reads only the output ratios that the model states, so the
+    # results do too. GASCC and ATDE keep their stated ratios. GASX states no electricity
+    # row, so it puts out no electricity, although the default is 0.5.
     Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0.5 has the rows:
       | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
       | R1     | GASCC      | ATELEC  | 1                 | 2030 | 1     |
       | R1     | GASCC      | ATELEC  | 1                 | 2031 | 1     |
       | R1     | GASCC      | ATELEC  | 2                 | 2030 | 0.5   |
       | R1     | GASCC      | ATELEC  | 2                 | 2031 | 0.5   |
+      | R1     | ATDE       | DEELEC  | 1                 | 2030 | 0.9   |
+      | R1     | ATDE       | DEELEC  | 1                 | 2031 | 0.9   |
+      | R1     | GASX       | GAS     | 1                 | 2030 | 1     |
+      | R1     | GASX       | GAS     | 1                 | 2031 | 1     |
       | R1     | ATT        | ATELEC2 | 1                 | 2030 | 0.95  |
       | R1     | ATT        | ATELEC2 | 1                 | 2031 | 0.95  |
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" has these "production" rows:
       | variable   | component | category           | timestamp           | value |
-      | production | GASCC     | gas-combined-cycle | 2030-01-01T00:00:00 | 26000 |
-      | production | GASCC     | gas-combined-cycle | 2031-01-01T00:00:00 | 46000 |
-      | production | ATDE      |                    | 2030-01-01T00:00:00 | 7500  |
-      | production | ATDE      |                    | 2031-01-01T00:00:00 | 7500  |
-      | production | GASX      |                    | 2030-01-01T00:00:00 | 10500 |
-      | production | GASX      |                    | 2031-01-01T00:00:00 | 10500 |
+      | production | GASCC     | gas-combined-cycle | 2030-01-01T00:00:00 | 12000 |
+      | production | GASCC     | gas-combined-cycle | 2031-01-01T00:00:00 | 22000 |
+      | production | ATDE      |                    | 2030-01-01T00:00:00 | 4500  |
+      | production | ATDE      |                    | 2031-01-01T00:00:00 | 4500  |
+    And the log contains "aetos-to-results: output_activity_ratio has the default 0.5, which the results do not apply. They read only the rows that the model states."
+    And the file "decisions.md" contains "`osemosys-canonical.parameter.output_activity_ratio.default` = 0.5 | `results.results.production.variable` MWh |"
 
   Scenario: A model with no electricity fuel gives no production, and the step reports it
     Given a file "user_mappings.yaml" containing the lines:
