@@ -57,7 +57,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generators import (
     set_generator_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._import_translations import (
-    build_import_translations,
+    build_import_mapping,
 )
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     report_left_out_technologies,
@@ -106,7 +106,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_imports impo
     build_import_extensions,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_translations import (
-    TRANSPORT_TRANSLATIONS,
+    TRANSPORT_MAPPING,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
 
@@ -118,7 +118,7 @@ __all__ = [
     "LOAD_MAPPING",
     "SIENNA_TYPE",
     "STORAGE_MAPPING",
-    "TRANSPORT_TRANSLATIONS",
+    "TRANSPORT_MAPPING",
     "BuiltRecords",
     "Calendar",
     "ComponentMapping",
@@ -142,7 +142,7 @@ __all__ = [
     "build_generator_extensions",
     "build_generators_source",
     "build_import_extensions",
-    "build_import_translations",
+    "build_import_mapping",
     "build_line_extensions",
     "build_load_series",
     "build_loads_source",

@@ -28,6 +28,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
     build_bound_events,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    ComponentMapping,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
     build_derived,
@@ -76,6 +79,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
 )
 from interop.plugins.shared.pypsa_constants import PyPSALinkCol
 from interop.plugins.shared.sienna_constants import (
+    HVDC_DESTINATION_SCHEMA,
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
     MinMaxField,
@@ -391,3 +395,8 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
     ),
     *_build_reports(),
 ]
+TRANSPORT_MAPPING = ComponentMapping(
+    SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,
+    (TRANSPORT_TRANSLATIONS,),
+    HVDC_DESTINATION_SCHEMA,
+)

@@ -10,25 +10,20 @@ from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
-    TRANSPORT_TRANSLATIONS,
+    TRANSPORT_MAPPING,
     GeneratorSources,
     OperationsMapping,
     OperationsYear,
     StagedSeries,
     add_to_per_unit_series,
     build_import_extensions,
-    build_import_translations,
+    build_import_mapping,
     build_line_extensions,
     build_transport_source,
+    map_component_table,
     set_line_values_persisted,
 )
-from interop.plugins.shared.sienna_constants import (
-    HVDC_DESTINATION_SCHEMA,
-    THERMAL_GENERATORS_DESTINATION_SCHEMA,
-    SiennaComponent,
-    SiennaSeriesName,
-)
-from interop.plugins.shared.translation_runner import apply_translations, finalise
+from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
 
 
 class OsemosysToSiennaMapTransport(OperationsMapping):
@@ -45,13 +40,8 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
         source = build_transport_source(state, operations, self._recorder)
         if source.table.height == 0:
             return
-        destination = apply_translations(source.table, TRANSPORT_TRANSLATIONS, self._recorder)
-        state.destination_tables[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = finalise(
-            destination,
-            HVDC_DESTINATION_SCHEMA,
-            self._recorder,
-            SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,
-        )
+        lines = map_component_table(source.table, TRANSPORT_MAPPING, self._recorder)
+        state.destination_tables[TRANSPORT_MAPPING.sienna_type] = lines
         append_extensions(
             state.destination_extensions,
             ExtensionKind.CONTROLLABLE_LINE,
@@ -69,14 +59,7 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
         """Add the import generators after the ThermalStandard rows of the supply technologies."""
         thermal = state.destination_tables.get(SiennaComponent.THERMAL_STANDARD)
         start = 1 if thermal is None else thermal.height + 1
-        translations = build_import_translations(start)
-        destination = apply_translations(imports.table, translations, self._recorder)
-        generators = finalise(
-            destination,
-            THERMAL_GENERATORS_DESTINATION_SCHEMA,
-            self._recorder,
-            SiennaComponent.THERMAL_STANDARD,
-        )
+        generators = map_component_table(imports.table, build_import_mapping(start), self._recorder)
         state.destination_tables[SiennaComponent.THERMAL_STANDARD] = (
             generators if thermal is None else pl.concat([thermal, generators])
         )

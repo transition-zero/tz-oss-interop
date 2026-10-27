@@ -36,6 +36,9 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    ComponentMapping,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_defaulted,
     build_derived,
@@ -91,6 +94,7 @@ from interop.plugins.shared.sienna_constants import (
     SIENNA_TYPE_ATTRIBUTE,
     THERMAL_FUELS_DTYPE,
     THERMAL_GENERATION_COST_DTYPE,
+    THERMAL_GENERATORS_DESTINATION_SCHEMA,
     SiennaComponent,
     SiennaPrimeMovers,
     SiennaThermalFuels,
@@ -144,6 +148,15 @@ _EMISSION_DERIVATION = (
     "emission_rate of the import mode / the electricity output_activity_ratio of the mode, in t/MWh"
 )
 _SOURCE_DERIVATION = "the transport technology and the operating mode that the generator stands for"
+
+
+def build_import_mapping(start: int) -> ComponentMapping:
+    """The ThermalStandard rows of the import generators, whose ids start at `start`."""
+    return ComponentMapping(
+        SiennaComponent.THERMAL_STANDARD,
+        (build_import_translations(start),),
+        THERMAL_GENERATORS_DESTINATION_SCHEMA,
+    )
 
 
 def build_import_translations(start: int) -> list[Translation]:
