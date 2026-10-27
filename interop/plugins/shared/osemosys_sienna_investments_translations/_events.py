@@ -6,7 +6,7 @@ Each candidate table names its Sienna component in `candidate_name`, and its OSe
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
@@ -14,8 +14,11 @@ from typing import Any
 import polars as pl
 
 from interop.plugins.shared.constants import UNIT_YEARS, Framework
-from interop.plugins.shared.osemosys_canonical.constants import TECHNOLOGY
-from interop.plugins.shared.osemosys_sienna_constants import TECHNOLOGY_COUNTED_NOUN
+from interop.plugins.shared.osemosys_canonical.constants import TECHNOLOGY, AnnotationColumn
+from interop.plugins.shared.osemosys_sienna_constants import (
+    TECHNOLOGIES_LABEL,
+    TECHNOLOGY_COUNTED_NOUN,
+)
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CANDIDATE_NAME,
     DISCOUNT_RATE,
@@ -29,6 +32,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_columns import SIENNA_TYPE
+from interop.plugins.shared.osemosys_sienna_translations._technologies import (
+    build_no_carriers_row_note,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     NO_RETIREMENT_COST_NOTE,
@@ -48,6 +55,8 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplyTechnologyCol,
 )
 from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipRule,
     Translation,
     default_translation,
     row_position_id_translation,
@@ -263,3 +272,63 @@ _FINANCIAL_SOURCES = FinancialDataSources(
     rate_derivation=_RATE_DERIVATION,
     base_year_note=_BASE_YEAR_NOTE,
 )
+
+
+# --- the rules that leave out a candidate ----------------------------------------------------
+
+_LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
+
+
+@dataclass(frozen=True)
+class CandidateRules:
+    """What the rules of one candidate type allow: the base system types that it can become,
+    the word for such a type, and the word for one candidate."""
+
+    types: Collection[str]
+    type_noun: str
+    member_noun: str
+
+
+def build_candidate_rules(areas: list[str], rules: CandidateRules) -> list[SkipRule]:
+    """The rules that each candidate type applies: a carriers: row, a type that the candidate
+    can become, and a location with an electricity bus."""
+    skip = TECHNOLOGY_SOURCE.skip
+    return [
+        SkipRule(
+            pl.col(SIENNA_TYPE).is_not_null(),
+            skip(
+                name_col=REPORT_NAME,
+                reason="may be built and have a category that no carriers: row names",
+                note=lambda row: build_no_carriers_row_note(row[AnnotationColumn.CATEGORY]),
+                listed=_LISTED,
+                attribute_col=AnnotationColumn.CATEGORY,
+            ),
+        ),
+        SkipRule(
+            pl.col(SIENNA_TYPE).is_in(list(rules.types)),
+            skip(
+                name_col=REPORT_NAME,
+                reason="may be built and have a carriers: row that names a type that is not a "
+                f"{rules.type_noun}",
+                note=lambda row: (
+                    f"the carriers: row of the category names {row[SIENNA_TYPE]}, which a "
+                    f"{rules.member_noun} cannot become"
+                ),
+                listed=_LISTED,
+                attribute_col=AnnotationColumn.CATEGORY,
+            ),
+        ),
+        SkipRule(
+            pl.col(AnnotationColumn.LOCATION).is_in(areas),
+            skip(
+                name_col=REPORT_NAME,
+                reason="may be built and have a location that holds no electricity bus",
+                note=(
+                    "no electricity fuel with a bus is at the location, so the "
+                    f"{rules.member_noun} is in no region"
+                ),
+                listed=_LISTED,
+                attribute_col=AnnotationColumn.LOCATION,
+            ),
+        ),
+    ]

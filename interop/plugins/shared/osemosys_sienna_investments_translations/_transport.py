@@ -107,8 +107,9 @@ from interop.plugins.shared.sienna_investments_constants import (
 )
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
+    SkipRule,
     Translation,
-    filter_component,
+    drop_skipped,
 )
 from interop.ports.outbound.reporting import SourceField
 
@@ -160,13 +161,7 @@ def build_transport_candidates(
         drop_non_candidates(technologies, yearly, prices), yearly, prices
     )
     technologies = _enrich_ends(state, plan, technologies)
-    technologies, _ = filter_component(technologies, _express_has_ends(), NO_ENDS_SKIP, recorder)
-    technologies, _ = filter_component(
-        technologies, pl.col(RATING_RATIO) > 0, NO_RATING_SKIP, recorder
-    )
-    technologies, _ = filter_component(
-        technologies, _express_has_areas(list_area_names(state)), NO_AREA_SKIP, recorder
-    )
+    technologies = drop_skipped(technologies, _build_skip_rules(state), recorder)
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     yearly = _enrich_variable_costs(state, plan, yearly)
     table = enrich_base_year_values(technologies, yearly, plan)
@@ -238,6 +233,14 @@ def _enrich_end(state: State, mode: str, year: int, technologies: pl.DataFrame) 
     return technologies.join(ends, on=TECHNOLOGY_KEYS, how="left").with_columns(
         pl.col(INPUT_RATIO).fill_null(0.0).alias(RATING_RATIO)
     )
+
+
+def _build_skip_rules(state: State) -> list[SkipRule]:
+    return [
+        SkipRule(_express_has_ends(), NO_ENDS_SKIP),
+        SkipRule(pl.col(RATING_RATIO) > 0, NO_RATING_SKIP),
+        SkipRule(_express_has_areas(list_area_names(state)), NO_AREA_SKIP),
+    ]
 
 
 def _express_has_areas(areas: list[str]) -> pl.Expr:

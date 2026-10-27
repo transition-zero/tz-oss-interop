@@ -56,7 +56,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     BASE_YEAR,
     PRICED_YEAR,
     TECHNOLOGY_SOURCE,
+    CandidateRules,
     Identity,
+    build_candidate_rules,
     build_derived_translation,
     build_identity_translations,
     build_lifetime_translations,
@@ -127,7 +129,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import GENERATOR_TYPES
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
-    build_no_carriers_row_note,
     enrich_targets,
     list_area_names,
 )
@@ -152,7 +153,7 @@ from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipRule,
     Translation,
-    filter_component,
+    drop_skipped,
 )
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
@@ -184,7 +185,7 @@ def build_supply_candidates(
         drop_non_candidates(technologies, yearly, prices), yearly, prices
     )
     technologies = _enrich_ratings(state, plan, enrich_targets(technologies, mappings))
-    technologies = _drop_skipped(technologies, list_area_names(state), recorder)
+    technologies = drop_skipped(technologies, _build_skip_rules(list_area_names(state)), recorder)
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     table = enrich_base_year_values(technologies, yearly, plan).join(
@@ -236,57 +237,17 @@ def _enrich_rating(state: State, mode: str, year: int, technologies: pl.DataFram
     return rated.with_columns(pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO))
 
 
-def _drop_skipped(
-    technologies: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
-) -> pl.DataFrame:
-    for rule in _build_skip_rules(areas):
-        technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
-    return technologies
+_RULES = CandidateRules(
+    types=GENERATOR_TYPES, type_noun="generator", member_noun="supply technology"
+)
 
 
 def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
-    skip = TECHNOLOGY_SOURCE.skip
     return [
-        SkipRule(
-            pl.col(SIENNA_TYPE).is_not_null(),
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and have a category that no carriers: row names",
-                note=lambda row: build_no_carriers_row_note(row[AnnotationColumn.CATEGORY]),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.CATEGORY,
-            ),
-        ),
-        SkipRule(
-            pl.col(SIENNA_TYPE).is_in(list(GENERATOR_TYPES)),
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and have a carriers: row that names a type that is not a "
-                "generator",
-                note=lambda row: (
-                    f"the carriers: row of the category names {row[SIENNA_TYPE]}, which a "
-                    "supply technology cannot become"
-                ),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.CATEGORY,
-            ),
-        ),
-        SkipRule(
-            pl.col(AnnotationColumn.LOCATION).is_in(areas),
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and have a location that holds no electricity bus",
-                note=(
-                    "no electricity fuel with a bus is at the location, so the technology is in no "
-                    "region"
-                ),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.LOCATION,
-            ),
-        ),
+        *build_candidate_rules(areas, _RULES),
         SkipRule(
             pl.col(RATING_RATIO) > 0,
-            skip(
+            TECHNOLOGY_SOURCE.skip(
                 name_col=REPORT_NAME,
                 reason="may be built and put out no electricity at the operations mode",
                 note="the technology puts out no electricity, so its capacity has no MW rating",
