@@ -20,8 +20,6 @@ the model builds at no cost in the year is extendable, up to the limit that `_fr
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import polars as pl
 
 from interop.core.pipeline import State
@@ -37,7 +35,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
-    HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
     NO_COST,
     OSEMOSYS_TO_SIENNA_PIPELINE,
@@ -45,9 +42,12 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     ActivityParameter,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    enrich_capacity_to_activity,
+    express_activity_mw,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
-    read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     BUILD_AVAILABILITY,
@@ -83,7 +83,6 @@ from interop.plugins.shared.osemosys_sienna_translations._left_out import (
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._units import (
-    ModelUnits,
     express_converted,
 )
 from interop.plugins.shared.translation_runner import (
@@ -101,7 +100,6 @@ INPUTS = "inputs"
 OUTPUTS = "outputs"
 RATIO = "ratio"
 RATED_RATIO = "rated_ratio"
-CTAU = "capacity_to_activity"
 AVAILABILITY = "availability"
 VARIABLE_COST = "variable_cost"
 ACTIVITY_MW = "activity_mw"
@@ -306,42 +304,15 @@ def _express_rated_ratio() -> pl.Expr:
 
 def _enrich_capacity(state: State, operations: OperationsYear, modes: pl.DataFrame) -> pl.DataFrame:
     table = enrich_free_build(state, operations.year, modes)
-    keys = modes.select(_KEYS).unique()
-    for parameter, column in _CAPACITY_PARAMETERS:
-        values = read_parameter_with_defaults(state, parameter, operations.year, keys)
-        table = table.join(
-            values.select(*_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(column)),
-            on=_KEYS,
-            how="left",
-        )
+    table = enrich_capacity_to_activity(state, operations.year, table)
     table = table.with_columns(
         pl.col(BUILD_AVAILABILITY).alias(AVAILABILITY), pl.col(BUILD_LIMIT).alias(MAX_ACTIVITY_MW)
     )
     return table.with_columns(
-        _express_activity_mw(table, RESIDUAL, operations.units).alias(ACTIVITY_MW),
-        _express_activity_mw(table, MAX_ACTIVITY_MW, operations.units).alias(MAX_ACTIVITY_MW),
+        express_activity_mw(table, RESIDUAL, operations.units).alias(ACTIVITY_MW),
+        express_activity_mw(table, MAX_ACTIVITY_MW, operations.units).alias(MAX_ACTIVITY_MW),
         pl.col(IS_FREE_TO_BUILD).alias(IS_EXTENDABLE),
     )
-
-
-# A null capacity_to_activity_unit, where the stage has no default, converts with the capacity unit.
-_CAPACITY_PARAMETERS = ((ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, CTAU),)
-
-
-def _express_activity_mw(table: pl.DataFrame, column: str, units: ModelUnits) -> pl.Expr:
-    """MW of activity: a capacity × its yearly activity over 8760 h, or the capacity in the
-    capacity unit where the model states no capacity_to_activity_unit."""
-    stated = pl.col(CTAU).is_not_null()
-    yearly = pl.col(column) * pl.col(CTAU)
-    mwh = _build_factor(table, yearly.filter(stated), units.convert_energy_to_mwh)
-    mw = _build_factor(table, pl.col(column).filter(~stated), units.convert_capacity_to_mw)
-    return pl.when(stated).then(yearly * mwh / HOURS_PER_YEAR).otherwise(pl.col(column) * mw)
-
-
-def _build_factor(table: pl.DataFrame, values: pl.Expr, convert: Callable[[float], float]) -> float:
-    """The factor of a unit, or 1 where every value is zero or null and so needs no unit."""
-    is_needed = table.select((values.fill_null(0.0) != 0).any()).item()
-    return convert(1.0) if is_needed else 1.0
 
 
 # --- the annual bounds -----------------------------------------------------------------------

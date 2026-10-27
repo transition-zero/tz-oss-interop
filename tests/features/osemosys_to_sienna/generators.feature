@@ -66,15 +66,17 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
     activity. Some technologies are left out: a biomass plant whose category has no carriers:
     row, a battery whose row names a storage type, a gas plant at DE with no residual capacity
     in 2030, and a gas plant that makes electricity in mode 2 only. The gas plant ATDEGASCC
-    burns gas at AT and puts out electricity at DE, so it sits on the bus of DE. Two fuel_supply technologies make the gas ATGAS, at 3 and 5 $/MWh. A pipeline carries
-    DEGAS to ATGAS for less, but it is not a fuel_supply technology. No technology makes the
-    oil ATOIL.
+    burns gas at AT and puts out electricity at DE, so it sits on the bus of DE. Each technology
+    runs 8760 GWh a year for each GW of its capacity. Two fuel_supply technologies make the gas
+    ATGAS, at 3 and 5 $/MWh. A pipeline carries DEGAS to ATGAS for less, but it is not a
+    fuel_supply technology. No technology makes the oil ATOIL.
 
     Background:
       Given the otoole set "FUEL" holds "ATELEC DEELEC GAS ATGAS DEGAS ATOIL"
       And the otoole set "TECHNOLOGY" holds "ATGASCC ATSOLAR ATWIND ATHYDRO ATBIO ATBATT ATOILCT DEGASCC ATDEGASCC ATSPAREGASCC ATGASWELL ATGASLNG DEGASWELL DEATPIPE"
       And the otoole set "EMISSION" holds "CO2"
       And the otoole set "MODE_OF_OPERATION" holds "1 2"
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATGASCC    | 2030 | 0.5   |
@@ -171,6 +173,17 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "active_power_limits.max" set to 450.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 7.0
       And the file "decisions.md" contains "the cheapest of 2 fuel_supply technologies that put out ATGAS"
+
+    Scenario: A plant rates its residual capacity with its own capacity_to_activity_unit
+      The gas plant runs 4380 GWh a year for each GW, so its 0.5 GW are 250 MW.
+      Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATGASCC    | 4380  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "base_power" set to 250.0
+      And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "ATSOLAR" having "base_power" set to 200.0
+      And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATGASCC` = 4380.0"
 
     Scenario: A solar plant becomes a RenewableDispatch with an hourly availability series
       When I translate the otoole model to Sienna for the year "2030"
@@ -712,6 +725,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the otoole set "TECHNOLOGY" holds "ATDEBUY ATDEODD ATPEAKER"
       And the otoole set "EMISSION" holds "CO2"
       And the otoole set "MODE_OF_OPERATION" holds "1 2 3"
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDEBUY    | 2030 | 2     |

@@ -3,8 +3,8 @@
 The fleet of the operations year is the `residual_capacity` of that year. A supply technology
 becomes a ThermalStandard, a RenewableDispatch, a RenewableNonDispatch or a HydroDispatch on
 the bus of the electricity fuel that it puts out at the operations mode. Its base power is its
-residual capacity in MW × its electricity output ratio at the operations mode, and it rates at
-all of it. Its availability in each hour is a
+residual capacity × its capacity_to_activity_unit / 8760 h, in MW, × its electricity output
+ratio at the operations mode, and it rates at all of it. Its availability in each hour is a
 series per unit of the base power, or the maximum of its active power limits when that is the
 same in every hour. A plant that burns a fuel whose producers all make nothing in the year has no
 fuel, so it is left out.
@@ -42,7 +42,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
+    enrich_capacity_to_activity,
     enrich_electricity_output_ratios,
+    express_activity_mw,
     express_output_capacity,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
@@ -269,7 +271,7 @@ def build_generators_source(
     _report_other_outputs(state, operations, generators, recorder)
     if generators.height == 0:
         return GeneratorSources(generators, pl.DataFrame())
-    generators = _enrich_capacity(operations, generators)
+    generators = _enrich_capacity(state, operations, generators)
     availability = build_availability(state, operations, generators, GENERATOR_NAME)
     table = _enrich_generators(state, operations, availability.table, fuel_supply)
     with_series = table.filter(pl.col(HAS_SERIES))[GENERATOR_NAME].implode()
@@ -392,9 +394,12 @@ def _read_output_buses(state: State, operations: OperationsYear) -> pl.DataFrame
     return buses.filter(pl.col(OPERATING_MODE) == operations.mode).drop(OPERATING_MODE)
 
 
-def _enrich_capacity(operations: OperationsYear, generators: pl.DataFrame) -> pl.DataFrame:
-    return generators.with_columns(
-        operations.units.convert_capacity_to_mw(pl.col(RESIDUAL_CAPACITY)).alias(CAPACITY_MW),
+def _enrich_capacity(
+    state: State, operations: OperationsYear, generators: pl.DataFrame
+) -> pl.DataFrame:
+    table = enrich_capacity_to_activity(state, operations.year, generators)
+    return table.with_columns(
+        express_activity_mw(table, RESIDUAL_CAPACITY, operations.units).alias(CAPACITY_MW),
         pl.lit(operations.units.capacity_unit, dtype=pl.Utf8).alias(CAPACITY_UNIT),
     ).with_columns(express_output_capacity(pl.col(CAPACITY_MW)).alias(OUTPUT_CAPACITY_MW))
 
