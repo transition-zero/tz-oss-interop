@@ -4,8 +4,9 @@ A transport technology that a plan may build becomes one technology between the 
 takes in electricity and the area where it puts electricity out, at the operations mode. Its
 capacity is in MW of the electricity that it sends: the capacity of the model multiplied by its
 electricity input ratio. `AggregateTransportTechnology.capacity_limits` holds one bound for
-every year, so it states the bounds of the earliest year in scope, and extensions.json holds
-the bounds of each year.
+every year, so it states the smallest minimum and the largest maximum over the years in scope,
+which every plan that the yearly bounds allow keeps. A year with no maximum leaves no maximum.
+extensions.json holds the bounds of each year.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     build_identity_translations,
     build_priced_field,
     build_technology_field,
+    build_yearly_field,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -65,7 +67,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
-    build_year_values,
     drop_non_candidates,
     enrich_yearly_units,
     read_technology_years,
@@ -109,6 +110,7 @@ _COMPONENT = SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY
 TRANSPORT_SCHEMA = AGGREGATE_TRANSPORT_TECHNOLOGY_DESTINATION_SCHEMA
 
 _ONE_LOCATION = 1
+_NO_MINIMUM = 0.0
 _TRANSPORT_KIND = TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY.value
 _ELECTRICITY = f"{ELECTRICITY_CARRIER} at the operations mode"
 _LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
@@ -164,11 +166,23 @@ def build_transport_candidates(
     yearly = enrich_yearly_units(yearly, technologies, plan.units)
     yearly = _enrich_variable_costs(state, plan, yearly)
     table = enrich_base_year_values(technologies, yearly, plan)
-    base = build_year_values(yearly, plan.base_year).select(
-        *TECHNOLOGY_KEYS, CAPACITY_LIMITS_MIN_MW, CAPACITY_LIMITS_MAX_MW
+    limits = _build_plan_limits(yearly)
+    table = enrich_financial_values(
+        state, plan, table.join(limits, on=TECHNOLOGY_KEYS, how="left")
     )
-    table = enrich_financial_values(state, plan, table.join(base, on=TECHNOLOGY_KEYS, how="left"))
     return TransportCandidates(table, yearly)
+
+
+def _build_plan_limits(yearly: pl.DataFrame) -> pl.DataFrame:
+    """The smallest minimum and the largest maximum of each candidate over the years in scope."""
+    has_open_year = pl.col(CAPACITY_LIMITS_MAX_MW).is_null().any()
+    return yearly.group_by(TECHNOLOGY_KEYS).agg(
+        pl.col(CAPACITY_LIMITS_MIN_MW).fill_null(_NO_MINIMUM).min(),
+        pl.when(has_open_year)
+        .then(pl.lit(None, dtype=pl.Float64))
+        .otherwise(pl.col(CAPACITY_LIMITS_MAX_MW).max())
+        .alias(CAPACITY_LIMITS_MAX_MW),
+    )
 
 
 def _enrich_variable_costs(
@@ -241,12 +255,8 @@ def _build_ratio_sources(old: dict[str, Any]) -> list[SourceField]:
 
 def _build_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     return [
-        build_technology_field(
-            old, InvestmentParameter.CAPACITY_LIMITS_MIN, CAPACITY_LIMITS_MIN_MW, BASE_YEAR
-        ),
-        build_technology_field(
-            old, InvestmentParameter.CAPACITY_LIMITS_MAX, CAPACITY_LIMITS_MAX_MW, BASE_YEAR
-        ),
+        build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MIN),
+        build_yearly_field(old, InvestmentParameter.CAPACITY_LIMITS_MAX),
         build_technology_field(old, FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _ELECTRICITY),
     ]
 
@@ -286,8 +296,9 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
         T.CAPACITY_LIMITS,
         _CAPACITY_LIMITS,
         _build_limit_sources,
-        "capacity_limits_min and capacity_limits_max of the earliest year in scope, in MW of the "
-        "electricity sent; extensions.json holds each year",
+        "the smallest capacity_limits_min and the largest capacity_limits_max over the years in "
+        "scope, in MW of the electricity sent; a year with no maximum leaves no maximum; "
+        "extensions.json holds each year",
         UNIT_MW,
     ),
     build_derived_translation(
