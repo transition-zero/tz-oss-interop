@@ -7,7 +7,7 @@ part of it becomes in Sienna.
 from __future__ import annotations
 
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
-    BUS_TRANSLATIONS,
+    BUS_MAPPING,
     build_bus_extensions,
     build_buses_source_table,
     read_electricity_fuels,
@@ -15,8 +15,7 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import (
 from interop.plugins.shared.osemosys_sienna_translations._calendar import (
     Calendar,
     build_calendar,
-    build_days_events,
-    build_representative_periods,
+    build_period_records,
     report_calendar,
     set_days_persisted,
 )
@@ -24,12 +23,17 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     list_model_years,
     read_operations_mode,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    BuiltRecords,
+    ComponentMapping,
+    add_built_records,
+    map_component_table,
+)
 from interop.plugins.shared.osemosys_sienna_translations._defaults import (
     report_unread_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._loads import (
-    LOAD_BASE_POWER_TRANSLATIONS,
-    LOAD_TRANSLATIONS,
+    LOAD_MAPPING,
     LoadSources,
     build_fuel_loads_source,
     build_load_series,
@@ -50,27 +54,29 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
 
 __all__ = [
-    "BUS_TRANSLATIONS",
-    "LOAD_BASE_POWER_TRANSLATIONS",
-    "LOAD_TRANSLATIONS",
+    "BUS_MAPPING",
+    "LOAD_MAPPING",
+    "BuiltRecords",
     "Calendar",
+    "ComponentMapping",
     "LoadSources",
     "ModelUnits",
     "OperationsMapping",
     "OperationsYear",
     "StagedSeries",
+    "add_built_records",
     "add_per_unit_series",
     "add_series",
     "add_to_per_unit_series",
     "build_bus_extensions",
     "build_buses_source_table",
     "build_calendar",
-    "build_days_events",
     "build_fuel_loads_source",
     "build_load_series",
     "build_loads_source",
-    "build_representative_periods",
+    "build_period_records",
     "list_model_years",
+    "map_component_table",
     "read_operations_mode",
     "parse_units",
     "read_electricity_fuels",

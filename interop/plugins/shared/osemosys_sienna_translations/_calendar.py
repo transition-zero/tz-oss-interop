@@ -56,6 +56,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._series import SERIES_SCHEMA
@@ -261,7 +262,16 @@ def build_calendar(state: State, year: int) -> Calendar:
         return _build_timeslice_calendar(slices, str(reason))
 
 
-def build_representative_periods(
+def build_period_records(
+    state: State, year: int, calendar: Calendar
+) -> BuiltRecords[RepresentativePeriodExtension]:
+    """The record of each period, and the event of each day that holds the days of its day
+    type."""
+    records = _build_representative_periods(state, year, calendar)
+    return BuiltRecords(ExtensionKind.REPRESENTATIVE_PERIOD, records, _build_days_events(records))
+
+
+def _build_representative_periods(
     state: State, year: int, calendar: Calendar
 ) -> list[RepresentativePeriodExtension]:
     """One record for each period of the calendar, with the days of its day type in a week."""
@@ -282,7 +292,9 @@ def build_representative_periods(
     ]
 
 
-def build_days_events(records: Sequence[RepresentativePeriodExtension]) -> list[TranslationEvent]:
+def _build_days_events(
+    records: Sequence[RepresentativePeriodExtension],
+) -> list[TranslationEvent]:
     """One VALUE_DERIVED for each day that holds the days of its day type."""
     return [
         TranslationEvent(

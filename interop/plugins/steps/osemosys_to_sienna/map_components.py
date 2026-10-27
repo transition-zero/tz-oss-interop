@@ -6,15 +6,14 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
-from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
+    add_built_records,
     build_calendar,
-    build_days_events,
-    build_representative_periods,
+    build_period_records,
     parse_units,
     read_operations_mode,
     report_calendar,
@@ -57,8 +56,8 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         self._calendar_recorder = ScopedRecorder(recorder, step=_BUILD_CALENDAR)
         self._defaults_recorder = ScopedRecorder(recorder, step=_REPORT_DEFAULTS)
         self._mappings: tuple[OperationsMapping, ...] = (
-            OsemosysToSiennaMapBuses(_scoped(recorder, OsemosysToSiennaMapBuses.step_name)),
-            OsemosysToSiennaMapLoads(_scoped(recorder, OsemosysToSiennaMapLoads.step_name)),
+            OsemosysToSiennaMapBuses(_build_group_recorder(recorder, OsemosysToSiennaMapBuses)),
+            OsemosysToSiennaMapLoads(_build_group_recorder(recorder, OsemosysToSiennaMapLoads)),
         )
 
     def run(self, state: State, params: BaseModel | None) -> State:
@@ -76,13 +75,9 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         return state
 
     def _map_periods(self, state: State, operations: OperationsYear) -> None:
-        periods = build_representative_periods(state, operations.year, operations.calendar)
-        append_extensions(
-            state.destination_extensions, ExtensionKind.REPRESENTATIVE_PERIOD, periods
-        )
-        for event in build_days_events(periods):
-            self._calendar_recorder.append(event)
-        set_days_persisted(state, periods)
+        periods = build_period_records(state, operations.year, operations.calendar)
+        add_built_records(state, periods, self._calendar_recorder)
+        set_days_persisted(state, periods.records)
 
     def _build_operations_year(
         self, state: State, params: OsemosysToSiennaMapComponentsParams
@@ -94,6 +89,8 @@ class OsemosysToSiennaMapComponents(TranslationStep):
         return OperationsYear(year, units, calendar, read_operations_mode(state))
 
 
-def _scoped(recorder: ScopedRecorder, step_name: str) -> ScopedRecorder:
+def _build_group_recorder(
+    recorder: ScopedRecorder, group: type[OperationsMapping]
+) -> ScopedRecorder:
     """A recorder that stamps each event that it takes with the group that raised it."""
-    return ScopedRecorder(recorder, step=step_name)
+    return ScopedRecorder(recorder, step=group.step_name)
