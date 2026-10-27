@@ -99,6 +99,7 @@ from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
     RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
+    TIME_AT_STATUS_SENTINEL,
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
     SiennaRenewableGeneratorCol,
@@ -112,10 +113,6 @@ from interop.plugins.shared.sienna_cost_curves import (
 from interop.plugins.shared.sienna_time_series import TimeSeriesInfo, ts_association_row
 
 log = logging.getLogger(__name__)
-
-# Sienna reads a unit that has never run as having run for this long, which is the schema's
-# own way of saying the commitment history is unknown.
-TIME_AT_STATUS_SENTINEL: float = 10000.0
 
 # A Sienna generator rates itself per unit of its base power, and a generator with no
 # availability cap runs at its whole rating.

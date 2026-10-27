@@ -22,9 +22,8 @@ import polars as pl
 from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.constants import HOURS_PER_YEAR, StagedTimeSeriesCol
 from interop.plugins.shared.power_systems_investments_schema import (
-    HOURS_PER_YEAR,
     PORTFOLIO_PERIODS_TABLE,
     PORTFOLIO_SERIES_TABLE,
     PORTFOLIO_SERIES_YEAR,

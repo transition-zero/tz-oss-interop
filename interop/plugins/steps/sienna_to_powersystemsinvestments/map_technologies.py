@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import MINUTES_PER_HOUR
 from interop.plugins.shared.power_simulations_schema import PSInputOutputCurve
 from interop.plugins.shared.power_systems_investments_schema import (
     PSIP_MODULE,
@@ -156,9 +157,6 @@ _REQUIRED_EMPTY: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] =
 _NO_CAPACITY_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1e8}
 _NO_DURATION_LIMIT = {MinMaxField.MIN: 0.0, MinMaxField.MAX: 1000.0}
 _TRANSPORT_UNIT_SIZE = 1.0
-
-# SiennaSchemas states a storage duration in minutes, and the package reads hours.
-_MINUTES_PER_HOUR = 60.0
 
 # The fields the reader rejects as null where a source may state none, with the package's default.
 _PACKAGE_DEFAULTS: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] = {
@@ -447,7 +445,7 @@ def _convert_duration_limits(row: dict[str, Any], name: str, recorder: ScopedRec
     if minutes is None:
         return
     hours = {
-        bound: None if value is None else value / _MINUTES_PER_HOUR
+        bound: None if value is None else value / MINUTES_PER_HOUR
         for bound, value in minutes.items()
     }
     row[SiennaStorageTechnologyCol.DURATION_LIMITS] = hours

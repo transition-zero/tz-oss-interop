@@ -37,6 +37,7 @@ from interop.plugins.shared.pypsa_time_series import (
     series_timing,
 )
 from interop.plugins.shared.sienna_constants import (
+    TIME_AT_STATUS_SENTINEL,
     PrimeMover,
     SiennaComponent,
     SiennaGeneratorCol,
@@ -49,10 +50,7 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
     stage_companion_columns,
 )
-from interop.plugins.shared.sienna_pypsa_translations.constants import (
-    TIME_AT_STATUS_SENTINEL,
-    pypsa_carrier,
-)
+from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_carrier
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     extendable_floor,

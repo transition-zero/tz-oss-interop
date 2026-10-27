@@ -18,9 +18,12 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import StagedTimeSeriesCol
-from interop.plugins.shared.power_systems_investments_schema import (
+from interop.plugins.shared.constants import (
     HOURS_PER_YEAR,
+    SECONDS_PER_HOUR,
+    StagedTimeSeriesCol,
+)
+from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_PERIODS_TABLE,
     PORTFOLIO_SERIES_TABLE,
     InvestmentsSeriesName,
@@ -64,7 +67,6 @@ _POWER_SYSTEMS_TYPE = SiennaSupplyTechnologyCol.POWER_SYSTEMS_TYPE
 
 # How many snapshots the slice of a year holds.
 _SLICE_LENGTH = 24
-_SECONDS_PER_HOUR = 3600.0
 
 # The package indexes a year's slices from one, and this derives a single slice per year.
 _FIRST_SLICE = 1
@@ -281,13 +283,13 @@ def _find_first_day_record(
 
 def _build_slice_weight(snapshot_count: int, resolution_seconds: float) -> float:
     """How many times the slice occurs in a year: the hours of a year over the hours it covers."""
-    return HOURS_PER_YEAR / (snapshot_count * resolution_seconds / _SECONDS_PER_HOUR)
+    return HOURS_PER_YEAR / (snapshot_count * resolution_seconds / SECONDS_PER_HOUR)
 
 
 def _build_resolution_seconds(snapshots: list[datetime]) -> float:
     """How far apart two snapshots sit, in seconds, from the first pair the slice holds."""
     if len(snapshots) < 2:
-        return _SECONDS_PER_HOUR
+        return SECONDS_PER_HOUR
     return (snapshots[1] - snapshots[0]).total_seconds()
 
 

@@ -42,6 +42,11 @@ A real sample label is always a digit string, so this never collides with one.
 """
 
 
+HOURS_PER_YEAR = 8760.0
+"""The hours of a year that is not a leap year."""
+MINUTES_PER_HOUR = 60.0
+SECONDS_PER_HOUR = 3600.0
+
 # How an event names a field that a record of extensions.json holds: `extensions.<field>`.
 EXTENSIONS_PREFIX = "extensions."
 

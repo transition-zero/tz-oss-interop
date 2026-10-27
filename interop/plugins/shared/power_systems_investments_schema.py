@@ -185,9 +185,6 @@ class InvestmentsSeriesName(StrEnum):
     DEMAND = "ops_demand"
 
 
-HOURS_PER_YEAR = 8760.0
-"""The hours that the slices of one year stand for, together."""
-
 PORTFOLIO_SERIES_YEAR = "year"
 """The feature a portfolio series states its year under, and the staged column that holds it."""
 
