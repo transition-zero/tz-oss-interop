@@ -47,6 +47,9 @@ HOURS_PER_YEAR = 8760.0
 MINUTES_PER_HOUR = 60.0
 SECONDS_PER_HOUR = 3600.0
 
+UNSCALED = 1.0
+"""The multiplier of a value that a reader takes as it is stated."""
+
 # How an event names a field that a record of extensions.json holds: `extensions.<field>`.
 EXTENSIONS_PREFIX = "extensions."
 

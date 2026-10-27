@@ -16,7 +16,7 @@ from typing import NamedTuple
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import SECONDS_PER_HOUR, StagedTimeSeriesCol
+from interop.plugins.shared.constants import SECONDS_PER_HOUR, UNSCALED, StagedTimeSeriesCol
 from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_EXISTING_DEVICES_TABLE,
     PortfolioColumn,
@@ -38,8 +38,6 @@ SOURCE_SERIES = SiennaSeriesName.MAX_ACTIVE_POWER.value
 
 SUPPLY = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value
 DEMAND = SiennaInvestmentsComponent.DEMAND_REQUIREMENT.value
-
-_UNSCALED = 1.0
 
 
 class ProfiledTechnology(NamedTuple):
@@ -147,7 +145,7 @@ class BaseSystemProfiles:
         """A demand profile in MW, where the load states it per unit of its peak."""
         if technology.owner_type != DEMAND:
             return profile
-        peak = self._peaks.get(name, _UNSCALED)
+        peak = self._peaks.get(name, UNSCALED)
         return profile._replace(values=[value * peak for value in profile.values])
 
     def _list_names(self, technology: ProfiledTechnology) -> list[str]:
