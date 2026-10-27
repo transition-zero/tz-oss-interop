@@ -31,6 +31,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
+from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
     BUS_VOLTAGE_LIMIT_MAX,
     BUS_VOLTAGE_LIMIT_MIN,
@@ -40,7 +41,6 @@ from interop.plugins.shared.sienna_constants import (
     DEFAULT_BUS_MAGNITUDE,
     VOLTAGE_LIMIT_DTYPE,
     ACBusType,
-    BusCarrier,
     SiennaACBusCol,
     SiennaComponent,
 )
@@ -113,7 +113,7 @@ def build_buses_source_table(state: State, recorder: ScopedRecorder) -> pl.DataF
 def build_bus_extensions(buses: pl.DataFrame) -> list[BusExtension]:
     """A bus of an electricity fuel is AC, and Sienna's ACBus has no field for it."""
     return [
-        BusExtension(name=name, carrier=BusCarrier.AC)
+        BusExtension(name=name, carrier=PyPSACarrier.AC)
         for name in buses[SiennaACBusCol.NAME].to_list()
     ]
 
