@@ -205,7 +205,7 @@ _FLEET_TERM = (
     "which no flow of the operations system can exceed"
 )
 # The rows of a line technology that the line applies, beside those its record keeps.
-_APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
+_APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR, *_FLOWS)
 
 
 @dataclass(frozen=True)
