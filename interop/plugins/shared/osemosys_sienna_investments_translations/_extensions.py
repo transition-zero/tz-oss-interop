@@ -13,7 +13,12 @@ import polars as pl
 from interop.core.extensions import ExtensionKind, TechnologyExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.osemosys_canonical.constants import REGION, TECHNOLOGY, YEAR
+from interop.plugins.shared.osemosys_canonical.constants import (
+    REGION,
+    TECHNOLOGY,
+    YEAR,
+    FlowParameter,
+)
 from interop.plugins.shared.osemosys_sienna_constants import (
     GrowthParameter,
     InvestmentParameter,
@@ -40,6 +45,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import EACH_YEAR
 from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    CandidateKind,
     Candidates,
     YearlyField,
 )
@@ -148,21 +154,48 @@ SUPPLY_APPLIED: tuple[str, ...] = (
 )
 
 
+# The flow ratios that rate each candidate and give its fuel input and its ends.
+_CANDIDATE_FLOWS: tuple[str, ...] = (
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
+)
+
+
 def set_technology_extensions_persisted(state: State, families: Sequence[Candidates]) -> None:
     """Note the candidates whose values the portfolio or the technology records hold."""
     by_parameter: dict[str, list[pl.DataFrame]] = {}
     for family in families:
-        kind = family.kind
-        members = [family.table.select(*kind.keys), family.table.select(REGION, TECHNOLOGY)]
-        parameters = [
-            *(field.parameter for field in kind.fields.values()),
-            *(value.parameter for value in CANDIDATE_VALUES),
-            *kind.applied,
-        ]
-        for parameter in parameters:
+        for parameter, members in _list_persisted_members(family):
             by_parameter.setdefault(parameter, []).extend(members)
     for parameter, tables in by_parameter.items():
         set_persisted_rows(state, ExtensionKind.TECHNOLOGY, parameter, tables)
+
+
+def _list_persisted_members(family: Candidates) -> list[tuple[str, list[pl.DataFrame]]]:
+    """Each parameter that the portfolio holds or applies, with the members whose rows it reads.
+
+    The flow ratios belong to every technology of a candidate, so a storage notes its charging
+    technology too.
+    """
+    kind = family.kind
+    members = [family.table.select(*kind.keys), family.table.select(REGION, TECHNOLOGY)]
+    technologies = [
+        family.table.select(REGION, pl.col(column).alias(TECHNOLOGY))
+        for column in kind.technology_cols
+    ]
+    return [
+        *((parameter, members) for parameter in _list_held_parameters(kind)),
+        *((flow, technologies) for flow in _CANDIDATE_FLOWS),
+    ]
+
+
+def _list_held_parameters(kind: CandidateKind) -> list[str]:
+    """The parameters that the records of a candidate hold, or that the portfolio applies."""
+    return [
+        *(field.parameter for field in kind.fields.values()),
+        *(value.parameter for value in CANDIDATE_VALUES),
+        *kind.applied,
+    ]
 
 
 def set_producers_persisted(state: State, supply_yearly: pl.DataFrame) -> None:
