@@ -755,6 +755,12 @@ when a technology of this section or a demand uses it:
 A fuel that only a plant burns gets no bus. The plant then stays a PyPSA `Generator` at its
 Sienna price.
 
+A PyPSA network balances each bus in each hour. So a load on a fuel bus that nothing supplies
+cannot be met, and a plant that draws its fuel from that bus cannot run. A bus is supplied when
+a `generator` record of the operations year is on it, or a `conversion` record puts a fuel out
+at it. `decisions.md` records each fuel bus that a load or a plant draws from, and that nothing
+supplies, as `NOT_MAPPED`, with the loads and the plants. One warning names three buses.
+
 ### The technologies
 
 The step reads each technology of kind `fuel_supply`, `export` or `conversion`, or of no kind,
