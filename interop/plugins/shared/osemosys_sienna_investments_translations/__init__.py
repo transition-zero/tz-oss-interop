@@ -35,6 +35,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._extensions
 from interop.plugins.shared.osemosys_sienna_investments_translations._financials import (
     build_osemosys_financial_data,
     build_osemosys_financial_events,
+    report_other_region_rates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._fleet import (
     FLEET_SOURCE,
@@ -66,6 +67,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._supply imp
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._technologies import (
     find_region_discount_rate,
+    read_region_discount_rates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._transport import (
     TRANSPORT_SCHEMA,
@@ -120,4 +122,6 @@ __all__ = [
     "build_transport_translations",
     "find_investment_plan",
     "find_region_discount_rate",
+    "read_region_discount_rates",
+    "report_other_region_rates",
 ]

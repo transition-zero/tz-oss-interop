@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import REGION
 from interop.plugins.shared.osemosys_sienna_constants import InvestmentParameter
@@ -11,10 +12,12 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._plan impor
     InvestmentPlan,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._technologies import (
+    REGION_RATE,
     RegionRate,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
+    OSEMOSYS_TO_SIENNA_INVESTMENTS,
     build_portfolio_financial_data,
 )
 from interop.plugins.shared.sienna_investments_constants import (
@@ -22,6 +25,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     PORTFOLIO_FINANCIAL_DATA_TABLE,
     SiennaPortfolioFinancialDataCol,
 )
+from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, report_not_mapped
 from interop.ports.outbound.reporting import DestinationField, EventKind, TranslationEvent
 
 F = SiennaPortfolioFinancialDataCol
@@ -34,6 +38,23 @@ _BASE_YEAR_NOTE = (
 )
 _RATE_DERIVATION = "the discount_rate of the first region of the model"
 _OTHER_RATES_NOTE = "OSeMOSYS states no inflation rate and no interest rate"
+
+OTHER_REGION_RATE_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_INVESTMENTS,
+    framework=Framework.OSEMOSYS,
+    component=InvestmentParameter.DISCOUNT_RATE,
+    name_col=REGION,
+    reason="state a discount_rate other than that of the first region, which the portfolio "
+    "takes as its own",
+    counted_noun="region(s)",
+    note=(
+        "OSeMOSYS discounts the costs of each region at the rate of that region, and "
+        "PortfolioFinancialData holds one rate, the rate of the first region"
+    ),
+    listed=SkippedNames(column=REGION, label="Regions"),
+    attribute_col=REGION_RATE,
+    attribute_name=REGION,
+)
 
 
 def build_osemosys_financial_data(plan: InvestmentPlan, rate: RegionRate | None) -> pl.DataFrame:
@@ -65,6 +86,16 @@ def build_osemosys_financial_events(
     if rate is not None:
         events.append(_build_rate_event(rate))
     return events
+
+
+def report_other_region_rates(
+    rates: pl.DataFrame, rate: RegionRate | None, recorder: ScopedRecorder
+) -> None:
+    """Each region whose discount_rate differs from the rate of the portfolio loses it."""
+    if rate is None:
+        return
+    is_portfolio_rate = pl.col(REGION_RATE) == rate.rate
+    report_not_mapped(rates, is_portfolio_rate, OTHER_REGION_RATE_REPORT, recorder)
 
 
 def _build_rate_event(rate: RegionRate) -> TranslationEvent:
