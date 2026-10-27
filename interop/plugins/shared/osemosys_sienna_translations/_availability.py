@@ -22,7 +22,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     WHOLE_CAPACITY,
-    CalendarHourCol,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
@@ -40,11 +39,6 @@ IS_VARYING = "is_varying"
 
 _FACTOR = "factor"
 _TROUGH_FACTOR = "trough_factor"
-_SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
-    StagedTimeSeriesCol.COMPONENT: pl.Utf8,
-    StagedTimeSeriesCol.VALUE: pl.Float64,
-}
 
 
 @dataclass(frozen=True)
@@ -78,9 +72,7 @@ def _read_timeslice_factors(
     state: State, operations: OperationsYear, technologies: pl.DataFrame, annual: pl.DataFrame
 ) -> pl.DataFrame:
     """The share of the capacity in each timeslice: capacity_factor × availability_factor."""
-    timeslices = pl.DataFrame(
-        {TIMESLICE: list(operations.calendar.year_split)}, schema={TIMESLICE: pl.Utf8}
-    )
+    timeslices = operations.calendar.build_timeslice_table().select(TIMESLICE)
     keys = technologies.select(REGION, TECHNOLOGY).join(timeslices, how="cross")
     stated = read_parameter_with_defaults(
         state, SupplyParameter.CAPACITY_FACTOR, operations.year, keys
@@ -97,17 +89,8 @@ def _reshape_to_hours(
     operations: OperationsYear, factors: pl.DataFrame, technologies: pl.DataFrame, name_col: str
 ) -> pl.DataFrame:
     """One row for each hour of the calendar and each technology, from one for each timeslice."""
-    hours = operations.calendar.hours.select(CalendarHourCol.TIMESTAMP, CalendarHourCol.TIMESLICE)
     named = factors.join(technologies.select(REGION, TECHNOLOGY, name_col), on=[REGION, TECHNOLOGY])
-    return (
-        hours.join(named, left_on=CalendarHourCol.TIMESLICE, right_on=TIMESLICE)
-        .select(
-            pl.col(CalendarHourCol.TIMESTAMP).alias(StagedTimeSeriesCol.SNAPSHOT),
-            pl.col(name_col).alias(StagedTimeSeriesCol.COMPONENT),
-            pl.col(_FACTOR).alias(StagedTimeSeriesCol.VALUE),
-        )
-        .cast(pl.Schema(_SERIES_SCHEMA))
-    )
+    return operations.calendar.reshape_to_hours(named, name_col, _FACTOR)
 
 
 def _enrich_factor_range(table: pl.DataFrame, series: pl.DataFrame, name_col: str) -> pl.DataFrame:
