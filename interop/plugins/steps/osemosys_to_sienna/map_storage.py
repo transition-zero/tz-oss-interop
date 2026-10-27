@@ -8,19 +8,15 @@ from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
-    STORAGE_TRANSLATIONS,
+    STORAGE_MAPPING,
     OperationsMapping,
     OperationsYear,
     build_storage_extensions,
     build_storages_source,
+    map_component_table,
     set_storage_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
-from interop.plugins.shared.sienna_constants import (
-    ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
-    SiennaComponent,
-)
-from interop.plugins.shared.translation_runner import apply_translations, finalise
 
 
 class OsemosysToSiennaMapStorage(OperationsMapping):
@@ -36,13 +32,8 @@ class OsemosysToSiennaMapStorage(OperationsMapping):
         source = build_storages_source(state, operations, self._mappings, self._recorder)
         if source.table.height == 0:
             return
-        destination = apply_translations(source.table, STORAGE_TRANSLATIONS, self._recorder)
-        state.destination_tables[SiennaComponent.ENERGY_RESERVOIR_STORAGE] = finalise(
-            destination,
-            ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
-            self._recorder,
-            SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-        )
+        storages = map_component_table(source.table, STORAGE_MAPPING, self._recorder)
+        state.destination_tables[STORAGE_MAPPING.sienna_type] = storages
         append_extensions(
             state.destination_extensions,
             ExtensionKind.STORAGE,

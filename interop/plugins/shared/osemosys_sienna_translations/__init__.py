@@ -78,7 +78,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage import (
     set_storage_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
-    STORAGE_TRANSLATIONS,
+    STORAGE_MAPPING,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     SIENNA_TYPE,
@@ -96,7 +96,7 @@ __all__ = [
     "GENERATOR_TYPE_MAPPINGS",
     "LOAD_MAPPING",
     "SIENNA_TYPE",
-    "STORAGE_TRANSLATIONS",
+    "STORAGE_MAPPING",
     "BuiltRecords",
     "Calendar",
     "ComponentMapping",
