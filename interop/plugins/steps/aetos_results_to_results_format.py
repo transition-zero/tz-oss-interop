@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.annual_results import build_annual_rows, build_results_destination
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import (
     CANONICAL_FRAMEWORK,
@@ -38,11 +39,11 @@ from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
     VARIABLE_DTYPE,
-    VARIABLE_UNIT,
     ResultsCol,
     ResultsVariable,
 )
-from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.sienna_results_constants import AnnualCol
+from interop.plugins.shared.translation_runner import SkipReport, SkipRule, filter_component
 from interop.plugins.shared.yearly_results_csv_constants import (
     RESULTS_CSV_COMPONENT,
     YEARLY_RESULTS_KEY,
@@ -71,8 +72,9 @@ log = logging.getLogger(__name__)
 _PIPELINE = "aetos-to-results"
 _REPORT_NAME = "report_name"
 _DEFAULT_ATTRIBUTE = "default"
-_FIRST_MONTH = 1
-_FIRST_DAY = 1
+_IS_KNOWN = "is_known"
+_IS_PRODUCER = "is_producer"
+_IS_CONVERSION = "is_conversion"
 
 _NO_PRODUCTION_NOTE = (
     "no technology puts out a fuel whose carrier is electricity, so production has no rows; "
@@ -101,47 +103,6 @@ _EMISSIONS_DERIVATION = (
 )
 _OBJECTIVE_DERIVATION = (
     "Σ ModelPeriodCostByRegion × the scale of {unit} → objective, in the same currency"
-)
-
-
-class LeftOutReport(NamedTuple):
-    """Why the rows of some members are left out. `note` and `warning` take `{variable}`;
-    `warning` then takes the count and a few names."""
-
-    member: str
-    note: str
-    warning: str
-
-
-_UNKNOWN_TECHNOLOGY = LeftOutReport(
-    TECHNOLOGY,
-    "the region holds no technology of this name in the model, so its {variable} rows are left out",
-    "%d technology(ies) of the results CSV are not technologies of the model, so their "
-    "{variable} rows are left out: %s",
-)
-_UNKNOWN_POLLUTANT = LeftOutReport(
-    POLLUTANT,
-    "the region holds no pollutant of this name in the model, so its {variable} rows are left out",
-    "%d pollutant(s) of the results CSV are not pollutants of the model, so their {variable} "
-    "rows are left out: %s",
-)
-_NO_ELECTRICITY = LeftOutReport(
-    TECHNOLOGY,
-    "the technology puts out no fuel whose carrier is electricity, and the results compare "
-    "electricity only, so its {variable} rows are left out",
-    "%d technology(ies) put out no electricity, so their {variable} rows are left out: %s",
-)
-_CONVERSION = LeftOutReport(
-    TECHNOLOGY,
-    "the technology converts one electricity fuel into another at one location, and the "
-    "Sienna system leaves such a technology out, so its {variable} rows are left out",
-    "%d technology(ies) convert electricity at one location, so their {variable} rows are "
-    "left out: %s",
-)
-_STORAGE_NAME_DERIVATION = (
-    "the Sienna system names a storage after the OSeMOSYS storage and rates it with the "
-    "technology that discharges it, so that technology states its {variables} under the "
-    "Sienna name of the storage"
 )
 
 
@@ -174,10 +135,68 @@ _OBJECTIVE = Derivation(
     ResultsVariable.OBJECTIVE,
     _OBJECTIVE_DERIVATION,
 )
+_CAPACITY_VARIABLES = (_INSTALLED_CAPACITY, _NEW_CAPACITY)
 # The variables of a technology, which the Sienna system states for its own components only.
-_TECHNOLOGY_VARIABLES = (_INSTALLED_CAPACITY, _NEW_CAPACITY, _PRODUCTION)
+_TECHNOLOGY_VARIABLES = (*_CAPACITY_VARIABLES, _PRODUCTION)
 _TECHNOLOGY_VARIABLE_NAMES = (
     f"{_INSTALLED_CAPACITY.destination}, {_NEW_CAPACITY.destination} and {_PRODUCTION.destination}"
+)
+
+_STORAGE_NAME_DERIVATION = (
+    "the Sienna system names a storage after the OSeMOSYS storage and rates it with the "
+    "technology that discharges it, so that technology states its {variables} under the "
+    "Sienna name of the storage"
+)
+_TECHNOLOGY_NOUN = "technology(ies)"
+
+
+def _build_technology_report(reason: str, note: str) -> SkipReport:
+    return SkipReport(
+        pipeline=_PIPELINE,
+        framework=Framework.AETOS,
+        component=TECHNOLOGY,
+        name_col=_REPORT_NAME,
+        reason=reason,
+        counted_noun=_TECHNOLOGY_NOUN,
+        note=f"{note}, so its {_TECHNOLOGY_VARIABLE_NAMES} rows are left out",
+    )
+
+
+# Each technology that states a row in a technology variable takes the first rule it fails.
+_TECHNOLOGY_RULES = (
+    SkipRule(
+        keep=pl.col(_IS_KNOWN),
+        report=_build_technology_report(
+            "of the results CSV are not technologies of the model",
+            "the region holds no technology of this name in the model",
+        ),
+    ),
+    SkipRule(
+        keep=~pl.col(_IS_CONVERSION),
+        report=_build_technology_report(
+            "convert electricity at one location",
+            "the technology converts one electricity fuel into another at one location, and "
+            "the Sienna system leaves such a technology out",
+        ),
+    ),
+    SkipRule(
+        keep=pl.col(_IS_PRODUCER),
+        report=_build_technology_report(
+            "put out no electricity",
+            "the technology puts out no fuel whose carrier is electricity, and the results "
+            "compare electricity only",
+        ),
+    ),
+)
+_UNKNOWN_POLLUTANT = SkipReport(
+    pipeline=_PIPELINE,
+    framework=Framework.AETOS,
+    component=POLLUTANT,
+    name_col=_REPORT_NAME,
+    reason="of the results CSV are not pollutants of the model",
+    counted_noun="pollutant(s)",
+    note="the region holds no pollutant of this name in the model, so its emissions rows are "
+    "left out",
 )
 
 _OUTPUT_ACTIVITY_RATIO_SOURCE = SourceField(
@@ -202,77 +221,54 @@ class AetosResultsToResultsFormat(TranslationStep):
 
     def run(self, state: State, params: BaseModel | None) -> State:
         self._report_unread_ratio_default(state)
-        stated = _read_stated_variables(state)
         inputs = MappingInputs(
-            _reshape_variables(stated), read_results_model(state), parse_units(state)
+            _reshape_variables(_read_stated_variables(state)),
+            read_results_model(state),
+            parse_units(state),
         )
-        conversions = _build_electricity_conversions(inputs.model)
-        self._report_conversions(inputs.variables, conversions)
-        inputs = _drop_conversions(inputs, conversions)
-        state.destination_tables[RESULTS_TABLE_KEY] = self._map_variables(inputs)
+        technologies = self._map_kept_technologies(inputs)
+        self._record_storage_names(inputs.model, technologies)
+        pieces = [
+            *(
+                self._map_capacity(inputs, technologies, derivation)
+                for derivation in _CAPACITY_VARIABLES
+            ),
+            self._map_production(inputs, technologies),
+            self._map_emissions(inputs),
+            self._map_objective(inputs),
+        ]
+        state.destination_tables[RESULTS_TABLE_KEY] = _build_results_table(pieces)
         return state
 
-    def _report_conversions(
-        self, variables: dict[OsemosysResultVariable, pl.DataFrame], conversions: pl.DataFrame
-    ) -> None:
-        """Each electricity conversion that states rows, once for the three variables."""
-        stated = _build_stated_technologies(variables)
-        names = _list_report_names(stated.join(conversions, on=[REGION, TECHNOLOGY], how="semi"))
-        self._report_left_out(names, _CONVERSION, _TECHNOLOGY_VARIABLE_NAMES)
+    def _map_kept_technologies(self, inputs: MappingInputs) -> pl.DataFrame:
+        """The technologies whose rows the results keep. It reports each other technology once,
+        for the three technology variables."""
+        technologies = _build_stated_technologies(inputs)
+        for rule in _TECHNOLOGY_RULES:
+            technologies, _ = filter_component(technologies, rule.keep, rule.report, self._recorder)
+        return technologies.select(REGION, TECHNOLOGY)
 
-    def _record_storage_names(self, model: ResultsModel, kept: list[pl.DataFrame]) -> None:
-        """One event for each technology whose kept rows take the name of a storage."""
-        stated = pl.concat([rows.select(REGION, TECHNOLOGY) for rows in kept]).unique()
-        renamed = model.storages.join(stated, on=[REGION, TECHNOLOGY], how="semi")
+    def _record_storage_names(self, model: ResultsModel, technologies: pl.DataFrame) -> None:
+        """One event for each kept technology that takes the name of a storage."""
+        renamed = model.storages.join(technologies, on=[REGION, TECHNOLOGY], how="semi")
         named = renamed.with_columns(express_report_name(TECHNOLOGY).alias(_REPORT_NAME))
         for row in named.sort(_REPORT_NAME).iter_rows(named=True):
             self._recorder.append(_build_storage_name_event(row))
 
-    def _map_variables(self, inputs: MappingInputs) -> pl.DataFrame:
-        capacity = {
-            derivation: self._build_capacity_rows(inputs, derivation)
-            for derivation in (_INSTALLED_CAPACITY, _NEW_CAPACITY)
-        }
-        activity = self._build_activity_rows(inputs)
-        self._record_storage_names(inputs.model, [*capacity.values(), activity])
-        pieces = [
-            *(
-                self._map_capacity(inputs, rows, derivation)
-                for derivation, rows in capacity.items()
-            ),
-            self._map_production(inputs, activity),
-            self._map_emissions(inputs),
-            self._map_objective(inputs),
-        ]
-        return _build_results_table(pieces)
-
-    def _build_capacity_rows(self, inputs: MappingInputs, derivation: Derivation) -> pl.DataFrame:
-        """The capacity rows of the technologies that put out electricity; it reports the rest."""
-        rows = self._build_known_technology_rows(inputs, derivation)
-        producers = build_electricity_producers(inputs.model)
-        return self._drop_left_out_members(rows, producers, _NO_ELECTRICITY, derivation)
-
-    def _build_activity_rows(self, inputs: MappingInputs) -> pl.DataFrame:
-        """The activity rows of the technologies that put out electricity; it reports the rest."""
-        activity = self._build_known_technology_rows(inputs, _PRODUCTION)
-        if activity.is_empty():
-            return activity
-        producers = build_electricity_producers(inputs.model)
-        if producers.is_empty():
-            self._report_no_production()
-            return activity.clear()
-        return self._drop_left_out_members(activity, producers, _NO_ELECTRICITY, _PRODUCTION)
-
     def _map_capacity(
-        self, inputs: MappingInputs, rows: pl.DataFrame, derivation: Derivation
-    ) -> pl.DataFrame:
+        self, inputs: MappingInputs, technologies: pl.DataFrame, derivation: Derivation
+    ) -> pl.LazyFrame:
+        rows = _build_technology_rows(inputs, technologies, derivation)
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(derivation, inputs.units.capacity_unit)
         named = _build_storage_named_rows(rows, inputs.model)
-        return _build_annual_results(named, derivation, inputs.units.convert_capacity_to_mw)
+        return _build_converted_rows(named, derivation, inputs.units.convert_capacity_to_mw)
 
-    def _map_production(self, inputs: MappingInputs, activity: pl.DataFrame) -> pl.DataFrame:
+    def _map_production(self, inputs: MappingInputs, technologies: pl.DataFrame) -> pl.LazyFrame:
+        if _has_activity_without_producers(inputs):
+            self._report_no_production()
+        activity = _build_technology_rows(inputs, technologies, _PRODUCTION)
         if activity.is_empty():
             return _build_empty_results()
         self._record_derivation(
@@ -281,67 +277,36 @@ class AetosResultsToResultsFormat(TranslationStep):
         production = _build_storage_named_rows(
             _build_production(activity, inputs.model), inputs.model
         )
-        return _build_annual_results(production, _PRODUCTION, inputs.units.convert_energy_to_mwh)
+        return _build_converted_rows(production, _PRODUCTION, inputs.units.convert_energy_to_mwh)
 
-    def _map_emissions(self, inputs: MappingInputs) -> pl.DataFrame:
+    def _map_emissions(self, inputs: MappingInputs) -> pl.LazyFrame:
         rows = _enrich_with_member(inputs.variables[_EMISSIONS.source], POLLUTANT)
-        rows = self._drop_left_out_members(
-            rows, inputs.model.pollutants, _UNKNOWN_POLLUTANT, _EMISSIONS
+        pollutants, _ = filter_component(
+            _build_stated_pollutants(rows, inputs.model),
+            pl.col(_IS_KNOWN),
+            _UNKNOWN_POLLUTANT,
+            self._recorder,
         )
+        rows = rows.join(pollutants, on=[REGION, POLLUTANT], how="semi")
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(_EMISSIONS, inputs.units.emissions_unit)
         named = _build_emissions(rows, inputs.model)
-        return _build_annual_results(named, _EMISSIONS, inputs.units.convert_emissions_to_tonnes)
+        return _build_converted_rows(named, _EMISSIONS, inputs.units.convert_emissions_to_tonnes)
 
-    def _map_objective(self, inputs: MappingInputs) -> pl.DataFrame:
+    def _map_objective(self, inputs: MappingInputs) -> pl.LazyFrame:
         rows = inputs.variables[_OBJECTIVE.source]
         if rows.is_empty():
             return _build_empty_results()
         self._record_derivation(_OBJECTIVE, inputs.units.currency_unit)
         total = inputs.units.convert_currency_to_dollars(pl.col(YearlyResultsCol.VALUE).sum())
-        return rows.select(
+        return rows.lazy().select(
             pl.lit(str(ResultsVariable.OBJECTIVE)).alias(ResultsCol.VARIABLE),
             pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.COMPONENT),
             pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY),
             pl.lit(None, dtype=RESULTS_SCHEMA[ResultsCol.TIMESTAMP]).alias(ResultsCol.TIMESTAMP),
             total.cast(pl.Float64).alias(ResultsCol.VALUE),
         )
-
-    def _build_known_technology_rows(
-        self, inputs: MappingInputs, derivation: Derivation
-    ) -> pl.DataFrame:
-        """The rows of the technologies that the model holds, with their name, category and
-        kind."""
-        rows = _enrich_with_member(inputs.variables[derivation.source], TECHNOLOGY)
-        technologies = inputs.model.technologies
-        rows = self._drop_left_out_members(rows, technologies, _UNKNOWN_TECHNOLOGY, derivation)
-        return rows.join(technologies, on=[REGION, TECHNOLOGY])
-
-    def _drop_left_out_members(
-        self, rows: pl.DataFrame, kept: pl.DataFrame, report: LeftOutReport, derivation: Derivation
-    ) -> pl.DataFrame:
-        """The rows whose region and member `kept` holds; it reports each member it drops."""
-        keys = [REGION, report.member]
-        names = _list_left_out_names(rows, kept, keys)
-        self._report_left_out(names, report, str(derivation.destination))
-        return rows.join(kept.select(keys), on=keys, how="semi")
-
-    def _report_left_out(self, names: list[str], report: LeftOutReport, variable: str) -> None:
-        note = report.note.format(variable=variable)
-        for name in names:
-            self._recorder.append(
-                TranslationEvent(
-                    kind=EventKind.COMPONENT_SKIPPED,
-                    sources=[
-                        SourceField(framework=Framework.AETOS, component=report.member, name=name)
-                    ],
-                    note=note,
-                )
-            )
-        if names:
-            warning = report.warning.format(variable=variable)
-            log.warning(warning, len(names), name_a_few(names))
 
     def _report_unread_ratio_default(self, state: State) -> None:
         default = find_parameter_default(state, FlowParameter.OUTPUT_ACTIVITY_RATIO)
@@ -355,7 +320,7 @@ class AetosResultsToResultsFormat(TranslationStep):
                         _OUTPUT_ACTIVITY_RATIO_SOURCE, attribute=_DEFAULT_ATTRIBUTE, value=default
                     )
                 ],
-                destinations=[_build_results_destination(ResultsVariable.PRODUCTION)],
+                destinations=[build_results_destination(ResultsVariable.PRODUCTION)],
                 note=_UNREAD_DEFAULT_NOTE,
             )
         )
@@ -368,7 +333,7 @@ class AetosResultsToResultsFormat(TranslationStep):
             TranslationEvent(
                 kind=EventKind.NOT_MAPPED,
                 sources=[_build_csv_source(_PRODUCTION.source)],
-                destinations=[_build_results_destination(ResultsVariable.PRODUCTION)],
+                destinations=[build_results_destination(ResultsVariable.PRODUCTION)],
                 note=_NO_PRODUCTION_NOTE,
             )
         )
@@ -381,7 +346,7 @@ class AetosResultsToResultsFormat(TranslationStep):
             TranslationEvent(
                 kind=EventKind.VALUE_DERIVED,
                 sources=[_build_csv_source(derivation.source, unit), *extra_sources],
-                destinations=[_build_results_destination(derivation.destination)],
+                destinations=[build_results_destination(derivation.destination)],
                 derivation=derivation.text.format(
                     variable=derivation.source, unit=unit, destination=derivation.destination
                 ),
@@ -395,20 +360,20 @@ def _build_csv_source(variable: OsemosysResultVariable, unit: str | None = None)
     )
 
 
-def _build_results_destination(variable: ResultsVariable) -> DestinationField:
-    return DestinationField(
-        framework=Framework.RESULTS,
-        component=RESULTS_TABLE_KEY,
-        name=str(variable),
-        attribute=ResultsCol.VARIABLE,
-        unit=VARIABLE_UNIT[variable],
-    )
-
-
 def _read_stated_variables(state: State) -> dict[OsemosysResultVariable, pl.DataFrame]:
+    """The rows of each variable that the step reads. Each is an annual variable with no
+    timeslice, so its rows are one for each component."""
     stated = state.source_time_series[YEARLY_RESULTS_KEY]
+    columns = [
+        YearlyResultsCol.REGION,
+        YearlyResultsCol.INDEX,
+        YearlyResultsCol.YEAR,
+        YearlyResultsCol.VALUE,
+    ]
     return {
-        variable: stated.filter(pl.col(YearlyResultsCol.VARIABLE) == variable).collect()
+        variable: stated.filter(pl.col(YearlyResultsCol.VARIABLE) == variable)
+        .select(columns)
+        .collect()
         for variable in OsemosysResultVariable
     }
 
@@ -431,53 +396,64 @@ def _enrich_with_member(rows: pl.DataFrame, member: str) -> pl.DataFrame:
     return rows.with_columns(pl.col(YearlyResultsCol.INDEX).list.get(0).alias(member))
 
 
-def _list_left_out_names(rows: pl.DataFrame, kept: pl.DataFrame, keys: list[str]) -> list[str]:
-    left_out = rows.join(kept.select(keys), on=keys, how="anti")
-    names = left_out.select(express_report_name(keys[1]).alias(_REPORT_NAME))
-    return [str(name) for name in names.unique(maintain_order=True)[_REPORT_NAME].to_list()]
-
-
-def _build_electricity_conversions(model: ResultsModel) -> pl.DataFrame:
-    """The conversions that put out electricity, which convert it at one location."""
-    is_conversion = pl.col(AnnotationColumn.KIND) == TechnologyKind.CONVERSION
-    return (
-        model.technologies.filter(is_conversion.fill_null(False))
-        .select(REGION, TECHNOLOGY)
-        .join(build_electricity_producers(model), on=[REGION, TECHNOLOGY], how="semi")
-    )
-
-
-def _build_stated_technologies(
-    variables: dict[OsemosysResultVariable, pl.DataFrame],
-) -> pl.DataFrame:
-    """The region and technology of each row of a technology variable."""
-    return pl.concat(
+def _build_stated_technologies(inputs: MappingInputs) -> pl.DataFrame:
+    """Each technology that states a row in a technology variable, with what the model says of
+    it: is it a technology of the model, does it put out electricity, and is it a conversion."""
+    keys = [REGION, TECHNOLOGY]
+    stated = pl.concat(
         [
-            _enrich_with_member(variables[derivation.source], TECHNOLOGY).select(REGION, TECHNOLOGY)
+            _enrich_with_member(inputs.variables[derivation.source], TECHNOLOGY).select(keys)
             for derivation in _TECHNOLOGY_VARIABLES
         ]
     ).unique()
-
-
-def _list_report_names(members: pl.DataFrame) -> list[str]:
-    names = members.select(express_report_name(TECHNOLOGY).alias(_REPORT_NAME)).sort(_REPORT_NAME)
-    return [str(name) for name in names[_REPORT_NAME].to_list()]
-
-
-def _drop_conversions(inputs: MappingInputs, conversions: pl.DataFrame) -> MappingInputs:
-    """The inputs without the rows of the electricity conversions in the technology variables."""
-    kept = {
-        derivation.source: _drop_members(
-            inputs.variables[derivation.source], conversions, TECHNOLOGY
+    is_conversion = pl.col(AnnotationColumn.KIND) == TechnologyKind.CONVERSION
+    known = inputs.model.technologies.select(
+        *keys, is_conversion.fill_null(False).alias(_IS_CONVERSION), pl.lit(True).alias(_IS_KNOWN)
+    )
+    producers = build_electricity_producers(inputs.model).with_columns(
+        pl.lit(True).alias(_IS_PRODUCER)
+    )
+    return (
+        stated.join(known, on=keys, how="left")
+        .join(producers, on=keys, how="left")
+        .with_columns(
+            pl.col(_IS_KNOWN, _IS_PRODUCER).fill_null(False),
+            (pl.col(_IS_CONVERSION) & pl.col(_IS_PRODUCER)).fill_null(False).alias(_IS_CONVERSION),
+            express_report_name(TECHNOLOGY).alias(_REPORT_NAME),
         )
-        for derivation in _TECHNOLOGY_VARIABLES
-    }
-    return inputs._replace(variables={**inputs.variables, **kept})
+        .sort(_REPORT_NAME)
+    )
 
 
-def _drop_members(rows: pl.DataFrame, dropped: pl.DataFrame, member: str) -> pl.DataFrame:
-    keys = [REGION, member]
-    return _enrich_with_member(rows, member).join(dropped, on=keys, how="anti").drop(member)
+def _build_stated_pollutants(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
+    """Each pollutant that states a row, and whether it is a pollutant of the model."""
+    keys = [REGION, POLLUTANT]
+    known = model.pollutants.select(*keys, pl.lit(True).alias(_IS_KNOWN))
+    return (
+        rows.select(keys)
+        .unique()
+        .join(known, on=keys, how="left")
+        .with_columns(
+            pl.col(_IS_KNOWN).fill_null(False),
+            express_report_name(POLLUTANT).alias(_REPORT_NAME),
+        )
+        .sort(_REPORT_NAME)
+        .select(*keys, _IS_KNOWN, _REPORT_NAME)
+    )
+
+
+def _build_technology_rows(
+    inputs: MappingInputs, technologies: pl.DataFrame, derivation: Derivation
+) -> pl.DataFrame:
+    """The rows of the kept technologies in one variable, with their name and category."""
+    rows = _enrich_with_member(inputs.variables[derivation.source], TECHNOLOGY)
+    kept = rows.join(technologies, on=[REGION, TECHNOLOGY], how="semi")
+    return kept.join(inputs.model.technologies, on=[REGION, TECHNOLOGY])
+
+
+def _has_activity_without_producers(inputs: MappingInputs) -> bool:
+    has_activity = not inputs.variables[_PRODUCTION.source].is_empty()
+    return has_activity and build_electricity_producers(inputs.model).is_empty()
 
 
 def _build_storage_named_rows(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
@@ -547,26 +523,27 @@ def _build_emissions(rows: pl.DataFrame, model: ResultsModel) -> pl.DataFrame:
     )
 
 
-def _build_annual_results(
+def _build_converted_rows(
     rows: pl.DataFrame, derivation: Derivation, convert: Callable[[pl.Expr], pl.Expr]
-) -> pl.DataFrame:
-    january_first = pl.datetime(pl.col(YearlyResultsCol.YEAR), _FIRST_MONTH, _FIRST_DAY)
-    return rows.select(
-        pl.lit(str(derivation.destination)).alias(ResultsCol.VARIABLE),
+) -> pl.LazyFrame:
+    """The results rows of one annual variable, with each value in the results unit."""
+    converted = rows.select(
         pl.col(COMPONENT).alias(ResultsCol.COMPONENT),
         pl.col(AnnotationColumn.CATEGORY).alias(ResultsCol.CATEGORY),
-        january_first.cast(RESULTS_SCHEMA[ResultsCol.TIMESTAMP]).alias(ResultsCol.TIMESTAMP),
-        convert(pl.col(YearlyResultsCol.VALUE)).cast(pl.Float64).alias(ResultsCol.VALUE),
+        pl.col(YearlyResultsCol.YEAR).alias(AnnualCol.YEAR),
+        convert(pl.col(YearlyResultsCol.VALUE)).alias(ResultsCol.VALUE),
     )
+    return build_annual_rows(converted, derivation.destination)
 
 
-def _build_empty_results() -> pl.DataFrame:
-    return pl.DataFrame(schema={**RESULTS_SCHEMA, ResultsCol.VARIABLE: pl.Utf8})
+def _build_empty_results() -> pl.LazyFrame:
+    return pl.LazyFrame(schema={**RESULTS_SCHEMA, ResultsCol.VARIABLE: pl.Utf8})
 
 
-def _build_results_table(pieces: list[pl.DataFrame]) -> pl.DataFrame:
+def _build_results_table(pieces: list[pl.LazyFrame]) -> pl.DataFrame:
     return (
         pl.concat(pieces, how="vertical")
         .with_columns(pl.col(ResultsCol.VARIABLE).cast(VARIABLE_DTYPE))
         .select(list(RESULTS_SCHEMA))
+        .collect()
     )
