@@ -35,9 +35,11 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICI
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
     build_derived,
-    build_osemosys_field,
     build_sienna_field,
     build_sienna_source,
+)
+from interop.plugins.shared.osemosys_sienna_translations._events import (
+    build_osemosys_field as _build_source,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     PRIME_MOVER,
@@ -204,12 +206,6 @@ _PENALTY_DERIVATION = (
     "emission_rate of the pollutant at the {direction} mode, in t/MWh of activity, × "
     "emission_penalty of the pollutant in the region, in $/t, / the electricity {flow} at that mode"
 )
-
-
-def _build_source(
-    parameter: str, name: str, attribute: str | None = None, value: Any = None
-) -> SourceField:
-    return build_osemosys_field(parameter, name, attribute, value)
 
 
 def _build_mode_attribute(direction: str, mode: str) -> str:
