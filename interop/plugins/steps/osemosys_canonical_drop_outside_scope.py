@@ -10,11 +10,11 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.scope import (
     Scope,
-    build_dropped_members,
+    build_scope_drop,
     reject_scope_outside_model,
-    report_dropped,
     set_scoped_tables,
 )
+from interop.plugins.shared.osemosys_canonical.scope_report import report_scope_drop
 
 _TEXT_LIST_SEPARATOR = ","
 
@@ -39,7 +39,8 @@ class OsemosysCanonicalDropOutsideScopeParams(BaseModel):
 
 class OsemosysCanonicalDropOutsideScope(TranslationStep):
     """A technology, a fuel or a storage is in scope when every part of its location is in
-    scope, so a transport technology at `A~B` needs both `A` and `B`."""
+    scope, so a transport technology at `A~B` needs both `A` and `B`. A member that a member in
+    scope needs also stays."""
 
     name: ClassVar[str] = "osemosys_canonical_drop_outside_scope"
     params_schema: ClassVar[type[BaseModel] | None] = OsemosysCanonicalDropOutsideScopeParams
@@ -55,7 +56,7 @@ class OsemosysCanonicalDropOutsideScope(TranslationStep):
             )
         scope = Scope(tuple(params.locations), tuple(params.years))
         reject_scope_outside_model(state, scope)
-        dropped = build_dropped_members(state, scope)
-        set_scoped_tables(state, scope, dropped)
-        report_dropped(dropped, self._recorder)
+        drop = build_scope_drop(state, scope)
+        set_scoped_tables(state, drop)
+        report_scope_drop(drop, self._recorder)
         return state

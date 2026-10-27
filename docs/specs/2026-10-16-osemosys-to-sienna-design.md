@@ -134,6 +134,12 @@ cost of 0 for a technology that the model opens later, and a cost of 0 would mak
 `locations` and `years`. It drops the canonical rows outside the scope. It also drops a transport
 technology with an end outside the scope. An empty parameter keeps everything.
 
+The step keeps each fuel and storage that a technology in scope uses. It also keeps a
+technology at the location of its region that uses only members that stay, such as the supply
+of a kept fuel. It drops a region whose location is outside the scope and that holds no flow of
+a technology in scope. It reports each region group that loses a region. `decisions.md` names
+each member and pair that the step removes or keeps.
+
 ### 7. The investments solve stacks on #42
 
 PR #42 adds the expansion leg (`sienna-to-power-systems-investments`) and the `solve` model type
