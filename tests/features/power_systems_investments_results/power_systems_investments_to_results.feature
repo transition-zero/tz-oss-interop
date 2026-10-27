@@ -163,3 +163,9 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=stats_only source.series_json_path=psi/portfolio_series.json"
     Then the pipeline exit code is 1
     And the log contains "Source node 'stage_power_systems_investments_results' cannot read the expansion results directory it was given: stats_only"
+
+  Scenario: A series document that does not state the periods stops the run with a line that names it
+    Given a file "psi/no_periods.json" containing "{}"
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/no_periods.json"
+    Then the pipeline exit code is 1
+    And the log contains "The file at psi/no_periods.json is not a series document"
