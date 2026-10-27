@@ -30,6 +30,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     STORAGE,
     TECHNOLOGY,
+    TIMESLICE,
     VALUE_COL,
     AnnotationColumn,
     FlowParameter,
@@ -87,6 +88,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_buses import (
     report_storage_buses,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
+    CAPACITY_FACTORS,
     CHARGE_SIDE,
     DISCHARGE_SIDE,
     ENERGY,
@@ -211,7 +213,7 @@ def build_storages_source(
         ),
         StorageCompanionCol.RATING_PU,
     )
-    storages = storages.with_columns(
+    storages = _enrich_capacity_factors(state, operations, storages).with_columns(
         express_has_capacity_factors(series, STORAGE_NAME).alias(HAS_CAPACITY_FACTORS)
     )
     return StorageSources(storages.sort(STORAGE_NAME), series)
@@ -246,6 +248,24 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     charging = _build_chargers(storages).select(REGION, TECHNOLOGY)
     set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
     set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
+
+
+def _enrich_capacity_factors(
+    state: State, operations: OperationsYear, storages: pl.DataFrame
+) -> pl.DataFrame:
+    """The capacity factor of each timeslice that the discharging technology states."""
+    technologies = storages.select(REGION, pl.col(DISCHARGE_SIDE.technology).alias(TECHNOLOGY))
+    factor = pl.struct(TIMESLICE, pl.col(VALUE_COL).cast(pl.Float64))
+    stated = (
+        read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
+        .lazy()
+        .join(technologies.unique().lazy(), on=_TECHNOLOGY_KEYS, how="semi")
+        .sort(TIMESLICE)
+        .group_by(_TECHNOLOGY_KEYS)
+        .agg(factor.alias(CAPACITY_FACTORS))
+        .collect()
+    )
+    return _enrich_side_technologies(storages, stated, DISCHARGE_SIDE)
 
 
 def _build_extension(row: dict[str, Any]) -> StorageExtension:
