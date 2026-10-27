@@ -28,6 +28,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
+    ActivityParameter,
     StorageParameter,
     SupplyParameter,
 )
@@ -67,7 +68,6 @@ from interop.plugins.shared.osemosys_sienna_translations._storage import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_AVAILABILITY,
-    CHARGE_CAPACITY,
     CHARGE_COST,
     CHARGE_COST_MWH,
     CHARGE_LINK_VALUE,
@@ -76,7 +76,6 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     CHARGE_SIDE,
     CHARGE_TECHNOLOGY_NAME,
     DISCHARGE_AVAILABILITY,
-    DISCHARGE_CAPACITY,
     DISCHARGE_COST,
     DISCHARGE_COST_MWH,
     DISCHARGE_LINK_VALUE,
@@ -167,12 +166,18 @@ _BUS_DERIVATION = (
     "the bus of the largest electricity fuel that the discharging technology puts out at the "
     "discharge mode, <region>/<fuel>"
 )
+# A technology runs its residual capacity × capacity_to_activity_unit of activity in a year.
+_ACTIVITY_MW = (
+    "residual_capacity of the {role} technology in the operations year × its "
+    "capacity_to_activity_unit, in MWh / 8760 h, or in MW where the model states no "
+    "capacity_to_activity_unit"
+)
 _BASE_POWER_DERIVATION = (
-    "residual_capacity of the discharging technology in the operations year, in MW, × its "
-    "electricity output_activity_ratio at the discharge mode"
+    f"{_ACTIVITY_MW.format(role='discharging')}, × its electricity output_activity_ratio at the "
+    "discharge mode"
 )
 _INPUT_LIMITS_DERIVATION = (
-    "min = 0; max = the lower of residual_capacity of the charging technology, in MW, × its "
+    f"min = 0; max = the lower of {_ACTIVITY_MW.format(role='charging')}, × its "
     "electricity input_activity_ratio at the charge mode × its availability_factor, and "
     "storage_max_charge_rate, in MWh / 8760 h when it is above 0, × that input_activity_ratio / "
     "technology_to_storage; per unit of base_power"
@@ -307,12 +312,7 @@ def _build_power() -> list[Translation]:
             _Col.BASE_POWER,
             pl.col(POWER_MW),
             lambda old: [
-                _build_source(
-                    SupplyParameter.RESIDUAL_CAPACITY,
-                    old[DISCHARGE_TECHNOLOGY_NAME],
-                    None,
-                    old[DISCHARGE_CAPACITY],
-                ),
+                *_build_capacity_sources(old, DISCHARGE_SIDE),
                 _build_output_ratio_source(old),
             ],
             _BASE_POWER_DERIVATION,
@@ -349,12 +349,7 @@ def _build_power() -> list[Translation]:
             _Col.INPUT_ACTIVE_POWER_LIMITS,
             _express_limits(INPUT_LIMIT),
             lambda old: [
-                _build_source(
-                    SupplyParameter.RESIDUAL_CAPACITY,
-                    old[CHARGE_TECHNOLOGY_NAME],
-                    None,
-                    old[CHARGE_CAPACITY],
-                ),
+                *_build_capacity_sources(old, CHARGE_SIDE),
                 _build_input_ratio_source(old),
                 _build_source(
                     SupplyParameter.AVAILABILITY_FACTOR,
@@ -396,6 +391,22 @@ def _build_power() -> list[Translation]:
             ],
             _EFFICIENCY_DERIVATION,
         ),
+    ]
+
+
+def _build_capacity_sources(old: dict[str, Any], side: StorageSide) -> list[SourceField]:
+    """The residual capacity of the technology of one side, and the activity of each unit of it
+    in a year where the model states one."""
+    technology = old[side.technology_name]
+    capacity = _build_source(
+        SupplyParameter.RESIDUAL_CAPACITY, technology, None, old[side.capacity]
+    )
+    activity = old[side.capacity_to_activity]
+    if activity is None:
+        return [capacity]
+    return [
+        capacity,
+        _build_source(ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, technology, None, activity),
     ]
 
 
