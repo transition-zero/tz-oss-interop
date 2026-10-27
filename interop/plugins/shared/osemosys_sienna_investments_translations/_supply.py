@@ -9,7 +9,6 @@ its electricity output ratio at the operations mode, as the operations step rate
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -25,6 +24,7 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
+    TECHNOLOGY,
     YEAR,
     AnnotationColumn,
     FlowParameter,
@@ -63,6 +63,14 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     build_priced_field,
     build_technology_field,
     build_yearly_field,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._extensions import (
+    SUPPLY_APPLIED,
+    SUPPLY_FIELDS,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    CandidateKind,
+    Candidates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -136,6 +144,9 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaInvestmentsComponent,
     SiennaSupplyTechnologyCol,
 )
+from interop.plugins.shared.sienna_investments_sources import (
+    GENERATOR_TYPES as BASE_GENERATOR_TYPES,
+)
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipRule,
@@ -158,21 +169,13 @@ _LISTED = SkippedNames(column=REPORT_NAME, label=TECHNOLOGIES_LABEL)
 _ELECTRICITY_OUTPUT = f"{FlowParameter.OUTPUT_ACTIVITY_RATIO} of electricity"
 
 
-@dataclass(frozen=True)
-class SupplyCandidates:
-    """One row for each candidate, and one row for each candidate and year of the plan."""
-
-    table: pl.DataFrame
-    yearly: pl.DataFrame
-
-
 def build_supply_candidates(
     state: State,
     plan_years: Mapping[int, OperationsYear],
     plan: InvestmentPlan,
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
-) -> SupplyCandidates:
+) -> Candidates:
     technologies = read_kind_technologies(state, TechnologyKind.SUPPLY_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
     prices = [InvestmentParameter.CAPITAL_COST]
@@ -193,7 +196,7 @@ def build_supply_candidates(
     table = enrich_financial_values(state, plan, table).with_columns(
         pl.col(AnnotationColumn.LOCATION).alias(AREA)
     )
-    return SupplyCandidates(table, yearly)
+    return Candidates(SUPPLY_KIND, table, yearly)
 
 
 def build_supply_translations(cost_year: int, start: int) -> list[Translation]:
@@ -203,6 +206,18 @@ def build_supply_translations(cost_year: int, start: int) -> list[Translation]:
         *_SUPPLY_TRANSLATIONS,
         *build_lifetime_translations(_COMPONENT, cost_year),
     ]
+
+
+SUPPLY_KIND = CandidateKind(
+    component=_COMPONENT,
+    schema=SUPPLY_SCHEMA,
+    build=build_supply_translations,
+    fields=SUPPLY_FIELDS,
+    keys=TECHNOLOGY_KEYS,
+    device_class=TECHNOLOGY,
+    base_types=BASE_GENERATOR_TYPES,
+    applied=SUPPLY_APPLIED,
+)
 
 
 # --- the candidates --------------------------------------------------------------------------

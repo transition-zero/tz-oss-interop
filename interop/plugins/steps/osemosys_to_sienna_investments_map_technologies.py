@@ -9,39 +9,21 @@ that tie each technology to the fleet of the base system.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import ClassVar
 
-import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.osemosys_canonical.constants import (
-    REGION,
-    STORAGE,
-    TECHNOLOGY,
-)
 from interop.plugins.shared.osemosys_sienna_investments_translations import (
     FLEET_SOURCE,
     LOADS_SOURCE,
-    STORAGE_FIELDS,
-    STORAGE_SCHEMA,
-    SUPPLY_APPLIED,
-    SUPPLY_FIELDS,
-    SUPPLY_SCHEMA,
-    TECHNOLOGY_KEYS,
-    TRANSPORT_FIELDS,
-    TRANSPORT_SCHEMA,
-    CandidateFamily,
-    FleetFamily,
+    Candidates,
     InvestmentPlan,
-    StorageCandidates,
-    SupplyCandidates,
-    TransportCandidates,
     build_availability_series,
     build_carbon_cap_translations,
     build_carbon_caps,
@@ -52,13 +34,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     build_plan_year,
     build_portfolio_technologies,
     build_storage_candidates,
-    build_storage_technology_keys,
-    build_storage_translations,
     build_supply_candidates,
-    build_supply_translations,
     build_technology_extensions,
     build_transport_candidates,
-    build_transport_translations,
     drop_capped_limits,
     find_investment_plan,
     find_region_discount_rate,
@@ -92,19 +70,21 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaInvestmentsComponent,
 )
 from interop.plugins.shared.sienna_investments_sources import (
-    GENERATOR_TYPES,
     build_demand_table,
     read_area_by_bus,
 )
 
-_STORAGE_KEYS = [REGION, STORAGE]
-
 
 @dataclass(frozen=True)
 class _Candidates:
-    supply: SupplyCandidates
-    storage: StorageCandidates
-    transport: TransportCandidates
+    supply: Candidates
+    storage: Candidates
+    transport: Candidates
+
+    @property
+    def families(self) -> tuple[Candidates, ...]:
+        """The candidates of each kind, in the order in which they take their ids."""
+        return (self.supply, self.storage, self.transport)
 
 
 _DEMAND_TABLE = PortfolioTable(
@@ -154,7 +134,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self._map_demand(state, mapper)
         self._map_carbon_caps(state, plan, mapper, candidates)
         self._map_series(state, plan_years, candidates)
-        fleet = build_fleet_table(state, plan, _list_fleet_families(candidates))
+        fleet = build_fleet_table(state, plan, candidates.families)
         mapper.map_supplemental_attributes(state, fleet, buses)
         self._map_extensions(state, plan_years[plan.base_year], candidates)
         self._map_financial_data(state, plan)
@@ -176,34 +156,8 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             ),
             transport=build_transport_candidates(state, plan, self._recorder),
         )
-        tables: Sequence[tuple[pl.DataFrame, PortfolioTable]] = (
-            (
-                candidates.supply.table,
-                PortfolioTable(
-                    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-                    SUPPLY_SCHEMA,
-                    partial(build_supply_translations, plan.cost_year),
-                ),
-            ),
-            (
-                candidates.storage.table,
-                PortfolioTable(
-                    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-                    STORAGE_SCHEMA,
-                    partial(build_storage_translations, plan.cost_year),
-                ),
-            ),
-            (
-                candidates.transport.table,
-                PortfolioTable(
-                    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
-                    TRANSPORT_SCHEMA,
-                    partial(build_transport_translations, plan.cost_year),
-                ),
-            ),
-        )
-        for table, spec in tables:
-            mapper.map_table(state, table, spec)
+        for family in candidates.families:
+            mapper.map_table(state, family.table, family.kind.build_table(plan.cost_year))
         return candidates
 
     def _map_demand(self, state: State, mapper: PortfolioMapper) -> None:
@@ -215,7 +169,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         self, state: State, plan: InvestmentPlan, mapper: PortfolioMapper, candidates: _Candidates
     ) -> None:
         """The caps, and the constraint records that the operations step wrote without them."""
-        portfolio = _build_portfolio_technologies(state, candidates)
+        portfolio = build_portfolio_technologies(state, candidates.families)
         caps = build_carbon_caps(state, plan, portfolio, self._recorder)
         constraints = state.destination_extensions.get(ExtensionKind.CONSTRAINT, [])
         capped = drop_capped_limits(constraints, caps.pollutants)
@@ -243,50 +197,12 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
     # --- the records of extensions.json and the portfolio financial data ----------------------
 
     def _map_extensions(self, state: State, base: OperationsYear, candidates: _Candidates) -> None:
-        families = (
-            (
-                SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-                candidates.supply.table,
-                candidates.supply.yearly,
-                SUPPLY_FIELDS,
-                TECHNOLOGY_KEYS,
-            ),
-            (
-                SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-                candidates.storage.table,
-                candidates.storage.yearly,
-                STORAGE_FIELDS,
-                _STORAGE_KEYS,
-            ),
-            (
-                SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
-                candidates.transport.table,
-                candidates.transport.yearly,
-                TRANSPORT_FIELDS,
-                TECHNOLOGY_KEYS,
-            ),
-        )
-        for component, table, yearly, fields, keys in families:
-            valued = enrich_technology_values(state, base, table, CANDIDATE_VALUES)
-            records = build_technology_extensions(
-                component, valued, yearly, fields, keys, self._recorder
-            )
+        for family in candidates.families:
+            valued = enrich_technology_values(state, base, family.table, CANDIDATE_VALUES)
+            records = build_technology_extensions(family, valued, self._recorder)
             append_extensions(state.destination_extensions, ExtensionKind.TECHNOLOGY, records)
         set_producers_persisted(state, candidates.supply.yearly)
-        set_technology_extensions_persisted(
-            state,
-            [
-                CandidateFamily(
-                    table,
-                    fields,
-                    keys,
-                    SUPPLY_APPLIED
-                    if component == SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
-                    else (),
-                )
-                for component, table, _, fields, keys in families
-            ],
-        )
+        set_technology_extensions_persisted(state, candidates.families)
 
     def _map_financial_data(self, state: State, plan: InvestmentPlan) -> None:
         rates = read_region_discount_rates(state, plan)
@@ -297,41 +213,6 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         for event in build_osemosys_financial_events(plan, rate):
             self._recorder.append(event)
         report_other_region_rates(rates, rate, self._recorder)
-
-
-def _list_fleet_families(candidates: _Candidates) -> list[FleetFamily]:
-    return [
-        FleetFamily(
-            component_type=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
-            device_class=TECHNOLOGY,
-            candidates=candidates.supply.table,
-            base_types=GENERATOR_TYPES,
-        ),
-        FleetFamily(
-            component_type=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
-            device_class=STORAGE,
-            candidates=candidates.storage.table,
-            base_types=(SiennaComponent.ENERGY_RESERVOIR_STORAGE,),
-        ),
-        FleetFamily(
-            component_type=SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
-            device_class=TECHNOLOGY,
-            candidates=candidates.transport.table,
-            base_types=(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,),
-        ),
-    ]
-
-
-def _build_portfolio_technologies(state: State, candidates: _Candidates) -> pl.DataFrame:
-    """The technologies of the candidates, and of the components of the base system."""
-    families = _list_fleet_families(candidates)
-    keys = [
-        candidates.supply.table.select(TECHNOLOGY_KEYS),
-        build_storage_technology_keys(candidates.storage.table),
-        candidates.transport.table.select(TECHNOLOGY_KEYS),
-    ]
-    base_types = [base_type for family in families for base_type in family.base_types]
-    return build_portfolio_technologies(state, pl.concat(keys), base_types)
 
 
 def _read_ids(state: State, component: str) -> dict[str, int]:

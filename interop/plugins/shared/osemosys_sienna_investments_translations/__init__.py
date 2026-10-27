@@ -22,12 +22,6 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._demand imp
     build_demand_series,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._extensions import (
-    STORAGE_FIELDS,
-    SUPPLY_APPLIED,
-    SUPPLY_FIELDS,
-    TRANSPORT_FIELDS,
-    CandidateFamily,
-    YearlyField,
     build_technology_extensions,
     set_producers_persisted,
     set_technology_extensions_persisted,
@@ -39,9 +33,13 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._financials
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._fleet import (
     FLEET_SOURCE,
-    FleetFamily,
     build_fleet_table,
     build_portfolio_technologies,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    CandidateKind,
+    Candidates,
+    YearlyField,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -53,15 +51,12 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._series imp
     set_portfolio_series,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._storage import (
-    STORAGE_SCHEMA,
-    StorageCandidates,
+    STORAGE_KIND,
     build_storage_candidates,
-    build_storage_technology_keys,
     build_storage_translations,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._supply import (
-    SUPPLY_SCHEMA,
-    SupplyCandidates,
+    SUPPLY_KIND,
     build_supply_candidates,
     build_supply_translations,
 )
@@ -70,8 +65,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
     read_region_discount_rates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._transport import (
-    TRANSPORT_SCHEMA,
-    TransportCandidates,
+    TRANSPORT_KIND,
     build_transport_candidates,
     build_transport_translations,
 )
@@ -80,48 +74,40 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
 )
 
 __all__ = [
-    "CANDIDATE_NAME",
-    "FLEET_SOURCE",
-    "LOADS_SOURCE",
-    "STORAGE_FIELDS",
-    "STORAGE_SCHEMA",
-    "SUPPLY_APPLIED",
-    "SUPPLY_FIELDS",
-    "SUPPLY_SCHEMA",
-    "TECHNOLOGY_KEYS",
-    "TRANSPORT_FIELDS",
-    "TRANSPORT_SCHEMA",
-    "CandidateFamily",
-    "FleetFamily",
-    "InvestmentPlan",
-    "PortfolioSeries",
-    "StorageCandidates",
-    "SupplyCandidates",
-    "TransportCandidates",
-    "YearlyField",
-    "set_portfolio_series",
-    "set_producers_persisted",
-    "set_technology_extensions_persisted",
     "build_availability_series",
     "build_carbon_cap_translations",
     "build_carbon_caps",
     "drop_capped_limits",
+    "CANDIDATE_NAME",
+    "LOADS_SOURCE",
     "build_demand_series",
-    "build_fleet_table",
-    "build_portfolio_technologies",
-    "build_storage_technology_keys",
+    "build_technology_extensions",
+    "set_producers_persisted",
+    "set_technology_extensions_persisted",
     "build_osemosys_financial_data",
     "build_osemosys_financial_events",
+    "report_other_region_rates",
+    "FLEET_SOURCE",
+    "build_fleet_table",
+    "build_portfolio_technologies",
+    "CandidateKind",
+    "Candidates",
+    "YearlyField",
+    "InvestmentPlan",
     "build_plan_year",
+    "find_investment_plan",
+    "PortfolioSeries",
+    "set_portfolio_series",
+    "STORAGE_KIND",
     "build_storage_candidates",
     "build_storage_translations",
+    "SUPPLY_KIND",
     "build_supply_candidates",
     "build_supply_translations",
-    "build_technology_extensions",
-    "build_transport_candidates",
-    "build_transport_translations",
-    "find_investment_plan",
     "find_region_discount_rate",
     "read_region_discount_rates",
-    "report_other_region_rates",
+    "TRANSPORT_KIND",
+    "build_transport_candidates",
+    "build_transport_translations",
+    "TECHNOLOGY_KEYS",
 ]

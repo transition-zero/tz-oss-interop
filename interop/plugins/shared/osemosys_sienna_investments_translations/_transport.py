@@ -11,7 +11,6 @@ extensions.json holds the bounds of each year.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
@@ -57,6 +56,13 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     build_priced_field,
     build_technology_field,
     build_yearly_field,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._extensions import (
+    TRANSPORT_FIELDS,
+)
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import (
+    CandidateKind,
+    Candidates,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -144,17 +150,9 @@ NO_AREA_SKIP = TECHNOLOGY_SOURCE.skip(
 )
 
 
-@dataclass(frozen=True)
-class TransportCandidates:
-    """One row for each candidate, and one row for each candidate and year of the plan."""
-
-    table: pl.DataFrame
-    yearly: pl.DataFrame
-
-
 def build_transport_candidates(
     state: State, plan: InvestmentPlan, recorder: ScopedRecorder
-) -> TransportCandidates:
+) -> Candidates:
     technologies = read_kind_technologies(state, TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
     prices = [InvestmentParameter.CAPITAL_COST]
@@ -174,7 +172,7 @@ def build_transport_candidates(
     table = enrich_base_year_values(technologies, yearly, plan)
     limits = _build_plan_limits(yearly)
     table = enrich_financial_values(state, plan, table.join(limits, on=TECHNOLOGY_KEYS, how="left"))
-    return TransportCandidates(table, yearly)
+    return Candidates(TRANSPORT_KIND, table, yearly)
 
 
 def _build_plan_limits(yearly: pl.DataFrame) -> pl.DataFrame:
@@ -215,6 +213,17 @@ def build_transport_translations(cost_year: int, start: int) -> list[Translation
         *_TRANSPORT_TRANSLATIONS,
         build_financial_translation(_COMPONENT, cost_year),
     ]
+
+
+TRANSPORT_KIND = CandidateKind(
+    component=_COMPONENT,
+    schema=TRANSPORT_SCHEMA,
+    build=build_transport_translations,
+    fields=TRANSPORT_FIELDS,
+    keys=TECHNOLOGY_KEYS,
+    device_class=TECHNOLOGY,
+    base_types=(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,),
+)
 
 
 def _enrich_ends(state: State, plan: InvestmentPlan, technologies: pl.DataFrame) -> pl.DataFrame:

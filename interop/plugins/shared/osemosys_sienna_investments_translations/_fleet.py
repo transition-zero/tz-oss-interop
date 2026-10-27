@@ -9,7 +9,6 @@ residual capacity of its technology is zero. The model states no build year.
 from __future__ import annotations
 
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
 
 import polars as pl
 
@@ -27,6 +26,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CANDIDATE_NAME,
 )
+from interop.plugins.shared.osemosys_sienna_investments_translations._kinds import Candidates
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
 )
@@ -68,44 +68,34 @@ FLEET_SOURCE = InvestmentsSource(
 )
 
 
-@dataclass(frozen=True)
-class FleetFamily:
-    """The candidates of one type, and the base system types that a component of each can be.
-
-    `candidates` holds `candidate_name`, `region`, `technology` and `location`. The technology is
-    the one whose residual capacity the component holds.
-    """
-
-    component_type: str
-    device_class: str
-    candidates: pl.DataFrame
-    base_types: Sequence[SiennaComponent]
-
-
 def build_fleet_table(
-    state: State, plan: InvestmentPlan, families: Sequence[FleetFamily]
+    state: State, plan: InvestmentPlan, families: Sequence[Candidates]
 ) -> pl.DataFrame:
-    """One row for each candidate that has a component of its own in the base system."""
+    """One row for each candidate that has a component of its own in the base system.
+
+    The table of each family holds `candidate_name`, `region`, `technology` and `location`. The
+    technology is the one whose residual capacity the component holds.
+    """
     return pl.concat([_build_family_fleet(state, plan, family) for family in families])
 
 
-def build_portfolio_technologies(
-    state: State, candidates: pl.DataFrame, base_types: Collection[SiennaComponent]
-) -> pl.DataFrame:
+def build_portfolio_technologies(state: State, families: Sequence[Candidates]) -> pl.DataFrame:
     """The region and technology of each candidate, and of each component of the base system."""
+    base_types = [base_type for family in families for base_type in family.kind.base_types]
     base_names = sorted(_list_base_names(state, base_types))
     fleet = (
         read_annotations(state, TECHNOLOGY)
         .with_columns(express_component_name(TECHNOLOGY).alias(CANDIDATE_NAME))
         .filter(pl.col(CANDIDATE_NAME).is_in(base_names))
     )
-    keys = [table.select(TECHNOLOGY_KEYS).cast(pl.Utf8) for table in (candidates, fleet)]
-    return pl.concat(keys).unique()
+    keys = [family.build_technology_keys() for family in families]
+    tables = [table.select(TECHNOLOGY_KEYS).cast(pl.Utf8) for table in (*keys, fleet)]
+    return pl.concat(tables).unique()
 
 
-def _build_family_fleet(state: State, plan: InvestmentPlan, family: FleetFamily) -> pl.DataFrame:
-    base_names = sorted(_list_base_names(state, family.base_types))
-    devices = family.candidates.filter(pl.col(CANDIDATE_NAME).is_in(base_names))
+def _build_family_fleet(state: State, plan: InvestmentPlan, family: Candidates) -> pl.DataFrame:
+    base_names = sorted(_list_base_names(state, family.kind.base_types))
+    devices = family.table.filter(pl.col(CANDIDATE_NAME).is_in(base_names))
     return build_existing_fleet_source_table(
         _list_candidates(family),
         _build_groups(devices),
@@ -143,17 +133,17 @@ def _read_retirement_years(
     return dict(named.iter_rows())
 
 
-def _list_candidates(family: FleetFamily) -> list[CandidateTechnology]:
+def _list_candidates(family: Candidates) -> list[CandidateTechnology]:
     """The shared rule matches a fleet by carrier and region, here the name and the location."""
     return [
         CandidateTechnology(
             name=name,
-            component_type=family.component_type,
-            device_class=family.device_class,
+            component_type=family.kind.component,
+            device_class=family.kind.device_class,
             carrier=name,
             region=location,
         )
-        for name, location in family.candidates.select(
+        for name, location in family.table.select(
             CANDIDATE_NAME, AnnotationColumn.LOCATION
         ).iter_rows()
     ]
