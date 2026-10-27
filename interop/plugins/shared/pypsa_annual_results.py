@@ -3,13 +3,16 @@
 A network over representative periods weights each snapshot by the hours of the year that it
 stands for. This writes production, installed capacity and emissions at 1 January of each year
 of the solve, with the definitions of `sienna-to-results`, so the two solves compare row by
-row. A network whose every snapshot counts once, with no representative periods in its
-sidecar, covers the hours it states and nothing more, so it gets no annual row.
+row. A weighted year gets rows only where its weightings sum to the hours of a year, or where
+the sidecar states representative periods. A network whose every snapshot counts once, with no
+representative periods in its sidecar, covers the hours it states and nothing more, so it gets
+no annual row.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from typing import NamedTuple
 
 import polars as pl
@@ -33,6 +36,8 @@ from interop.plugins.shared.annual_results import (
 )
 from interop.plugins.shared.constants import (
     ALL_COMPONENTS,
+    HOURS_PER_LEAP_YEAR,
+    HOURS_PER_YEAR,
     Framework,
     require_extension_attribute,
 )
@@ -55,6 +60,12 @@ from interop.plugins.shared.pypsa_link_places import build_one_location_links
 from interop.plugins.shared.pypsa_network_view import PypsaNetworkView
 from interop.plugins.shared.results_constants import PYPSA_TO_RESULTS, ResultsCol
 from interop.plugins.shared.sienna_results_constants import AnnualCol
+from interop.plugins.shared.translation_runner import (
+    DROPPED_NAMES_LABEL,
+    SkippedNames,
+    SkipReport,
+    report_not_mapped,
+)
 from interop.ports.outbound.reporting import SourceField
 
 _UNWEIGHTED = 1.0
@@ -64,6 +75,29 @@ _GENERATOR_RATES = require_extension_attribute(GeneratorExtension, _EMISSION_RAT
 _OWN_RATES = require_extension_attribute(GeneratorExtension, "own_emission_rates_t_per_mwh")
 _CONVERSION_RATES = require_extension_attribute(ConversionExtension, _EMISSION_RATES_FIELD)
 _DELIVERED = "delivered"
+_HOURS_OF_A_YEAR = (HOURS_PER_YEAR, HOURS_PER_LEAP_YEAR)
+# Hours of float error that a sum of weightings may hold and still fill a year.
+_YEAR_HOURS_TOLERANCE = 1e-6
+_YEAR_HOURS = "year_hours"
+_YEAR_NAME = "year_name"
+_YEAR_LABEL = "year_label"
+_PARTIAL_YEAR_REPORT = SkipReport(
+    pipeline=PYPSA_TO_RESULTS,
+    framework=Framework.PYPSA,
+    component=PyPSATable.SNAPSHOTS,
+    name_col=_YEAR_NAME,
+    reason=(
+        "have snapshot weightings that sum to other than the hours of a year, so they have no "
+        "production, installed_capacity or emissions row"
+    ),
+    counted_noun="year(s)",
+    note=(
+        "the snapshot weightings of the year sum to other than 8760 h or 8784 h, so the "
+        "snapshots do not stand for the year, and a row at 1 January would hold part of it"
+    ),
+    listed=SkippedNames(column=_YEAR_LABEL, label=DROPPED_NAMES_LABEL),
+    attribute_col=_YEAR_HOURS,
+)
 _KEYS = [PyPSATimeSeriesCol.SNAPSHOT, PyPSATimeSeriesCol.COMPONENT]
 
 _FUEL_EMISSIONS_DERIVATION = (
@@ -164,11 +198,12 @@ class PypsaAnnualResultsMapper:
     """Writes `production`, `installed_capacity` and `emissions` for a weighted solve."""
 
     def __init__(self, recorder: ScopedRecorder) -> None:
+        self._recorder = recorder
         self._mapper = AnnualRowsMapper(recorder, ResultsLeg(Framework.PYPSA, PYPSA_TO_RESULTS))
 
     def map_annual(self, state: State, view: PypsaNetworkView) -> list[pl.LazyFrame]:
-        weights = _find_weights(state)
-        if weights is None or not _is_annual(state, weights):
+        weights = self._choose_annual_weights(state)
+        if weights.is_empty():
             return []
         self._report_lines(state, view)
         activity = _build_all_production(state, weights, view)
@@ -182,6 +217,29 @@ class PypsaAnnualResultsMapper:
             *self._mapper.map_installed_capacity(capacity, produced, _INSTALLED_CAPACITY),
             *self._map_emissions(state, activity, view.fuels),
         ]
+
+    def _choose_annual_weights(self, state: State) -> pl.DataFrame:
+        """The weight of each snapshot of a year that the snapshots stand for, or none.
+
+        The representative periods of a sidecar state that their weights fill each year, as
+        sienna-to-results reads them; with none, the weightings of a year must sum to a year.
+        """
+        weights = _find_weights(state)
+        if weights is None:
+            return pl.DataFrame()
+        if state.source_extensions.get(ExtensionKind.REPRESENTATIVE_PERIOD):
+            return weights.table
+        if not (weights.table[AnnualCol.WEIGHT] != _UNWEIGHTED).any():
+            return weights.table.clear()
+        return self._drop_partial_years(weights)
+
+    def _drop_partial_years(self, weights: _Weights) -> pl.DataFrame:
+        """The weights of the years whose weightings sum to a year; it reports the others."""
+        totals = _build_year_totals(weights.table)
+        report = replace(_PARTIAL_YEAR_REPORT, attribute_name=weights.attribute)
+        kept, _ = report_not_mapped(totals, _express_whole_year(), report, self._recorder)
+        is_kept = _express_year().is_in(kept[AnnualCol.YEAR].to_list())
+        return weights.table.filter(is_kept)
 
     def _report_lines(self, state: State, view: PypsaNetworkView) -> None:
         """Report each conversion link, and each link at one location that states no mark."""
@@ -224,22 +282,45 @@ def _fill_unproduced(production: pl.DataFrame, capacity: pl.DataFrame) -> pl.Dat
     return pl.concat([production, unproduced.cast(pl.Schema(PRODUCTION_SCHEMA))])
 
 
-def _find_weights(state: State) -> pl.DataFrame | None:
+class _Weights(NamedTuple):
+    """The hours each snapshot counts for, and the weighting that states them."""
+
+    attribute: str
+    table: pl.DataFrame
+
+
+def _find_weights(state: State) -> _Weights | None:
     """The hours each snapshot counts for in a generator's energy, by snapshot."""
     for attribute in (PyPSASolvedAttr.GENERATOR_WEIGHTING, PyPSASolvedAttr.SNAPSHOT_WEIGHTING):
         frame = state.source_time_series.get((PyPSATable.SNAPSHOTS, attribute))
         if frame is not None:
-            return frame.select(
+            table = frame.select(
                 PyPSATimeSeriesCol.SNAPSHOT,
                 pl.col(PyPSATimeSeriesCol.VALUE).alias(AnnualCol.WEIGHT),
-            ).collect()
+            )
+            return _Weights(attribute, table.collect())
     return None
 
 
-def _is_annual(state: State, weights: pl.DataFrame) -> bool:
-    """Whether a snapshot counts for other than one hour, or the sidecar states periods."""
-    is_weighted = bool((weights[AnnualCol.WEIGHT] != _UNWEIGHTED).any())
-    return is_weighted or bool(state.source_extensions.get(ExtensionKind.REPRESENTATIVE_PERIOD))
+def _build_year_totals(weights: pl.DataFrame) -> pl.DataFrame:
+    """The hours that the snapshots of each year stand for, with a label for the warning."""
+    totals = (
+        weights.group_by(_express_year())
+        .agg(pl.col(AnnualCol.WEIGHT).sum().alias(_YEAR_HOURS))
+        .sort(AnnualCol.YEAR)
+    )
+    labels = [f"{year} ({hours:g} h)" for year, hours in totals.iter_rows()]
+    return totals.with_columns(
+        pl.col(AnnualCol.YEAR).cast(pl.Utf8).alias(_YEAR_NAME),
+        pl.Series(_YEAR_LABEL, labels, dtype=pl.Utf8),
+    )
+
+
+def _express_whole_year() -> pl.Expr:
+    hours = pl.col(_YEAR_HOURS)
+    return pl.any_horizontal(
+        [(hours - year).abs() <= _YEAR_HOURS_TOLERANCE for year in _HOURS_OF_A_YEAR]
+    )
 
 
 def _build_years(weights: pl.DataFrame) -> pl.DataFrame:
