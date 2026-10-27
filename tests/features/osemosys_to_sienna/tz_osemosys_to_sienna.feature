@@ -15,6 +15,7 @@ Feature: tz-osemosys-to-sienna translates one year of a TZ-format model into a S
     And the TZ-format commodity "electricity" has the field "demand_annual" set to {"R1": {"2030": 876.0}}
     And the TZ-format commodity "electricity" has the field "demand_profile" set to {"R1": {"2030": {"S1": 0.5, "S2": 0.5}}}
     And the TZ-format technology "gas-combined-cycle" has the field "residual_capacity" set to {"R1": {"2030": 0.5}}
+    And the TZ-format technology "gas-combined-cycle" has the field "capacity_activity_unit_ratio" set to {"R1": 8760}
     And the TZ-format technology "gas-combined-cycle" has the field "operating_modes" set to [{"id": "generation", "input_activity_ratio": {"R1": {"natural-gas": {"2030": 2.0}}}, "output_activity_ratio": {"R1": {"electricity": {"2030": 1.0}}}}]
     And a file "user_mappings.yaml" containing the lines:
       | line                                                                                                                              |

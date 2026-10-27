@@ -22,8 +22,10 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
+    ActivityParameter,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import CTAU
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
     build_bound_events,
 )
@@ -145,8 +147,8 @@ _BUS_DERIVATION = (
     "mode, <region>/<fuel>"
 )
 _BASE_POWER_DERIVATION = (
-    "residual_capacity of the operations year, in MW, × the electricity output_activity_ratio at "
-    "the operations mode"
+    "residual_capacity of the operations year × capacity_to_activity_unit / 8760 h, in MW, × the "
+    "electricity output_activity_ratio at the operations mode"
 )
 _BUDGET_DERIVATION = (
     "OSeMOSYS states no energy budget, so the budget is the availability, which binds nothing "
@@ -253,6 +255,12 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
                         None,
                         old[RESIDUAL_CAPACITY],
                         old[CAPACITY_UNIT],
+                    ),
+                    build_osemosys_field(
+                        ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT,
+                        old[TECHNOLOGY_NAME],
+                        None,
+                        old[CTAU],
                     ),
                     build_output_ratio_source(old),
                 ],
