@@ -7,7 +7,7 @@ other (the composite imports both, so a step-to-step import would cycle).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple, Protocol
 
 from interop.core.pipeline import State
 from interop.plugins.shared.sienna_constants import (
@@ -19,6 +19,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStorageCol,
     SiennaStructField,
     SiennaTable,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    STATED_FLOOR,
+    CarriedReporter,
+    record_carried_value,
 )
 
 # The name column and the type column of each source table that states a Sienna type.
@@ -35,11 +40,42 @@ def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
     return rated if is_extendable else None
 
 
+class CapacityFloor(NamedTuple):
+    """The p_nom_min of a component, and whether its sidecar record states it."""
+
+    value: float | None
+    is_stated: bool
+
+
+class FloorReporter(CarriedReporter, Protocol):
+    """A reporter that records a floor, as the sidecar states it or from the rating."""
+
+    def record_p_nom_min(self, sienna_type: str, name: str, rated: float) -> None: ...
+
+
 def choose_p_nom_min(
-    stated: float | None, rated: float, is_extendable: bool | None
-) -> float | None:
-    """The floor that the sidecar states, else the rating of an extendable component."""
-    return stated if stated is not None else extendable_floor(rated, is_extendable)
+    stated: float | None, rated: float | None, is_extendable: bool | None
+) -> CapacityFloor:
+    """The floor that the sidecar states, else the positive rating of an extendable component.
+
+    A rating of zero is no floor, as it states PyPSA's own p_nom_min.
+    """
+    if stated is not None:
+        return CapacityFloor(stated, is_stated=True)
+    has_rating = rated is not None and rated > 0
+    return CapacityFloor(rated if is_extendable and has_rating else None, is_stated=False)
+
+
+def record_p_nom_min(
+    reporter: FloorReporter, sienna_type: str, name: str, floor: CapacityFloor
+) -> None:
+    """A floor the record states maps as it is; an extendable component keeps its rating."""
+    if floor.value is None:
+        return
+    if floor.is_stated:
+        record_carried_value(reporter, sienna_type, name, STATED_FLOOR, floor.value)
+    else:
+        reporter.record_p_nom_min(sienna_type, name, floor.value)
 
 
 def per_unit_of(value: float, base_power: float) -> float:

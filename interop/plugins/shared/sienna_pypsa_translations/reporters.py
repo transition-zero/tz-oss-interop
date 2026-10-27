@@ -517,10 +517,12 @@ class GeneratorReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
-    def record_p_nom_min(self, sienna_type: SiennaComponent, name: str, base_power: float) -> None:
+    def record_p_nom_min(self, sienna_type: str, name: str, base_power: float) -> None:
         self._derived(
             sources=[
-                self._source(sienna_type, name, SiennaGeneratorCol.BASE_POWER, base_power, UNIT_MVA)
+                self._source_field(
+                    sienna_type, name, SiennaGeneratorCol.BASE_POWER, base_power, UNIT_MVA
+                )
             ],
             destinations=[
                 self._destination(name, PyPSAGeneratorCol.P_NOM_MIN, base_power, UNIT_MW)
@@ -746,10 +748,12 @@ class StorageUnitReporter(_Reporter):
             derivation=_P_NOM_EXTENDABLE_FROM_EXT,
         )
 
-    def record_p_nom_min(self, sienna_type: SiennaComponent, name: str, base_power: float) -> None:
+    def record_p_nom_min(self, sienna_type: str, name: str, base_power: float) -> None:
         self._derived(
             sources=[
-                self._source(sienna_type, name, SiennaStorageCol.BASE_POWER, base_power, UNIT_MVA)
+                self._source_field(
+                    sienna_type, name, SiennaStorageCol.BASE_POWER, base_power, UNIT_MVA
+                )
             ],
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.P_NOM_MIN, base_power, UNIT_MW)
@@ -1224,12 +1228,10 @@ class ConversionReporter(_Reporter):
             note=_DEFAULT_LINK_NOTE.format(column=column),
         )
 
-    def record_p_nom_min(self, name: str, p_nom: float) -> None:
+    def record_p_nom_min(self, sienna_type: str, name: str, p_nom: float) -> None:
         self._derived(
             sources=[
-                self._source_field(
-                    ExtensionKind.CONVERSION, name, f"{EXTENSIONS_PREFIX}p_nom", p_nom, UNIT_MW
-                )
+                self._source_field(sienna_type, name, f"{EXTENSIONS_PREFIX}p_nom", p_nom, UNIT_MW)
             ],
             destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
             derivation=_P_NOM_FLOOR_DERIVATION,

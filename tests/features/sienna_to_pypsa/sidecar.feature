@@ -270,6 +270,22 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ELC" having "bus0" set to "R1/ELC"
     And the file "decisions.md" contains "| `sienna.conversion.a_to_b.extensions.efficiency` = 0.9 | `pypsa.Link.a_to_b.efficiency` = 0.9 | extensions.efficiency (PyPSA round-trip) |"
 
+  Scenario: A conversion that can extend keeps its capacity as a floor, unless its record states a floor
+    Given the system has a conversion extension record "a_to_b" with "bus0" set to "node_a"
+    And the system has a conversion extension record "a_to_b" with "bus1" set to "node_b"
+    And the system has a conversion extension record "a_to_b" with "p_nom" set to 50.0
+    And the system has a conversion extension record "a_to_b" with "p_nom_extendable" set to true
+    And the system has a conversion extension record "b_to_a" with "bus0" set to "node_b"
+    And the system has a conversion extension record "b_to_a" with "bus1" set to "node_a"
+    And the system has a conversion extension record "b_to_a" with "p_nom" set to 50.0
+    And the system has a conversion extension record "b_to_a" with "p_nom_extendable" set to true
+    And the system has a conversion extension record "b_to_a" with "p_nom_min" set to 20.0
+    And the system is saved as "inputs/conversion_floor.json"
+    When I run translate against "inputs/conversion_floor.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "a_to_b" attribute "p_nom_min" is 50.0
+    And the PyPSA network "outputs/network.nc" link "b_to_a" attribute "p_nom_min" is 20.0
+    And the file "decisions.md" contains "| `sienna.conversion.b_to_a.extensions.p_nom_min` = 20.0 MW | `pypsa.Link.b_to_a.p_nom_min` = 20.0 MW | extensions.p_nom_min (PyPSA round-trip) |"
+
   Scenario: A two-way line whose reverse name another line holds stays one link, and the log says so
     The line "line reverse" already exists, so the flow back of "line" cannot take that name.
     Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 0.95

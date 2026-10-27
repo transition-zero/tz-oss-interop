@@ -15,7 +15,6 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
     PyPSACarrier,
@@ -58,9 +57,11 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     record_carried_value,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    CapacityFloor,
     bus_id_to_name,
     choose_p_nom_min,
     per_unit_of,
+    record_p_nom_min,
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
@@ -317,8 +318,7 @@ class _PhsMapping:
     cyclic: bool
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
-    p_nom_min: float | None
-    p_nom_min_from_ext: bool
+    floor: CapacityFloor
     # Sienna states one rating, no build, no inflow and no cycle, so each of these reaches a
     # PyPSA storage unit only through the sidecar.
     ext: StorageExtension
@@ -368,8 +368,7 @@ def _derive_phs(
         inflow_mw=float(ext.inflow_mw or 0.0),
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=choose_p_nom_min(ext.p_nom_min, base_power, ext.p_nom_extendable),
-        p_nom_min_from_ext=ext.p_nom_min is not None,
+        floor=choose_p_nom_min(ext.p_nom_min, base_power, ext.p_nom_extendable),
     )
 
 
@@ -400,25 +399,12 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
     else:
         reporter.record_p_nom_extendable_default(m.name)
     _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
-    _record_p_nom_min(reporter, m)
+    record_p_nom_min(reporter, sienna_type, m.name, m.floor)
     record_carried_fields(reporter, sienna_type, m.ext, STORAGE_CARRIED)
     if m.overnight_cost is not None:
         record_carried_value(
             reporter, sienna_type, m.name, STORAGE_OVERNIGHT_COST, m.overnight_cost
         )
-
-
-def _record_p_nom_min(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
-    """A floor the record states maps as it is; an extendable unit with none keeps its rating."""
-    sienna_type = SiennaComponent.ENERGY_RESERVOIR_STORAGE
-    if m.p_nom_min is None:
-        return
-    if m.p_nom_min_from_ext:
-        reporter.record_carried(
-            sienna_type, m.name, "p_nom_min", PyPSAStorageUnitCol.P_NOM_MIN, m.p_nom_min, UNIT_MW
-        )
-    else:
-        reporter.record_p_nom_min(sienna_type, m.name, m.p_nom_min)
 
 
 def _phs_row(m: _PhsMapping) -> dict[str, Any]:
@@ -436,7 +422,7 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: m.state_of_charge_initial,
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: m.cyclic,
         PyPSAStorageUnitCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
-        PyPSAStorageUnitCol.P_NOM_MIN: m.p_nom_min,
+        PyPSAStorageUnitCol.P_NOM_MIN: m.floor.value,
         PyPSAStorageUnitCol.OVERNIGHT_COST: m.overnight_cost,
         **build_carried_values(m.ext, STORAGE_CARRIED),
         PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
