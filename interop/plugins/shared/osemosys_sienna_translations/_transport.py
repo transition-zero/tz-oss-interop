@@ -34,7 +34,6 @@ from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
-    OSEMOSYS_FRAMEWORK,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -69,6 +68,7 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     build_capacity_factor_series,
     express_has_capacity_factors,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     FREE_BUILD_PARAMETERS,
 )
@@ -173,7 +173,7 @@ from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
     SkipRule,
-    filter_component,
+    drop_skipped,
     report_not_mapped,
 )
 from interop.plugins.shared.warning_text import name_a_few
@@ -245,9 +245,7 @@ _TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, TO_BUS, TO_BUSES, TO_FUEL, OUTPUT_R
 def _build_skip(
     reason: str, note: str, attribute_col: str | None = None, attribute_name: str | None = None
 ) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=TECHNOLOGY,
         name_col=TECHNOLOGY_NAME,
         reason=reason,
@@ -265,9 +263,7 @@ NO_CAPACITY_SKIP = _build_skip(
     RESIDUAL_CAPACITY,
 )
 _LOST_MODE = "lost_mode"
-_ONE_WAY_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_ONE_WAY_REPORT = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="are neither the flow back nor an import, and extensions.json holds their values",
@@ -302,9 +298,7 @@ def _note_reverse_cost(row: dict[str, Any]) -> str:
     )
 
 
-_REVERSE_LOSS_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_REVERSE_LOSS_REPORT = osemosys_skip_report(
     component=FlowParameter.OUTPUT_ACTIVITY_RATIO,
     name_col=TECHNOLOGY_NAME,
     reason="differ from the loss at the operations mode, which the line applies both ways",
@@ -314,9 +308,7 @@ _REVERSE_LOSS_REPORT = SkipReport(
     attribute_col=REVERSE_OUTPUT_RATIO,
     attribute_name="electricity at the flow back",
 )
-_REVERSE_COST_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_REVERSE_COST_REPORT = osemosys_skip_report(
     component=SupplyParameter.VARIABLE_OPERATION_COST,
     name_col=TECHNOLOGY_NAME,
     reason=(
@@ -361,8 +353,7 @@ def build_transport_source(
     """
     mode_ends = _read_mode_ends(state, operations.year)
     lines = _read_lines(state, operations, _drop_other_modes(mode_ends, operations.mode))
-    for rule in _SKIP_RULES:
-        lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
+    lines = drop_skipped(lines, _SKIP_RULES, recorder)
     if lines.height == 0:
         return TransportSources(lines, pl.DataFrame(), _NO_IMPORTS)
     imports = read_import_modes(state, operations, lines, recorder)

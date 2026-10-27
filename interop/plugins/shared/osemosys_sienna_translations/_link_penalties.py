@@ -17,17 +17,16 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_DOLLARS_PER_TONNE
 from interop.plugins.shared.osemosys_canonical.constants import (
     OPERATING_MODE,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     ACTIVITY_RATE_T_PER_MWH,
     PENALTY_PER_TONNE,
@@ -63,9 +62,7 @@ def _note_penalty(row: dict[str, Any]) -> str:
 
 
 def _build_penalty_report(component: str, verb: str) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=SupplyParameter.EMISSION_RATE,
         name_col=TECHNOLOGY_NAME,
         reason=_REASON.format(verb=verb),
