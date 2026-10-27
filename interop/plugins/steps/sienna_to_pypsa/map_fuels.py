@@ -25,35 +25,51 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW, UNSCALED
+from interop.plugins.shared.constants import UNSCALED
 from interop.plugins.shared.pypsa_constants import (
     GENERATORS_DESTINATION_SCHEMA,
     LOADS_DESTINATION_SCHEMA,
+    PYPSA_GENERATOR_DEFAULTS,
+    PYPSA_LOAD_DEFAULTS,
     UNCOMMITTED_GENERATOR_FIELDS,
     PyPSABusCol,
     PyPSADestinationTable,
     PyPSAGeneratorCol,
     PyPSALoadCol,
 )
-from interop.plugins.shared.pypsa_destination import append_destination_rows
+from interop.plugins.shared.pypsa_destination import (
+    append_destination_rows,
+    list_destination_names,
+)
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
     stage_companion_columns,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    FUEL_GENERATOR_CARRIED,
     FUEL_GENERATOR_MAPPED_FIELDS,
+    FUEL_LOAD_CARRIED,
     FUEL_LOAD_MAPPED_FIELDS,
+    record_carried_fields,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    CapacityFloor,
+    choose_p_nom_min,
+    record_p_nom_min,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
-    GeneratorReporter,
+    FuelGeneratorReporter,
     LoadReporter,
 )
 
-# PyPSA's own values for a generator that the record states nothing for.
-_NO_OUTPUT = 0.0
-_WHOLE = 1.0
-_NO_COST = 0.0
+_DEFAULT_P_NOM = float(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.P_NOM])
+_DEFAULT_P_MIN_PU = float(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.P_MIN_PU])
+_DEFAULT_P_MAX_PU = float(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.P_MAX_PU])
+_DEFAULT_MARGINAL_COST = float(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.MARGINAL_COST])
+_DEFAULT_COMMITTABLE = bool(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.COMMITTABLE])
+_DEFAULT_EXTENDABLE = bool(PYPSA_GENERATOR_DEFAULTS[PyPSAGeneratorCol.P_NOM_EXTENDABLE])
+_DEFAULT_P_SET = float(PYPSA_LOAD_DEFAULTS[PyPSALoadCol.P_SET])
 _LOAD_COLUMNS = (
     CompanionColumn(LoadCompanionCol.P_SET, PyPSADestinationTable.LOADS, PyPSALoadCol.P_SET),
 )
@@ -67,14 +83,6 @@ class _RowDefault(NamedTuple):
     fields: tuple[str, ...] = ()
 
 
-class _CarriedField(NamedTuple):
-    """A field of a sidecar record, the PyPSA column that takes its value, and its unit."""
-
-    field_name: str
-    column: str
-    unit: str | None = None
-
-
 @dataclass(frozen=True)
 class _FuelMapping:
     """What differs between the generators and the loads of a fuel that is not electricity."""
@@ -84,10 +92,10 @@ class _FuelMapping:
     name_col: str
     schema: dict[str, pl.DataType | type[pl.DataType]]
     mapped_fields: frozenset[str]
-    carried: tuple[_CarriedField, ...]
     defaults: tuple[_RowDefault, ...]
     build_row: Callable[[Any], dict[str, Any]]
-    build_reporter: Callable[[ScopedRecorder], GeneratorReporter | LoadReporter]
+    build_reporter: Callable[[ScopedRecorder], FuelGeneratorReporter | LoadReporter]
+    record_values: Callable[[Any, Any], None]
 
 
 class SiennaToPypsaMapFuels(TranslationStep):
@@ -99,7 +107,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         self._extensions = extensions
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        buses = _build_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
+        buses = set(list_destination_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME))
         self._map_records(state, buses, _GENERATORS)
         loads = self._map_records(state, buses, _LOADS)
         _stage_load_series(state, loads)
@@ -110,7 +118,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
     ) -> list[GeneratorExtension | LoadExtension]:
         """Each record on a bus of the network becomes a row, and its other fields travel on."""
         lookup: ExtensionLookup[Any] = self._extensions.read(mapping.kind)
-        held = _build_names(state, mapping.table, mapping.name_col)
+        held = set(list_destination_names(state, mapping.table, mapping.name_col))
         records = [
             record
             for record in lookup.list_records()
@@ -119,7 +127,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         reporter = mapping.build_reporter(self._recorder)
         for record in records:
             lookup.get_fields(record.name, mapping.mapped_fields)
-            _record_stated(reporter, mapping, record)
+            mapping.record_values(reporter, record)
             _record_defaults(reporter, mapping, record)
         rows = [mapping.build_row(record) for record in records]
         append_destination_rows(state, mapping.table, rows, mapping.schema)
@@ -127,26 +135,17 @@ class SiennaToPypsaMapFuels(TranslationStep):
         return records
 
 
-def _build_names(state: State, table: str, column: str) -> set[str]:
-    frame = state.destination_tables.get(table)
-    return set() if frame is None else set(frame[column].to_list())
+def _record_generator(reporter: FuelGeneratorReporter, record: GeneratorExtension) -> None:
+    record_carried_fields(reporter, ExtensionKind.GENERATOR, record, FUEL_GENERATOR_CARRIED)
+    record_p_nom_min(reporter, ExtensionKind.GENERATOR, record.name, _choose_floor(record))
 
 
-def _record_stated(
-    reporter: GeneratorReporter | LoadReporter,
-    mapping: _FuelMapping,
-    record: GeneratorExtension | LoadExtension,
-) -> None:
-    for carried in mapping.carried:
-        value = getattr(record, carried.field_name)
-        if value is not None:
-            reporter.record_carried(
-                mapping.kind, record.name, carried.field_name, carried.column, value, carried.unit
-            )
+def _record_load(reporter: LoadReporter, record: LoadExtension) -> None:
+    record_carried_fields(reporter, ExtensionKind.LOAD, record, FUEL_LOAD_CARRIED)
 
 
 def _record_defaults(
-    reporter: GeneratorReporter | LoadReporter,
+    reporter: FuelGeneratorReporter | LoadReporter,
     mapping: _FuelMapping,
     record: GeneratorExtension | LoadExtension,
 ) -> None:
@@ -166,21 +165,29 @@ def _stage_load_series(state: State, loads: list[GeneratorExtension | LoadExtens
         stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
 
 
+def _choose_floor(record: GeneratorExtension) -> CapacityFloor:
+    p_nom = _DEFAULT_P_NOM if record.p_nom is None else record.p_nom
+    return choose_p_nom_min(record.p_nom_min, p_nom, record.p_nom_extendable)
+
+
 def _build_generator_row(record: GeneratorExtension) -> dict[str, Any]:
-    p_nom = record.p_nom or _NO_OUTPUT
-    is_extendable = bool(record.p_nom_extendable)
     return {
         PyPSAGeneratorCol.NAME: record.name,
         PyPSAGeneratorCol.BUS: record.bus,
         PyPSAGeneratorCol.CARRIER: record.carrier,
-        PyPSAGeneratorCol.P_NOM: p_nom,
-        PyPSAGeneratorCol.P_MIN_PU: _NO_OUTPUT,
-        PyPSAGeneratorCol.P_MAX_PU: _WHOLE if record.p_max_pu is None else record.p_max_pu,
-        PyPSAGeneratorCol.MARGINAL_COST: record.marginal_cost or _NO_COST,
-        PyPSAGeneratorCol.COMMITTABLE: False,
-        PyPSAGeneratorCol.P_NOM_EXTENDABLE: is_extendable,
-        # PyPSA ignores the p_nom of an extendable generator, so the capacity it has is a floor.
-        PyPSAGeneratorCol.P_NOM_MIN: p_nom if is_extendable and p_nom > 0 else None,
+        PyPSAGeneratorCol.P_NOM: _DEFAULT_P_NOM if record.p_nom is None else record.p_nom,
+        PyPSAGeneratorCol.P_MIN_PU: _DEFAULT_P_MIN_PU,
+        PyPSAGeneratorCol.P_MAX_PU: _DEFAULT_P_MAX_PU
+        if record.p_max_pu is None
+        else record.p_max_pu,
+        PyPSAGeneratorCol.MARGINAL_COST: _DEFAULT_MARGINAL_COST
+        if record.marginal_cost is None
+        else record.marginal_cost,
+        PyPSAGeneratorCol.COMMITTABLE: _DEFAULT_COMMITTABLE,
+        PyPSAGeneratorCol.P_NOM_EXTENDABLE: _DEFAULT_EXTENDABLE
+        if record.p_nom_extendable is None
+        else record.p_nom_extendable,
+        PyPSAGeneratorCol.P_NOM_MIN: _choose_floor(record).value,
         PyPSAGeneratorCol.P_NOM_MAX: record.p_nom_max,
         **UNCOMMITTED_GENERATOR_FIELDS,
     }
@@ -190,7 +197,7 @@ def _build_load_row(record: LoadExtension) -> dict[str, Any]:
     return {
         PyPSALoadCol.NAME: record.name,
         PyPSALoadCol.BUS: record.bus,
-        PyPSALoadCol.P_SET: record.p_set or _NO_OUTPUT,
+        PyPSALoadCol.P_SET: _DEFAULT_P_SET if record.p_set is None else record.p_set,
         PyPSALoadCol.CARRIER: record.carrier,
     }
 
@@ -201,25 +208,17 @@ _GENERATORS = _FuelMapping(
     name_col=PyPSAGeneratorCol.NAME,
     schema=GENERATORS_DESTINATION_SCHEMA,
     mapped_fields=FUEL_GENERATOR_MAPPED_FIELDS,
-    carried=(
-        _CarriedField("bus", PyPSAGeneratorCol.BUS),
-        _CarriedField("carrier", PyPSAGeneratorCol.CARRIER),
-        _CarriedField("p_nom", PyPSAGeneratorCol.P_NOM, UNIT_MW),
-        _CarriedField("p_nom_extendable", PyPSAGeneratorCol.P_NOM_EXTENDABLE),
-        _CarriedField("p_nom_max", PyPSAGeneratorCol.P_NOM_MAX, UNIT_MW),
-        _CarriedField("marginal_cost", PyPSAGeneratorCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
-        _CarriedField("p_max_pu", PyPSAGeneratorCol.P_MAX_PU),
-    ),
     defaults=(
-        _RowDefault(PyPSAGeneratorCol.P_NOM, _NO_OUTPUT, ("p_nom",)),
-        _RowDefault(PyPSAGeneratorCol.P_MIN_PU, _NO_OUTPUT),
-        _RowDefault(PyPSAGeneratorCol.P_MAX_PU, _WHOLE, ("p_max_pu",)),
-        _RowDefault(PyPSAGeneratorCol.MARGINAL_COST, _NO_COST, ("marginal_cost",)),
-        _RowDefault(PyPSAGeneratorCol.COMMITTABLE, False),  # noqa: FBT003
-        _RowDefault(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False, ("p_nom_extendable",)),  # noqa: FBT003
+        _RowDefault(PyPSAGeneratorCol.P_NOM, _DEFAULT_P_NOM, ("p_nom",)),
+        _RowDefault(PyPSAGeneratorCol.P_MIN_PU, _DEFAULT_P_MIN_PU),
+        _RowDefault(PyPSAGeneratorCol.P_MAX_PU, _DEFAULT_P_MAX_PU, ("p_max_pu",)),
+        _RowDefault(PyPSAGeneratorCol.MARGINAL_COST, _DEFAULT_MARGINAL_COST, ("marginal_cost",)),
+        _RowDefault(PyPSAGeneratorCol.COMMITTABLE, _DEFAULT_COMMITTABLE),
+        _RowDefault(PyPSAGeneratorCol.P_NOM_EXTENDABLE, _DEFAULT_EXTENDABLE, ("p_nom_extendable",)),
     ),
     build_row=_build_generator_row,
-    build_reporter=GeneratorReporter,
+    build_reporter=FuelGeneratorReporter,
+    record_values=_record_generator,
 )
 _LOADS = _FuelMapping(
     kind=ExtensionKind.LOAD,
@@ -227,12 +226,8 @@ _LOADS = _FuelMapping(
     name_col=PyPSALoadCol.NAME,
     schema=LOADS_DESTINATION_SCHEMA,
     mapped_fields=FUEL_LOAD_MAPPED_FIELDS,
-    carried=(
-        _CarriedField("bus", PyPSALoadCol.BUS),
-        _CarriedField("carrier", PyPSALoadCol.CARRIER),
-        _CarriedField("p_set", PyPSALoadCol.P_SET, UNIT_MW),
-    ),
-    defaults=(_RowDefault(PyPSALoadCol.P_SET, _NO_OUTPUT, ("p_set", "p_set_series")),),
+    defaults=(_RowDefault(PyPSALoadCol.P_SET, _DEFAULT_P_SET, ("p_set", "p_set_series")),),
     build_row=_build_load_row,
     build_reporter=LoadReporter,
+    record_values=_record_load,
 )

@@ -54,6 +54,21 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the file "decisions.md" contains "| `pypsa.Generator.well.p_nom` = 0.0 |  | the sidecar record states no p_nom, so PyPSA's own default applies |"
     And the file "decisions.md" does not contain "| `pypsa.Generator.terminal.p_max_pu` = 1.0 |"
 
+  Scenario: An extendable fuel generator keeps the capacity that it has as a floor, unless its record states a floor
+    Given the system has a generator extension record "well" with "bus" set to "R1/DEGAS"
+    And the system has a generator extension record "well" with "p_nom" set to 500.0
+    And the system has a generator extension record "well" with "p_nom_extendable" set to true
+    And the system has a generator extension record "terminal" with "bus" set to "R1/ATGAS"
+    And the system has a generator extension record "terminal" with "p_nom" set to 2000.0
+    And the system has a generator extension record "terminal" with "p_nom_extendable" set to true
+    And the system has a generator extension record "terminal" with "p_nom_min" set to 1500.0
+    And the system is saved as "inputs/floors.json"
+    When I run translate against "inputs/floors.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "well" attribute "p_nom_min" is 500.0
+    And the PyPSA network "outputs/network.nc" generator "terminal" attribute "p_nom_min" is 1500.0
+    And the file "decisions.md" contains "| `sienna.generator.well.extensions.p_nom` = 500.0 MW | `pypsa.Generator.well.p_nom_min` = 500.0 MW | PyPSA ignores the p_nom of an extendable component"
+    And the file "decisions.md" contains "| `sienna.generator.terminal.extensions.p_nom_min` = 1500.0 MW | `pypsa.Generator.terminal.p_nom_min` = 1500.0 MW | extensions.p_nom_min (PyPSA round-trip) |"
+
   Scenario: A load record on the bus of a fuel becomes a load, flat or with its series
     Given the system has a load extension record "ATGAS/accumulated" with "bus" set to "R1/ATGAS"
     And the system has a load extension record "ATGAS/accumulated" with "p_set" set to 100.0
