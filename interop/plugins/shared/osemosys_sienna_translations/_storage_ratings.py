@@ -64,15 +64,15 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_SIDES,
     StorageSide,
 )
-from interop.plugins.shared.osemosys_sienna_translations._technologies import (
-    VARIABLE_COST,
-    read_variable_costs,
-)
+from interop.plugins.shared.osemosys_sienna_translations._technologies import VARIABLE_COST
 from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
     FIXED_COST,
     FIXED_COST_MW_YEAR,
+    RATED_COST_MWH,
     enrich_fixed_costs,
+    read_rated_costs,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import RATING_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
     express_converted,
@@ -126,14 +126,9 @@ def enrich_costs(state: State, operations: OperationsYear, storages: pl.DataFram
     for side in STORAGE_SIDES:
         table = table.join(_read_mode_costs(state, operations, storages, side), on=side.mode_keys)
         table = _enrich_penalties(state, operations, table, side)
-    convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
-    return table.with_columns(
-        (
-            express_converted(table, side.cost, convert) / pl.col(side.ratio)
-            + pl.col(side.penalty_mwh)
-        ).alias(side.cost_mwh)
-        for side in STORAGE_SIDES
-    )
+        cost = pl.col(RATED_COST_MWH) + pl.col(side.penalty_mwh)
+        table = table.with_columns(cost.alias(side.cost_mwh)).drop(RATED_COST_MWH)
+    return table
 
 
 def enrich_storage_fixed_costs(
@@ -206,16 +201,19 @@ def _read_storage_values(
 def _read_mode_costs(
     state: State, operations: OperationsYear, storages: pl.DataFrame, side: StorageSide
 ) -> pl.DataFrame:
-    keys = storages.select(
+    """The variable cost at the mode of one side, as stated and in $/MWh of its electricity."""
+    rated = storages.select(
         REGION,
         pl.col(side.technology).alias(TECHNOLOGY),
         pl.col(side.mode).alias(OPERATING_MODE),
+        pl.col(side.ratio).alias(RATING_RATIO),
     ).unique()
-    return read_variable_costs(state, operations.year, keys).select(
+    return read_rated_costs(state, operations, rated).select(
         REGION,
         pl.col(TECHNOLOGY).alias(side.technology),
         pl.col(OPERATING_MODE).alias(side.mode),
         pl.col(VARIABLE_COST).alias(side.cost),
+        RATED_COST_MWH,
     )
 
 
