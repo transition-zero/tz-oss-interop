@@ -191,6 +191,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the EnergyReservoirStorage "battery" has ext "p_nom_max" set to 40.0
     And the EnergyReservoirStorage "battery" has ext "overnight_cost_per_mw" set to 1000.0
     And the EnergyReservoirStorage "battery" has ext "discount_rate" set to 0.07
+    And the EnergyReservoirStorage "battery" has ext "lifetime_years" set to 20.0
     And the system is saved as "inputs/storage.json"
     When I run translate against "inputs/storage.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "battery" has "cyclic_state_of_charge_per_period" set
@@ -201,7 +202,22 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.p_nom_max` = 40.0 MW | `pypsa.StorageUnit.battery.p_nom_max` = 40.0 MW | extensions.p_nom_max (PyPSA round-trip) |"
     And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.overnight_cost_per_mw` = 1000.0 \$/MW | `pypsa.StorageUnit.battery.overnight_cost` = 1000.0 \$/MW | extensions.overnight_cost_per_mw (PyPSA round-trip) |"
     And the PyPSA network "outputs/network.nc" storage unit "battery" attribute "discount_rate" is 0.07
+    And the PyPSA network "outputs/network.nc" storage unit "battery" costs 94.39292574325567 a year for each MW
     And the PyPSA network "outputs/network.nc" passes the PyPSA consistency check
+
+  Scenario: An overnight cost with no lifetime stays in extensions.json, and the network leaves it out
+    PyPSA annualises an overnight cost with no lifetime as a cost that never ends, so 1000 $/MW
+    at 7% would cost 70 $/MW a year, where a life of 20 years costs 94.39 $/MW a year.
+    Given the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 4 initial_level 0 rating 1 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
+    And the EnergyReservoirStorage "battery" has ext "overnight_cost_per_mw" set to 1000.0
+    And the EnergyReservoirStorage "battery" has ext "discount_rate" set to 0.07
+    And the system is saved as "inputs/lifeless.json"
+    When I run translate against "inputs/lifeless.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "battery" states no "overnight_cost"
+    And the PyPSA network "outputs/network.nc" storage unit "battery" costs 0 a year for each MW
+    And the file "outputs/extensions.json" parses as JSON storage extension record for "battery" having "overnight_cost_per_mw" set to 1000.0
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.overnight_cost_per_mw` = 1000.0 \$/MW |  |  | the record states no lifetime_years, and PyPSA annualises an overnight_cost only over a discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it |"
+    And the log contains "1 StorageUnit(s) state an overnight cost with no discount rate or no lifetime, which PyPSA needs to annualise the cost, so the network leaves the cost out and extensions.json keeps it: battery"
 
   Scenario: An overnight cost with no discount rate stays in extensions.json, and the network leaves it out
     PyPSA cannot annualise an overnight cost without a discount rate, and refuses a network
@@ -216,9 +232,9 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the PyPSA network "outputs/network.nc" passes the PyPSA consistency check
     And the file "outputs/extensions.json" parses as JSON storage extension record for "battery" having "overnight_cost_per_mw" set to 1000.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "overnight_cost_per_mw" set to 900.0
-    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.overnight_cost_per_mw` = 1000.0 \$/MW |  |  | the record states no discount_rate, and PyPSA cannot annualise an overnight_cost without one, so the network leaves the cost out; extensions.json keeps it |"
-    And the log contains "1 StorageUnit(s) state an overnight cost and no discount rate, and PyPSA cannot annualise the cost without one, so the network leaves the cost out and extensions.json keeps it: battery"
-    And the log contains "1 Generator(s) state an overnight cost and no discount rate, and PyPSA cannot annualise the cost without one, so the network leaves the cost out and extensions.json keeps it: gas"
+    And the file "decisions.md" contains "| `sienna.EnergyReservoirStorage.battery.extensions.overnight_cost_per_mw` = 1000.0 \$/MW |  |  | the record states no discount_rate, and PyPSA annualises an overnight_cost only over a discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it |"
+    And the log contains "1 StorageUnit(s) state an overnight cost with no discount rate or no lifetime, which PyPSA needs to annualise the cost, so the network leaves the cost out and extensions.json keeps it: battery"
+    And the log contains "1 Generator(s) state an overnight cost with no discount rate or no lifetime, which PyPSA needs to annualise the cost, so the network leaves the cost out and extensions.json keeps it: gas"
 
   Scenario: The price of lost load of a bus travels on, and the sign of a load maps
     Given the ACBus "node_b" has ext "value_of_lost_load" set to 9000.0
