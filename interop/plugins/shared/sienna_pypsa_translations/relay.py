@@ -7,7 +7,7 @@ read it. Each field that travels records one event, so the report says where it 
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 from interop.core.extensions import (
     EXTENSION_MODELS,
@@ -32,8 +32,13 @@ def relay_records(
     lookup: ExtensionLookup[RecordT],
     names: Iterable[str],
     recorder: ScopedRecorder,
+    *,
+    partly_mapped: Collection[str] = (),
 ) -> None:
-    """Relay the fields of each named record that no mapping maps, with their companion series."""
+    """Relay the fields of each named record that no mapping maps, with their companion series.
+
+    A field in ``partly_mapped`` also maps in part, so its event says what the network holds.
+    """
     stated = [record for record in map(lookup.build_relayed, names) if record.has_any_value()]
     if not stated:
         return
@@ -42,7 +47,10 @@ def relay_records(
     reporter = ExtensionRelayReporter(recorder, kind)
     for record in stated:
         for field_name, value in _build_report_values(record).items():
-            reporter.record_relayed(record.name, field_name, value)
+            if field_name in partly_mapped:
+                reporter.record_relayed_by_year(record.name, field_name, value)
+            else:
+                reporter.record_relayed(record.name, field_name, value)
     series = state.source_extension_series.get(kind)
     if series is not None and names_companion_series(kind, stated):
         state.destination_extension_series[kind] = series

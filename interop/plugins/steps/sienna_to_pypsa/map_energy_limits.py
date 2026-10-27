@@ -4,7 +4,8 @@ The sidecar states `e_sum_min` and `e_sum_max` in MWh for each year in scope. Py
 bound over all the snapshots, weighted by the `generators` snapshot weighting. The value of the
 year maps only where the snapshots count for that whole year; a bound for less than a year
 would ask a part of the year for the energy of all of it. The record keeps every year either
-way, because the generator step relays both fields.
+way, because the generator step relays both fields, and its event says the network holds one
+year at most.
 """
 
 from __future__ import annotations

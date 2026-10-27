@@ -47,6 +47,7 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_carrier
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    ANNUAL_BOUND_FIELDS,
     RENEWABLE_CARRIED,
     RENEWABLE_MAPPED_FIELDS,
     THERMAL_CARRIED,
@@ -183,7 +184,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
 
     def _carry_on(self, state: State, names: list[str]) -> None:
         """Pass on each field of a generator's record that no PyPSA column holds."""
-        relay_records(state, self._extensions.read(ExtensionKind.GENERATOR), names, self._recorder)
+        lookup = self._extensions.read(ExtensionKind.GENERATOR)
+        relay_records(state, lookup, names, self._recorder, partly_mapped=ANNUAL_BOUND_FIELDS)
 
     def _record_generator_time_series(
         self, state: State, p_max_pu_scale_by_name: dict[str, float]

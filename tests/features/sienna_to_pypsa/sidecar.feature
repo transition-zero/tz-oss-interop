@@ -46,6 +46,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the PyPSA network "outputs/network.nc" generator "gas" attribute "e_sum_max" is 5000.0
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "e_sum_min" set to {"2020": 1000.0, "2021": 2000.0}
     And the file "decisions.md" contains "| `sienna.ThermalStandard.gas.extensions.e_sum_min` = 1000.0 MWh | `pypsa.Generator.gas.e_sum_min` = 1000.0 MWh | the value of 2020, the year of the snapshots, which count for 8760.0 h, the whole year;"
+    And the file "decisions.md" contains "| `sienna.generator.gas.extensions.e_sum_min` = {'2020': 1000.0, '2021': 2000.0} | `pypsa.generator.gas.extensions.e_sum_min` = {'2020': 1000.0, '2021': 2000.0} | relayed unchanged to extensions.json with every year that it states, as a PyPSA Generator holds the bound of one year at most |"
 
   Scenario: An annual energy bound stays in extensions.json where the snapshots count for less than a year
     Given the ThermalStandard "gas" has ext "e_sum_max" set to {"2020": 5000.0}
