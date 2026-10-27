@@ -157,12 +157,12 @@ def _build_producer_note(term: dict[str, Any]) -> str:
 
 def _build_no_producer_note(old: dict[str, Any], term: dict[str, Any]) -> str:
     return (
-        f"no fuel_supply technology puts out the fuel {_build_region_name(old, term[FUEL])}, so "
+        f"no fuel_supply technology puts out the fuel {build_region_name(old, term[FUEL])}, so "
         "the generator pays no fuel cost for it"
     )
 
 
-def _build_region_name(old: dict[str, Any], member: str) -> str:
+def build_region_name(old: dict[str, Any], member: str) -> str:
     return f"{old[REGION]}{REGION_NAME_SEPARATOR}{member}"
 
 
@@ -248,7 +248,7 @@ def _build_input_ratio_source(old: dict[str, Any], term: dict[str, Any]) -> Sour
 
 def _build_fuel_term_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
     """The input ratio of the fuel, the cost and output ratio of its producer, and own output."""
-    producer = _build_region_name(old, term[PRODUCER])
+    producer = build_region_name(old, term[PRODUCER])
     return [
         _build_input_ratio_source(old, term),
         build_osemosys_field(
@@ -335,17 +335,29 @@ def build_emission_events(
 
 
 def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
+    """The own rate, then the input ratio, rate and output ratio of each fuel and its producer."""
     own = _build_source(SupplyParameter.EMISSION_RATE, old, term[POLLUTANT], term[OWN_RATE])
     burned = [
-        build_osemosys_field(
-            SupplyParameter.EMISSION_RATE,
-            _build_region_name(old, producer[PRODUCER]),
-            term[POLLUTANT],
-            producer[PRODUCER_EMISSION_RATE],
-        )
+        source
         for producer in term[FUEL_PRODUCERS] or []
+        for source in _build_producer_rate_sources(old, term[POLLUTANT], producer)
     ]
     return [own, *burned, build_output_ratio_source(old)]
+
+
+def _build_producer_rate_sources(
+    old: dict[str, Any], pollutant: str, producer: dict[str, Any]
+) -> list[SourceField]:
+    name = build_region_name(old, producer[PRODUCER])
+    return [
+        _build_input_ratio_source(old, producer),
+        build_osemosys_field(
+            SupplyParameter.EMISSION_RATE, name, pollutant, producer[PRODUCER_EMISSION_RATE]
+        ),
+        build_osemosys_field(
+            FlowParameter.OUTPUT_ACTIVITY_RATIO, name, producer[FUEL], producer[OUTPUT_RATIO]
+        ),
+    ]
 
 
 def build_penalty_events(
@@ -394,7 +406,7 @@ def _build_penalty_sources(old: dict[str, Any], term: dict[str, Any]) -> list[So
         ),
         build_osemosys_field(
             SupplyParameter.EMISSION_PENALTY,
-            _build_region_name(old, term[POLLUTANT]),
+            build_region_name(old, term[POLLUTANT]),
             None,
             term[PENALTY],
         ),

@@ -221,6 +221,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "category" set to "gas-cc"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" without field "fom_charge_per_mw_year"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.operation_cost.fixed` = 0.0 |  | OSeMOSYS states no fixed cost of the technology, so the fixed cost is 0"
+      And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATGASCC.CO2` = 100.0<br>`osemosys.input_activity_ratio.R1/ATGASCC.ATGAS` = 2.0<br>`osemosys.emission_rate.R1/ATGASWELL.CO2` = 250.0<br>`osemosys.output_activity_ratio.R1/ATGASWELL.ATGAS` = 1.0<br>`osemosys.output_activity_ratio.R1/ATGASCC.electricity at the operations mode` = 1.0 | `sienna.ThermalStandard.ATGASCC.extensions.emission_rates_t_per_mwh.CO2`"
 
     Scenario: A plant whose fuel no technology produces pays no fuel cost, and the report says so
       When I translate the otoole model to Sienna for the year "2030"
@@ -627,7 +628,9 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "own_marginal_cost" close to 2.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "own_emission_rates_t_per_mwh" set to {"CO2": 0.1}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": 0.1}
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.extensions.fuel_buses`"
+      And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATGASCC.ATGAS` = 2.0<br>`osemosys.output_activity_ratio.R1/ATGASCC.electricity at the operations mode` = 1.0 | `sienna.ThermalStandard.ATGASCC.extensions.fuel_buses`"
+      And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASCC` = 1000.0<br>`osemosys.emission_rate.R1/ATGASCC.CO2` = 100.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.output_activity_ratio.R1/ATGASCC.electricity at the operations mode` = 1.0 | `sienna.ThermalStandard.ATGASCC.extensions.own_marginal_cost`"
+      And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATGASCC.CO2` = 100.0<br>`osemosys.output_activity_ratio.R1/ATGASCC.electricity at the operations mode` = 1.0 | `sienna.ThermalStandard.ATGASCC.extensions.own_emission_rates_t_per_mwh`"
 
   Rule: A mode of a transport technology that imports electricity becomes a generator at the end where it puts electricity out
     The invented interconnector ATDEBUY takes in 1 unit of electricity at AT and puts out 0.95

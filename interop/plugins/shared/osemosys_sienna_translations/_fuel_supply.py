@@ -186,5 +186,13 @@ def _read_emission_rates(state: State, year: int, mode: str, prices: pl.DataFram
         .with_columns(
             (pl.col(PRODUCER_EMISSION_RATE) / pl.col(OUTPUT_RATIO)).alias(EMISSION_RATE_PER_OUTPUT)
         )
-        .select(REGION, FUEL, PRODUCER, POLLUTANT, PRODUCER_EMISSION_RATE, EMISSION_RATE_PER_OUTPUT)
+        .select(
+            REGION,
+            FUEL,
+            PRODUCER,
+            POLLUTANT,
+            OUTPUT_RATIO,
+            PRODUCER_EMISSION_RATE,
+            EMISSION_RATE_PER_OUTPUT,
+        )
     )

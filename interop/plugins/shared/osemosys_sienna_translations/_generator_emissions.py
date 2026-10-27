@@ -34,6 +34,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     EMISSION_RATE_PER_OUTPUT,
     INPUT_RATIO,
+    OUTPUT_RATIO,
     PRODUCER,
     PRODUCER_EMISSION_RATE,
     FuelSupply,
@@ -152,6 +153,8 @@ def _build_fuel_rates(inputs: pl.DataFrame, fuel_supply: FuelSupply) -> pl.DataF
         .group_by(_POLLUTANT_KEYS)
         .agg(
             pl.col(FUEL_RATE).sum(),
-            pl.struct(FUEL, PRODUCER, INPUT_RATIO, PRODUCER_EMISSION_RATE).alias(FUEL_PRODUCERS),
+            pl.struct(FUEL, PRODUCER, INPUT_RATIO, PRODUCER_EMISSION_RATE, OUTPUT_RATIO).alias(
+                FUEL_PRODUCERS
+            ),
         )
     )
