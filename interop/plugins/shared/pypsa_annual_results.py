@@ -46,6 +46,7 @@ from interop.plugins.shared.pypsa_constants import (
     PYPSA_LINK_DEFAULTS,
     PYPSA_NAME_COLUMN,
     PYPSA_STORAGE_UNIT_DEFAULTS,
+    PyPSACarrierCol,
     PyPSAComponent,
     PyPSAComponentCol,
     PyPSADefault,
@@ -75,6 +76,9 @@ _GENERATOR_RATES = require_extension_attribute(GeneratorExtension, _EMISSION_RAT
 _OWN_RATES = require_extension_attribute(GeneratorExtension, "own_emission_rates_t_per_mwh")
 _CONVERSION_RATES = require_extension_attribute(ConversionExtension, _EMISSION_RATES_FIELD)
 _DELIVERED = "delivered"
+_EFFICIENCY = "generator_efficiency"
+# PyPSA's carriers state one pollutant, CO2.
+_CARRIER_POLLUTANT = "CO2"
 _HOURS_OF_A_YEAR = (HOURS_PER_YEAR, HOURS_PER_LEAP_YEAR)
 # Hours of float error that a sum of weightings may hold and still fill a year.
 _YEAR_HOURS_TOLERANCE = 1e-6
@@ -105,7 +109,9 @@ _FUEL_EMISSIONS_DERIVATION = (
     "generators snapshot weighting → emissions at 1 January of the year: the output of a "
     "generator, including a generator of a fuel, × emission_rates_t_per_mwh; the electricity of "
     "a plant link × own_emission_rates_t_per_mwh of its generator record; max(p0, 0) of a link "
-    "of a fuel × emission_rates_t_per_mwh of its conversion record"
+    "of a fuel × emission_rates_t_per_mwh of its conversion record; a generator with no sidecar "
+    "rate emits CO2 at co2_emissions of its carrier ÷ its efficiency, as PyPSA states the CO2 "
+    "of a carrier for each MWh of the fuel"
 )
 _PRODUCTION_DERIVATION = (
     "Σ over the snapshots of max(p, 0) for a generator or a storage unit, or of the power that "
@@ -195,6 +201,8 @@ _EMISSIONS = AnnualDerivation(
         _build_source(PyPSAComponent.GENERATOR, _GENERATOR_RATES),
         _build_source(PyPSAComponent.LINK, _OWN_RATES),
         _build_source(PyPSAComponent.LINK, _CONVERSION_RATES),
+        _build_source(PyPSAComponent.CARRIER, PyPSACarrierCol.CO2_EMISSIONS),
+        _build_source(PyPSAComponent.GENERATOR, PyPSAGeneratorCol.EFFICIENCY),
     ],
     _FUEL_EMISSIONS_DERIVATION,
 )
@@ -261,9 +269,40 @@ class PypsaAnnualResultsMapper:
         plant, a plant link and a link of a fuel."""
         fuel_links = activity.links.filter(pl.col(ResultsCol.COMPONENT).is_in(list(fuels.links)))
         energy = pl.concat([activity.generators, activity.storage, fuel_links])
-        return self._mapper.map_emissions(
-            energy, lambda name: _find_rates(state, name, fuels), _EMISSIONS
-        )
+        carrier_rates = _build_carrier_rates(state)
+
+        def find_rates(name: str) -> dict[str, float] | None:
+            return _find_rates(state, name, fuels) or carrier_rates.get(name)
+
+        return self._mapper.map_emissions(energy, find_rates, _EMISSIONS)
+
+
+def _build_carrier_rates(state: State) -> dict[str, dict[str, float]]:
+    """The t of CO2 for each MWh out of each generator whose carrier states CO2: the CO2 of a
+    MWh of the fuel ÷ the efficiency of the generator."""
+    generators = state.source_topology.get(PyPSATable.GENERATORS)
+    carriers = state.source_topology.get(PyPSATable.CARRIERS)
+    if generators is None or carriers is None:
+        return {}
+    if PyPSACarrierCol.CO2_EMISSIONS not in carriers.collect_schema().names():
+        return {}
+    rated = _RATED_BY_TABLE[PyPSATable.GENERATORS]
+    efficiency = _express_attribute(generators, rated, PyPSAGeneratorCol.EFFICIENCY)
+    stated = generators.select(
+        PYPSA_NAME_COLUMN, pl.col(PyPSAGeneratorCol.CARRIER), efficiency.alias(_EFFICIENCY)
+    ).join(
+        carriers.select(
+            pl.col(PyPSACarrierCol.NAME).alias(PyPSAGeneratorCol.CARRIER),
+            pl.col(PyPSACarrierCol.CO2_EMISSIONS),
+        ),
+        on=PyPSAGeneratorCol.CARRIER,
+        how="inner",
+    )
+    rate = pl.col(PyPSACarrierCol.CO2_EMISSIONS) / pl.col(_EFFICIENCY)
+    emitting = stated.filter(pl.col(PyPSACarrierCol.CO2_EMISSIONS) > 0).select(
+        PYPSA_NAME_COLUMN, rate.alias(AnnualCol.RATE)
+    )
+    return {name: {_CARRIER_POLLUTANT: rate} for name, rate in emitting.collect().iter_rows()}
 
 
 def _drop_fuels(production: Production, fuels: FuelComponents) -> Production:

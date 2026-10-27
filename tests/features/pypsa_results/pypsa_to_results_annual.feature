@@ -226,3 +226,19 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | installed_capacity | wind      | wind     | 2030-01-01T00:00:00 | 120   |
       | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 200   |
     And the file "decisions.md" contains "p_nom_opt, the capacity that the solve built, for an extendable component of a solved network"
+
+  Scenario: A generator with no sidecar rate emits the CO2 that its carrier states
+    PyPSA states the CO2 of a carrier in t for each MWh of the fuel. The coal plant turns 0.4 of
+    its fuel into electricity, so it emits 0.9 / 0.4 t for each MWh that it puts out. The run
+    reads no sidecar, so no other component states a rate.
+    Given the network contains carrier "coal" co2_emissions 0.9
+    And the network contains generator "coal" on "node_a" carrier "coal" p_nom 100
+    And generator "coal" has efficiency 0.4
+    And the generator "coal" dispatches 10 10 10 10
+    And the network is saved as "inputs/solved.nc"
+    When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/solved.nc"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "emissions" rows:
+      | variable  | component | category | timestamp           | value  |
+      | emissions | CO2       |          | 2030-01-01T00:00:00 | 197100 |
+    And the file "decisions.md" contains "co2_emissions of its carrier ÷ its efficiency"
