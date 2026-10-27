@@ -234,7 +234,7 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
     And the system is saved as "inputs/system.json"
     When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
     Then the pipeline exit code is 0
-    And the log contains "1 component(s) have a rating, but the solve states no output for them, so they have no production: roof_b"
+    And the log contains "1 component(s) have a rating, but the solve states no output for them, so they have no production. Each one: roof_b"
     And the file "decisions.md" contains "`sienna.RenewableNonDispatch.roof_b`"
     And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
       | variable           | component | category      | timestamp           | value |
