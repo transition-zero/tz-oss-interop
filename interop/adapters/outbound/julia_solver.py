@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
@@ -12,7 +11,15 @@ from interop.adapters.outbound.balance_slacks import (
     build_slack_energy,
     warn_balance_slacks,
 )
-from interop.adapters.outbound.julia_packages import declare_julia_packages
+from interop.adapters.outbound.julia_packages import JuliaEnvironment
+from interop.adapters.outbound.julia_session import (
+    MIP_GAP_ATTRIBUTE,
+    HiGHSAttribute,
+    build_highs_args,
+    is_julia_provisioned,
+    reject_julia_errors,
+    require_julia,
+)
 from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import (
@@ -48,8 +55,13 @@ _THERMAL_FORMULATIONS = {
     UnitCommitmentTreatment.LINEARISED: "ThermalBasicDispatch",
 }
 
-# How far from proven optimality a mixed-integer solve may stop, matching the PyPSA path.
-_MILP_REL_GAP = 0.01
+# HiGHS attributes that a dispatch sets and an expansion does not.
+_DISPATCH_HIGHS_ATTRIBUTES = (
+    HiGHSAttribute("mip_detect_symmetry", "false"),
+    HiGHSAttribute("parallel", '"off"'),
+)
+
+_POWER_SIMULATIONS_PACKAGES = "the PowerSimulations.jl packages"
 
 _NETWORK_MODEL_MAP: dict[str, str] = {
     "dcp": "DCPPowerModel",
@@ -77,24 +89,18 @@ class JuliaSolveAdapter(SolverPort):
     config_schema: ClassVar[type[BaseModel] | None] = JuliaSolveConfig
 
     def __init__(self, config: JuliaSolveConfig | None = None) -> None:
-        c = config or JuliaSolveConfig()
-        self._dev_checkout_paths: dict[str, Path | None] = {
-            "PowerSystems": c.powersystems_jl_path,
-            "PowerSimulations": c.powersimulations_jl_path,
-            "HydroPowerSimulations": c.hydropowersimulations_jl_path,
-        }
+        settings = config or JuliaSolveConfig()
+        self._environment = JuliaEnvironment(
+            dev_checkout_paths={
+                "PowerSystems": settings.powersystems_jl_path,
+                "PowerSimulations": settings.powersimulations_jl_path,
+                "HydroPowerSimulations": settings.hydropowersimulations_jl_path,
+            },
+            description=_POWER_SIMULATIONS_PACKAGES,
+        )
 
     def is_provisioned(self) -> bool:
-        """Report whether Julia and the declared packages are already installed.
-
-        `juliapkg.resolve(dry_run=True)` returns True only when the current
-        declarations match the last successful resolution, i.e. nothing would
-        be downloaded; it never installs anything itself.
-        """
-        declare_julia_packages(self._dev_checkout_paths)
-        import juliapkg  # noqa: PLC0415
-
-        return bool(juliapkg.resolve(dry_run=True))
+        return is_julia_provisioned(self._environment)
 
     def solve(
         self,
@@ -115,7 +121,7 @@ class JuliaSolveAdapter(SolverPort):
                 f"Valid options: {sorted(_NETWORK_MODEL_MAP)}"
             )
 
-        jl = self._bootstrap_julia()
+        jl = require_julia(self._environment)
         resolved_output_dir = output_dir or (sienna_json_path.parent / "solved")
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -127,21 +133,6 @@ class JuliaSolveAdapter(SolverPort):
             unit_commitment=unit_commitment,
             highs=highs,
         )
-
-    def _bootstrap_julia(self) -> Any:
-        os.environ.setdefault("PYTHON_JULIACALL_HANDLE_SIGNALS", "yes")
-        declare_julia_packages(self._dev_checkout_paths)
-
-        log.info(
-            "Preparing the Julia environment. The first run downloads Julia and the "
-            "PowerSimulations.jl packages and compiles them. Later runs start much faster."
-        )
-        import faulthandler
-
-        faulthandler.disable()
-        from juliacall import Main as jl  # noqa: PLC0415
-
-        return jl
 
 
 def _build_network_model(julia_model: str, unserved_energy: UnservedEnergy) -> str:
@@ -304,20 +295,11 @@ def _warn_partly_covered(coverage: dict[str, _SeriesCoverage]) -> None:
         )
 
 
-def _build_highs_args(highs: HiGHSOptions, unit_commitment: UnitCommitmentTreatment) -> str:
-    attrs: list[tuple[str, str]] = [
-        ('"log_to_console"', "true"),
-        ('"mip_detect_symmetry"', "false"),
-        ('"parallel"', '"off"'),
-        ('"solver"', f'"{highs.solver}"'),
-        ('"presolve"', f'"{highs.presolve}"'),
-        ('"run_crossover"', f'"{highs.run_crossover}"'),
-    ]
+def _list_highs_attributes(unit_commitment: UnitCommitmentTreatment) -> list[HiGHSAttribute]:
+    """The attributes past the run's own answers; exact unit commitment is mixed-integer."""
     if unit_commitment is UnitCommitmentTreatment.EXACT:
-        attrs.append(('"mip_rel_gap"', str(_MILP_REL_GAP)))
-    if highs.time_limit_seconds is not None:
-        attrs.append(('"time_limit"', str(float(highs.time_limit_seconds))))
-    return ", ".join(f"{k} => {v}" for k, v in attrs)
+        return [*_DISPATCH_HIGHS_ATTRIBUTES, MIP_GAP_ATTRIBUTE]
+    return list(_DISPATCH_HIGHS_ATTRIBUTES)
 
 
 def _run_pipeline(
@@ -330,10 +312,8 @@ def _run_pipeline(
     highs: HiGHSOptions,
 ) -> DispatchOutcome:
     """Build and solve the Sienna system in Julia, re-raising Julia errors as user errors."""
-    from juliacall import JuliaError  # noqa: PLC0415
-
     sienna_json_str = build_julia_path_text(sienna_json_path)
-    try:
+    with reject_julia_errors("Julia solver error"):
         return _run_pipeline_inner(
             jl,
             sienna_json_str,
@@ -342,8 +322,6 @@ def _run_pipeline(
             unit_commitment=unit_commitment,
             highs=highs,
         )
-    except JuliaError as exc:
-        raise UserInputError(f"Julia solver error:\n{exc}") from exc
 
 
 def _run_pipeline_inner(
@@ -437,7 +415,7 @@ def _run_pipeline_inner(
 
     log.info("=== 3. Building DecisionModel ===")
     out_dir_str = build_julia_path_text(output_dir)
-    highs_args = _build_highs_args(highs, unit_commitment)
+    highs_args = build_highs_args(highs, _list_highs_attributes(unit_commitment))
     jl.seval(f"""
         global problem = DecisionModel(
             template, sys;

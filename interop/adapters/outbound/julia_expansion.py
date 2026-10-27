@@ -10,14 +10,21 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
-from interop.adapters.outbound.julia_packages import declare_julia_packages
+from interop.adapters.outbound.julia_packages import JuliaEnvironment
+from interop.adapters.outbound.julia_session import (
+    MIP_GAP_ATTRIBUTE,
+    HiGHSAttribute,
+    build_highs_args,
+    is_julia_provisioned,
+    reject_julia_errors,
+    require_julia,
+)
 from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.plugins.shared.power_systems_investments_schema import MODELLED_TECHNOLOGIES
 from interop.plugins.shared.warning_text import name_a_few
@@ -54,8 +61,7 @@ _TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = tuple(
     for model in MODELLED_TECHNOLOGIES
 )
 
-# How far from proven optimality a mixed-integer run may stop, matching the dispatch path.
-_MILP_REL_GAP = 0.01
+_POWER_SYSTEMS_INVESTMENTS_PACKAGES = "the PowerSystemsInvestments.jl packages"
 
 
 class JuliaExpansionConfig(BaseModel):
@@ -72,19 +78,18 @@ class JuliaExpansionAdapter(ExpansionPort):
 
     def __init__(self, config: JuliaExpansionConfig | None = None) -> None:
         settings = config or JuliaExpansionConfig()
-        self._dev_checkout_paths: dict[str, Path | None] = {
-            "PowerSystemsInvestments": settings.powersystemsinvestments_jl_path,
-            "PowerSystemsInvestmentsPortfolios": (
-                settings.powersystemsinvestmentsportfolios_jl_path
-            ),
-        }
+        self._environment = JuliaEnvironment(
+            dev_checkout_paths={
+                "PowerSystemsInvestments": settings.powersystemsinvestments_jl_path,
+                "PowerSystemsInvestmentsPortfolios": (
+                    settings.powersystemsinvestmentsportfolios_jl_path
+                ),
+            },
+            description=_POWER_SYSTEMS_INVESTMENTS_PACKAGES,
+        )
 
     def is_provisioned(self) -> bool:
-        """Report whether Julia and the declared packages are already installed."""
-        declare_julia_packages(self._dev_checkout_paths)
-        import juliapkg  # noqa: PLC0415
-
-        return bool(juliapkg.resolve(dry_run=True))
+        return is_julia_provisioned(self._environment)
 
     def solve_expansion(
         self,
@@ -103,7 +108,7 @@ class JuliaExpansionAdapter(ExpansionPort):
         resolved_output_dir = output_dir or (portfolio_json_path.parent / "expanded")
         resolved_output_dir.mkdir(parents=True, exist_ok=True)
         return _run_expansion(
-            self._bootstrap_julia(),
+            self._require_julia(),
             _ExpansionRequest(
                 portfolio_json_path=portfolio_json_path,
                 document=document,
@@ -111,24 +116,12 @@ class JuliaExpansionAdapter(ExpansionPort):
                 balance_model=balance_model,
                 investment_treatment=investment_treatment,
                 discount_rate=discount_rate,
-                highs_args=_build_highs_args(highs, investment_treatment),
+                highs_args=build_highs_args(highs, _list_highs_attributes(investment_treatment)),
             ),
         )
 
-    def _bootstrap_julia(self) -> Any:
-        os.environ.setdefault("PYTHON_JULIACALL_HANDLE_SIGNALS", "yes")
-        declare_julia_packages(self._dev_checkout_paths)
-        log.info(
-            "Preparing the Julia environment. The first run downloads Julia and the "
-            "PowerSystemsInvestments.jl packages and compiles them. Later runs start much "
-            "faster."
-        )
-        import faulthandler  # noqa: PLC0415
-
-        faulthandler.disable()
-        from juliacall import Main as jl  # noqa: PLC0415
-
-        return jl
+    def _require_julia(self) -> Any:
+        return require_julia(self._environment)
 
 
 @dataclass(frozen=True)
@@ -177,28 +170,17 @@ def _describe_unreadable(exc: ValueError) -> str:
     return f"{location}: {first['msg']} ({exc.error_count()} fault(s) in all)"
 
 
-def _build_highs_args(highs: HiGHSOptions, investment_treatment: InvestmentTreatment) -> str:
-    attributes: list[tuple[str, str]] = [
-        ('"log_to_console"', "true"),
-        ('"solver"', f'"{highs.solver}"'),
-        ('"presolve"', f'"{highs.presolve}"'),
-        ('"run_crossover"', f'"{highs.run_crossover}"'),
-    ]
+def _list_highs_attributes(investment_treatment: InvestmentTreatment) -> list[HiGHSAttribute]:
+    """The attributes past the run's own answers; an integer plan is mixed-integer."""
     if investment_treatment is InvestmentTreatment.INTEGER:
-        attributes.append(('"mip_rel_gap"', str(_MILP_REL_GAP)))
-    if highs.time_limit_seconds is not None:
-        attributes.append(('"time_limit"', str(float(highs.time_limit_seconds))))
-    return ", ".join(f"{key} => {value}" for key, value in attributes)
+        return [MIP_GAP_ATTRIBUTE]
+    return []
 
 
 def _run_expansion(jl: Any, request: _ExpansionRequest) -> ExpansionOutcome:
     """Build and solve the expansion, re-raising a Julia error as a user error."""
-    from juliacall import JuliaError  # noqa: PLC0415
-
-    try:
+    with reject_julia_errors("Julia expansion error"):
         return _run_expansion_inner(jl, request)
-    except JuliaError as exc:
-        raise UserInputError(f"Julia expansion error:\n{exc}") from exc
 
 
 def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> ExpansionOutcome:

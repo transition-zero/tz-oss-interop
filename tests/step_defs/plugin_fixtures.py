@@ -430,7 +430,7 @@ class JuliaExpansionProbe(JuliaExpansionAdapter):
     def is_provisioned(self) -> bool:
         return True
 
-    def _bootstrap_julia(self) -> Any:
+    def _require_julia(self) -> Any:
         raise UserInputError("the probe reached Julia")
 """
 

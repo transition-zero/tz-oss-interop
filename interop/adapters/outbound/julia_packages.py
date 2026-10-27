@@ -28,6 +28,17 @@ class JuliaPackage:
         return {"version": self.version} if self.version is not None else {}
 
 
+@dataclass(frozen=True)
+class JuliaEnvironment:
+    """What one adapter installs into Julia: the local checkouts it uses and how it names them.
+
+    A package with no checkout path comes from its registry release or its pinned revision.
+    """
+
+    dev_checkout_paths: Mapping[str, Path | None]
+    description: str
+
+
 # Versions are pinned to the releases the solve pipeline was developed against;
 # unpinned packages are constrained transitively by the pinned ones.
 JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
