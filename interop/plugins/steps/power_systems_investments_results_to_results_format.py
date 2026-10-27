@@ -7,9 +7,8 @@ from. The solve states no category, so each row leaves it null.
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime
-from typing import ClassVar, NamedTuple
+import math
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -30,6 +29,7 @@ from interop.plugins.shared.power_systems_investments_results_constants import (
     StagedResultCol,
 )
 from interop.plugins.shared.power_systems_investments_schema import SeriesDocument
+from interop.plugins.shared.representative_periods import Period
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
@@ -37,10 +37,13 @@ from interop.plugins.shared.results_constants import (
     ResultsVariable,
 )
 from interop.plugins.shared.sienna_results_constants import AnnualCol
-from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    filter_component,
+    report_not_mapped,
+)
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
-
-log = logging.getLogger(__name__)
 
 POWER_SYSTEMS_INVESTMENTS_TO_RESULTS = "power-systems-investments-to-results"
 
@@ -53,41 +56,80 @@ _HOUR_ROW_KEYS = [
     StagedResultCol.SNAPSHOT,
 ]
 
-_UNWEIGHTED_WARNING = (
-    "%d hour(s) of the solve fall in no slice of the series document, so production leaves "
-    "them out: %s"
-)
-_OVERLAPPING_SLICE_NOTE = (
-    "the slice holds an hour that the slice {earlier} also holds, so it is left out, and "
-    "production leaves out each of its hours that no other slice holds"
-)
-_OVERLAPPING_SLICE_WARNING = (
-    "%d slice(s) of the series document hold an hour that an earlier slice holds, so each is "
-    "left out: %s"
-)
-_SHARED_NAME_NOTE = (
-    "the name belongs to the technology types {technologies}, and the results name a component "
-    "by its name alone, so each row of the name is left out"
-)
-_SHARED_NAME_WARNING = (
-    "%d component name(s) belong to more than one technology type of the solve, so the rows of "
-    "each are left out: %s"
-)
-_UNKNOWN_PERIOD_WARNING = (
-    "%d investment period(s) of the solve are not periods of the series document, so their "
-    "capacity rows are left out: %s"
-)
+# Working columns of the slices and hours that the reports name.
+_SLICE_NAME = "slice"
+_FIRST_HOUR = "first_hour"
+_EARLIER_SLICE = "earlier_slice"
+_HOUR_NAME = "hour"
+_HOUR_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 
-class Slice(NamedTuple):
-    """One slice of the series document, which its year and its number name together."""
+def _note_shared_name(row: dict[str, Any]) -> str:
+    technologies = " and ".join(row[StagedResultCol.TECHNOLOGY])
+    return (
+        f"the name belongs to the technology types {technologies}, and the results name a "
+        "component by its name alone, so each row of the name is left out"
+    )
 
-    year: int
-    representative_day: int
 
-    @property
-    def name(self) -> str:
-        return f"{self.representative_day} of {self.year}"
+def _note_overlapping_slice(row: dict[str, Any]) -> str:
+    return (
+        f"the slice holds an hour that the slice {row[_EARLIER_SLICE]} also holds, so it is left "
+        "out, and production leaves out each of its hours that no other slice holds"
+    )
+
+
+def _note_unknown_period(row: dict[str, Any]) -> str:
+    return (
+        f"the investment period is not a period of the series document, so the "
+        f"{row[StagedResultCol.RESULT]} row has no year, and the results leave it out"
+    )
+
+
+_SHARED_NAME_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=_RESULTS_COMPONENT,
+    name_col=StagedResultCol.COMPONENT,
+    reason="belong to more than one technology type of the solve",
+    counted_noun="component name(s)",
+    note=_note_shared_name,
+    attribute_col=StagedResultCol.COMPONENT,
+    attribute_name=ResultsCsvCol.NAME,
+)
+_OVERLAPPING_SLICE_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=SeriesDocument.REPRESENTATIVE_DAY,
+    name_col=_SLICE_NAME,
+    reason="of the series document hold an hour that an earlier slice holds",
+    counted_noun="slice(s)",
+    note=_note_overlapping_slice,
+    attribute_col=StagedResultCol.WEIGHT,
+    attribute_name=SeriesDocument.WEIGHT,
+)
+_UNKNOWN_PERIOD_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=_RESULTS_COMPONENT,
+    name_col=StagedResultCol.COMPONENT,
+    reason="fall in an investment period that is not a period of the series document",
+    counted_noun="capacity row(s)",
+    note=_note_unknown_period,
+    listed=SkippedNames(column=StagedResultCol.PERIOD, label="Periods"),
+    attribute_col=StagedResultCol.PERIOD,
+    attribute_name=ResultsCsvCol.TIME_INDEX,
+)
+_UNWEIGHTED_HOUR_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=ResultsCsvCol.DATE_TIME,
+    name_col=_HOUR_NAME,
+    reason="fall in no slice of the series document and take no weight in production",
+    counted_noun="hour(s) of the solve",
+    note="the hour falls in no slice of the series document, so production leaves it out",
+    listed=SkippedNames(column=_HOUR_NAME, label="Hours"),
+)
 
 
 class Derivation(NamedTuple):
@@ -135,9 +177,8 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         period_years = state.source_topology[PERIOD_YEARS_KEY].collect()
         investment = state.source_topology[INVESTMENT_RESULTS_KEY].collect()
         operations = state.source_time_series[OPERATIONS_RESULTS_KEY]
-        shared = _list_shared_names(investment, operations)
-        self._report_shared_names(shared)
-        is_unshared = _express_unshared(list(shared))
+        shared = self._choose_shared_names(investment, operations)
+        is_unshared = ~pl.col(StagedResultCol.COMPONENT).is_in(shared)
         investment = investment.filter(is_unshared)
         weights = self._choose_hour_weights(state.source_topology[HOUR_WEIGHTS_KEY].collect())
         pieces = [
@@ -157,38 +198,48 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         )
         if rows.is_empty():
             return _build_empty_results()
-        dated = rows.join(period_years, on=StagedResultCol.PERIOD, how="left")
-        self._warn_unknown_periods(dated)
-        self._record(derivation)
-        return _build_annual_results(
-            dated.filter(pl.col(StagedResultCol.YEAR).is_not_null()), derivation
+        dated, _unknown = report_not_mapped(
+            rows.join(period_years, on=StagedResultCol.PERIOD, how="left"),
+            pl.col(StagedResultCol.YEAR).is_not_null(),
+            _UNKNOWN_PERIOD_REPORT,
+            self._recorder,
         )
+        self._record(derivation)
+        return _build_annual_results(dated, derivation)
+
+    def _choose_shared_names(self, investment: pl.DataFrame, operations: pl.LazyFrame) -> list[str]:
+        """The component names that more than one technology type states; it reports each."""
+        _unshared, shared = filter_component(
+            _list_technologies_by_name(investment, operations),
+            pl.col(StagedResultCol.TECHNOLOGY).list.len() == 1,
+            _SHARED_NAME_REPORT,
+            self._recorder,
+        )
+        return list(shared[StagedResultCol.COMPONENT])
 
     def _choose_hour_weights(self, weights: pl.DataFrame) -> pl.DataFrame:
-        """The hours of each slice that holds no hour of an earlier slice; it reports the rest."""
-        holders: dict[datetime, Slice] = {}
-        left_out: dict[Slice, Slice] = {}
-        for (year, representative_day), hours in weights.group_by(_SLICE_KEYS, maintain_order=True):
-            one = Slice(int(year), int(representative_day))
-            snapshots = hours[StagedResultCol.SNAPSHOT].to_list()
-            earlier = next((holders[hour] for hour in snapshots if hour in holders), None)
-            if earlier is None:
-                holders.update(dict.fromkeys(snapshots, one))
-            else:
-                left_out[one] = earlier
-        self._report_overlapping_slices(left_out)
-        return weights.join(_build_slice_keys(list(left_out)), on=_SLICE_KEYS, how="anti")
+        """The hours of each slice that overlaps no earlier slice; it reports the rest."""
+        slices = _list_slices(weights)
+        _kept, left_out = filter_component(
+            slices.with_columns(
+                pl.Series(_EARLIER_SLICE, _list_earlier_slices(slices), dtype=pl.Utf8)
+            ),
+            pl.col(_EARLIER_SLICE).is_null(),
+            _OVERLAPPING_SLICE_REPORT,
+            self._recorder,
+        )
+        return weights.join(left_out.select(_SLICE_KEYS), on=_SLICE_KEYS, how="anti")
 
     def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
         # The solve writes a row for each hour of each slice, so an hour two slices hold has two.
         first_rows = operations.unique(_HOUR_ROW_KEYS, keep="first", maintain_order=True)
         weighted = first_rows.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
-        unweighted = (
-            weighted.filter(pl.col(StagedResultCol.WEIGHT).is_null())
-            .select(pl.col(StagedResultCol.SNAPSHOT).unique().sort())
-            .collect()
+        report_not_mapped(
+            _list_solve_hours(weighted),
+            pl.col(StagedResultCol.WEIGHT).is_not_null(),
+            _UNWEIGHTED_HOUR_REPORT,
+            self._recorder,
         )
-        self._warn_unweighted(unweighted)
         production = (
             weighted.filter(pl.col(StagedResultCol.WEIGHT).is_not_null())
             .group_by(StagedResultCol.COMPONENT, StagedResultCol.YEAR)
@@ -252,91 +303,66 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
             )
         )
 
-    def _report_shared_names(self, shared: dict[str, list[str]]) -> None:
-        for name, technologies in shared.items():
-            self._recorder.append(
-                TranslationEvent(
-                    kind=EventKind.COMPONENT_SKIPPED,
-                    sources=[
-                        SourceField(
-                            framework=Framework.POWER_SYSTEMS_INVESTMENTS,
-                            component=_RESULTS_COMPONENT,
-                            name=name,
-                            attribute=ResultsCsvCol.NAME,
-                            value=name,
-                        )
-                    ],
-                    note=_SHARED_NAME_NOTE.format(technologies=" and ".join(technologies)),
-                )
-            )
-        if shared:
-            _warn(_SHARED_NAME_WARNING, len(shared), name_a_few(shared))
 
-    def _report_overlapping_slices(self, left_out: dict[Slice, Slice]) -> None:
-        for one, earlier in left_out.items():
-            self._recorder.append(
-                TranslationEvent(
-                    kind=EventKind.COMPONENT_SKIPPED,
-                    sources=[
-                        SourceField(
-                            framework=Framework.POWER_SYSTEMS_INVESTMENTS,
-                            component=SeriesDocument.REPRESENTATIVE_DAY,
-                            name=one.name,
-                        )
-                    ],
-                    note=_OVERLAPPING_SLICE_NOTE.format(earlier=earlier.name),
-                )
-            )
-        if left_out:
-            _warn(
-                _OVERLAPPING_SLICE_WARNING, len(left_out), name_a_few(one.name for one in left_out)
-            )
-
-    def _warn_unknown_periods(self, dated: pl.DataFrame) -> None:
-        unknown = (
-            dated.filter(pl.col(StagedResultCol.YEAR).is_null())[StagedResultCol.PERIOD]
-            .unique()
-            .sort()
-            .to_list()
-        )
-        if unknown:
-            _warn(_UNKNOWN_PERIOD_WARNING, len(unknown), name_a_few(str(one) for one in unknown))
-
-    def _warn_unweighted(self, unweighted: pl.DataFrame) -> None:
-        if unweighted.is_empty():
-            return
-        hours = [stamp.isoformat() for stamp in unweighted[StagedResultCol.SNAPSHOT].to_list()]
-        _warn(_UNWEIGHTED_WARNING, len(hours), name_a_few(hours))
-
-
-def _list_shared_names(investment: pl.DataFrame, operations: pl.LazyFrame) -> dict[str, list[str]]:
-    """Each component name that more than one technology type states, with those types."""
+def _list_technologies_by_name(investment: pl.DataFrame, operations: pl.LazyFrame) -> pl.DataFrame:
+    """Each component name of the solve, with the technology types that state it."""
     columns = [StagedResultCol.COMPONENT, StagedResultCol.TECHNOLOGY]
-    shared = (
+    return (
         pl.concat([investment.lazy().select(columns), operations.select(columns)])
         .unique()
         .group_by(StagedResultCol.COMPONENT)
         .agg(pl.col(StagedResultCol.TECHNOLOGY).sort())
-        .filter(pl.col(StagedResultCol.TECHNOLOGY).list.len() > 1)
         .sort(StagedResultCol.COMPONENT)
         .collect()
     )
-    return {
-        row[StagedResultCol.COMPONENT]: row[StagedResultCol.TECHNOLOGY]
-        for row in shared.iter_rows(named=True)
-    }
 
 
-def _build_slice_keys(slices: list[Slice]) -> pl.DataFrame:
-    return pl.DataFrame(
-        slices,
-        schema={StagedResultCol.YEAR: pl.Int32, StagedResultCol.REPRESENTATIVE_DAY: pl.Int64},
-        orient="row",
+def _list_slices(weights: pl.DataFrame) -> pl.DataFrame:
+    """Each slice of the series document, in the order the solve reads them, with its span."""
+    return weights.group_by(_SLICE_KEYS, maintain_order=True).agg(
+        pl.format(
+            "{} of {}", pl.col(StagedResultCol.REPRESENTATIVE_DAY), pl.col(StagedResultCol.YEAR)
+        )
+        .first()
+        .alias(_SLICE_NAME),
+        pl.col(StagedResultCol.SNAPSHOT).min().alias(_FIRST_HOUR),
+        pl.col(StagedResultCol.HOURS).sum(),
+        pl.col(StagedResultCol.WEIGHT).first(),
     )
 
 
-def _express_unshared(shared: list[str]) -> pl.Expr:
-    return ~pl.col(StagedResultCol.COMPONENT).is_in(shared)
+def _list_earlier_slices(slices: pl.DataFrame) -> list[str | None]:
+    """For each slice, an earlier slice that it overlaps, or None where it overlaps none kept."""
+    kept: list[Period] = []
+    earlier_names: list[str | None] = []
+    for row in slices.iter_rows(named=True):
+        period = _build_period(row)
+        earlier = next((other for other in kept if period.is_overlapping(other)), None)
+        if earlier is None:
+            kept.append(period)
+        earlier_names.append(None if earlier is None else earlier.name)
+    return earlier_names
+
+
+def _build_period(row: dict[str, Any]) -> Period:
+    """The span of a slice as a representative period, whose overlap rule the slices share."""
+    return Period(
+        name=row[_SLICE_NAME],
+        first_hour=row[_FIRST_HOUR],
+        hours=math.ceil(row[StagedResultCol.HOURS]),
+        weight=row[StagedResultCol.WEIGHT],
+    )
+
+
+def _list_solve_hours(weighted: pl.LazyFrame) -> pl.DataFrame:
+    """Each hour of the solve once, with its weight and the name a report gives it."""
+    return (
+        weighted.select(StagedResultCol.SNAPSHOT, StagedResultCol.WEIGHT)
+        .unique(StagedResultCol.SNAPSHOT)
+        .sort(StagedResultCol.SNAPSHOT)
+        .with_columns(pl.col(StagedResultCol.SNAPSHOT).dt.strftime(_HOUR_FORMAT).alias(_HOUR_NAME))
+        .collect()
+    )
 
 
 def _express_output() -> pl.Expr:
@@ -366,8 +392,3 @@ def _build_results_table(pieces: list[pl.LazyFrame]) -> pl.DataFrame:
         how="vertical",
     )
     return combined.collect()
-
-
-def _warn(template: str, *args: object) -> None:
-    """Write one warning of the step, after the name of its pipeline."""
-    log.warning(f"%s: {template}", POWER_SYSTEMS_INVESTMENTS_TO_RESULTS, *args)
