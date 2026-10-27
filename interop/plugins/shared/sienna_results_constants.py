@@ -142,9 +142,6 @@ WIDE_RESULT_SERIES: tuple[StagedSeriesSource, ...] = (
     StagedSeriesSource(LOAD_KEY, LOAD_CSVS),
 )
 
-SNAPSHOT_HOURS = 1.0
-"""Hours one row of a solve result covers: the solve runs at an hourly resolution."""
-
 
 class AnnualCol(StrEnum):
     """Working columns of the annual rows, which the results table does not keep."""

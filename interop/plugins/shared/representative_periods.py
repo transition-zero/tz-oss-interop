@@ -36,8 +36,10 @@ class Period(NamedTuple):
     hours: int
     weight: float
 
-    def list_hours(self) -> list[datetime]:
-        return [self.first_hour + offset * ONE_HOUR for offset in range(self.hours)]
+    def list_timestamps(self, step: timedelta) -> list[datetime]:
+        """Each timestamp of the period, one `step` apart from its first hour."""
+        count = math.ceil(self.hours * ONE_HOUR / step)
+        return [self.first_hour + index * step for index in range(count)]
 
     def is_overlapping(self, other: Period) -> bool:
         return self.first_hour < other.end_hour and other.first_hour < self.end_hour

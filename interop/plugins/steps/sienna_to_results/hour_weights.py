@@ -1,14 +1,16 @@
 """The weight of each hour of a solve over representative periods.
 
 A `representative_period` record gives the first hour of a period, its number of hours, and its
-weight: how many times the period occurs in the year. A record that cannot give a weight, or
-that holds an hour an earlier period holds, is left out, and its hours then have no weight.
+weight: how many times the period occurs in the year. Each row of the solve stands for the hours
+between two rows, once for each time that its period occurs. A record that cannot give a
+weight, or that holds an hour an earlier period holds, is left out, and its hours then have no
+weight.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import NamedTuple
 
 import polars as pl
@@ -87,13 +89,15 @@ class HourWeighter:
     ) -> pl.DataFrame:
         """The weight of each hour of the solve that a period holds; it reports the rest."""
         periods = PeriodChooser(self._recorder, _LEFT_OUT_PERIOD_TEXT).choose_periods(records)
-        calendar = _build_calendar(periods)
         hours = _build_solve_hours(frames)
-        self._report_hours_outside(hours.join(calendar, on=ResultsCol.TIMESTAMP, how="anti"))
+        step = _find_step(hours)
+        calendar = _build_calendar(periods, step)
+        outside = hours.join(calendar, on=ResultsCol.TIMESTAMP, how="anti")
+        self._report_hours_outside(outside, step)
         return hours.join(calendar, on=ResultsCol.TIMESTAMP, how="inner")
 
-    def _report_hours_outside(self, hours: pl.DataFrame) -> None:
-        runs = _list_runs(hours[ResultsCol.TIMESTAMP].sort().to_list())
+    def _report_hours_outside(self, hours: pl.DataFrame, step: timedelta) -> None:
+        runs = _list_runs(hours[ResultsCol.TIMESTAMP].sort().to_list(), step)
         for run in runs:
             self._recorder.append(
                 TranslationEvent(
@@ -113,10 +117,24 @@ class HourWeighter:
             )
 
 
-def _build_calendar(periods: list[Period]) -> pl.DataFrame:
-    """One row for each hour that a period holds, with the weight of the period."""
-    rows = [(hour, period.weight) for period in periods for hour in period.list_hours()]
+def _build_calendar(periods: list[Period], step: timedelta) -> pl.DataFrame:
+    """One row for each timestamp of the solve that a period holds, with the hours that it
+    stands for in the year: the hours of the step × the weight of the period."""
+    step_hours = step / ONE_HOUR
+    rows = [
+        (timestamp, period.weight * step_hours)
+        for period in periods
+        for timestamp in period.list_timestamps(step)
+    ]
     return pl.DataFrame(rows, schema=_CALENDAR_SCHEMA, orient="row")
+
+
+def _find_step(hours: pl.DataFrame) -> timedelta:
+    """The time between two rows of the solve: the smallest gap between two timestamps, or one
+    hour for a solve of one timestamp."""
+    gaps = hours[ResultsCol.TIMESTAMP].sort().diff().drop_nulls()
+    smallest = gaps.filter(gaps > timedelta(0)).min()
+    return smallest if isinstance(smallest, timedelta) else ONE_HOUR
 
 
 def _build_solve_hours(frames: list[pl.LazyFrame]) -> pl.DataFrame:
@@ -126,12 +144,12 @@ def _build_solve_hours(frames: list[pl.LazyFrame]) -> pl.DataFrame:
     return hours.unique().collect().cast(pl.Schema(_HOURS_SCHEMA))
 
 
-def _list_runs(hours: list[datetime]) -> list[HourRun]:
-    """The runs of consecutive hours, in order, from sorted hours."""
+def _list_runs(hours: list[datetime], step: timedelta) -> list[HourRun]:
+    """The runs of consecutive timestamps, one step apart, in order, from sorted timestamps."""
     runs: list[HourRun] = []
     for hour in hours:
         last = runs[-1] if runs else None
-        if last is not None and hour - last.last_hour == ONE_HOUR:
+        if last is not None and hour - last.last_hour == step:
             runs[-1] = HourRun(last.first_hour, hour, last.hour_count + 1)
         else:
             runs.append(HourRun(hour, hour, 1))
