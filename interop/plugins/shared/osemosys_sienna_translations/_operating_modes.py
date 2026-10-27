@@ -223,6 +223,22 @@ def _build_detail_key(entry: dict[str, Any]) -> str | int:
     return str(entry[_DETAIL])
 
 
+class ModeEntry(NamedTuple):
+    """One value of a mode that a record holds: its parameter, its mode and its detail."""
+
+    parameter: str
+    mode: str
+    detail: str | None
+
+
+def list_mode_entries(row: dict[str, Any]) -> list[ModeEntry]:
+    """Each value of a mode that the record of one row holds."""
+    return [
+        ModeEntry(entry[_PARAMETER], entry[OPERATING_MODE], entry[_DETAIL])
+        for entry in row[_VALUES] or []
+    ]
+
+
 def build_mode_events(row: dict[str, Any], owners: ValueOwners) -> list[TranslationEvent]:
     """One VALUE_DERIVED for each value of a mode that the record of one row holds."""
     return [_build_event(row, entry, owners) for entry in row[_VALUES] or []]
