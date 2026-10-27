@@ -10,8 +10,11 @@ Link has no e_sum_min or e_sum_max.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, ClassVar, Literal, NamedTuple
 
+import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import (
@@ -57,21 +60,28 @@ _NO_COST = 0.0
 _LOAD_COLUMNS = (
     CompanionColumn(LoadCompanionCol.P_SET, PyPSADestinationTable.LOADS, PyPSALoadCol.P_SET),
 )
-# Each stated field of a generator record, the Generator column it fills, and its unit.
-_GENERATOR_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
-    ("bus", PyPSAGeneratorCol.BUS, None),
-    ("carrier", PyPSAGeneratorCol.CARRIER, None),
-    ("p_nom", PyPSAGeneratorCol.P_NOM, UNIT_MW),
-    ("p_nom_extendable", PyPSAGeneratorCol.P_NOM_EXTENDABLE, None),
-    ("p_nom_max", PyPSAGeneratorCol.P_NOM_MAX, UNIT_MW),
-    ("marginal_cost", PyPSAGeneratorCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
-    ("p_max_pu", PyPSAGeneratorCol.P_MAX_PU, None),
-)
-_LOAD_FIELDS: tuple[tuple[str, str, str | None], ...] = (
-    ("bus", PyPSALoadCol.BUS, None),
-    ("carrier", PyPSALoadCol.CARRIER, None),
-    ("p_set", PyPSALoadCol.P_SET, UNIT_MW),
-)
+
+
+class _CarriedField(NamedTuple):
+    """A field of a sidecar record, the PyPSA column that takes its value, and its unit."""
+
+    field_name: str
+    column: str
+    unit: str | None = None
+
+
+@dataclass(frozen=True)
+class _FuelMapping:
+    """What differs between the generators and the loads of a fuel that is not electricity."""
+
+    kind: Literal[ExtensionKind.GENERATOR, ExtensionKind.LOAD]
+    table: str
+    name_col: str
+    schema: dict[str, pl.DataType | type[pl.DataType]]
+    mapped_fields: frozenset[str]
+    carried: tuple[_CarriedField, ...]
+    build_row: Callable[[Any], dict[str, Any]]
+    build_reporter: Callable[[ScopedRecorder], GeneratorReporter | LoadReporter]
 
 
 class SiennaToPypsaMapFuels(TranslationStep):
@@ -84,49 +94,32 @@ class SiennaToPypsaMapFuels(TranslationStep):
 
     def run(self, state: State, params: BaseModel | None) -> State:
         buses = _build_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
-        self._map_generators(state, buses)
-        self._map_loads(state, buses)
+        self._map_records(state, buses, _GENERATORS)
+        loads = self._map_records(state, buses, _LOADS)
+        _stage_load_series(state, loads)
         PlantLinkMapper(self._recorder).map_plant_links(state, self._extensions, buses)
         return state
 
-    def _map_generators(self, state: State, buses: set[str]) -> None:
-        lookup = self._extensions.read(ExtensionKind.GENERATOR)
-        held = _build_names(state, PyPSADestinationTable.GENERATORS, PyPSAGeneratorCol.NAME)
+    def _map_records(
+        self, state: State, buses: set[str], mapping: _FuelMapping
+    ) -> list[GeneratorExtension | LoadExtension]:
+        """Each record on a bus of the network becomes a row, and its other fields travel on."""
+        lookup = self._extensions.read(mapping.kind)
+        held = _build_names(state, mapping.table, mapping.name_col)
         records = [
             record
             for record in lookup.list_records()
             if record.bus in buses and record.name not in held
         ]
-        reporter = GeneratorReporter(self._recorder)
+        reporter = mapping.build_reporter(self._recorder)
         for record in records:
-            lookup.get_fields(record.name, FUEL_GENERATOR_MAPPED_FIELDS)
-            _record_stated(reporter, record, _GENERATOR_COLUMNS)
-        rows = [_build_generator_row(record) for record in records]
-        append_destination_rows(
-            state, PyPSADestinationTable.GENERATORS, rows, GENERATORS_DESTINATION_SCHEMA
-        )
+            lookup.get_fields(record.name, mapping.mapped_fields)
+            _record_stated(reporter, mapping, record)
+        rows = [mapping.build_row(record) for record in records]
+        append_destination_rows(state, mapping.table, rows, mapping.schema)
         relayed = [lookup.build_relayed(record.name) for record in records]
-        relay_records(state, ExtensionKind.GENERATOR, relayed, self._recorder)
-
-    def _map_loads(self, state: State, buses: set[str]) -> None:
-        lookup = self._extensions.read(ExtensionKind.LOAD)
-        held = _build_names(state, PyPSADestinationTable.LOADS, PyPSALoadCol.NAME)
-        records = [
-            record
-            for record in lookup.list_records()
-            if record.bus in buses and record.name not in held
-        ]
-        reporter = LoadReporter(self._recorder)
-        for record in records:
-            lookup.get_fields(record.name, FUEL_LOAD_MAPPED_FIELDS)
-            _record_stated(reporter, record, _LOAD_FIELDS)
-        rows = [_build_load_row(record) for record in records]
-        append_destination_rows(state, PyPSADestinationTable.LOADS, rows, LOADS_DESTINATION_SCHEMA)
-        varying = {record.name: UNSCALED for record in records if record.p_set_series}
-        if varying:
-            stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
-        relayed = [lookup.build_relayed(record.name) for record in records]
-        relay_records(state, ExtensionKind.LOAD, relayed, self._recorder)
+        relay_records(state, mapping.kind, relayed, self._recorder)
+        return records
 
 
 def _build_names(state: State, table: str, column: str) -> set[str]:
@@ -136,14 +129,26 @@ def _build_names(state: State, table: str, column: str) -> set[str]:
 
 def _record_stated(
     reporter: GeneratorReporter | LoadReporter,
+    mapping: _FuelMapping,
     record: GeneratorExtension | LoadExtension,
-    columns: tuple[tuple[str, str, str | None], ...],
 ) -> None:
-    kind = ExtensionKind.GENERATOR if isinstance(record, GeneratorExtension) else ExtensionKind.LOAD
-    for field_name, column, unit in columns:
-        value = getattr(record, field_name)
+    for carried in mapping.carried:
+        value = getattr(record, carried.field_name)
         if value is not None:
-            reporter.record_carried(kind, record.name, field_name, column, value, unit)
+            reporter.record_carried(
+                mapping.kind, record.name, carried.field_name, carried.column, value, carried.unit
+            )
+
+
+def _stage_load_series(state: State, loads: list[GeneratorExtension | LoadExtension]) -> None:
+    """Stage the MW of each load whose record names a companion series."""
+    varying = {
+        load.name: UNSCALED
+        for load in loads
+        if isinstance(load, LoadExtension) and load.p_set_series
+    }
+    if varying:
+        stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
 
 
 def _build_generator_row(record: GeneratorExtension) -> dict[str, Any]:
@@ -173,3 +178,37 @@ def _build_load_row(record: LoadExtension) -> dict[str, Any]:
         PyPSALoadCol.P_SET: record.p_set or _NO_OUTPUT,
         PyPSALoadCol.CARRIER: record.carrier,
     }
+
+
+_GENERATORS = _FuelMapping(
+    kind=ExtensionKind.GENERATOR,
+    table=PyPSADestinationTable.GENERATORS,
+    name_col=PyPSAGeneratorCol.NAME,
+    schema=GENERATORS_DESTINATION_SCHEMA,
+    mapped_fields=FUEL_GENERATOR_MAPPED_FIELDS,
+    carried=(
+        _CarriedField("bus", PyPSAGeneratorCol.BUS),
+        _CarriedField("carrier", PyPSAGeneratorCol.CARRIER),
+        _CarriedField("p_nom", PyPSAGeneratorCol.P_NOM, UNIT_MW),
+        _CarriedField("p_nom_extendable", PyPSAGeneratorCol.P_NOM_EXTENDABLE),
+        _CarriedField("p_nom_max", PyPSAGeneratorCol.P_NOM_MAX, UNIT_MW),
+        _CarriedField("marginal_cost", PyPSAGeneratorCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
+        _CarriedField("p_max_pu", PyPSAGeneratorCol.P_MAX_PU),
+    ),
+    build_row=_build_generator_row,
+    build_reporter=GeneratorReporter,
+)
+_LOADS = _FuelMapping(
+    kind=ExtensionKind.LOAD,
+    table=PyPSADestinationTable.LOADS,
+    name_col=PyPSALoadCol.NAME,
+    schema=LOADS_DESTINATION_SCHEMA,
+    mapped_fields=FUEL_LOAD_MAPPED_FIELDS,
+    carried=(
+        _CarriedField("bus", PyPSALoadCol.BUS),
+        _CarriedField("carrier", PyPSALoadCol.CARRIER),
+        _CarriedField("p_set", PyPSALoadCol.P_SET, UNIT_MW),
+    ),
+    build_row=_build_load_row,
+    build_reporter=LoadReporter,
+)
