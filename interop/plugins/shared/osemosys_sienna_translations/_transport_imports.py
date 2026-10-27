@@ -84,14 +84,16 @@ from interop.plugins.shared.osemosys_sienna_translations._generators import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import ModeEntry
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
-from interop.plugins.shared.osemosys_sienna_translations._technologies import (
-    VARIABLE_COST,
-    read_variable_costs,
-)
+from interop.plugins.shared.osemosys_sienna_translations._technologies import VARIABLE_COST
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     SIENNA_TYPE,
     TECHNOLOGY_NAME,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    RATED_COST_MWH,
+    read_rated_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import RATING_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     CAPACITY_PARAMETER,
     FROM_BUS,
@@ -324,11 +326,13 @@ def _enrich_own_costs(
     state: State, operations: OperationsYear, imports: pl.DataFrame
 ) -> pl.DataFrame:
     """The variable cost of the mode, for each MWh of the electricity that it puts out."""
-    stated = read_variable_costs(state, operations.year, imports.select(_MODE_KEYS))
-    table = imports.join(stated.rename({VARIABLE_COST: OWN_COST}), on=_MODE_KEYS)
-    convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
-    own = express_per_output(express_converted(table, OWN_COST, convert))
-    return table.with_columns(own.alias(OWN_COST_MWH))
+    rated = imports.select(*_MODE_KEYS, pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO))
+    costs = read_rated_costs(state, operations, rated).select(
+        *_MODE_KEYS,
+        pl.col(VARIABLE_COST).alias(OWN_COST),
+        pl.col(RATED_COST_MWH).alias(OWN_COST_MWH),
+    )
+    return imports.join(costs, on=_MODE_KEYS)
 
 
 def _enrich_emissions(

@@ -104,12 +104,15 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
     enrich_residual_capacity,
     read_availability_factors,
-    read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     RESIDUAL_CAPACITY,
     SIENNA_TYPE,
     TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    RATED_COST_MWH,
+    read_rated_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,
@@ -229,6 +232,13 @@ class _EndColumns(NamedTuple):
     buses: str
     fuel: str
     ratio: str
+
+
+class _CostColumns(NamedTuple):
+    """The columns of the cost of one mode: as stated, and for each MWh that the line sends."""
+
+    stated: str
+    per_mwh: str
 
 
 class _FactoredLines(NamedTuple):
@@ -694,21 +704,29 @@ def _express_smallest_ratio() -> pl.Expr:
 def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
     """The cost of each MWh that the line sends, from the cost of each unit of activity, at the
     operations mode and in the flow back."""
-    forward = lines.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
+    forward = lines.select(
+        *_KEYS,
+        pl.lit(operations.mode).alias(OPERATING_MODE),
+        pl.col(INPUT_RATIO).alias(RATING_RATIO),
+    )
     reverse = lines.filter(~_NO_FLOW_BACK).select(
-        *_KEYS, pl.col(REVERSE_MODE).alias(OPERATING_MODE)
+        *_KEYS,
+        pl.col(REVERSE_MODE).alias(OPERATING_MODE),
+        pl.col(REVERSE_INPUT_RATIO).alias(RATING_RATIO),
     )
-    table = lines.join(_read_mode_costs(state, operations, forward, COST), on=_KEYS).join(
-        _read_mode_costs(state, operations, reverse, REVERSE_COST), on=_KEYS, how="left"
+    forward_costs = _read_mode_costs(state, operations, forward, _CostColumns(COST, COST_MWH))
+    reverse_costs = _read_mode_costs(
+        state, operations, reverse, _CostColumns(REVERSE_COST, REVERSE_COST_MWH)
     )
-    convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
-    per_sent = express_converted(table, COST, convert) / pl.col(INPUT_RATIO)
-    reverse_per_sent = express_converted(table, REVERSE_COST, convert) / pl.col(REVERSE_INPUT_RATIO)
-    return table.with_columns(per_sent.alias(COST_MWH), reverse_per_sent.alias(REVERSE_COST_MWH))
+    return lines.join(forward_costs, on=_KEYS).join(reverse_costs, on=_KEYS, how="left")
 
 
 def _read_mode_costs(
-    state: State, operations: OperationsYear, keys: pl.DataFrame, column: str
+    state: State, operations: OperationsYear, rated: pl.DataFrame, columns: _CostColumns
 ) -> pl.DataFrame:
-    stated = read_variable_costs(state, operations.year, keys)
-    return stated.select(*_KEYS, pl.col(VARIABLE_COST).alias(column))
+    """The cost of one mode of each line, as stated and for each MWh that the mode sends."""
+    return read_rated_costs(state, operations, rated).select(
+        *_KEYS,
+        pl.col(VARIABLE_COST).alias(columns.stated),
+        pl.col(RATED_COST_MWH).alias(columns.per_mwh),
+    )
