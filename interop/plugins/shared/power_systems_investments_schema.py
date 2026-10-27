@@ -162,6 +162,17 @@ PORTFOLIO_EXISTING_DEVICES_TABLE = "PortfolioExistingDevices"
 """Destination tables holding the series and the existing devices the envelope drops, and the
 periods the series fall in."""
 
+PORTFOLIO_PLANT_DEVICES_TABLE = "PortfolioPlantDevices"
+"""A table that no sink writes: the base system device of each technology made for an existing
+plant, whose profile that technology takes."""
+
+
+class PlantDeviceColumn:
+    """Columns of the table of plant devices."""
+
+    TECHNOLOGY = "technology"
+    DEVICE = "device"
+
 
 class InvestmentsSeriesName(StrEnum):
     """The series names PowerSystemsInvestments looks a technology's profile up by.

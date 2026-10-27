@@ -41,6 +41,9 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_default,
     record_translation,
 )
+from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_plants import (
+    build_profile_names,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
 from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
     PROFILED_SUPPLY_TYPES,
@@ -161,10 +164,12 @@ def _list_technology_records(
     records: list[dict[str, Any]] = []
     without: list[str] = []
     unprofiled: list[str] = []
+    profile_names = build_profile_names(state)
     for name, power_systems_type in zip(
         table[SIENNA_NAME_COLUMN].to_list(), table[_POWER_SYSTEMS_TYPE].to_list(), strict=True
     ):
-        key = owners.get((power_systems_type, name))
+        device_name = profile_names.get((component, name), name)
+        key = owners.get((power_systems_type, device_name))
         is_read = (
             component is not SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
             or power_systems_type in PROFILED_SUPPLY_TYPES
@@ -177,7 +182,9 @@ def _list_technology_records(
             without.append(name)
             continue
         scale = peak_by_load.get(name, 1.0) if series_name is InvestmentsSeriesName.DEMAND else 1.0
-        record = _find_first_day_record(state, key, name, component, series_name, scale, recorder)
+        record = _find_first_day_record(
+            state, _Profile(key, device_name), name, component, series_name, scale, recorder
+        )
         if record is not None:
             records.append(record)
     if component is not SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY:
@@ -216,9 +223,16 @@ def _build_full_availability(
     return records
 
 
+class _Profile(NamedTuple):
+    """The staged frame that holds a profile, and the base device the profile belongs to."""
+
+    key: tuple[str, str]
+    device_name: str
+
+
 def _find_first_day_record(
     state: State,
-    key: tuple[str, str],
+    profile: _Profile,
     name: str,
     component: SiennaInvestmentsComponent,
     series_name: InvestmentsSeriesName,
@@ -227,8 +241,8 @@ def _find_first_day_record(
 ) -> dict[str, Any] | None:
     """The first day of one component's profile, which stands for every day of its year."""
     frame = (
-        state.source_time_series[key]
-        .filter(pl.col(StagedTimeSeriesCol.COMPONENT) == name)
+        state.source_time_series[profile.key]
+        .filter(pl.col(StagedTimeSeriesCol.COMPONENT) == profile.device_name)
         .sort(StagedTimeSeriesCol.SNAPSHOT)
         .head(_SLICE_LENGTH)
         .collect()

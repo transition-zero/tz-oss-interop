@@ -18,6 +18,8 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.power_simulations_schema import PowerSimulationsCol
 from interop.plugins.shared.power_systems_investments_schema import (
     MODELLED_TECHNOLOGIES,
+    PORTFOLIO_PLANT_DEVICES_TABLE,
+    PlantDeviceColumn,
     PortfolioColumn,
     PortfolioComponent,
 )
@@ -165,7 +167,8 @@ class ExistingPlantBuilder:
     ) -> list[PlantRow]:
         """A technology row and the operation cost of each existing plant that no one names."""
         rows = [row for type_rows in rows_by_type.values() for row in type_rows]
-        taken = {row[PortfolioColumn.NAME] for row in rows}
+        # A name is unique within one type only, so only a supply technology takes a plant's name.
+        taken = {row[PortfolioColumn.NAME] for row in rows_by_type.get(_SUPPLY, [])}
         named = [(device, self._choose_plant_name(device, taken)) for device in unnamed]
         chosen = [(device, name) for device, name in named if name is not None]
         if not chosen:
@@ -306,6 +309,27 @@ class ExistingPlantBuilder:
             destination_value=rate,
             derivation=derivation,
         )
+
+
+def build_plant_table(plants: list[PlantRow]) -> pl.DataFrame:
+    """The base system device of each technology made for an existing plant."""
+    return pl.DataFrame(
+        {
+            PlantDeviceColumn.TECHNOLOGY: [plant.technology.name for plant in plants],
+            PlantDeviceColumn.DEVICE: [plant.device.name for plant in plants],
+        },
+        schema={PlantDeviceColumn.TECHNOLOGY: pl.Utf8, PlantDeviceColumn.DEVICE: pl.Utf8},
+    )
+
+
+def build_profile_names(state: State) -> dict[tuple[str, str], str]:
+    """The base device each technology made for a plant takes its profile from, by its type and
+    name."""
+    table = state.destination_tables.get(PORTFOLIO_PLANT_DEVICES_TABLE)
+    if table is None:
+        return {}
+    pairs = table.select(PlantDeviceColumn.TECHNOLOGY, PlantDeviceColumn.DEVICE).iter_rows()
+    return {(_SUPPLY, technology): device for technology, device in pairs}
 
 
 def _build_no_technology_note(device: BaseDevice) -> str:

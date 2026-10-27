@@ -151,8 +151,10 @@ in MW. The step reads the `ExistingDevices` attributes of the portfolio and sett
   no capital cost, and the plant as its one existing device. A `RenewableDispatch` or a
   `HydroDispatch` of this kind takes its base system profile, split into the representative
   days of every year. A `HydroDispatch` of this kind loses its `hydro_budget`, and the step
-  records and warns that. When a technology already has the plant's name, the plant's own
-  technology takes the name with `/existing`. Its finance is all equity over one year, at the
+  records and warns that. When a supply technology already has the plant's name, the plant's
+  own technology takes the name with `/existing`, and it still takes the plant's profile. A
+  technology of another type, such as a demand, can share the plant's name, because a name is
+  unique within one type only. Its finance is all equity over one year, at the
   portfolio's rate, else the highest rate of a technology, else a fixed rate of 0.05, so the
   capital recovery factor stays defined. An existing component of another type, such as a
   storage or a `RenewableNonDispatch`, is left out, recorded and warned.
@@ -247,9 +249,9 @@ The leg applies these rules to an existing plant:
 - **The finance of a technology that the leg adds.** It is all equity, and its recovery period
   is one year. Its rate is the discount rate of the portfolio, else the highest rate of a
   technology, else 0.05. The technology builds nothing, so the rate prices nothing.
-- **A plant whose name a technology holds, when that technology does not list the plant.** The
-  plant's own technology takes the name with `/existing`. When the plan also holds that name,
-  the plant is left out. The step records each plant and warns.
+- **A plant whose name a supply technology holds, when that technology does not list the
+  plant.** The plant's own technology takes the name with `/existing`. When the plan also holds
+  that name, the plant is left out. The step records each plant and warns.
 - **A `capacity_limits.min` and the existing devices.** The model reads `min` as a floor on
   the build of each period. So the step lowers `min` by the rating of the devices, down to 0.
   The leg writes no minimum for an OSeMOSYS candidate, so this rule changes no OSeMOSYS limit.

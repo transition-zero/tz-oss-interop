@@ -24,6 +24,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_EXISTING_DEVICES_TABLE,
+    PORTFOLIO_PLANT_DEVICES_TABLE,
     PortfolioColumn,
     SeriesDocument,
 )
@@ -52,6 +53,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
 from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_plants import (
     ExistingPlantBuilder,
     PlantRow,
+    build_plant_table,
 )
 
 log = logging.getLogger(__name__)
@@ -131,7 +133,7 @@ def map_existing_fleet(
     plants = builder.list_plants(fleet.unnamed, rows_by_type, state)
     fleet.add_plants(plants)
     mapper.set_floors(fleet, rows_by_type)
-    state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = _build_table(fleet)
+    _set_tables(state, fleet, plants)
     mapper.report(fleet)
     builder.warn()
     return plants
@@ -346,6 +348,12 @@ class _FleetMapper:
             value=names,
             derivation=note,
         )
+
+
+def _set_tables(state: State, fleet: _ExistingFleet, plants: list[PlantRow]) -> None:
+    """The devices the adapter attaches, and the device each plant's technology stands for."""
+    state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = _build_table(fleet)
+    state.destination_tables[PORTFOLIO_PLANT_DEVICES_TABLE] = build_plant_table(plants)
 
 
 def _build_table(fleet: _ExistingFleet) -> pl.DataFrame:

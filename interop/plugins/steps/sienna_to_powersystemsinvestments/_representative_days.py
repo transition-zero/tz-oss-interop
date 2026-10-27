@@ -44,6 +44,9 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_not_mapped,
     record_translation,
 )
+from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_plants import (
+    build_profile_names,
+)
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import build_periods
 from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
     PROFILED_SUPPLY_TYPES,
@@ -437,10 +440,12 @@ class _SeriesSplitter:
             stated.setdefault(owner, set()).add(row[PORTFOLIO_SERIES_YEAR])
         years = {one.year for one in self._slices}
         records: list[dict[str, Any]] = []
+        profile_names = build_profile_names(state)
         for owner_type, name, power_systems_type in _list_profiled_technologies(state):
             missing = sorted(years - stated.get((owner_type, name), set()))
             if missing:
-                base = _find_base_profile(state, power_systems_type, name)
+                device_name = profile_names.get((owner_type, name), name)
+                base = _find_base_profile(state, power_systems_type, device_name)
                 records.extend(self._build_missing(owner_type, name, missing, base))
         return records
 
