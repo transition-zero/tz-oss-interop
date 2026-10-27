@@ -16,7 +16,7 @@ from interop.ports.inbound.solve import (
 )
 from interop.ports.outbound.expansion import ExpansionPort
 from interop.ports.outbound.network_solver import NetworkSolverPort
-from interop.ports.outbound.solver import SolverPort
+from interop.ports.outbound.solver import EnergyHours, SolverPort
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +96,7 @@ class SolveUsingPort(SolveUseCase):
             status=outcome.status,
             objective=outcome.objective,
             unserved_energy_mwh=outcome.unserved_energy_mwh,
+            unserved_energy_hours=EnergyHours.MODELLED,
         )
 
 

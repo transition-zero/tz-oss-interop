@@ -8,7 +8,12 @@ from typing import Protocol, runtime_checkable
 
 from interop.ports.outbound.expansion import BalanceModel, InvestmentTreatment
 from interop.ports.outbound.network_solver import SolveWindowLength
-from interop.ports.outbound.solver import HiGHSOptions, UnservedEnergy
+from interop.ports.outbound.solver import (
+    ENERGY_HOURS_QUALIFIERS,
+    EnergyHours,
+    HiGHSOptions,
+    UnservedEnergy,
+)
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
 # Sienna's SolverPort reports a run status containing this marker on success.
@@ -30,6 +35,7 @@ class SolveResult:
     status: str
     objective: float
     unserved_energy_mwh: float | None = None
+    unserved_energy_hours: EnergyHours = EnergyHours.WEIGHTED
 
     def is_success(self) -> bool:
         normalized = self.status.strip()
@@ -43,7 +49,8 @@ class SolveResult:
         text = f"[{icon}]  status={self.status}  objective={self.objective:.6g}"
         if self.unserved_energy_mwh is None:
             return text
-        return f"{text}  unserved_energy={self.unserved_energy_mwh:.6g} MWh"
+        qualifier = ENERGY_HOURS_QUALIFIERS[self.unserved_energy_hours]
+        return f"{text}  unserved_energy={self.unserved_energy_mwh:.6g} MWh{qualifier}"
 
 
 @dataclass

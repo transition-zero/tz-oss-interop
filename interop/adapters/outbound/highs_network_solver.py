@@ -17,7 +17,7 @@ from interop.ports.outbound.network_solver import (
     NetworkSolverPort,
     SolveWindow,
 )
-from interop.ports.outbound.solver import DispatchOutcome, UnservedEnergy
+from interop.ports.outbound.solver import DispatchOutcome, EnergyHours, UnservedEnergy
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 from interop.ports.warning_text import name_a_few
 
@@ -118,7 +118,9 @@ class HighsNetworkSolver(NetworkSolverPort):
         unserved_mwh = None
         if slacks is not None:
             unserved = _read_slack_energy(network, slacks.unserved)
-            warn_balance_slacks(unserved, _read_slack_energy(network, slacks.surplus))
+            warn_balance_slacks(
+                unserved, _read_slack_energy(network, slacks.surplus), EnergyHours.WEIGHTED
+            )
             _set_unserved_energy(network, unserved)
             _drop_balance_slacks(network, slacks)
             unserved_mwh = unserved.total_mwh

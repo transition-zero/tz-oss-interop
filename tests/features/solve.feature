@@ -45,6 +45,15 @@ Feature: solve command runs the Sienna solver on a translated model
     Then the printed output contains "SUCCESSFULLY_FINALIZED"
     And the printed output contains "unserved_energy=42.5 MWh"
 
+  Scenario: a penalised Sienna solve says that its unserved energy counts the modelled hours only
+    The Sienna reading counts each modelled hour once, with no weight for the hours that a
+    representative period stands for, so the summary says which hours it counts.
+    Given a fake solver adapter in project plugins
+    And adapters.yaml binds solver to "fake_solver"
+    And a file "outputs/system.json" exists
+    When I dispatch the solve command for "outputs/system.json" with network model "copperplate" output directory "solved" unserved energy "penalised" unit commitment "linearised" solver "simplex" presolve "choose" crossover "choose" time limit "60"
+    Then the printed output contains "unserved_energy=42.5 MWh in the modelled hours only"
+
   Scenario: a time limit of zero is refused before the solver is reached
     Given a fake solver adapter in project plugins
     And adapters.yaml binds solver to "fake_solver"

@@ -46,11 +46,26 @@ class UnservedEnergy(StrEnum):
     PENALISED = "penalised"  # a network balance slack covers the shortfall at a penalty cost
 
 
+class EnergyHours(StrEnum):
+    """Which hours an energy total counts."""
+
+    WEIGHTED = "weighted"  # each snapshot for the hours that its weighting states
+    MODELLED = "modelled"  # each modelled hour once, with no weight for what it stands for
+
+
+ENERGY_HOURS_QUALIFIERS: dict[EnergyHours, str] = {
+    EnergyHours.WEIGHTED: "",
+    EnergyHours.MODELLED: " in the modelled hours only",
+}
+"""What a message adds after an energy total to say which hours the total counts."""
+
+
 class DispatchOutcome(NamedTuple):
     """What one dispatch solve reports.
 
-    ``unserved_energy_mwh`` is None where the solve allows no unserved energy, or where the
-    adapter cannot read it.
+    ``unserved_energy_mwh`` counts each modelled hour once, with no weight for the hours that
+    a representative period stands for. It is None where the solve allows no unserved energy,
+    or where the adapter cannot read it.
     """
 
     status: str

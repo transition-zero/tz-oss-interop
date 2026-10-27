@@ -228,6 +228,7 @@ Feature: Solve a PyPSA network
     When I run solve on "inputs/weighted.nc" from "2026-09-01" to "2026-09-01" with unserved energy "penalised" into "outputs/solved"
     Then the solve reported success
     And the printed output contains "unserved_energy=180 MWh"
+    And the printed output does not contain "modelled hours"
     And the solved network "outputs/solved/weighted.nc" records 180 MWh of unserved energy at "bus_1"
 
   Scenario: the same shortfall with unserved energy refused does not solve

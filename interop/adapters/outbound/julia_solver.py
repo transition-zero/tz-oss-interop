@@ -24,6 +24,7 @@ from interop.adapters.outbound.julia_strings import build_julia_path_text
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.solver import (
     DispatchOutcome,
+    EnergyHours,
     HiGHSOptions,
     SolverPort,
     UnservedEnergy,
@@ -441,7 +442,7 @@ def _run_pipeline_inner(
     """)
 
     unserved = _read_slack_energy(jl, _UNSERVED_SLACK)
-    warn_balance_slacks(unserved, _read_slack_energy(jl, _SURPLUS_SLACK))
+    warn_balance_slacks(unserved, _read_slack_energy(jl, _SURPLUS_SLACK), EnergyHours.MODELLED)
 
     log.info("=== 5. Exporting results ===")
     wide_dir_str = build_julia_path_text(output_dir / "results_wide")
