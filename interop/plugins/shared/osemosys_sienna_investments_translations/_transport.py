@@ -34,6 +34,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
+    CANDIDATE_NAME,
     CAPACITY_LIMITS_MAX_MW,
     CAPACITY_LIMITS_MIN_MW,
     CAPITAL_COST,
@@ -167,7 +168,7 @@ def build_transport_candidates(
     table = enrich_base_year_values(technologies, yearly, plan)
     limits = _build_plan_limits(yearly)
     table = enrich_financial_values(state, plan, table.join(limits, on=TECHNOLOGY_KEYS, how="left"))
-    return Candidates(TRANSPORT_KIND, table, yearly)
+    return Candidates(TRANSPORT_KIND, table.sort(CANDIDATE_NAME), yearly)
 
 
 def _build_plan_limits(yearly: pl.DataFrame) -> pl.DataFrame:

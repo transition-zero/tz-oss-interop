@@ -191,7 +191,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASNEW" has field "capacity_limits" equal to {"min": 0.0, "max": 2000.0}
       And the file "decisions.md" contains "so max = the largest yearly max"
       And the file "decisions.md" contains "so no yearly minimum reaches it"
-      And the log contains "so each takes its largest yearly maximum and no minimum: ATGASNEW"
+      And the log contains "so each takes its largest yearly maximum and no minimum: ATGASCC, ATGASNEW"
 
     Scenario: A technology with no capacity limit takes the limit of the package, which bounds nothing
       Then the pipeline exit code is 0

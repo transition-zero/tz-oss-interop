@@ -58,7 +58,8 @@ class CandidateKind:
 
 @dataclass(frozen=True)
 class Candidates:
-    """The candidates of one kind: one row for each, and one row for each one and year."""
+    """The candidates of one kind: one row for each, in name order, and one row for each one
+    and year."""
 
     kind: CandidateKind
     table: pl.DataFrame

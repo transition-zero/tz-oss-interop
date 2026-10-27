@@ -198,7 +198,7 @@ def build_supply_candidates(
     table = enrich_financial_values(state, plan, table).with_columns(
         pl.col(AnnotationColumn.LOCATION).alias(AREA)
     )
-    return Candidates(SUPPLY_KIND, table, yearly)
+    return Candidates(SUPPLY_KIND, table.sort(CANDIDATE_NAME), yearly)
 
 
 def build_supply_translations(cost_year: int, start: int) -> list[Translation]:
