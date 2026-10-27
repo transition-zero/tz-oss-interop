@@ -28,6 +28,7 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.framework_reporting import DestinationReporter
 from interop.plugins.shared.pypsa_constants import (
+    LinkPort,
     PyPSABusCol,
     PyPSABusControl,
     PyPSACarrier,
@@ -1299,6 +1300,15 @@ _BOUNDED_PLANT_NOTE = (
 )
 
 
+class _PlantLinkValue(NamedTuple):
+    """One column of the Link of a plant, its unit, the values it comes from, and how."""
+
+    column: str
+    unit: str | None
+    sources: list[SourceField]
+    derivation: str
+
+
 class PlantLinkReporter(_Reporter):
     """Records a Sienna ThermalStandard that becomes a PyPSA Link from the bus of its fuel."""
 
@@ -1315,21 +1325,21 @@ class PlantLinkReporter(_Reporter):
             SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}own_marginal_cost", None
         )
         values = (
-            (PyPSALinkCol.BUS0, None, [source], _PLANT_BUS0_DERIVATION),
-            (PyPSALinkCol.EFFICIENCY, None, [source], _PLANT_EFFICIENCY_DERIVATION),
-            (PyPSALinkCol.P_NOM, UNIT_MW, [power, source], _PLANT_P_NOM_DERIVATION),
-            (
+            _PlantLinkValue(PyPSALinkCol.BUS0, None, [source], _PLANT_BUS0_DERIVATION),
+            _PlantLinkValue(PyPSALinkCol.EFFICIENCY, None, [source], _PLANT_EFFICIENCY_DERIVATION),
+            _PlantLinkValue(PyPSALinkCol.P_NOM, UNIT_MW, [power, source], _PLANT_P_NOM_DERIVATION),
+            _PlantLinkValue(
                 PyPSALinkCol.MARGINAL_COST,
                 UNIT_DOLLARS_PER_MWH,
                 [cost, source],
                 _PLANT_MARGINAL_COST_DERIVATION,
             ),
         )
-        for column, unit, sources, derivation in values:
+        for value in values:
             self._derived(
-                sources=sources,
-                destinations=[self._destination(name, column, row[column], unit)],
-                derivation=derivation,
+                sources=value.sources,
+                destinations=[self._destination(name, value.column, row[value.column], value.unit)],
+                derivation=value.derivation,
             )
         self._derived(
             sources=[self._source_field(SiennaComponent.THERMAL_STANDARD, name, None, None)],
@@ -1345,17 +1355,16 @@ class PlantLinkReporter(_Reporter):
             derivation=_PLANT_MOVED_DERIVATION,
         )
 
-    def record_further_port(self, name: str, row: dict[str, Any], port: tuple[str, str]) -> None:
+    def record_further_port(self, name: str, row: dict[str, Any], port: LinkPort) -> None:
         """A further fuel of the plant, which the Link draws at bus2 or bus3."""
-        bus_column, efficiency_column = port
         source = self._source_field(
             SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
         )
         self._derived(
             sources=[source],
             destinations=[
-                self._destination(name, bus_column, row[bus_column]),
-                self._destination(name, efficiency_column, row[efficiency_column]),
+                self._destination(name, port.bus, row[port.bus]),
+                self._destination(name, port.efficiency, row[port.efficiency]),
             ],
             derivation=_PLANT_FURTHER_DERIVATION,
         )

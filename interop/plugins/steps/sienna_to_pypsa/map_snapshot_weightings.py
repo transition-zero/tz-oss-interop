@@ -173,17 +173,17 @@ class SnapshotWeightingMapper:
 
     def _report_outside(self, snapshots: list[datetime], weights: list[float | None]) -> None:
         runs = _list_unweighted_runs(snapshots, weights)
-        for first, last, count in runs:
+        for run in runs:
             self._recorder.append(
                 TranslationEvent(
                     kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-                    destinations=[_build_weighting_destination(first, last, None)],
-                    note=_OUTSIDE_NOTE.format(count=count),
+                    destinations=[_build_weighting_destination(run.first, run.last, None)],
+                    note=_OUTSIDE_NOTE.format(count=run.snapshot_count),
                 )
             )
         if runs:
-            count = sum(run[2] for run in runs)
-            log.warning(_OUTSIDE_WARNING, count, name_a_few(run[0].isoformat() for run in runs))
+            count = sum(run.snapshot_count for run in runs)
+            log.warning(_OUTSIDE_WARNING, count, name_a_few(run.first.isoformat() for run in runs))
 
     def _record_unweighted(self, names: list[str], note: str) -> None:
         for name in names:
@@ -222,18 +222,25 @@ def _build_span(snapshots: list[datetime], counted: list[float]) -> SnapshotSpan
     return SnapshotSpan(year, float(sum(counted)), len(snapshots))
 
 
+class _UnweightedRun(NamedTuple):
+    """A run of consecutive snapshots that no period holds."""
+
+    first: datetime
+    last: datetime
+    snapshot_count: int
+
+
 def _list_unweighted_runs(
     snapshots: list[datetime], weights: list[float | None]
-) -> list[tuple[datetime, datetime, int]]:
-    """Each run of consecutive snapshots that no period holds: first, last and count."""
-    runs: list[tuple[datetime, datetime, int]] = []
+) -> list[_UnweightedRun]:
+    """Each run of consecutive snapshots that no period holds."""
+    runs: list[_UnweightedRun] = []
     previous_is_unweighted = False
     for moment, weight in zip(snapshots, weights, strict=True):
         if weight is None and previous_is_unweighted:
-            first, _, count = runs[-1]
-            runs[-1] = (first, moment, count + 1)
+            runs[-1] = runs[-1]._replace(last=moment, snapshot_count=runs[-1].snapshot_count + 1)
         elif weight is None:
-            runs.append((moment, moment, 1))
+            runs.append(_UnweightedRun(moment, moment, 1))
         previous_is_unweighted = weight is None
     return runs
 
