@@ -43,7 +43,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_events impor
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
     GENERATOR_TYPE_MAPPINGS,
-    GeneratorTypeMapping,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import (
     GeneratorSources,
@@ -93,7 +92,6 @@ __all__ = [
     "Calendar",
     "ComponentMapping",
     "GeneratorSources",
-    "GeneratorTypeMapping",
     "LoadSources",
     "ModelUnits",
     "OperationsMapping",

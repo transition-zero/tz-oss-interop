@@ -6,7 +6,6 @@ fields that only it holds.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import partial
 
 import polars as pl
@@ -29,6 +28,9 @@ from interop.plugins.shared.osemosys_sienna_translations._availability import (
     PEAK_FACTOR,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    ComponentMapping,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
@@ -154,15 +156,6 @@ _SERIES_LIMITS_DERIVATION = (
     "min = 0, as OSeMOSYS states no minimum stable level; max = base_power, and the "
     f"{SERIES_ATTRIBUTE} carries the availability of each hour"
 )
-
-
-@dataclass(frozen=True)
-class GeneratorTypeMapping:
-    """The translations and the destination schema of one Sienna generator type."""
-
-    sienna_type: SiennaComponent
-    translations: list[Translation]
-    schema: dict[str, pl.DataType | type[pl.DataType]]
 
 
 # --- the fields that every type holds -------------------------------------------------------
@@ -507,21 +500,23 @@ def _build_hydro_dispatch() -> list[Translation]:
     ]
 
 
-GENERATOR_TYPE_MAPPINGS: tuple[GeneratorTypeMapping, ...] = (
-    GeneratorTypeMapping(
-        SiennaComponent.THERMAL_STANDARD, _build_thermal(), THERMAL_GENERATORS_DESTINATION_SCHEMA
+GENERATOR_TYPE_MAPPINGS: tuple[ComponentMapping, ...] = (
+    ComponentMapping(
+        SiennaComponent.THERMAL_STANDARD, (_build_thermal(),), THERMAL_GENERATORS_DESTINATION_SCHEMA
     ),
-    GeneratorTypeMapping(
+    ComponentMapping(
         SiennaComponent.RENEWABLE_DISPATCH,
-        _build_renewable_dispatch(),
+        (_build_renewable_dispatch(),),
         RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
     ),
-    GeneratorTypeMapping(
+    ComponentMapping(
         SiennaComponent.RENEWABLE_NON_DISPATCH,
-        _build_renewable_non_dispatch(),
+        (_build_renewable_non_dispatch(),),
         RENEWABLE_NON_DISPATCH_DESTINATION_SCHEMA,
     ),
-    GeneratorTypeMapping(
-        SiennaComponent.HYDRO_DISPATCH, _build_hydro_dispatch(), HYDRO_DISPATCH_DESTINATION_SCHEMA
+    ComponentMapping(
+        SiennaComponent.HYDRO_DISPATCH,
+        (_build_hydro_dispatch(),),
+        HYDRO_DISPATCH_DESTINATION_SCHEMA,
     ),
 )
