@@ -24,10 +24,17 @@ BuildKindTranslations = Callable[[int, int], list[Translation]]
 
 
 class YearlyField(NamedTuple):
-    """The yearly column that fills a record field, and the parameter that it comes from."""
+    """The yearly column that fills a record field, the parameter that it comes from, and the
+    yearly column that holds the value as the model states it, if one does."""
 
     column: str
     parameter: str
+    stated: str | None = None
+
+
+def build_stated_field(column: str, parameter: str) -> YearlyField:
+    """A field whose parameter, read in each year, holds the value as the model states it."""
+    return YearlyField(column, parameter, parameter)
 
 
 @dataclass(frozen=True)

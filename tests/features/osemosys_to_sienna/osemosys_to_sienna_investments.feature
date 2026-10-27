@@ -324,6 +324,8 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "min_growth" set to {"2035": 100.0}
+    And the file "decisions.md" contains "`osemosys.total_annual_min_capacity_investment.R1/ATGASNEW.each year` = {'2035': 0.1}"
+    And the file "decisions.md" contains "`sienna.SupplyTechnology.ATGASNEW.extensions.min_growth` = {'2035': 100.0}"
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "e_sum_max" set to {"2035": 2000.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "capacity_to_activity_unit" set to 8760.0
     And the log does not contain "capacity_to_activity_unit states"
