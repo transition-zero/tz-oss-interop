@@ -549,6 +549,23 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON load extension record for "ATGAS/accumulated" having "bus" set to "R1/ATGAS"
       And the file "outputs/extensions.json" parses as JSON load extension record for "ATGAS/accumulated" having "p_set" close to 100.0
 
+    Scenario: The fuels reach a PyPSA network as the buses, links, generators and loads of the same run
+      The gas plant burns 2 MWh of ATGAS for each MWh of electricity, so its Link takes in 1000 MW
+      at an efficiency of 0.5. Its own cost of 2 $/MWh of electricity is 1 $/MWh of gas.
+      Given a pipeline "osemosys-to-pypsa" that translates the otoole model to Sienna and then to PyPSA in the year "2030"
+      When I run the otoole model through the pipeline "osemosys-to-pypsa"
+      Then the pipeline exit code is 0
+      And the PyPSA network "outputs/network.nc" has no generator "ATGASCC"
+      And the PyPSA network "outputs/network.nc" link "ATGASCC" has bus0 "R1/ATGAS"
+      And the PyPSA network "outputs/network.nc" link "ATGASCC" attribute "p_nom" is 1000.0
+      And the PyPSA network "outputs/network.nc" link "ATGASCC" attribute "efficiency" is 0.5
+      And the PyPSA network "outputs/network.nc" link "ATGASCC" attribute "marginal_cost" is 1.0
+      And the PyPSA network "outputs/network.nc" generator "ATGASWELL" has bus "R1/ATGAS"
+      And the PyPSA network "outputs/network.nc" generator "ATGASWELL" attribute "marginal_cost" is 4.0
+      And the PyPSA network "outputs/network.nc" generator "ATGASWELL" attribute "e_sum_max" is 100000.0
+      And the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" has bus "R1/ATGAS"
+      And the PyPSA network "outputs/network.nc" load "ATGAS/accumulated" attribute "p_set" is 100.0
+
     Scenario: A fuel bus that has a load and no supply is reported
       The gas plant also puts out 0.8 units of heat for each unit of electricity, which no
       record holds. So the heat demand of 876 GWh is a load of 100 MW at R1/ATHEAT, and no
