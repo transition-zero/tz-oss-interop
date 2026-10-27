@@ -93,9 +93,9 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_LOCATIONS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
-from interop.plugins.shared.pypsa_sienna_investments_translations import capital_cost_struct
+from interop.plugins.shared.pypsa_sienna_investments_translations import express_capital_cost
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
-    capacity_limits_struct,
+    express_capacity_limits,
 )
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
@@ -284,7 +284,7 @@ def _build_limit_sources(old: dict[str, Any]) -> list[SourceField]:
     ]
 
 
-_CAPACITY_LIMITS = capacity_limits_struct(
+_CAPACITY_LIMITS = express_capacity_limits(
     pl.col(CAPACITY_LIMITS_MIN_MW), pl.col(CAPACITY_LIMITS_MAX_MW)
 )
 
@@ -327,7 +327,7 @@ _TRANSPORT_TRANSLATIONS: list[Translation] = [
     build_derived_translation(
         _COMPONENT,
         T.CAPITAL_COSTS,
-        capital_cost_struct(pl.col(CAPITAL_COST_MW)),
+        express_capital_cost(pl.col(CAPITAL_COST_MW)),
         lambda old: [
             build_priced_field(old, CAPITAL_COST, CAPITAL_COST, CAPITAL_COST_YEAR),
             build_technology_field(

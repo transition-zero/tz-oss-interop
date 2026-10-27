@@ -105,11 +105,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     build_fuel_supply,
     read_input_ratios,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    FUEL_TYPE,
-    PRIME_MOVER,
-    SIENNA_TYPE,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     FUEL_TERMS,
     enrich_variable_costs,
@@ -132,12 +127,17 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_targets,
     list_area_names,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    FUEL_TYPE,
+    PRIME_MOVER,
+    SIENNA_TYPE,
+)
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
-    capital_cost_struct,
+    express_capital_cost,
     express_cost_type,
     express_fuel_list,
-    operation_cost_struct,
+    express_operation_cost,
 )
 from interop.plugins.shared.sienna_constants import PRIME_MOVERS_DTYPE
 from interop.plugins.shared.sienna_investments_constants import (
@@ -410,7 +410,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
     build_derived_translation(
         _COMPONENT,
         S.CAPITAL_COSTS,
-        capital_cost_struct(pl.col(CAPITAL_COST_MW)),
+        express_capital_cost(pl.col(CAPITAL_COST_MW)),
         _build_cost_sources,
         f"capital_cost of {PRICED_YEAR}, in $/MW of electricity output, as the proportional "
         "term of a linear capital cost curve; extensions.json holds each year",
@@ -420,7 +420,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
     build_derived_translation(
         _COMPONENT,
         S.OPERATION_COSTS,
-        operation_cost_struct(
+        express_operation_cost(
             pl.col(FIXED_COST_MW_YEAR).fill_null(0.0),
             express_cost_type(SIENNA_TYPE),
             pl.col(VARIABLE_COST_MWH),

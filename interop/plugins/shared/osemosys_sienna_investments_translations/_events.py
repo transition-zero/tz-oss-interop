@@ -33,10 +33,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import SIENNA_TYPE
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import SIENNA_TYPE
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     NO_RETIREMENT_COST_NOTE,
     NO_RETIREMENT_DERIVATION,
