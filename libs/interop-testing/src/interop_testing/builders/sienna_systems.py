@@ -13,7 +13,9 @@ from typing import Any
 
 import polars as pl
 
+from interop.core.extensions import ExtensionKind, get_companion
 from interop_testing.builders.sienna_documents import (
+    KIND_BY_SIENNA_TYPE,
     TIME_SERIES_INITIAL_TIME,
     TIME_SERIES_RESOLUTION_SECONDS,
     ac_bus,
@@ -419,14 +421,17 @@ class SiennaSystemBuilder:
         self._kind_records.setdefault((kind, name), {}).update(fields)
 
     def add_companion_series(
-        self, owner_type: str, owner_name: str, field: str, filename: str, values: list[float]
+        self, owner_type: str, owner_name: str, field: str, values: list[float]
     ) -> None:
         """Name a companion parquet in a record, and write one value for each hour into it.
 
-        The value column takes the name of the field without its ``_series`` ending.
+        The file and the value column are the ones that the kind of the owner states for the
+        field, so a reader finds the values where it looks for them.
         """
+        companion = get_companion(ExtensionKind(KIND_BY_SIENNA_TYPE[owner_type]))
+        filename = companion.filename
+        column = companion.columns[field]
         self.add_ext(owner_type, owner_name, {field: filename})
-        column = field.removesuffix("_series")
         start = datetime.fromisoformat(TIME_SERIES_INITIAL_TIME)
         step = timedelta(seconds=TIME_SERIES_RESOLUTION_SECONDS)
         self._companions.setdefault(filename, []).extend(

@@ -516,27 +516,48 @@ class ControllableLineCompanionCol(StrEnum):
     P_MAX_PU = "p_max_pu"
 
 
+class ReserveCompanionCol(StrEnum):
+    """Value columns of the reserve companion parquet, named for the field each holds."""
+
+    REQUIREMENT_MW = "requirement_mw"
+
+
 class Companion(NamedTuple):
-    """The parquet a kind's series live in, and the record fields that name that file."""
+    """The parquet a kind's series live in, and the value column of each field that names it.
+
+    ``columns`` maps a record field that names the file to the column that holds its values.
+    """
 
     filename: str
-    series_fields: tuple[str, ...]
+    columns: dict[str, str]
 
 
 # Companions sit beside the sidecar and are named for what they hold. A kind with no entry
 # states every value on the record itself. One parquet holds every series of its kind, one
 # column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
-    ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
-    ExtensionKind.LOAD: Companion("loads.parquet", ("p_set_series",)),
-    ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
-    ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
-    ExtensionKind.CONTROLLABLE_LINE: Companion("controllable_lines.parquet", ("p_max_pu_series",)),
+    ExtensionKind.GENERATOR: Companion(
+        "generators.parquet", {"marginal_cost_series": GeneratorCompanionCol.MARGINAL_COST}
+    ),
+    ExtensionKind.LOAD: Companion("loads.parquet", {"p_set_series": LoadCompanionCol.P_SET}),
+    ExtensionKind.RESERVE: Companion(
+        "reserves.parquet", {"requirement_series": ReserveCompanionCol.REQUIREMENT_MW}
+    ),
+    ExtensionKind.STORAGE: Companion(
+        "storage.parquet",
+        {
+            "inflow_series": StorageCompanionCol.INFLOW_MW,
+            "rating_series": StorageCompanionCol.RATING_PU,
+        },
+    ),
+    ExtensionKind.CONTROLLABLE_LINE: Companion(
+        "controllable_lines.parquet", {"p_max_pu_series": ControllableLineCompanionCol.P_MAX_PU}
+    ),
 }
 
 
-def companion_filename(kind: ExtensionKind) -> str:
-    """The parquet beside the sidecar that holds one kind's series.
+def get_companion(kind: ExtensionKind) -> Companion:
+    """The parquet beside the sidecar that holds one kind's series, and its value columns.
 
     Total, not a lookup that can miss: a kind only reaches here by staging a series, and a
     kind that stages one without naming a file for it is a wiring mistake, not model data.
@@ -544,7 +565,12 @@ def companion_filename(kind: ExtensionKind) -> str:
     companion = _COMPANIONS.get(kind)
     if companion is None:
         raise KeyError(f"extension kind {kind!r} stages a series but names no companion file")
-    return companion.filename
+    return companion
+
+
+def companion_filename(kind: ExtensionKind) -> str:
+    """The parquet beside the sidecar that holds one kind's series."""
+    return get_companion(kind).filename
 
 
 def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecord]) -> bool:
@@ -558,7 +584,7 @@ def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecor
     return companion is not None and any(
         getattr(record, series_field, None) is not None
         for record in records
-        for series_field in companion.series_fields
+        for series_field in companion.columns
     )
 
 

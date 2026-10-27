@@ -422,8 +422,21 @@ def given_system_has_load_record_series(
         "PowerLoad",
         name,
         "p_set_series",
-        "loads.parquet",
         [float(value) for value in series.split()],
+    )
+
+
+@given(parsers.parse('the {sienna_type} "{name}" has an ext "{field}" series {series}'))
+def given_component_has_ext_series(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    field: str,
+    series: str,
+) -> None:
+    """A record field that names the companion parquet, which holds one value for each hour."""
+    sienna_system_builder.add_companion_series(
+        sienna_type, name, field, [float(value) for value in series.split()]
     )
 
 
@@ -435,7 +448,6 @@ def given_hvdc_line_has_ext_p_max_pu_series(
         "TwoTerminalGenericHVDCLine",
         name,
         "p_max_pu_series",
-        "controllable_lines.parquet",
         [float(value) for value in series.split()],
     )
 

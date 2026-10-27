@@ -73,7 +73,7 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
 # Sienna types share one.
-_KIND_BY_SIENNA_TYPE = {
+KIND_BY_SIENNA_TYPE = {
     "ACBus": "bus",
     "ThermalStandard": "generator",
     "RenewableDispatch": "generator",
@@ -93,7 +93,7 @@ def _build_extensions(records: list[dict[str, Any]]) -> dict[str, list[dict[str,
     """
     document: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        kind = record.get("kind") or _KIND_BY_SIENNA_TYPE[record["owner_type"]]
+        kind = record.get("kind") or KIND_BY_SIENNA_TYPE[record["owner_type"]]
         document.setdefault(kind, []).append({"name": record["owner_name"], **record["ext"]})
     return document
 
