@@ -286,6 +286,13 @@ def given_hvdc_line_unavailable(sienna_system_builder: SiennaSystemBuilder, name
     sienna_system_builder.set_link_available(name, available=False)
 
 
+@given(parsers.parse('the HVDC line "{name}" has a constant loss of {megawatts:g} MW'))
+def given_hvdc_line_constant_loss(
+    sienna_system_builder: SiennaSystemBuilder, name: str, megawatts: float
+) -> None:
+    sienna_system_builder.set_link_constant_loss(name, megawatts)
+
+
 @given(parsers.parse('the HVDC line "{name}" is extendable in ext'))
 def given_hvdc_line_extendable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, name: str

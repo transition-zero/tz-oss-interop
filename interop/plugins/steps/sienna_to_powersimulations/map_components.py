@@ -57,6 +57,12 @@ _PER_UNIT_SCALING_DERIVATION = "natural-unit MW / base_power MVA -> per-unit for
 _SYSTEM_BASE_SCALING_DERIVATION = (
     f"natural-unit MW / system base {SYSTEM_BASE_MVA:g} MVA -> per-unit for PS.jl"
 )
+_CONSTANT_LOSS_SCALING_DERIVATION = (
+    f"constant loss in MW / system base {SYSTEM_BASE_MVA:g} MVA -> per-unit for PS.jl"
+)
+_CONSTANT_LOSS_FIELD = (
+    f"{SiennaLinkCol.LOSS}.{SiennaStructField.FUNCTION_DATA}.{SiennaStructField.CONSTANT_TERM}"
+)
 _THERMAL_MUST_RUN_DEFAULT = False
 _THERMAL_TIME_AT_STATUS_DEFAULT = 10000.0
 _RENEWABLE_POWER_FACTOR_DEFAULT = 1.0
@@ -954,7 +960,43 @@ def _convert_hvdc_loss(
             derivation="Sienna InputOutputCurve{LinearFunctionData} -> PS.jl LinearCurve with __metadata__",  # noqa: E501
         )
     )
+    _convert_constant_loss_to_per_unit(ps_loss.function_data, sienna_type, comp_name, recorder)
     return ps_loss.model_dump()
+
+
+def _convert_constant_loss_to_per_unit(
+    function_data: PSLinearFunctionData,
+    sienna_type: str,
+    comp_name: str,
+    recorder: ScopedRecorder,
+) -> None:
+    """Divide the constant loss in MW by the system base, as PowerSimulations adds it to flow."""
+    natural_val = function_data.constant_term
+    function_data.constant_term = natural_val / SYSTEM_BASE_MVA
+    recorder.append(
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
+                SourceField(
+                    Framework.SIENNA,
+                    sienna_type,
+                    comp_name,
+                    _CONSTANT_LOSS_FIELD,
+                    natural_val,
+                )
+            ],
+            destinations=[
+                DestinationField(
+                    Framework.POWER_SIMULATIONS,
+                    sienna_type,
+                    comp_name,
+                    _CONSTANT_LOSS_FIELD,
+                    function_data.constant_term,
+                )
+            ],
+            derivation=_CONSTANT_LOSS_SCALING_DERIVATION,
+        )
+    )
 
 
 def _map_arc_backed_component(

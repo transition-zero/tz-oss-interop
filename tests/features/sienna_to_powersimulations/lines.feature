@@ -64,3 +64,17 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     Then the printed output contains "The sink parameter base_power is 50 MVA, but sienna-to-power-simulations states each HVDC line per unit of a system base of 100 MVA"
     And the file "outputs/system.json" does not exist
     And the file "outputs/system_ts.h5" does not exist
+
+  Scenario: The constant loss of an HVDC line in MW is stored per-unit relative to the system base
+    PowerSimulations adds the constant loss to the flow per unit of the system base of 100 MVA,
+    so a constant loss of 5 MW is stored as 0.05.
+    Given a Sienna system
+    And the system contains a bus "bus_a"
+    And the system contains a bus "bus_b"
+    And the system contains an HVDC line "link_1" from "bus_a" to "bus_b" with p_nom 1000.0 efficiency 0.5
+    And the HVDC line "link_1" has a constant loss of 5.0 MW
+    And the system is saved as "inputs/hvdc_constant_loss.json"
+    When I run translate against Sienna system "inputs/hvdc_constant_loss.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.constant_term" equal to "0.05"
+    And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
+    And the file "decisions.md" contains "constant loss in MW / system base 100 MVA -> per-unit for PS.jl"
