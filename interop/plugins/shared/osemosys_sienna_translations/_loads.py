@@ -25,7 +25,7 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_MVA, UNIT_MW, StagedTimeSeriesCol
+from interop.plugins.shared.constants import HOURS_PER_YEAR, UNIT_MVA, UNIT_MW, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
@@ -34,7 +34,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     ACCUMULATED_LOAD_SUFFIX,
-    HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
     MIN_LOAD_BASE_POWER_MVA,
     DemandParameter,
@@ -275,9 +274,10 @@ def _read_demand(
         express_report_name(FUEL).alias(FUEL_NAME),
         pl.lit(parameter.value).alias(DEMAND_PARAMETER),
         pl.col(VALUE_COL).cast(pl.Float64).alias(ANNUAL_DEMAND),
-    ).join(fuels.select(REGION, FUEL, LOAD_BUS), on=[REGION, FUEL], how="inner")
+    ).join(fuels.select(REGION, FUEL, LOAD_BUS).lazy(), on=[REGION, FUEL], how="inner")
     positive = drop(
-        rows, SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter))
+        rows.collect(),
+        SkipRule(pl.col(ANNUAL_DEMAND) > 0, _build_negative_demand_skip(parameter)),
     )
     return positive.cast(pl.Schema(_SOURCE_SCHEMA))
 
