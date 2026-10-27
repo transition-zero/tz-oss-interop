@@ -220,6 +220,41 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "overnight_cost" set to {"2030": 1000000.0, "2035": 900000.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "marginal_cost" set to {"2030": 7.0, "2035": 7.0}
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "fom_cost" set to {"2030": 20000.0, "2035": 0.0}
+    And the file "outputs/portfolio.json" parses as JSON with "financial_data.discount_rate" set to 0.07
+    And the file "outputs/portfolio.json" parses as JSON with "financial_data.base_year" set to 2030
+
+  Scenario: The portfolio and each candidate quote their costs in the currency year of the user mappings file
+    Given a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                         |
+      | osemosys: {                                                                                                                  |
+      | units: {capacity: GW, energy: GWh, currency: USD, emissions: t, currency_year: 2020},                                        |
+      | objects: {                                                                                                                   |
+      | fuels: [                                                                                                                     |
+      | {match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},                                         |
+      | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"}],                                                 |
+      | technologies: [                                                                                                              |
+      | {match: "GAS(CC\|NEW)$", category: gas-cc}, {match: "SOLAR$", category: solar}, {match: "BIO$", category: biomass}]}}       |
+      | carriers: [                                                                                                                  |
+      | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
+      | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]                          |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with "financial_data.base_year" set to 2020
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "financial_data.technology_base_year" set to 2020
+
+  Scenario: The discount rate of a second region that states another rate is recorded as not mapped
+    The portfolio holds one discount rate, the rate of the first region R1. OSeMOSYS discounts
+    the costs of R2 at 0.10, so the report names that rate.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole parameter "DiscountRate" keyed by "REGION" with default 0.05 has the rows:
+      | REGION | VALUE |
+      | R1     | 0.07  |
+      | R2     | 0.10  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with "financial_data.discount_rate" set to 0.07
+    And the file "decisions.md" contains "`osemosys.discount_rate.R2.region` = 0.1"
+    And the log contains "1 region(s) state a discount_rate other than that of the first region, which the portfolio takes as its own"
 
   Scenario: The report of the parameters that no step applies leaves out the parameters of the portfolio
     The portfolio step applies the capital cost, the lifetime and the emission limits, so the

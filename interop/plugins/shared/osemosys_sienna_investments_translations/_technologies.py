@@ -64,7 +64,7 @@ _CAPITAL_COST_COLUMNS = {
     InvestmentParameter.CAPITAL_COST: CAPITAL_COST,
     CAPITAL_COST_MW: CAPITAL_COST_MW,
 }
-_REGION_RATE = "region_discount_rate"
+REGION_RATE = "region_discount_rate"
 
 
 def read_kind_technologies(state: State, kind: TechnologyKind) -> pl.DataFrame:
@@ -96,8 +96,8 @@ def enrich_financial_values(
     ).join(_read_region_rates(state, plan, keys), on=REGION, how="left")
     table = technologies.join(
         lives.select(*TECHNOLOGY_KEYS, pl.col(VALUE_COL).alias(LIFETIME)), on=TECHNOLOGY_KEYS
-    ).join(rates.select(*TECHNOLOGY_KEYS, VALUE_COL, _REGION_RATE), on=TECHNOLOGY_KEYS)
-    return table.with_columns(*_express_rate_columns()).drop(VALUE_COL, _REGION_RATE)
+    ).join(rates.select(*TECHNOLOGY_KEYS, VALUE_COL, REGION_RATE), on=TECHNOLOGY_KEYS)
+    return table.with_columns(*_express_rate_columns()).drop(VALUE_COL, REGION_RATE)
 
 
 def _express_rate_columns() -> list[pl.Expr]:
@@ -105,7 +105,7 @@ def _express_rate_columns() -> list[pl.Expr]:
     return [
         pl.lit(InvestmentParameter.LIFETIME.value).alias(LIFETIME_PARAMETER),
         pl.col(REPORT_NAME).alias(LIFETIME_MEMBER),
-        pl.col(VALUE_COL).fill_null(pl.col(_REGION_RATE)).alias(DISCOUNT_RATE),
+        pl.col(VALUE_COL).fill_null(pl.col(REGION_RATE)).alias(DISCOUNT_RATE),
         pl.when(is_stated)
         .then(pl.lit(InvestmentParameter.TECHNOLOGY_DISCOUNT_RATE.value))
         .otherwise(pl.lit(InvestmentParameter.DISCOUNT_RATE.value))
@@ -147,17 +147,21 @@ class RegionRate(NamedTuple):
     rate: float
 
 
-def find_region_discount_rate(state: State, plan: InvestmentPlan) -> RegionRate | None:
-    """The `discount_rate` of the first region of the model, or None when it has no region."""
+def read_region_discount_rates(state: State, plan: InvestmentPlan) -> pl.DataFrame:
+    """The `discount_rate` of each region of the model, in the order of the region set."""
     regions = pl.DataFrame({REGION: list_set_members(state, REGION)}, schema={REGION: pl.Utf8})
-    rates = _read_region_rates(state, plan, regions)
+    return _read_region_rates(state, plan, regions)
+
+
+def find_region_discount_rate(rates: pl.DataFrame) -> RegionRate | None:
+    """The rate of the first region of `rates`, or None when the model has no region."""
     if rates.is_empty():
         return None
-    return RegionRate(rates[REGION][0], rates[_REGION_RATE][0])
+    return RegionRate(rates[REGION][0], rates[REGION_RATE][0])
 
 
 def _read_region_rates(state: State, plan: InvestmentPlan, keys: pl.DataFrame) -> pl.DataFrame:
     regions = keys.select(REGION).unique(maintain_order=True)
     return read_parameter_with_defaults(
         state, InvestmentParameter.DISCOUNT_RATE, plan.base_year, regions
-    ).select(REGION, pl.col(VALUE_COL).alias(_REGION_RATE))
+    ).select(REGION, pl.col(VALUE_COL).alias(REGION_RATE))

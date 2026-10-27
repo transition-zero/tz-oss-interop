@@ -62,6 +62,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     drop_capped_limits,
     find_investment_plan,
     find_region_discount_rate,
+    read_region_discount_rates,
+    report_other_region_rates,
     set_portfolio_series,
     set_producers_persisted,
     set_technology_extensions_persisted,
@@ -398,12 +400,14 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         )
 
     def _map_financial_data(self, state: State, plan: InvestmentPlan) -> None:
-        rate = find_region_discount_rate(state, plan)
+        rates = read_region_discount_rates(state, plan)
+        rate = find_region_discount_rate(rates)
         state.destination_tables[PORTFOLIO_FINANCIAL_DATA_TABLE] = build_osemosys_financial_data(
             plan, rate
         )
         for event in build_osemosys_financial_events(plan, rate):
             self._recorder.append(event)
+        report_other_region_rates(rates, rate, self._recorder)
 
 
 def _list_fleet_families(candidates: _Candidates) -> list[FleetFamily]:
