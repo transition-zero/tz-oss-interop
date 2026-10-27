@@ -110,7 +110,7 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "sense" set to ">="
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "limits" set to [{"period": "year", "value": 1.2, "unit": "pu", "investment_period": 2030}, {"period": "year", "value": 1.0, "unit": "pu", "investment_period": 2035}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "R1/ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "reserve_margin_tag_fuel"}]
-    And the file "decisions.md" contains "`osemosys.annual_emission_limit.R1/CO2.year 2030` | `sienna.constraint.CO2.extensions.limits.year 2030` = 900.0 t"
+    And the file "decisions.md" contains "`osemosys.annual_emission_limit.R1/CO2.year 2030` = 1000.0<br>`osemosys.annual_exogenous_emission.R1/CO2.year 2030` = 100.0 | `sienna.constraint.CO2.extensions.limits.year 2030` = 900.0 t"
     And the log does not contain "annual_emission_limit states"
     And the log does not contain "generation_fraction_requirement states"
     And the log does not contain "reserve_margin states"
@@ -131,9 +131,8 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "ATSOLAR", "member_class": "technology", "coefficient": 0.2, "coefficient_property": "reserve_margin_tag_technology"}]
-    And the log contains "1 tag(s) of a renewable target or a reserve margin change in a year with a limit, and each constraint record keeps the value of the earliest year that tags the member. Tags: R1/ATGASCC"
-    And the file "decisions.md" contains "`osemosys.reserve_margin_tag_technology.R1/ATGASCC.year 2035` = 0.5"
-    And the file "decisions.md" contains "the constraint record R1/reserve_margin weights ATGASCC by 0.9 in each year"
+    And the log contains "1 tag value(s) of reserve_margin_tag_technology in a year with a limit differ from the value of the earliest year that tags the member, which each constraint record keeps. Tags: R1/ATGASCC"
+    And the file "decisions.md" contains "| `osemosys.technology.R1/ATGASCC.reserve_margin_tag_technology` = 0.5 |  |  | the value of 2035; each constraint record that counts ATGASCC weights it by 0.9 in each year"
 
   Scenario: A renewable tag that changes only in a year with no target is not reported
     Given the otoole parameter "REMinProductionTarget" keyed by "REGION YEAR" with default 0 has the rows:
@@ -145,7 +144,7 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "members" set to [{"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}]
-    And the log does not contain "tag(s) of a renewable target or a reserve margin change"
+    And the log does not contain "tag value(s) of renewable_tag_technology"
 
   Scenario: The emission limit of a region group becomes a constraint record whose members are its regions
     Given the otoole set "REGIONGROUP" holds "G1"
@@ -163,7 +162,7 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "limits" set to [{"period": "year", "value": 650.0, "unit": "t", "investment_period": 2030}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "members" set to [{"name": "R1", "member_class": "region"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "type" set to "primary_energy"
-    And the file "decisions.md" contains "`osemosys.annual_emission_limit_region_group.G1/CO2.year 2030` | `sienna.constraint.G1/CO2.extensions.limits.year 2030` = 650.0 t"
+    And the file "decisions.md" contains "`osemosys.annual_emission_limit_region_group.G1/CO2.year 2030` = 700.0<br>`osemosys.annual_exogenous_emission_region_group.G1/CO2.year 2030` = 50.0 | `sienna.constraint.G1/CO2.extensions.limits.year 2030` = 650.0 t"
     And the log does not contain "annual_emission_limit_region_group states"
     And the log does not contain "region_group_tag_region states"
 
@@ -208,3 +207,30 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "prime_mover_type" set to "CT"
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/CO2" having "members" set to [{"name": "ATOILCT", "member_class": "technology"}, {"name": "R1/ATGASCC", "member_class": "technology"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R2/CO2" having "members" set to [{"name": "R2/ATGASCC", "member_class": "technology"}]
+
+  Scenario: The renewable target of a region group counts the tagged members of its regions
+    The fuel tag of ATELEC holds in 2035 only, which is not the operations year.
+    Given the otoole set "REGIONGROUP" holds "G1"
+    And the otoole parameter "RegionGroupTagRegion" keyed by "REGIONGROUP REGION YEAR" with default 0 has the rows:
+      | REGIONGROUP | REGION | YEAR | VALUE |
+      | G1          | R1     | 2030 | 1     |
+      | G1          | R1     | 2035 | 1     |
+    And the otoole parameter "RegionGroupREMinProductionTarget" keyed by "REGIONGROUP YEAR" with default 0 has the rows:
+      | REGIONGROUP | YEAR | VALUE |
+      | G1          | 2030 | 0.4   |
+      | G1          | 2035 | 0.5   |
+    And the otoole parameter "RETagTechnology" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATSOLAR    | 2030 | 1     |
+      | R1     | ATSOLAR    | 2035 | 1     |
+    And the otoole parameter "RETagFuel" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2035 | 1     |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/renewable_share" having "sense" set to ">="
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/renewable_share" having "limits" set to [{"period": "year", "value": 0.4, "unit": "pu", "investment_period": 2030}, {"period": "year", "value": 0.5, "unit": "pu", "investment_period": 2035}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/renewable_share" having "members" set to [{"name": "R1", "member_class": "region"}, {"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}, {"name": "R1/ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "renewable_tag_fuel"}]
+    And the file "decisions.md" contains "`osemosys.region_group_generation_fraction_requirement.G1.year 2035` = 0.5 | `sienna.constraint.G1/renewable_share.extensions.limits.year 2035` = 0.5 pu"
+    And the log does not contain "region_group_generation_fraction_requirement states"
+    And the log does not contain "renewable_tag_technology states"

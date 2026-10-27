@@ -66,8 +66,15 @@ class NetLimit(NamedTuple):
     net: str
 
 
-_ANNUAL_NET_LIMIT = NetLimit(ANNUAL_LIMIT, EXOGENOUS, NET_LIMIT_T)
-_PERIOD_NET_LIMIT = NetLimit(PERIOD_LIMIT, PERIOD_EXOGENOUS, PERIOD_NET_LIMIT_T)
+class LimitScope(NamedTuple):
+    """The years in scope, in order, and the units that the model states its values in."""
+
+    years: Sequence[int]
+    units: ModelUnits
+
+
+ANNUAL_NET_LIMIT = NetLimit(ANNUAL_LIMIT, EXOGENOUS, NET_LIMIT_T)
+PERIOD_NET_LIMIT = NetLimit(PERIOD_LIMIT, PERIOD_EXOGENOUS, PERIOD_NET_LIMIT_T)
 
 
 def read_pollutants(state: State, years: Sequence[int]) -> pl.DataFrame:
@@ -76,8 +83,13 @@ def read_pollutants(state: State, years: Sequence[int]) -> pl.DataFrame:
     members = pl.DataFrame(
         {POLLUTANT: list_set_members(state, POLLUTANT)}, schema={POLLUTANT: pl.Utf8}
     )
-    rates = read_parameter_for_years(state, SupplyParameter.EMISSION_RATE, years).filter(
-        pl.col(VALUE_COL) != 0
+    rates = (
+        read_parameter_for_years(state, SupplyParameter.EMISSION_RATE, years)
+        .lazy()
+        .filter(pl.col(VALUE_COL) != 0)
+        .select(*POLLUTANT_KEYS, TECHNOLOGY)
+        .unique()
+        .collect()
     )
     emitters = rates.group_by(POLLUTANT_KEYS).agg(
         pl.col(TECHNOLOGY).unique().sort().alias(EMITTERS)
@@ -99,26 +111,46 @@ def read_annual_limits(
     state: State, years: Sequence[int], units: ModelUnits, pollutants: pl.DataFrame
 ) -> pl.DataFrame:
     """Each year in which a pollutant has a limit, with the net limit in t."""
-    keys = pollutants.select(POLLUTANT_KEYS)
-    limits = read_yearly_values(state, ANNUAL_LIMIT, keys, years).join(
-        read_yearly_values(state, EXOGENOUS, keys, years), on=[*POLLUTANT_KEYS, YEAR]
-    )
-    net = enrich_net_limit(limits, _ANNUAL_NET_LIMIT, units)
-    return net.filter(pl.col(NET_LIMIT_T).is_not_null()).sort(*POLLUTANT_KEYS, YEAR)
+    scope = LimitScope(years, units)
+    return read_net_limits(state, pollutants.select(POLLUTANT_KEYS), ANNUAL_NET_LIMIT, scope)
 
 
 def enrich_period_limits(
     state: State, year: int, units: ModelUnits, pollutants: pl.DataFrame
 ) -> pl.DataFrame:
     """Add the limit over the whole model period, net of its exogenous emission, in t."""
-    keys = pollutants.select(POLLUTANT_KEYS)
-    for name in (PERIOD_LIMIT, PERIOD_EXOGENOUS):
-        stated = read_parameter_with_defaults(state, name, year, keys)
-        pollutants = pollutants.join(
-            stated.select(*POLLUTANT_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(name)),
-            on=POLLUTANT_KEYS,
+    scope = LimitScope([year], units)
+    limits = read_horizon_limits(state, pollutants.select(POLLUTANT_KEYS), PERIOD_NET_LIMIT, scope)
+    return pollutants.join(limits, on=POLLUTANT_KEYS)
+
+
+def read_net_limits(
+    state: State, keys: pl.DataFrame, columns: NetLimit, scope: LimitScope
+) -> pl.DataFrame:
+    """Each year in which a key has a limit, with the net limit in t.
+
+    `keys` holds the key columns of the two parameters other than `year`.
+    """
+    on = [*keys.columns, YEAR]
+    limits = read_yearly_values(state, columns.limit, keys, scope.years).join(
+        read_yearly_values(state, columns.exogenous, keys, scope.years), on=on
+    )
+    net = enrich_net_limit(limits, columns, scope.units)
+    return net.filter(pl.col(columns.net).is_not_null()).sort(*on)
+
+
+def read_horizon_limits(
+    state: State, keys: pl.DataFrame, columns: NetLimit, scope: LimitScope
+) -> pl.DataFrame:
+    """The limit over the whole model period of each key, net of its exogenous emission, in t."""
+    table = keys
+    for name in (columns.limit, columns.exogenous):
+        stated = read_parameter_with_defaults(state, name, scope.years[0], keys)
+        table = table.join(
+            stated.select(*keys.columns, pl.col(VALUE_COL).cast(pl.Float64).alias(name)),
+            on=keys.columns,
         )
-    return enrich_net_limit(pollutants, _PERIOD_NET_LIMIT, units)
+    return enrich_net_limit(table, columns, scope.units)
 
 
 def enrich_net_limit(table: pl.DataFrame, columns: NetLimit, units: ModelUnits) -> pl.DataFrame:
