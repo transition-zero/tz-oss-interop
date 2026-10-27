@@ -89,11 +89,14 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
     enrich_residual_capacity,
     read_availability_factors,
-    read_variable_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     RESIDUAL_CAPACITY,
     TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    RATED_COST_MWH,
+    read_rated_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,
@@ -300,24 +303,30 @@ def _enrich_link(
     ends = read_transport_ends(state, operations.year, operations.mode).select(
         *_KEYS, FROM_BUS, TO_BUS, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
     )
-    costs = read_variable_costs(
-        state, operations.year, keys.with_columns(pl.lit(operations.mode).alias(OPERATING_MODE))
-    ).drop(OPERATING_MODE)
     table = (
         enrich_residual_capacity(state, operations.year, conversions)
         .join(ends, on=_KEYS, how="left")
         .join(read_availability_factors(state, operations.year, keys), on=_KEYS, how="left")
-        .join(costs, on=_KEYS, how="left")
     )
-    units = operations.units
-    convert = units.convert_cost_per_energy_to_dollars_per_mwh
-    capacity = express_converted(table, RESIDUAL_CAPACITY, units.convert_capacity_to_mw)
+    table = table.join(_read_costs(state, operations, table), on=_KEYS, how="left")
+    capacity = express_converted(table, RESIDUAL_CAPACITY, operations.units.convert_capacity_to_mw)
     return table.with_columns(
         (capacity * pl.col(INPUT_RATIO)).alias(PyPSALinkCol.P_NOM),
         (pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(PyPSALinkCol.EFFICIENCY),
-        (express_converted(table, VARIABLE_COST, convert) / pl.col(INPUT_RATIO)).alias(
-            PyPSALinkCol.MARGINAL_COST
-        ),
+    )
+
+
+def _read_costs(
+    state: State, operations: OperationsYear, conversions: pl.DataFrame
+) -> pl.DataFrame:
+    """The cost of the operations mode, as stated and for each MWh that goes in."""
+    rated = conversions.select(
+        *_KEYS,
+        pl.lit(operations.mode).alias(OPERATING_MODE),
+        pl.col(INPUT_RATIO).alias(RATING_RATIO),
+    )
+    return read_rated_costs(state, operations, rated).select(
+        *_KEYS, VARIABLE_COST, pl.col(RATED_COST_MWH).alias(PyPSALinkCol.MARGINAL_COST)
     )
 
 
