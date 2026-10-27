@@ -70,6 +70,7 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     ACTIVITY_RATE_T_PER_MWH,
+    PENALTY,
     PENALTY_PER_TONNE,
     STATED_RATE,
     read_emission_penalties,
@@ -119,6 +120,11 @@ RATES = "rates"
 RATE_T_PER_MWH = "rate_t_per_mwh"
 E_MIN_MWH = "e_min_mwh"
 E_MAX_MWH = "e_max_mwh"
+# The annual activity limits as the model states them, before the tightest becomes a bound.
+TECHNOLOGY_LOWER = "technology_lower"
+TECHNOLOGY_UPPER = "technology_upper"
+MODE_LOWER = "mode_lower"
+MODE_UPPER = "mode_upper"
 MODE_COUNT = "mode_count"
 IS_INPUT = "is_input"
 
@@ -135,10 +141,6 @@ _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _MODE_SUFFIX = "mode"
 _PENALTY_COST = "penalty_cost"
-_TECH_LOWER = "technology_lower"
-_TECH_UPPER = "technology_upper"
-_MODE_LOWER = "mode_lower"
-_MODE_UPPER = "mode_upper"
 _PER_ACTIVITY = 1.0
 _COUNTED_NOUN = "fuel technology mode(s)"
 _LISTED = SkippedNames(column=MODE_REPORT_NAME, label=TECHNOLOGIES_LABEL)
@@ -338,18 +340,22 @@ def _enrich_bounds(state: State, operations: OperationsYear, modes: pl.DataFrame
     energy = operations.units.convert_energy_to_mwh
     is_single = pl.col(MODE_COUNT) == 1
     upper = _express_tightest(
-        pl.when(pl.col(_MODE_UPPER) > 0).then(pl.col(_MODE_UPPER)),
-        pl.when(is_single & UPPER_BOUND.binds(pl.col(_TECH_UPPER))).then(pl.col(_TECH_UPPER)),
+        pl.when(pl.col(MODE_UPPER) > 0).then(pl.col(MODE_UPPER)),
+        pl.when(is_single & UPPER_BOUND.binds(pl.col(TECHNOLOGY_UPPER))).then(
+            pl.col(TECHNOLOGY_UPPER)
+        ),
     ).list.min()
     lower = _express_tightest(
-        pl.when(pl.col(_MODE_LOWER) > 0).then(pl.col(_MODE_LOWER)),
-        pl.when(is_single & LOWER_BOUND.binds(pl.col(_TECH_LOWER))).then(pl.col(_TECH_LOWER)),
+        pl.when(pl.col(MODE_LOWER) > 0).then(pl.col(MODE_LOWER)),
+        pl.when(is_single & LOWER_BOUND.binds(pl.col(TECHNOLOGY_LOWER))).then(
+            pl.col(TECHNOLOGY_LOWER)
+        ),
     ).list.max()
     table = table.with_columns(upper.alias(E_MAX_MWH), lower.alias(E_MIN_MWH))
     return table.with_columns(
         express_converted(table, E_MAX_MWH, energy),
         express_converted(table, E_MIN_MWH, energy),
-    ).drop(_MODE_UPPER, _MODE_LOWER, _TECH_UPPER, _TECH_LOWER)
+    )
 
 
 def _express_tightest(*bounds: pl.Expr) -> pl.Expr:
@@ -372,10 +378,10 @@ def _enrich_stated_bounds(
 
 
 _BOUNDS: tuple[tuple[str, str, list[str]], ...] = (
-    (SupplyParameter.ACTIVITY_UPPER_LIMIT, _TECH_UPPER, _KEYS),
-    (SupplyParameter.ACTIVITY_LOWER_LIMIT, _TECH_LOWER, _KEYS),
-    (ActivityParameter.BY_MODE_UPPER_LIMIT, _MODE_UPPER, _MODE_KEYS),
-    (ActivityParameter.BY_MODE_LOWER_LIMIT, _MODE_LOWER, _MODE_KEYS),
+    (SupplyParameter.ACTIVITY_UPPER_LIMIT, TECHNOLOGY_UPPER, _KEYS),
+    (SupplyParameter.ACTIVITY_LOWER_LIMIT, TECHNOLOGY_LOWER, _KEYS),
+    (ActivityParameter.BY_MODE_UPPER_LIMIT, MODE_UPPER, _MODE_KEYS),
+    (ActivityParameter.BY_MODE_LOWER_LIMIT, MODE_LOWER, _MODE_KEYS),
 )
 
 
@@ -409,6 +415,7 @@ def _read_rates(state: State, operations: OperationsYear, modes: pl.DataFrame) -
                 POLLUTANT,
                 STATED_RATE,
                 pl.col(ACTIVITY_RATE_T_PER_MWH).alias(RATE_T_PER_MWH),
+                PENALTY,
             ).alias(RATES),
             pl.col(_PENALTY_COST).sum().alias(PENALTY_MWH),
         )
