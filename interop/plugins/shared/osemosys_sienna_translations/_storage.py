@@ -256,7 +256,6 @@ def _enrich_capacity_factors(
     factor = pl.struct(TIMESLICE, pl.col(VALUE_COL).cast(pl.Float64))
     stated = (
         read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
-        .lazy()
         .join(technologies.unique().lazy(), on=_TECHNOLOGY_KEYS, how="semi")
         .sort(TIMESLICE)
         .group_by(_TECHNOLOGY_KEYS)
@@ -402,7 +401,6 @@ def _read_storage_links(state: State, year: int) -> pl.DataFrame:
 def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
     return (
         read_parameter(state, side.link_parameter, year)
-        .lazy()
         .filter(pl.col(VALUE_COL) > 0)
         .sort(TECHNOLOGY, OPERATING_MODE)
         .group_by(_STORAGE_KEYS)
