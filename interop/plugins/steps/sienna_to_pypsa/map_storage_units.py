@@ -175,7 +175,9 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
             return
         timing = series_timing(frame)
         metadata_rows: list[dict[str, Any]] = []
-        for component in series_components(frame):
+        # A hydro generator left out above has no base_power, so its series stays out with it.
+        written = [name for name in series_components(frame) if name in hydro_base_power]
+        for component in written:
             base_power = hydro_base_power[component]
             # efficiency_dispatch is assumed unity (folded into hydro_budget and lost), so the
             # division is documentary and its operator mutation is a no-op.

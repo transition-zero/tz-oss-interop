@@ -364,12 +364,26 @@ def given_power_load_max_active_power_series(
     sienna_system_builder.add_time_series("PowerLoad", name, "max_active_power", values)
 
 
+@given(parsers.parse('the PowerLoad "{name}" states power_units {power_units}'))
+def given_power_load_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_load_power_units(name, power_units)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
 ) -> None:
     values = [float(v) for v in series.split()]
     sienna_system_builder.add_time_series("HydroDispatch", name, "hydro_budget", values)
+
+
+@given(parsers.parse('the HydroDispatch "{name}" states power_units {power_units}'))
+def given_hydro_dispatch_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_generator_power_units(name, power_units)
 
 
 @given(

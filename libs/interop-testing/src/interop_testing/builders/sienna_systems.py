@@ -281,6 +281,16 @@ class SiennaSystemBuilder:
             }
         )
 
+    def set_load_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for PowerLoad {name!r}")
+        self._load_by_name(name)["power_units"] = power_units
+
+    def _load_by_name(self, name: str) -> dict[str, Any]:
+        for load in self._loads:
+            if load["name"] == name:
+                return load
+        raise KeyError(f"no PowerLoad {name!r} added yet")
+
     def add_line(
         self,
         name: str,
