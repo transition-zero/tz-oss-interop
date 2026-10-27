@@ -256,6 +256,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "lifetime_years" set to 40.0
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "discount_rate" set to 0.06
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "max_growth" set to {"2030": 200.0}
+      And the file "decisions.md" contains "| `osemosys.total_annual_max_transport_investment.R1/R2/ATELEC` = 0.2 | `sienna.conversion.R1/R2/ATELEC.extensions.max_growth` = {2030: 200.0} MW |"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "e_sum_max" set to {"2030": 100000.0, "2035": 120000.0}
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "capacity_factor_min" set to 0.1
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ATELEC" having "capacity_to_activity_unit" set to 8760.0

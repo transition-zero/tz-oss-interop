@@ -178,7 +178,7 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
         "max_growth",
         Scale.CAPACITY,
         UNIT_MW,
-        detail=YEAR,
+        is_by_year=True,
         derivation=_ROUTE_GROWTH_DERIVATION,
     ),
     TechnologyValue(
