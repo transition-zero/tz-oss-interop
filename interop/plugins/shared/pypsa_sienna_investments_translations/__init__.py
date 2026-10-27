@@ -34,7 +34,7 @@ from ._shared import (
     InvestmentsSource,
     build_expansion_skips,
     build_scope_skips,
-    financial_data_struct,
+    express_financial_data,
     yearly_fixed_charge,
 )
 from ._storage import (
@@ -47,10 +47,10 @@ from ._supply import (
     GENERATOR_SOURCE,
     build_supply_skips,
     build_supply_translations,
-    capital_cost_struct,
+    express_capital_cost,
     express_cost_type,
+    express_operation_cost,
     fill_supply_defaults,
-    operation_cost_struct,
 )
 from ._topology import AREA_NAME, build_topology_mapping_translations, build_topology_source_table
 
@@ -94,10 +94,10 @@ __all__ = [
     "build_portfolio_financial_data",
     "build_retirement_potential_translations",
     "build_scope_skips",
-    "capital_cost_struct",
+    "express_capital_cost",
     "express_cost_type",
-    "financial_data_struct",
-    "operation_cost_struct",
+    "express_financial_data",
+    "express_operation_cost",
     "build_storage_technology_translations",
     "build_supply_translations",
     "build_topology_mapping_translations",

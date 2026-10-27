@@ -198,8 +198,8 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> ExpansionOutcom
     jl.seval(f'global portfolio = PSIP.Portfolio("{portfolio_path}")')
 
     log.info("=== 2. Attaching the time series the portfolio cannot carry ===")
-    _attach_series(jl, request.document)
-    _attach_existing_devices(jl, request.document)
+    _add_series(jl, request.document)
+    _add_existing_devices(jl, request.document)
 
     log.info("=== 3. Building the investment model template ===")
     _build_template(jl, request)
@@ -246,10 +246,10 @@ _DEFINE_GET_ONE_COMPONENT = """
 """
 
 
-def _attach_series(jl: Any, document: PortfolioSeries) -> None:
+def _add_series(jl: Any, document: PortfolioSeries) -> None:
     """Put each record on the component that came off disk, under the features it is read by."""
     jl.seval(_DEFINE_GET_ONE_COMPONENT)
-    attach = jl.seval("""
+    add_series = jl.seval("""
         function (portfolio, type_name, component_name, series_name, year, rep_day,
                   timestamps, values)
             component = get_one_component(portfolio, type_name, component_name)
@@ -262,7 +262,7 @@ def _attach_series(jl: Any, document: PortfolioSeries) -> None:
         end
     """)
     for record in document.records:
-        attach(
+        add_series(
             jl.portfolio,
             record.component_type,
             record.component_name,
@@ -275,10 +275,10 @@ def _attach_series(jl: Any, document: PortfolioSeries) -> None:
     log.info("attached %d time series", len(document.records))
 
 
-def _attach_existing_devices(jl: Any, document: PortfolioSeries) -> None:
+def _add_existing_devices(jl: Any, document: PortfolioSeries) -> None:
     """Give each technology the base system components that it already holds."""
     jl.seval(_DEFINE_GET_ONE_COMPONENT)
-    attach = jl.seval("""
+    add_devices = jl.seval("""
         function (portfolio, type_name, component_name, attribute_id, devices)
             component = get_one_component(portfolio, type_name, component_name)
             PSIP.add_supplemental_attribute!(portfolio, component,
@@ -289,7 +289,7 @@ def _attach_existing_devices(jl: Any, document: PortfolioSeries) -> None:
     """)
     records = document.existing_devices
     for attribute_id, record in enumerate(records, start=1):
-        attach(
+        add_devices(
             jl.portfolio, record.component_type, record.component_name, attribute_id, record.devices
         )
     log.info("attached the existing devices of %d technologies", len(records))

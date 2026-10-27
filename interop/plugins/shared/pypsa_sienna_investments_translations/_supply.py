@@ -40,7 +40,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     InvestmentsSource,
     build_expansion_skips,
     build_financial_data_translation,
-    capacity_limits_struct,
+    express_capacity_limits,
     finite_or_null,
     yearly_fixed_charge,
 )
@@ -130,7 +130,7 @@ def fill_supply_defaults(table: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
+def express_capital_cost(overnight_cost: pl.Expr) -> pl.Expr:
     """A Sienna ``CapitalCost`` whose curve prices one MW of new capacity linearly."""
     return pl.struct(
         linear_value_curve(overnight_cost, input_at_zero=pl.lit(None, dtype=pl.Float64)).alias(
@@ -140,7 +140,7 @@ def capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
     ).cast(CAPITAL_COST_DTYPE)
 
 
-def operation_cost_struct(
+def express_operation_cost(
     fixed: pl.Expr, cost_type: pl.Expr, variable: pl.Expr | None = None
 ) -> pl.Expr:
     """A Sienna ``GenericOperationCost`` carrying the fixed O&M of new capacity.
@@ -249,7 +249,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
     supply_capital_costs = _direct(
         source_col=PyPSAGeneratorCol.OVERNIGHT_COST,
         dest_col=S.CAPITAL_COSTS,
-        expr=capital_cost_struct(pl.col(PyPSAGeneratorCol.OVERNIGHT_COST)),
+        expr=express_capital_cost(pl.col(PyPSAGeneratorCol.OVERNIGHT_COST)),
         unit=UNIT_DOLLARS_PER_MW,
         derivation="overnight_cost as the proportional term of a linear capital cost curve",
     )
@@ -259,7 +259,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
     supply_operation_costs = _direct(
         source_col=FOM_CHARGE_COL,
         dest_col=S.OPERATION_COSTS,
-        expr=operation_cost_struct(yearly_fixed_charge(PyPSAGeneratorCol.FOM_COST), _cost_type),
+        expr=express_operation_cost(yearly_fixed_charge(PyPSAGeneratorCol.FOM_COST), _cost_type),
         unit=UNIT_DOLLARS_PER_MW_YEAR,
         derivation=FOM_CHARGE_DERIVATION,
         note=(
@@ -279,7 +279,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
 
     supply_capacity_limits = Translation(
         exprs=[
-            capacity_limits_struct(
+            express_capacity_limits(
                 pl.col(PyPSAGeneratorCol.P_NOM_MIN), pl.col(PyPSAGeneratorCol.P_NOM_MAX)
             ).alias(S.CAPACITY_LIMITS)
         ],

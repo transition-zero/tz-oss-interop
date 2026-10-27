@@ -106,13 +106,13 @@ class EmitPowerSystemsInvestmentsFiles(Sink):
     ) -> dict[str, Any]:
         return EmitPowerSimulationsSystemJson.build_document(
             state,
-            h5_basename=self._location_name(params.h5_output_path),
+            h5_basename=self._build_location_name(params.h5_output_path),
             system_name=params.portfolio_name,
             base_power=params.base_power,
             frequency=params.frequency,
         )
 
-    def _location_name(self, location: Location) -> str:
+    def _build_location_name(self, location: Location) -> str:
         return location_name(location)
 
     def _build_sibling(self, portfolio_path: Location, suffix: str) -> Location:

@@ -334,14 +334,14 @@ def finite_or_null(column: pl.Expr) -> pl.Expr:
     return pl.when(column.is_finite()).then(column)
 
 
-def capacity_limits_struct(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
+def express_capacity_limits(minimum: pl.Expr, maximum: pl.Expr) -> pl.Expr:
     return pl.struct(
         minimum.cast(pl.Float64).alias(MinMaxField.MIN),
         maximum.cast(pl.Float64).alias(MinMaxField.MAX),
     ).cast(CAPACITY_LIMITS_DTYPE)
 
 
-def financial_data_struct(
+def express_financial_data(
     capital_recovery_period: pl.Expr, return_on_equity: pl.Expr, base_year: int
 ) -> pl.Expr:
     field = SiennaTechnologyFinancialDataField
@@ -422,7 +422,7 @@ def build_stated_financial_data_translation(
     sources: FinancialDataSources, target: FinancialDataTarget
 ) -> Translation:
     """The six fields of ``TechnologyFinancialData``, as all-equity financing at the rate."""
-    expr = financial_data_struct(
+    expr = express_financial_data(
         pl.col(sources.lifetime_col), pl.col(sources.discount_rate_col), target.base_year
     )
 
@@ -440,7 +440,7 @@ def _build_financial_data_events(
 ) -> list[TranslationEvent]:
     field = SiennaTechnologyFinancialDataField
 
-    def dest(attribute: str, value: object, unit: str | None = None) -> Any:
+    def build_destination(attribute: str, value: object, unit: str | None = None) -> Any:
         name = old[target.name_col]
         return target.dest_field(name, f"{target.dest_col}.{attribute}", value, unit)
 
@@ -449,7 +449,7 @@ def _build_financial_data_events(
             kind=EventKind.VALUE_DERIVED,
             sources=[sources.lifetime(old)],
             destinations=[
-                dest(
+                build_destination(
                     field.CAPITAL_RECOVERY_PERIOD,
                     written[field.CAPITAL_RECOVERY_PERIOD],
                     UNIT_YEARS,
@@ -460,22 +460,24 @@ def _build_financial_data_events(
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
             sources=[sources.discount_rate(old)],
-            destinations=[dest(field.RETURN_ON_EQUITY, written[field.RETURN_ON_EQUITY])],
+            destinations=[
+                build_destination(field.RETURN_ON_EQUITY, written[field.RETURN_ON_EQUITY])
+            ],
             derivation=sources.rate_derivation,
             note=ALL_EQUITY_NOTE,
         ),
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[
-                dest(field.DEBT_FRACTION, ALL_EQUITY_DEBT_FRACTION),
-                dest(field.DEBT_RATE, ALL_EQUITY_DEBT_RATE),
-                dest(field.TAX_RATE, ALL_EQUITY_TAX_RATE),
+                build_destination(field.DEBT_FRACTION, ALL_EQUITY_DEBT_FRACTION),
+                build_destination(field.DEBT_RATE, ALL_EQUITY_DEBT_RATE),
+                build_destination(field.TAX_RATE, ALL_EQUITY_TAX_RATE),
             ],
             note=ALL_EQUITY_NOTE,
         ),
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[dest(field.TECHNOLOGY_BASE_YEAR, target.base_year)],
+            destinations=[build_destination(field.TECHNOLOGY_BASE_YEAR, target.base_year)],
             note=sources.base_year_note,
         ),
     ]

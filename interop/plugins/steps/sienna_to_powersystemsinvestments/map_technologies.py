@@ -122,7 +122,7 @@ _CAPITAL_COST_RULES: dict[SiennaInvestmentsComponent, _CapitalCostRule] = {
 _NO_COST = 0.0
 
 
-def _zero_value_curve() -> dict[str, Any]:
+def _build_zero_value_curve() -> dict[str, Any]:
     """A curve stating no cost, for a field the destination requires and no source fills."""
     return PSInputOutputCurve.model_validate({}).model_dump()
 
@@ -171,7 +171,7 @@ _REQUIRED_EMPTY: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]] =
         (SiennaDemandRequirementCol.REQUIREMENTS, []),
         # The model at the pinned revision reads neither, so neither enters a result.
         (SiennaDemandRequirementCol.VALUE_OF_LOST_LOAD, _NO_COST),
-        (SiennaDemandRequirementCol.UNSERVED_DEMAND_CURVE, _zero_value_curve()),
+        (SiennaDemandRequirementCol.UNSERVED_DEMAND_CURVE, _build_zero_value_curve()),
     ),
 }
 
@@ -361,7 +361,7 @@ def _map_one(
     _map_capital_costs(row, sienna_type, name, recorder)
     _convert_minute_limits(row, sienna_type, name, recorder)
     _fill_required(row, sienna_type, name, recorder)
-    _tag_financial_data(row, sienna_type, name, recorder)
+    _set_financial_data_type(row, sienna_type, name, recorder)
     if row.get(SiennaSupplyTechnologyCol.OPERATION_COSTS) is not None:
         row[SiennaSupplyTechnologyCol.OPERATION_COSTS] = _build_operation_costs(
             row[SiennaSupplyTechnologyCol.OPERATION_COSTS], sienna_type, name, recorder
@@ -369,7 +369,7 @@ def _map_one(
     return row
 
 
-def _tag_financial_data(
+def _set_financial_data_type(
     row: dict[str, Any],
     sienna_type: SiennaInvestmentsComponent,
     name: str,
