@@ -12,8 +12,8 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsYear,
     build_policies,
     list_model_years,
+    report_policy_changes,
     set_policies_persisted,
-    warn_changed_tags,
 )
 
 
@@ -30,5 +30,5 @@ class OsemosysToSiennaMapPolicies(OperationsMapping):
         append_extensions(state.destination_extensions, ExtensionKind.CONSTRAINT, policies.records)
         for event in policies.events:
             self._recorder.append(event)
-        warn_changed_tags(policies)
+        report_policy_changes(policies, self._recorder)
         set_policies_persisted(state, policies)

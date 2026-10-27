@@ -1,16 +1,18 @@
 """The policies of the model as a whole -> constraint records in extensions.json.
 
 An operations system has no emission limit, no renewable target and no reserve margin, so each
-one goes to a constraint record, as a PyPSA GlobalConstraint states it. A record holds one
-limit for each year in scope that states one, and names the members that the limit counts.
+one goes to a constraint record, as a PyPSA GlobalConstraint states it. A `PolicySpec` states
+one kind of policy: the parameter of its limit, the keys of one record, the type, the sense, the
+unit and the members. A record holds one limit for each year in scope that states one.
 
 - An emission limit of a region or a region group: the limit less the exogenous emission, in t,
-  for each year and over the model period. Its members are the technologies that emit the
-  pollutant, or the regions of the group.
-- A renewable target: the least share of the tagged production, for each year. Its members are
-  the tagged technologies and fuels, each with its tag as the coefficient.
+  for each year, and over the model period for a region. Its members are the technologies that
+  emit the pollutant, or the regions of the group.
+- A renewable target of a region or a region group: the least share of the tagged production,
+  for each year. Its members are the tagged technologies and fuels, each with its tag as the
+  coefficient, after the regions of a group.
 - A reserve margin: the ratio of the tagged capacity to the tagged peak demand, for each year.
-  Its members are the tagged technologies and fuels.
+  Its members are the tagged technologies and fuels, so a region with no tag has no record.
 
 A technology member takes the name of its component: the technology, after its region when two
 regions hold a technology of that name and kind. A fuel member takes the name of its bus, which
@@ -20,10 +22,10 @@ value of a year with a limit that differs from it is reported.
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from enum import StrEnum
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -36,9 +38,15 @@ from interop.core.extensions import (
     ExtensionKind,
 )
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import UNIT_PER_UNIT, UNIT_TONNES
+from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import (
+    UNIT_PER_UNIT,
+    UNIT_TONNES,
+    require_extension_attribute,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     REGION_GROUP,
@@ -49,7 +57,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     MEMBERSHIP_FLAG,
-    NO_LIMIT,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
     EmissionParameter,
@@ -57,22 +64,18 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     PolicyType,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    list_set_members,
     read_annotations,
     read_parameter_for_years,
     read_yearly_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._emission_limits import (
     EMITTERS,
-    NET_LIMIT_T,
-    PERIOD_NET_LIMIT_T,
-    POLLUTANT_KEYS,
-    POLLUTANT_NAME,
-    POLLUTANT_REPORT_NAME,
+    PERIOD_NET_LIMIT,
+    LimitScope,
     NetLimit,
-    drop_unlimited,
-    enrich_net_limit,
-    enrich_period_limits,
-    read_annual_limits,
+    read_horizon_limits,
+    read_net_limits,
     read_pollutants,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -85,45 +88,174 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits
-from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    SkipRule,
+    report_not_mapped,
+)
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
-log = logging.getLogger(__name__)
-
-_NAME = "name"
-_MEMBER_NAME = "member_name"
-_LIMIT = "limit"
-_EXOGENOUS = "exogenous"
+_LIMITS_ATTRIBUTE = require_extension_attribute(ConstraintExtension, "limits")
 _NO_SHARE = 0.0
-_GROUP_NET_LIMIT = NetLimit(_LIMIT, _EXOGENOUS, VALUE_COL)
-_LIMITS_ATTRIBUTE = "extensions.limits"
-# The parameter that states a limit over the whole model period.
-_PERIOD_PARAMETERS = {ConstraintPeriod.HORIZON: EmissionParameter.MODEL_PERIOD_EMISSION_LIMIT}
-_EMISSION_PARAMETERS = (
-    EmissionParameter.ANNUAL_EMISSION_LIMIT,
-    EmissionParameter.ANNUAL_EXOGENOUS_EMISSION,
-    EmissionParameter.MODEL_PERIOD_EMISSION_LIMIT,
-    EmissionParameter.MODEL_PERIOD_EXOGENOUS_EMISSION,
+
+# The columns of the limits table of a policy, one row for each limit of a record.
+_RECORD = "record"
+_SOURCE_NAME = "source_name"
+_PERIOD = "period"
+_STATED = "stated"
+_EXOGENOUS = "exogenous"
+_LIMIT_PARAMETER = "limit_parameter"
+_EXOGENOUS_PARAMETER = "exogenous_parameter"
+# The columns of the members table of a policy, one row for each member of a record.
+_MEMBER_NAME = "member_name"
+_MEMBER_CLASS = "member_class"
+_COEFFICIENT = "coefficient"
+_COEFFICIENT_PROPERTY = "coefficient_property"
+_MEMBER_ORDER = "member_order"
+# The region and the member of a tag, which name it in an event and a warning.
+_TAG_NAME = "tag_name"
+_TAGS_LABEL = "Tags"
+
+
+class MemberRule(StrEnum):
+    """The members that a constraint record counts."""
+
+    EMITTERS = "emitters"  # the technologies of the region that emit the pollutant
+    TAGS = "tags"  # the technologies and fuels that the tags of the region weight
+    GROUP_REGIONS = "group_regions"  # the regions of the region group
+    GROUP_TAGS = "group_tags"  # the technologies and fuels that the regions of the group tag
+
+
+@dataclass(frozen=True)
+class PolicySpec:
+    """One kind of policy, and the constraint record that each key with a limit becomes.
+
+    A limit with an `exogenous` parameter is net of that emission, and holds unless it is -1.
+    A limit of any other policy holds where it is above zero. `tags` names the parameters that
+    the `TAGS` and `GROUP_TAGS` members read. A record with no member is kept only where
+    `is_kept_without_members` holds.
+    """
+
+    parameter: str
+    keys: tuple[str, ...]
+    type: PolicyType
+    sense: ConstraintSense
+    unit: str
+    members: tuple[MemberRule, ...]
+    name: pl.Expr = field(compare=False)
+    exogenous: str | None = None
+    horizon: NetLimit | None = None
+    tags: tuple[str, ...] = ()
+    is_kept_without_members: bool = True
+
+
+def _express_typed_name(key: str, policy: PolicyType) -> pl.Expr:
+    return pl.concat_str(pl.col(key), pl.lit(str(policy)), separator=REGION_NAME_SEPARATOR)
+
+
+_RENEWABLE_TAGS = (PolicyParameter.RENEWABLE_TAG_TECHNOLOGY, PolicyParameter.RENEWABLE_TAG_FUEL)
+_RESERVE_TAGS = (
+    PolicyParameter.RESERVE_MARGIN_TAG_TECHNOLOGY,
+    PolicyParameter.RESERVE_MARGIN_TAG_FUEL,
 )
+POLICY_SPECS = (
+    PolicySpec(
+        parameter=EmissionParameter.ANNUAL_EMISSION_LIMIT,
+        keys=(REGION, POLLUTANT),
+        type=PolicyType.EMISSION_LIMIT,
+        sense=ConstraintSense.AT_MOST,
+        unit=UNIT_TONNES,
+        members=(MemberRule.EMITTERS,),
+        name=express_component_name(POLLUTANT),
+        exogenous=EmissionParameter.ANNUAL_EXOGENOUS_EMISSION,
+        horizon=PERIOD_NET_LIMIT,
+    ),
+    PolicySpec(
+        parameter=PolicyParameter.REGION_GROUP_EMISSION_LIMIT,
+        keys=(REGION_GROUP, POLLUTANT),
+        type=PolicyType.EMISSION_LIMIT,
+        sense=ConstraintSense.AT_MOST,
+        unit=UNIT_TONNES,
+        members=(MemberRule.GROUP_REGIONS, MemberRule.GROUP_TAGS),
+        name=pl.concat_str(REGION_GROUP, POLLUTANT, separator=REGION_NAME_SEPARATOR),
+        exogenous=PolicyParameter.REGION_GROUP_EXOGENOUS_EMISSION,
+    ),
+    PolicySpec(
+        parameter=PolicyParameter.GENERATION_FRACTION,
+        keys=(REGION,),
+        type=PolicyType.RENEWABLE_SHARE,
+        sense=ConstraintSense.AT_LEAST,
+        unit=UNIT_PER_UNIT,
+        members=(MemberRule.TAGS,),
+        name=_express_typed_name(REGION, PolicyType.RENEWABLE_SHARE),
+        tags=_RENEWABLE_TAGS,
+    ),
+    PolicySpec(
+        parameter=PolicyParameter.REGION_GROUP_GENERATION_FRACTION,
+        keys=(REGION_GROUP,),
+        type=PolicyType.RENEWABLE_SHARE,
+        sense=ConstraintSense.AT_LEAST,
+        unit=UNIT_PER_UNIT,
+        members=(MemberRule.GROUP_REGIONS, MemberRule.GROUP_TAGS),
+        name=_express_typed_name(REGION_GROUP, PolicyType.RENEWABLE_SHARE),
+        tags=_RENEWABLE_TAGS,
+    ),
+    PolicySpec(
+        parameter=PolicyParameter.RESERVE_MARGIN,
+        keys=(REGION,),
+        type=PolicyType.RESERVE_MARGIN,
+        sense=ConstraintSense.AT_LEAST,
+        unit=UNIT_PER_UNIT,
+        members=(MemberRule.TAGS,),
+        name=_express_typed_name(REGION, PolicyType.RESERVE_MARGIN),
+        tags=_RESERVE_TAGS,
+        is_kept_without_members=False,
+    ),
+)
+
+
+class HeldRows(NamedTuple):
+    """The rows of one parameter whose values a constraint record holds."""
+
+    parameter: str
+    rows: pl.DataFrame
+
+
+class NotMappedCheck(NamedTuple):
+    """The rows of one check, and the rule that keeps some and reports the rest as not mapped."""
+
+    rows: pl.DataFrame
+    rule: SkipRule
 
 
 @dataclass
 class Policies:
     """The constraint records, their events, the rows of each parameter that they hold, and the
-    tags whose value of a year with a limit the records do not hold.
+    checks that report each value that the records do not hold.
     """
 
     records: list[ConstraintExtension] = field(default_factory=list)
     events: list[TranslationEvent] = field(default_factory=list)
-    held: list[tuple[str, pl.DataFrame]] = field(default_factory=list)
-    changed_tags: list[str] = field(default_factory=list)
+    held: list[HeldRows] = field(default_factory=list)
+    checks: list[NotMappedCheck] = field(default_factory=list)
 
     def add(self, other: Policies) -> None:
-        """Add the records, the events, the held rows and the changed tags of other policies."""
+        """Add the records, the events, the held rows and the checks of other policies."""
         self.records.extend(other.records)
         self.events.extend(other.events)
         self.held.extend(other.held)
-        self.changed_tags.extend(other.changed_tags)
+        self.checks.extend(other.checks)
+
+
+@dataclass(frozen=True)
+class _PolicyInputs:
+    """The reads that more than one policy uses, each made once."""
+
+    scope: LimitScope
+    emitters: pl.DataFrame  # region, pollutant and the name of each technology that emits it
+    tags: dict[str, pl.DataFrame]  # each tag parameter: its members, as `_read_tags` reads them
+    groups: pl.DataFrame  # region_group and region of each membership
 
 
 def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Policies:
@@ -131,417 +263,458 @@ def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Pol
     policies = Policies()
     if not years:
         return policies
-    policies.add(_build_emission_policies(state, years, units))
-    policies.add(_build_group_emission_policies(state, years, units))
-    policies.add(_build_renewable_policies(state, years))
-    policies.add(_build_group_renewable_policies(state, years))
-    policies.add(_build_reserve_policies(state, years))
+    inputs = _read_inputs(state, LimitScope(years, units))
+    limited: list[pl.DataFrame] = []
+    for spec in POLICY_SPECS:
+        limits = _read_record_limits(state, inputs, spec)
+        if limits.is_empty():
+            continue
+        policies.add(_build_spec_policies(inputs, spec, limits))
+        limited.append(_list_tagged_years(inputs, spec, limits))
+    policies.checks.extend(_build_tag_checks(state, inputs, limited))
     return policies
 
 
-def warn_changed_tags(policies: Policies) -> None:
-    """Warn once when a tag changes in a year with a limit, and name a few of the tags."""
-    if not policies.changed_tags:
-        return
-    log.warning(
-        "%s: %d tag(s) of a renewable target or a reserve margin change in a year with a limit, "
-        "and each constraint record keeps the value of the earliest year that tags the member. "
-        "Tags: %s",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        len(policies.changed_tags),
-        name_a_few(policies.changed_tags),
-    )
+def report_policy_changes(policies: Policies, recorder: ScopedRecorder) -> None:
+    """Record NOT_MAPPED for each value that a check does not keep, and warn once for each check."""
+    for check in policies.checks:
+        report_not_mapped(check.rows, check.rule.keep, check.rule.report, recorder)
 
 
 def set_policies_persisted(state: State, policies: Policies) -> None:
     """Note the rows of each parameter that a constraint record holds."""
     by_parameter: dict[str, list[pl.DataFrame]] = {}
-    for parameter, rows in policies.held:
-        by_parameter.setdefault(parameter, []).append(rows)
+    for held in policies.held:
+        by_parameter.setdefault(held.parameter, []).append(held.rows)
     for parameter, tables in by_parameter.items():
         set_persisted_rows(state, ExtensionKind.CONSTRAINT, parameter, tables)
 
 
-# --- the emission limits -----------------------------------------------------------------------
+# --- the reads that the policies share ---------------------------------------------------------
 
 
-def _build_emission_policies(state: State, years: Sequence[int], units: ModelUnits) -> Policies:
-    pollutants = read_pollutants(state, years)
-    yearly = read_annual_limits(state, years, units, pollutants)
-    pollutants = enrich_period_limits(state, years[0], units, pollutants)
-    limited = drop_unlimited(pollutants, yearly)
-    by_pollutant = yearly.partition_by(POLLUTANT_KEYS, as_dict=True)
+def _read_inputs(state: State, scope: LimitScope) -> _PolicyInputs:
+    tag_parameters = {tag for spec in POLICY_SPECS for tag in spec.tags}
+    return _PolicyInputs(
+        scope=scope,
+        emitters=_read_emitters(state, scope.years),
+        tags={tag: _read_tags(state, scope.years, tag) for tag in sorted(tag_parameters)},
+        groups=_read_group_regions(state, scope.years),
+    )
+
+
+def _read_emitters(state: State, years: Sequence[int]) -> pl.DataFrame:
+    emitters = (
+        read_pollutants(state, years)
+        .select(REGION, POLLUTANT, pl.col(EMITTERS).alias(TECHNOLOGY))
+        .explode(TECHNOLOGY)
+        .drop_nulls(TECHNOLOGY)
+    )
     names = _read_member_names(state, TECHNOLOGY)
-    policies = Policies(
-        held=[(parameter, limited.select(POLLUTANT_KEYS)) for parameter in _EMISSION_PARAMETERS]
-    )
-    for row in limited.iter_rows(named=True):
-        years_table = by_pollutant.get((row[REGION], row[POLLUTANT]))
-        limits = _build_emission_limits(row, years_table)
-        policies.records.append(
-            ConstraintExtension(
-                name=row[POLLUTANT_NAME],
-                type=PolicyType.EMISSION_LIMIT,
-                carrier_attribute=row[POLLUTANT],
-                sense=ConstraintSense.AT_MOST,
-                limits=limits,
-                members=_build_named_members(names, row[REGION], row[EMITTERS] or []),
-            )
-        )
-        policies.events.extend(
-            _build_limit_events(row[POLLUTANT_NAME], row[POLLUTANT_REPORT_NAME], limits)
-        )
-    return policies
-
-
-def _build_emission_limits(
-    row: dict[str, Any], years: pl.DataFrame | None
-) -> list[ConstraintLimit]:
-    rows = [] if years is None else years.select(YEAR, NET_LIMIT_T).rows()
-    limits = [_build_year_limit(year, limit, UNIT_TONNES) for year, limit in rows]
-    if row[PERIOD_NET_LIMIT_T] is not None:
-        limits.append(
-            ConstraintLimit(
-                period=ConstraintPeriod.HORIZON, value=row[PERIOD_NET_LIMIT_T], unit=UNIT_TONNES
-            )
-        )
-    return limits
-
-
-def _build_group_emission_policies(
-    state: State, years: Sequence[int], units: ModelUnits
-) -> Policies:
-    keys = [REGION_GROUP, POLLUTANT]
-    limits = read_parameter_for_years(state, PolicyParameter.REGION_GROUP_EMISSION_LIMIT, years)
-    limits = limits.filter(pl.col(VALUE_COL) != NO_LIMIT).select(
-        *keys, YEAR, pl.col(VALUE_COL).cast(pl.Float64).alias(_LIMIT)
-    )
-    if limits.height == 0:
-        return Policies()
-    exogenous = read_parameter_for_years(
-        state, PolicyParameter.REGION_GROUP_EXOGENOUS_EMISSION, years
-    ).select(*keys, YEAR, pl.col(VALUE_COL).cast(pl.Float64).alias(_EXOGENOUS))
-    net = enrich_net_limit(
-        limits.join(exogenous, on=[*keys, YEAR], how="left"), _GROUP_NET_LIMIT, units
-    )
-    regions = _read_group_regions(state, years)
-    policies = Policies(
-        held=[
-            (PolicyParameter.REGION_GROUP_EMISSION_LIMIT, net.select(keys)),
-            (PolicyParameter.REGION_GROUP_EXOGENOUS_EMISSION, net.select(keys)),
-            (PolicyParameter.REGION_GROUP_TAG_REGION, regions.select(REGION_GROUP, REGION)),
-        ]
-    )
-    for (group, pollutant), rows in net.partition_by(keys, as_dict=True).items():
-        name = f"{group}{REGION_NAME_SEPARATOR}{pollutant}"
-        record = ConstraintExtension(
-            name=name,
-            type=PolicyType.EMISSION_LIMIT,
-            carrier_attribute=str(pollutant),
-            sense=ConstraintSense.AT_MOST,
-            limits=_build_year_limits(rows, UNIT_TONNES),
-            members=_build_group_members(regions, str(group)),
-        )
-        policies.records.append(record)
-        policies.events.extend(
-            _build_limit_events(
-                name, name, record.limits, PolicyParameter.REGION_GROUP_EMISSION_LIMIT
-            )
-        )
-    return policies
-
-
-# --- the renewable targets and the reserve margins ---------------------------------------------
-
-
-def _build_renewable_policies(state: State, years: Sequence[int]) -> Policies:
-    targets = read_parameter_for_years(state, PolicyParameter.GENERATION_FRACTION, years).filter(
-        pl.col(VALUE_COL) > _NO_SHARE
-    )
-    return _build_tagged_policies(
-        state,
-        years,
-        targets,
-        PolicyType.RENEWABLE_SHARE,
-        (PolicyParameter.RENEWABLE_TAG_TECHNOLOGY, PolicyParameter.RENEWABLE_TAG_FUEL),
-        PolicyParameter.GENERATION_FRACTION,
-    )
-
-
-def _build_reserve_policies(state: State, years: Sequence[int]) -> Policies:
-    """A region with a tag gets a record, and the margin of each year, stated or the default."""
-    tags = (PolicyParameter.RESERVE_MARGIN_TAG_TECHNOLOGY, PolicyParameter.RESERVE_MARGIN_TAG_FUEL)
-    regions = pl.concat(
-        [_read_tags(state, years, parameter).select(REGION) for parameter in tags]
-    ).unique()
-    margins = read_yearly_values(state, PolicyParameter.RESERVE_MARGIN, regions, years)
-    margins = margins.filter(pl.col(PolicyParameter.RESERVE_MARGIN).is_not_null()).select(
-        REGION,
-        pl.col(YEAR).cast(pl.Utf8),
-        pl.col(PolicyParameter.RESERVE_MARGIN).alias(VALUE_COL),
-    )
-    return _build_tagged_policies(
-        state, years, margins, PolicyType.RESERVE_MARGIN, tags, PolicyParameter.RESERVE_MARGIN
-    )
-
-
-def _build_tagged_policies(
-    state: State,
-    years: Sequence[int],
-    limits: pl.DataFrame,
-    policy: PolicyType,
-    tags: tuple[str, str],
-    parameter: str,
-) -> Policies:
-    """One record for each region of `limits`, whose members are the members that `tags` tag.
-
-    `limits` holds `region`, `year` and the value of each year.
-    """
-    tagged = [_name_tags(state, _read_tags(state, years, tag)) for tag in tags]
-    policies = Policies(held=[(parameter, limits.select(REGION))])
-    regions = limits.select(REGION).unique()
-    for tag, rows in zip(tags, tagged, strict=True):
-        policies.held.append((tag, rows.join(regions, on=REGION, how="semi").drop(VALUE_COL)))
-    for (region,), rows in sorted(limits.partition_by(REGION, as_dict=True).items()):
-        name = f"{region}{REGION_NAME_SEPARATOR}{policy}"
-        record = ConstraintExtension(
-            name=name,
-            type=policy,
-            sense=ConstraintSense.AT_LEAST,
-            limits=_build_year_limits(rows, UNIT_PER_UNIT),
-            members=[
-                member
-                for tag, rows_of_tag in zip(tags, tagged, strict=True)
-                for member in _build_tag_members(rows_of_tag, str(region), tag)
-            ],
-        )
-        policies.records.append(record)
-        policies.events.extend(_build_limit_events(name, str(region), record.limits, parameter))
-    for tag, rows in zip(tags, tagged, strict=True):
-        policies.add(_build_tag_changes(state, limits, tag, rows, policy))
-    return policies
-
-
-def _build_tag_changes(
-    state: State, limits: pl.DataFrame, tag: str, kept: pl.DataFrame, policy: PolicyType
-) -> Policies:
-    """An event for each value of `tag`, in a year with a limit, that is not the kept value."""
-    changes = _read_tag_changes(state, limits, tag, kept)
-    member = _choose_member_column(kept)
-    names = changes.select(
-        pl.concat_str(REGION, pl.lit(REGION_NAME_SEPARATOR), member).alias(_NAME)
-    ).unique(maintain_order=True)
-    return Policies(
-        events=[
-            _build_tag_change_event(row, member, tag, policy)
-            for row in changes.iter_rows(named=True)
-        ],
-        changed_tags=names[_NAME].to_list(),
-    )
-
-
-def _read_tag_changes(
-    state: State, limits: pl.DataFrame, tag: str, kept: pl.DataFrame
-) -> pl.DataFrame:
-    member = _choose_member_column(kept)
-    limited = limits.select(REGION, pl.col(YEAR).cast(pl.Int64)).unique()
-    years = sorted(limited[YEAR].to_list())
-    yearly = read_yearly_values(state, tag, kept.select(REGION, member), years)
-    return (
-        yearly.join(limited, on=[REGION, YEAR], how="semi")
-        .join(kept, on=[REGION, member])
-        .filter(pl.col(tag) != pl.col(VALUE_COL))
-        .sort(REGION, member, YEAR)
-    )
-
-
-def _build_tag_change_event(
-    row: dict[str, Any], member: str, tag: str, policy: PolicyType
-) -> TranslationEvent:
-    name = f"{row[REGION]}{REGION_NAME_SEPARATOR}{row[member]}"
-    record = f"{row[REGION]}{REGION_NAME_SEPARATOR}{policy}"
-    return TranslationEvent(
-        kind=EventKind.NOT_MAPPED,
-        sources=[build_osemosys_field(tag, name, f"{YEAR} {row[YEAR]}", row[tag])],
-        note=(
-            f"the constraint record {record} weights {row[member]} by {row[VALUE_COL]} in each "
-            "year, the value of the earliest year that tags it"
-        ),
-    )
-
-
-def _build_group_renewable_policies(state: State, years: Sequence[int]) -> Policies:
-    targets = read_parameter_for_years(
-        state, PolicyParameter.REGION_GROUP_GENERATION_FRACTION, years
-    ).filter(pl.col(VALUE_COL) > _NO_SHARE)
-    if targets.height == 0:
-        return Policies()
-    regions = _read_group_regions(state, years)
-    policies = Policies(
-        held=[
-            (PolicyParameter.REGION_GROUP_GENERATION_FRACTION, targets.select(REGION_GROUP)),
-            (PolicyParameter.REGION_GROUP_TAG_REGION, regions.select(REGION_GROUP, REGION)),
-        ]
-    )
-    for (group,), rows in sorted(targets.partition_by(REGION_GROUP, as_dict=True).items()):
-        name = f"{group}{REGION_NAME_SEPARATOR}{PolicyType.RENEWABLE_SHARE}"
-        record = ConstraintExtension(
-            name=name,
-            type=PolicyType.RENEWABLE_SHARE,
-            sense=ConstraintSense.AT_LEAST,
-            limits=_build_year_limits(rows, UNIT_PER_UNIT),
-            members=_build_group_members(regions, str(group)),
-        )
-        policies.records.append(record)
-        policies.events.extend(
-            _build_limit_events(
-                name, str(group), record.limits, PolicyParameter.REGION_GROUP_GENERATION_FRACTION
-            )
-        )
-    return policies
-
-
-# --- the members -------------------------------------------------------------------------------
+    return emitters.join(names, on=[REGION, TECHNOLOGY]).select(REGION, POLLUTANT, _MEMBER_NAME)
 
 
 def _read_tags(state: State, years: Sequence[int], parameter: str) -> pl.DataFrame:
     """The members that a tag names, with the value of the earliest year that states one."""
-    rows = read_parameter_for_years(state, parameter, years).filter(pl.col(VALUE_COL) != 0)
-    member = _choose_member_column(rows)
-    return (
-        rows.sort(YEAR)
+    rows = read_parameter_for_years(state, parameter, years).lazy()
+    member = _choose_member_column(rows.collect_schema().names())
+    tags = (
+        rows.filter(pl.col(VALUE_COL) != 0)
+        .sort(YEAR)
         .group_by(REGION, member, maintain_order=True)
         .agg(pl.col(VALUE_COL).cast(pl.Float64).first())
-        .sort(REGION, member)
+        .collect()
     )
+    names = _read_member_names(state, member)
+    return tags.join(names, on=[REGION, member], how="left").sort(REGION, member)
 
 
-def _name_tags(state: State, tags: pl.DataFrame) -> pl.DataFrame:
-    member = _choose_member_column(tags)
-    return tags.join(_read_member_names(state, member), on=[REGION, member], how="left")
-
-
-def _build_tag_members(tags: pl.DataFrame, region: str, parameter: str) -> list[ConstraintMember]:
-    member = _choose_member_column(tags)
-    rows = tags.filter(pl.col(REGION) == region).select(_MEMBER_NAME, VALUE_COL).rows()
-    return [
-        ConstraintMember(
-            name=name, member_class=member, coefficient=value, coefficient_property=parameter
-        )
-        for name, value in rows
-    ]
-
-
-def _choose_member_column(tags: pl.DataFrame) -> str:
-    return TECHNOLOGY if TECHNOLOGY in tags.columns else FUEL
+def _choose_member_column(columns: Sequence[str]) -> str:
+    return TECHNOLOGY if TECHNOLOGY in columns else FUEL
 
 
 def _read_member_names(state: State, member: str) -> pl.DataFrame:
     """The region, the member and the name of the component of each member of the set."""
-    annotations = read_annotations(state, member).select(REGION, member, *_list_kind(member))
-    if member != TECHNOLOGY:
-        return annotations.with_columns(express_report_name(member).alias(_MEMBER_NAME))
-    # A component group names its technologies over the technologies of its own kind.
-    kinds = annotations.partition_by(AnnotationColumn.KIND)
-    return pl.concat(
-        [kind.with_columns(express_component_name(member).alias(_MEMBER_NAME)) for kind in kinds]
-    ).drop(AnnotationColumn.KIND)
+    if member == TECHNOLOGY:
+        return _read_technology_names(state)
+    annotations = read_annotations(state, member).select(REGION, member)
+    return annotations.with_columns(express_report_name(member).alias(_MEMBER_NAME))
 
 
-def _list_kind(member: str) -> list[str]:
-    return [AnnotationColumn.KIND] if member == TECHNOLOGY else []
-
-
-def _build_named_members(
-    names: pl.DataFrame, region: str, members: Sequence[str]
-) -> list[ConstraintMember]:
-    named = names.filter((pl.col(REGION) == region) & pl.col(TECHNOLOGY).is_in(list(members)))
-    return _build_members(named.sort(_MEMBER_NAME)[_MEMBER_NAME].to_list(), TECHNOLOGY)
+def _read_technology_names(state: State) -> pl.DataFrame:
+    """A component group names its technologies over the technologies of its own kind."""
+    annotations = read_annotations(state, TECHNOLOGY).select(
+        REGION, TECHNOLOGY, AnnotationColumn.KIND
+    )
+    kinds = annotations.partition_by(AnnotationColumn.KIND) or [annotations]
+    named = [
+        kind.with_columns(express_component_name(TECHNOLOGY).alias(_MEMBER_NAME)) for kind in kinds
+    ]
+    return pl.concat(named).drop(AnnotationColumn.KIND)
 
 
 def _read_group_regions(state: State, years: Sequence[int]) -> pl.DataFrame:
     """The regions of each region group, in any year."""
     return (
         read_parameter_for_years(state, PolicyParameter.REGION_GROUP_TAG_REGION, years)
+        .lazy()
         .filter(pl.col(VALUE_COL) == MEMBERSHIP_FLAG)
         .select(REGION_GROUP, REGION)
         .unique()
         .sort(REGION_GROUP, REGION)
+        .collect()
     )
 
 
-def _build_group_members(regions: pl.DataFrame, group: str) -> list[ConstraintMember]:
-    names = regions.filter(pl.col(REGION_GROUP) == group)[REGION].to_list()
-    return _build_members(names, REGION)
+# --- the limits of the records of one policy ---------------------------------------------------
 
 
-def _build_members(names: Sequence[str], member_class: str) -> list[ConstraintMember]:
-    return [ConstraintMember(name=name, member_class=member_class) for name in names]
+def _read_record_limits(state: State, inputs: _PolicyInputs, spec: PolicySpec) -> pl.DataFrame:
+    """One row for each limit of each record, with its record name, its source name, its span,
+    the stated values and the net value."""
+    grid = _build_key_grid(state, spec)
+    keys = grid.select(spec.keys)
+    limits = pl.concat(
+        [
+            _read_yearly_limits(state, inputs.scope, spec, keys),
+            _read_horizon_limits(state, inputs.scope, spec, keys),
+        ],
+        how="diagonal",
+    )
+    limits = limits.join(grid, on=list(spec.keys))
+    if spec.is_kept_without_members:
+        return limits
+    return limits.join(_build_member_rows(inputs, spec), on=_list_member_keys(spec), how="semi")
 
 
-# --- the limits and the events -----------------------------------------------------------------
+def _build_key_grid(state: State, spec: PolicySpec) -> pl.DataFrame:
+    """Every key that a record of the policy can have, with its record and source names."""
+    grid = pl.DataFrame()
+    for key in spec.keys:
+        members = pl.DataFrame({key: list_set_members(state, key)}, schema={key: pl.Utf8})
+        grid = members if grid.width == 0 else grid.join(members, how="cross")
+    return grid.with_columns(
+        spec.name.alias(_RECORD),
+        pl.concat_str(list(spec.keys), separator=REGION_NAME_SEPARATOR).alias(_SOURCE_NAME),
+    )
 
 
-def _build_year_limits(rows: pl.DataFrame, unit: str) -> list[ConstraintLimit]:
-    """One limit for each year of `rows`, which hold `year` and `value`."""
-    return [
-        _build_year_limit(year, value, unit)
-        for year, value in rows.sort(YEAR).select(YEAR, VALUE_COL).rows()
+def _read_yearly_limits(
+    state: State, scope: LimitScope, spec: PolicySpec, keys: pl.DataFrame
+) -> pl.DataFrame:
+    span = [
+        pl.lit(str(ConstraintPeriod.YEAR)).alias(_PERIOD),
+        pl.lit(spec.parameter).alias(_LIMIT_PARAMETER),
     ]
-
-
-def _build_year_limit(year: Any, value: float, unit: str) -> ConstraintLimit:
-    return ConstraintLimit(
-        period=ConstraintPeriod.YEAR, value=value, unit=unit, investment_period=int(year)
-    )
-
-
-def _build_limit_events(
-    name: str,
-    member: str,
-    limits: Sequence[ConstraintLimit],
-    parameter: str = EmissionParameter.ANNUAL_EMISSION_LIMIT,
-) -> list[TranslationEvent]:
-    """One event for each limit; a limit over the model period reads its own parameter.
-
-    An emission limit is net of its exogenous emission, and any other limit is the stated one.
-    """
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                build_osemosys_field(
-                    _PERIOD_PARAMETERS.get(limit.period, parameter), member, _build_span(limit)
-                )
-            ],
-            destinations=[
-                build_sienna_field(
-                    ExtensionKind.CONSTRAINT,
-                    name,
-                    f"{_LIMITS_ATTRIBUTE}.{_build_span(limit)}",
-                    limit.value,
-                    limit.unit,
-                )
-            ],
-            derivation=_EMISSION_DERIVATION if _is_emission(parameter) else _DERIVATION,
+    if spec.exogenous is None:
+        stated = read_yearly_values(state, spec.parameter, keys, scope.years)
+        return stated.filter(pl.col(spec.parameter) > _NO_SHARE).select(
+            *keys.columns,
+            YEAR,
+            *span,
+            pl.col(spec.parameter).alias(_STATED),
+            pl.col(spec.parameter).alias(VALUE_COL),
         )
-        for limit in limits
+    net = read_net_limits(state, keys, NetLimit(spec.parameter, spec.exogenous, VALUE_COL), scope)
+    return net.select(
+        *keys.columns,
+        YEAR,
+        *span,
+        pl.col(spec.parameter).alias(_STATED),
+        pl.lit(spec.exogenous).alias(_EXOGENOUS_PARAMETER),
+        pl.col(spec.exogenous).alias(_EXOGENOUS),
+        VALUE_COL,
+    )
+
+
+def _read_horizon_limits(
+    state: State, scope: LimitScope, spec: PolicySpec, keys: pl.DataFrame
+) -> pl.DataFrame:
+    if spec.horizon is None:
+        return pl.DataFrame()
+    horizon = spec.horizon
+    net = read_horizon_limits(state, keys, horizon, scope)
+    return net.filter(pl.col(horizon.net).is_not_null()).select(
+        *keys.columns,
+        pl.lit(str(ConstraintPeriod.HORIZON)).alias(_PERIOD),
+        pl.lit(horizon.limit).alias(_LIMIT_PARAMETER),
+        pl.col(horizon.limit).alias(_STATED),
+        pl.lit(horizon.exogenous).alias(_EXOGENOUS_PARAMETER),
+        pl.col(horizon.exogenous).alias(_EXOGENOUS),
+        pl.col(horizon.net).alias(VALUE_COL),
+    )
+
+
+# --- the records of one policy -----------------------------------------------------------------
+
+
+def _build_spec_policies(inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame) -> Policies:
+    members = _group_members(inputs, spec, limits)
+    by_record = limits.partition_by(_RECORD, as_dict=True)
+    return Policies(
+        records=[
+            _build_record(spec, rows, members.get(record, []))
+            for (record,), rows in sorted(by_record.items())
+        ],
+        events=[_build_limit_event(spec, row) for row in limits.iter_rows(named=True)],
+        held=_list_held_rows(inputs, spec, limits),
+    )
+
+
+def _build_record(
+    spec: PolicySpec, limits: pl.DataFrame, members: list[ConstraintMember]
+) -> ConstraintExtension:
+    first = limits.row(0, named=True)
+    return ConstraintExtension(
+        name=first[_RECORD],
+        type=spec.type,
+        carrier_attribute=first[POLLUTANT] if POLLUTANT in spec.keys else None,
+        sense=spec.sense,
+        limits=[
+            ConstraintLimit(
+                period=row[_PERIOD],
+                value=row[VALUE_COL],
+                unit=spec.unit,
+                investment_period=row[YEAR],
+            )
+            for row in limits.sort(YEAR, nulls_last=True).iter_rows(named=True)
+        ],
+        members=members,
+    )
+
+
+def _build_limit_event(spec: PolicySpec, row: dict[str, Any]) -> TranslationEvent:
+    """A limit reads its stated value, and an emission limit also the exogenous emission."""
+    span = _build_span(row)
+    sources = [build_osemosys_field(row[_LIMIT_PARAMETER], row[_SOURCE_NAME], span, row[_STATED])]
+    if spec.exogenous is not None:
+        sources.append(
+            build_osemosys_field(
+                row[_EXOGENOUS_PARAMETER], row[_SOURCE_NAME], span, row[_EXOGENOUS]
+            )
+        )
+    return TranslationEvent(
+        kind=EventKind.VALUE_DERIVED,
+        sources=sources,
+        destinations=[
+            build_sienna_field(
+                ExtensionKind.CONSTRAINT,
+                row[_RECORD],
+                f"{_LIMITS_ATTRIBUTE}.{span}",
+                row[VALUE_COL],
+                spec.unit,
+            )
+        ],
+        derivation=_DERIVATION if spec.exogenous is None else _EMISSION_DERIVATION,
+    )
+
+
+def _build_span(row: dict[str, Any]) -> str:
+    if row[YEAR] is None:
+        return str(row[_PERIOD])
+    return f"{YEAR} {row[YEAR]}"
+
+
+def _list_held_rows(
+    inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame
+) -> list[HeldRows]:
+    keys = limits.select(spec.keys).unique()
+    parameters = [spec.parameter, spec.exogenous]
+    if spec.horizon is not None:
+        parameters.extend((spec.horizon.limit, spec.horizon.exogenous))
+    held = [HeldRows(parameter, keys) for parameter in parameters if parameter is not None]
+    if MemberRule.GROUP_REGIONS in spec.members:
+        regions = inputs.groups.join(keys, on=REGION_GROUP, how="semi")
+        held.append(HeldRows(PolicyParameter.REGION_GROUP_TAG_REGION, regions))
+    regions = _list_tagged_regions(inputs, spec, keys)
+    for tag in spec.tags:
+        tags = inputs.tags[tag]
+        rows = tags.join(regions, on=REGION, how="semi").select(
+            REGION, _choose_member_column(tags.columns)
+        )
+        held.append(HeldRows(tag, rows))
+    return held
+
+
+def _list_tagged_regions(
+    inputs: _PolicyInputs, spec: PolicySpec, keys: pl.DataFrame
+) -> pl.DataFrame:
+    """The regions whose tags the records of `keys` count."""
+    if MemberRule.TAGS in spec.members:
+        return keys.select(REGION)
+    if MemberRule.GROUP_TAGS in spec.members:
+        return inputs.groups.join(keys, on=REGION_GROUP, how="semi").select(REGION)
+    return pl.DataFrame(schema={REGION: pl.Utf8})
+
+
+# --- the members -------------------------------------------------------------------------------
+
+
+def _group_members(
+    inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame
+) -> dict[str, list[ConstraintMember]]:
+    """The members of each record, by record name."""
+    members = _build_member_rows(inputs, spec)
+    records = limits.select(_RECORD, *spec.keys).unique()
+    rows = records.join(members, on=_list_member_keys(spec)).sort(
+        _RECORD, _MEMBER_ORDER, _MEMBER_NAME
+    )
+    grouped: dict[str, list[ConstraintMember]] = {}
+    for row in rows.iter_rows(named=True):
+        grouped.setdefault(row[_RECORD], []).append(_build_member(row))
+    return grouped
+
+
+def _build_member(row: dict[str, Any]) -> ConstraintMember:
+    return ConstraintMember(
+        name=row[_MEMBER_NAME],
+        member_class=row[_MEMBER_CLASS],
+        coefficient=row[_COEFFICIENT],
+        coefficient_property=row[_COEFFICIENT_PROPERTY],
+    )
+
+
+def _list_member_keys(spec: PolicySpec) -> list[str]:
+    """The keys of a record that its member rows state; an emission member names its pollutant."""
+    if MemberRule.EMITTERS in spec.members:
+        return [REGION, POLLUTANT]
+    return [spec.keys[0]]
+
+
+def _build_member_rows(inputs: _PolicyInputs, spec: PolicySpec) -> pl.DataFrame:
+    """One row for each member of each key of the policy, in the order that a record lists them."""
+    parts = [part for rule in spec.members for part in _MEMBER_BUILDERS[rule](inputs, spec)]
+    ordered = [
+        part.with_columns(pl.lit(order).alias(_MEMBER_ORDER)) for order, part in enumerate(parts)
+    ]
+    return pl.concat(ordered, how="diagonal")
+
+
+def _build_emitter_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
+    return [
+        inputs.emitters.with_columns(
+            pl.lit(TECHNOLOGY).alias(_MEMBER_CLASS),
+            pl.lit(None, dtype=pl.Float64).alias(_COEFFICIENT),
+            pl.lit(None, dtype=pl.Utf8).alias(_COEFFICIENT_PROPERTY),
+        )
     ]
 
 
-def _build_span(limit: ConstraintLimit) -> str:
-    if limit.investment_period is None:
-        return str(limit.period)
-    return f"{YEAR} {limit.investment_period}"
+def _build_tag_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
+    """The members of each region, one table for each tag, each with its tag as the coefficient."""
+    return [_select_tag_members(inputs.tags[tag], tag) for tag in spec.tags]
 
 
-def _is_emission(parameter: str) -> bool:
-    return parameter in _EMISSION_LIMIT_PARAMETERS
+def _select_tag_members(tags: pl.DataFrame, tag: str) -> pl.DataFrame:
+    return tags.select(
+        REGION,
+        _MEMBER_NAME,
+        pl.lit(_choose_member_column(tags.columns)).alias(_MEMBER_CLASS),
+        pl.col(VALUE_COL).alias(_COEFFICIENT),
+        pl.lit(tag).alias(_COEFFICIENT_PROPERTY),
+    )
 
 
-_EMISSION_LIMIT_PARAMETERS = frozenset(
-    {EmissionParameter.ANNUAL_EMISSION_LIMIT, PolicyParameter.REGION_GROUP_EMISSION_LIMIT}
-)
+def _build_group_region_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
+    return [
+        inputs.groups.select(
+            REGION_GROUP,
+            pl.col(REGION).alias(_MEMBER_NAME),
+            pl.lit(REGION).alias(_MEMBER_CLASS),
+            pl.lit(None, dtype=pl.Float64).alias(_COEFFICIENT),
+            pl.lit(None, dtype=pl.Utf8).alias(_COEFFICIENT_PROPERTY),
+        )
+    ]
+
+
+def _build_group_tag_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
+    """The tagged members of the regions of each group."""
+    return [
+        inputs.groups.join(rows, on=REGION).drop(REGION) for rows in _build_tag_rows(inputs, spec)
+    ]
+
+
+_MEMBER_BUILDERS: dict[MemberRule, Callable[[_PolicyInputs, PolicySpec], list[pl.DataFrame]]] = {
+    MemberRule.EMITTERS: _build_emitter_rows,
+    MemberRule.TAGS: _build_tag_rows,
+    MemberRule.GROUP_REGIONS: _build_group_region_rows,
+    MemberRule.GROUP_TAGS: _build_group_tag_rows,
+}
+
+
+# --- the tags that change by year --------------------------------------------------------------
+
+
+def _list_tagged_years(
+    inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame
+) -> pl.DataFrame:
+    """Each tag of the policy, with each region and year in which a record counts it."""
+    if not spec.tags:
+        return pl.DataFrame()
+    yearly = limits.filter(pl.col(YEAR).is_not_null())
+    regions = _list_tagged_regions(inputs, spec, yearly.select(spec.keys).unique())
+    if REGION in yearly.columns:
+        years = yearly.select(REGION, YEAR)
+    else:
+        years = inputs.groups.join(yearly.select(REGION_GROUP, YEAR), on=REGION_GROUP).select(
+            REGION, YEAR
+        )
+    tagged = years.join(regions, on=REGION, how="semi").unique()
+    return pl.concat(
+        [tagged.with_columns(pl.lit(tag).alias(_LIMIT_PARAMETER)) for tag in spec.tags]
+    )
+
+
+def _build_tag_checks(
+    state: State, inputs: _PolicyInputs, limited: Sequence[pl.DataFrame]
+) -> list[NotMappedCheck]:
+    """One check for each tag: its value in each year with a limit against the kept value."""
+    tagged = [table for table in limited if not table.is_empty()]
+    if not tagged:
+        return []
+    by_tag = pl.concat(tagged).partition_by(_LIMIT_PARAMETER, as_dict=True, include_key=False)
+    return [
+        _build_tag_check(state, inputs, str(tag), years) for (tag,), years in sorted(by_tag.items())
+    ]
+
+
+def _build_tag_check(
+    state: State, inputs: _PolicyInputs, tag: str, limited: pl.DataFrame
+) -> NotMappedCheck:
+    kept = inputs.tags[tag]
+    member = _choose_member_column(kept.columns)
+    years = sorted(limited[YEAR].unique().to_list())
+    yearly = read_yearly_values(state, tag, kept.select(REGION, member), years)
+    rows = (
+        yearly.join(limited.unique(), on=[REGION, YEAR], how="semi")
+        .join(kept, on=[REGION, member])
+        .with_columns(express_report_name(member).alias(_TAG_NAME))
+        .sort(REGION, member, YEAR)
+    )
+    report = SkipReport(
+        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+        framework=OSEMOSYS_FRAMEWORK,
+        component=member,
+        name_col=_TAG_NAME,
+        reason=(
+            f"of {tag} in a year with a limit differ from the value of the earliest year that "
+            "tags the member, which each constraint record keeps"
+        ),
+        counted_noun="tag value(s)",
+        note=_build_tag_change_note,
+        listed=SkippedNames(column=_TAG_NAME, label=_TAGS_LABEL),
+        attribute_col=tag,
+    )
+    return NotMappedCheck(rows, SkipRule(keep=pl.col(tag) == pl.col(VALUE_COL), report=report))
+
+
+def _build_tag_change_note(row: dict[str, Any]) -> str:
+    return (
+        f"the value of {row[YEAR]}; each constraint record that counts {row[_MEMBER_NAME]} "
+        f"weights it by {row[VALUE_COL]} in each year, the value of the earliest year that tags it"
+    )
+
+
 _EMISSION_DERIVATION = (
     "the emission limit less its exogenous emission, in t, which an operations system has no "
     "field for; a PyPSA GlobalConstraint states it"

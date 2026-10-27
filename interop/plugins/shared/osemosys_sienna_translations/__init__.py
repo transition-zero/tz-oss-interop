@@ -77,8 +77,8 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._policies import (
     build_policies,
+    report_policy_changes,
     set_policies_persisted,
-    warn_changed_tags,
 )
 from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
@@ -174,6 +174,7 @@ __all__ = [
     "read_transport_ends",
     "report_calendar",
     "report_left_out_technologies",
+    "report_policy_changes",
     "report_unapplied_parameters",
     "report_unread_defaults",
     "require_model_year",
@@ -185,6 +186,5 @@ __all__ = [
     "set_operations_year",
     "set_policies_persisted",
     "set_storage_values_persisted",
-    "warn_changed_tags",
     "warn_lost_costs",
 ]
