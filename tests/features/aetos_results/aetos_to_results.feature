@@ -87,6 +87,7 @@ Feature: aetos-to-results reads a published results CSV into the results format
     And the results parquet "outputs/results.parquet" has these "objective" rows:
       | variable  | component | category | timestamp | value     |
       | objective |           |          |           | 123500000 |
+    And the file "decisions.md" contains "`aetos.results_csv.ModelPeriodCostByRegion` million USD |"
 
   Scenario: The rows of a technology that puts out no electricity are left out and reported
     When I read the results CSV through aetos-to-results from the year "2030"
