@@ -49,7 +49,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field as _build_source,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import PENALTY
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    PENALTY,
+    STATED_RATE,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PENALTY_COST_MWH,
 )
@@ -83,7 +86,6 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     MIN_LEVEL,
     OUTPUT_LIMIT,
     POWER_MW,
-    STATED_RATE,
     STORAGE_HOURS,
     STORAGE_NAME,
     STORAGE_REPORT_NAME,
