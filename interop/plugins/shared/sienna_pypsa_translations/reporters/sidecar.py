@@ -15,6 +15,10 @@ RELAYED_FIXED_CHARGE_DERIVATION = (
     "relayed unchanged to extensions.json, as fom_cost holds the yearly charge only where the "
     "snapshots count for one whole year"
 )
+RELAYED_TO_LINK_DERIVATION = (
+    "relayed unchanged to extensions.json; where the network holds the bus of each fuel of the "
+    "plant, the plant becomes a PyPSA Link that also maps it"
+)
 
 
 class ExtensionRelayReporter(SiennaToPypsaReporter):
@@ -24,16 +28,10 @@ class ExtensionRelayReporter(SiennaToPypsaReporter):
         super().__init__(recorder)
         self.destination_component = kind
 
-    def record_relayed(self, name: str, field_name: str, value: object) -> None:
-        self._record_relay(name, field_name, value, _RELAYED_DERIVATION)
-
-    def record_relayed_in_part(
-        self, name: str, field_name: str, value: object, derivation: str
+    def record_relayed(
+        self, name: str, field_name: str, value: object, derivation: str = _RELAYED_DERIVATION
     ) -> None:
-        """A field that travels on whole, and that the network also holds in part."""
-        self._record_relay(name, field_name, value, derivation)
-
-    def _record_relay(self, name: str, field_name: str, value: object, derivation: str) -> None:
+        """A field that travels on unchanged; a field that also maps in part names how."""
         attribute = f"{EXTENSIONS_PREFIX}{field_name}"
         self._derived(
             sources=[self._source_field(self.destination_component, name, attribute, value)],
