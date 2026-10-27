@@ -274,8 +274,14 @@ class SkipReport:
         return self.listed or SkippedNames(column=self.name_col, label=DROPPED_NAMES_LABEL)
 
     def build_event(self, row: dict[str, Any]) -> TranslationEvent:
+        return self._build_event(EventKind.COMPONENT_SKIPPED, row)
+
+    def build_not_mapped_event(self, row: dict[str, Any]) -> TranslationEvent:
+        return self._build_event(EventKind.NOT_MAPPED, row)
+
+    def _build_event(self, kind: EventKind, row: dict[str, Any]) -> TranslationEvent:
         return TranslationEvent(
-            kind=EventKind.COMPONENT_SKIPPED,
+            kind=kind,
             sources=[self._build_source_field(row)],
             note=self.note(row) if callable(self.note) else self.note,
         )
@@ -319,11 +325,47 @@ def filter_component(
     return passing, skipped
 
 
+def report_not_mapped(
+    table: pl.DataFrame,
+    condition: pl.Expr,
+    report: SkipReport,
+    recorder: ScopedRecorder,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split table into (kept, not_mapped), record NOT_MAPPED for each row that the condition
+    does not keep, and warn once for the lot."""
+    keep = condition.fill_null(False)  # noqa: FBT003
+    kept = table.filter(keep)
+    not_mapped = table.filter(~keep)
+    for row in not_mapped.iter_rows(named=True):
+        recorder.append(report.build_not_mapped_event(row))
+    _warn_not_mapped(report, not_mapped)
+    return kept, not_mapped
+
+
+def _warn_not_mapped(report: SkipReport, not_mapped: pl.DataFrame) -> None:
+    if not_mapped.is_empty():
+        return
+    listing = report.listing
+    log.warning(
+        "%s: %d %s %s. %s: %s",
+        report.pipeline,
+        not_mapped.height,
+        report.counted_noun,
+        report.reason,
+        listing.label,
+        name_a_few(_list_named(not_mapped, listing)),
+    )
+
+
+def _list_named(table: pl.DataFrame, listing: SkippedNames) -> list[str]:
+    return sorted(str(value) for value in table[listing.column].unique().to_list())
+
+
 def _warn_dropped(report: SkipReport, skipped: pl.DataFrame) -> None:
     if skipped.is_empty():
         return
     listing = report.listing
-    named = sorted(str(value) for value in skipped[listing.column].unique().to_list())
+    named = _list_named(skipped, listing)
     log.warning(
         "%s: %d %s %s, so each is left out. %s: %s",
         report.pipeline,

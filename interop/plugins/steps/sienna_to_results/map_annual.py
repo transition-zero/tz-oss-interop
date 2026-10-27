@@ -29,17 +29,24 @@ from interop.core.extensions import (
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.annual_results import (
-    EMISSIONS_DERIVATION,
+    CAPACITY_SCHEMA,
     PRODUCTION_SCHEMA,
-    AnnualReporter,
+    AnnualDerivation,
+    AnnualRowsMapper,
+    LineEnds,
     Production,
-    build_annual_rows,
-    build_emission_rates,
-    build_emissions,
+    ResultsLeg,
+    build_one_place_lines,
+    drop_components,
 )
-from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
+from interop.plugins.shared.constants import (
+    ALL_COMPONENTS,
+    Framework,
+    StagedTimeSeriesCol,
+    require_extension_attribute,
+)
 from interop.plugins.shared.conversion_lines import build_conversion_lines
-from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
+from interop.plugins.shared.results_constants import SIENNA_TO_RESULTS, ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaACBusCol,
@@ -59,10 +66,22 @@ from interop.ports.outbound.reporting import (
     SourceField,
 )
 
-_EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
+_EMISSION_RATES_ATTRIBUTE = require_extension_attribute(
+    GeneratorExtension, "emission_rates_t_per_mwh"
+)
 _LINE_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
-_AREA0 = "area0"
-_AREA1 = "area1"
+_LINE_ENDS = LineEnds(
+    name=SiennaLinkCol.NAME,
+    end0=SiennaLinkCol.BUS0,
+    end1=SiennaLinkCol.BUS1,
+    place_key=SiennaACBusCol.ID,
+    place=SiennaACBusCol.AREA,
+)
+
+_EMISSIONS_DERIVATION = (
+    "Σ over generators of production × emission_rates_t_per_mwh of the pollutant → emissions "
+    "at 1 January of the year"
+)
 
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
@@ -119,10 +138,14 @@ _INSTALLED_CAPACITY_SOURCES = [
 _EMISSIONS_SOURCES = [
     SourceField(
         framework=Framework.SIENNA,
-        component=ExtensionKind.GENERATOR,
-        name=_EMISSION_RATES_FIELD,
+        component=SiennaTable.GENERATORS,
+        name=ALL_COMPONENTS,
+        attribute=_EMISSION_RATES_ATTRIBUTE,
     ),
 ]
+_PRODUCTION = AnnualDerivation(_PRODUCTION_SOURCES, _PRODUCTION_DERIVATION)
+_INSTALLED_CAPACITY = AnnualDerivation(_INSTALLED_CAPACITY_SOURCES, _INSTALLED_CAPACITY_DERIVATION)
+_EMISSIONS = AnnualDerivation(_EMISSIONS_SOURCES, _EMISSIONS_DERIVATION)
 
 
 class HourlyResults(NamedTuple):
@@ -153,7 +176,7 @@ class AnnualResultsMapper:
 
     def __init__(self, recorder: ScopedRecorder) -> None:
         self._recorder = recorder
-        self._reporter = AnnualReporter(recorder, Framework.SIENNA)
+        self._mapper = AnnualRowsMapper(recorder, ResultsLeg(Framework.SIENNA, SIENNA_TO_RESULTS))
 
     def map_annual(
         self, state: State, hourly: HourlyResults, carrier_lookup: pl.LazyFrame | None
@@ -166,21 +189,24 @@ class AnnualResultsMapper:
         self._report_lines(state, conversions)
         production = _build_all_production(hourly, weights).drop_links(conversions)
         capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
-        return self._map_rows(reader, production, _drop_components(capacity, conversions))
+        return self._map_rows(reader, production, drop_components(capacity, conversions))
 
     def _report_lines(self, state: State, conversions: frozenset[str]) -> None:
         """Report each conversion line, and each line inside one area that states no mark."""
-        self._reporter.report_conversions(_LINE_TYPE, conversions)
-        self._reporter.report_unmarked(_LINE_TYPE, _build_one_area_lines(state) - conversions)
+        self._mapper.report_conversions(_LINE_TYPE, conversions)
+        self._mapper.report_unmarked(_LINE_TYPE, _build_one_area_lines(state) - conversions)
 
     def _map_rows(
         self, reader: ExtensionReader, production: Production, capacity: pl.DataFrame
     ) -> list[pl.LazyFrame]:
         produced = production.build_table()
+        generators = reader.read(ExtensionKind.GENERATOR)
         return [
-            *self._map_production(produced),
-            *self._map_installed_capacity(capacity, produced),
-            *self._map_emissions(production.generators, reader.read(ExtensionKind.GENERATOR)),
+            *self._mapper.map_production(produced, _PRODUCTION),
+            *self._mapper.map_installed_capacity(capacity, produced, _INSTALLED_CAPACITY),
+            *self._mapper.map_emissions(
+                production.generators, lambda name: _find_rates(generators, name), _EMISSIONS
+            ),
         ]
 
     def _build_weights(self, reader: ExtensionReader, hourly: HourlyResults) -> pl.DataFrame:
@@ -190,41 +216,11 @@ class AnnualResultsMapper:
         weighter = HourWeighter(self._recorder)
         return weighter.build_hour_weights(records, hourly.list_production_frames())
 
-    def _map_production(self, production: pl.DataFrame) -> list[pl.LazyFrame]:
-        if production.is_empty():
-            return []
-        self._reporter.record_derivation(
-            ResultsVariable.PRODUCTION, _PRODUCTION_SOURCES, _PRODUCTION_DERIVATION
-        )
-        return [build_annual_rows(production, ResultsVariable.PRODUCTION)]
 
-    def _map_installed_capacity(
-        self, capacity: pl.DataFrame, production: pl.DataFrame
-    ) -> list[pl.LazyFrame]:
-        if capacity.is_empty():
-            return []
-        self._reporter.record_derivation(
-            ResultsVariable.INSTALLED_CAPACITY,
-            _INSTALLED_CAPACITY_SOURCES,
-            _INSTALLED_CAPACITY_DERIVATION,
-        )
-        self._reporter.report_unproduced(
-            capacity.join(production, on=ResultsCol.COMPONENT, how="anti")
-        )
-        return [build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
-
-    def _map_emissions(
-        self, production: pl.DataFrame, generators: ExtensionLookup[GeneratorExtension]
-    ) -> list[pl.LazyFrame]:
-        rates = build_emission_rates(
-            production, lambda name: generators.get(name).emission_rates_t_per_mwh
-        )
-        if rates.is_empty():
-            return []
-        self._reporter.record_derivation(
-            ResultsVariable.EMISSIONS, _EMISSIONS_SOURCES, EMISSIONS_DERIVATION
-        )
-        return [build_annual_rows(build_emissions(production, rates), ResultsVariable.EMISSIONS)]
+def _find_rates(
+    generators: ExtensionLookup[GeneratorExtension], name: str
+) -> dict[str, float] | None:
+    return generators.get(name).emission_rates_t_per_mwh
 
 
 def _build_one_area_lines(state: State) -> frozenset[str]:
@@ -233,23 +229,9 @@ def _build_one_area_lines(state: State) -> frozenset[str]:
     buses = state.source_topology.get(SiennaTable.BUSES)
     if links is None or buses is None:
         return frozenset()
-    areas = buses.select(SiennaACBusCol.ID, SiennaACBusCol.AREA).collect()
-    ends = links.select(SiennaLinkCol.NAME, SiennaLinkCol.BUS0, SiennaLinkCol.BUS1).collect()
-    inside = _enrich_end_areas(ends, areas).filter(pl.col(_AREA0) == pl.col(_AREA1))
-    return frozenset(inside[SiennaLinkCol.NAME].to_list())
-
-
-def _enrich_end_areas(ends: pl.DataFrame, areas: pl.DataFrame) -> pl.DataFrame:
-    for end, area in ((SiennaLinkCol.BUS0, _AREA0), (SiennaLinkCol.BUS1, _AREA1)):
-        renamed = areas.rename({SiennaACBusCol.ID: end, SiennaACBusCol.AREA: area})
-        ends = ends.join(renamed, on=end, how="inner")
-    return ends
-
-
-def _drop_components(table: pl.DataFrame, names: frozenset[str]) -> pl.DataFrame:
-    if table.is_empty():
-        return table
-    return table.filter(~pl.col(ResultsCol.COMPONENT).is_in(list(names)))
+    areas = buses.select(SiennaACBusCol.ID, SiennaACBusCol.AREA)
+    ends = links.select(SiennaLinkCol.NAME, SiennaLinkCol.BUS0, SiennaLinkCol.BUS1)
+    return build_one_place_lines(ends, areas, _LINE_ENDS)
 
 
 def _build_all_production(hourly: HourlyResults, weights: pl.DataFrame) -> Production:
@@ -302,7 +284,7 @@ def _build_capacity(
     ]
     stated = [rating for rating in ratings if rating is not None]
     if not stated:
-        return pl.DataFrame()
+        return pl.DataFrame(schema=CAPACITY_SCHEMA)
     return pl.concat(stated).collect().join(years, how="cross")
 
 

@@ -33,6 +33,10 @@ __all__ = [
 ]
 
 
+PYPSA_TO_RESULTS = "pypsa-to-results"
+SIENNA_TO_RESULTS = "sienna-to-results"
+
+
 class ResultsUnit(StrEnum):
     """Fixed unit of a variable's value; the format doc, not the manifest, sets these."""
 

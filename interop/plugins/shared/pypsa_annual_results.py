@@ -14,49 +14,55 @@ from typing import NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import NETWORK_RECORD_NAME, ExtensionKind, record_for
+from interop.core.extensions import (
+    ConversionExtension,
+    ExtensionKind,
+    GeneratorExtension,
+    record_for,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.annual_results import (
+    CAPACITY_SCHEMA,
     PRODUCTION_SCHEMA,
-    AnnualReporter,
+    AnnualDerivation,
+    AnnualRowsMapper,
     Production,
-    build_annual_rows,
-    build_emission_rates,
-    build_emissions,
+    ResultsLeg,
+    drop_components,
 )
-from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
-from interop.plugins.shared.conversion_lines import build_conversion_lines
+from interop.plugins.shared.constants import (
+    ALL_COMPONENTS,
+    Framework,
+    require_extension_attribute,
+)
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_GENERATOR_DEFAULTS,
+    PYPSA_LINK_DEFAULTS,
     PYPSA_NAME_COLUMN,
-    REVERSE_LINK_SUFFIX,
+    PYPSA_STORAGE_UNIT_DEFAULTS,
     PyPSAComponent,
+    PyPSAComponentCol,
+    PyPSADefault,
     PyPSAGeneratorCol,
+    PyPSALinkCol,
     PyPSASolvedAttr,
     PyPSATable,
     PyPSATimeSeriesCol,
 )
-from interop.plugins.shared.pypsa_fuel_components import FuelComponents, build_fuel_components
+from interop.plugins.shared.pypsa_fuel_components import FuelComponents
 from interop.plugins.shared.pypsa_link_places import build_one_location_links
-from interop.plugins.shared.results_constants import ResultsCol, ResultsVariable
+from interop.plugins.shared.pypsa_network_view import PypsaNetworkView
+from interop.plugins.shared.results_constants import PYPSA_TO_RESULTS, ResultsCol
 from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.ports.outbound.reporting import SourceField
 
 _UNWEIGHTED = 1.0
 _NO_PRODUCTION = 0.0
-_P_MAX_PU = "p_max_pu"
-_P_NOM = "p_nom"
-_EFFICIENCY = "efficiency"
-# PyPSA writes a static attribute only where a component differs from its default, so an
-# absent column holds the default.
-_DEFAULTS: dict[str, float | str] = {
-    _P_NOM: 0.0,
-    _P_MAX_PU: 1.0,
-    _EFFICIENCY: 1.0,
-    PyPSAGeneratorCol.CARRIER: "",
-}
 _EMISSION_RATES_FIELD = "emission_rates_t_per_mwh"
-_OWN_EMISSION_RATES_FIELD = "own_emission_rates_t_per_mwh"
+_GENERATOR_RATES = require_extension_attribute(GeneratorExtension, _EMISSION_RATES_FIELD)
+_OWN_RATES = require_extension_attribute(GeneratorExtension, "own_emission_rates_t_per_mwh")
+_CONVERSION_RATES = require_extension_attribute(ConversionExtension, _EMISSION_RATES_FIELD)
 _DELIVERED = "delivered"
 _KEYS = [PyPSATimeSeriesCol.SNAPSHOT, PyPSATimeSeriesCol.COMPONENT]
 
@@ -90,124 +96,124 @@ class _Rated(NamedTuple):
 
     table: str
     component: PyPSAComponent
+    defaults: dict[str, PyPSADefault]
     has_category: bool
     # A generator's p_max_pu is what it may make, so its nameplate is p_nom alone.
     is_rated_by_p_max_pu: bool
 
 
+# PyPSA names p_nom, p_max_pu, efficiency and carrier the same on all three tables.
 _RATED = (
     _Rated(
         PyPSATable.GENERATORS,
         PyPSAComponent.GENERATOR,
+        PYPSA_GENERATOR_DEFAULTS,
         has_category=True,
         is_rated_by_p_max_pu=False,
     ),
     _Rated(
         PyPSATable.STORAGE_UNITS,
         PyPSAComponent.STORAGE_UNIT,
+        PYPSA_STORAGE_UNIT_DEFAULTS,
         has_category=True,
         is_rated_by_p_max_pu=True,
     ),
-    _Rated(PyPSATable.LINKS, PyPSAComponent.LINK, has_category=False, is_rated_by_p_max_pu=True),
+    _Rated(
+        PyPSATable.LINKS,
+        PyPSAComponent.LINK,
+        PYPSA_LINK_DEFAULTS,
+        has_category=False,
+        is_rated_by_p_max_pu=True,
+    ),
 )
+_RATED_BY_TABLE = {rated.table: rated for rated in _RATED}
 # Finds the power of the components of one table, by snapshot, or None where it states none.
 _PowerFinder = Callable[[State, str], pl.LazyFrame | None]
+
+
+def _build_source(component: str, attribute: str) -> SourceField:
+    return SourceField(
+        framework=Framework.PYPSA, component=component, name=ALL_COMPONENTS, attribute=attribute
+    )
+
+
+_ENERGY_SOURCES = [
+    _build_source(PyPSAComponent.GENERATOR, PyPSASolvedAttr.DISPATCH),
+    _build_source(PyPSAComponent.STORAGE_UNIT, PyPSASolvedAttr.DISPATCH),
+    _build_source(PyPSAComponent.LINK, PyPSASolvedAttr.FLOW),
+    _build_source(PyPSAComponent.LINK, PyPSASolvedAttr.FAR_END_FLOW),
+    _build_source(PyPSATable.SNAPSHOTS, PyPSASolvedAttr.GENERATOR_WEIGHTING),
+]
+_PRODUCTION = AnnualDerivation(_ENERGY_SOURCES, _PRODUCTION_DERIVATION)
+_INSTALLED_CAPACITY = AnnualDerivation(
+    [_build_source(rated.component, PyPSAGeneratorCol.P_NOM) for rated in _RATED],
+    _INSTALLED_CAPACITY_DERIVATION,
+)
+_EMISSIONS = AnnualDerivation(
+    [
+        *_ENERGY_SOURCES,
+        _build_source(PyPSAComponent.GENERATOR, _GENERATOR_RATES),
+        _build_source(PyPSAComponent.LINK, _OWN_RATES),
+        _build_source(PyPSAComponent.LINK, _CONVERSION_RATES),
+    ],
+    _FUEL_EMISSIONS_DERIVATION,
+)
 
 
 class PypsaAnnualResultsMapper:
     """Writes `production`, `installed_capacity` and `emissions` for a weighted solve."""
 
     def __init__(self, recorder: ScopedRecorder) -> None:
-        self._reporter = AnnualReporter(recorder, Framework.PYPSA)
+        self._mapper = AnnualRowsMapper(recorder, ResultsLeg(Framework.PYPSA, PYPSA_TO_RESULTS))
 
-    def map_annual(self, state: State) -> list[pl.LazyFrame]:
+    def map_annual(self, state: State, view: PypsaNetworkView) -> list[pl.LazyFrame]:
         weights = _find_weights(state)
         if weights is None or not _is_annual(state, weights):
             return []
-        fuels = build_fuel_components(state)
-        conversions = build_conversion_lines(state.source_extensions)
-        self._report_lines(state, fuels, conversions)
-        activity = _build_all_production(state, weights, fuels)
-        production = activity.drop_fuels(fuels).drop_links(conversions)
-        capacity = _build_capacity(state, _build_years(weights), fuels, conversions)
+        self._report_lines(state, view)
+        activity = _build_all_production(state, weights, view)
+        production = _drop_fuels(activity, view.fuels).drop_links(view.conversion_lines)
+        capacity = _build_capacity(state, _build_years(weights), view)
         produced = production.build_table()
-        if is_solved(state):
+        if view.is_solved:
             produced = _fill_unproduced(produced, capacity)
-        fuel_links = activity.links.filter(pl.col(ResultsCol.COMPONENT).is_in(list(fuels.links)))
-        emitting = pl.concat([activity.generators, activity.storage, fuel_links])
         return [
-            *self._map_production(produced),
-            *self._map_installed_capacity(capacity, produced),
-            *self._map_emissions(state, emitting, fuels),
+            *self._mapper.map_production(produced, _PRODUCTION),
+            *self._mapper.map_installed_capacity(capacity, produced, _INSTALLED_CAPACITY),
+            *self._map_emissions(state, activity, view.fuels),
         ]
 
-    def _report_lines(
-        self, state: State, fuels: FuelComponents, conversions: frozenset[str]
-    ) -> None:
+    def _report_lines(self, state: State, view: PypsaNetworkView) -> None:
         """Report each conversion link, and each link at one location that states no mark."""
-        self._reporter.report_conversions(PyPSAComponent.LINK, conversions)
-        reverses = frozenset(build_reverse_links(state))
-        unmarked = build_one_location_links(state, fuels) - conversions - reverses
-        self._reporter.report_unmarked(PyPSAComponent.LINK, unmarked)
-
-    def _map_production(self, production: pl.DataFrame) -> list[pl.LazyFrame]:
-        if production.is_empty():
-            return []
-        sources = [
-            _build_source(PyPSAComponent.GENERATOR, PyPSASolvedAttr.DISPATCH),
-            _build_source(PyPSAComponent.STORAGE_UNIT, PyPSASolvedAttr.DISPATCH),
-            _build_source(PyPSAComponent.LINK, PyPSASolvedAttr.FLOW),
-            _build_source(PyPSAComponent.LINK, PyPSASolvedAttr.FAR_END_FLOW),
-            _build_source(PyPSATable.SNAPSHOTS, PyPSASolvedAttr.GENERATOR_WEIGHTING),
-        ]
-        self._reporter.record_derivation(
-            ResultsVariable.PRODUCTION, sources, _PRODUCTION_DERIVATION
-        )
-        return [build_annual_rows(production, ResultsVariable.PRODUCTION)]
-
-    def _map_installed_capacity(
-        self, capacity: pl.DataFrame, production: pl.DataFrame
-    ) -> list[pl.LazyFrame]:
-        if capacity.is_empty():
-            return []
-        sources = [_build_source(rated.component, _P_NOM) for rated in _RATED]
-        self._reporter.record_derivation(
-            ResultsVariable.INSTALLED_CAPACITY, sources, _INSTALLED_CAPACITY_DERIVATION
-        )
-        unproduced = capacity.join(production, on=ResultsCol.COMPONENT, how="anti")
-        self._reporter.report_unproduced(unproduced)
-        return [build_annual_rows(capacity, ResultsVariable.INSTALLED_CAPACITY)]
+        conversions = view.conversion_lines
+        self._mapper.report_conversions(PyPSAComponent.LINK, conversions)
+        unmarked = build_one_location_links(state, view.fuels) - conversions
+        self._mapper.report_unmarked(PyPSAComponent.LINK, unmarked - set(view.reverse_links))
 
     def _map_emissions(
-        self, state: State, activity: pl.DataFrame, fuels: FuelComponents
+        self, state: State, activity: Production, fuels: FuelComponents
     ) -> list[pl.LazyFrame]:
         """Emissions of each component with a rate: a generator, a storage unit such as a hydro
         plant, a plant link and a link of a fuel."""
-        rates = build_emission_rates(activity, lambda name: _find_rates(state, name, fuels))
-        if rates.is_empty():
-            return []
-        sources = [
-            _build_source(ExtensionKind.GENERATOR, _EMISSION_RATES_FIELD),
-            _build_source(ExtensionKind.GENERATOR, _OWN_EMISSION_RATES_FIELD),
-            _build_source(ExtensionKind.CONVERSION, _EMISSION_RATES_FIELD),
-        ]
-        self._reporter.record_derivation(
-            ResultsVariable.EMISSIONS, sources, _FUEL_EMISSIONS_DERIVATION
+        fuel_links = activity.links.filter(pl.col(ResultsCol.COMPONENT).is_in(list(fuels.links)))
+        energy = pl.concat([activity.generators, activity.storage, fuel_links])
+        return self._mapper.map_emissions(
+            energy, lambda name: _find_rates(state, name, fuels), _EMISSIONS
         )
-        return [build_annual_rows(build_emissions(activity, rates), ResultsVariable.EMISSIONS)]
 
 
-def is_solved(state: State) -> bool:
-    """Whether the network states an objective, which only a solve writes."""
-    record = record_for(state.source_extensions, ExtensionKind.NETWORK, NETWORK_RECORD_NAME)
-    return record is not None and record.objective is not None
+def _drop_fuels(production: Production, fuels: FuelComponents) -> Production:
+    """The production of electricity: no generator and no link of a fuel."""
+    return Production(
+        generators=drop_components(production.generators, fuels.generators),
+        storage=production.storage,
+        links=drop_components(production.links, fuels.fuel_links),
+    )
 
 
 def _fill_unproduced(production: pl.DataFrame, capacity: pl.DataFrame) -> pl.DataFrame:
     """A production of 0 for each rated component with no output; PyPSA's netCDF export
     leaves out a series that is 0 in every snapshot."""
-    if capacity.is_empty():
-        return production
     keys = [ResultsCol.COMPONENT, AnnualCol.YEAR]
     unproduced = capacity.join(production, on=keys, how="anti").select(
         ResultsCol.COMPONENT,
@@ -244,15 +250,18 @@ def _express_year() -> pl.Expr:
     return pl.col(PyPSATimeSeriesCol.SNAPSHOT).dt.year().cast(pl.Int32).alias(AnnualCol.YEAR)
 
 
-def _build_all_production(state: State, weights: pl.DataFrame, fuels: FuelComponents) -> Production:
+def _build_all_production(
+    state: State, weights: pl.DataFrame, view: PypsaNetworkView
+) -> Production:
     """The energy of each component: what a link of a fuel takes in at bus0, and what every
     other component puts out."""
-    links = _build_production(state, PyPSATable.LINKS, _build_link_delivery, weights, fuels)
-    inputs = _build_production(state, PyPSATable.LINKS, _find_link_input, weights, fuels)
-    is_fuel_link = pl.col(ResultsCol.COMPONENT).is_in(list(fuels.fuel_links))
+    energy = _EnergyBuilder(state, weights, view)
+    is_fuel_link = pl.col(ResultsCol.COMPONENT).is_in(list(view.fuels.fuel_links))
+    links = energy.build_production(PyPSATable.LINKS, _build_link_delivery)
+    inputs = energy.build_production(PyPSATable.LINKS, _find_link_input)
     return Production(
-        generators=_build_production(state, PyPSATable.GENERATORS, _find_dispatch, weights, fuels),
-        storage=_build_production(state, PyPSATable.STORAGE_UNITS, _find_dispatch, weights, fuels),
+        generators=energy.build_production(PyPSATable.GENERATORS, _find_dispatch),
+        storage=energy.build_production(PyPSATable.STORAGE_UNITS, _find_dispatch),
         links=pl.concat([links.filter(~is_fuel_link), inputs.filter(is_fuel_link)]),
     )
 
@@ -290,28 +299,32 @@ def _build_link_delivery(state: State, table: str) -> pl.LazyFrame | None:
     return joined.select(*_KEYS, delivered.alias(_DELIVERED))
 
 
-def _build_production(
-    state: State,
-    table: str,
-    find_power: _PowerFinder,
-    weights: pl.DataFrame,
-    fuels: FuelComponents,
-) -> pl.DataFrame:
-    """MWh in each year, by component: the power × the hours of the snapshot, summed."""
-    power = find_power(state, table)
-    if power is None:
-        return pl.DataFrame(schema=PRODUCTION_SCHEMA)
-    named = power.with_columns(_express_owner(state, table).alias(PyPSATimeSeriesCol.COMPONENT))
-    produced = _sum_energy(named, weights)
-    return (
-        produced.join(_build_categories(state, table, fuels), on=ResultsCol.COMPONENT, how="left")
-        .select(list(PRODUCTION_SCHEMA))
-        .collect()
-        .cast(pl.Schema(PRODUCTION_SCHEMA))
-    )
+class _EnergyBuilder:
+    """Builds the MWh of the components of one table, in each year of the solve."""
+
+    def __init__(self, state: State, weights: pl.DataFrame, view: PypsaNetworkView) -> None:
+        self._state = state
+        self._weights = weights
+        self._view = view
+
+    def build_production(self, table: str, find_power: _PowerFinder) -> pl.DataFrame:
+        """MWh in each year, by component: the power × the hours of the snapshot, summed."""
+        power = find_power(self._state, table)
+        if power is None:
+            return pl.DataFrame(schema=PRODUCTION_SCHEMA)
+        owner = _express_owner(table, self._view.reverse_links)
+        named = power.with_columns(owner.alias(PyPSATimeSeriesCol.COMPONENT))
+        categories = _build_categories(self._state, table, self._view.fuels)
+        return (
+            _build_yearly_energy(named, self._weights)
+            .join(categories, on=ResultsCol.COMPONENT, how="left")
+            .select(list(PRODUCTION_SCHEMA))
+            .collect()
+            .cast(pl.Schema(PRODUCTION_SCHEMA))
+        )
 
 
-def _sum_energy(power: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
+def _build_yearly_energy(power: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
     energy = (pl.col(_DELIVERED) * pl.col(AnnualCol.WEIGHT)).sum().alias(ResultsCol.VALUE)
     return (
         power.join(weights.lazy(), on=PyPSATimeSeriesCol.SNAPSHOT, how="inner")
@@ -322,26 +335,12 @@ def _sum_energy(power: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
     )
 
 
-def _express_owner(state: State, table: str) -> pl.Expr:
+def _express_owner(table: str, reverse_links: dict[str, str]) -> pl.Expr:
     """The component that owns each row: the two-way link of a reverse link, else itself."""
     component = pl.col(PyPSATimeSeriesCol.COMPONENT)
-    reverses = build_reverse_links(state) if table == PyPSATable.LINKS else {}
-    if not reverses:
+    if table != PyPSATable.LINKS or not reverse_links:
         return component
-    return component.replace(reverses)
-
-
-def build_reverse_links(state: State) -> dict[str, str]:
-    """Each reverse link of the network, mapped to the two-way link it carries the flow back of."""
-    topology = state.source_topology.get(PyPSATable.LINKS)
-    if topology is None:
-        return {}
-    names = set(topology.select(PYPSA_NAME_COLUMN).collect().to_series().to_list())
-    return {
-        name: name.removesuffix(REVERSE_LINK_SUFFIX)
-        for name in names
-        if name.endswith(REVERSE_LINK_SUFFIX) and name.removesuffix(REVERSE_LINK_SUFFIX) in names
-    }
+    return component.replace(reverse_links)
 
 
 def _build_categories(state: State, table: str, fuels: FuelComponents) -> pl.LazyFrame:
@@ -350,8 +349,8 @@ def _build_categories(state: State, table: str, fuels: FuelComponents) -> pl.Laz
     topology = state.source_topology.get(table)
     if topology is None:
         return pl.LazyFrame(schema={ResultsCol.COMPONENT: pl.Utf8, ResultsCol.CATEGORY: pl.Utf8})
-    rated = next(one for one in _RATED if one.table == table)
-    carrier = _express_attribute(topology, PyPSAGeneratorCol.CARRIER)
+    rated = _RATED_BY_TABLE[table]
+    carrier = _express_attribute(topology, rated, PyPSAComponentCol.CARRIER)
     if rated.has_category:
         category = carrier
     else:
@@ -363,46 +362,48 @@ def _build_categories(state: State, table: str, fuels: FuelComponents) -> pl.Laz
     )
 
 
-def _build_capacity(
-    state: State, years: pl.DataFrame, fuels: FuelComponents, conversions: frozenset[str]
-) -> pl.DataFrame:
+def _build_capacity(state: State, years: pl.DataFrame, view: PypsaNetworkView) -> pl.DataFrame:
     """The MW rating of each component that puts out electricity, for each year of the solve."""
     ratings = [
-        _build_rating(state, rated, fuels)
+        _build_rating(state, rated, view.fuels)
         for rated in _RATED
         if state.source_topology.get(rated.table) is not None
     ]
     if not ratings:
-        return pl.DataFrame()
-    excluded = [*build_reverse_links(state), *fuels.generators, *fuels.fuel_links, *conversions]
+        return pl.DataFrame(schema=CAPACITY_SCHEMA)
+    fuels = view.fuels
+    excluded = [*view.reverse_links, *fuels.generators, *fuels.fuel_links, *view.conversion_lines]
     rated = pl.concat(ratings).filter(~pl.col(ResultsCol.COMPONENT).is_in(excluded))
     return rated.collect().join(years, how="cross")
 
 
 def _build_rating(state: State, rated: _Rated, fuels: FuelComponents) -> pl.LazyFrame:
-    """A plant link rates the electricity that it can put out, p_nom × efficiency."""
     topology = state.source_topology[rated.table]
-    rating = _express_attribute(topology, _P_NOM)
-    if rated.is_rated_by_p_max_pu:
-        is_plant = pl.col(PYPSA_NAME_COLUMN).is_in(list(fuels.plant_links))
-        output = rating * _express_attribute(topology, _EFFICIENCY)
-        rating = (
-            pl.when(is_plant)
-            .then(output)
-            .otherwise(rating * _express_attribute(topology, _P_MAX_PU))
-        )
     return topology.select(
         pl.col(PYPSA_NAME_COLUMN).alias(ResultsCol.COMPONENT),
         pl.lit(str(rated.component)).alias(AnnualCol.COMPONENT_TYPE),
-        rating.cast(pl.Float64).alias(ResultsCol.VALUE),
+        _express_rating(topology, rated, fuels).cast(pl.Float64).alias(ResultsCol.VALUE),
     ).join(_build_categories(state, rated.table, fuels), on=ResultsCol.COMPONENT, how="left")
 
 
-def _express_attribute(topology: pl.LazyFrame, attribute: str) -> pl.Expr:
+def _express_rating(topology: pl.LazyFrame, rated: _Rated, fuels: FuelComponents) -> pl.Expr:
+    """A plant link rates the electricity that it can put out, p_nom × efficiency."""
+    rating = _express_attribute(topology, rated, PyPSAGeneratorCol.P_NOM)
+    if not rated.is_rated_by_p_max_pu:
+        return rating
+    available = rating * _express_attribute(topology, rated, PyPSALinkCol.P_MAX_PU)
+    if rated.table != PyPSATable.LINKS:
+        return available
+    is_plant = pl.col(PYPSA_NAME_COLUMN).is_in(list(fuels.plant_links))
+    output = rating * _express_attribute(topology, rated, PyPSALinkCol.EFFICIENCY)
+    return pl.when(is_plant).then(output).otherwise(available)
+
+
+def _express_attribute(topology: pl.LazyFrame, rated: _Rated, attribute: str) -> pl.Expr:
     """A static attribute of the components, or PyPSA's default where the file omits it."""
     if attribute in topology.collect_schema().names():
         return pl.col(attribute)
-    return pl.lit(_DEFAULTS[attribute])
+    return pl.lit(rated.defaults[attribute])
 
 
 def _find_rates(state: State, name: str, fuels: FuelComponents) -> dict[str, float] | None:
@@ -418,9 +419,3 @@ def _find_rates(state: State, name: str, fuels: FuelComponents) -> dict[str, flo
     if name in fuels.plant_links:
         return record.own_emission_rates_t_per_mwh
     return record.emission_rates_t_per_mwh
-
-
-def _build_source(component: str, attribute: str) -> SourceField:
-    return SourceField(
-        framework=Framework.PYPSA, component=component, name=ALL_COMPONENTS, attribute=attribute
-    )
