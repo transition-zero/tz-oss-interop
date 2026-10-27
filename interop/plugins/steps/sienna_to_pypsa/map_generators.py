@@ -48,6 +48,9 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_carrier
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     ANNUAL_BOUND_FIELDS,
+    GENERATOR_CARRIER,
+    GENERATOR_COMMITTABLE,
+    GENERATOR_EXTENDABLE,
     RENEWABLE_CARRIED,
     RENEWABLE_MAPPED_FIELDS,
     THERMAL_CARRIED,
@@ -385,11 +388,11 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     reporter.record_p_min_pu_from_limits(sienna_type, m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     if m.ext_carrier is not None:
-        reporter.record_carrier_from_ext(sienna_type, m.name, m.ext_carrier)
+        record_carried_value(reporter, sienna_type, m.name, GENERATOR_CARRIER, m.ext_carrier)
     elif m.carrier is not None:
         reporter.record_carrier_thermal(m.name, m.prime_mover, m.fuel, m.carrier)
     if m.committable_from_ext:
-        reporter.record_committable_from_ext(sienna_type, m.name, m.committable)
+        record_carried_value(reporter, sienna_type, m.name, GENERATOR_COMMITTABLE, m.committable)
     reporter.record_start_up_cost(sienna_type, m.name, m.start_up_cost)
     reporter.record_shut_down_cost(sienna_type, m.name, m.shut_down_cost)
     if m.has_ramp_limits:
@@ -417,11 +420,19 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         )
     record_carried_fields(reporter, sienna_type, m.ext, THERMAL_CARRIED)
     _record_overnight_cost(reporter, sienna_type, m.name, m.overnight_cost)
+    _record_p_nom_extendable(reporter, sienna_type, m)
+    record_p_nom_min(reporter, sienna_type, m.name, m.floor)
+
+
+def _record_p_nom_extendable(
+    reporter: GeneratorReporter, sienna_type: str, m: _ThermalMapping | _RenewableMapping
+) -> None:
     if m.p_nom_extendable_from_ext:
-        reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
+        record_carried_value(
+            reporter, sienna_type, m.name, GENERATOR_EXTENDABLE, m.p_nom_extendable
+        )
     else:
         reporter.record_p_nom_extendable_default(m.name)
-    record_p_nom_min(reporter, sienna_type, m.name, m.floor)
 
 
 def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
@@ -528,13 +539,10 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
     else:
         reporter.record_no_cost(m.sienna_type, m.name)
     if m.ext_carrier is not None:
-        reporter.record_carrier_from_ext(m.sienna_type, m.name, m.ext_carrier)
+        record_carried_value(reporter, m.sienna_type, m.name, GENERATOR_CARRIER, m.ext_carrier)
     elif m.carrier is not None:
         reporter.record_carrier_from_prime_mover(m.sienna_type, m.name, m.prime_mover, m.carrier)
-    if m.p_nom_extendable_from_ext:
-        reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
-    else:
-        reporter.record_p_nom_extendable_default(m.name)
+    _record_p_nom_extendable(reporter, m.sienna_type, m)
     record_p_nom_min(reporter, m.sienna_type, m.name, m.floor)
 
 

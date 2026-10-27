@@ -36,8 +36,14 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     stage_companion_columns,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    LINE_CARRIED,
     LINE_MAPPED_FIELDS,
+    LINK_CARRIED,
     LINK_MAPPED_FIELDS,
+    LINK_P_MAX_PU,
+    LINK_P_MIN_PU,
+    record_carried_fields,
+    record_carried_value,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
@@ -57,6 +63,9 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
         PyPSALinkCol.P_MAX_PU,
     ),
 )
+
+# The Sienna type of every link that this step maps.
+_LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line.
 _DEFAULT_LENGTH = 0.0
@@ -157,14 +166,7 @@ def _read_line_ext(
     reporter: LineReporter, sienna_type: SiennaComponent, name: str, ext: LineExtension
 ) -> _LineExtFields:
     """Read the PyPSA round-trip fields a line carries in the sidecar, one event per field."""
-    if ext.length is not None:
-        reporter.record_length(sienna_type, name, ext.length)
-    if ext.num_parallel is not None:
-        reporter.record_num_parallel(sienna_type, name, ext.num_parallel)
-    if ext.carrier is not None:
-        reporter.record_carrier_from_ext(sienna_type, name, ext.carrier)
-    if ext.s_nom_extendable is not None:
-        reporter.record_s_nom_extendable_from_ext(sienna_type, name, ext.s_nom_extendable)
+    record_carried_fields(reporter, sienna_type, ext, LINE_CARRIED)
     return _LineExtFields(
         length=ext.length if ext.length is not None else _DEFAULT_LENGTH,
         num_parallel=(ext.num_parallel if ext.num_parallel is not None else _DEFAULT_NUM_PARALLEL),
@@ -202,12 +204,12 @@ def _reconstruct_link_power_limits(
         p_nom = limit_max
         reporter.record_p_nom(name, limit_max, p_nom)
     else:
-        reporter.record_p_max_pu_from_ext(name, p_max_pu)
+        record_carried_value(reporter, _LINK_TYPE, name, LINK_P_MAX_PU, p_max_pu)
         p_nom = limit_max / p_max_pu if p_max_pu != 0.0 else 0.0
         reporter.record_p_nom_from_p_max_pu(name, limit_max, p_max_pu, p_nom)
     if ext.p_min_pu is not None:
         p_min_pu = ext.p_min_pu
-        reporter.record_p_min_pu_from_ext(name, p_min_pu)
+        record_carried_value(reporter, _LINK_TYPE, name, LINK_P_MIN_PU, p_min_pu)
     elif p_nom == 0.0:
         p_min_pu = 0.0
         reporter.record_p_min_pu_zero_capacity(name)
@@ -341,7 +343,7 @@ def _build_link_row(
     limits = _reconstruct_link_power_limits(
         reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
     )
-    _record_link_ext(reporter, name, ext)
+    record_carried_fields(reporter, _LINK_TYPE, ext, LINK_CARRIED)
     p_nom_min = extendable_floor(limits.p_nom, ext.p_nom_extendable)
     if p_nom_min is not None:
         reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
@@ -383,13 +385,3 @@ def _derive_efficiency(reporter: LinkReporter, row: dict[str, Any]) -> float:
     efficiency = 1.0 - loss_term
     reporter.record_efficiency(row[SiennaLinkCol.NAME], loss_term, efficiency)
     return efficiency
-
-
-def _record_link_ext(reporter: LinkReporter, name: str, ext: ControllableLineExtension) -> None:
-    """The values of the sidecar record that the Link maps."""
-    if ext.carrier is not None:
-        reporter.record_carrier_from_ext(name, ext.carrier)
-    if ext.marginal_cost is not None:
-        reporter.record_marginal_cost_from_ext(name, ext.marginal_cost)
-    if ext.p_nom_extendable is not None:
-        reporter.record_p_nom_extendable_from_ext(name, ext.p_nom_extendable)

@@ -51,6 +51,9 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     HYDRO_CARRIED,
     HYDRO_MAPPED_FIELDS,
     STORAGE_CARRIED,
+    STORAGE_CARRIER,
+    STORAGE_EXTENDABLE,
+    STORAGE_INFLOW,
     STORAGE_MAPPED_FIELDS,
     build_carried_values,
     record_carried_fields,
@@ -188,7 +191,7 @@ def _record_inflow(
 ) -> None:
     """A reservoir that states an inflow refills at it; one that states none refills at zero."""
     if inflow:
-        reporter.record_inflow_from_ext(sienna_type, name, inflow)
+        record_carried_value(reporter, sienna_type, name, STORAGE_INFLOW, inflow)
     else:
         reporter.record_inflow_default(name)
 
@@ -391,11 +394,11 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
     reporter.record_state_of_charge_initial(m.name, m.initial_level, m.state_of_charge_initial)
     reporter.record_cyclic(m.name, m.cyclic)
     if m.ext_carrier is not None:
-        reporter.record_carrier_from_ext(m.name, m.ext_carrier)
+        record_carried_value(reporter, sienna_type, m.name, STORAGE_CARRIER, m.ext_carrier)
     else:
         reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
     if m.p_nom_extendable_from_ext:
-        reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
+        record_carried_value(reporter, sienna_type, m.name, STORAGE_EXTENDABLE, m.p_nom_extendable)
     else:
         reporter.record_p_nom_extendable_default(m.name)
     _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
