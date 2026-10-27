@@ -15,16 +15,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
+from pydantic import BaseModel
 
 from interop.core.extensions import ExtensionKind, ExtensionReader, GeneratorExtension
-from interop.core.pipeline import State
+from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     LINK_FURTHER_PORTS,
     LINKS_DESTINATION_SCHEMA,
+    PyPSABusCol,
     PyPSADestinationTable,
     PyPSAGeneratorCol,
     PyPSALinkCol,
@@ -85,6 +87,24 @@ class _KeptReason(NamedTuple):
     is_kept: Callable[[_Plant], bool]
     reason: str
     note: str
+
+
+class SiennaToPypsaMapPlantLinks(TranslationStep):
+    """Moves each plant whose fuels have a bus from the generators to the links.
+
+    It runs after the fuels step, which adds the buses of the fuels to the network.
+    """
+
+    name: ClassVar[str] = "sienna_to_pypsa_map_plant_links"
+    params_schema: ClassVar[type[BaseModel] | None] = None
+
+    def __init__(self, recorder: ScopedRecorder, extensions: ExtensionReader) -> None:
+        self._mapper = PlantLinkMapper(recorder)
+        self._extensions = extensions
+
+    def run(self, state: State, params: BaseModel | None) -> State:
+        self._mapper.map_plant_links(state, self._extensions, _build_bus_names(state))
+        return state
 
 
 class PlantLinkMapper:
@@ -166,6 +186,11 @@ class PlantLinkMapper:
         for column in _DROPPED_COLUMNS:
             if generator[column] is not None:
                 self._reporter.record_dropped(name, column, generator[column])
+
+
+def _build_bus_names(state: State) -> set[str]:
+    buses = state.destination_tables.get(PyPSADestinationTable.BUSES)
+    return set() if buses is None else set(buses[PyPSABusCol.NAME].to_list())
 
 
 def _list_plants(

@@ -23,6 +23,7 @@ from interop.plugins.steps.sienna_to_pypsa.map_conversions import SiennaToPypsaM
 from interop.plugins.steps.sienna_to_pypsa.map_fuels import SiennaToPypsaMapFuels
 from interop.plugins.steps.sienna_to_pypsa.map_generators import SiennaToPypsaMapGenerators
 from interop.plugins.steps.sienna_to_pypsa.map_loads import SiennaToPypsaMapLoads
+from interop.plugins.steps.sienna_to_pypsa.map_plant_links import SiennaToPypsaMapPlantLinks
 from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import SnapshotWeightingMapper
 from interop.plugins.steps.sienna_to_pypsa.map_storage_units import SiennaToPypsaMapStorageUnits
 from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsaMapTransmission
@@ -98,6 +99,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
             SiennaToPypsaMapTransmission(self._scoped(SiennaToPypsaMapTransmission.name), reader),
             SiennaToPypsaMapConversions(self._scoped(SiennaToPypsaMapConversions.name), reader),
             SiennaToPypsaMapFuels(self._scoped(SiennaToPypsaMapFuels.name), reader),
+            SiennaToPypsaMapPlantLinks(self._scoped(SiennaToPypsaMapPlantLinks.name), reader),
         )
 
     def _scoped(self, step: str) -> ScopedRecorder:

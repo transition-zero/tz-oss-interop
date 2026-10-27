@@ -104,7 +104,7 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the PyPSA network "outputs/network.nc" link "gas" attribute "marginal_cost" is 2.5
     And the PyPSA network "outputs/network.nc" link "gas" has carrier "CCGT"
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "own_emission_rates_t_per_mwh" set to {"CO2": 0.1}
-    And the file "decisions.md" contains "| `pypsa.Link.gas.p_nom` = 400.0 MW | base_power × the MWh of that fuel for each MWh of electricity |"
+    And the file "decisions.md" contains "| `pypsa.Link.gas.p_nom` = 400.0 MW | base_power × the MWh of that fuel for each MWh of electricity |  | sienna-to-pypsa | sienna_to_pypsa_map_plant_links |"
 
   Scenario: A gas plant with an annual energy bound stays a Generator, and the log says so
     Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}

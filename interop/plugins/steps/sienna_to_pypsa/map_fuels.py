@@ -2,10 +2,8 @@
 
 Sienna holds electricity only, so a generator and a load of another fuel reach this hop as
 records that name their bus. Each one becomes a Generator or a Load on that bus, where the
-network holds the bus. A ThermalStandard whose record names the bus of each fuel that it burns
-becomes a Link from the bus of its largest fuel to its electricity bus, so the network prices
-the fuel once. A plant that states an annual energy bound stays a Generator, because a PyPSA
-Link has no e_sum_min or e_sum_max.
+network holds the bus. The plant links step then moves a ThermalStandard that burns such a fuel
+to a Link from the bus of that fuel.
 """
 
 from __future__ import annotations
@@ -51,7 +49,6 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters import (
     GeneratorReporter,
     LoadReporter,
 )
-from interop.plugins.steps.sienna_to_pypsa.map_plant_links import PlantLinkMapper
 
 # PyPSA's own values for a generator that the record states nothing for.
 _NO_OUTPUT = 0.0
@@ -97,7 +94,6 @@ class SiennaToPypsaMapFuels(TranslationStep):
         self._map_records(state, buses, _GENERATORS)
         loads = self._map_records(state, buses, _LOADS)
         _stage_load_series(state, loads)
-        PlantLinkMapper(self._recorder).map_plant_links(state, self._extensions, buses)
         return state
 
     def _map_records(
