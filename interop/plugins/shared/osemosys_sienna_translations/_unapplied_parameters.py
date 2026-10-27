@@ -171,7 +171,7 @@ def _read_stated_groups(state: State, parameter: str, year: int) -> UnappliedRow
     The rows are grouped before they are collected, as a parameter can hold a row for each
     timeslice.
     """
-    rows = read_parameter(state, parameter, year).lazy()
+    rows = read_parameter(state, parameter, year)
     columns = rows.collect_schema().names()
     default = find_parameter_default(state, parameter)
     if default is not None:

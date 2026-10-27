@@ -330,7 +330,7 @@ def _read_emitters(state: State, years: Sequence[int]) -> pl.DataFrame:
 
 def _read_tags(state: State, years: Sequence[int], parameter: str) -> pl.DataFrame:
     """The members that a tag names, with the value of the earliest year that states one."""
-    rows = read_parameter_for_years(state, parameter, years).lazy()
+    rows = read_parameter_for_years(state, parameter, years)
     member = _choose_member_column(rows.collect_schema().names())
     tags = (
         rows.filter(pl.col(VALUE_COL) != 0)
@@ -371,7 +371,6 @@ def _read_memberships(state: State, years: Sequence[int]) -> pl.DataFrame:
     """The regions of each region group, in each year that states one."""
     return (
         read_parameter_for_years(state, PolicyParameter.REGION_GROUP_TAG_REGION, years)
-        .lazy()
         .filter(pl.col(VALUE_COL) == MEMBERSHIP_FLAG)
         .select(REGION_GROUP, REGION, pl.col(YEAR).cast(pl.Int64))
         .unique()
