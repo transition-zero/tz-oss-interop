@@ -13,9 +13,7 @@ Each value stays in the units of the model: currency and emissions per energy un
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import NamedTuple
 
 import polars as pl
 
@@ -60,28 +58,6 @@ IS_RUNNABLE = "is_runnable"
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_KEYS = [REGION, FUEL]
 
-_PRICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    REGION: pl.Utf8,
-    FUEL: pl.Utf8,
-    PRODUCER: pl.Utf8,
-    PRODUCER_COUNT: pl.Int64,
-    PRODUCER_COST: pl.Float64,
-    OUTPUT_RATIO: pl.Float64,
-    COST_PER_OUTPUT: pl.Float64,
-}
-
-
-class FuelProducer(NamedTuple):
-    """One `fuel_supply` technology that puts out a fuel, and its variable cost at the mode."""
-
-    technology: str
-    variable_cost: float
-    output_ratio: float
-
-    @property
-    def cost_per_output(self) -> float:
-        return self.variable_cost / self.output_ratio
-
 
 @dataclass(frozen=True)
 class FuelSupply:
@@ -96,14 +72,6 @@ class FuelSupply:
     prices: pl.DataFrame
     emission_rates: pl.DataFrame
     stranded: pl.DataFrame
-
-
-def choose_fuel_producer(producers: Sequence[FuelProducer]) -> FuelProducer | None:
-    """The producer with the lowest variable cost for each unit of the fuel, or None.
-
-    Two producers at one cost go to the first name, so the choice does not depend on row order.
-    """
-    return min(producers, key=lambda one: (one.cost_per_output, one.technology), default=None)
 
 
 def build_fuel_supply(state: State, year: int, mode: str) -> FuelSupply:
@@ -167,32 +135,21 @@ def _list_stranded_fuels(candidates: pl.DataFrame) -> pl.DataFrame:
 
 
 def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:
-    rows = []
-    for (region, fuel), group in candidates.sort(REGION, FUEL).group_by(
-        [REGION, FUEL], maintain_order=True
-    ):
-        producers = [
-            FuelProducer(*row)
-            for row in group.select(TECHNOLOGY, PRODUCER_COST, OUTPUT_RATIO).iter_rows()
-        ]
-        chosen = choose_fuel_producer(producers)
-        if chosen is not None:
-            rows.append(_build_price_row(str(region), str(fuel), chosen, len(producers)))
-    return pl.DataFrame(rows, schema=_PRICES_SCHEMA)
+    """The producer with the lowest variable cost for each unit of each fuel.
 
-
-def _build_price_row(
-    region: str, fuel: str, chosen: FuelProducer, count: int
-) -> dict[str, str | int | float]:
-    return {
-        REGION: region,
-        FUEL: fuel,
-        PRODUCER: chosen.technology,
-        PRODUCER_COUNT: count,
-        PRODUCER_COST: chosen.variable_cost,
-        OUTPUT_RATIO: chosen.output_ratio,
-        COST_PER_OUTPUT: chosen.cost_per_output,
-    }
+    Two producers at one cost go to the first name, so the choice does not depend on row order.
+    """
+    cost = (pl.col(PRODUCER_COST) / pl.col(OUTPUT_RATIO)).alias(COST_PER_OUTPUT)
+    return (
+        candidates.with_columns(cost)
+        .sort(REGION, FUEL, COST_PER_OUTPUT, TECHNOLOGY)
+        .group_by(REGION, FUEL, maintain_order=True)
+        .agg(
+            pl.col(TECHNOLOGY).first().alias(PRODUCER),
+            pl.len().alias(PRODUCER_COUNT),
+            pl.col(PRODUCER_COST, OUTPUT_RATIO, COST_PER_OUTPUT).first(),
+        )
+    )
 
 
 def _read_emission_rates(state: State, year: int, mode: str, prices: pl.DataFrame) -> pl.DataFrame:
