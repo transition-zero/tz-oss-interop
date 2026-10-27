@@ -59,6 +59,14 @@ _LOAD_COLUMNS = (
 )
 
 
+class _RowDefault(NamedTuple):
+    """A PyPSA column that takes PyPSA's own value where the record states none of `fields`."""
+
+    column: str
+    value: object
+    fields: tuple[str, ...] = ()
+
+
 class _CarriedField(NamedTuple):
     """A field of a sidecar record, the PyPSA column that takes its value, and its unit."""
 
@@ -77,6 +85,7 @@ class _FuelMapping:
     schema: dict[str, pl.DataType | type[pl.DataType]]
     mapped_fields: frozenset[str]
     carried: tuple[_CarriedField, ...]
+    defaults: tuple[_RowDefault, ...]
     build_row: Callable[[Any], dict[str, Any]]
     build_reporter: Callable[[ScopedRecorder], GeneratorReporter | LoadReporter]
 
@@ -111,6 +120,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         for record in records:
             lookup.get_fields(record.name, mapping.mapped_fields)
             _record_stated(reporter, mapping, record)
+            _record_defaults(reporter, mapping, record)
         rows = [mapping.build_row(record) for record in records]
         append_destination_rows(state, mapping.table, rows, mapping.schema)
         relayed = [lookup.build_relayed(record.name) for record in records]
@@ -134,6 +144,16 @@ def _record_stated(
             reporter.record_carried(
                 mapping.kind, record.name, carried.field_name, carried.column, value, carried.unit
             )
+
+
+def _record_defaults(
+    reporter: GeneratorReporter | LoadReporter,
+    mapping: _FuelMapping,
+    record: GeneratorExtension | LoadExtension,
+) -> None:
+    for default in mapping.defaults:
+        if all(getattr(record, field_name) is None for field_name in default.fields):
+            reporter.record_unstated_default(record.name, default.column, default.value)
 
 
 def _stage_load_series(state: State, loads: list[GeneratorExtension | LoadExtension]) -> None:
@@ -191,6 +211,14 @@ _GENERATORS = _FuelMapping(
         _CarriedField("marginal_cost", PyPSAGeneratorCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
         _CarriedField("p_max_pu", PyPSAGeneratorCol.P_MAX_PU),
     ),
+    defaults=(
+        _RowDefault(PyPSAGeneratorCol.P_NOM, _NO_OUTPUT, ("p_nom",)),
+        _RowDefault(PyPSAGeneratorCol.P_MIN_PU, _NO_OUTPUT),
+        _RowDefault(PyPSAGeneratorCol.P_MAX_PU, _WHOLE, ("p_max_pu",)),
+        _RowDefault(PyPSAGeneratorCol.MARGINAL_COST, _NO_COST, ("marginal_cost",)),
+        _RowDefault(PyPSAGeneratorCol.COMMITTABLE, False),  # noqa: FBT003
+        _RowDefault(PyPSAGeneratorCol.P_NOM_EXTENDABLE, False, ("p_nom_extendable",)),  # noqa: FBT003
+    ),
     build_row=_build_generator_row,
     build_reporter=GeneratorReporter,
 )
@@ -205,6 +233,7 @@ _LOADS = _FuelMapping(
         _CarriedField("carrier", PyPSALoadCol.CARRIER),
         _CarriedField("p_set", PyPSALoadCol.P_SET, UNIT_MW),
     ),
+    defaults=(_RowDefault(PyPSALoadCol.P_SET, _NO_OUTPUT, ("p_set", "p_set_series")),),
     build_row=_build_load_row,
     build_reporter=LoadReporter,
 )

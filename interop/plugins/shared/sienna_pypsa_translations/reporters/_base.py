@@ -24,6 +24,7 @@ _UNPRICED_OVERNIGHT_COST_NOTE = (
     "the record states no {missing_field}, and PyPSA annualises an overnight_cost only over a "
     "discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it"
 )
+_UNSTATED_DEFAULT_NOTE = "the sidecar record states no {column}, so PyPSA's own default applies"
 
 
 class SiennaToPypsaReporter(DestinationReporter):
@@ -47,6 +48,13 @@ class SiennaToPypsaReporter(DestinationReporter):
             sources=[self._source_field(sienna_type, name, attribute, value, unit)],
             destinations=[self._destination(name, column, value, unit)],
             derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
+    def record_unstated_default(self, name: str, column: str, value: object) -> None:
+        """A PyPSA column that takes PyPSA's own value, as the sidecar record states none."""
+        self._default_applied(
+            destinations=[self._destination(name, column, value)],
+            note=_UNSTATED_DEFAULT_NOTE.format(column=column),
         )
 
     def record_bound_unapplied(
