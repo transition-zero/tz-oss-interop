@@ -398,7 +398,7 @@ def _read_value(
         _express_scaled(rows, value.scale, operations.units).alias(_VALUE_SCALED)
     )
     if value.detail is not None:
-        return _group_details(scaled, value, keys)
+        return _reshape_details(scaled, value, keys)
     table = scaled.select(
         *keys,
         pl.col(VALUE_COL).alias(value.stated_column),
@@ -427,7 +427,7 @@ def _read_rows(
     return rows.join(keys, on=keys.columns, how="semi")
 
 
-def _group_details(rows: pl.DataFrame, value: TechnologyValue, keys: list[str]) -> pl.DataFrame:
+def _reshape_details(rows: pl.DataFrame, value: TechnologyValue, keys: list[str]) -> pl.DataFrame:
     detail = value.detail or ""
     entry = pl.struct(
         pl.col(detail).alias(_DETAIL),
