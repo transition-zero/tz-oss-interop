@@ -118,3 +118,33 @@ def add_portfolio_series(
     )
     portfolio["time_series_storage_file"] = _PORTFOLIO_H5_NAME
     portfolio_path.write_text(json.dumps(portfolio, indent=2), encoding="utf-8")
+
+
+@when(
+    parsers.parse(
+        'I add to the portfolio "{path}" the transport technology "{name}" from area "{start}" '
+        'to area "{end}" with capacity limits from {minimum:g} to {maximum:g} MW'
+    )
+)
+def add_portfolio_transport(
+    path: str, name: str, start: str, end: str, minimum: float, maximum: float
+) -> None:
+    """Add one transport technology to a written portfolio, naming each end by its area id."""
+    portfolio_path = Path(path)
+    portfolio = json.loads(portfolio_path.read_text(encoding="utf-8"))
+    system = json.loads((portfolio_path.parent / "system.json").read_text(encoding="utf-8"))
+    area_ids = {area["name"]: area["id"] for area in system["components"]["Area"]}
+    components = portfolio["components"]
+    next_id = 1 + max(c["id"] for rows in components.values() for c in rows)
+    components.setdefault("AggregateTransportTechnology", []).append(
+        {
+            "id": next_id,
+            "name": name,
+            "available": True,
+            "power_systems_type": "ACBranch",
+            "start_region": area_ids[start],
+            "end_region": area_ids[end],
+            "capacity_limits": {"min": minimum, "max": maximum},
+        }
+    )
+    portfolio_path.write_text(json.dumps(portfolio, indent=2), encoding="utf-8")

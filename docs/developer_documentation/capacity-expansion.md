@@ -92,7 +92,9 @@ from the schema:
   the package takes the loss from the energy that reaches the end region. A flow from the end
   to the start therefore delivers more energy than it takes. So the step writes `line_loss`
   `0.0`, records the stated loss as not mapped, and warns. The direction that the source
-  states does not bound the flow, and the step records and warns that too. Every transport
+  states does not bound the flow, and the step records and warns that too. The package builds
+  a transport technology from a lower bound of 0 and never reads `capacity_limits.min`. So the
+  step writes a minimum of 0, records the stated minimum as not mapped, and warns. Every transport
   technology is built as `AggregateTransportTechnology{ACBranch}`, which is the type the adapter
   sets a model for, and its `power_systems_type` states `ACBranch`.
 
@@ -241,7 +243,7 @@ what each rule does to an OSeMOSYS plan.
 | --- | --- |
 | `SupplyTechnology.capacity_limits`, keyed by year | One limit: the largest yearly maximum, and no minimum. Each minimum is recorded as not mapped. |
 | The series of each year, with the feature `year` | Split into the representative days of the `representative_period` records, one investment period for each year. |
-| `AggregateTransportTechnology` | Built between two Zones as `AggregateTransportTechnology{ACBranch}`, lossless, in both directions. The stated loss and the direction are recorded as not mapped. |
+| `AggregateTransportTechnology` | Built between two Zones as `AggregateTransportTechnology{ACBranch}`, lossless, in both directions, from a minimum of 0. The stated loss, the direction and the stated minimum are recorded as not mapped. |
 | `CarbonCaps`, one for each year | Passed with its `target_year`. The model builds no constraint from it. |
 | `StorageTechnology.duration_limits`, in minutes | Divided by 60, because the model reads hours. |
 | A limit or a unit size that the portfolio does not state | The default of the package. |
@@ -265,7 +267,9 @@ The leg applies these rules to an existing plant:
   that name, the plant is left out. The step records each plant and warns.
 - **A `capacity_limits.min` and the existing devices.** The model reads `min` as a floor on
   the build of each period. So the step lowers `min` by the rating of the devices, down to 0.
-  The leg writes no minimum for an OSeMOSYS candidate, so this rule changes no OSeMOSYS limit.
+  An OSeMOSYS supply candidate states its limits by year, so no minimum of a supply candidate
+  reaches the package, and this rule changes no OSeMOSYS limit. A transport candidate can state
+  a minimum, which the package never reads. The step records it as not mapped and warns.
 
 ### What an OSeMOSYS plan loses in the expansion
 
