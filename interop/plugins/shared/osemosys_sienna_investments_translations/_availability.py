@@ -40,7 +40,7 @@ _WHOLE_CAPACITY = 1.0
 _SERIES_FIELD = f"{PORTFOLIO_SERIES_NAME} time series, one for each year"
 _SERIES_DERIVATION = (
     "capacity_factor of the timeslice of each hour × availability_factor of the year, per unit "
-    "of the capacity, over the representative days of each year of the plan"
+    "of the capacity, in each year of the plan, over the representative days of the earliest year"
 )
 
 

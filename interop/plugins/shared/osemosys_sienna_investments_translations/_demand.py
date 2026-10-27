@@ -1,9 +1,9 @@
 """The demand of the portfolio: one DemandRequirement for each load of the base system.
 
 The requirement of a load has one hourly series for each year of the plan, in MW, over the
-representative days of that year. The operations step staged the series of the earliest year,
-so this reads it back. Each later year computes the demand of that year in the same way, and
-the events of that year name the year in their step.
+representative days of the earliest year. The operations step staged the series of the
+earliest year, so this reads it back. Each later year computes its own demand in the same way,
+on those days, and the events of that year name the year in their step.
 """
 
 from __future__ import annotations
@@ -74,8 +74,8 @@ _EMPTY_SERIES = pl.DataFrame(
 )
 _SERIES_FIELD = f"{PORTFOLIO_SERIES_NAME} time series, one for each year"
 _SERIES_DERIVATION = (
-    "the hourly MW of the load in each year of the plan, over the representative days of that "
-    "year, as the operations step derives it for the earliest year"
+    "the hourly MW of the load in each year of the plan, over the representative days of the "
+    "earliest year, as the operations step derives it for the earliest year"
 )
 _NO_DEMAND_NOTE = (
     "the model states no demand for the load in the year, so the requirement has no series "
