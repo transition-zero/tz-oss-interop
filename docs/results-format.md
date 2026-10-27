@@ -113,11 +113,19 @@ the period occurs in the year. The `sienna-to-results` pipeline then writes thes
 - `installed_capacity` is `base_power` × `rating` of a generator, `base_power` ×
   `output_active_power_limits.max` of a storage, and `active_power_limits_from.max` of a
   `TwoTerminalGenericHVDCLine` that is not a conversion.
-- `installed_capacity` is the nameplate, as the published `TotalCapacityAnnual` of an OSeMOSYS
-  model is. `base_power` × `rating` is the nameplate of a plant from OSeMOSYS: `base_power` is
-  the residual capacity in MW of electricity, and `rating` is always 1.0. The availability
-  factor goes to `active_power_limits.max` and not to `rating`. A plant from PLEXOS or PyPSA
-  can state a `rating` below 1.0, a derate, and then this number is less than its nameplate.
+- `installed_capacity` of a plant is the nameplate, as the published `TotalCapacityAnnual` of
+  an OSeMOSYS model is. `base_power` × `rating` is the nameplate of a plant from OSeMOSYS:
+  `base_power` is the residual capacity in MW of electricity, and `rating` is always 1.0. The
+  availability factor goes to `active_power_limits.max` and not to `rating`. A plant from
+  PLEXOS or PyPSA can state a `rating` below 1.0, a derate, and then this number is less than
+  its nameplate.
+- `installed_capacity` of a line is not the nameplate. A line from OSeMOSYS states
+  `active_power_limits_from.max` as the capacity of the line × `availability_factor` × the
+  electricity input ratio.
+- A line whose `controllable_line` record states `has_stand_in_limit` gets no
+  `installed_capacity` row, because its limit is a number that never binds. It keeps its
+  `production` row. `decisions.md` records the line as `NOT_MAPPED`, and one warning names
+  three.
 - `emissions` of a pollutant is the sum over the generators of `production` multiplied by the
   rate in `emission_rates_t_per_mwh` of the generator record.
 

@@ -74,7 +74,8 @@ Each step that reads the stage takes these rules from it:
 - A step writes its own tables into `State` under a key whose kind is not a `TableKind`, so
   `list_canonical_tables` does not read them as canonical tables.
 - The step `osemosys_canonical_drop_outside_scope` removes members and years from the stage in
-  place, with `set_canonical_table`. Each later step then reads the subset.
+  place, with `set_canonical_table`. Each later step then reads the subset. When the step
+  removes a year, it empties each table of model-period values.
 
 Each source declares the `OsemosysCanonicalMappings` schema, so each run needs a user
 mappings file. In `headless_cli`, give the file with `--user-mappings-path` or with the
