@@ -86,12 +86,7 @@ class SiennaToPypsaMapConversions(TranslationStep):
         joining = [record for record in records if _is_joining_buses(record, buses)]
         self._report_taken_names([record.name for record in joining if record.name in links])
         self._map_links(state, lookup, [record for record in joining if record.name not in links])
-        relay_records(
-            state,
-            ExtensionKind.CONVERSION,
-            [lookup.build_relayed(record.name) for record in records],
-            self._recorder,
-        )
+        relay_records(state, lookup, [record.name for record in records], self._recorder)
         return state
 
     def _report_taken_names(self, names: list[str]) -> None:

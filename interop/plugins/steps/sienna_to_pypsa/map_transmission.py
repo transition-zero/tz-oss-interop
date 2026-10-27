@@ -283,8 +283,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             state.destination_tables[PyPSADestinationTable.LINES] = pl.DataFrame(
                 rows, schema=LINES_DESTINATION_SCHEMA
             )
-        relayed = [extensions.build_relayed(row[PyPSALineCol.NAME]) for row in rows]
-        relay_records(state, ExtensionKind.LINE, relayed, self._recorder)
+        relay_records(state, extensions, [row[PyPSALineCol.NAME] for row in rows], self._recorder)
 
     def _map_links(self, state: State, bus_names: dict[int, str]) -> None:
         source = state.source_topology.get(SiennaTable.LINKS)
@@ -297,10 +296,10 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
             ext = extensions.get_fields(row[SiennaLinkCol.NAME], LINK_MAPPED_FIELDS)
             rows.append(_build_link_row(reporter, row, bus_names, ext))
-        relayed = [extensions.build_relayed(row[PyPSALinkCol.NAME]) for row in rows]
+        names = [row[PyPSALinkCol.NAME] for row in rows]
         if rows:
             self._write_links(state, rows, reporter)
-        relay_records(state, ExtensionKind.CONTROLLABLE_LINE, relayed, self._recorder)
+        relay_records(state, extensions, names, self._recorder)
 
     def _write_links(
         self, state: State, rows: list[dict[str, Any]], reporter: LinkReporter

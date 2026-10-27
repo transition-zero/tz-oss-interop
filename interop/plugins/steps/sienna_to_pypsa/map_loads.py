@@ -94,12 +94,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
                 rows, schema=LOADS_DESTINATION_SCHEMA
             )
             self._record_load_time_series(state, max_active_power_by_name)
-            relay_records(
-                state,
-                ExtensionKind.LOAD,
-                [records.build_relayed(name) for name in max_active_power_by_name],
-                self._recorder,
-            )
+            relay_records(state, records, max_active_power_by_name, self._recorder)
         return state
 
     def _record_load_time_series(

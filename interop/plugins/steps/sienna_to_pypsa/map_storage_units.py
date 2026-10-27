@@ -143,20 +143,9 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
     def _carry_on(self, state: State, names: list[str], hydro_names: list[str]) -> None:
         """Pass on each unmapped field of a unit's records, with a hydro unit's generator record."""
-        storage = self._extensions.read(ExtensionKind.STORAGE)
-        relay_records(
-            state,
-            ExtensionKind.STORAGE,
-            [storage.build_relayed(name) for name in names],
-            self._recorder,
-        )
+        relay_records(state, self._extensions.read(ExtensionKind.STORAGE), names, self._recorder)
         generators = self._extensions.read(ExtensionKind.GENERATOR)
-        relay_records(
-            state,
-            ExtensionKind.GENERATOR,
-            [generators.build_relayed(name) for name in hydro_names],
-            self._recorder,
-        )
+        relay_records(state, generators, hydro_names, self._recorder)
 
     def _record_hydro_inflow(self, state: State, hydro_base_power: dict[str, float]) -> None:
         frame = state.source_time_series.get(

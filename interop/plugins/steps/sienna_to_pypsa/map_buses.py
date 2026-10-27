@@ -48,8 +48,7 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
         state.destination_tables[PyPSADestinationTable.BUSES] = pl.DataFrame(
             rows, schema=BUSES_DESTINATION_SCHEMA
         )
-    relayed = [records.build_relayed(row[PyPSABusCol.NAME]) for row in rows]
-    relay_records(state, ExtensionKind.BUS, relayed, recorder)
+    relay_records(state, records, [row[PyPSABusCol.NAME] for row in rows], recorder)
 
 
 def _map_electricity_buses(
