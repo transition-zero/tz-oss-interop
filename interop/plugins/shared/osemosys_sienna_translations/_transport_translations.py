@@ -30,11 +30,11 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     build_mode_events,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,
