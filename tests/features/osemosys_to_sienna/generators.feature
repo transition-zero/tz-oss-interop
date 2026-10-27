@@ -227,6 +227,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
       And the file "decisions.md" contains "no fuel_supply technology puts out the fuel R1/ATOIL"
+      And the log contains "1 generator(s) burn a fuel that no fuel_supply technology puts out, so each pays no fuel cost for it. Technologies: R1/ATOILCT"
 
     Scenario: A plant that puts out half a unit of electricity for each unit of activity is rated and priced for its output
       When I translate the otoole model to Sienna for the year "2030"
@@ -264,6 +265,20 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "decisions.md" contains "RenewableNonDispatch has no operation_cost field, so the emission penalty of CO2 is left out"
       And the file "decisions.md" does not contain "`sienna.RenewableNonDispatch.ATWIND.operation_cost fuel term of ATGAS`"
       And the file "decisions.md" does not contain "`sienna.RenewableNonDispatch.ATWIND.operation_cost emission penalty of CO2`"
+      And the file "decisions.md" does not contain "so the variable cost is left out"
+      And the log contains "1 RenewableNonDispatch generator(s) pay for a fuel, and the type has no operation_cost field, so the cost is left out. Technologies: R1/ATWIND"
+      And the log contains "1 RenewableNonDispatch generator(s) pay an emission penalty, and the type has no operation_cost field, so the cost is left out. Technologies: R1/ATWIND"
+      And the log does not contain "state a variable cost"
+
+    Scenario: A RenewableNonDispatch with a variable cost records the cost as left out
+      Given the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATWIND     | 1                 | 2030 | 1000  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATWIND` = 1000.0"
+      And the file "decisions.md" contains "RenewableNonDispatch has no operation_cost field, so the variable cost is left out"
+      And the log contains "1 RenewableNonDispatch generator(s) state a variable cost, and the type has no operation_cost field, so the cost is left out. Technologies: R1/ATWIND"
 
     Scenario: A hydro plant becomes a HydroDispatch limited to its residual capacity
       When I translate the otoole model to Sienna for the year "2030"

@@ -23,6 +23,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_generator_extensions,
     build_generators_source,
     set_generator_values_persisted,
+    warn_lost_costs,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
@@ -44,6 +45,7 @@ class OsemosysToSiennaMapGenerators(OperationsMapping):
             return
         for mapping in GENERATOR_TYPE_MAPPINGS:
             self._map_type(state, source, mapping)
+        warn_lost_costs(source.table)
         append_extensions(
             state.destination_extensions,
             ExtensionKind.GENERATOR,
