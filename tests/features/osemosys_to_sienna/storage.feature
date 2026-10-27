@@ -158,7 +158,7 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And a file "user_mappings.yaml" containing the lines:
         | line                                                                                                       |
         | osemosys: {                                                                                                |
-        | units: {capacity: GW, energy: GWh, currency: USD},                                                         |
+        | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                           |
         | objects: {                                                                                                 |
         | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},               |
         | {match: "^ATWATER$", carrier: water, location: AT},                                                        |
@@ -192,6 +192,26 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "decisions.md" contains "`osemosys.technology_to_storage.R1/ATPHS.ATPHSS` = 0.9"
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "carrier" set to "pumped-storage"
       And the file "decisions.md" contains "| `osemosys.technology.R1/ATPHS.category` = pumped-storage | `sienna.EnergyReservoirStorage.ATPHSS.extensions.carrier` = pumped-storage | the category of the discharging technology, which names its carriers: row |"
+
+    Scenario: An emission penalty adds the cost of each pollutant that a storage emits at each mode
+      ATPHS emits 0.125 t of CO2 for each MWh of its activity when it charges, and 0.4 t when it
+      discharges. At 10 USD/t that adds 1.25 $/MWh of activity to the charge and 4 to the
+      discharge. The charge takes in 1.25 MWh and the discharge puts out 0.8 MWh for each MWh of
+      activity, so the charge cost rises by 1 $/MWh and the discharge cost by 5 $/MWh.
+      Given the otoole set "EMISSION" holds "CO2"
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | CO2      | 1                 | 2030 | 125   |
+        | R1     | ATPHS      | CO2      | 2                 | 2030 | 400   |
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 10    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.charge_variable_cost.value_curve.function_data.proportional_term" set to 1.4
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 7.5
+      And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATPHS.CO2 at the discharge mode 2` = 400.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8 | `sienna.EnergyReservoirStorage.ATPHSS.operation_cost discharge emission penalty of CO2` = 5.0 \$/MWh"
+      And the file "decisions.md" contains "`sienna.EnergyReservoirStorage.ATPHSS.operation_cost charge emission penalty of CO2` = 1.0 \$/MWh"
 
     Scenario: The availability, the charge and discharge rates and the fixed cost of a storage are applied
       Given the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:

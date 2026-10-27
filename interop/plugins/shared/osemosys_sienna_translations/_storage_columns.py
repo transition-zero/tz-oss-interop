@@ -45,6 +45,12 @@ DISCHARGE_RATE_MW = "discharge_rate_mw"
 OUTPUT_LIMIT = "output_limit"
 EFFICIENCY_IN = "efficiency_in"
 EFFICIENCY_OUT = "efficiency_out"
+CHARGE_PENALTY_TERMS = "charge_penalty_terms"
+CHARGE_PENALTY_MWH = "charge_penalty_mwh"
+DISCHARGE_PENALTY_TERMS = "discharge_penalty_terms"
+DISCHARGE_PENALTY_MWH = "discharge_penalty_mwh"
+# The emission rate of a pollutant at a mode, as the model states it, in a penalty term.
+STATED_RATE = "stated_rate"
 
 
 class StorageSide(NamedTuple):
@@ -67,6 +73,8 @@ class StorageSide(NamedTuple):
     rate_mw: str
     limit: str
     cost: str
+    penalty_terms: str
+    penalty_mwh: str
     cost_mwh: str
 
     @property
@@ -92,6 +100,8 @@ CHARGE_SIDE = StorageSide(
     rate_mw=CHARGE_RATE_MW,
     limit=INPUT_LIMIT,
     cost=CHARGE_COST,
+    penalty_terms=CHARGE_PENALTY_TERMS,
+    penalty_mwh=CHARGE_PENALTY_MWH,
     cost_mwh=CHARGE_COST_MWH,
 )
 DISCHARGE_SIDE = StorageSide(
@@ -111,6 +121,8 @@ DISCHARGE_SIDE = StorageSide(
     rate_mw=DISCHARGE_RATE_MW,
     limit=OUTPUT_LIMIT,
     cost=DISCHARGE_COST,
+    penalty_terms=DISCHARGE_PENALTY_TERMS,
+    penalty_mwh=DISCHARGE_PENALTY_MWH,
     cost_mwh=DISCHARGE_COST_MWH,
 )
 STORAGE_SIDES = (CHARGE_SIDE, DISCHARGE_SIDE)
