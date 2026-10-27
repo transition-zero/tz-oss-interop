@@ -16,6 +16,10 @@ from interop.plugins.shared.power_systems_investments_schema import (
     MODELLED_TECHNOLOGIES,
     PortfolioComponent,
 )
+from interop.ports.outbound.expansion import (
+    INVESTMENT_FORMULATIONS as INVESTMENT_FORMULATION_NAMES,
+)
+from interop.ports.outbound.expansion import ExpansionResultsLayout
 
 
 class InvestmentsResult(StrEnum):
@@ -53,9 +57,10 @@ class StagedResultCol:
     HOURS = "hours"
 
 
-VARIABLES_FOLDER = "results_wide/variables"
-EXPRESSIONS_FOLDER = "results_wide/expressions"
-OPTIMIZER_STATS_CSV = "results/optimizer_stats.csv"
+_LAYOUT = ExpansionResultsLayout
+VARIABLES_FOLDER = f"{_LAYOUT.WIDE_DIR}/{_LAYOUT.VARIABLES_DIR}"
+EXPRESSIONS_FOLDER = f"{_LAYOUT.WIDE_DIR}/{_LAYOUT.EXPRESSIONS_DIR}"
+OPTIMIZER_STATS_CSV = f"{_LAYOUT.STATISTICS_DIR}/{_LAYOUT.OPTIMIZER_STATS_FILE}"
 OBJECTIVE_VALUE_COLUMN = "objective_value"
 
 # The character between the parts of a file name.
@@ -75,8 +80,10 @@ SUPPLY_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.SUPPLY_TECHNOLO
 STORAGE_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.STORAGE_TECHNOLOGY)
 TRANSPORT_TECHNOLOGIES = _list_file_technologies(PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY)
 
-INVESTMENT_FORMULATIONS = ("ContinuousInvestment", "IntegerInvestment")
-OPERATIONS_FORMULATIONS = ("BasicDispatch", "CyclicalStorageDispatch")
+INVESTMENT_FORMULATIONS = tuple(INVESTMENT_FORMULATION_NAMES.values())
+OPERATIONS_FORMULATIONS = tuple(
+    dict.fromkeys(modelled.operations for modelled in MODELLED_TECHNOLOGIES)
+)
 
 
 class ResultCsvs(NamedTuple):
@@ -93,7 +100,7 @@ class ResultCsvs(NamedTuple):
             (
                 technology,
                 f"{self.folder}/{self.result}{_FILE_NAME_SEPARATOR}{technology}"
-                f"{_FILE_NAME_SEPARATOR}{formulation}.csv",
+                f"{_FILE_NAME_SEPARATOR}{formulation}{_LAYOUT.CSV_SUFFIX}",
             )
             for technology in self.technologies
             for formulation in self.formulations
