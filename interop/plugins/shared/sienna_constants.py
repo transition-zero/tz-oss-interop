@@ -971,7 +971,7 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 
 
 SIENNA_SOURCE_AREAS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    SiennaACBusCol.ID: pl.Int64,
-    SiennaACBusCol.NAME: pl.Utf8,
+    SiennaAreaCol.ID: pl.Int64,
+    SiennaAreaCol.NAME: pl.Utf8,
 }
 """An Area as a reverse pipeline stages it: the id a portfolio names it by, and its name."""

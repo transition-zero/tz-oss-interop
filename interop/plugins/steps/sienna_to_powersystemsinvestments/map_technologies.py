@@ -31,7 +31,7 @@ from interop.plugins.shared.sienna_constants import (
     SIENNA_NAME_COLUMN,
     SIENNA_REGION_COLUMN,
     MinMaxField,
-    SiennaACBusCol,
+    SiennaAreaCol,
     SiennaComponent,
     SiennaStructField,
     SiennaTable,
@@ -245,16 +245,16 @@ def _map_zones(state: State, recorder: ScopedRecorder) -> None:
         return
     rows: list[dict[str, Any]] = []
     for area in source.collect().iter_rows(named=True):
-        name = area[SiennaACBusCol.NAME]
-        rows.append({PortfolioColumn.NAME: name, PortfolioColumn.ID: area[SiennaACBusCol.ID]})
+        name = area[SiennaAreaCol.NAME]
+        rows.append({PortfolioColumn.NAME: name, PortfolioColumn.ID: area[SiennaAreaCol.ID]})
         record_translation(
             recorder,
             component=SiennaComponent.AREA.value,
             name=name,
-            source_field=SiennaACBusCol.ID,
-            source_value=area[SiennaACBusCol.ID],
+            source_field=SiennaAreaCol.ID,
+            source_value=area[SiennaAreaCol.ID],
             destination_field=PortfolioColumn.ID,
-            destination_value=area[SiennaACBusCol.ID],
+            destination_value=area[SiennaAreaCol.ID],
             derivation="Area -> Zone, the region a technology names by id",
         )
     if rows:

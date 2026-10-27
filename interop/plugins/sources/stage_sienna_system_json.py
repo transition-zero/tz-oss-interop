@@ -17,6 +17,7 @@ from interop.plugins.shared.sienna_constants import (
     Hdf5TimeSeriesStore,
     SiennaACBusCol,
     SiennaArcCol,
+    SiennaAreaCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
@@ -112,13 +113,13 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     components = system.get(SiennaSchemasSystem.COMPONENTS, {})
 
     area_name_by_id = {
-        area[SiennaACBusCol.ID]: area[SiennaACBusCol.NAME]
+        area[SiennaAreaCol.ID]: area[SiennaAreaCol.NAME]
         for area in components.get(SiennaComponent.AREA, [])
     }
 
     frames: dict[str, pl.LazyFrame] = {}
     area_rows = [
-        {SiennaACBusCol.ID: area_id, SiennaACBusCol.NAME: area_name}
+        {SiennaAreaCol.ID: area_id, SiennaAreaCol.NAME: area_name}
         for area_id, area_name in area_name_by_id.items()
     ]
     _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
