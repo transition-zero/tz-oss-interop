@@ -24,6 +24,7 @@ from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MW,
@@ -504,7 +505,7 @@ def _build_link_event(row: dict[str, Any], value: _LinkValue) -> TranslationEven
             build_sienna_field(
                 ExtensionKind.CONVERSION,
                 row[CONVERSION_NAME],
-                f"extensions.{value.field}",
+                f"{EXTENSIONS_PREFIX}{value.field}",
                 value.value,
                 value.unit,
             )

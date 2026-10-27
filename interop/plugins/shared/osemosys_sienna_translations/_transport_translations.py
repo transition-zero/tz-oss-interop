@@ -8,7 +8,7 @@ from typing import Any
 import polars as pl
 
 from interop.core.extensions import ExtensionKind, companion_filename
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
@@ -92,14 +92,14 @@ _default = partial(default_translation, _dest, name_col=LINE_NAME)
 _NO_POWER = 0.0
 _NO_LIMITS = {MinMaxField.MIN: _NO_POWER, MinMaxField.MAX: _NO_POWER}
 _OPERATIONS_MODE_ATTRIBUTE = "electricity at the operations mode"
-_MARGINAL_COST_ATTRIBUTE = "extensions.marginal_cost"
+_MARGINAL_COST_ATTRIBUTE = f"{EXTENSIONS_PREFIX}marginal_cost"
 
 _ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available"
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
-_P_MAX_PU_ATTRIBUTE = "extensions.p_max_pu"
-_IS_CONVERSION_ATTRIBUTE = "extensions.is_conversion"
+_P_MAX_PU_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu"
+_IS_CONVERSION_ATTRIBUTE = f"{EXTENSIONS_PREFIX}is_conversion"
 _DROPPED_DERATE_NOTE = (
     "the model builds the line at no cost and no limit binds it, so the factor that the model "
     "states limits nothing, and the record writes neither p_max_pu nor its series"
@@ -108,7 +108,7 @@ _CONVERSION_DERIVATION = (
     "the technology is of kind conversion and its fuels are all electricity, so it converts one "
     "electricity fuel into another; the results count it neither as production nor as trade"
 )
-_P_MAX_PU_SERIES_ATTRIBUTE = "extensions.p_max_pu_series"
+_P_MAX_PU_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu_series"
 _COMPANION = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
 _EACH_TIMESLICE = "each timeslice"
 _P_MAX_PU_DERIVATION = (
