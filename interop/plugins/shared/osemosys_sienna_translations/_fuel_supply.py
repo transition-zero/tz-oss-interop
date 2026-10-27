@@ -146,7 +146,7 @@ def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:
         .group_by(REGION, FUEL, maintain_order=True)
         .agg(
             pl.col(TECHNOLOGY).first().alias(PRODUCER),
-            pl.len().alias(PRODUCER_COUNT),
+            pl.len().cast(pl.Int64).alias(PRODUCER_COUNT),
             pl.col(PRODUCER_COST, OUTPUT_RATIO, COST_PER_OUTPUT).first(),
         )
     )

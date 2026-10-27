@@ -147,9 +147,7 @@ _MODE_VALUES = (
 _FLOW_PARAMETERS = frozenset(
     {FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO}
 )
-# The values of a mode that a generator runs, which the generator holds itself for every fuel:
-# it pays for the fuels that it takes in, and reports a fuel other than electricity that it
-# puts out.
+# The values of a mode that a generator runs and holds itself, for every fuel of the mode.
 GENERATOR_RUN_PARAMETERS = frozenset(
     {
         SupplyParameter.VARIABLE_OPERATION_COST,
@@ -157,8 +155,7 @@ GENERATOR_RUN_PARAMETERS = frozenset(
         SupplyParameter.EMISSION_RATE,
     }
 )
-# The values of a mode that a storage, a line or a conversion runs. It holds only the
-# electricity flows of the mode, and states no emission rate.
+# The values of a mode that a storage, a line or a conversion runs, beside its electricity flows.
 LINK_RUN_PARAMETERS = frozenset({SupplyParameter.VARIABLE_OPERATION_COST})
 # The bounds of a mode, whose rows a record holds for each technology that it names.
 MODE_BOUND_PARAMETERS: tuple[str, ...] = tuple(
