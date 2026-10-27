@@ -63,7 +63,7 @@ class SolveUsingPort(SolveUseCase):
             request.run_crossover,
             request.time_limit_seconds,
         )
-        _reject_non_positive_time_limit(request.time_limit_seconds)
+        _reject_unusable_time_limit(request.time_limit_seconds)
         _reject_unusable_discount_rate(request.discount_rate)
         status, objective = self._expansion.solve_expansion(
             request.portfolio_json_path,
@@ -92,7 +92,7 @@ class SolveUsingPort(SolveUseCase):
             request.run_crossover,
             request.time_limit_seconds,
         )
-        _reject_non_positive_time_limit(request.time_limit_seconds)
+        _reject_unusable_time_limit(request.time_limit_seconds)
         outcome = self._solver.solve(
             request.sienna_json_path,
             request.network_model,
@@ -111,9 +111,13 @@ class SolveUsingPort(SolveUseCase):
         )
 
 
-def _reject_non_positive_time_limit(time_limit_seconds: float | None) -> None:
-    if time_limit_seconds is not None and not (time_limit_seconds > 0):
-        raise UserInputError(f"time limit must be a positive number, got {time_limit_seconds}")
+def _reject_unusable_time_limit(time_limit_seconds: float | None) -> None:
+    if time_limit_seconds is not None and not (
+        math.isfinite(time_limit_seconds) and time_limit_seconds > 0
+    ):
+        raise UserInputError(
+            f"time limit must be a positive, finite number, got {time_limit_seconds}"
+        )
 
 
 def _reject_unusable_discount_rate(discount_rate: float | None) -> None:

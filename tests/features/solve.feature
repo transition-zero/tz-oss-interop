@@ -50,7 +50,7 @@ Feature: solve command runs the Sienna solver on a translated model
     And adapters.yaml binds solver to "fake_solver"
     And a file "outputs/system.json" exists
     When I dispatch the solve command for "outputs/system.json" with network model "dcp" output directory "solved" unserved energy "refused" unit commitment "exact" solver "simplex" presolve "choose" crossover "choose" time limit "0"
-    Then a user error is printed containing "time limit must be a positive number, got 0.0"
+    Then a user error is printed containing "time limit must be a positive, finite number, got 0.0"
     And the file "outputs/solver-call.txt" does not exist
 
   Scenario: a negative time limit is refused too
@@ -58,7 +58,15 @@ Feature: solve command runs the Sienna solver on a translated model
     And adapters.yaml binds solver to "fake_solver"
     And a file "outputs/system.json" exists
     When I dispatch the solve command for "outputs/system.json" with network model "dcp" output directory "solved" unserved energy "refused" unit commitment "exact" solver "simplex" presolve "choose" crossover "choose" time limit "-1"
-    Then a user error is printed containing "time limit must be a positive number, got -1.0"
+    Then a user error is printed containing "time limit must be a positive, finite number, got -1.0"
+    And the file "outputs/solver-call.txt" does not exist
+
+  Scenario: an infinite time limit is refused before the solver is reached
+    Given a fake solver adapter in project plugins
+    And adapters.yaml binds solver to "fake_solver"
+    And a file "outputs/system.json" exists
+    When I dispatch the solve command for "outputs/system.json" with network model "dcp" output directory "solved" unserved energy "refused" unit commitment "exact" solver "simplex" presolve "choose" crossover "choose" time limit "inf"
+    Then a user error is printed containing "time limit must be a positive, finite number, got inf"
     And the file "outputs/solver-call.txt" does not exist
 
   Scenario: solve shows a user error when the JSON file does not exist
@@ -161,7 +169,15 @@ Feature: solve command runs the Sienna solver on a translated model
     And adapters.yaml binds expansion to "fake_expansion"
     And a file "outputs/portfolio.json" exists
     When I dispatch the expand command for "outputs/portfolio.json" with balance model "multi-region" output directory "expanded" investment treatment "continuous" discount rate "" solver "simplex" presolve "choose" crossover "choose" time limit "0"
-    Then a user error is printed containing "time limit must be a positive number, got 0.0"
+    Then a user error is printed containing "time limit must be a positive, finite number, got 0.0"
+    And the file "outputs/expansion-call.txt" does not exist
+
+  Scenario: an expansion refuses an infinite time limit before the port is reached
+    Given a fake expansion adapter in project plugins
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I dispatch the expand command for "outputs/portfolio.json" with balance model "multi-region" output directory "expanded" investment treatment "continuous" discount rate "" solver "simplex" presolve "choose" crossover "choose" time limit "inf"
+    Then a user error is printed containing "time limit must be a positive, finite number, got inf"
     And the file "outputs/expansion-call.txt" does not exist
 
   Scenario: an expansion refuses a discount rate of zero given on the run before the port is reached
