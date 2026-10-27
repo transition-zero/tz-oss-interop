@@ -38,6 +38,8 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
 )
@@ -55,6 +57,8 @@ LOADS_SOURCE = InvestmentsSource(
     component=SiennaComponent.POWER_LOAD,
     display=SiennaComponent.POWER_LOAD,
     plural="load(s)",
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 # The step that the events of the demand of a later year name, after which comes the year.

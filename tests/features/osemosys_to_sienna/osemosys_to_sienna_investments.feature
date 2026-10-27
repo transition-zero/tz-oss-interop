@@ -383,7 +383,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "plans/system_time_series_storage.h5" exists
     And the file "plans/extensions.json" exists
     And the file "plans/portfolio_time_series_storage.h5" exists
-    And the file "plans/system.json" parses as JSON with "time_series_storage_filename" set to "system_time_series_storage.h5"
+    And the file "plans/system.json" parses as JSON with "time_series_storage_file" set to "system_time_series_storage.h5"
     And the file "plans/portfolio.json" parses as JSON with "time_series_storage_file" set to "portfolio_time_series_storage.h5"
     And the file "outputs/system_time_series_storage.h5" does not exist
     And the file "outputs/portfolio_time_series_storage.h5" does not exist

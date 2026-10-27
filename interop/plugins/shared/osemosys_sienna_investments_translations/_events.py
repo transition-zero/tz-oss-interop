@@ -31,6 +31,8 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
 )
@@ -71,6 +73,8 @@ TECHNOLOGY_SOURCE = InvestmentsSource(
     component=TECHNOLOGY,
     display=TECHNOLOGY,
     plural=TECHNOLOGY_COUNTED_NOUN,
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 # Each technology type of the portfolio states these fields under the same names.
