@@ -8,7 +8,7 @@ companion parquet that holds its MW in each hour, as `p_set_series`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -40,7 +40,7 @@ from interop.plugins.shared.osemosys_sienna_translations._loads import (
     LOAD_NAME,
     LoadSources,
 )
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _IS_FLAT = "is_flat"
 _FLAT_MW = "flat_mw"
@@ -111,31 +111,47 @@ def _build_companion(series: pl.DataFrame, varying: pl.DataFrame) -> pl.DataFram
     )
 
 
+class _LoadValue(NamedTuple):
+    """A field of a load record, its value, its unit, the value it reads and how it derives."""
+
+    field_name: str
+    value: object
+    unit: str | None
+    source: SourceField
+    derivation: str
+
+
 def _build_events(row: dict[str, Any], record: LoadExtension) -> list[TranslationEvent]:
     demand = build_osemosys_field(row[DEMAND_PARAMETER], row[FUEL_NAME], None, row[ANNUAL_DEMAND])
     values = (
-        ("bus", record.bus, None, build_osemosys_field(FUEL, row[FUEL_NAME]), _BUS_DERIVATION),
-        (
+        _LoadValue(
+            "bus", record.bus, None, build_osemosys_field(FUEL, row[FUEL_NAME]), _BUS_DERIVATION
+        ),
+        _LoadValue(
             "carrier",
             record.carrier,
             None,
             build_osemosys_field(FUEL, row[FUEL_NAME], AnnotationColumn.CARRIER),
             _CARRIER_DERIVATION,
         ),
-        ("p_set", record.p_set, UNIT_MW, demand, _FLAT_DERIVATION),
-        ("p_set_series", record.p_set_series, None, demand, _SERIES_DERIVATION),
+        _LoadValue("p_set", record.p_set, UNIT_MW, demand, _FLAT_DERIVATION),
+        _LoadValue("p_set_series", record.p_set_series, None, demand, _SERIES_DERIVATION),
     )
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[source],
+            sources=[value.source],
             destinations=[
                 build_sienna_field(
-                    ExtensionKind.LOAD, record.name, f"{EXTENSIONS_PREFIX}{name}", value, unit
+                    ExtensionKind.LOAD,
+                    record.name,
+                    f"{EXTENSIONS_PREFIX}{value.field_name}",
+                    value.value,
+                    value.unit,
                 )
             ],
-            derivation=derivation,
+            derivation=value.derivation,
         )
-        for name, value, unit, source, derivation in values
-        if value is not None
+        for value in values
+        if value.value is not None
     ]
