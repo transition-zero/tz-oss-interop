@@ -25,6 +25,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     LINKS_DESTINATION_SCHEMA,
+    PYPSA_LINK_DEFAULTS,
     PyPSABusCol,
     PyPSADestinationTable,
     PyPSALinkCol,
@@ -56,10 +57,10 @@ _TAKEN_NAME_WARNING = (
 )
 
 # PyPSA's own Link defaults, for a record that states no capacity or no efficiency.
-_DEFAULT_P_NOM = 0.0
-_DEFAULT_EFFICIENCY = 1.0
-_P_MIN_PU = 0.0
-_ACTIVE = True
+_DEFAULT_P_NOM = PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_NOM]
+_DEFAULT_EFFICIENCY = PYPSA_LINK_DEFAULTS[PyPSALinkCol.EFFICIENCY]
+_P_MIN_PU = PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_MIN_PU]
+_ACTIVE = PYPSA_LINK_DEFAULTS[PyPSALinkCol.ACTIVE]
 
 
 class SiennaToPypsaMapConversions(TranslationStep):
