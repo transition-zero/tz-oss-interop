@@ -200,6 +200,7 @@ def build_capacity_limits_by_year(yearly: pl.DataFrame) -> pl.DataFrame:
     """
     is_bounded = pl.col(CAPACITY_LIMITS_MAX_MW).is_not_null() | (pl.col(CAPACITY_LIMITS_MIN_MW) > 0)
     entry = pl.struct(
+        # SiennaSchemas keys a MinMaxByKey by a float written as a string, so 2030 is "2030.0".
         pl.col(YEAR).cast(pl.Float64).cast(pl.Utf8).alias(MinMaxByKeyField.KEY),
         pl.col(CAPACITY_LIMITS_MIN_MW).alias(MinMaxByKeyField.MIN),
         pl.col(CAPACITY_LIMITS_MAX_MW).alias(MinMaxByKeyField.MAX),
