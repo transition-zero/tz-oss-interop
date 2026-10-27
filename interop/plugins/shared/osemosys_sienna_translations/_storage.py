@@ -59,6 +59,11 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     build_capacity_factor_series,
     express_has_capacity_factors,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    STORAGE_PENALTIES,
+    build_penalty_keys,
+    set_penalties_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -245,6 +250,8 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     charging = _build_chargers(storages).select(REGION, TECHNOLOGY)
     set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
     set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
+    penalty_terms = tuple(side.penalty_terms for side in STORAGE_SIDES)
+    set_penalties_persisted(state, STORAGE_PENALTIES, build_penalty_keys(storages, penalty_terms))
 
 
 def _enrich_capacity_factors(

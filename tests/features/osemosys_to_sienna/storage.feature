@@ -216,6 +216,7 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 7.5
       And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATPHS.CO2 at the discharge mode 2` = 400.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8 | `sienna.EnergyReservoirStorage.ATPHSS.operation_cost discharge emission penalty of CO2` = 5.0 \$/MWh"
       And the file "decisions.md" contains "`sienna.EnergyReservoirStorage.ATPHSS.operation_cost charge emission penalty of CO2` = 1.0 \$/MWh"
+      And the log does not contain "emission_penalty states"
 
     Scenario: A storage is rated on the activity that the capacity to activity unit of its technology states
       One GW of ATPHS runs 4380 GWh of activity in a year, which is 50 MW of activity. It puts

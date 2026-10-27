@@ -71,6 +71,10 @@ from interop.plugins.shared.osemosys_sienna_translations._free_build import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
+    LINE_PENALTIES,
+    PENALTY_TERMS,
+    build_penalty_keys,
+    set_penalties_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import GeneratorSources
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
@@ -396,6 +400,7 @@ def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
     """Note the rows of each line technology that the lines apply or keep."""
     LINE_EXTRAS.set_persisted(state, lines)
     set_applied_rows(state, LINE_OWNERS, lines, _APPLIED_PARAMETERS)
+    set_penalties_persisted(state, LINE_PENALTIES, build_penalty_keys(lines, (PENALTY_TERMS,)))
     free = lines.filter(pl.col(IS_BUILT_FREE)).select(_KEYS)
     if free.height > 0:
         for parameter in FREE_BUILD_PARAMETERS:

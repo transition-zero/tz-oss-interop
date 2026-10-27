@@ -301,9 +301,33 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "marginal_cost" set to 5.0
       And the log does not contain "emission penalty(ies)"
+      And the log does not contain "emission_penalty states"
       And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATEXPORT.CO2 at the operations mode` = 500.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0 | `sienna.conversion.ATEXPORT.extensions.marginal_cost emission penalty of CO2` = 5.0 "
       And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0<br>`sienna.conversion.ATEXPORT.extensions.marginal_cost emission penalty of CO2` = 5.0 "
       And the file "decisions.md" contains "| `sienna.conversion.ATEXPORT.extensions.marginal_cost` = 5.0 "
+
+    Scenario: The emission penalty that a line applies is not reported
+      ATDELINK emits 0.125 t of CO2 for each MWh of activity at mode 1, and takes in 1.25 MWh,
+      so 0.1 t for each MWh that goes in. At 20 $/t that adds 2 $ to its cost of 0.8 $.
+      Given the otoole set "EMISSION" holds "CO2"
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDELINK   | CO2      | 1                 | 2030 | 125   |
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 20    |
+      And a file "user_mappings.yaml" containing the lines:
+        | line                                                                                                    |
+        | osemosys: {                                                                                             |
+        | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                        |
+        | objects: {fuels: [                                                                                      |
+        | {match: "^(?P<country>[A-Z]{2})ELEC(LV)?$", carrier: electricity, location: "{country}"},               |
+        | {match: "^(?P<country>[A-Z]{2})GAS$", carrier: gas, location: "{country}"},                             |
+        | {match: "^(?P<country>[A-Z]{2})H2$", carrier: hydrogen, location: "{country}"}]}}                       |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "marginal_cost" set to 2.8
+      And the log does not contain "emission_penalty states"
 
     Scenario: A line technology with no residual capacity and a capital cost is left out and reported
       When I translate the otoole model to Sienna for the year "2030"
@@ -649,6 +673,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDEBUY" having "marginal_cost" set to 3.0
       And the log does not contain "emission penalty(ies)"
+      And the log does not contain "emission_penalty states"
       And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATDEBUY.CO2 at the operations mode` = 100.0<br>`osemosys.emission_penalty.R1/CO2` = 20.0<br>`osemosys.input_activity_ratio.R1/ATDEBUY.electricity at the operations mode` = 1.0 | `sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost emission penalty of CO2` = 2.0 "
       And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATDEBUY.electricity at the operations mode` = 1.0<br>`sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost emission penalty of CO2` = 2.0 "
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost` = 3.0 "
