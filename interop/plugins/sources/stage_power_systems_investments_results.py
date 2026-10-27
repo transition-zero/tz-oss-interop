@@ -29,23 +29,39 @@ from interop.plugins.shared.power_systems_investments_results_constants import (
     OPERATIONS_RESULTS_KEY,
     OPTIMIZER_STATS_CSV,
     PERIOD_YEARS_KEY,
+    STORAGE_TECHNOLOGIES,
+    SUPPLY_TECHNOLOGIES,
+    TRANSPORT_TECHNOLOGIES,
+    UNIT_SIZES_KEY,
     ResultCsvs,
     ResultsCsvCol,
     StagedResultCol,
 )
+from interop.plugins.shared.power_systems_investments_schema import (
+    PortfolioComponent,
+    PortfolioEnvelope,
+)
 from interop.ports.errors import MissingInputError, UserInputError
-from interop.ports.outbound.expansion import OperationalSlice, PortfolioSeries
+from interop.ports.outbound.expansion import (
+    INVESTMENT_FORMULATIONS,
+    InvestmentTreatment,
+    OperationalSlice,
+    PortfolioSeries,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, InputDirectory, InputFile
 
 _STAGING_SUBDIR = "power_systems_investments_results"
 _RESULTS_DIR_DESCRIPTION = "expansion results directory"
 _SERIES_DESCRIPTION = "series document"
+_PORTFOLIO_DESCRIPTION = "portfolio"
+_INTEGER_FORMULATION = INVESTMENT_FORMULATIONS[InvestmentTreatment.INTEGER]
 _FIRST_PERIOD = 1
 _DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S%.f"
 
 _INVESTMENT_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedResultCol.RESULT: pl.Utf8,
     StagedResultCol.TECHNOLOGY: pl.Utf8,
+    StagedResultCol.FORMULATION: pl.Utf8,
     StagedResultCol.COMPONENT: pl.Utf8,
     StagedResultCol.PERIOD: pl.Int64,
     StagedResultCol.VALUE: pl.Float64,
@@ -57,6 +73,18 @@ _OPERATIONS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedResultCol.SNAPSHOT: pl.Datetime("us"),
     StagedResultCol.VALUE: pl.Float64,
 }
+_UNIT_SIZES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    StagedResultCol.TECHNOLOGY: pl.Utf8,
+    StagedResultCol.COMPONENT: pl.Utf8,
+    StagedResultCol.UNIT_SIZE: pl.Float64,
+}
+
+# The technology part of each result file name that a portfolio type can take.
+_FILE_TECHNOLOGIES: dict[str, tuple[str, ...]] = {
+    PortfolioComponent.SUPPLY_TECHNOLOGY: SUPPLY_TECHNOLOGIES,
+    PortfolioComponent.STORAGE_TECHNOLOGY: STORAGE_TECHNOLOGIES,
+    PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY: TRANSPORT_TECHNOLOGIES,
+}
 
 
 class StagePowerSystemsInvestmentsResultsParams(BaseModel):
@@ -64,6 +92,49 @@ class StagePowerSystemsInvestmentsResultsParams(BaseModel):
     series_json_path: InputFile = Field(
         description="the series document beside the portfolio that the solve read"
     )
+    portfolio_json_path: InputFile = Field(
+        description=(
+            "the portfolio that the solve read; an integer solve reads the unit size of each "
+            "technology from it"
+        )
+    )
+
+
+class ResultFile(NamedTuple):
+    """One file that the solve can write: its result, technology, formulation and path."""
+
+    result: str
+    technology: str
+    formulation: str
+    path: str
+
+
+class _ComponentType(BaseModel):
+    type: str
+
+
+class _PortfolioTechnology(BaseModel):
+    """One component of the portfolio envelope, with the MW of one unit that it builds."""
+
+    name: str
+    metadata: _ComponentType = Field(validation_alias=PortfolioEnvelope.METADATA_KEY)
+    unit_size: float | None = None
+    unit_size_discharge: float | None = None
+
+    @property
+    def build_unit_size(self) -> float | None:
+        """The MW of one unit: the discharge power of a storage technology, else the unit size."""
+        if self.metadata.type == PortfolioComponent.STORAGE_TECHNOLOGY:
+            return self.unit_size_discharge
+        return self.unit_size
+
+
+class _PortfolioData(BaseModel):
+    components: list[_PortfolioTechnology]
+
+
+class _Portfolio(BaseModel):
+    data: _PortfolioData
 
 
 class StagePowerSystemsInvestmentsResults(StagedSource):
@@ -90,6 +161,11 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
         )
         if not investment and not operations:
             raise MissingInputError(self.name, _RESULTS_DIR_DESCRIPTION, f"{params.results_dir}")
+        unit_sizes = (
+            _build_unit_sizes(self._read_portfolio(params.portfolio_json_path))
+            if _has_unit_counts(investment)
+            else []
+        )
         directory = staging_dir / _STAGING_SUBDIR
         directory.mkdir(parents=True, exist_ok=True)
         topology = {
@@ -101,6 +177,9 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
             ),
             HOUR_WEIGHTS_KEY: _write(
                 _build_hour_weights(series), None, directory / f"{HOUR_WEIGHTS_KEY}.parquet"
+            ),
+            UNIT_SIZES_KEY: _write(
+                unit_sizes, _UNIT_SIZES_SCHEMA, directory / f"{UNIT_SIZES_KEY}.parquet"
             ),
             **self._stage_objective(params.results_dir, directory),
         }
@@ -124,20 +203,29 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
                 f"The file at {path} is not a {_SERIES_DESCRIPTION}:\n{exc}"
             ) from exc
 
+    def _read_portfolio(self, path: Path | str) -> _Portfolio:
+        if not self._fs.can_read(path):
+            raise MissingInputError(self.name, _PORTFOLIO_DESCRIPTION, f"{path}")
+        try:
+            return _Portfolio.model_validate_json(self._fs.read_bytes(path))
+        except ValidationError as exc:
+            raise UserInputError(
+                f"The file at {path} is not a {_PORTFOLIO_DESCRIPTION}:\n{exc}"
+            ) from exc
+
     def _read_results(
         self,
         results_dir: Path,
         csvs: tuple[ResultCsvs, ...],
-        read: Callable[[pl.DataFrame, str, str], pl.DataFrame],
+        read: Callable[[pl.DataFrame, ResultFile], pl.DataFrame],
     ) -> list[pl.DataFrame]:
-        """Every result file that the solve wrote, each tagged with its result and technology."""
+        """Every result file that the solve wrote, each tagged with what its name states."""
         frames: list[pl.DataFrame] = []
-        for result_csvs in csvs:
-            for technology, relative in result_csvs.list_paths():
-                path = results_dir / relative
-                if self._fs.can_read(path):
-                    raw = pl.read_csv(io.BytesIO(self._fs.read_bytes(path)))
-                    frames.append(read(raw, str(result_csvs.result), technology))
+        for result_file in _list_result_files(csvs):
+            path = results_dir / result_file.path
+            if self._fs.can_read(path):
+                raw = pl.read_csv(io.BytesIO(self._fs.read_bytes(path)))
+                frames.append(read(raw, result_file))
         return frames
 
     def _stage_objective(self, results_dir: Path, directory: Path) -> dict[str, pl.LazyFrame]:
@@ -151,20 +239,30 @@ class StagePowerSystemsInvestmentsResults(StagedSource):
         return {OBJECTIVE_KEY: _write([objective], None, directory / f"{OBJECTIVE_KEY}.parquet")}
 
 
-def _reshape_investment_rows(raw: pl.DataFrame, result: str, technology: str) -> pl.DataFrame:
+def _list_result_files(csvs: tuple[ResultCsvs, ...]) -> list[ResultFile]:
+    return [
+        ResultFile(str(result_csvs.result), technology, formulation, relative)
+        for result_csvs in csvs
+        for formulation in result_csvs.formulations
+        for technology, relative in result_csvs._replace(formulations=(formulation,)).list_paths()
+    ]
+
+
+def _reshape_investment_rows(raw: pl.DataFrame, result_file: ResultFile) -> pl.DataFrame:
     return raw.select(
-        pl.lit(result).alias(StagedResultCol.RESULT),
-        pl.lit(technology).alias(StagedResultCol.TECHNOLOGY),
+        pl.lit(result_file.result).alias(StagedResultCol.RESULT),
+        pl.lit(result_file.technology).alias(StagedResultCol.TECHNOLOGY),
+        pl.lit(result_file.formulation).alias(StagedResultCol.FORMULATION),
         pl.col(ResultsCsvCol.NAME).cast(pl.Utf8).alias(StagedResultCol.COMPONENT),
         pl.col(ResultsCsvCol.TIME_INDEX).cast(pl.Int64).alias(StagedResultCol.PERIOD),
         pl.col(ResultsCsvCol.VALUE).cast(pl.Float64).alias(StagedResultCol.VALUE),
     )
 
 
-def _reshape_operations_rows(raw: pl.DataFrame, result: str, technology: str) -> pl.DataFrame:
+def _reshape_operations_rows(raw: pl.DataFrame, result_file: ResultFile) -> pl.DataFrame:
     return raw.select(
-        pl.lit(result).alias(StagedResultCol.RESULT),
-        pl.lit(technology).alias(StagedResultCol.TECHNOLOGY),
+        pl.lit(result_file.result).alias(StagedResultCol.RESULT),
+        pl.lit(result_file.technology).alias(StagedResultCol.TECHNOLOGY),
         pl.col(ResultsCsvCol.NAME).cast(pl.Utf8).alias(StagedResultCol.COMPONENT),
         pl.col(ResultsCsvCol.DATE_TIME)
         .cast(pl.Utf8)
@@ -172,6 +270,27 @@ def _reshape_operations_rows(raw: pl.DataFrame, result: str, technology: str) ->
         .alias(StagedResultCol.SNAPSHOT),
         pl.col(ResultsCsvCol.VALUE).cast(pl.Float64).alias(StagedResultCol.VALUE),
     )
+
+
+def _has_unit_counts(investment: list[pl.DataFrame]) -> bool:
+    """Whether an integer solve wrote a result, whose builds count units rather than MW."""
+    return any(
+        not frame.is_empty() and frame[StagedResultCol.FORMULATION][0] == _INTEGER_FORMULATION
+        for frame in investment
+    )
+
+
+def _build_unit_sizes(portfolio: _Portfolio) -> list[pl.DataFrame]:
+    """The MW of one unit of each technology, under each file name its type can take."""
+    rows = [
+        (technology, component.name, component.build_unit_size)
+        for component in portfolio.data.components
+        for technology in _FILE_TECHNOLOGIES.get(component.metadata.type, ())
+    ]
+    keys = [StagedResultCol.TECHNOLOGY, StagedResultCol.COMPONENT]
+    # A name that one type states twice has no one unit size, so neither row is kept.
+    table = pl.DataFrame(rows, schema=_UNIT_SIZES_SCHEMA, orient="row").unique(keys, keep="none")
+    return [table]
 
 
 def _build_period_years(series: PortfolioSeries) -> list[pl.DataFrame]:

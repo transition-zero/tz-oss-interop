@@ -315,11 +315,13 @@ The adapter writes one long CSV for each variable under `results_wide/variables`
 stored expression under `results_wide/expressions`, and `results/optimizer_stats.csv`. The
 results pipeline `power-systems-investments-to-results` reads them with the series document,
 `portfolio_series.json`, which gives each investment period its year and each hour its weight.
-It writes these rows, each at 1 January of its year:
+An `integer` solve counts the units that it builds, so the pipeline also reads the portfolio,
+`portfolio.json`, for the MW of one unit of each technology. It writes these rows, each at
+1 January of its year:
 
 | Variable | From |
 |---|---|
-| `new_capacity` | `BuildCapacity`, or `BuildPowerCapacity` of a storage technology |
+| `new_capacity` | `BuildCapacity`, or `BuildPowerCapacity` of a storage technology; under `integer`, × `unit_size`, or `unit_size_discharge` of a storage technology |
 | `installed_capacity` | `CumulativeCapacity`, or `CumulativePowerCapacity` of a storage technology |
 | `production` | Σ of `ActivePowerVariable`, `ActiveOutPowerVariable` of a storage technology, or the absolute `FlowActivePowerVariable` of a transport technology, × hours × the weight of the day |
 | `objective` | `objective_value` of the solve |
@@ -327,13 +329,22 @@ It writes these rows, each at 1 January of its year:
 A component keeps the name of its technology in the portfolio, so `interop compare` joins the
 rows with those of the model that the portfolio came from. The solve states no category.
 
-The pipeline leaves out two kinds of input, and it records and warns each one:
+The pipeline leaves out these kinds of input, and it records and warns each one:
 
 - **A name that two technology types share.** A row names a component by its name alone, so
   the rows cannot tell the two apart. Each row of that name is left out.
 - **A slice that holds an hour of an earlier slice.** One hour would then take two weights. The
   later slice is left out, and production leaves out each of its hours that no other slice
-  holds.
+  holds. The solve writes a row for each hour of each slice, so production reads the first row
+  of an hour only.
+- **An hour of the solve that no slice holds.** The hour has no weight, so production leaves
+  it out.
+- **A capacity row of a period that the series document does not state.** The row has no year,
+  so it is left out.
+- **A build of an `integer` solve whose technology states no unit size in the portfolio.** The
+  count cannot become MW, so `new_capacity` leaves the row out.
+- **A variable that no file of the solve states.** The adapter goes on when one export fails, so
+  the results can lack a variable. The warning names the folder where its files belong.
 
 ## What does not work
 

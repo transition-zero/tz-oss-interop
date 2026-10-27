@@ -3,7 +3,7 @@
 The solve writes one long CSV for each result under ``results_wide/variables`` or
 ``results_wide/expressions``, and its statistics under ``results/optimizer_stats.csv``. The
 series document beside the portfolio states the periods and the representative days that the
-solve ran.
+solve ran. The portfolio beside it states the size of one unit of each technology.
 """
 
 from __future__ import annotations
@@ -72,4 +72,32 @@ class SeriesDocumentBuilder:
     def _write(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         document = {"periods": self.periods, "records": self.records}
+        self.path.write_text(json.dumps(document), encoding="utf-8")
+
+
+@dataclass
+class PortfolioBuilder:
+    """Writes a portfolio envelope that states the unit size of each technology it holds."""
+
+    path: Path
+    components: list[dict[str, Any]] = field(default_factory=list)
+
+    def add_technology(
+        self, component_type: str, name: str, unit_size_field: str, size: float
+    ) -> None:
+        self.components.append(
+            {
+                "name": name,
+                unit_size_field: size,
+                "__metadata__": {
+                    "module": "PowerSystemsInvestmentsPortfolios",
+                    "type": component_type,
+                },
+            }
+        )
+        self._write()
+
+    def _write(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        document = {"data": {"components": self.components}}
         self.path.write_text(json.dumps(document), encoding="utf-8")
