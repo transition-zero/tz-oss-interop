@@ -93,6 +93,7 @@ from interop.plugins.shared.pypsa_constants import LINK_FURTHER_PORTS
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _NO_COST = 0.0
+_FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
 _FUEL_SCOPE = "fuel"
 _FUEL_PENALTY_SCOPE = "fuel-penalties"
 
@@ -165,6 +166,7 @@ def _set_persisted(state: State, kind: ExtensionKind, parameter: str, held: pl.D
 
 
 _HELD_PARAMETERS: tuple[str, ...] = (
+    *_FLOWS,
     SupplyParameter.RESIDUAL_CAPACITY,
     SupplyParameter.AVAILABILITY_FACTOR,
     ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT,
@@ -375,7 +377,6 @@ _BUS_VALUES = (
     ),
     _BusValue("location", AnnotationColumn.LOCATION, FUEL_LOCATION, "the location of the fuel"),
 )
-_FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
 # The ports of a mode that hold each flow parameter.
 _FLOW_PORTS: dict[str, str] = {
     FlowParameter.INPUT_ACTIVITY_RATIO: INPUTS,
