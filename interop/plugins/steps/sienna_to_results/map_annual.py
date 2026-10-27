@@ -37,6 +37,7 @@ from interop.plugins.shared.annual_results import (
     Production,
     ResultsLeg,
     build_one_place_lines,
+    build_results_source,
     drop_components,
 )
 from interop.plugins.shared.constants import (
@@ -59,7 +60,6 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_results_constants import (
     SNAPSHOT_HOURS,
     AnnualCol,
-    SiennaResultSeries,
 )
 from interop.plugins.steps.sienna_to_results.hour_weights import HourWeighter
 from interop.ports.outbound.reporting import (
@@ -86,8 +86,9 @@ _EMISSIONS_DERIVATION = (
 _PRODUCTION_DERIVATION = (
     "Σ over the hours of the solve of max(dispatch, 0) for a generator or a storage, or "
     "|flow| for a TwoTerminalGenericHVDCLine, × 1 h × the weight of the representative "
-    "period that holds the hour → production at 1 January of the year. The dispatch of a "
-    "RenewableNonDispatch is its ActivePowerTimeSeriesParameter. The solve models the HVDC "
+    "period that holds the hour → production at 1 January of the year. The dispatch rows hold "
+    "ActivePowerVariable, ActivePowerTimeSeriesParameter for a RenewableNonDispatch, and "
+    "ActivePowerOutVariable - ActivePowerInVariable for a storage. The solve models the HVDC "
     "line as lossless, so the energy that it delivers equals the energy that it sends. A line "
     "that its extensions record marks as a conversion has no row."
 )
@@ -97,21 +98,8 @@ _INSTALLED_CAPACITY_DERIVATION = (
     "conversion → installed_capacity at 1 January of the year"
 )
 _PRODUCTION_SOURCES = [
-    SourceField(
-        framework=Framework.SIENNA,
-        component=SiennaResultSeries.ACTIVE_POWER,
-        name=ResultsVariable.DISPATCH,
-    ),
-    SourceField(
-        framework=Framework.SIENNA,
-        component=SiennaResultSeries.ACTIVE_POWER_PARAMETER,
-        name=ResultsVariable.DISPATCH,
-    ),
-    SourceField(
-        framework=Framework.SIENNA,
-        component=SiennaResultSeries.FLOW_ACTIVE_POWER,
-        name=ResultsVariable.FLOW,
-    ),
+    build_results_source(ResultsVariable.DISPATCH),
+    build_results_source(ResultsVariable.FLOW),
     SourceField(
         framework=Framework.SIENNA,
         component=ExtensionKind.REPRESENTATIVE_PERIOD,
@@ -136,6 +124,7 @@ _INSTALLED_CAPACITY_SOURCES = [
     ),
 ]
 _EMISSIONS_SOURCES = [
+    build_results_source(ResultsVariable.PRODUCTION),
     SourceField(
         framework=Framework.SIENNA,
         component=SiennaTable.GENERATORS,

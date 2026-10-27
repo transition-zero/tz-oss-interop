@@ -39,3 +39,17 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
     And the results parquet "outputs/results.parquet" has these "emissions" rows:
       | variable  | component | category | timestamp           | value |
       | emissions | CO2       |          | 2030-01-01T00:00:00 | 3250  |
+
+  Scenario: The annual events name the results rows that they sum, so the report shows each step
+    Production sums the dispatch and flow rows that the step writes, and emissions multiply the
+    production rows by the rate of each generator.
+    Given the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00
+    And the results have ThermalStandard dispatch for "gas" of 10 20
+    And the results have HVDC flow for "link" of 5 -3
+    And the results are saved in "results"
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 365
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the file "decisions.md" contains "| `results.results.dispatch.variable` MW<br>`results.results.flow.variable` MW<br>`sienna.representative_period.weight`"
+    And the file "decisions.md" contains "| `results.results.production.variable` MWh<br>`sienna.generators.all.extensions.emission_rates_t_per_mwh`"
