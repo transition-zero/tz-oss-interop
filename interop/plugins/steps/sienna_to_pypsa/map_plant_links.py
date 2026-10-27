@@ -1,7 +1,8 @@
 """A ThermalStandard that burns a fuel whose bus the network holds becomes a PyPSA Link.
 
 A plant that the network may build, or whose marginal cost changes from hour to hour, stays a
-Generator, as do a plant with an annual energy bound and a plant whose fuel has no bus.
+Generator, as do a plant with an annual energy bound, a plant whose fuel has no bus, a plant of
+more than three fuels and a plant whose fuel ratio is not above zero. The report names each.
 
 The Link draws the fuel at bus0 and puts out electricity at bus1, at an efficiency of one over
 the MWh of fuel for each MWh of electricity. Its capacity, its limits and its commitment are
@@ -13,7 +14,8 @@ bus3 with a negative efficiency. The p_max_pu series of the generator moves to t
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -35,10 +37,9 @@ from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
 
-_BOUNDED_WARNING = (
-    "%d plant(s) burn a fuel whose bus the network holds, but each states an annual energy "
-    "bound, which a PyPSA Link has no attribute for, so each stays a Generator that pays the "
-    "Sienna price of its fuel: %s"
+_KEPT_WARNING = (
+    "%d plant(s) state the buses of their fuels, but each %s, so each stays a Generator that "
+    "pays the Sienna price of its fuel: %s"
 )
 _NO_COST = 0.0
 # The commitment of the generator, which the Link keeps column by column.
@@ -68,6 +69,24 @@ _DROPPED_COLUMNS = (
 )
 
 
+class _Plant(NamedTuple):
+    """A plant that states the buses of its fuels, and what decides whether a Link holds it."""
+
+    record: GeneratorExtension
+    fuels: dict[str, float]
+    is_extendable: bool
+    is_priced: bool
+    has_buses: bool
+
+
+class _KeptReason(NamedTuple):
+    """Why a plant stays a Generator: the rule, the words of the warning and the note."""
+
+    is_kept: Callable[[_Plant], bool]
+    reason: str
+    note: str
+
+
 class PlantLinkMapper:
     """Moves each plant whose fuels have a bus from the generators to the links."""
 
@@ -78,24 +97,40 @@ class PlantLinkMapper:
         generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
         if generators is None:
             return
-        records = _build_plant_records(state, reader, buses)
-        fixed = _build_fixed_names(state, generators)
-        records = {name: record for name, record in records.items() if name in fixed}
-        bounded = sorted(name for name, record in records.items() if _is_bounded(record))
-        self._report_bounded(bounded)
-        linked = {name: record for name, record in records.items() if name not in bounded}
+        plants = _list_plants(state, reader, buses, generators)
+        linked = self._drop_kept(plants)
         if not linked:
             return
-        plants = generators.filter(pl.col(PyPSAGeneratorCol.NAME).is_in(list(linked)))
+        plants_table = generators.filter(pl.col(PyPSAGeneratorCol.NAME).is_in(list(linked)))
         rows = [
             self._build_link(row, linked[row[PyPSAGeneratorCol.NAME]])
-            for row in plants.iter_rows(named=True)
+            for row in plants_table.iter_rows(named=True)
         ]
         state.destination_tables[PyPSADestinationTable.GENERATORS] = generators.filter(
             ~pl.col(PyPSAGeneratorCol.NAME).is_in(list(linked))
         )
         append_destination_rows(state, PyPSADestinationTable.LINKS, rows, LINKS_DESTINATION_SCHEMA)
         _set_link_series(state, set(linked))
+
+    def _drop_kept(self, plants: list[_Plant]) -> dict[str, GeneratorExtension]:
+        """Report each plant that stays a Generator, and give the record of each other one."""
+        kept: dict[_KeptReason, list[_Plant]] = {}
+        linked: dict[str, GeneratorExtension] = {}
+        for plant in plants:
+            reason = _choose_kept_reason(plant)
+            if reason is None:
+                linked[plant.record.name] = plant.record
+            else:
+                kept.setdefault(reason, []).append(plant)
+        for reason, held in kept.items():
+            self._report_kept(reason, held)
+        return linked
+
+    def _report_kept(self, reason: _KeptReason, plants: list[_Plant]) -> None:
+        names = sorted(plant.record.name for plant in plants)
+        for plant in plants:
+            self._reporter.record_kept(plant.record.name, plant.fuels, reason.note)
+        log.warning(_KEPT_WARNING, len(names), reason.reason, name_a_few(names))
 
     def _build_link(self, generator: dict[str, Any], record: GeneratorExtension) -> dict[str, Any]:
         fuels = sorted((record.fuel_buses or {}).items(), key=lambda fuel: (-fuel[1], fuel[0]))
@@ -132,31 +167,36 @@ class PlantLinkMapper:
             if generator[column] is not None:
                 self._reporter.record_dropped(name, column, generator[column])
 
-    def _report_bounded(self, names: list[str]) -> None:
-        for name in names:
-            self._reporter.record_bounded(name)
-        if names:
-            log.warning(_BOUNDED_WARNING, len(names), name_a_few(names))
 
-
-def _build_plant_records(
-    state: State, reader: ExtensionReader, buses: set[str]
-) -> dict[str, GeneratorExtension]:
-    """The record of each ThermalStandard whose fuels each have a bus, by name."""
+def _list_plants(
+    state: State, reader: ExtensionReader, buses: set[str], generators: pl.DataFrame
+) -> list[_Plant]:
+    """Each ThermalStandard of the generators table whose record states the buses of its fuels."""
     thermal = _build_thermal_names(state)
-    records = reader.read(ExtensionKind.GENERATOR).list_records()
-    return {
-        record.name: record
-        for record in records
-        if record.name in thermal and _has_fuel_buses(record, buses)
-    }
-
-
-def _build_fixed_names(state: State, generators: pl.DataFrame) -> set[str]:
-    """The generators that a Link can hold: no build, and one marginal cost in every hour."""
-    fixed = generators.filter(~pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE).fill_null(False))  # noqa: FBT003
+    extendable = _build_extendable_names(generators)
     priced = _build_series_names(state, PyPSAGeneratorCol.MARGINAL_COST)
-    return set(fixed[PyPSAGeneratorCol.NAME].to_list()) - priced
+    held = set(generators[PyPSAGeneratorCol.NAME].to_list())
+    return [
+        _Plant(
+            record=record,
+            fuels=record.fuel_buses,
+            is_extendable=record.name in extendable,
+            is_priced=record.name in priced,
+            has_buses=set(record.fuel_buses) <= buses,
+        )
+        for record in reader.read(ExtensionKind.GENERATOR).list_records()
+        if record.fuel_buses and record.name in thermal and record.name in held
+    ]
+
+
+def _choose_kept_reason(plant: _Plant) -> _KeptReason | None:
+    """The first reason that keeps the plant a Generator, or None for a plant a Link holds."""
+    return next((reason for reason in _KEPT_REASONS if reason.is_kept(plant)), None)
+
+
+def _build_extendable_names(generators: pl.DataFrame) -> set[str]:
+    extendable = generators.filter(pl.col(PyPSAGeneratorCol.P_NOM_EXTENDABLE).fill_null(False))  # noqa: FBT003
+    return set(extendable[PyPSAGeneratorCol.NAME].to_list())
 
 
 def _build_series_names(state: State, attribute: str) -> set[str]:
@@ -170,13 +210,49 @@ def _build_series_names(state: State, attribute: str) -> set[str]:
     return set(held[ReverseTimeSeriesMetadataCol.COMPONENT_NAME].to_list())
 
 
-def _has_fuel_buses(record: GeneratorExtension, buses: set[str]) -> bool:
-    fuels = record.fuel_buses or {}
-    return 0 < len(fuels) <= 1 + len(LINK_FURTHER_PORTS) and set(fuels) <= buses
+def _is_bounded(plant: _Plant) -> bool:
+    return bool(plant.record.e_sum_min) or bool(plant.record.e_sum_max)
 
 
-def _is_bounded(record: GeneratorExtension) -> bool:
-    return bool(record.e_sum_min) or bool(record.e_sum_max)
+_MAX_FUELS = 1 + len(LINK_FURTHER_PORTS)
+_STAYS = "so it stays a Generator that pays the Sienna price of its fuel and does not draw the fuel"
+_KEPT_REASONS = (
+    _KeptReason(
+        lambda plant: not plant.has_buses,
+        "names a bus that the network does not hold",
+        f"the plant names a bus that the network does not hold, {_STAYS}",
+    ),
+    _KeptReason(
+        lambda plant: any(ratio <= 0 for ratio in plant.fuels.values()),
+        "states a fuel ratio that is not above zero",
+        f"the plant states a fuel ratio that is not above zero, which gives a Link no "
+        f"efficiency, {_STAYS}",
+    ),
+    _KeptReason(
+        lambda plant: len(plant.fuels) > _MAX_FUELS,
+        f"burns more than {_MAX_FUELS} fuels, and a Link of this hop draws at bus0, bus2 and "
+        "bus3 only",
+        f"the plant burns more than {_MAX_FUELS} fuels, and a Link of this hop draws at bus0, "
+        f"bus2 and bus3 only, {_STAYS}",
+    ),
+    _KeptReason(
+        lambda plant: plant.is_extendable,
+        "may build more capacity, which a Link of this hop does not",
+        f"the plant may build more capacity, which a Link of this hop does not, {_STAYS}",
+    ),
+    _KeptReason(
+        lambda plant: plant.is_priced,
+        "has a marginal cost that changes from hour to hour, which a Link of this hop does not",
+        f"the plant has a marginal cost that changes from hour to hour, which a Link of this hop "
+        f"does not, {_STAYS}",
+    ),
+    _KeptReason(
+        _is_bounded,
+        "states an annual energy bound, which a PyPSA Link has no attribute for",
+        f"the plant states an annual energy bound, and a PyPSA Link has no e_sum_min or "
+        f"e_sum_max, {_STAYS}",
+    ),
+)
 
 
 def _build_thermal_names(state: State) -> set[str]:
