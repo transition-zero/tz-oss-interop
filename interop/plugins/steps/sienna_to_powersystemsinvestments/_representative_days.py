@@ -21,7 +21,7 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
+from interop.core.extensions import ExtensionKind
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
@@ -35,6 +35,12 @@ from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_SERIES_YEAR,
     InvestmentsSeriesName,
     SeriesDocument,
+)
+from interop.plugins.shared.representative_periods import (
+    ONE_HOUR,
+    LeftOutPeriodText,
+    Period,
+    PeriodChooser,
 )
 from interop.plugins.shared.sienna_constants import SiennaTimeSeriesAssociationCol
 from interop.plugins.shared.sienna_investments_constants import (
@@ -63,8 +69,10 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     warn_step,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import (
+    INVESTMENT_PERIODS,
     build_periods,
     convert_year_key,
+    report_gap_years,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
     PROFILED_SUPPLY_TYPES,
@@ -73,10 +81,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._profiles import (
 )
 
 _OWNER_TYPE = SiennaTimeSeriesAssociationCol.OWNER_TYPE
-_ONE_HOUR = timedelta(hours=1)
 _FIRST_SLICE = 1
-_INVESTMENT_PERIODS = "InvestmentPeriods"
-_FIRST_TIMESTAMP_FIELD = "first_timestamp"
 
 # How many snapshots the one day of a plan holds, where the base system gives the profiles.
 _SYSTEM_DAY_SNAPSHOTS = 24
@@ -144,19 +149,27 @@ _DROPPED_DAY_NOTE = (
     "a series of the year does not reach the end of this representative day, so the plan "
     "leaves the day out and its weight with it"
 )
-_FAULTY_DAY_NOTE = (
-    "the representative period states no first hour, length or weight, so it is left out"
+_LEFT_OUT_PERIOD_TEXT = LeftOutPeriodText(
+    faulty_note=(
+        "the representative period is left out because {fault}, so the plan has no day for it"
+    ),
+    faulty_warning=(
+        "%d representative period(s) cannot give their hours a weight, so the plan leaves each "
+        "out: %s"
+    ),
+    overlapping_note=(
+        "the representative period holds an hour that the period {earlier} also holds, so the "
+        "plan leaves it out"
+    ),
+    overlapping_warning=(
+        "%d representative period(s) hold an hour that an earlier period holds, so the plan "
+        "leaves each out: %s"
+    ),
 )
 _OTHER_SERIES_NOTE = (
     "the model reads max_active_power of a supply technology or a demand requirement only, so "
     "this series is left out"
 )
-_GAP_NOTE = (
-    "the model counts the operations of each investment period's own year only, while it "
-    "amortises capital over the whole recovery period, so the years {years} between the "
-    "periods carry no operating cost"
-)
-
 _NO_DEMAND_WARNING = (
     "%d demand requirement(s) state no series in some year, so each slice of that year states "
     "no demand: %s"
@@ -183,16 +196,9 @@ _NO_DAYS_WARNING = (
     "the base system states no representative days, so the series of each year is one slice "
     "that stands for the whole year"
 )
-_FAULTY_DAYS_WARNING = (
-    "%d representative period(s) state no first hour, length or weight, so each is left out: %s"
-)
 _OTHER_SERIES_WARNING = (
     "%d portfolio series are not max_active_power of a supply technology or a demand "
     "requirement, which are the only ones the model reads, so each is left out: %s"
-)
-_GAP_WARNING = (
-    "PowerSystemsInvestments counts the operations of each period's own year only, so the %d "
-    "year(s) between the periods carry no operating cost: %s"
 )
 
 
@@ -251,7 +257,7 @@ def derive_representative_day_series(state: State, recorder: ScopedRecorder) -> 
     records = splitter.build_records(profiles)
     records.extend(splitter.build_missing_records(base_system, state, profiles))
     splitter.warn()
-    _report_gap_years(plan.years, recorder)
+    report_gap_years(plan.years, recorder)
     if records:
         state.destination_tables[PORTFOLIO_SERIES_TABLE] = pl.DataFrame(records)
         state.destination_tables[PORTFOLIO_PERIODS_TABLE] = build_periods(
@@ -420,7 +426,7 @@ def _find_base_year(state: State) -> int | None:
 def _report_default_day(year: str, day: Day, recorder: ScopedRecorder) -> None:
     record_default(
         recorder,
-        component=_INVESTMENT_PERIODS,
+        component=INVESTMENT_PERIODS,
         name=PLAN,
         field=SeriesDocument.REPRESENTATIVE_DAY,
         value={year: _FIRST_SLICE},
@@ -454,51 +460,18 @@ def _drop_unprofiled(
 def _list_days(state: State, recorder: ScopedRecorder) -> list[Day]:
     """The representative days of the base system, in the order of their first hours."""
     records = state.extension_reader(recorder).read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
-    faulty = [record.name for record in records if not _is_usable(record)]
-    for name in faulty:
-        record_not_mapped(
-            recorder,
-            component=ExtensionKind.REPRESENTATIVE_PERIOD.value,
-            name=name,
-            field=_FIRST_TIMESTAMP_FIELD,
-            value=None,
-            derivation=_FAULTY_DAY_NOTE,
-        )
-    if faulty:
-        warn_step(_FAULTY_DAYS_WARNING, len(faulty), name_a_few(faulty))
-    return sorted(_build_day(record) for record in records if _is_usable(record))
+    chooser = PeriodChooser(recorder, _LEFT_OUT_PERIOD_TEXT, warn=warn_step)
+    return sorted(_build_day(period) for period in chooser.choose_periods(records))
 
 
-def _is_usable(record: RepresentativePeriodExtension) -> bool:
-    return bool(record.first_timestamp and record.hours) and record.weight is not None
-
-
-def _build_day(record: RepresentativePeriodExtension) -> Day:
-    first_hour = datetime.fromisoformat(str(record.first_timestamp))
-    year_start = datetime(first_hour.year, _FIRST_MONTH, _FIRST_DAY, tzinfo=first_hour.tzinfo)
+def _build_day(period: Period) -> Day:
+    first_hour = period.first_hour
+    year_start = datetime(first_hour.year, _FIRST_MONTH, _FIRST_DAY)
     return Day(
-        offset_hours=(first_hour - year_start) / _ONE_HOUR,
-        hours=float(record.hours or 0),
-        weight=float(record.weight or 0.0),
+        offset_hours=(first_hour - year_start) / ONE_HOUR,
+        hours=float(period.hours),
+        weight=period.weight,
     )
-
-
-def _report_gap_years(years: list[str], recorder: ScopedRecorder) -> None:
-    """Record and warn the years between the periods, which the model gives no operations."""
-    stated = {int(year) for year in years}
-    span = range(min(stated), max(stated) + 1) if stated else range(0)
-    gaps = [str(year) for year in span if year not in stated]
-    if not gaps:
-        return
-    record_not_mapped(
-        recorder,
-        component=_INVESTMENT_PERIODS,
-        name=PLAN,
-        field=SeriesDocument.PERIODS,
-        value=years,
-        derivation=_GAP_NOTE.format(years=", ".join(gaps)),
-    )
-    warn_step(_GAP_WARNING, len(gaps), name_a_few(gaps))
 
 
 class _Steps(NamedTuple):
@@ -761,7 +734,7 @@ class _SeriesSplitter:
         self, owner: tuple[str, str], one: Slice, values: list[float]
     ) -> dict[str, Any]:
         owner_type, name = owner
-        first_hour = self._plan.starts[one.year] + one.day.offset_hours * _ONE_HOUR
+        first_hour = self._plan.starts[one.year] + one.day.offset_hours * ONE_HOUR
         return {
             SeriesDocument.COMPONENT_TYPE: owner_type,
             SeriesDocument.COMPONENT_NAME: name,

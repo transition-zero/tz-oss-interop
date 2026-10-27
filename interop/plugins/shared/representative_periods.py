@@ -59,12 +59,19 @@ class LeftOutPeriodText(NamedTuple):
     overlapping_warning: str
 
 
+# Writes one warning from a %-style template and its arguments.
+Warner = Callable[..., None]
+
+
 class PeriodChooser:
     """Chooses the periods that can weight their hours, and reports each one it leaves out."""
 
-    def __init__(self, recorder: ScopedRecorder, text: LeftOutPeriodText) -> None:
+    def __init__(
+        self, recorder: ScopedRecorder, text: LeftOutPeriodText, warn: Warner = log.warning
+    ) -> None:
         self._recorder = recorder
         self._text = text
+        self._warn = warn
 
     def choose_periods(self, records: list[RepresentativePeriodExtension]) -> list[Period]:
         """The periods that can weight their hours, in record order, with no two overlapping."""
@@ -98,7 +105,7 @@ class PeriodChooser:
                 )
             )
         if notes:
-            log.warning(warning, len(notes), name_a_few(notes))
+            self._warn(warning, len(notes), name_a_few(notes))
 
 
 def _build_period_source(name: str) -> SourceField:
