@@ -322,6 +322,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_from`"
       And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to`"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "is_conversion" set to true
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "has_stand_in_limit" set to true
+      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.extensions.has_stand_in_limit` = True | the model builds the technology at no cost and no limit binds it, so the limits of the line are what the whole fleet of the year can put out, and not a capacity"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" without field "p_max_pu"
       And the file "decisions.md" contains "| `osemosys.availability_factor.R1/ATSTEPDOWN` = 0.9 |  |  | the model builds the line at no cost and no limit binds it, so the factor that the model states limits nothing"
 
@@ -335,6 +337,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from.max" close to 500.0
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to.max" close to 495.0
       And the file "decisions.md" does not contain "the whole fleet of the year can put out"
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" without field "has_stand_in_limit"
 
     Scenario: The rating of a line with no limit counts the output of every technology of the fleet
       The plant ATPLANT holds 1 GW and puts out 1 unit of electricity, so the fleet puts out
