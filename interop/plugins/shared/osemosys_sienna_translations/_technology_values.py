@@ -424,7 +424,7 @@ def _read_rows(
     if value.is_every_year:
         return read_parameter_all_years(state, value.parameter, keys)
     rows = read_parameter(state, value.parameter, operations.year)
-    return rows.join(keys, on=keys.columns, how="semi")
+    return rows.join(keys.lazy(), on=keys.columns, how="semi").collect()
 
 
 def _reshape_details(rows: pl.DataFrame, value: TechnologyValue, keys: list[str]) -> pl.DataFrame:

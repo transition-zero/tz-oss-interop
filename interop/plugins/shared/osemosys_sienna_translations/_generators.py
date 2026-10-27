@@ -342,9 +342,13 @@ def _report_other_outputs(
             state, FlowParameter.OUTPUT_ACTIVITY_RATIO, operations.year, operations.mode
         )
         .filter(pl.col(VALUE_COL) > 0)
-        .join(electricity, on=[REGION, FUEL], how="anti")
-        .join(generators.select(REGION, TECHNOLOGY, TECHNOLOGY_NAME), on=[REGION, TECHNOLOGY])
+        .join(electricity.lazy(), on=[REGION, FUEL], how="anti")
+        .join(
+            generators.select(REGION, TECHNOLOGY, TECHNOLOGY_NAME).lazy(),
+            on=[REGION, TECHNOLOGY],
+        )
         .sort(TECHNOLOGY_NAME, FUEL)
+        .collect()
     )
     for row in outputs.iter_rows(named=True):
         recorder.append(_build_other_output_event(row))

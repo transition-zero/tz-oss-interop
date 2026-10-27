@@ -48,9 +48,10 @@ def read_electricity_ratios(state: State, year: int, parameter: FlowParameter) -
     electricity = read_electricity_fuels(state).select(REGION, FUEL)
     return (
         read_parameter(state, parameter, year)
-        .join(electricity, on=[REGION, FUEL], how="semi")
+        .join(electricity.lazy(), on=[REGION, FUEL], how="semi")
         .group_by(*_KEYS, OPERATING_MODE)
         .agg(pl.col(VALUE_COL).cast(pl.Float64).sum().alias(ELECTRICITY_RATIO))
+        .collect()
     )
 
 

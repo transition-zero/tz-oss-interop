@@ -79,7 +79,7 @@ def read_flow_buses(state: State, year: int, parameter: FlowParameter) -> pl.Dat
         read_parameter(state, parameter, year)
         .select(*_MODE_KEYS, FUEL, pl.col(VALUE_COL).cast(pl.Float64).alias(_RATIO))
         .filter(pl.col(_RATIO) > 0)
-        .join(fuels, on=[REGION, FUEL])
+        .join(fuels.lazy(), on=[REGION, FUEL])
         .sort([_RATIO, ELECTRICITY_BUS], descending=[True, False], nulls_last=True)
         .group_by(_MODE_KEYS, maintain_order=True)
         .agg(
@@ -87,6 +87,7 @@ def read_flow_buses(state: State, year: int, parameter: FlowParameter) -> pl.Dat
             bus.drop_nulls().n_unique().alias(BUS_COUNT),
             bus.is_null().sum().alias(UNPLACED_COUNT),
         )
+        .collect()
     )
 
 

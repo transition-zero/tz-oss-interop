@@ -255,7 +255,7 @@ def _read_flows(state: State, year: int, technologies: pl.DataFrame) -> pl.DataF
         [
             read_parameter(state, parameter, year)
             .filter(pl.col(VALUE_COL) > 0)
-            .join(technologies.select(_KEYS), on=_KEYS, how="semi")
+            .join(technologies.select(_KEYS).lazy(), on=_KEYS, how="semi")
             .select(
                 *_MODE_KEYS,
                 FUEL,
@@ -264,7 +264,7 @@ def _read_flows(state: State, year: int, technologies: pl.DataFrame) -> pl.DataF
             )
             for parameter, is_input in directions
         ]
-    )
+    ).collect()
     return flows.join(read_fuel_buses(state), on=[REGION, FUEL], how="left")
 
 
@@ -359,8 +359,10 @@ def _enrich_stated_bounds(
 ) -> pl.DataFrame:
     table = modes
     for parameter, column, keys in _BOUNDS:
-        stated = read_parameter(state, parameter, operations.year).select(
-            *keys, pl.col(VALUE_COL).cast(pl.Float64).alias(column)
+        stated = (
+            read_parameter(state, parameter, operations.year)
+            .select(*keys, pl.col(VALUE_COL).cast(pl.Float64).alias(column))
+            .collect()
         )
         table = table.join(stated, on=keys, how="left")
     return table

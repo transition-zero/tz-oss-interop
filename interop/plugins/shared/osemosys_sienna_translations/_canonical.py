@@ -117,7 +117,7 @@ def read_parameter_all_years(state: State, name: str, keys: pl.DataFrame) -> pl.
     """
     table = state.source_time_series.get((TableKind.PARAMETER, name))
     if table is None:
-        return _build_empty_parameter(name).lazy().collect()
+        return _build_empty_parameter(name).collect()
     return table.join(keys.lazy(), on=keys.columns, how="semi").collect()
 
 

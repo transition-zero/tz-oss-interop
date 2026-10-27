@@ -88,8 +88,9 @@ def read_input_ratios(
     return (
         read_mode_parameter(state, FlowParameter.INPUT_ACTIVITY_RATIO, year, mode)
         .filter(pl.col(VALUE_COL) > 0)
-        .join(technologies.select(REGION, TECHNOLOGY), on=[REGION, TECHNOLOGY], how="semi")
+        .join(technologies.select(REGION, TECHNOLOGY).lazy(), on=[REGION, TECHNOLOGY], how="semi")
         .select(REGION, TECHNOLOGY, FUEL, pl.col(VALUE_COL).alias(INPUT_RATIO))
+        .collect()
     )
 
 
@@ -99,8 +100,9 @@ def _read_candidates(state: State, year: int, mode: str) -> pl.DataFrame:
     outputs = (
         read_mode_parameter(state, FlowParameter.OUTPUT_ACTIVITY_RATIO, year, mode)
         .filter(pl.col(VALUE_COL) > 0)
-        .join(suppliers, on=_KEYS)
+        .join(suppliers.lazy(), on=_KEYS)
         .select(*_KEYS, FUEL, pl.col(VALUE_COL).alias(OUTPUT_RATIO), IS_RUNNABLE)
+        .collect()
     )
     keys = outputs.select(*_KEYS, pl.lit(mode).alias(OPERATING_MODE)).unique()
     costs = read_variable_costs(state, year, keys).select(
@@ -163,6 +165,7 @@ def _read_emission_rates(state: State, year: int, mode: str, prices: pl.DataFram
             POLLUTANT,
             pl.col(VALUE_COL).alias(PRODUCER_EMISSION_RATE),
         )
+        .collect()
     )
     return (
         prices.select(REGION, FUEL, PRODUCER, OUTPUT_RATIO)

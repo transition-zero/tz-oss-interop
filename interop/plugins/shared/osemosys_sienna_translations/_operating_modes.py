@@ -288,8 +288,10 @@ def _read_rows(
     """A bound reads every year; any other value reads the operations year."""
     if value.is_bound:
         return read_parameter_all_years(state, value.parameter, technologies)
-    return read_parameter(state, value.parameter, operations.year).join(
-        technologies, on=_KEYS, how="semi"
+    return (
+        read_parameter(state, value.parameter, operations.year)
+        .join(technologies.lazy(), on=_KEYS, how="semi")
+        .collect()
     )
 
 
