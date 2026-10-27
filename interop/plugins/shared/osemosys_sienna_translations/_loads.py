@@ -92,6 +92,7 @@ from interop.plugins.shared.translation_runner import (
     report_not_mapped,
     row_position_id_translation,
 )
+from interop.ports.outbound.reporting import SourceField
 
 # One row for each load, in OSeMOSYS words, before any Sienna column exists.
 LOAD_NAME = "load_name"
@@ -406,9 +407,9 @@ _load_field = partial(build_sienna_field, SiennaComponent.POWER_LOAD)
 _load_source = partial(build_sienna_source, SiennaComponent.POWER_LOAD)
 
 
-def _build_demand_source(old: dict[str, Any]) -> Any:
+def _build_demand_source(old: dict[str, Any]) -> SourceField:
     return build_osemosys_field(
-        old[DEMAND_PARAMETER], old[FUEL_NAME], None, old[ANNUAL_DEMAND], old[ENERGY_UNIT]
+        FUEL, old[FUEL_NAME], old[DEMAND_PARAMETER], old[ANNUAL_DEMAND], old[ENERGY_UNIT]
     )
 
 
