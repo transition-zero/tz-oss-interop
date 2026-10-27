@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from interop.core.extensions import (
     ExtensionKind,
+    ExtensionLookup,
     ExtensionReader,
     GeneratorExtension,
     LoadCompanionCol,
@@ -24,7 +25,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW, UNSCALED
 from interop.plugins.shared.pypsa_constants import (
     GENERATORS_DESTINATION_SCHEMA,
     LOADS_DESTINATION_SCHEMA,
@@ -36,7 +37,6 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_destination import append_destination_rows
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
-    UNSCALED,
     CompanionColumn,
     stage_companion_columns,
 )
@@ -109,7 +109,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         self, state: State, buses: set[str], mapping: _FuelMapping
     ) -> list[GeneratorExtension | LoadExtension]:
         """Each record on a bus of the network becomes a row, and its other fields travel on."""
-        lookup = self._extensions.read(mapping.kind)
+        lookup: ExtensionLookup[Any] = self._extensions.read(mapping.kind)
         held = _build_names(state, mapping.table, mapping.name_col)
         records = [
             record
@@ -123,8 +123,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
             _record_defaults(reporter, mapping, record)
         rows = [mapping.build_row(record) for record in records]
         append_destination_rows(state, mapping.table, rows, mapping.schema)
-        relayed = [lookup.build_relayed(record.name) for record in records]
-        relay_records(state, mapping.kind, relayed, self._recorder)
+        relay_records(state, lookup, [record.name for record in records], self._recorder)
         return records
 
 
