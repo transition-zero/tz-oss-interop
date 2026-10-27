@@ -51,6 +51,9 @@ class PenaltyNote(NamedTuple):
 
 GENERATOR_PENALTIES = PenaltyNote(ExtensionKind.GENERATOR, "generator-penalties")
 IMPORT_PENALTIES = PenaltyNote(ExtensionKind.GENERATOR, "import-penalties")
+STORAGE_PENALTIES = PenaltyNote(ExtensionKind.STORAGE, "storage-penalties")
+LINE_PENALTIES = PenaltyNote(ExtensionKind.CONTROLLABLE_LINE, "line-penalties")
+CONVERSION_PENALTIES = PenaltyNote(ExtensionKind.CONVERSION, "conversion-penalties")
 
 
 def enrich_emission_penalties(
