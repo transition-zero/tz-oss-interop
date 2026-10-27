@@ -25,7 +25,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TIMESLICE,
     VALUE_COL,
     AnnotationColumn,
-    FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
@@ -34,9 +33,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     ActivityParameter,
     StorageParameter,
     SupplyParameter,
-)
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    build_bound_events,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
 from interop.plugins.shared.osemosys_sienna_translations._component_mapping import ComponentMapping
@@ -56,13 +52,10 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PENALTY_COST_MWH,
 )
-from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
-    build_mode_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
     CHARGE_TECHNOLOGY_OWNERS,
     STORAGE_OWNERS,
-    STORAGE_TECHNOLOGY_OWNERS,
+    STORAGE_TECHNOLOGY_EXTRAS,
     has_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
@@ -102,7 +95,6 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_costs impor
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CHARGE_VALUES,
-    DISCHARGE_TECHNOLOGY_VALUES,
     STORAGE_VALUES,
     build_value_events,
 )
@@ -585,11 +577,9 @@ def _build_extension_events(old: dict[str, Any]) -> list[TranslationEvent]:
     """The values of the technology, of the storage and of the other modes, and the series."""
     events = [
         *_build_carrier_events(old),
-        *build_value_events(old, DISCHARGE_TECHNOLOGY_VALUES, STORAGE_TECHNOLOGY_OWNERS),
+        *STORAGE_TECHNOLOGY_EXTRAS.build_events(old),
         *build_value_events(old, STORAGE_VALUES, STORAGE_OWNERS),
         *build_value_events(old, CHARGE_VALUES, CHARGE_TECHNOLOGY_OWNERS),
-        *build_mode_events(old, STORAGE_TECHNOLOGY_OWNERS),
-        *build_bound_events(old, STORAGE_TECHNOLOGY_OWNERS, FlowParameter.OUTPUT_ACTIVITY_RATIO),
     ]
     if has_series(old):
         events.extend(
