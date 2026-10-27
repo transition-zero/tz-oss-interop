@@ -180,9 +180,9 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `up_time_before` | snapshots | `time_at_status` × 60 ÷ the snapshot duration in minutes | `derived` |
 | `committable` | | `extensions.committable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator only. | `sidecar` or `derived` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator whose `base_power` is above 0. | `sidecar` or `derived` |
 | `efficiency` | | `extensions.efficiency` of the `generator` record. If absent, PyPSA's own default of 1.0. | `sidecar` or `default` |
-| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record. `overnight_cost` only if the record also states a `discount_rate` and a `lifetime_years`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `e_sum_min`, `e_sum_max` | MWh | The value of the year of the snapshots in `extensions.e_sum_min` and `.e_sum_max`. Refer to [Annual energy bounds](#annual-energy-bounds). | `sidecar` |
 
 Sienna states a ramp rate in MW for each minute, and PyPSA states it as a share of `p_nom`
@@ -213,7 +213,7 @@ placeholder, so the translator does not divide by it.
 | `p_min_pu` | per unit of `p_nom` | `active_power` ÷ `base_power` | `derived` |
 | `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator only. | `sidecar` or `derived` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `generator` record. If absent, `base_power`, for an extendable generator whose `base_power` is above 0. | `sidecar` or `derived` |
 | `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | The same fields of the `generator` record as for a `ThermalStandard` | `sidecar` |
 | `e_sum_min`, `e_sum_max` | MWh | The same as for a `ThermalStandard` | `sidecar` |
 | `committable` | | `False` | `default` |
@@ -286,8 +286,8 @@ field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 | `state_of_charge_initial` | MWh | `initial_storage_capacity_level` × `base_power` × `storage_capacity` | `derived` |
 | `cyclic_state_of_charge` | | `True` where `operation_cost.energy_shortage_cost` is above zero. If not, `False`. | `derived` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `storage` record. If absent, `False`. | `sidecar` or `default` |
-| `p_nom_min` | MW | `extensions.p_nom_min` of the `storage` record. If absent, `base_power`, for an extendable storage unit only. | `sidecar` or `derived` |
-| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record. `overnight_cost` only if the record also states a `discount_rate`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
+| `p_nom_min` | MW | `extensions.p_nom_min` of the `storage` record. If absent, `base_power`, for an extendable storage unit whose `base_power` is above 0. | `sidecar` or `derived` |
+| `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record. `overnight_cost` only if the record also states a `discount_rate` and a `lifetime_years`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `cyclic_state_of_charge_per_period` | | `extensions.cyclic_state_of_charge_per_period` of the `storage` record | `sidecar` |
 | `inflow` | MW | `extensions.inflow_mw` of the `storage` record. If absent, `0.0`. | `sidecar` or `default` |
 
@@ -638,7 +638,7 @@ record that no step reads does not travel on. The report gives it a `NOT_MAPPED`
 note that no mapping reads it.
 
 These fields become PyPSA attributes. `overnight_cost_per_mw` becomes one only if the record
-also states a `discount_rate`:
+also states a `discount_rate` and a `lifetime_years`:
 
 | Kind | Fields |
 | --- | --- |
@@ -658,12 +658,14 @@ also states a `discount_rate`:
 ### Overnight cost
 
 PyPSA refuses a network in which a component states `overnight_cost` and no
-`discount_rate`, because it cannot annualise the cost. So if a `generator` or a `storage`
-record states `overnight_cost_per_mw` and no `discount_rate`, these things occur:
+`discount_rate`, because it cannot annualise the cost. PyPSA annualises the cost over the
+`lifetime`, and the translator does not supply a lifetime that the record does not state. So
+if a `generator` or a `storage` record states `overnight_cost_per_mw` and no `discount_rate`
+or no `lifetime_years`, these things occur:
 
 1. The network leaves out `overnight_cost` of the component.
 2. The field travels on to `extensions.json`.
-3. The report gives a `NOT_MAPPED` row for the field.
+3. The report gives a `NOT_MAPPED` row for the field. The note names the field that is absent.
 4. The log gives one warning, which names three components and counts the rest.
 
 Examples of fields that travel on: the emission rates, the operating modes, the growth
