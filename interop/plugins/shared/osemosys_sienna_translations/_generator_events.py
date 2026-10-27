@@ -66,13 +66,13 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     EMISSION_TERMS,
     FUEL_PRODUCERS,
     OWN_RATE,
+    PENALTY,
+    PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     OPERATION_COST_MWH,
-    PENALTY,
     PENALTY_COST_MWH,
-    PENALTY_PER_TONNE,
     PENALTY_TERMS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (

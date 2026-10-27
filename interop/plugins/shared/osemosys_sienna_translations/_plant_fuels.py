@@ -24,21 +24,15 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_mode_parameter
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
-)
-from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
-    PENALTY,
-    read_emission_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import INPUT_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
@@ -50,6 +44,12 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import OWN_COST_MWH
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    OWN_RATE,
+    PENALTY_PER_TONNE,
+    STATED_OWN_RATES,
+    read_emission_penalties,
+)
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.translation_runner import DestinationFieldFactory
@@ -168,19 +168,25 @@ def _build_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFra
 def _build_own_rates(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:
-    """The own rate of each pollutant in t/MWh of electricity, and the penalty of their sum."""
+    """The own rate of each pollutant in t/MWh of electricity, and the penalty of their sum.
+
+    `generators` holds the own rates that `enrich_emission_rates` read.
+    """
+    own = pl.col(STATED_OWN_RATES)
     stated = (
-        read_mode_parameter(state, SupplyParameter.EMISSION_RATE, operations.year, operations.mode)
-        .filter(pl.col(VALUE_COL) != 0)
-        .join(generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO), on=_KEYS)
-        .select(*_KEYS, POLLUTANT, ELECTRICITY_OUTPUT_RATIO, pl.col(VALUE_COL).cast(pl.Float64))
-    )
-    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
-    rates = stated.with_columns(
-        (express_converted(stated, VALUE_COL, convert) / pl.col(ELECTRICITY_OUTPUT_RATIO)).alias(
-            _RATE
+        generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO, STATED_OWN_RATES)
+        .explode(STATED_OWN_RATES, empty_as_null=True)
+        .drop_nulls(STATED_OWN_RATES)
+        .select(
+            *_KEYS,
+            ELECTRICITY_OUTPUT_RATIO,
+            own.struct.field(POLLUTANT),
+            own.struct.field(OWN_RATE),
         )
     )
+    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
+    rate = express_converted(stated, OWN_RATE, convert) / pl.col(ELECTRICITY_OUTPUT_RATIO)
+    rates = stated.with_columns(rate.alias(_RATE))
     penalties = read_emission_penalties(state, operations, rates)
     priced = rates.join(penalties, on=[REGION, POLLUTANT], how="left")
     return (
@@ -188,6 +194,6 @@ def _build_own_rates(
         .group_by(_KEYS)
         .agg(
             pl.struct(POLLUTANT, _RATE).alias(OWN_RATES),
-            (pl.col(_RATE) * pl.col(PENALTY).fill_null(NO_COST)).sum().alias(_OWN_PENALTY),
+            (pl.col(_RATE) * pl.col(PENALTY_PER_TONNE)).sum().alias(_OWN_PENALTY),
         )
     )

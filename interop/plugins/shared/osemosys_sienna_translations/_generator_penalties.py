@@ -14,25 +14,21 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
-from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    read_parameter_with_defaults,
-)
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     VARIABLE_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
+    PENALTY,
+    PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
+    read_emission_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 
 PENALTY_TERMS = "penalty_terms"
-PENALTY = "penalty"
-PENALTY_PER_TONNE = "penalty_per_tonne"
 PENALTY_COST_MWH = "penalty_cost_mwh"
 EMISSION_COST_MWH = "emission_cost_mwh"
 OPERATION_COST_MWH = "operation_cost_mwh"
@@ -87,13 +83,8 @@ def build_penalty_terms(
 
     `rates` holds `region`, `pollutant` and the rate in t/MWh, with any other key columns.
     """
-    keys = rates.select(_PENALTY_KEYS).unique()
-    penalties = read_parameter_with_defaults(
-        state, SupplyParameter.EMISSION_PENALTY, operations.year, keys
-    ).select(*_PENALTY_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(PENALTY))
-    priced = rates.join(penalties.filter(pl.col(PENALTY) != 0), on=_PENALTY_KEYS)
-    convert = operations.units.convert_cost_per_emissions_to_dollars_per_tonne
-    per_tonne = express_converted(priced, PENALTY, convert)
-    return priced.with_columns(per_tonne.alias(PENALTY_PER_TONNE)).with_columns(
+    penalties = read_emission_penalties(state, operations, rates)
+    priced = rates.join(penalties.filter(pl.col(PENALTY) != NO_COST), on=_PENALTY_KEYS)
+    return priced.with_columns(
         (pl.col(RATE_T_PER_MWH) * pl.col(PENALTY_PER_TONNE)).alias(PENALTY_COST_MWH)
     )
