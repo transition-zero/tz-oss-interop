@@ -69,6 +69,8 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_source,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
 )
@@ -96,6 +98,8 @@ POLLUTANT_SOURCE = InvestmentsSource(
     component=POLLUTANT,
     display=POLLUTANT,
     plural="pollutant(s)",
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 SCOPED_POLLUTANT_SKIP = POLLUTANT_SOURCE.skip(
