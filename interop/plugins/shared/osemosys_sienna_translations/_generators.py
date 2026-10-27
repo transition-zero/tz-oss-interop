@@ -144,14 +144,21 @@ GENERATOR_TYPES: tuple[SiennaComponent, ...] = tuple(
     mapping.sienna_type for mapping in GENERATOR_TYPE_MAPPINGS
 )
 _COUNTED_NOUN = "supply technology(ies)"
-# The rows of each generator that its Sienna type applies, beside those its record keeps.
+# The rows of each generator that its Sienna type applies, keeps or reports as not mapped.
 _APPLIED_PARAMETERS = (
     *RATED_PARAMETERS,
     SupplyParameter.FIXED_COST,
     SupplyParameter.CAPACITY_FACTOR,
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
 )
-# A fuel producer gives its cost and its emission rate to each plant that burns its fuel.
-_PRODUCER_PARAMETERS = (SupplyParameter.VARIABLE_OPERATION_COST, SupplyParameter.EMISSION_RATE)
+# A fuel producer gives its cost, its output ratio and its emission rate to each plant that burns
+# its fuel.
+_PRODUCER_PARAMETERS = (
+    SupplyParameter.VARIABLE_OPERATION_COST,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    SupplyParameter.EMISSION_RATE,
+)
 _PRODUCER_OWNERS = replace(GENERATOR_OWNERS, report_col=PRODUCER)
 
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
