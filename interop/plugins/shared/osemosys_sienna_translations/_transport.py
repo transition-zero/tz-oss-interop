@@ -31,6 +31,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
@@ -122,8 +123,10 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
     CAPACITY_MW,
+    CAPACITY_PARAMETER,
     COST,
     COST_MWH,
+    DERATE,
     FROM_BUS,
     FROM_BUSES,
     FROM_FUEL,
@@ -139,6 +142,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
+    RATING,
     RECEIVED_MW,
     REVERSE_INPUT_RATIO,
     REVERSE_MODE,
@@ -151,6 +155,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_FUEL,
     TO_LOCATION,
     TO_LOCATIONS,
+    RatingField,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
     build_imports_source,
@@ -185,6 +190,17 @@ _NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
 _FREE_BUILD_SCOPE = "free-build"
 _FLEET_MW = "fleet_mw"
+# The source value of the rating of a line with no limit: the output of the whole fleet.
+_FLEET = "the whole fleet"
+_FLEET_ATTRIBUTE = "Σ in MW × the largest electricity output_activity_ratio of each technology"
+_STATED_TERM = "the capacity is "
+_STATED_TERM_END = " in MW × availability_factor"
+_BUILD_LIMIT_TERM = ", the most that the model builds at no cost in the year,"
+_FLEET_TERM = (
+    "the model builds the technology at no cost and no limit binds it, so the capacity is the "
+    "electricity that the whole fleet of the year can put out / the smallest ratio of the line, "
+    "which no flow of the operations system can exceed"
+)
 # The rows of a line technology that the line applies, beside those its record keeps.
 _APPLIED_PARAMETERS = (*RATED_PARAMETERS, SupplyParameter.CAPACITY_FACTOR)
 
@@ -307,7 +323,7 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
     return ControllableLineExtension(
         name=row[LINE_NAME],
         marginal_cost=row[COST_MWH] if row[COST_MWH] != _NO_COST else None,
-        p_max_pu=_find_derate(row),
+        p_max_pu=row[DERATE],
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         is_conversion=True if row[IS_CONVERSION] else None,
         operating_modes=build_operating_mode_field(row),
@@ -337,13 +353,6 @@ def _enrich_capacity_factors(
         has_factors.alias(HAS_STATED_FACTORS),
         (pl.col(IS_UNLIMITED) & is_derated).alias(HAS_DROPPED_DERATE),
     ), series
-
-
-def _find_derate(row: dict[str, Any]) -> float | None:
-    """The availability factor, or None where it is the whole capacity or no limit binds."""
-    if row[IS_UNLIMITED] or row[AVAILABILITY] == WHOLE_CAPACITY:
-        return None
-    return float(row[AVAILABILITY])
 
 
 def _enrich_extension_values(
@@ -505,15 +514,25 @@ def _enrich_reverse_modes(
 
 def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
     """The capacity in MW of activity × the availability factor; a line with no limit gets
-    what the whole fleet can put out / its smallest ratio, so that no limit of the line binds."""
+    what the whole fleet can put out / its smallest ratio, so that no limit of the line binds.
+
+    The rating states the source value of each capacity once, for each event that reads it.
+    """
     stated = read_availability_factors(state, operations.year, lines.select(_KEYS))
     rated = lines.join(stated.rename({AVAILABILITY_FACTOR: AVAILABILITY}), on=_KEYS)
     limited = express_converted(rated, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
+    is_stand_in = pl.col(IS_UNLIMITED)
+    is_derated = ~is_stand_in & (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
     rated = rated.with_columns(
-        pl.when(pl.col(IS_UNLIMITED))
+        pl.when(is_stand_in)
         .then(pl.col(_FLEET_MW) / _express_smallest_ratio())
         .otherwise(limited * pl.col(AVAILABILITY))
-        .alias(CAPACITY_MW)
+        .alias(CAPACITY_MW),
+        pl.when(is_stand_in)
+        .then(_express_fleet_rating())
+        .otherwise(_express_stated_rating())
+        .alias(RATING),
+        pl.when(is_derated).then(pl.col(AVAILABILITY).cast(pl.Float64)).alias(DERATE),
     )
     capacity = pl.col(CAPACITY_MW)
     return rated.with_columns(
@@ -523,6 +542,40 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
         (capacity * pl.col(REVERSE_INPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_SENT_MW),
         (capacity * pl.col(REVERSE_OUTPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_RECEIVED_MW),
     )
+
+
+def _express_stated_rating() -> pl.Expr:
+    """The capacity that the model states, or the most that it builds at no cost."""
+    is_residual = pl.col(CAPACITY_PARAMETER) == SupplyParameter.RESIDUAL_CAPACITY
+    build_limit = pl.when(is_residual).then(pl.lit("")).otherwise(pl.lit(_BUILD_LIMIT_TERM))
+    term = [pl.lit(_STATED_TERM), pl.col(CAPACITY_PARAMETER), build_limit, pl.lit(_STATED_TERM_END)]
+    return _express_rating(
+        parameter=pl.col(CAPACITY_PARAMETER),
+        name=pl.col(TECHNOLOGY_NAME),
+        attribute=pl.lit(None, dtype=pl.Utf8),
+        value=pl.col(LINE_CAPACITY).cast(pl.Float64),
+        unit=pl.lit(None, dtype=pl.Utf8),
+        is_stand_in=pl.lit(False),  # noqa: FBT003
+        term=pl.concat_str(term),
+    )
+
+
+def _express_fleet_rating() -> pl.Expr:
+    """What the whole fleet of the year can put out, for a line that no limit binds."""
+    return _express_rating(
+        parameter=pl.lit(SupplyParameter.RESIDUAL_CAPACITY.value),
+        name=pl.lit(_FLEET),
+        attribute=pl.lit(_FLEET_ATTRIBUTE),
+        value=pl.col(_FLEET_MW),
+        unit=pl.lit(UNIT_MW),
+        is_stand_in=pl.lit(True),  # noqa: FBT003
+        term=pl.lit(_FLEET_TERM),
+    )
+
+
+def _express_rating(**fields: pl.Expr) -> pl.Expr:
+    """The rating struct, with its fields in the order of `RatingField`."""
+    return pl.struct([fields[field].alias(field) for field in RatingField])
 
 
 def _enrich_fleet_output(

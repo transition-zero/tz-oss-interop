@@ -26,7 +26,6 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
-    build_defaulted,
     build_derived,
     build_osemosys_field,
     build_sienna_field,
@@ -47,20 +46,19 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
-    CAPACITY_PARAMETER,
     COST,
     COST_MWH,
+    DERATE,
     FROM_BUS,
     FROM_FUEL,
     HAS_DROPPED_DERATE,
     HAS_STATED_FACTORS,
     INPUT_RATIO,
     IS_CONVERSION,
-    IS_UNLIMITED,
-    LINE_CAPACITY,
     LINE_NAME,
     LOSS,
     OUTPUT_RATIO,
+    RATING,
     RECEIVED_MW,
     REVERSE_INPUT_RATIO,
     REVERSE_MODE,
@@ -70,6 +68,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     SENT_MW,
     TO_BUS,
     TO_FUEL,
+    RatingField,
 )
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
@@ -125,26 +124,16 @@ _ENDS_DERIVATION = (
     "the bus of the electricity fuel that the technology takes in at the operations mode, "
     "<region>/<fuel> -> bus0; the bus of the electricity fuel that it puts out -> bus1"
 )
-_CAPACITY_TERM = (
-    "the capacity in MW × availability_factor, where the capacity is residual_capacity, or for "
-    "a technology with no residual_capacity that the model builds at no cost "
-    "min(total_annual_max_capacity, total_annual_max_capacity_investment)"
-)
+# `{capacity}` says where the rating of the line comes from.
 _FROM_DERIVATION = (
-    f"min = - {_CAPACITY_TERM} × the electricity output_activity_ratio of the flow back, or 0 "
-    "when no mode flows back; max = the same capacity × the electricity input_activity_ratio "
-    "at the operations mode"
+    "{capacity}; min = - the capacity × the electricity output_activity_ratio of the flow back, "
+    "or 0 when no mode flows back; max = the capacity × the electricity input_activity_ratio at "
+    "the operations mode"
 )
 _TO_DERIVATION = (
-    f"min = - {_CAPACITY_TERM} × the electricity input_activity_ratio of the flow back, or 0 "
-    "when no mode flows back; max = the same capacity × the electricity output_activity_ratio "
+    "{capacity}; min = - the capacity × the electricity input_activity_ratio of the flow back, "
+    "or 0 when no mode flows back; max = the capacity × the electricity output_activity_ratio "
     "at the operations mode"
-)
-_UNLIMITED_NOTE = (
-    "the model builds the technology at no cost and no limit binds it, so the capacity is the "
-    "electricity that the whole fleet of the year can put out (Σ residual_capacity in MW × the "
-    "largest electricity output_activity_ratio of each technology) / the smallest ratio of the "
-    "line; no flow of the operations system can exceed it, so it never binds there"
 )
 _LOSS_DERIVATION = (
     "a linear curve with the proportional term 1 - the electricity output_activity_ratio / the "
@@ -187,12 +176,34 @@ def _build_reverse_sources(old: dict[str, Any]) -> list[SourceField]:
 
 
 def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
-    return [
-        _build_source(old[CAPACITY_PARAMETER], old, None, old[LINE_CAPACITY]),
-        _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY]),
-        *_build_ratio_sources(old),
-        *_build_reverse_sources(old),
+    """The source value of the rating, the availability factor that it applies, and the ratios."""
+    rating = old[RATING]
+    sources = [
+        build_osemosys_field(
+            rating[RatingField.PARAMETER],
+            rating[RatingField.NAME],
+            rating[RatingField.ATTRIBUTE],
+            rating[RatingField.VALUE],
+            rating[RatingField.UNIT],
+        )
     ]
+    if not rating[RatingField.IS_STAND_IN]:
+        sources.append(
+            _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])
+        )
+    return [*sources, *_build_ratio_sources(old), *_build_reverse_sources(old)]
+
+
+def _build_limits(dest_col: str, expr: pl.Expr, derivation: str) -> Translation:
+    """One limit of the line, which its rating gives, and the event that names the rating."""
+    return Translation(
+        exprs=[expr.alias(dest_col)],
+        make_events=lambda old, new: build_derived(
+            _build_capacity_sources(old),
+            [_dest(old[LINE_NAME], dest_col, new[dest_col], UNIT_MW)],
+            derivation.format(capacity=old[RATING][RatingField.TERM]),
+        ),
+    )
 
 
 def _express_limits(back: str, forward: str) -> pl.Expr:
@@ -233,17 +244,6 @@ def _build_end_sources(old: dict[str, Any]) -> list[SourceField]:
     return sources
 
 
-def _build_unlimited_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
-    """The default on each field that the rating of a line with no limit fills."""
-    if not old[IS_UNLIMITED]:
-        return []
-    filled = (SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.ACTIVE_POWER_LIMITS_TO)
-    return build_defaulted(
-        [_dest(old[LINE_NAME], field, new[field], UNIT_MW) for field in filled],
-        _UNLIMITED_NOTE,
-    )
-
-
 def _build_conversion_events(old: dict[str, Any]) -> list[TranslationEvent]:
     if not old[IS_CONVERSION]:
         return []
@@ -256,7 +256,6 @@ def _build_conversion_events(old: dict[str, Any]) -> list[TranslationEvent]:
 
 def _build_reports() -> list[Translation]:
     return [
-        Translation(exprs=[], make_events=_build_unlimited_events),
         Translation(exprs=[], make_events=lambda old, _new: _build_conversion_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
@@ -276,11 +275,11 @@ def _build_availability_events(old: dict[str, Any]) -> list[TranslationEvent]:
     if old[HAS_DROPPED_DERATE]:
         return _build_dropped_derate_events(old)
     events = []
-    if old[AVAILABILITY] != WHOLE_CAPACITY and not old[IS_UNLIMITED]:
+    if old[DERATE] is not None:
         events.extend(
             build_derived(
-                [_build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])],
-                [_dest(old[LINE_NAME], _P_MAX_PU_ATTRIBUTE, old[AVAILABILITY])],
+                [_build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[DERATE])],
+                [_dest(old[LINE_NAME], _P_MAX_PU_ATTRIBUTE, old[DERATE])],
                 _P_MAX_PU_DERIVATION,
             )
         )
@@ -335,19 +334,15 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
         dest_col=SiennaLinkCol.ACTIVE_POWER_FLOW, value=_NO_POWER, note=_FLOW_NOTE, unit=UNIT_MW
     ),
     _build_ends(),
-    _build_value(
+    _build_limits(
         SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
         _express_limits(REVERSE_RECEIVED_MW, SENT_MW),
-        _build_capacity_sources,
         _FROM_DERIVATION,
-        UNIT_MW,
     ),
-    _build_value(
+    _build_limits(
         SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
         _express_limits(REVERSE_SENT_MW, RECEIVED_MW),
-        _build_capacity_sources,
         _TO_DERIVATION,
-        UNIT_MW,
     ),
     _default(
         dest_col=SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM,

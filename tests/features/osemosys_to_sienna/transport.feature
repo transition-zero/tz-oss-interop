@@ -262,7 +262,11 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
       And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATSTEPDOWN"
       And the file "decisions.md" contains "the model builds the technology at no cost and no limit binds it, so the capacity is the electricity that the whole fleet of the year can put out"
+      And the file "decisions.md" contains "`osemosys.residual_capacity.the whole fleet.Σ in MW × the largest electricity output_activity_ratio of each technology` = 3500.0 MW"
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to` ="
+      And the file "decisions.md" does not contain "`osemosys.residual_capacity.R1/ATSTEPDOWN` = 0.0"
+      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_from`"
+      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to`"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "is_conversion" set to true
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" without field "p_max_pu"
       And the file "decisions.md" contains "| `osemosys.availability_factor.R1/ATSTEPDOWN` = 0.9 |  |  | the model builds the line at no cost and no limit binds it, so the factor that the model states limits nothing"
