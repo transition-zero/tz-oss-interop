@@ -9,12 +9,13 @@ into the PyPSA network; the steps own every decision.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.constants import SECONDS_PER_HOUR, StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     DEFAULT_TS_RESOLUTION_SECONDS,
     REVERSE_TIME_SERIES_METADATA_SCHEMA,
@@ -112,6 +113,35 @@ def metadata_row(
         ReverseTimeSeriesMetadataCol.INITIAL_TIMESTAMP: initial_timestamp,
         ReverseTimeSeriesMetadataCol.LENGTH: length,
     }
+
+
+class SnapshotWindow(NamedTuple):
+    """The snapshots of the network: the first, the step between two, and how many."""
+
+    first: datetime
+    resolution_seconds: int
+    length: int
+
+    @property
+    def snapshot_hours(self) -> float:
+        return self.resolution_seconds / SECONDS_PER_HOUR
+
+    def list_snapshots(self) -> list[datetime]:
+        step = timedelta(seconds=self.resolution_seconds)
+        return [self.first + index * step for index in range(self.length)]
+
+
+def find_snapshot_window(state: State) -> SnapshotWindow | None:
+    """The snapshots of the network, which every series metadata row states; None with no series."""
+    metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
+    if metadata is None or metadata.height == 0:
+        return None
+    first = metadata.row(0, named=True)
+    return SnapshotWindow(
+        datetime.fromisoformat(first[ReverseTimeSeriesMetadataCol.INITIAL_TIMESTAMP]),
+        first[ReverseTimeSeriesMetadataCol.RESOLUTION_SECONDS],
+        first[ReverseTimeSeriesMetadataCol.LENGTH],
+    )
 
 
 def find_table_series(state: State, table: str) -> pl.DataFrame | None:

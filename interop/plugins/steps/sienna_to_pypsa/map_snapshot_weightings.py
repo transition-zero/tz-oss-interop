@@ -9,7 +9,7 @@ a generator. A store counts each snapshot once, because its level moves hour by 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import NamedTuple
 
 import polars as pl
@@ -26,8 +26,8 @@ from interop.plugins.shared.pypsa_constants import (
     SNAPSHOT_WEIGHTINGS_SCHEMA,
     PyPSADestinationTable,
     PyPSASnapshotWeightingCol,
-    ReverseTimeSeriesMetadataCol,
 )
+from interop.plugins.shared.pypsa_time_series import SnapshotWindow, find_snapshot_window
 from interop.plugins.shared.representative_periods import (
     LeftOutPeriodText,
     Period,
@@ -43,7 +43,6 @@ from interop.ports.outbound.reporting import (
 
 log = logging.getLogger(__name__)
 
-_SECONDS_PER_HOUR = 3600.0
 # A whole year is 365 or 366 days for any year, as a model that weights its year at 8760 h
 # states a leap year that way too.
 _HOURS_IN_WHOLE_YEARS = (365 * 24.0, 366 * 24.0)
@@ -85,22 +84,6 @@ _NO_SNAPSHOTS_NOTE = "the network has no snapshots, so the period weights nothin
 _UNWEIGHTED = 1.0
 
 
-class SnapshotWindow(NamedTuple):
-    """The snapshots of the network: the first, the step between two, and how many."""
-
-    first: datetime
-    resolution_seconds: int
-    length: int
-
-    @property
-    def snapshot_hours(self) -> float:
-        return self.resolution_seconds / _SECONDS_PER_HOUR
-
-    def list_snapshots(self) -> list[datetime]:
-        step = timedelta(seconds=self.resolution_seconds)
-        return [self.first + index * step for index in range(self.length)]
-
-
 class SnapshotSpan(NamedTuple):
     """The one calendar year of every snapshot, else None, the hours they count for, and how
     many there are."""
@@ -125,19 +108,6 @@ class SnapshotSpan(NamedTuple):
             abs(self.represented_hours - hours) <= hours * _WHOLE_YEAR_TOLERANCE
             for hours in _HOURS_IN_WHOLE_YEARS
         )
-
-
-def find_snapshot_window(state: State) -> SnapshotWindow | None:
-    """The snapshots that the sink gives the network, read where the sink reads them."""
-    metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
-    if metadata is None or metadata.height == 0:
-        return None
-    first = metadata.row(0, named=True)
-    return SnapshotWindow(
-        datetime.fromisoformat(first[ReverseTimeSeriesMetadataCol.INITIAL_TIMESTAMP]),
-        first[ReverseTimeSeriesMetadataCol.RESOLUTION_SECONDS],
-        first[ReverseTimeSeriesMetadataCol.LENGTH],
-    )
 
 
 def find_snapshot_span(state: State) -> SnapshotSpan:

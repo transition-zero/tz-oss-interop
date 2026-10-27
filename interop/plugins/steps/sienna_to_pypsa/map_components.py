@@ -8,7 +8,10 @@ from interop.core.extensions import ExtensionKind, ExtensionLookup, ExtensionRea
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
+from interop.plugins.shared.pypsa_time_series import (
+    drop_profiles_off_the_window,
+    find_snapshot_window,
+)
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ProfileReporter
 from interop.plugins.shared.sienna_pypsa_translations.unapplied_bounds import (
@@ -19,10 +22,7 @@ from interop.plugins.steps.sienna_to_pypsa.map_buses import map_buses
 from interop.plugins.steps.sienna_to_pypsa.map_conversions import SiennaToPypsaMapConversions
 from interop.plugins.steps.sienna_to_pypsa.map_generators import SiennaToPypsaMapGenerators
 from interop.plugins.steps.sienna_to_pypsa.map_loads import SiennaToPypsaMapLoads
-from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
-    SnapshotWeightingMapper,
-    find_snapshot_window,
-)
+from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import SnapshotWeightingMapper
 from interop.plugins.steps.sienna_to_pypsa.map_storage_units import SiennaToPypsaMapStorageUnits
 from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsaMapTransmission
 
