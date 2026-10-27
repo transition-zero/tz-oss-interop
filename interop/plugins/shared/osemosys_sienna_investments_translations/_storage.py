@@ -228,7 +228,8 @@ def build_storage_candidates(
     storages = _drop_skipped(storages, list_area_names(state), recorder)
     yearly = yearly.join(storages.select(_STORAGE_KEYS), on=_STORAGE_KEYS, how="semi")
     discharge = _enrich_energy_costs(enrich_yearly_units(yearly, storages, plan.units), plan)
-    return Candidates(STORAGE_KIND, _enrich_values(state, plan, storages, discharge), discharge)
+    table = _enrich_values(state, plan, storages, discharge)
+    return Candidates(STORAGE_KIND, table.sort(CANDIDATE_NAME), discharge)
 
 
 def build_storage_translations(cost_year: int, start: int) -> list[Translation]:
