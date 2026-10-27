@@ -17,10 +17,10 @@ from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     InvestmentsSource,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_cost_curves import (
     ZERO_IO_CURVE,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     NAMED_YEAR_DTYPE,
     NamedYearField,
@@ -104,8 +104,8 @@ def _named_years(devices: Sequence[str], years: Mapping[str, int]) -> list[dict[
     ]
 
 
-_existing_dest = partial(sienna_dest_field, SiennaSupplementalAttribute.EXISTING_DEVICES)
-_retirement_dest = partial(sienna_dest_field, SiennaSupplementalAttribute.RETIREMENT_POTENTIAL)
+_existing_dest = partial(build_sienna_field, SiennaSupplementalAttribute.EXISTING_DEVICES)
+_retirement_dest = partial(build_sienna_field, SiennaSupplementalAttribute.RETIREMENT_POTENTIAL)
 
 # The extensions sidecar field carrying the year a device leaves service.
 _RETIREMENT_YEAR_FIELD = "retirement_year"

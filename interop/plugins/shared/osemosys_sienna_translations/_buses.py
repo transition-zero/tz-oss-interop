@@ -22,9 +22,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AnnotationColumn,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
-    build_derived,
     build_osemosys_field,
-    build_sienna_field,
     osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
@@ -46,6 +44,10 @@ from interop.plugins.shared.sienna_constants import (
     ACBusType,
     SiennaACBusCol,
     SiennaComponent,
+)
+from interop.plugins.shared.sienna_events import (
+    build_derived,
+    build_sienna_field,
 )
 from interop.plugins.shared.translation_runner import (
     SkippedNames,

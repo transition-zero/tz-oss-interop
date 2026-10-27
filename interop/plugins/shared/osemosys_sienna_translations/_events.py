@@ -1,28 +1,32 @@
-"""The event fields and events of the OSeMOSYS to Sienna translation."""
+"""The event fields and events of the OSeMOSYS to Sienna translation.
+
+The Sienna fields and events come from `sienna_events`, which every translator into Sienna
+shares.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from typing import Any
 
 import polars as pl
 
-from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
 from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
+
+# The Sienna factories stay importable from here for the modules that import them from here.
+from interop.plugins.shared.sienna_events import build_defaulted as build_defaulted
+from interop.plugins.shared.sienna_events import build_derived as build_derived
+from interop.plugins.shared.sienna_events import build_sienna_field as build_sienna_field
+from interop.plugins.shared.sienna_events import build_sienna_source as build_sienna_source
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     SkipReport,
     Translation,
 )
-from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
-    SourceField,
-    TranslationEvent,
-)
+from interop.ports.outbound.reporting import SourceField
 
 # Every drop that the operations step reports is an OSeMOSYS value that the system leaves out.
 osemosys_skip_report = partial(
@@ -46,57 +50,6 @@ def build_osemosys_field(
         value=value,
         unit=unit,
     )
-
-
-def build_sienna_field(
-    sienna_type: str, name: str, attribute: str, value: Any = None, unit: str | None = None
-) -> DestinationField:
-    """One Sienna value that an event writes."""
-    return DestinationField(
-        framework=Framework.SIENNA,
-        component=sienna_type,
-        name=name,
-        attribute=attribute,
-        value=value,
-        unit=unit,
-    )
-
-
-def build_sienna_source(
-    sienna_type: str, name: str, attribute: str, value: Any = None, unit: str | None = None
-) -> SourceField:
-    """A Sienna value that an earlier translation wrote, read as the source of a later one."""
-    return SourceField(
-        framework=Framework.SIENNA,
-        component=sienna_type,
-        name=name,
-        attribute=attribute,
-        value=value,
-        unit=unit,
-    )
-
-
-def build_derived(
-    sources: Sequence[SourceField], destinations: Sequence[DestinationField], derivation: str
-) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=list(sources),
-            destinations=list(destinations),
-            derivation=derivation,
-        )
-    ]
-
-
-def build_defaulted(destinations: Sequence[DestinationField], note: str) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=list(destinations),
-            note=note,
-        )
-    ]
 
 
 @dataclass(frozen=True)
