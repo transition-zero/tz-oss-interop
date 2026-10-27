@@ -437,6 +437,7 @@ def _enrich_storage_finance(
             read_parameter(state, finance.parameter, plan.base_year)
             .filter(finance.keep)
             .select(*_STORAGE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_STATED))
+            .collect()
         )
         storages = storages.join(stated, on=_STORAGE_KEYS, how="left")
         storages = _fill_default(state, finance, storages)
@@ -493,8 +494,10 @@ def _enrich_charge_side(state: State, plan: InvestmentPlan, storages: pl.DataFra
 def _enrich_durations(state: State, plan: InvestmentPlan, storages: pl.DataFrame) -> pl.DataFrame:
     """`duration_limits_max` has no year column, so the year of the read selects nothing."""
     duration = InvestmentParameter.DURATION_LIMITS_MAX
-    stated = read_parameter(state, duration, plan.base_year).select(
-        *_STORAGE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(DURATION_HOURS)
+    stated = (
+        read_parameter(state, duration, plan.base_year)
+        .select(*_STORAGE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(DURATION_HOURS))
+        .collect()
     )
     return storages.join(stated, on=_STORAGE_KEYS, how="left")
 
