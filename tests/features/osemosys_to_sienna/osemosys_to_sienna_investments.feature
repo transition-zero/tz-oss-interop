@@ -281,7 +281,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the log does not contain "capital_cost states"
     And the log does not contain "annual_emission_limit states"
     And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASNEW` = 1000000000.0 |  |  |"
-    And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
+    And the log contains "osemosys-to-sienna: 1 region(s) whose reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Regions: R1"
 
   Scenario: The cost of a fuel producer that only a candidate burns, and the cost of a transport candidate, count as kept
     Only the candidate ATGASNEW burns gas, so the cost of the gas well reaches its variable
