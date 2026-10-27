@@ -23,6 +23,8 @@ _VALUE_COLUMN = "value"
 _RESULTS_KEY_COLUMNS = ("variable", "component", "category", "timestamp")
 # Two values this close, as a share of the larger, are the same value.
 _RELATIVE_TOLERANCE = 1e-9
+# Two values this close are the same value, which lets an expected zero match a rounding residue.
+_ABSOLUTE_TOLERANCE = 1e-9
 
 
 @then(parsers.parse('the parquet file "{path}" has {count:d} rows'))
@@ -48,9 +50,9 @@ def assert_results_rows(path: str, variable: str, datatable: list[list[str]]) ->
     expected = {tuple(row[:-1]): float(row[-1]) for row in expected_rows}
     assert actual.keys() == expected.keys(), f"expected {variable} rows {expected}, got {actual}"
     for key, value in expected.items():
-        assert math.isclose(actual[key], value, rel_tol=_RELATIVE_TOLERANCE), (
-            f"expected {value} for {key}, got {actual[key]}"
-        )
+        assert math.isclose(
+            actual[key], value, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE
+        ), f"expected {value} for {key}, got {actual[key]}"
 
 
 @then(parsers.parse('the results parquet "{path}" holds these "{variable}" rows among others:'))
@@ -61,9 +63,12 @@ def assert_results_rows_among_others(path: str, variable: str, datatable: list[l
     actual = _read_results_values(path, variable)
     for *key, value in expected_rows:
         assert tuple(key) in actual, f"no {variable} row {key}; got {sorted(actual)}"
-        assert math.isclose(actual[tuple(key)], float(value), rel_tol=_RELATIVE_TOLERANCE), (
-            f"expected {value} for {key}, got {actual[tuple(key)]}"
-        )
+        assert math.isclose(
+            actual[tuple(key)],
+            float(value),
+            rel_tol=_RELATIVE_TOLERANCE,
+            abs_tol=_ABSOLUTE_TOLERANCE,
+        ), f"expected {value} for {key}, got {actual[tuple(key)]}"
 
 
 def _read_results_values(path: str, variable: str) -> dict[tuple[str, ...], float]:
