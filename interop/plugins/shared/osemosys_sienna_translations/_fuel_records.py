@@ -82,13 +82,12 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
     set_penalties_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
+from interop.plugins.shared.pypsa_constants import LINK_FURTHER_PORTS
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 _NO_COST = 0.0
 _FUEL_SCOPE = "fuel"
 _FUEL_PENALTY_SCOPE = "fuel-penalties"
-# The ports after bus0 and bus1 of a link, and the fields that hold each.
-_EXTRA_PORTS = (("bus2", "efficiency2"), ("bus3", "efficiency3"))
 
 
 @dataclass
@@ -210,7 +209,9 @@ def _build_extra_ports(row: dict[str, Any]) -> dict[str, Any]:
     extras = [(port[FUEL_BUS], -port[RATIO] / rated) for port in row[INPUTS][1:]]
     extras += [(port[FUEL_BUS], port[RATIO] / rated) for port in row[OUTPUTS][1:]]
     fields: dict[str, Any] = {}
-    for (bus, efficiency), (bus_field, efficiency_field) in zip(extras, _EXTRA_PORTS, strict=False):
+    for (bus, efficiency), (bus_field, efficiency_field) in zip(
+        extras, LINK_FURTHER_PORTS, strict=False
+    ):
         fields[bus_field] = bus
         fields[efficiency_field] = efficiency
     return fields
