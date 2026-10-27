@@ -27,7 +27,12 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_MEGATONNES, UNIT_YEARS, Framework
+from interop.plugins.shared.constants import (
+    UNIT_MEGATONNES,
+    UNIT_YEARS,
+    Framework,
+    require_extension_attribute,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
@@ -155,7 +160,7 @@ LEFT_OUT_EMITTER_REPORT = SkipReport(
     attribute_name=POLLUTANT,
 )
 
-_LIMITS_ATTRIBUTE = "extensions.limits"
+_LIMITS_ATTRIBUTE = require_extension_attribute(ConstraintExtension, "limits")
 _CAPPED_DERIVATION = (
     "the CarbonCaps of the year holds this limit, in Mt, so the constraint record of "
     "extensions.json drops it"
