@@ -41,6 +41,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_hvdc_flow import (
+    FLOW_BOUNDS_DERIVATION,
+    build_hvdc_flow_bounds,
+)
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -924,36 +928,41 @@ def _convert_hvdc_loss(
 
 
 _HVDC_LIMITS_DERIVATION = (
-    "rating_from -> from-end max; -rating_to -> from-end min; the to-end limits are the "
-    "from-end limits times (1 - loss proportional term)"
+    f"{FLOW_BOUNDS_DERIVATION}; the to-end limits are the from-end limits times "
+    "(1 - loss proportional term)"
+)
+_HVDC_RATING_COLUMNS = (
+    SiennaLinkCol.RATING,
+    SiennaLinkCol.RATING_FROM,
+    SiennaLinkCol.RATING_TO,
+    SiennaLinkCol.OPERATIONAL_FLOW_LIMIT,
 )
 
 
 def _convert_hvdc_ratings(
     out: dict[str, Any], ps_loss: dict[str, Any], comp_name: str, recorder: ScopedRecorder
 ) -> None:
-    """Replace the converter ratings of an HVDC row with the per-end limits PS.jl states."""
+    """Replace the ratings and the flow limit of an HVDC row with the end limits PS.jl states."""
     hvdc_type = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value
-    rating_from = float(out.pop(SiennaLinkCol.RATING_FROM))
-    rating_to = float(out.pop(SiennaLinkCol.RATING_TO))
-    out.pop(SiennaLinkCol.RATING)
+    bounds = build_hvdc_flow_bounds(out)
+    stated = {column: out.pop(column, None) for column in _HVDC_RATING_COLUMNS}
     loss_term = float(ps_loss[SiennaStructField.FUNCTION_DATA][SiennaStructField.PROPORTIONAL_TERM])
     efficiency = 1.0 - loss_term
-    minimum = -rating_to if rating_to > 0.0 else 0.0
     limits = {
         PowerSimulationsCol.ACTIVE_POWER_LIMITS_FROM: {
-            SiennaStructField.MIN: minimum,
-            SiennaStructField.MAX: rating_from,
+            SiennaStructField.MIN: bounds.minimum,
+            SiennaStructField.MAX: bounds.maximum,
         },
         PowerSimulationsCol.ACTIVE_POWER_LIMITS_TO: {
-            SiennaStructField.MIN: minimum * efficiency,
-            SiennaStructField.MAX: rating_from * efficiency,
+            SiennaStructField.MIN: bounds.minimum * efficiency,
+            SiennaStructField.MAX: bounds.maximum * efficiency,
         },
     }
     out.update(limits)
     sources = [
-        SourceField(Framework.SIENNA, hvdc_type, comp_name, SiennaLinkCol.RATING_FROM, rating_from),
-        SourceField(Framework.SIENNA, hvdc_type, comp_name, SiennaLinkCol.RATING_TO, rating_to),
+        SourceField(Framework.SIENNA, hvdc_type, comp_name, column, value)
+        for column, value in stated.items()
+        if value is not None
     ]
     for attribute, value in limits.items():
         recorder.append(
