@@ -166,10 +166,18 @@ the HVDC line in MW. The gas plant emits 0.5 t of
 
     Examples:
       | first_timestamp           | hours | weight | fault                                                |
-      | not a timestamp           | 2     | 50     | is not an ISO 8601 date and time                     |
       | 2030-01-01T02:00:00+01:00 | 2     | 50     | states a time zone, and the hours of the solve state none |
       | 2030-01-01T02:00:00       | 9000  | 50     | its hours, 9000, is not between 1 and 8784           |
       | 2030-01-01T02:00:00       | 2     | nan    | its weight, nan, is not a finite number of 0 or more |
+
+  Scenario: A representative period whose first hour is not a date and time stops the run
+    Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "day_2" from "not a timestamp" of 2 hours with weight 50
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 1
+    And the log contains "representative_period.1.first_timestamp"
+    And the log contains "Input should be a valid datetime"
 
   Scenario: A representative period that holds an hour of an earlier period is left out, and reported
     Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 3 hours with weight 100
