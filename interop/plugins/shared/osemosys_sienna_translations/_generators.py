@@ -6,7 +6,8 @@ the bus of the electricity fuel that it puts out at the operations mode. Its bas
 residual capacity in MW × its electricity output ratio at the operations mode, and it rates at
 all of it. Its availability in each hour is a
 series per unit of the base power, or the maximum of its active power limits when that is the
-same in every hour.
+same in every hour. A plant that burns a fuel whose producers all make nothing in the year has no
+fuel, so it is left out.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
+    FUEL,
     OPERATING_MODE,
     OSEMOSYS_FRAMEWORK,
     POLLUTANT,
@@ -32,6 +34,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_TO_SIENNA_PIPELINE,
+    REGION_NAME_SEPARATOR,
     TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
@@ -62,6 +65,7 @@ from interop.plugins.shared.osemosys_sienna_translations._flow_buses import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     PRODUCER,
+    FuelSupply,
     build_fuel_supply,
     read_input_ratios,
 )
@@ -149,6 +153,8 @@ _PRODUCER_PARAMETERS = (SupplyParameter.VARIABLE_OPERATION_COST, SupplyParameter
 _PRODUCER_OWNERS = replace(GENERATOR_OWNERS, report_col=PRODUCER)
 
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
+# The first fuel that a generator burns whose producers all make nothing in the year.
+_STRANDED_FUEL = "stranded_fuel"
 _OUTPUT_FLOW = SplitFlow(
     FlowParameter.OUTPUT_ACTIVITY_RATIO, TECHNOLOGY_NAME, "the operations mode"
 )
@@ -200,6 +206,21 @@ NO_BUS_SKIP = SkipReport(
     note="no electricity fuel that the technology puts out has a location, so no bus can hold it",
     listed=_LISTED,
 )
+STRANDED_FUEL_SKIP = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=TECHNOLOGY,
+    name_col=TECHNOLOGY_NAME,
+    reason="burn a fuel whose fuel_supply technologies cannot run in the operations year",
+    counted_noun=_COUNTED_NOUN,
+    note=lambda row: (
+        f"no fuel_supply technology that puts out {row[REGION]}{REGION_NAME_SEPARATOR}"
+        f"{row[_STRANDED_FUEL]} can run in the operations year, so the plant has no fuel"
+    ),
+    listed=_LISTED,
+    attribute_col=_STRANDED_FUEL,
+    attribute_name=FUEL,
+)
 NO_ELECTRICITY_OUTPUT_SKIP = SkipReport(
     pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
     framework=OSEMOSYS_FRAMEWORK,
@@ -231,12 +252,14 @@ def build_generators_source(
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
 ) -> GeneratorSources:
+    fuel_supply = build_fuel_supply(state, operations.year, operations.mode)
     generators = _read_generators(state, operations, mappings, recorder)
+    generators = _drop_stranded(state, operations, generators, fuel_supply, recorder)
     if generators.height == 0:
         return GeneratorSources(generators, pl.DataFrame())
     generators = _enrich_capacity(operations, generators)
     availability = build_availability(state, operations, generators, GENERATOR_NAME)
-    table = _enrich_generators(state, operations, availability.table)
+    table = _enrich_generators(state, operations, availability.table, fuel_supply)
     with_series = table.filter(pl.col(HAS_SERIES))[GENERATOR_NAME].implode()
     series = availability.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(with_series))
     return GeneratorSources(table.sort(GENERATOR_NAME), series)
@@ -280,6 +303,27 @@ def _read_generators(
     return technologies
 
 
+def _drop_stranded(
+    state: State,
+    operations: OperationsYear,
+    generators: pl.DataFrame,
+    fuel_supply: FuelSupply,
+    recorder: ScopedRecorder,
+) -> pl.DataFrame:
+    """A plant that burns a fuel whose producers make nothing in the year cannot run."""
+    inputs = read_input_ratios(state, operations.year, operations.mode, generators)
+    stranded = (
+        inputs.join(fuel_supply.stranded, on=[REGION, FUEL], how="semi")
+        .group_by(REGION, TECHNOLOGY)
+        .agg(pl.col(FUEL).min().alias(_STRANDED_FUEL))
+    )
+    table = generators.join(stranded, on=[REGION, TECHNOLOGY], how="left")
+    kept, _ = filter_component(
+        table, pl.col(_STRANDED_FUEL).is_null(), STRANDED_FUEL_SKIP, recorder
+    )
+    return kept.drop(_STRANDED_FUEL)
+
+
 def _read_output_buses(state: State, operations: OperationsYear) -> pl.DataFrame:
     buses = read_flow_buses(state, operations.year, FlowParameter.OUTPUT_ACTIVITY_RATIO)
     return buses.filter(pl.col(OPERATING_MODE) == operations.mode).drop(OPERATING_MODE)
@@ -316,10 +360,9 @@ def _build_skip_rules(bus_names: list[str]) -> list[SkipRule]:
 
 
 def _enrich_generators(
-    state: State, operations: OperationsYear, generators: pl.DataFrame
+    state: State, operations: OperationsYear, generators: pl.DataFrame, fuel_supply: FuelSupply
 ) -> pl.DataFrame:
     inputs = read_input_ratios(state, operations.year, operations.mode, generators)
-    fuel_supply = build_fuel_supply(state, operations.year, operations.mode)
     table = enrich_variable_costs(state, operations, generators, inputs, fuel_supply)
     table = enrich_fixed_costs(state, operations, table)
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)

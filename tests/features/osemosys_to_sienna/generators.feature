@@ -494,6 +494,39 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
       And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
 
+    Scenario: A producer that has no available capacity in the year cannot be the cheapest
+      Given the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASCC    | 2030 | 0.9   |
+        | R1     | ATSOLAR    | 2030 | 0.8   |
+        | R1     | ATGASWELL  | 2030 | 0     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
+
+    Scenario: A producer that the model may not build in the year cannot be the cheapest
+      Given the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATGASWELL  | 2030 | 0     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
+
+    Scenario: A plant whose fuel has producers that cannot run in the year is left out and reported
+      Neither gas producer has residual capacity, and each costs capital to build, so no gas
+      reaches the plants that burn it.
+      Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE  |
+        | R1     | ATGASWELL  | 2030 | 999999 |
+        | R1     | ATGASLNG   | 2030 | 999999 |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
+      And the log contains "2 supply technology(ies) burn a fuel whose fuel_supply technologies cannot run in the operations year, so each is left out. Technologies: R1/ATDEGASCC, R1/ATGASCC"
+      And the file "decisions.md" contains "no fuel_supply technology that puts out R1/ATGAS can run in the operations year, so the plant has no fuel"
+
     Scenario: The carrier of a generator is its category, which names its carriers row
       A plant with two input fuels and a plant with no input fuel each take the category.
       Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:

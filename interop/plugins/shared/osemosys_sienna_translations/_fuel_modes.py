@@ -42,7 +42,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
-    WHOLE_CAPACITY,
     ActivityParameter,
     SupplyParameter,
 )
@@ -51,10 +50,13 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    BUILD_AVAILABILITY,
     BUILD_LIMIT,
     IS_FREE_TO_BUILD,
     RESIDUAL,
     enrich_free_build,
+    express_has_fleet,
+    express_is_available,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_BUS,
@@ -164,6 +166,11 @@ NO_CAPACITY_SKIP = _build_skip(
     "have no residual capacity in the operations year, and the model builds none at no cost",
     "the fleet of the operations year is its residual capacity, which holds none of it",
     RESIDUAL,
+)
+NO_AVAILABILITY_SKIP = _build_skip(
+    "have an availability factor of 0 in the operations year",
+    "an availability factor of 0 lets the technology run at none of its capacity in the year",
+    AVAILABILITY,
 )
 CLOSED_SKIP = _build_skip(
     "may not run in the operations year",
@@ -308,7 +315,7 @@ def _enrich_capacity(state: State, operations: OperationsYear, modes: pl.DataFra
             how="left",
         )
     table = table.with_columns(
-        pl.col(AVAILABILITY).fill_null(WHOLE_CAPACITY), pl.col(BUILD_LIMIT).alias(MAX_ACTIVITY_MW)
+        pl.col(BUILD_AVAILABILITY).alias(AVAILABILITY), pl.col(BUILD_LIMIT).alias(MAX_ACTIVITY_MW)
     )
     return table.with_columns(
         _express_activity_mw(table, RESIDUAL, operations.units).alias(ACTIVITY_MW),
@@ -318,10 +325,7 @@ def _enrich_capacity(state: State, operations: OperationsYear, modes: pl.DataFra
 
 
 # A null capacity_to_activity_unit, where the stage has no default, converts with the capacity unit.
-_CAPACITY_PARAMETERS = (
-    (ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, CTAU),
-    (SupplyParameter.AVAILABILITY_FACTOR, AVAILABILITY),
-)
+_CAPACITY_PARAMETERS = ((ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, CTAU),)
 
 
 def _express_activity_mw(table: pl.DataFrame, column: str, units: ModelUnits) -> pl.Expr:
@@ -443,14 +447,11 @@ def _express_fuel_count() -> pl.Expr:
     return pl.col(INPUTS).list.len() + pl.col(OUTPUTS).list.len()
 
 
-def _express_has_capacity() -> pl.Expr:
-    return (pl.col(ACTIVITY_MW) > 0) | pl.col(IS_EXTENDABLE)
-
-
 _SKIP_RULES = (
     SkipRule(_express_has_buses(), NO_BUS_SKIP),
     SkipRule((pl.col(ROLE) != SUPPLY) | (pl.col(OUTPUTS).list.len() == 1), SEVERAL_OUTPUTS_SKIP),
     SkipRule(_express_fuel_count() <= MAX_LINK_FUELS, MANY_FUELS_SKIP),
-    SkipRule(_express_has_capacity(), NO_CAPACITY_SKIP),
+    SkipRule(express_has_fleet(), NO_CAPACITY_SKIP),
+    SkipRule(express_is_available(), NO_AVAILABILITY_SKIP),
     SkipRule(pl.col(E_MAX_MWH).is_null() | (pl.col(E_MAX_MWH) > 0), CLOSED_SKIP),
 )

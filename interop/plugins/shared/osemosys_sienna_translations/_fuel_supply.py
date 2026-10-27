@@ -5,7 +5,8 @@ producer is the cheapest `fuel_supply` technology that puts the fuel out in the 
 technology, at the operations mode. A fuel balances in one region and has one location, so
 that producer makes the fuel at the place where the technology takes it in. A technology of any
 other kind, for example a pipeline, is not a producer. A producer whose activity upper limit in
-the year is zero makes nothing, so it is not a producer either.
+the year is zero makes nothing, and neither does a producer with no capacity that can run in the
+year, so neither is a producer. A fuel whose producers all make nothing is stranded.
 
 Each value stays in the units of the model: currency and emissions per energy unit of the fuel.
 """
@@ -36,6 +37,10 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_mode_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    enrich_free_build,
+    express_has_capacity,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
     read_variable_costs,
@@ -49,6 +54,11 @@ OUTPUT_RATIO = "output_ratio"
 COST_PER_OUTPUT = "cost_per_output"
 PRODUCER_EMISSION_RATE = "producer_emission_rate"
 EMISSION_RATE_PER_OUTPUT = "emission_rate_per_output"
+# Whether a fuel_supply technology makes anything in the year.
+IS_RUNNABLE = "is_runnable"
+
+_KEYS = [REGION, TECHNOLOGY]
+_FUEL_KEYS = [REGION, FUEL]
 
 _PRICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
@@ -79,11 +89,13 @@ class FuelSupply:
 
     `prices` holds one row for each region and fuel, with the chosen producer, the number of
     producers it was chosen from and its cost per unit of the fuel. `emission_rates` holds one
-    row for each region, fuel and pollutant of a producer that emits.
+    row for each region, fuel and pollutant of a producer that emits. `stranded` holds one row
+    for each region and fuel whose producers all make nothing in the year.
     """
 
     prices: pl.DataFrame
     emission_rates: pl.DataFrame
+    stranded: pl.DataFrame
 
 
 def choose_fuel_producer(producers: Sequence[FuelProducer]) -> FuelProducer | None:
@@ -96,8 +108,9 @@ def choose_fuel_producer(producers: Sequence[FuelProducer]) -> FuelProducer | No
 
 def build_fuel_supply(state: State, year: int, mode: str) -> FuelSupply:
     candidates = _read_candidates(state, year, mode)
-    prices = _build_prices(candidates)
-    return FuelSupply(prices, _read_emission_rates(state, year, mode, prices))
+    prices = _build_prices(candidates.filter(pl.col(IS_RUNNABLE)))
+    emission_rates = _read_emission_rates(state, year, mode, prices)
+    return FuelSupply(prices, emission_rates, _list_stranded_fuels(candidates))
 
 
 def read_input_ratios(
@@ -113,30 +126,44 @@ def read_input_ratios(
 
 
 def _read_candidates(state: State, year: int, mode: str) -> pl.DataFrame:
-    """Each fuel that a `fuel_supply` technology puts out, with the cost of that technology."""
+    """Each fuel that a `fuel_supply` technology puts out, with its cost and whether it runs."""
     suppliers = _read_suppliers(state, year)
     outputs = (
         read_mode_parameter(state, FlowParameter.OUTPUT_ACTIVITY_RATIO, year, mode)
         .filter(pl.col(VALUE_COL) > 0)
-        .join(suppliers.select(REGION, TECHNOLOGY), on=[REGION, TECHNOLOGY], how="semi")
-        .select(REGION, TECHNOLOGY, FUEL, pl.col(VALUE_COL).alias(OUTPUT_RATIO))
+        .join(suppliers, on=_KEYS)
+        .select(*_KEYS, FUEL, pl.col(VALUE_COL).alias(OUTPUT_RATIO), IS_RUNNABLE)
     )
-    keys = outputs.select(REGION, TECHNOLOGY, pl.lit(mode).alias(OPERATING_MODE)).unique()
+    keys = outputs.select(*_KEYS, pl.lit(mode).alias(OPERATING_MODE)).unique()
     costs = read_variable_costs(state, year, keys).select(
-        REGION, TECHNOLOGY, pl.col(VARIABLE_COST).alias(PRODUCER_COST)
+        *_KEYS, pl.col(VARIABLE_COST).alias(PRODUCER_COST)
     )
-    return outputs.join(costs, on=[REGION, TECHNOLOGY])
+    return outputs.join(costs, on=_KEYS)
 
 
 def _read_suppliers(state: State, year: int) -> pl.DataFrame:
-    """Each `fuel_supply` technology, except one whose activity limit of the year is zero."""
-    suppliers = read_annotations(state, TECHNOLOGY).filter(
-        pl.col(AnnotationColumn.KIND) == TechnologyKind.FUEL_SUPPLY
+    """Each `fuel_supply` technology, and whether it has capacity that can run in the year and
+    an activity limit of the year above zero."""
+    suppliers = (
+        read_annotations(state, TECHNOLOGY)
+        .filter(pl.col(AnnotationColumn.KIND) == TechnologyKind.FUEL_SUPPLY)
+        .select(_KEYS)
     )
     limits = read_parameter_with_defaults(
-        state, SupplyParameter.ACTIVITY_UPPER_LIMIT, year, suppliers.select(REGION, TECHNOLOGY)
+        state, SupplyParameter.ACTIVITY_UPPER_LIMIT, year, suppliers
     )
-    return limits.filter(pl.col(VALUE_COL).fill_null(NO_LIMIT) != 0).select(REGION, TECHNOLOGY)
+    is_open = pl.col(VALUE_COL).fill_null(NO_LIMIT) != 0
+    built = enrich_free_build(state, year, suppliers).join(limits, on=_KEYS, how="left")
+    return built.select(*_KEYS, (express_has_capacity() & is_open).alias(IS_RUNNABLE))
+
+
+def _list_stranded_fuels(candidates: pl.DataFrame) -> pl.DataFrame:
+    return (
+        candidates.group_by(_FUEL_KEYS)
+        .agg(pl.col(IS_RUNNABLE).any(), pl.len().alias(PRODUCER_COUNT))
+        .filter(~pl.col(IS_RUNNABLE))
+        .select(*_FUEL_KEYS, PRODUCER_COUNT)
+    )
 
 
 def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:
