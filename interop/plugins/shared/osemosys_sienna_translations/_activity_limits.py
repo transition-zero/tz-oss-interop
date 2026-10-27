@@ -13,6 +13,7 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import ByYear
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_MWH
 from interop.plugins.shared.osemosys_canonical.constants import (
@@ -89,11 +90,11 @@ def enrich_activity_limits(
     return rated
 
 
-def build_yearly_limits(bounds: list[dict[str, Any]] | None) -> dict[str, float] | None:
+def build_yearly_limits(bounds: list[dict[str, Any]] | None) -> ByYear | None:
     """The bound of each year in MWh, keyed by the year, or None when no year binds."""
     if not bounds:
         return None
-    return {bound[YEAR]: bound[LIMIT_MWH] for bound in bounds}
+    return {int(bound[YEAR]): bound[LIMIT_MWH] for bound in bounds}
 
 
 def build_bound_events(
