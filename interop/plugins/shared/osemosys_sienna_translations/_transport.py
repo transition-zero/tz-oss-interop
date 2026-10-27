@@ -411,6 +411,7 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
         p_max_pu=row[DERATE],
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         is_conversion=True if row[IS_CONVERSION] else None,
+        has_stand_in_limit=True if row[RATING][RatingField.IS_STAND_IN] else None,
         operating_modes=build_operating_mode_field(row),
         e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
         e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),

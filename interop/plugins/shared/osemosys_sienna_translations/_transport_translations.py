@@ -7,8 +7,13 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, companion_filename
-from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.core.extensions import ControllableLineExtension, ExtensionKind, companion_filename
+from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
+    UNIT_DOLLARS_PER_MWH,
+    UNIT_MW,
+    require_extension_attribute,
+)
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     REGION,
@@ -100,6 +105,7 @@ _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
 _P_MAX_PU_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu"
 _IS_CONVERSION_ATTRIBUTE = f"{EXTENSIONS_PREFIX}is_conversion"
+_STAND_IN_ATTRIBUTE = require_extension_attribute(ControllableLineExtension, "has_stand_in_limit")
 _DROPPED_DERATE_NOTE = (
     "the model builds the line at no cost and no limit binds it, so the factor that the model "
     "states limits nothing, and the record writes neither p_max_pu nor its series"
@@ -107,6 +113,10 @@ _DROPPED_DERATE_NOTE = (
 _CONVERSION_DERIVATION = (
     "the technology is of kind conversion and its fuels are all electricity, so it converts one "
     "electricity fuel into another; the results count it neither as production nor as trade"
+)
+_STAND_IN_DERIVATION = (
+    "the model builds the technology at no cost and no limit binds it, so the limits of the line "
+    "are what the whole fleet of the year can put out, and not a capacity"
 )
 _P_MAX_PU_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu_series"
 _COMPANION = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
@@ -178,20 +188,22 @@ def _build_reverse_sources(old: dict[str, Any]) -> list[SourceField]:
 def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
     """The source value of the rating, the availability factor that it applies, and the ratios."""
     rating = old[RATING]
-    sources = [
-        build_osemosys_field(
-            rating[RatingField.PARAMETER],
-            rating[RatingField.NAME],
-            rating[RatingField.ATTRIBUTE],
-            rating[RatingField.VALUE],
-            rating[RatingField.UNIT],
-        )
-    ]
+    sources = [_build_rating_source(rating)]
     if not rating[RatingField.IS_STAND_IN]:
         sources.append(
             _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])
         )
     return [*sources, *_build_ratio_sources(old), *_build_reverse_sources(old)]
+
+
+def _build_rating_source(rating: dict[str, Any]) -> SourceField:
+    return build_osemosys_field(
+        rating[RatingField.PARAMETER],
+        rating[RatingField.NAME],
+        rating[RatingField.ATTRIBUTE],
+        rating[RatingField.VALUE],
+        rating[RatingField.UNIT],
+    )
 
 
 def _build_limits(dest_col: str, expr: pl.Expr, derivation: str) -> Translation:
@@ -254,9 +266,21 @@ def _build_conversion_events(old: dict[str, Any]) -> list[TranslationEvent]:
     )
 
 
+def _build_stand_in_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    rating = old[RATING]
+    if not rating[RatingField.IS_STAND_IN]:
+        return []
+    return build_derived(
+        [_build_rating_source(rating)],
+        [_dest(old[LINE_NAME], _STAND_IN_ATTRIBUTE, True)],
+        _STAND_IN_DERIVATION,
+    )
+
+
 def _build_reports() -> list[Translation]:
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_conversion_events(old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_stand_in_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
         Translation(
