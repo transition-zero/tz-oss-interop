@@ -150,7 +150,9 @@ class RegionRate(NamedTuple):
 def read_region_discount_rates(state: State, plan: InvestmentPlan) -> pl.DataFrame:
     """The `discount_rate` of each region of the model, in the order of the region set."""
     regions = pl.DataFrame({REGION: list_set_members(state, REGION)}, schema={REGION: pl.Utf8})
-    return _read_region_rates(state, plan, regions)
+    rates = _read_region_rates(state, plan, regions)
+    # The read joins lazily, which keeps no row order, so the first region comes back first here.
+    return regions.join(rates, on=REGION, how="left", maintain_order="left")
 
 
 def find_region_discount_rate(rates: pl.DataFrame) -> RegionRate | None:
