@@ -380,8 +380,8 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 37.0
-      And the log contains "emission_penalty states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 pollutant(s): R1/NOX"
-      And the file "decisions.md" contains "`osemosys.emission_penalty.R1/NOX` = 5.0"
+      And the log contains "1 pollutant(s) whose emission_penalty states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Pollutants: R1/NOX"
+      And the file "decisions.md" contains "`osemosys.emission_penalty.R1/NOX.year 2030` = 5.0"
 
     Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
       The model states currency in million USD and emissions in kt. The gas plant emits 600

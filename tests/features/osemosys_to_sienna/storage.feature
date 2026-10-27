@@ -399,7 +399,7 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/system.json" parses as JSON with 1 component of type "EnergyReservoirStorage"
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "charge_fom_cost" set to 40.0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "operating_modes" set to [{"mode": "1", "variable_cost": 0.5}, {"mode": "2", "emission_rates": {"CO2": 0.01}}]
-      And the log contains "osemosys-to-sienna: capacity_factor states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/ATPUMP"
+      And the log contains "osemosys-to-sienna: 1 technology(ies) whose capacity_factor states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATPUMP"
       And the log does not contain "emission_rate states"
       And the log does not contain "fixed_cost states"
 

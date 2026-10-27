@@ -2,15 +2,15 @@
 applies or writes to extensions.json.
 
 A parameter of the canonical stage that the Sienna documents have no field for still holds
-data of the model, so each row whose values no extension record holds is reported: one event
-for each member that it states values for, else one event for each region, else one event with
-a count, and one warning. A row that holds the default of the parameter states nothing beyond
-it, so it is not counted.
+data of the model, so each row whose values no extension record holds is reported. The rows
+group by their member key, which names the region group, the region, the start and end region
+and the member that a row states. Each group gets one NOT_MAPPED event, and each parameter one
+warning. A row that holds the default of the parameter states nothing beyond it, so it is not
+counted.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Set
 from typing import NamedTuple
 
@@ -18,11 +18,13 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import ALL_COMPONENTS
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
+    REGION_GROUP,
+    START_REGION,
     STORAGE,
     TECHNOLOGY,
     VALUE_COL,
@@ -43,16 +45,14 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
     read_parameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
-from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import (
     require_operations_year,
 )
-from interop.plugins.shared.osemosys_sienna_translations._persisted import drop_persisted_rows
-from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
-
-log = logging.getLogger(__name__)
+from interop.plugins.shared.osemosys_sienna_translations._persisted import (
+    drop_persisted_rows,
+    express_member_key,
+)
+from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, report_not_mapped
 
 # Each parameter that a part of the operations step applies to the system as a whole; a
 # parameter of a technology is applied row by row, by the component that holds the technology.
@@ -83,24 +83,42 @@ _UPPER_BOUND_NOTE = (
     "producer"
 )
 _NOTES: dict[str, str] = {SupplyParameter.ACTIVITY_UPPER_LIMIT: _UPPER_BOUND_NOTE}
-# The columns that name the member a row is about, in the order that the report prefers them.
-_MEMBER_COLUMNS: dict[str, str] = {
-    TECHNOLOGY: "technology(ies)",
-    STORAGE: "storage(s)",
-    FUEL: "fuel(s)",
-    POLLUTANT: "pollutant(s)",
-}
-_REGIONS_LABEL = "region(s)"
 _NAME = "name"
 _ROW_COUNT = "row_count"
 _FIRST_VALUE = "first_value"
+_VALUE = "value"
+# Every group that reaches the report holds rows that no step applies, so the report keeps none.
+_KEEP_NONE = pl.lit(value=False)
+
+
+class Grouping(NamedTuple):
+    """The word that counts the groups of a parameter, and the word that lists them."""
+
+    counted_noun: str
+    label: str
+
+
+# The grouping of a key, by the most specific column that the key names.
+_GROUPINGS: dict[str, Grouping] = {
+    TECHNOLOGY: Grouping("technology(ies)", "Technologies"),
+    STORAGE: Grouping("storage(s)", "Storages"),
+    FUEL: Grouping("fuel(s)", "Fuels"),
+    POLLUTANT: Grouping("pollutant(s)", "Pollutants"),
+    REGION: Grouping("region(s)", "Regions"),
+    REGION_GROUP: Grouping("region group(s)", "Region groups"),
+}
+_ROUTES = Grouping("route(s)", "Routes")
+_PARAMETERS = Grouping("parameter(s)", "Parameters")
 
 
 class UnappliedRows(NamedTuple):
-    """The rows of one parameter that state a value other than its default."""
+    """The rows of one parameter that state a value other than its default, one row for each
+    member key, with the count of rows and the first value."""
 
     parameter: str
-    rows: pl.DataFrame
+    groups: pl.DataFrame
+    keys: list[str]
+    is_yearly: bool
     year: int
 
     @property
@@ -110,26 +128,33 @@ class UnappliedRows(NamedTuple):
     @property
     def scope(self) -> str:
         """The years that the rows hold in: the operations year, or each year."""
-        if YEAR in self.rows.columns:
+        if self.is_yearly:
             return f"for {self.year}"
         return "for every year"
 
+    @property
+    def span(self) -> str:
+        """The years that the rows hold in, as the attribute of an event names them."""
+        if self.is_yearly:
+            return f"{YEAR} {self.year}"
+        return "every year"
 
-class Grouping(NamedTuple):
-    """The columns that one event of the report covers, and the word that counts them."""
-
-    columns: list[str]
-    name: pl.Expr
-    label: str
+    @property
+    def grouping(self) -> Grouping:
+        if START_REGION in self.keys:
+            return _ROUTES
+        if not self.keys:
+            return _PARAMETERS
+        return _GROUPINGS[self.keys[-1]]
 
 
 def report_unapplied_parameters(state: State, applied: Set[str], recorder: ScopedRecorder) -> None:
     """Record NOT_MAPPED and warn for each parameter that `applied` does not hold."""
     year = require_operations_year(state)
     for parameter in _list_unapplied_parameters(state, applied):
-        rows = _read_stated_rows(state, parameter, year)
-        if rows.height > 0:
-            _report_rows(UnappliedRows(parameter, rows, year), recorder)
+        unapplied = _read_stated_groups(state, parameter, year)
+        if unapplied.groups.height > 0:
+            report_not_mapped(unapplied.groups, _KEEP_NONE, _build_report(unapplied), recorder)
 
 
 def _list_unapplied_parameters(state: State, applied: Set[str]) -> list[str]:
@@ -140,71 +165,44 @@ def _list_unapplied_parameters(state: State, applied: Set[str]) -> list[str]:
     )
 
 
-def _read_stated_rows(state: State, parameter: str, year: int) -> pl.DataFrame:
-    rows = drop_persisted_rows(state, parameter, read_parameter(state, parameter, year))
+def _read_stated_groups(state: State, parameter: str, year: int) -> UnappliedRows:
+    """The stated rows of `parameter`, counted for each member key that no record holds.
+
+    The rows are grouped before they are collected, as a parameter can hold a row for each
+    timeslice.
+    """
+    rows = read_parameter(state, parameter, year).lazy()
+    columns = rows.collect_schema().names()
     default = find_parameter_default(state, parameter)
-    if default is None:
-        return rows
-    return rows.filter(pl.col(VALUE_COL).cast(pl.Float64) != default)
-
-
-def _report_rows(unapplied: UnappliedRows, recorder: ScopedRecorder) -> None:
-    grouping = _choose_grouping(unapplied.rows)
-    if grouping is None:
-        _report_parameter(unapplied, recorder)
-    else:
-        _report_groups(unapplied, grouping, recorder)
-
-
-def _choose_grouping(rows: pl.DataFrame) -> Grouping | None:
-    """The member of each row with its region, else the region, else none."""
-    if REGION not in rows.columns:
-        return None
-    member = next((column for column in _MEMBER_COLUMNS if column in rows.columns), None)
-    if member is None:
-        return Grouping([REGION], pl.col(REGION), _REGIONS_LABEL)
-    return Grouping([REGION, member], express_report_name(member), _MEMBER_COLUMNS[member])
-
-
-def _report_groups(unapplied: UnappliedRows, grouping: Grouping, recorder: ScopedRecorder) -> None:
-    groups = (
-        unapplied.rows.group_by(grouping.columns)
-        .agg(pl.len().alias(_ROW_COUNT), pl.col(VALUE_COL).first().alias(_FIRST_VALUE))
-        .with_columns(grouping.name.alias(_NAME))
-        .sort(_NAME)
+    if default is not None:
+        rows = rows.filter(pl.col(VALUE_COL).cast(pl.Float64) != default)
+    key = express_member_key(columns)
+    keys = key.meta.root_names()
+    counts = [pl.len().alias(_ROW_COUNT), pl.col(VALUE_COL).first().alias(_FIRST_VALUE)]
+    grouped = rows.group_by(keys).agg(counts) if keys else rows.select(counts)
+    groups = drop_persisted_rows(state, parameter, grouped.collect())
+    groups = groups.filter(pl.col(_ROW_COUNT) > 0).with_columns(
+        key.alias(_NAME),
+        pl.when(pl.col(_ROW_COUNT) == 1).then(pl.col(_FIRST_VALUE)).alias(_VALUE),
     )
-    for row in groups.iter_rows(named=True):
-        value = row[_FIRST_VALUE] if row[_ROW_COUNT] == 1 else None
-        recorder.append(_build_event(unapplied, row[_NAME], value, row[_ROW_COUNT]))
-    names = groups[_NAME].to_list()
-    log.warning(
-        "%s: %s states %d row(s) %s that no step of the pipeline applies or keeps, for %d %s: %s",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        unapplied.parameter,
-        unapplied.rows.height,
-        unapplied.scope,
-        len(names),
-        grouping.label,
-        name_a_few(names),
-    )
+    return UnappliedRows(parameter, groups.sort(_NAME), keys, YEAR in columns, year)
 
 
-def _report_parameter(unapplied: UnappliedRows, recorder: ScopedRecorder) -> None:
-    recorder.append(_build_event(unapplied, ALL_COMPONENTS, None, unapplied.rows.height))
-    log.warning(
-        "%s: %s states %d row(s) %s that no step of the pipeline applies or keeps",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        unapplied.parameter,
-        unapplied.rows.height,
-        unapplied.scope,
-    )
-
-
-def _build_event(
-    unapplied: UnappliedRows, name: str, value: object, row_count: int
-) -> TranslationEvent:
-    return TranslationEvent(
-        kind=EventKind.NOT_MAPPED,
-        sources=[build_osemosys_field(unapplied.parameter, name, None, value)],
-        note=f"{row_count} row(s) {unapplied.scope}; {unapplied.note}",
+def _build_report(unapplied: UnappliedRows) -> SkipReport:
+    grouping = unapplied.grouping
+    rows = unapplied.groups[_ROW_COUNT].sum()
+    return SkipReport(
+        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+        framework=OSEMOSYS_FRAMEWORK,
+        component=unapplied.parameter,
+        name_col=_NAME,
+        reason=(
+            f"whose {unapplied.parameter} states {rows} row(s) {unapplied.scope} that no step of "
+            "the pipeline applies or keeps"
+        ),
+        counted_noun=grouping.counted_noun,
+        note=lambda row: f"{row[_ROW_COUNT]} row(s) {unapplied.scope}; {unapplied.note}",
+        listed=SkippedNames(column=_NAME, label=grouping.label),
+        attribute_col=_VALUE,
+        attribute_name=unapplied.span,
     )
