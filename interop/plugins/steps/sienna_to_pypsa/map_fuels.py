@@ -105,7 +105,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         append_destination_rows(
             state, PyPSADestinationTable.GENERATORS, rows, GENERATORS_DESTINATION_SCHEMA
         )
-        relayed = [lookup.relay(record.name) for record in records]
+        relayed = [lookup.build_relayed(record.name) for record in records]
         relay_records(state, ExtensionKind.GENERATOR, relayed, self._recorder)
 
     def _map_loads(self, state: State, buses: set[str]) -> None:
@@ -125,7 +125,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         varying = {record.name: UNSCALED for record in records if record.p_set_series}
         if varying:
             stage_companion_columns(state, ExtensionKind.LOAD, _LOAD_COLUMNS, varying)
-        relayed = [lookup.relay(record.name) for record in records]
+        relayed = [lookup.build_relayed(record.name) for record in records]
         relay_records(state, ExtensionKind.LOAD, relayed, self._recorder)
 
 
