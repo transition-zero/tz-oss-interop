@@ -62,6 +62,8 @@ _KEPT_COLUMNS = (
 
 # The columns of the generator that a Link of this hop does not hold.
 _DROPPED_COLUMNS = (
+    PyPSAGeneratorCol.EFFICIENCY,
+    PyPSAGeneratorCol.MARGINAL_COST,
     PyPSAGeneratorCol.P_NOM_MIN,
     PyPSAGeneratorCol.P_NOM_MAX,
     PyPSAGeneratorCol.OVERNIGHT_COST,
