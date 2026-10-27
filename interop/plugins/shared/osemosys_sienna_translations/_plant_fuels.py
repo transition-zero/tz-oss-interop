@@ -14,11 +14,12 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import GeneratorExtension
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import (
-    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MWH,
     UNIT_TONNES_PER_MWH,
+    require_extension_attribute,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
@@ -123,7 +124,7 @@ def build_plant_fuel_events(
     return [
         build_derived(
             field.build_sources(old),
-            [dest(old[name_col], f"{EXTENSIONS_PREFIX}{field.field}", value, field.unit)],
+            [dest(old[name_col], field.attribute, value, field.unit)],
             field.derivation,
         )[0]
         for field in _PLANT_FUEL_FIELDS
@@ -176,7 +177,7 @@ def _build_own_rate_source(old: dict[str, Any], rate: dict[str, Any]) -> SourceF
 class _PlantFuelField(NamedTuple):
     """One field of the record that the fuels of a plant fill, and how its event reads."""
 
-    field: str
+    attribute: str
     unit: str | None
     build_value: Callable[[dict[str, Any]], Any]
     build_sources: Callable[[dict[str, Any]], list[SourceField]]
@@ -185,17 +186,21 @@ class _PlantFuelField(NamedTuple):
 
 _PLANT_FUEL_FIELDS = (
     _PlantFuelField(
-        FUEL_BUSES, None, build_fuel_buses_field, _build_fuel_bus_sources, _FUEL_BUSES_DERIVATION
+        require_extension_attribute(GeneratorExtension, FUEL_BUSES),
+        None,
+        build_fuel_buses_field,
+        _build_fuel_bus_sources,
+        _FUEL_BUSES_DERIVATION,
     ),
     _PlantFuelField(
-        "own_marginal_cost",
+        require_extension_attribute(GeneratorExtension, "own_marginal_cost"),
         UNIT_DOLLARS_PER_MWH,
         build_own_cost_field,
         _build_own_cost_sources,
         _OWN_COST_DERIVATION,
     ),
     _PlantFuelField(
-        "own_emission_rates_t_per_mwh",
+        require_extension_attribute(GeneratorExtension, "own_emission_rates_t_per_mwh"),
         UNIT_TONNES_PER_MWH,
         build_own_rates_field,
         _build_own_rate_sources,
