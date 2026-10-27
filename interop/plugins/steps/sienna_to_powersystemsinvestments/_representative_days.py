@@ -243,12 +243,13 @@ def list_portfolio_years(state: State) -> list[str]:
 
 def derive_representative_day_series(state: State, recorder: ScopedRecorder) -> None:
     """One record for each technology, year and representative day, and one period a year."""
-    plan = _build_plan(state, recorder)
+    base_system = BaseSystemProfiles(state)
+    plan = _build_plan(state, base_system, recorder)
     profiles = _drop_unprofiled(plan.profiles, build_supply_types(state), recorder)
     slices = _Slicer(recorder, profiles, plan).build_slices()
     splitter = _SeriesSplitter(recorder, slices, plan)
     records = splitter.build_records(profiles)
-    records.extend(splitter.build_missing_records(BaseSystemProfiles(state), state, profiles))
+    records.extend(splitter.build_missing_records(base_system, state, profiles))
     splitter.warn()
     _report_gap_years(plan.years, recorder)
     if records:
@@ -258,10 +259,10 @@ def derive_representative_day_series(state: State, recorder: ScopedRecorder) -> 
         )
 
 
-def _build_plan(state: State, recorder: ScopedRecorder) -> _Plan:
+def _build_plan(state: State, base_system: BaseSystemProfiles, recorder: ScopedRecorder) -> _Plan:
     if has_portfolio_series(state):
         return _build_portfolio_plan(state, recorder)
-    return _build_system_plan(state, recorder)
+    return _build_system_plan(state, base_system, recorder)
 
 
 def _is_portfolio_key(key: tuple[str, str]) -> bool:
@@ -334,11 +335,11 @@ def _build_profiles(state: State) -> pl.DataFrame:
     ).sort(_OWNER_TYPE, StagedTimeSeriesCol.COMPONENT, PORTFOLIO_SERIES_YEAR)
 
 
-def _build_system_plan(state: State, recorder: ScopedRecorder) -> _Plan:
+def _build_system_plan(
+    state: State, base_system: BaseSystemProfiles, recorder: ScopedRecorder
+) -> _Plan:
     """The first snapshots of each base system profile, as the one day of the plan."""
-    stated = BaseSystemProfiles(state).build_profiles(
-        list_series_owners(state), _SYSTEM_DAY_SNAPSHOTS
-    )
+    stated = base_system.build_profiles(list_series_owners(state), _SYSTEM_DAY_SNAPSHOTS)
     if not stated:
         return _build_default_plan(state, recorder)
     resolution_seconds = next(iter(stated.values())).resolution_seconds
