@@ -356,6 +356,52 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the log contains "R1/ATNOX"
     And the file "decisions.md" contains "so the limits go to extensions.json as a constraint record"
 
+  Scenario: A technology that the portfolio leaves out does not decide which pollutant covers the portfolio
+    ATBIO has no carriers: row, so the portfolio leaves it out. It emits only ATNOX, and each
+    technology of the portfolio still emits CO2.
+    Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASCC    | CO2      | 1                 | 2030 | 400   |
+      | R1     | ATGASNEW   | CO2      | 1                 | 2030 | 350   |
+      | R1     | ATGASCC    | ATNOX    | 1                 | 2030 | 1     |
+      | R1     | ATBIO      | ATNOX    | 1                 | 2030 | 1     |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with 2 components of type "CarbonCaps"
+    And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "CO2/2030" having "max_mtons" set to 0.5
+
+  Scenario: A technology that the portfolio leaves out and that emits the capped pollutant is reported
+    ATBIO emits CO2, so OSeMOSYS counts its emissions under the limit, but no CarbonCaps does.
+    Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASCC    | CO2      | 1                 | 2030 | 400   |
+      | R1     | ATGASNEW   | CO2      | 1                 | 2030 | 350   |
+      | R1     | ATGASCC    | ATNOX    | 1                 | 2030 | 1     |
+      | R1     | ATBIO      | CO2      | 1                 | 2030 | 100   |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with 2 components of type "CarbonCaps"
+    And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATBIO.pollutant` = R1/CO2"
+    And the log contains "1 technology(ies) emit the pollutant of a CarbonCaps but are not in the portfolio, so the cap holds less than the limit counts"
+
+  Scenario: Only the first pollutant in name order that covers the portfolio becomes a CarbonCaps
+    ATGASCC and ATGASNEW each emit CO2 and ATNOX, so both pollutants cover the portfolio. A
+    CarbonCaps names no pollutant, so ATNOX, which comes first, takes the caps, and the limits
+    of CO2 stay in extensions.json.
+    Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASCC    | CO2      | 1                 | 2030 | 400   |
+      | R1     | ATGASNEW   | CO2      | 1                 | 2030 | 350   |
+      | R1     | ATGASCC    | ATNOX    | 1                 | 2030 | 1     |
+      | R1     | ATGASNEW   | ATNOX    | 1                 | 2030 | 1     |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with 1 component of type "CarbonCaps"
+    And the file "outputs/portfolio.json" parses as JSON with component "CarbonCaps" named "ATNOX/2030" having "max_mtons" set to 0.0001
+    And the file "outputs/portfolio.json" parses as a portfolio with no component "CarbonCaps" named "CO2/2030"
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "CO2" having "sense" set to "<="
+    And the log contains "1 pollutant(s) cover the portfolio after a pollutant that comes first in name order"
+
   Scenario: A transport candidate becomes an AggregateTransportTechnology between two areas
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
