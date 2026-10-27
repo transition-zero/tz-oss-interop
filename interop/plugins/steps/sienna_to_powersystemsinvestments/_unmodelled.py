@@ -7,9 +7,9 @@ from typing import Any
 
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_systems_investments_schema import (
-    AGGREGATE_TRANSPORT_PARAMETER,
     MODELLED_TECHNOLOGIES,
     PortfolioColumn,
+    find_fixed_parameter,
 )
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
@@ -47,17 +47,17 @@ def report_unmodelled(
         if component not in _TECHNOLOGY_COMPONENTS:
             continue
         for row in rows:
-            if (component, _get_parameter(component, row)) not in _MODELLED:
+            if (component, _find_parameter(component, row)) not in _MODELLED:
                 left_out.append(row[PortfolioColumn.NAME])
                 _record(component, row, recorder)
     if left_out:
         log.warning(_UNMODELLED_WARNING, len(left_out), name_a_few(left_out))
 
 
-def _get_parameter(component: str, row: dict[str, Any]) -> str | None:
-    if component == SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY:
-        return AGGREGATE_TRANSPORT_PARAMETER
-    parameter: str | None = row.get(PortfolioColumn.POWER_SYSTEMS_TYPE)
+def _find_parameter(component: str, row: dict[str, Any]) -> str | None:
+    parameter: str | None = find_fixed_parameter(component) or row.get(
+        PortfolioColumn.POWER_SYSTEMS_TYPE
+    )
     return parameter
 
 

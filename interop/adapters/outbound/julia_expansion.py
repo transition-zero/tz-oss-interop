@@ -26,7 +26,10 @@ from interop.adapters.outbound.julia_session import (
     require_julia,
 )
 from interop.adapters.outbound.julia_strings import build_julia_path_text
-from interop.plugins.shared.power_systems_investments_schema import MODELLED_TECHNOLOGIES
+from interop.plugins.shared.power_systems_investments_schema import (
+    MODELLED_TECHNOLOGIES,
+    ModelledTechnology,
+)
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.expansion import (
@@ -52,13 +55,10 @@ _BALANCE_MODELS: dict[BalanceModel, str] = {
 }
 
 # One formulation triple per technology type: how a plan may build it, how it runs, and how
-# its contribution to a feasibility period is counted. A demand requirement is not built, so
-# its investment formulation is the one that states so.
-_DEMAND_INVESTMENT = "StaticLoadInvestment"
+# its contribution to a feasibility period is counted.
 _FEASIBILITY_FORMULATION = "BasicDispatchFeasibility"
-_TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = tuple(
-    (f"PSIP.{model.component}{{PSY.{model.parameter}}}", model.operations)
-    for model in MODELLED_TECHNOLOGIES
+_TECHNOLOGY_MODELS: tuple[tuple[str, ModelledTechnology], ...] = tuple(
+    (f"PSIP.{model.component}{{PSY.{model.parameter}}}", model) for model in MODELLED_TECHNOLOGIES
 )
 
 _POWER_SYSTEMS_INVESTMENTS_PACKAGES = "the PowerSystemsInvestments.jl packages"
@@ -344,13 +344,13 @@ def _set_technology_models(jl: Any, investment_treatment: InvestmentTreatment) -
     """One formulation triple per type the portfolio holds, and none for a type it does not."""
     investment = INVESTMENT_FORMULATIONS[investment_treatment]
     set_models: list[str] = []
-    for technology_type, operations in _TECHNOLOGY_MODELS:
+    for technology_type, model in _TECHNOLOGY_MODELS:
         if not _has_any(jl, technology_type):
             continue
-        formulation = _DEMAND_INVESTMENT if "DemandRequirement" in technology_type else investment
+        formulation = model.fixed_investment or investment
         jl.seval(f"""
             PSIN.set_technology_model!(template, portfolio, {technology_type},
-                PSIN.{formulation}, PSIN.{operations}, PSIN.{_FEASIBILITY_FORMULATION})
+                PSIN.{formulation}, PSIN.{model.operations}, PSIN.{_FEASIBILITY_FORMULATION})
         """)
         set_models.append(technology_type)
     return set_models

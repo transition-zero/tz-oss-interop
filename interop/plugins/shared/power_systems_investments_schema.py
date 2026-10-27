@@ -100,17 +100,28 @@ COMPONENT_ORDER: tuple[PortfolioComponent, ...] = (
 
 
 class ModelledTechnology(NamedTuple):
-    """A technology type that the adapter sets a model for, and how that type runs."""
+    """A technology type that the adapter sets a model for, and the formulations of that type."""
 
     component: PortfolioComponent
     parameter: str
     operations: str
+    # The investment formulation that the type always takes; None takes the one of the run.
+    fixed_investment: str | None = None
+    # Every technology of the component names ``parameter``, whatever its source states.
+    is_parameter_fixed: bool = False
 
 
 _BASIC_DISPATCH = "BasicDispatch"
+# A demand requirement is not built, so its investment formulation is the one that states so.
+_STATIC_LOAD_INVESTMENT = "StaticLoadInvestment"
 
 MODELLED_TECHNOLOGIES: tuple[ModelledTechnology, ...] = (
-    ModelledTechnology(PortfolioComponent.DEMAND_REQUIREMENT, "PowerLoad", _BASIC_DISPATCH),
+    ModelledTechnology(
+        PortfolioComponent.DEMAND_REQUIREMENT,
+        "PowerLoad",
+        _BASIC_DISPATCH,
+        fixed_investment=_STATIC_LOAD_INVESTMENT,
+    ),
     ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "RenewableDispatch", _BASIC_DISPATCH),
     ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "ThermalStandard", _BASIC_DISPATCH),
     ModelledTechnology(PortfolioComponent.SUPPLY_TECHNOLOGY, "HydroDispatch", _BASIC_DISPATCH),
@@ -121,9 +132,23 @@ MODELLED_TECHNOLOGIES: tuple[ModelledTechnology, ...] = (
         PortfolioComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
         AGGREGATE_TRANSPORT_PARAMETER,
         _BASIC_DISPATCH,
+        is_parameter_fixed=True,
     ),
 )
 """Every type that a plan holds a technology of; a technology of any other type is left out."""
+
+
+def find_fixed_parameter(component: str) -> str | None:
+    """The parameter that every technology of the component names, or None if each names its own."""
+    return next(
+        (
+            model.parameter
+            for model in MODELLED_TECHNOLOGIES
+            if model.is_parameter_fixed and model.component == component
+        ),
+        None,
+    )
+
 
 PORTFOLIO_FINANCIAL_DATA_TYPE = "PortfolioFinancialData"
 PORTFOLIO_METADATA_TYPE = "PortfolioMetadata"
