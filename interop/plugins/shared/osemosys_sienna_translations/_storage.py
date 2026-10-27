@@ -135,7 +135,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent
-from interop.plugins.shared.translation_runner import SkipRule, filter_component
+from interop.plugins.shared.translation_runner import SkipRule, drop_skipped
 
 _STORAGE_KEYS = [REGION, STORAGE]
 _TECHNOLOGY_KEYS = [REGION, TECHNOLOGY]
@@ -188,11 +188,11 @@ def build_storages_source(
 ) -> StorageSources:
     """One row for each storage that the operations system holds, with its ratings."""
     storages = _read_storages(state, operations)
-    storages = _drop_skipped(storages, _build_link_rules(), recorder)
+    storages = drop_skipped(storages, _build_link_rules(), recorder)
     storages = _enrich_technology_storages(storages)
-    storages = _drop_skipped(storages, _build_sharing_rules(), recorder)
+    storages = drop_skipped(storages, _build_sharing_rules(), recorder)
     storages = _enrich_technologies(state, operations, storages, mappings)
-    storages = _drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
+    storages = drop_skipped(storages, _build_technology_rules(list_bus_names(state)), recorder)
     report_storage_buses(storages, recorder)
     if storages.height == 0:
         return StorageSources(storages, pl.DataFrame())
@@ -412,15 +412,6 @@ def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
         )
         .collect()
     )
-
-
-def _drop_skipped(
-    table: pl.DataFrame, rules: list[SkipRule], recorder: ScopedRecorder
-) -> pl.DataFrame:
-    """Take out the rows that each rule drops, and report each one."""
-    for rule in rules:
-        table, _ = filter_component(table, rule.keep, rule.report, recorder)
-    return table
 
 
 def _build_link_rules() -> list[SkipRule]:
