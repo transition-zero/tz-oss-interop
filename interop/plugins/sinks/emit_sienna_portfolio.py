@@ -119,6 +119,11 @@ class EmitSiennaPortfolioParams(BaseModel):
             return self.output_time_series_path
         return build_sibling_location(self.output_path, PORTFOLIO_TIME_SERIES_FILENAME)
 
+    @property
+    def time_series_file(self) -> str:
+        """The basename of the HDF5 companion of the portfolio, which the document names."""
+        return location_name(self.time_series_path)
+
 
 class EmitSiennaPortfolio(Sink):
     name: ClassVar[str] = "emit_sienna_portfolio"
@@ -195,7 +200,7 @@ def _choose_storage_file(
     """The companion of the portfolio's own series, else the companion of the base system."""
     if associations is None:
         return params.time_series_storage_file
-    return location_name(params.time_series_path)
+    return params.time_series_file
 
 
 def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
