@@ -10,8 +10,10 @@ from ._existing import (
     TECHNOLOGY_NAME,
     TECHNOLOGY_TYPE,
     CandidateTechnology,
+    TechnologyFleet,
     build_existing_devices_translations,
     build_existing_fleet_source_table,
+    build_fleet_source_table,
     build_retirement_potential_translations,
 )
 from ._financials import build_financial_data_events, build_portfolio_financial_data
@@ -89,6 +91,8 @@ __all__ = [
     "TECHNOLOGY_TYPE",
     "UNIT_SIZE_COL",
     "CandidateTechnology",
+    "TechnologyFleet",
+    "build_fleet_source_table",
     "build_association_rows",
     "build_carbon_cap_translations",
     "build_carbon_caps_source_table",

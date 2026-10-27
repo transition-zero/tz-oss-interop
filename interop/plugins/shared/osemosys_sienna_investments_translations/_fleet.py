@@ -17,7 +17,6 @@ from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     YEAR,
-    AnnotationColumn,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     TECHNOLOGY_COUNTED_NOUN,
@@ -40,9 +39,9 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
-    CandidateTechnology,
     InvestmentsSource,
-    build_existing_fleet_source_table,
+    TechnologyFleet,
+    build_fleet_source_table,
 )
 from interop.plugins.shared.sienna_constants import SIENNA_NAME_COLUMN, SiennaComponent
 
@@ -96,9 +95,8 @@ def build_portfolio_technologies(state: State, families: Sequence[Candidates]) -
 def _build_family_fleet(state: State, plan: InvestmentPlan, family: Candidates) -> pl.DataFrame:
     base_names = sorted(_list_base_names(state, family.kind.base_types))
     devices = family.table.filter(pl.col(CANDIDATE_NAME).is_in(base_names))
-    return build_existing_fleet_source_table(
-        _list_candidates(family),
-        _build_groups(devices),
+    return build_fleet_source_table(
+        _list_fleets(family, devices),
         build_years={},
         retirement_years=_read_retirement_years(state, plan, devices),
     )
@@ -113,14 +111,6 @@ def _list_base_names(state: State, types: Collection[SiennaComponent]) -> set[st
     return names
 
 
-def _build_groups(devices: pl.DataFrame) -> dict[tuple[str, str | None], list[str]]:
-    """Each device alone, keyed as `_list_candidates` keys the candidate of the same name."""
-    return {
-        (name, location): [name]
-        for name, location in devices.select(CANDIDATE_NAME, AnnotationColumn.LOCATION).iter_rows()
-    }
-
-
 def _read_retirement_years(
     state: State, plan: InvestmentPlan, devices: pl.DataFrame
 ) -> dict[str, int]:
@@ -133,17 +123,15 @@ def _read_retirement_years(
     return dict(named.iter_rows())
 
 
-def _list_candidates(family: Candidates) -> list[CandidateTechnology]:
-    """The shared rule matches a fleet by carrier and region, here the name and the location."""
+def _list_fleets(family: Candidates, devices: pl.DataFrame) -> list[TechnologyFleet]:
+    """Each candidate, with the one base system component of its name when there is one."""
+    held = set(devices[CANDIDATE_NAME].to_list())
     return [
-        CandidateTechnology(
+        TechnologyFleet(
             name=name,
             component_type=family.kind.component,
             device_class=family.kind.device_class,
-            carrier=name,
-            region=location,
+            devices=[name] if name in held else [],
         )
-        for name, location in family.table.select(
-            CANDIDATE_NAME, AnnotationColumn.LOCATION
-        ).iter_rows()
+        for name in family.table[CANDIDATE_NAME].to_list()
     ]
