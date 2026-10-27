@@ -175,6 +175,15 @@ class MinMaxField:
     MAX = "max"
 
 
+class OperationalFlowLimitField:
+    """Field names of the Sienna ``OperationalFlowLimit`` struct, each a flow of 0 or more."""
+
+    FROM_TO_MIN = "from_to_min"
+    FROM_TO_MAX = "from_to_max"
+    TO_FROM_MIN = "to_from_min"
+    TO_FROM_MAX = "to_from_max"
+
+
 class SiennaLineCol:
     """Sienna Line/MonitoredLine column names.
 
@@ -220,6 +229,7 @@ class SiennaLinkCol:
     RATING = "rating"
     RATING_FROM = "rating_from"
     RATING_TO = "rating_to"
+    OPERATIONAL_FLOW_LIMIT = "operational_flow_limit"
     REACTIVE_POWER_LIMITS_FROM = "reactive_power_limits_from"
     REACTIVE_POWER_LIMITS_TO = "reactive_power_limits_to"
     LOSS = "loss"
@@ -676,6 +686,14 @@ THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels]
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
 FROM_TO_DTYPE: pl.DataType = pl.Struct({FromToField.FROM: pl.Float64, FromToField.TO: pl.Float64})
 MIN_MAX_DTYPE: pl.DataType = pl.Struct({MinMaxField.MIN: pl.Float64, MinMaxField.MAX: pl.Float64})
+OPERATIONAL_FLOW_LIMIT_DTYPE: pl.DataType = pl.Struct(
+    {
+        OperationalFlowLimitField.FROM_TO_MIN: pl.Float64,
+        OperationalFlowLimitField.FROM_TO_MAX: pl.Float64,
+        OperationalFlowLimitField.TO_FROM_MIN: pl.Float64,
+        OperationalFlowLimitField.TO_FROM_MAX: pl.Float64,
+    }
+)
 
 # Destination table schemas
 ARCS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -981,8 +999,7 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLinkCol.BUS0: pl.Utf8,
     SiennaLinkCol.BUS1: pl.Utf8,
     SiennaLinkCol.RATING: pl.Float64,
-    SiennaLinkCol.RATING_FROM: pl.Float64,
-    SiennaLinkCol.RATING_TO: pl.Float64,
+    SiennaLinkCol.OPERATIONAL_FLOW_LIMIT: OPERATIONAL_FLOW_LIMIT_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
     SiennaLinkCol.LOSS: LOSS_CURVE_DTYPE,

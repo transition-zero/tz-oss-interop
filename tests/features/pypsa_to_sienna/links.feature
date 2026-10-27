@@ -1,9 +1,10 @@
 @slow @fork_unsafe
 Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGenericHVDCLine
   Each in-scope PyPSA Link becomes a TwoTerminalGenericHVDCLine sharing the Arc list with
-  lines. The ratings come from p_nom * p_max_pu (rating_from) and -p_nom * p_min_pu (rating_to);
-  p_min_pu < 0 makes the link bidirectional. efficiency maps to a linear InputOutputCurve
-  loss with proportional_term = 1 - efficiency. Extendable links use p_nom_opt when solved.
+  lines. The rating is p_nom. The operational flow limit bounds the forward flow at
+  p_nom * p_max_pu and the reverse flow at -p_nom * p_min_pu, so p_min_pu < 0 makes the link
+  bidirectional. A PyPSA link states no converter ratings, so rating_from and rating_to are
+  left out. efficiency maps to a linear LossCurve with proportional_term = 1 - efficiency. Extendable links use p_nom_opt when solved.
   Multi-port links (bus2 set) are out of scope and skipped. Time-varying efficiency uses the
   static value and records a flag in the extensions sidecar.
 
@@ -21,9 +22,13 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "arc" set to 4
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "power_units" set to "NATURAL_UNITS"
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "base_power" set to 100.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "rating_to" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "rating_from" set to 2000.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "rating" set to 2000.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "operational_flow_limit.from_to_max" set to 2000.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "operational_flow_limit.to_from_max" set to 0.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "operational_flow_limit.from_to_min" set to 0.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "operational_flow_limit.to_from_min" set to 0.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" without field "rating_from"
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" without field "rating_to"
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "reactive_power_limits_from.min" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "reactive_power_limits_from.max" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_a" having "reactive_power_limits_to.min" set to 0.0
@@ -42,9 +47,9 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the network contains link "link_b" from "bus_1" to "bus_2" with capacity 600.0 MW efficiency 1.0 min dispatch fraction -1.0
     And the network is saved as "inputs/bidir.nc"
     When I run translate against "inputs/bidir.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "rating_to" set to 600.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "rating_from" set to 600.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "rating" set to 600.0
+    Then the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "rating" set to 600.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "operational_flow_limit.from_to_max" set to 600.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "operational_flow_limit.to_from_max" set to 600.0
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "loss.value_curve.function_data.proportional_term" set to 0.0
     And every "TwoTerminalGenericHVDCLine" component in the written Sienna system is valid SiennaSchemas 0.2
 
@@ -55,7 +60,8 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the network contains link "link_opt" from "bus_1" to "bus_2" with capacity 600.0 MW efficiency 1.0 optimised capacity 720.0 MW extendable
     And the network is saved as "inputs/link_opt.nc"
     When I run translate against "inputs/link_opt.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_opt" having "rating_from" set to 720.0
+    Then the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_opt" having "rating" set to 720.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_opt" having "operational_flow_limit.from_to_max" set to 720.0
     And the file "decisions.md" contains "`pypsa.Link.link_opt.p_nom_opt` = 720.0 MW"
 
   Scenario: multi-port link is out of scope and skipped
@@ -103,9 +109,9 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "link_pu" having "p_min_pu" set to 0.2
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "link_default" without field "p_max_pu"
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "link_default" without field "p_min_pu"
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "rating_from" set to 500.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "rating_to" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "rating" set to 500.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "rating" set to 1000.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "operational_flow_limit.from_to_max" set to 500.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_pu" having "operational_flow_limit.to_from_max" set to 0.0
 
   Scenario: a line and a link on the same bus pair share one Arc
     Given a PyPSA network
