@@ -228,6 +228,7 @@ class SiennaGeneratorCol:
     ID = "id"
     SIENNA_TYPE = "sienna_type"
     NAME = "name"
+    AVAILABLE = "available"
     BUS = "bus"
     BASE_POWER = "base_power"
     RATING = "rating"

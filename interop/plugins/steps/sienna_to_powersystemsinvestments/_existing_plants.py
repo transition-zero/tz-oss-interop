@@ -15,6 +15,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.power_simulations_schema import PowerSimulationsCol
 from interop.plugins.shared.power_systems_investments_schema import (
     MODELLED_TECHNOLOGIES,
     PortfolioColumn,
@@ -56,8 +57,6 @@ _SUPPLY_TYPES = frozenset(
 )
 _SUPPLY = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value
 _HYDRO_BUDGET_KEY = (SiennaComponent.HYDRO_DISPATCH.value, SiennaSeriesName.HYDRO_BUDGET.value)
-_PS_FUEL = "fuel"
-_PS_AVAILABLE = "available"
 _EXISTING_SUFFIX = "/existing"
 _LINK_KIND = "link"
 _PLANT_KIND = "plant"
@@ -336,8 +335,8 @@ def _build_plant_row(
     device: BaseDevice, name: str, component_id: int, finance: dict[str, Any]
 ) -> dict[str, Any]:
     """A supply technology that holds one existing plant and that the plan cannot add to."""
-    fuel = device.row.get(_PS_FUEL)
-    available = device.row.get(_PS_AVAILABLE)
+    fuel = device.row.get(PowerSimulationsCol.FUEL)
+    available = device.row.get(SiennaGeneratorCol.AVAILABLE)
     return {
         PortfolioColumn.ID: component_id,
         PortfolioColumn.NAME: name,

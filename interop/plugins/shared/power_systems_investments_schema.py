@@ -145,6 +145,17 @@ class PortfolioColumn:
     ID = "id"
 
 
+class PortfolioStorageColumn:
+    """Fields of a PowerSystemsInvestments StorageTechnology that SiennaSchemas does not state.
+
+    The package holds one value curve for each capacity that a plan can add to a store.
+    """
+
+    CAPITAL_COSTS_CHARGE = "capital_costs_charge"
+    CAPITAL_COSTS_DISCHARGE = "capital_costs_discharge"
+    CAPITAL_COSTS_ENERGY = "capital_costs_energy"
+
+
 PORTFOLIO_SERIES_TABLE = "PortfolioSeries"
 PORTFOLIO_PERIODS_TABLE = "PortfolioPeriods"
 PORTFOLIO_EXISTING_DEVICES_TABLE = "PortfolioExistingDevices"

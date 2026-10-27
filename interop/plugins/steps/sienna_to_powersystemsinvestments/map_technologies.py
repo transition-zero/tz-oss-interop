@@ -25,6 +25,7 @@ from interop.plugins.shared.power_systems_investments_schema import (
     PortfolioColumn,
     PortfolioComponent,
     PortfolioEnvelope,
+    PortfolioStorageColumn,
 )
 from interop.plugins.shared.sienna_constants import (
     SIENNA_NAME_COLUMN,
@@ -81,9 +82,18 @@ _TECHNOLOGY_TYPES: tuple[SiennaInvestmentsComponent, ...] = (
 # Where a storage technology's one capital cost struct goes: the package holds a separate
 # value curve per thing a plan may add.
 _STORAGE_CAPITAL_COST_FIELDS: tuple[tuple[str, str], ...] = (
-    (SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST, "capital_costs_charge"),
-    (SiennaStorageCapitalCostField.DISCHARGE_CAPITAL_COST, "capital_costs_discharge"),
-    (SiennaStorageCapitalCostField.ENERGY_CAPITAL_COST, "capital_costs_energy"),
+    (
+        SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST,
+        PortfolioStorageColumn.CAPITAL_COSTS_CHARGE,
+    ),
+    (
+        SiennaStorageCapitalCostField.DISCHARGE_CAPITAL_COST,
+        PortfolioStorageColumn.CAPITAL_COSTS_DISCHARGE,
+    ),
+    (
+        SiennaStorageCapitalCostField.ENERGY_CAPITAL_COST,
+        PortfolioStorageColumn.CAPITAL_COSTS_ENERGY,
+    ),
 )
 
 _NO_COST = 0.0
@@ -167,7 +177,10 @@ _PACKAGE_DEFAULTS: dict[SiennaInvestmentsComponent, tuple[tuple[str, Any], ...]]
 }
 
 # What a StorageCost requires and no SiennaSchemas storage cost states.
-_STORAGE_COST_DEFAULTS: tuple[str, ...] = ("energy_shortage_cost", "energy_surplus_cost")
+_STORAGE_COST_DEFAULTS: tuple[str, ...] = (
+    SiennaStructField.ENERGY_SHORTAGE_COST,
+    SiennaStructField.ENERGY_SURPLUS_COST,
+)
 
 
 class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
