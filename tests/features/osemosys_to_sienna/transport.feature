@@ -500,14 +500,13 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATPEAKER   | ATELEC | 1                 | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "1 line technology(ies) have two or more import modes, and each import generator takes the whole capacity of the line, where OSeMOSYS shares it among the modes. Technologies: R1/ATDEBUY"
-      And the file "decisions.md" contains "`osemosys.residual_capacity.R1/ATDEBUY` = 2.0"
-      And the file "decisions.md" contains "the import modes 2, 4 each become a ThermalStandard at the whole capacity of the line"
+      And the log contains "1 shared capacity limit(s) of a line bind the sum of two or more import modes, and each import generator takes the whole capacity of the line, so each is left out. Technologies: R1/ATDEBUY"
+      And the file "decisions.md" contains "| `osemosys.technology.R1/ATDEBUY.import modes` = 2, 4 |  |  | the import modes 2, 4 each become a ThermalStandard at the whole capacity of the line, residual_capacity = 2.0,"
 
     Scenario: A line of one import mode is not reported for its capacity
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log does not contain "have two or more import modes"
+      And the log does not contain "shared capacity limit(s) of a line"
 
     Scenario: An import takes the capacity factor of its line in each hour
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
@@ -530,8 +529,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with 1 components of type "ThermalStandard"
-      And the log contains "1 line technology(ies) have a mode that imports an electricity fuel with no location, so no generator holds that import. Technologies: R1/ATDEBUY"
-      And the file "decisions.md" contains "the electricity fuel OUTSIDE has no location, so no bus can hold what the mode imports"
+      And the log contains "1 import(s) of a line technology put out an electricity fuel with no location, which no bus can hold, so each is left out. Technologies: R1/ATDEBUY"
+      And the file "decisions.md" contains "| `osemosys.output_activity_ratio.R1/ATDEBUY.electricity with no location` = 0.8 |  |  | at the operating_mode 2, the electricity fuel OUTSIDE has no location, so no bus can hold what the mode imports |"
 
     Scenario: An import of a line that the model builds at no cost with no limit is left out and reported
       ATDEBUY states no residual capacity and no cost, so no limit binds it, and its import mode
