@@ -134,6 +134,10 @@ _ROUTE_CAPACITY_DERIVATION = (
     "the value of the operations year, in MW of the fuel that the route moves; no Sienna field "
     "holds it"
 )
+_ROUTE_GROWTH_DERIVATION = (
+    "the value of the operations year, in MW of the fuel that the route moves, keyed by the "
+    "year; no Sienna field holds it"
+)
 _ROUTE_ENERGY_DERIVATION = (
     "the value of each year, in MWh of the fuel that the route moves, keyed by the year; no "
     "Sienna field holds it"
@@ -168,7 +172,8 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
         "max_growth",
         Scale.CAPACITY,
         UNIT_MW,
-        derivation=_ROUTE_CAPACITY_DERIVATION,
+        detail=YEAR,
+        derivation=_ROUTE_GROWTH_DERIVATION,
     ),
     TechnologyValue(
         TradeParameter.ACTIVITY_LOWER_LIMIT,
