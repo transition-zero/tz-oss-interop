@@ -26,6 +26,7 @@ from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaComponent,
     SiennaGeneratorCol,
+    SiennaLinkCol,
     SiennaSeriesName,
 )
 from interop.plugins.shared.sienna_investments_constants import (
@@ -57,6 +58,8 @@ _SUPPLY_TYPES = frozenset(
 )
 _SUPPLY = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value
 _HYDRO_BUDGET_KEY = (SiennaComponent.HYDRO_DISPATCH.value, SiennaSeriesName.HYDRO_BUDGET.value)
+# A link states no rating, so these limits state its capacity.
+_LINK_LIMIT_FIELDS = (SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.ACTIVE_POWER_LIMITS_TO)
 _EXISTING_SUFFIX = "/existing"
 _LINK_KIND = "link"
 _PLANT_KIND = "plant"
@@ -239,14 +242,15 @@ class ExistingPlantBuilder:
 
     def _record_component_left_out(self, device: BaseDevice, note: str) -> None:
         self._left_out.components.append(device.name)
-        record_not_mapped(
-            self._recorder,
-            component=device.sienna_type,
-            name=device.name,
-            field=SiennaGeneratorCol.RATING,
-            value=device.rating_mw,
-            derivation=note,
-        )
+        for field_name, value in _list_capacity_fields(device):
+            record_not_mapped(
+                self._recorder,
+                component=device.sienna_type,
+                name=device.name,
+                field=field_name,
+                value=value,
+                derivation=note,
+            )
 
     def _record_renamed(self, device: BaseDevice, renamed: str) -> None:
         record_translation(
@@ -305,8 +309,18 @@ class ExistingPlantBuilder:
 
 
 def _build_no_technology_note(device: BaseDevice) -> str:
-    is_link = device.sienna_type == SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
-    return _NO_TECHNOLOGY_NOTE.format(kind=_LINK_KIND if is_link else _PLANT_KIND)
+    return _NO_TECHNOLOGY_NOTE.format(kind=_LINK_KIND if _is_link(device) else _PLANT_KIND)
+
+
+def _list_capacity_fields(device: BaseDevice) -> list[tuple[str, Any]]:
+    """The fields that state the capacity of a device: a rating, or the limits of a link."""
+    if _is_link(device):
+        return [(limit, device.row.get(limit)) for limit in _LINK_LIMIT_FIELDS]
+    return [(SiennaGeneratorCol.RATING, device.rating_mw)]
+
+
+def _is_link(device: BaseDevice) -> bool:
+    return device.sienna_type == SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
 
 
 def _find_portfolio_finance(state: State) -> dict[str, Any]:
