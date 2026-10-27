@@ -434,7 +434,8 @@ def _enrich_capacity_factors(
         ControllableLineCompanionCol.P_MAX_PU,
     )
     stated = read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
-    has_factors = pl.struct(_KEYS).is_in(stated.select(_KEYS).unique().to_struct().implode())
+    stated_keys = stated.select(_KEYS).unique().collect()
+    has_factors = pl.struct(_KEYS).is_in(stated_keys.to_struct().implode())
     is_derated = has_factors | (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
     factored = lines.with_columns(
         express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS),
@@ -522,7 +523,7 @@ def _read_end(
     return (
         read_parameter(state, parameter, year)
         .filter(pl.col(VALUE_COL) > 0)
-        .join(fuels.filter(location.is_not_null()), on=[REGION, FUEL])
+        .join(fuels.filter(location.is_not_null()).lazy(), on=[REGION, FUEL])
         .group_by(_MODE_KEYS)
         .agg(
             location.min().alias(columns.location),
@@ -532,6 +533,7 @@ def _read_end(
             pl.col(FUEL).min().alias(columns.fuel),
             pl.col(VALUE_COL).cast(pl.Float64).sum().alias(columns.ratio),
         )
+        .collect()
     )
 
 

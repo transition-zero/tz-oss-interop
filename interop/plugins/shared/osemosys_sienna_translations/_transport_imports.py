@@ -312,7 +312,9 @@ def _read_flows(
     return (
         read_parameter(state, parameter, year)
         .filter(pl.col(VALUE_COL) > 0)
-        .join(fuels, on=[REGION, FUEL])
+        .join(fuels.lazy(), on=[REGION, FUEL])
+        .select(*_MODE_KEYS, FUEL, VALUE_COL, ELECTRICITY_BUS)
+        .collect()
     )
 
 

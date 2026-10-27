@@ -76,7 +76,7 @@ def read_fleet_output_mw(state: State, operations: OperationsYear) -> float:
         .group_by(_KEYS)
         .agg(pl.col(ELECTRICITY_RATIO).max())
     )
-    table = residual.join(ratios, on=_KEYS)
+    table = residual.join(ratios.lazy(), on=_KEYS).collect()
     convert = operations.units.convert_capacity_to_mw
     output = express_converted(table, _CAPACITY_MW, convert) * pl.col(ELECTRICITY_RATIO)
     return float(table.select(output.sum()).item() or 0.0)
