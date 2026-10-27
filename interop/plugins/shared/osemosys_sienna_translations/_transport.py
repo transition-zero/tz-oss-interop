@@ -48,13 +48,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     WHOLE_CAPACITY,
     SupplyParameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    LOWER_BOUND,
-    UPPER_BOUND,
-    build_yearly_limits,
-    enrich_activity_limits,
-    set_bounds_persisted,
-)
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
     ELECTRICITY_BUS,
     read_electricity_fuels,
@@ -92,10 +85,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     LINK_RUN_PARAMETERS,
     MODE_BOUND_PARAMETERS,
     ModeEntry,
-    build_operating_mode_field,
-    build_operating_modes,
     list_mode_entries,
-    set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
@@ -114,15 +104,13 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_costs impor
     RATED_COST_MWH,
     read_rated_costs,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_extras import TechnologyExtras
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,
     RATED_PARAMETERS,
     RATING_RATIO,
     ValueOwners,
-    build_value_fields,
-    enrich_technology_values,
     set_applied_rows,
-    set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
@@ -195,6 +183,10 @@ _NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
 
 # The records of the lines, and the columns that name each line and its technology.
 LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY_NAME, SIENNA_TYPE)
+# A line rates on the electricity that it sends, and runs the operations mode.
+LINE_EXTRAS = TechnologyExtras(
+    LINE_OWNERS, LINK_VALUES, LINK_RUN_PARAMETERS, FlowParameter.INPUT_ACTIVITY_RATIO
+)
 _FREE_BUILD_SCOPE = "free-build"
 _FLEET_MW = "fleet_mw"
 # The source value of the rating of a line with no limit: the output of the whole fleet.
@@ -393,9 +385,7 @@ def has_series(line: dict[str, Any]) -> bool:
 
 def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
     """Note the rows of each line technology that the lines apply or keep."""
-    set_values_persisted(state, LINE_OWNERS, lines, LINK_VALUES)
-    set_mode_bounds_persisted(state, LINE_OWNERS, lines)
-    set_bounds_persisted(state, LINE_OWNERS, lines)
+    LINE_EXTRAS.set_persisted(state, lines)
     set_applied_rows(state, LINE_OWNERS, lines, _APPLIED_PARAMETERS)
     free = lines.filter(pl.col(IS_BUILT_FREE)).select(_KEYS)
     if free.height > 0:
@@ -413,10 +403,7 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         is_conversion=True if row[IS_CONVERSION] else None,
         has_stand_in_limit=True if row[RATING][RatingField.IS_STAND_IN] else None,
-        operating_modes=build_operating_mode_field(row),
-        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
-        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
-        **build_value_fields(row, LINK_VALUES),
+        **LINE_EXTRAS.build_fields(row),
     )
 
 
@@ -456,12 +443,7 @@ def _enrich_extension_values(
         pl.lit(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value).alias(SIENNA_TYPE),
         pl.lit(operations.mode).alias(OPERATING_MODE),
     )
-    table = enrich_technology_values(state, operations, rated, LINK_VALUES)
-    held = rated.select(_MODE_KEYS)
-    bounds = enrich_activity_limits(state, operations, held, FlowParameter.INPUT_ACTIVITY_RATIO)
-    table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
-    modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
-    return modes.enrich(table)
+    return LINE_EXTRAS.enrich(state, operations, rated)
 
 
 def report_one_way_lines(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:

@@ -25,9 +25,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     WHOLE_CAPACITY,
     SupplyParameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    build_bound_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
     ComponentMapping,
 )
@@ -37,18 +34,11 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
-from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
-    build_mode_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     TECHNOLOGY_NAME,
 )
-from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    LINK_VALUES,
-    build_value_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._transport import (
-    LINE_OWNERS,
+    LINE_EXTRAS,
     has_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
@@ -290,11 +280,7 @@ def _build_reports() -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
         Translation(
             exprs=[],
-            make_events=lambda old, _new: [
-                *build_value_events(old, LINK_VALUES, LINE_OWNERS),
-                *build_mode_events(old, LINE_OWNERS),
-                *build_bound_events(old, LINE_OWNERS, FlowParameter.INPUT_ACTIVITY_RATIO),
-            ],
+            make_events=lambda old, _new: LINE_EXTRAS.build_events(old),
         ),
     ]
 
