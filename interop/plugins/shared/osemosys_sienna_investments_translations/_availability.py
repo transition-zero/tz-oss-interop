@@ -27,13 +27,18 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._series imp
     build_series_event,
 )
 from interop.plugins.shared.osemosys_sienna_translations import OperationsYear
-from interop.plugins.shared.osemosys_sienna_translations._availability import build_availability
+from interop.plugins.shared.osemosys_sienna_translations._availability import (
+    Availability,
+    build_availability,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technologies import AVAILABILITY_FACTOR
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 
 _OWNER = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
+_EACH_TIMESLICE = "each timeslice of each year"
 _SERIES_DERIVATION = (
     "capacity_factor of the timeslice of each hour × availability_factor of the year, per unit "
     "of the capacity, in each year of the plan, over the representative days of the earliest year"
@@ -48,19 +53,20 @@ def build_availability_series(
 ) -> list[PortfolioSeries]:
     """One series for each year, for each candidate whose share is not one in some hour."""
     technologies = candidates.select(REGION, TECHNOLOGY, CANDIDATE_NAME)
-    tables = {
-        year: build_availability(state, operations, technologies, CANDIDATE_NAME).series
+    availability = {
+        year: build_availability(state, operations, technologies, CANDIDATE_NAME)
         for year, operations in plan_years.items()
     }
-    varying = _list_varying(tables.values())
-    _record_series(candidates.filter(pl.col(CANDIDATE_NAME).is_in(varying)), recorder)
+    varying = _list_varying(found.series for found in availability.values())
+    varied = candidates.filter(pl.col(CANDIDATE_NAME).is_in(varying))
+    _record_series(varied, _build_yearly_factors(availability), recorder)
     return [
         PortfolioSeries(
             str(_OWNER),
             year,
-            table.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(varying)).lazy(),
+            found.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(varying)).lazy(),
         )
-        for year, table in tables.items()
+        for year, found in availability.items()
     ]
 
 
@@ -72,10 +78,23 @@ def _list_varying(tables: Iterable[pl.DataFrame]) -> list[str]:
     return sorted(names)
 
 
-def _record_series(candidates: pl.DataFrame, recorder: ScopedRecorder) -> None:
+def _build_yearly_factors(availability: Mapping[int, Availability]) -> dict[str, dict[str, float]]:
+    """The availability_factor of each candidate, keyed by the year."""
+    factors: dict[str, dict[str, float]] = {}
+    for year, found in availability.items():
+        for name, factor in found.table.select(CANDIDATE_NAME, AVAILABILITY_FACTOR).iter_rows():
+            factors.setdefault(name, {})[str(year)] = factor
+    return factors
+
+
+def _record_series(
+    candidates: pl.DataFrame, factors: Mapping[str, dict[str, float]], recorder: ScopedRecorder
+) -> None:
     for name, report_name in candidates.select(CANDIDATE_NAME, REPORT_NAME).iter_rows():
         sources = [
-            build_osemosys_field(parameter, report_name, EACH_YEAR)
-            for parameter in (SupplyParameter.CAPACITY_FACTOR, SupplyParameter.AVAILABILITY_FACTOR)
+            build_osemosys_field(SupplyParameter.CAPACITY_FACTOR, report_name, _EACH_TIMESLICE),
+            build_osemosys_field(
+                SupplyParameter.AVAILABILITY_FACTOR, report_name, EACH_YEAR, factors.get(name)
+            ),
         ]
         recorder.append(build_series_event(_OWNER, name, sources, _SERIES_DERIVATION))

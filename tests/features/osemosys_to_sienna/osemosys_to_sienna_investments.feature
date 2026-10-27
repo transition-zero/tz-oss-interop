@@ -543,6 +543,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" with 48 values that peak at 400
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2030" with 48 values that peak at 0.8
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2035" with 48 values that peak at 0.9
+    And the file "decisions.md" contains "`osemosys.capacity_factor.R1/ATSOLAR.each timeslice of each year`<br>`osemosys.availability_factor.R1/ATSOLAR.each year` = {'2030': 1.0, '2035': 1.0}"
 
   Scenario: The demand of a later year takes the representative days of the earliest year
     The expansion weights each year by the representative days of the earliest year. So the
