@@ -16,8 +16,9 @@ unit and the members. A record holds one limit for each year in scope that state
 
 A technology member takes the name of its component: the technology, after its region when two
 regions hold a technology of that name and kind. A fuel member takes the name of its bus, which
-is the region and the fuel. A tag keeps the value of the earliest year that states one. Each
-value of a year with a limit that differs from it is reported.
+is the region and the fuel. A tag keeps the value of the earliest year that states one, and a
+region group keeps the regions of the earliest year that states one. Each value of a year with a
+limit that differs from the kept one is reported.
 """
 
 from __future__ import annotations
@@ -116,6 +117,13 @@ _MEMBER_ORDER = "member_order"
 # The region and the member of a tag, which name it in an event and a warning.
 _TAG_NAME = "tag_name"
 _TAGS_LABEL = "Tags"
+# The columns of the membership check: the regions of a group in one year, and the kept ones.
+_REGIONS = "regions"
+_KEPT_REGIONS = "kept_regions"
+_KEPT_YEAR = "kept_year"
+_GROUP_YEAR = "group_year"
+_REGION_LIST_SEPARATOR = ", "
+_GROUPS_LABEL = "Region groups"
 
 
 class MemberRule(StrEnum):
@@ -255,7 +263,8 @@ class _PolicyInputs:
     scope: LimitScope
     emitters: pl.DataFrame  # region, pollutant and the name of each technology that emits it
     tags: dict[str, pl.DataFrame]  # each tag parameter: its members, as `_read_tags` reads them
-    groups: pl.DataFrame  # region_group and region of each membership
+    groups: pl.DataFrame  # region_group, region and year of the kept membership
+    memberships: pl.DataFrame  # region_group, region and year of each membership
 
 
 def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Policies:
@@ -265,13 +274,16 @@ def build_policies(state: State, years: Sequence[int], units: ModelUnits) -> Pol
         return policies
     inputs = _read_inputs(state, LimitScope(years, units))
     limited: list[pl.DataFrame] = []
+    grouped: list[pl.DataFrame] = []
     for spec in POLICY_SPECS:
         limits = _read_record_limits(state, inputs, spec)
         if limits.is_empty():
             continue
         policies.add(_build_spec_policies(inputs, spec, limits))
-        limited.append(_list_tagged_years(inputs, spec, limits))
+        limited.append(_build_tagged_years(inputs, spec, limits))
+        grouped.append(_build_group_years(spec, limits))
     policies.checks.extend(_build_tag_checks(state, inputs, limited))
+    policies.checks.extend(_build_membership_checks(inputs, grouped))
     return policies
 
 
@@ -295,11 +307,13 @@ def set_policies_persisted(state: State, policies: Policies) -> None:
 
 def _read_inputs(state: State, scope: LimitScope) -> _PolicyInputs:
     tag_parameters = {tag for spec in POLICY_SPECS for tag in spec.tags}
+    memberships = _read_memberships(state, scope.years)
     return _PolicyInputs(
         scope=scope,
         emitters=_read_emitters(state, scope.years),
         tags={tag: _read_tags(state, scope.years, tag) for tag in sorted(tag_parameters)},
-        groups=_read_group_regions(state, scope.years),
+        groups=_drop_later_memberships(memberships),
+        memberships=memberships,
     )
 
 
@@ -353,17 +367,23 @@ def _read_technology_names(state: State) -> pl.DataFrame:
     return pl.concat(named).drop(AnnotationColumn.KIND)
 
 
-def _read_group_regions(state: State, years: Sequence[int]) -> pl.DataFrame:
-    """The regions of each region group, in any year."""
+def _read_memberships(state: State, years: Sequence[int]) -> pl.DataFrame:
+    """The regions of each region group, in each year that states one."""
     return (
         read_parameter_for_years(state, PolicyParameter.REGION_GROUP_TAG_REGION, years)
         .lazy()
         .filter(pl.col(VALUE_COL) == MEMBERSHIP_FLAG)
-        .select(REGION_GROUP, REGION)
+        .select(REGION_GROUP, REGION, pl.col(YEAR).cast(pl.Int64))
         .unique()
-        .sort(REGION_GROUP, REGION)
+        .sort(REGION_GROUP, YEAR, REGION)
         .collect()
     )
+
+
+def _drop_later_memberships(memberships: pl.DataFrame) -> pl.DataFrame:
+    """The regions of each region group in the earliest year that states one."""
+    earliest = pl.col(YEAR) == pl.col(YEAR).min().over(REGION_GROUP)
+    return memberships.filter(earliest)
 
 
 # --- the limits of the records of one policy ---------------------------------------------------
@@ -524,9 +544,11 @@ def _list_held_rows(
         parameters.extend((spec.horizon.limit, spec.horizon.exogenous))
     held = [HeldRows(parameter, keys) for parameter in parameters if parameter is not None]
     if MemberRule.GROUP_REGIONS in spec.members:
-        regions = inputs.groups.join(keys, on=REGION_GROUP, how="semi")
-        held.append(HeldRows(PolicyParameter.REGION_GROUP_TAG_REGION, regions))
-    regions = _list_tagged_regions(inputs, spec, keys)
+        regions = inputs.memberships.join(keys, on=REGION_GROUP, how="semi")
+        held.append(
+            HeldRows(PolicyParameter.REGION_GROUP_TAG_REGION, regions.select(REGION_GROUP, REGION))
+        )
+    regions = _build_tagged_regions(inputs, spec, keys)
     for tag in spec.tags:
         tags = inputs.tags[tag]
         rows = tags.join(regions, on=REGION, how="semi").select(
@@ -536,7 +558,7 @@ def _list_held_rows(
     return held
 
 
-def _list_tagged_regions(
+def _build_tagged_regions(
     inputs: _PolicyInputs, spec: PolicySpec, keys: pl.DataFrame
 ) -> pl.DataFrame:
     """The regions whose tags the records of `keys` count."""
@@ -630,7 +652,8 @@ def _build_group_region_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl
 def _build_group_tag_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
     """The tagged members of the regions of each group."""
     return [
-        inputs.groups.join(rows, on=REGION).drop(REGION) for rows in _build_tag_rows(inputs, spec)
+        inputs.groups.select(REGION_GROUP, REGION).join(rows, on=REGION).drop(REGION)
+        for rows in _build_tag_rows(inputs, spec)
     ]
 
 
@@ -645,20 +668,19 @@ _MEMBER_BUILDERS: dict[MemberRule, Callable[[_PolicyInputs, PolicySpec], list[pl
 # --- the tags that change by year --------------------------------------------------------------
 
 
-def _list_tagged_years(
+def _build_tagged_years(
     inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame
 ) -> pl.DataFrame:
     """Each tag of the policy, with each region and year in which a record counts it."""
     if not spec.tags:
         return pl.DataFrame()
     yearly = limits.filter(pl.col(YEAR).is_not_null())
-    regions = _list_tagged_regions(inputs, spec, yearly.select(spec.keys).unique())
+    regions = _build_tagged_regions(inputs, spec, yearly.select(spec.keys).unique())
     if REGION in yearly.columns:
         years = yearly.select(REGION, YEAR)
     else:
-        years = inputs.groups.join(yearly.select(REGION_GROUP, YEAR), on=REGION_GROUP).select(
-            REGION, YEAR
-        )
+        groups = inputs.groups.select(REGION_GROUP, REGION)
+        years = groups.join(yearly.select(REGION_GROUP, YEAR), on=REGION_GROUP).select(REGION, YEAR)
     tagged = years.join(regions, on=REGION, how="semi").unique()
     return pl.concat(
         [tagged.with_columns(pl.lit(tag).alias(_LIMIT_PARAMETER)) for tag in spec.tags]
@@ -722,4 +744,73 @@ _EMISSION_DERIVATION = (
 _DERIVATION = (
     "the limit of the policy as the model states it, which an operations system has no field "
     "for; a PyPSA GlobalConstraint states it"
+)
+
+
+# --- the regions of a region group that change by year -----------------------------------------
+
+
+def _build_group_years(spec: PolicySpec, limits: pl.DataFrame) -> pl.DataFrame:
+    """Each region group of the policy, with each year in which a record counts its regions."""
+    if MemberRule.GROUP_REGIONS not in spec.members:
+        return pl.DataFrame()
+    return limits.filter(pl.col(YEAR).is_not_null()).select(REGION_GROUP, YEAR).unique()
+
+
+def _build_membership_checks(
+    inputs: _PolicyInputs, grouped: Sequence[pl.DataFrame]
+) -> list[NotMappedCheck]:
+    """One check of the regions of each region group in each year with a limit."""
+    years = [table for table in grouped if not table.is_empty()]
+    if not years:
+        return []
+    limited = pl.concat(years).unique()
+    rows = (
+        limited.join(_build_region_lists(inputs.memberships), on=[REGION_GROUP, YEAR], how="left")
+        .join(_build_kept_regions(inputs.groups), on=REGION_GROUP, how="left")
+        .with_columns(
+            pl.col(_REGIONS).fill_null(""),
+            pl.concat_str(REGION_GROUP, YEAR, separator=REGION_NAME_SEPARATOR).alias(_GROUP_YEAR),
+        )
+        .sort(REGION_GROUP, YEAR)
+    )
+    rule = SkipRule(keep=pl.col(_REGIONS) == pl.col(_KEPT_REGIONS), report=_MEMBERSHIP_REPORT)
+    return [NotMappedCheck(rows, rule)]
+
+
+def _build_region_lists(memberships: pl.DataFrame) -> pl.DataFrame:
+    """The regions of each region group in each year, as one sorted list in text."""
+    return memberships.group_by(REGION_GROUP, YEAR).agg(
+        pl.col(REGION).sort().str.join(_REGION_LIST_SEPARATOR).alias(_REGIONS)
+    )
+
+
+def _build_kept_regions(groups: pl.DataFrame) -> pl.DataFrame:
+    return groups.group_by(REGION_GROUP).agg(
+        pl.col(REGION).sort().str.join(_REGION_LIST_SEPARATOR).alias(_KEPT_REGIONS),
+        pl.col(YEAR).first().alias(_KEPT_YEAR),
+    )
+
+
+def _build_membership_note(row: dict[str, Any]) -> str:
+    return (
+        f"the regions of {row[YEAR]}; each constraint record of {row[REGION_GROUP]} counts "
+        f"{row[_KEPT_REGIONS]}, the regions of {row[_KEPT_YEAR]}"
+    )
+
+
+_MEMBERSHIP_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=REGION_GROUP,
+    name_col=REGION_GROUP,
+    reason=(
+        "hold other regions in a year with a limit than in the earliest year that states them, "
+        "and each constraint record keeps the regions of that earliest year"
+    ),
+    counted_noun="year(s) of a region group",
+    note=_build_membership_note,
+    listed=SkippedNames(column=_GROUP_YEAR, label=_GROUPS_LABEL),
+    attribute_col=_REGIONS,
+    attribute_name=PolicyParameter.REGION_GROUP_TAG_REGION,
 )
