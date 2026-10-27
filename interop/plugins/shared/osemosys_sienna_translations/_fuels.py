@@ -17,10 +17,10 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     AnnotationColumn,
 )
-from interop.plugins.shared.osemosys_sienna_translations._buses import FUEL_NAME
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_annotations
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 
+FUEL_NAME = "fuel_name"
 FUEL_BUS = "fuel_bus"
 FUEL_CARRIER = "fuel_carrier"
 FUEL_LOCATION = "fuel_location"
