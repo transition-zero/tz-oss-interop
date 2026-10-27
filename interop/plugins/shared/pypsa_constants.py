@@ -437,6 +437,10 @@ PYPSA_GENERATOR_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSAGeneratorCol.EFFICIENCY: 1.0,
     PyPSAGeneratorCol.MARGINAL_COST: 0.0,
     PyPSAGeneratorCol.CARRIER: "",
+    PyPSAGeneratorCol.COMMITTABLE: False,
+}
+PYPSA_LOAD_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSALoadCol.P_SET: 0.0,
 }
 PYPSA_STORAGE_UNIT_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSAStorageUnitCol.P_NOM: 0.0,

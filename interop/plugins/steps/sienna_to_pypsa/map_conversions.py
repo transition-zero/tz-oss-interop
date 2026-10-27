@@ -120,11 +120,11 @@ def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> N
     record_carried_fields(reporter, ExtensionKind.CONVERSION, record, CONVERSION_CARRIED)
     record_p_nom_min(reporter, ExtensionKind.CONVERSION, record.name, _choose_floor(record))
     if record.p_nom is None:
-        reporter.record_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
+        reporter.record_unstated_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
     if record.efficiency is None:
-        reporter.record_default(record.name, PyPSALinkCol.EFFICIENCY, _DEFAULT_EFFICIENCY)
-    reporter.record_default(record.name, PyPSALinkCol.P_MIN_PU, _P_MIN_PU)
-    reporter.record_default(record.name, PyPSALinkCol.ACTIVE, _ACTIVE)
+        reporter.record_unstated_default(record.name, PyPSALinkCol.EFFICIENCY, _DEFAULT_EFFICIENCY)
+    reporter.record_unstated_default(record.name, PyPSALinkCol.P_MIN_PU, _P_MIN_PU)
+    reporter.record_unstated_default(record.name, PyPSALinkCol.ACTIVE, _ACTIVE)
 
 
 def _build_link_row(record: ConversionExtension) -> dict[str, Any]:

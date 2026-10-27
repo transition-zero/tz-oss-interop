@@ -180,13 +180,13 @@ _TAKEN_NAME_NOTE = (
     "a link of the network has the name of the conversion record, so the record becomes no "
     "link and travels on to extensions.json"
 )
-_DEFAULT_LINK_NOTE = "the conversion record states no {column}, so PyPSA's own default applies"
 
 
 class ConversionReporter(SiennaToPypsaReporter):
     """Records a conversion record of the sidecar that becomes a PyPSA Link."""
 
     destination_component = PyPSAComponent.LINK
+    unstated_record = "conversion"
 
     def record_name_taken(self, name: str) -> None:
         self._not_mapped(
@@ -194,20 +194,8 @@ class ConversionReporter(SiennaToPypsaReporter):
             note=_TAKEN_NAME_NOTE,
         )
 
-    def record_default(self, name: str, column: str, value: object) -> None:
-        self._default_applied(
-            destinations=[self._destination(name, column, value)],
-            note=_DEFAULT_LINK_NOTE.format(column=column),
-        )
-
     def record_p_nom_min(self, sienna_type: str, name: str, p_nom: float) -> None:
-        self._derived(
-            sources=[
-                self._source_field(sienna_type, name, f"{EXTENSIONS_PREFIX}p_nom", p_nom, UNIT_MW)
-            ],
-            destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
-            derivation=P_NOM_FLOOR_DERIVATION,
-        )
+        self._record_stated_floor(sienna_type, name, p_nom)
 
 
 _PLANT_LINK_NOTE = (

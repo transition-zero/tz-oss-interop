@@ -8,6 +8,7 @@ sidecar states and a PyPSA column takes as it is goes through ``record_carried``
 
 from interop.plugins.shared.sienna_pypsa_translations.reporters.buses import BusReporter
 from interop.plugins.shared.sienna_pypsa_translations.reporters.generators import (
+    FuelGeneratorReporter,
     GeneratorReporter,
     ThermalLimit,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "BusReporter",
     "ConversionReporter",
     "ExtensionRelayReporter",
+    "FuelGeneratorReporter",
     "GeneratorReporter",
     "LineReporter",
     "LinkReporter",
