@@ -109,6 +109,16 @@ def when_dispatch_expand_with_every_answer(
     )
 
 
+@when(parsers.parse('I dispatch the expand command for "{path}" accepting the download'))
+def when_dispatch_expand_accepting_download(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    invoke_expand(monkeypatch, path, download_consent=True)
+
+
+@when(parsers.parse('I dispatch the expand command for "{path}" declining the download'))
+def when_dispatch_expand_declining_download(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    invoke_expand(monkeypatch, path, download_consent=False)
+
+
 @when(
     parsers.parse('I dispatch the expand command for "{path}" and cancel the balance model prompt')
 )

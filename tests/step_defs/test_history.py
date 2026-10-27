@@ -271,6 +271,58 @@ def when_replay_last_pypsa_solve(monkeypatch: pytest.MonkeyPatch, isolated_histo
     )
 
 
+@when(
+    parsers.parse(
+        'I run an expansion from the menu for "{path}" with balance model "{balance_model}" '
+        'investment treatment "{investment_treatment}" and discount rate "{discount_rate}"'
+    )
+)
+def when_run_expansion_from_menu(
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    balance_model: str,
+    investment_treatment: str,
+    discount_rate: str,
+) -> None:
+    invoke_run(
+        monkeypatch,
+        [
+            "solve",
+            "sienna-investments",
+            balance_model,
+            investment_treatment,
+            "simplex",
+            "choose",
+            "choose",
+            "quit",
+        ],
+        extra_path_answers={
+            "Path to the PowerSystemsInvestments portfolio JSON?": path,
+            "Output directory?": "expanded",
+        },
+        **{"Discount rate": discount_rate},
+    )
+
+
+@when("I replay the last expansion invocation")
+def when_replay_last_expansion(monkeypatch: pytest.MonkeyPatch, isolated_history: Path) -> None:
+    invocation = _last_invocation(isolated_history, "solve")
+    invoke_run(
+        monkeypatch,
+        [
+            "history",
+            invocation,
+            "sienna-investments",
+            "multi-region",
+            "continuous",
+            "simplex",
+            "choose",
+            "choose",
+            "quit",
+        ],
+    )
+
+
 @when("I replay the recorded solve invocation")
 def when_replay_recorded_solve(
     monkeypatch: pytest.MonkeyPatch, recorded_invocation: dict[str, Any]

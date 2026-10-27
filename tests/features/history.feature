@@ -84,6 +84,20 @@ Feature: REPL history records and re-runs past invocations
     When I replay the last PyPSA solve invocation
     Then the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered default "penalised"
 
+  Scenario: an expansion records its answers, and a replay offers them again
+    Given a fake expansion adapter in project plugins
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I run an expansion from the menu for "outputs/portfolio.json" with balance model "nodal" investment treatment "integer" and discount rate "0.07"
+    Then the history file records a "solve" invocation with detail "balance_model" set to "nodal"
+    And the history file records a "solve" invocation with detail "investment_treatment" set to "integer"
+    And the history file records a "solve" invocation with detail "discount_rate" set to "0.07"
+    When I replay the last expansion invocation
+    Then the prompt "Path to the PowerSystemsInvestments portfolio JSON?" offered default "outputs/portfolio.json"
+    And the select prompt "Balance model? (single-region = one zone; multi-region = zone by zone; nodal = bus by bus)" offered default "nodal"
+    And the select prompt "Investment treatment? (continuous = build any amount of capacity; integer = build whole units only, which is slower)" offered default "integer"
+    And the prompt "Discount rate?" offered default "0.07"
+
   Scenario: a compare run records its answers in the history file
     Given a compare-ready working directory
     When I run from the menu a compare of pypsa against sienna

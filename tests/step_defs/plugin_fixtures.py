@@ -410,6 +410,13 @@ def given_fake_expansion_plugin() -> None:
     )
 
 
+@given("a fake expansion adapter in project plugins that is not provisioned")
+def given_unprovisioned_fake_expansion_plugin() -> None:
+    write_project_plugin(
+        "adapters", "fake_expansion", _FAKE_EXPANSION_TEMPLATE.format(provisioned=False)
+    )
+
+
 @given("a staging probe step plugin")
 def given_staging_probe_step_plugin() -> None:
     write_project_plugin("steps", "staging_probe", _STAGING_PROBE_STEP_PY)

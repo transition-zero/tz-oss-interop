@@ -217,3 +217,20 @@ Feature: solve command runs the Sienna solver on a translated model
     And adapters.yaml binds expansion to "fake_expansion"
     When I dispatch the expand command for "missing.json"
     Then a user error is printed containing "file not found"
+
+  Scenario: a missing expansion environment names the investments packages and proceeds when accepted
+    Given a fake expansion adapter in project plugins that is not provisioned
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I dispatch the expand command for "outputs/portfolio.json" accepting the download
+    Then the printed output contains "Julia and the PowerSystemsInvestments.jl packages will be downloaded"
+    And the printed output contains "SUCCESSFULLY_FINALIZED"
+
+  Scenario: declining the expansion download cancels the expansion
+    Given a fake expansion adapter in project plugins that is not provisioned
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I dispatch the expand command for "outputs/portfolio.json" declining the download
+    Then the printed output contains "Solve cancelled"
+    And the printed output does not contain "SUCCESSFULLY_FINALIZED"
+    And the file "outputs/expansion-call.txt" does not exist
