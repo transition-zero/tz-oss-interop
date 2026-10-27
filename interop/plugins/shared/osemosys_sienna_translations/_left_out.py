@@ -17,7 +17,6 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     ELECTRICITY_CARRIER,
     FUEL,
-    OSEMOSYS_FRAMEWORK,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -27,7 +26,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TechnologyKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     TECHNOLOGY_COUNTED_NOUN,
 )
@@ -35,6 +33,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
@@ -44,7 +43,7 @@ from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
     SkipRule,
-    filter_component,
+    drop_skipped,
 )
 
 IS_ALL_ELECTRICITY = "is_all_electricity"
@@ -57,9 +56,7 @@ _KIND = pl.col(AnnotationColumn.KIND)
 
 
 def _build_skip(reason: str, note: str) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=TECHNOLOGY,
         name_col=TECHNOLOGY_NAME,
         reason=reason,
@@ -87,7 +84,7 @@ def report_left_out_technologies(
 ) -> None:
     """Record one COMPONENT_SKIPPED for each export of electricity, and warn once."""
     technologies = read_left_out_technologies(state, operations)
-    filter_component(technologies, _SKIP_RULE.keep, _SKIP_RULE.report, recorder)
+    drop_skipped(technologies, [_SKIP_RULE], recorder)
 
 
 def read_left_out_technologies(state: State, operations: OperationsYear) -> pl.DataFrame:
