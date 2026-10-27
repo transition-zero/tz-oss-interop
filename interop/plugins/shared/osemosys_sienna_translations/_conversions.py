@@ -16,7 +16,7 @@ which `_transport` builds.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -396,11 +396,30 @@ def _build_route(row: dict[str, Any]) -> ConversionExtension:
 # --- the events --------------------------------------------------------------------------------
 
 
+class _LinkSource(NamedTuple):
+    """One source value of a field of a conversion record: its parameter, the column of the
+    source table that holds it, and the attribute that the event names."""
+
+    parameter: str
+    column: str
+    attribute: str | None
+
+
+class _LinkValue(NamedTuple):
+    """One field of a conversion record that the PyPSA Link states, and how it is derived."""
+
+    field: str
+    value: Any
+    unit: str | None
+    sources: list[_LinkSource]
+    derivation: str
+
+
 def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[TranslationEvent]:
     link = [
-        _build_link_event(row, name, value, unit, sources, derivation)
-        for name, value, unit, sources, derivation in _list_link_values(record)
-        if value is not None
+        _build_link_event(row, value)
+        for value in _list_link_values(record)
+        if value.value is not None
     ]
     return [
         *link,
@@ -410,81 +429,83 @@ def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[Tran
     ]
 
 
-def _list_link_values(
-    record: ConversionExtension,
-) -> list[tuple[str, Any, str | None, list[str], str]]:
+def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
     return [
-        ("bus0", record.bus0, None, [FlowParameter.INPUT_ACTIVITY_RATIO], _BUS0_DERIVATION),
-        ("bus1", record.bus1, None, [FlowParameter.OUTPUT_ACTIVITY_RATIO], _BUS1_DERIVATION),
-        (
+        _LinkValue("bus0", record.bus0, None, [_INPUT], _BUS0_DERIVATION),
+        _LinkValue("bus1", record.bus1, None, [_OUTPUT], _BUS1_DERIVATION),
+        _LinkValue(
             "input_fuel",
             record.input_fuel,
             None,
-            [FlowParameter.INPUT_ACTIVITY_RATIO],
+            [_INPUT],
             _INPUT_FUEL_DERIVATION,
         ),
-        (
+        _LinkValue(
             "output_fuel",
             record.output_fuel,
             None,
-            [FlowParameter.OUTPUT_ACTIVITY_RATIO],
+            [_OUTPUT],
             _OUTPUT_FUEL_DERIVATION,
         ),
-        (
+        _LinkValue(
             _P_NOM,
             record.p_nom,
             UNIT_MW,
-            [SupplyParameter.RESIDUAL_CAPACITY, FlowParameter.INPUT_ACTIVITY_RATIO],
+            [_RESIDUAL, _INPUT],
             _P_NOM_DERIVATION,
         ),
-        (
+        _LinkValue(
             _EFFICIENCY,
             record.efficiency,
             None,
-            [FlowParameter.OUTPUT_ACTIVITY_RATIO, FlowParameter.INPUT_ACTIVITY_RATIO],
+            [_OUTPUT, _INPUT],
             _EFFICIENCY_DERIVATION,
         ),
-        (
+        _LinkValue(
             _MARGINAL_COST,
             record.marginal_cost,
             UNIT_DOLLARS_PER_MWH,
-            [SupplyParameter.VARIABLE_OPERATION_COST, FlowParameter.INPUT_ACTIVITY_RATIO],
+            [_COST, _INPUT],
             _MARGINAL_COST_DERIVATION,
         ),
-        (
+        _LinkValue(
             "p_max_pu",
             record.p_max_pu,
             None,
-            [SupplyParameter.AVAILABILITY_FACTOR],
+            [_AVAILABILITY],
             _P_MAX_PU_DERIVATION,
         ),
     ]
 
 
-def _build_link_event(
-    row: dict[str, Any],
-    name: str,
-    value: Any,
-    unit: str | None,
-    parameters: list[str],
-    derivation: str,
-) -> TranslationEvent:
+def _build_link_event(row: dict[str, Any], value: _LinkValue) -> TranslationEvent:
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=[
-            build_osemosys_field(parameter, row[TECHNOLOGY_NAME], _OPERATIONS_MODE)
-            for parameter in parameters
+            build_osemosys_field(
+                source.parameter, row[TECHNOLOGY_NAME], source.attribute, row[source.column]
+            )
+            for source in value.sources
         ],
         destinations=[
             build_sienna_field(
-                ExtensionKind.CONVERSION, row[CONVERSION_NAME], f"extensions.{name}", value, unit
+                ExtensionKind.CONVERSION,
+                row[CONVERSION_NAME],
+                f"extensions.{value.field}",
+                value.value,
+                value.unit,
             )
         ],
-        derivation=derivation,
+        derivation=value.derivation,
     )
 
 
 _OPERATIONS_MODE = "electricity at the operations mode"
+_INPUT = _LinkSource(FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _OPERATIONS_MODE)
+_OUTPUT = _LinkSource(FlowParameter.OUTPUT_ACTIVITY_RATIO, OUTPUT_RATIO, _OPERATIONS_MODE)
+_RESIDUAL = _LinkSource(SupplyParameter.RESIDUAL_CAPACITY, RESIDUAL_CAPACITY, None)
+_COST = _LinkSource(SupplyParameter.VARIABLE_OPERATION_COST, VARIABLE_COST, "the operations mode")
+_AVAILABILITY = _LinkSource(SupplyParameter.AVAILABILITY_FACTOR, AVAILABILITY_FACTOR, None)
 _BUS0_DERIVATION = "the bus of the electricity fuel that the technology takes in, <region>/<fuel>"
 _BUS1_DERIVATION = (
     "the bus of the electricity fuel that the technology puts out; an export puts out none"

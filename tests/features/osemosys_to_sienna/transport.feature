@@ -379,6 +379,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.bus1` = R1/ATELECLV |"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "bus0" set to "R1/ATELEC"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" without field "bus1"
+      And the file "decisions.md" contains "| `osemosys.residual_capacity.R1/ATEXPORT` = 0.0<br>`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0 | `sienna.conversion.ATEXPORT.extensions.p_nom` = 0.0 MW |"
       And the log does not contain "lifetime states"
 
   Rule: A mode of a transport technology that imports electricity becomes a generator at the end where it puts electricity out

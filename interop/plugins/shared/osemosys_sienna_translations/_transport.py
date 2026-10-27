@@ -230,6 +230,13 @@ class _EndColumns(NamedTuple):
     ratio: str
 
 
+class _FactoredLines(NamedTuple):
+    """The lines, with whether each has a capacity factor series, and the series."""
+
+    lines: pl.DataFrame
+    series: pl.DataFrame
+
+
 _FROM = _EndColumns(FROM_LOCATION, FROM_LOCATIONS, FROM_BUS, FROM_BUSES, FROM_FUEL, INPUT_RATIO)
 _TO = _EndColumns(TO_LOCATION, TO_LOCATIONS, TO_BUS, TO_BUSES, TO_FUEL, OUTPUT_RATIO)
 
@@ -366,9 +373,9 @@ def build_transport_source(
     lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
     report_one_way_lines(lines, recorder)
-    lines, series = _enrich_capacity_factors(state, operations, lines)
-    import_sources = build_imports_source(state, operations, imports, lines)
-    return TransportSources(lines.sort(LINE_NAME), series, import_sources)
+    factored = _enrich_capacity_factors(state, operations, lines)
+    import_sources = build_imports_source(state, operations, imports, factored.lines)
+    return TransportSources(factored.lines.sort(LINE_NAME), factored.series, import_sources)
 
 
 def build_line_extensions(lines: pl.DataFrame) -> list[ControllableLineExtension]:
@@ -412,7 +419,7 @@ def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
 
 def _enrich_capacity_factors(
     state: State, operations: OperationsYear, lines: pl.DataFrame
-) -> tuple[pl.DataFrame, pl.DataFrame]:
+) -> _FactoredLines:
     """The capacity factor of each hour of each line that has a limit, and whether a line with
     no limit leaves out a derate that the model states."""
     limited = lines.filter(~pl.col(IS_UNLIMITED))
@@ -425,11 +432,12 @@ def _enrich_capacity_factors(
     stated = read_parameter(state, SupplyParameter.CAPACITY_FACTOR, operations.year)
     has_factors = pl.struct(_KEYS).is_in(stated.select(_KEYS).unique().to_struct().implode())
     is_derated = has_factors | (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
-    return lines.with_columns(
+    factored = lines.with_columns(
         express_has_capacity_factors(series, LINE_NAME).alias(HAS_CAPACITY_FACTORS),
         has_factors.alias(HAS_STATED_FACTORS),
         (pl.col(IS_UNLIMITED) & is_derated).alias(HAS_DROPPED_DERATE),
-    ), series
+    )
+    return _FactoredLines(factored, series)
 
 
 def _enrich_extension_values(
