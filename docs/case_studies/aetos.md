@@ -397,8 +397,10 @@ If Julia and the PowerSimulations.jl packages are not installed, the prompt
 downloads and compiles the packages.
 
 The system has no AC line, so use the network model `copperplate`. The network model `dcp`
-needs AC branches. The fleet of 2021 is short of the peak load in two countries. The answer
-`penalised` at the `Unserved energy?` prompt lets the solve leave that load unserved.
+needs AC branches. In two countries, `MR` and `GW`, the only producer of gas is a backstop. It
+prices the gas of their plants above the penalty of unserved energy, so the solve does not run
+them. The answer `penalised` at the `Unserved energy?` prompt lets the solve leave that load
+unserved. The translation now leaves these plants out, and reports each one.
 
 The solve covers 96 hours: four representative days of 24 hours, one for each season of 2021.
 The run gives this result:
@@ -591,7 +593,7 @@ The run gives this result:
 
 The summary line is `[OK]  status=optimal  objective=5.54311e+09  unserved_energy=2367.51 MWh`.
 The conversion lines lose about 398 TWh in the year, so the plants make that much more, and
-the short countries `MR` and `GW` are shorter than in the Sienna solve.
+`MR` and `GW` leave more load unserved than in the Sienna solve.
 Every bus of a fuel balances, so no gas, coal or oil goes unserved. The objective is higher than
 the objective of the network with no fuels, 1.84617 × 10⁹ USD, because it pays for the gas that
 the 42 gas loads take.
@@ -733,10 +735,10 @@ PyPSA removes four causes:
 
 These causes remain:
 
-- **The residual fleet.** `MR` and `GW` have unserved energy: 1,141.1 MWh in the 96 hours in
-  Sienna, and 2,367.5 MWh in PyPSA, which must also cover the conversion losses. The
-  published solve builds 3.1 GW of power plants in 2021. Of this, 2.5 GW is `ZAWINDPN1`,
-  onshore wind.
+- **The unserved energy.** `MR` and `GW` have unserved energy: 1,141.1 MWh in the 96 hours in
+  Sienna, and 2,367.5 MWh in PyPSA, which must also cover the conversion losses. The only
+  producer of the gas of the two countries is a backstop with no capacity in 2021.
+  [The comparison report](aetos-comparison.md#the-sienna-dispatch) gives the cause.
 - **The emissions.** The emissions are 243.0 Mt higher than published. `coal` makes 756.3 TWh
   against 568.2 TWh published, and `oil-steam` and `other-gas` make less. The negative
   emissions of `UACO2` and `ALCO2`, which the gas pipelines from outside the model state, are
@@ -748,11 +750,11 @@ These causes remain:
   published results. `HUELUAPH1` alone carries 16.0 TWh.
 - **The storage cycle.** Pumped storage makes 0.6 TWh in PyPSA, 8.9 TWh in Sienna and
   48.1 GWh in the published results. Its capacity is 42.9 GW in each dispatch against
-  51.6 GW published. The storage units are not cyclic, so the dispatch can empty the level
-  that they hold at the start. The results then multiply each hour of that output by the
-  weight of its day.
+  51.6 GW published. AETOS states no `StorageLevelStart`, so each storage starts empty, and
+  each MWh of its output comes from energy that it takes in during the 96 hours.
 
-We did not measure the cause of the low output of `oil-steam` and `other-gas`.
+We did not measure the cause of the storage output, or of the low output of `oil-steam` and
+`other-gas`.
 
 ## Expand the portfolio
 
@@ -915,7 +917,8 @@ are the entries that explain the large differences above:
   [Limits on activity and energy](../translation_mappings/osemosys-to-sienna-gap-analysis.md#limits-on-activity-and-energy).
 - **The trade is two times the published trade in the Sienna dispatch.** A line has no cost in
   the system, and the solve applies no loss. The PyPSA dispatch applies both. The 21 imports
-  from outside the model do not happen in either dispatch. Refer to
+  from outside the model happen in both dispatches, but at less than a tenth of the published
+  69.4 TWh: 5.2 TWh in Sienna and 5.5 TWh in PyPSA. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices)
   and [Operating modes](../translation_mappings/osemosys-to-sienna-gap-analysis.md#operating-modes).
 - **The emissions are 613.7 Mt lower in the Sienna dispatch.** The published emissions also count the
@@ -923,11 +926,13 @@ are the entries that explain the large differences above:
   Sienna emissions are those of the power plants only. Refer to
   [Differences that are not a loss](../translation_mappings/osemosys-to-sienna-gap-analysis.md#differences-that-are-not-a-loss).
 - **Pumped storage has 8.8 GW less capacity and makes 8.8 TWh more.** Sienna rates a storage on
-  its electricity output, and the dispatch runs the days in time order. Refer to
+  its electricity output, and the dispatch runs the days in time order. We did not measure
+  the effect of the time order on the output. Refer to
   [Storage](../translation_mappings/osemosys-to-sienna-gap-analysis.md#storage).
-- **Two countries have unserved energy.** The published solve builds 3.1 GW in 2021. The
-  system holds the residual capacity of 2021 only, so `MR` and `GW` are short of their peak.
-  Refer to [The four structural losses](../translation_mappings/osemosys-to-sienna-gap-analysis.md#the-four-structural-losses).
+- **Two countries have unserved energy.** The only producer of the gas of `MR` and `GW` is a
+  backstop. Its cost prices the gas plants of the two countries above the penalty of unserved
+  energy, so the dispatch does not run them. Refer to
+  [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices).
 - **The expansion builds biomass, and the published solve builds wind and solar.** The package
   reads no availability profile for a thermal candidate, so a biomass plant can run at its full
   capacity in every hour. No emission limit binds, and the existing fleet does not retire. We

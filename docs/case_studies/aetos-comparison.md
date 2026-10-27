@@ -157,64 +157,81 @@ gas bus. The emissions fell by 108.5 Mt, and coal did not change.
 With both corrections in one test copy, PyPSA gave 567.5 TWh of coal and 1,449.4 Mt. The
 published values are 568.2 TWh and 1,459.1 Mt.
 
-**3. The imports from outside the model.** The 21 import generators make 5.5 TWh. In the
-published results, the import modes of the 21 lines import 69.4 TWh from outside the model.
-`HUELUAPH1` alone imports 16.0 TWh.
+**3. The price of the gas in `MR` and `GW`: the unserved energy.** The dispatch leaves
+2,367.5 MWh unserved in the 96 hours. Of this, 2,307.9 MWh is in `MR`, on its bus
+`REGION1/MRE3`. The fleet is not short: `MRNGCCPH1` alone has 319 MW, against the 239 MW peak
+of `MR`. In AETOS, the only producer of the gas of `MR` and `GW` is a backstop. It has no
+capacity in 2021, and the model may not build it at no cost. The translation leaves out each
+such mode of a fuel that is not electricity, so the gas bus of each country has no supply.
+These countries must also cover their conversion loss. We did not measure this cause in a test
+copy.
 
-**4. The categories that still differ after both corrections.** In the test copy with both
-corrections:
+**4. The storage rating.** Pumped storage has 42.9 GW, against 51.6 GW published, because a
+Sienna storage is rated on its electricity output.
 
-- `gas-steam` is 37.6 TWh above the published value.
-- `oil-steam` is 33.8 TWh below it.
-- `biomass` is 18.4 TWh below it.
-- `nuclear` is 15.0 TWh below it.
+### Differences with no measured cause
 
-The year-to-year limit also holds gas extraction, LNG and the gas pipelines. This can explain
-part of the `gas-steam` difference. We did not test it.
+We did not measure a cause for these differences of the PyPSA dispatch:
 
-**5. The residual fleet.** The system holds the residual capacity of 2021 only. The published
-run builds 3.1 GW of power plants in 2021, of which 2.5 GW is `ZAWINDPN1`. `MR` and `GW` are
-short of their peak load, so the dispatch leaves 2,367.5 MWh unserved in the 96 hours. Of this,
-2,307.9 MWh is in `MR`, on its bus `REGION1/MRE3`. These countries must also cover their conversion loss.
-
-**6. The storage.** Pumped storage has 42.9 GW, against 51.6 GW published, because a Sienna
-storage is rated on its electricity output. It makes 0.6 TWh, against 48.1 GWh published. The
-storage units are not cyclic, so the dispatch can empty the level that they hold at the start.
-The results then multiply each hour of that output by the weight of its day.
+- **The imports from outside the model.** The 21 import generators make 5.5 TWh. In the
+  published results, the import modes of the 21 lines import 69.4 TWh from outside the model.
+  `HUELUAPH1` alone imports 16.0 TWh.
+- **Four categories in the test copy with both corrections.** `gas-steam` is 37.6 TWh above the
+  published value. `oil-steam` is 33.8 TWh below it, `biomass` 18.4 TWh and `nuclear`
+  15.0 TWh. The year-to-year limit also holds gas extraction, LNG and the gas pipelines. This
+  can explain part of the `gas-steam` difference. We did not test it.
+- **`other-gas`.** It makes 3.3 TWh in the PyPSA dispatch, against 54.7 TWh published.
+- **The storage output.** Pumped storage makes 0.6 TWh, against 48.1 GWh published. AETOS
+  states no `StorageLevelStart`, and its default is 0. Thus each storage starts empty, and each
+  MWh of its output comes from energy that it takes in during the 96 hours.
 
 ### The Sienna dispatch
 
 These causes are in order of size. The four largest causes are values that a Sienna system has
-no field or component for, or that its solve ignores.
+no field or component for, or that its solve ignores. Each heading gives the measured effect of
+the cause. The other causes make up the rest of each difference, in both directions.
 
-**1. The emission scope: 613.7 Mt.** The Sienna system holds electricity only. Thus the Sienna
-emissions are those of the power plants only. The published emissions also count the CO2 of each
-fuel that enters a country. Two transit countries state negative emissions: `UACO2` is
-−128.7 Mt and `ALCO2` is −43.5 Mt.
+**1. The emission scope: 681.5 Mt.** The Sienna emissions are 613.7 Mt below the published
+value. The Sienna system holds electricity only. Thus the Sienna emissions are those of the
+power plants only. The published emissions also count the CO2 of each fuel that enters a
+country. Two transit countries state negative emissions: `UACO2` is −128.7 Mt and `ALCO2` is
+−43.5 Mt. In PyPSA, the fuels that are not electricity add 681.5 Mt (step 3).
 
-**2. The line cost and the line loss: 425.2 TWh of trade.** A `TwoTerminalGenericHVDCLine` has no
-cost field. The solve uses `HVDCTwoTerminalLossless`, which ignores the loss of a line. Thus trade
-is free. In test copies of the step 2 network, the line cost and the line loss lower the trade by
-475.4 TWh. Step 2 gives 472.8 TWh, because it adds the three features at once, and this copy
-adds two features to a network that already holds the annual bounds.
+**2. The line cost and the line loss: 475.4 TWh of trade.** The Sienna trade is 425.2 TWh above
+the published value. A `TwoTerminalGenericHVDCLine` has no cost field. The solve uses
+`HVDCTwoTerminalLossless`, which ignores the loss of a line. Thus trade is free. In test copies
+of the step 2 network, the line cost and the line loss lower the trade by 475.4 TWh. Step 2
+gives 472.8 TWh, because it adds the three features at once, and this copy adds two features to
+a network that already holds the annual bounds.
 
-**3. The conversion loss: 370.3 TWh of production.** Each conversion is a line with its loss.
-The Sienna solve ignores the loss, so the plants do not make the 398.1 TWh that the conversions
-lose in PyPSA.
+**3. The conversion loss: 398.1 TWh of production.** The Sienna production is 370.3 TWh below
+the published value. Each conversion is a line with its loss. The Sienna solve ignores the
+loss, so the plants do not make the 398.1 TWh that the conversions lose in PyPSA.
 
-**4. The annual energy limits: 330.6 TWh of `gas-combined-cycle`.** A Sienna system has no field
-for a limit on the energy of a year. The 24 bounded gas plants make 73.8 TWh, against their lower
+**4. The annual energy limits: 295.7 TWh of `gas-combined-cycle`.** The Sienna
+`gas-combined-cycle` is 330.6 TWh below the published value. A Sienna system has no field for a
+limit on the energy of a year. The 24 bounded gas plants make 73.8 TWh, against their lower
 limit of 450.6 TWh. In test copies of the step 2 network, the annual bounds add 295.7 TWh of
 `gas-combined-cycle`, remove 213.9 TWh of `coal`, and lower the emissions by 97.9 Mt. Step 2
-gives 293.7 TWh and 204.2 TWh, because it adds the three features at once, and this copy adds the
-bounds to a network that already holds the line cost and the line loss.
+gives 293.7 TWh and 204.2 TWh, because it adds the three features at once, and this copy adds
+the bounds to a network that already holds the line cost and the line loss.
 
-**5. The storage: 8.8 TWh of pumped storage.** Pumped storage makes 8.9 TWh, against 48.1 GWh
-published. The dispatch runs the days in time order and carries the level from one day to the
-next.
+**5. The price of the gas in `MR` and `GW`.** The dispatch leaves 1,141.1 MWh unserved in the
+96 hours: 1,121.9 MWh in `MR` and 19.1 MWh in `GW`. The only producer of the gas of the two
+countries is a backstop. The translation prices the gas of each plant at the cost of that
+backstop. For example, `MRNGCCPH1` pays 631,585 USD/MWh, above the penalty of 10,000 USD for
+each MWh of unserved energy. Thus the solve does not run the plant, and leaves the load
+unserved.
 
-**6. The residual fleet.** As in PyPSA, `MR` and `GW` are short of their peak load. The dispatch
-leaves 1,141.1 MWh unserved in the 96 hours: 1,121.9 MWh in `MR` and 19.1 MWh in `GW`.
+**6. The storage rating.** As in PyPSA, pumped storage has 42.9 GW, against 51.6 GW published.
+
+We did not measure a cause for the storage output. Pumped storage makes 8.9 TWh, against
+48.1 GWh published. The dispatch runs the days in time order and carries the level from one
+day to the next.
+
+The translation now leaves out a plant whose fuel has producers that all cannot run in the
+year, and it reports each plant. A run with the current code thus holds no plant that a
+backstop prices, such as `MRNGCCPH1`. We did not run the model again.
 
 [The gap analysis](../translation_mappings/osemosys-to-sienna-gap-analysis.md) gives one entry for
 each loss, with its cause and its effect.
@@ -236,6 +253,24 @@ value that PyPSA has an attribute for to that attribute.
 The gap analysis section
 [What a PyPSA dispatch holds](../translation_mappings/osemosys-to-sienna-gap-analysis.md#what-a-pypsa-dispatch-holds)
 gives every entry.
+
+## Production, unserved energy and emissions in both dispatches
+
+The comparison measured these three differences in both dispatches:
+
+- **Production.** The PyPSA dispatch applies the conversion loss, and its production is
+  37.3 TWh above the published value. The Sienna dispatch does not, and its production is
+  370.3 TWh below it.
+- **Unserved energy.** The Sienna dispatch leaves 1,141.1 MWh unserved in the 96 hours, and the
+  PyPSA dispatch 2,367.5 MWh. Most of it is at `REGION1/MRE3`. The cause is the backstop that is
+  the only producer of the gas of `MR` and `GW`. The PyPSA dispatch must also cover the
+  conversion loss.
+- **Emissions.** The PyPSA dispatch gives 1,702.1 Mt, the Sienna dispatch 845.5 Mt, and the
+  published results 1,459.1 Mt. In PyPSA, `coal` makes 756.3 TWh against 568.2 TWh published,
+  and `oil-steam` and `other-gas` make less. The negative emissions of `UACO2` and `ALCO2`,
+  which the gas pipelines from outside the model state, are 108.6 Mt smaller than published.
+  Two causes explain the extra coal and the extra emissions. [The PyPSA dispatch](#the-pypsa-dispatch)
+  measures each one.
 
 ## The expansion subset
 
