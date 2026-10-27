@@ -18,7 +18,6 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     AnnotationColumn,
-    FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
@@ -26,9 +25,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import CTAU
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    build_bound_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     PEAK_FACTOR,
 )
@@ -41,8 +37,8 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     CAPACITY_UNIT,
+    GENERATOR_EXTRAS,
     GENERATOR_NAME,
-    GENERATOR_OWNERS,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
 )
@@ -62,9 +58,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_events impor
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     OPERATION_COST_MWH,
 )
-from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
-    build_mode_events,
-)
 from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
     build_plant_fuel_events,
 )
@@ -77,10 +70,6 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_columns imp
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
     FIXED_COST,
-)
-from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    COMPONENT_VALUES,
-    build_value_events,
 )
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
@@ -296,16 +285,7 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: build_emission_events(dest, old)),
         Translation(
             exprs=[],
-            make_events=lambda old, _new: build_bound_events(
-                old, GENERATOR_OWNERS, FlowParameter.OUTPUT_ACTIVITY_RATIO
-            ),
-        ),
-        Translation(
-            exprs=[],
-            make_events=lambda old, _new: [
-                *build_value_events(old, COMPONENT_VALUES, GENERATOR_OWNERS),
-                *build_mode_events(old, GENERATOR_OWNERS),
-            ],
+            make_events=lambda old, _new: GENERATOR_EXTRAS.build_events(old),
         ),
         Translation(exprs=[], make_events=lambda old, _new: build_grouping_events(dest, old)),
         Translation(

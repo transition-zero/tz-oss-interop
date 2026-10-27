@@ -47,13 +47,6 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     express_activity_mw,
     express_output_capacity,
 )
-from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
-    LOWER_BOUND,
-    UPPER_BOUND,
-    build_yearly_limits,
-    enrich_activity_limits,
-    set_bounds_persisted,
-)
 from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
     build_availability,
@@ -81,6 +74,7 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     CAPACITY_MW,
     CAPACITY_UNIT,
+    GENERATOR_EXTRAS,
     GENERATOR_NAME,
     GENERATOR_OWNERS,
     HAS_SERIES,
@@ -105,11 +99,6 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
 )
-from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
-    build_operating_mode_field,
-    build_operating_modes,
-    set_mode_bounds_persisted,
-)
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
     build_fuel_buses_field,
@@ -133,13 +122,9 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_costs impor
     enrich_fixed_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
-    COMPONENT_VALUES,
     RATED_PARAMETERS,
     RATING_RATIO,
-    build_value_fields,
-    enrich_technology_values,
     set_applied_rows,
-    set_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent
@@ -290,9 +275,7 @@ def build_generator_extensions(generators: pl.DataFrame) -> list[GeneratorExtens
 
 def set_generator_values_persisted(state: State, generators: pl.DataFrame) -> None:
     """Note the rows that the generators apply or keep, and those of the fuel producers."""
-    set_values_persisted(state, GENERATOR_OWNERS, generators, COMPONENT_VALUES)
-    set_mode_bounds_persisted(state, GENERATOR_OWNERS, generators)
-    set_bounds_persisted(state, GENERATOR_OWNERS, generators)
+    GENERATOR_EXTRAS.set_persisted(state, generators)
     set_applied_rows(state, GENERATOR_OWNERS, generators, _APPLIED_PARAMETERS)
     set_applied_rows(state, _PRODUCER_OWNERS, list_fuel_producers(generators), _PRODUCER_PARAMETERS)
 
@@ -440,21 +423,12 @@ def _enrich_generators(
     table = enrich_emission_rates(state, operations, table, inputs, fuel_supply)
     table = enrich_emission_penalties(state, operations, table)
     table = enrich_plant_fuels(state, operations, table, inputs)
-    rated = table.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
-    bounds = enrich_activity_limits(state, operations, rated, FlowParameter.OUTPUT_ACTIVITY_RATIO)
-    table = table.join(bounds.drop(OPERATING_MODE), on=[REGION, TECHNOLOGY], how="left")
-    table = _enrich_extension_values(state, operations, table)
+    members = table.with_columns(
+        pl.lit(operations.mode).alias(OPERATING_MODE),
+        pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO),
+    )
+    table = GENERATOR_EXTRAS.enrich(state, operations, members).drop(OPERATING_MODE)
     return table.with_columns(_express_has_series().alias(HAS_SERIES))
-
-
-def _enrich_extension_values(
-    state: State, operations: OperationsYear, generators: pl.DataFrame
-) -> pl.DataFrame:
-    """The values that a generator rates on its electricity output, and its other modes."""
-    rated = generators.with_columns(pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO))
-    table = enrich_technology_values(state, operations, rated, COMPONENT_VALUES)
-    held = generators.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
-    return build_operating_modes(state, operations, held).enrich(table)
 
 
 def _express_has_series() -> pl.Expr:
@@ -473,13 +447,10 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         category=row[AnnotationColumn.CATEGORY],
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=build_emission_rates(row[EMISSION_TERMS]),
-        e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
-        e_sum_max=build_yearly_limits(row[UPPER_BOUND.column]),
-        operating_modes=build_operating_mode_field(row),
         fuel_buses=build_fuel_buses_field(row),
         own_marginal_cost=build_own_cost_field(row),
         own_emission_rates_t_per_mwh=build_own_rates_field(row),
-        **build_value_fields(row, COMPONENT_VALUES),
+        **GENERATOR_EXTRAS.build_fields(row),
     )
 
 
