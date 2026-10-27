@@ -15,7 +15,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW, UNIT_MW, UNIT_YEARS
+from interop.plugins.shared.constants import UNIT_MW
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
     PyPSACarrier,
@@ -49,8 +49,13 @@ from interop.plugins.shared.sienna_pypsa_translations.constants import (
     pypsa_carrier,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    HYDRO_CARRIED,
     HYDRO_MAPPED_FIELDS,
+    STORAGE_CARRIED,
     STORAGE_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
+    record_carried_value,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
@@ -59,6 +64,7 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     variable_proportional_term,
 )
 from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
+    STORAGE_OVERNIGHT_COST,
     UnpricedCost,
     find_overnight_cost,
     find_unpriced_cost,
@@ -68,6 +74,8 @@ from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
+# PyPSA's own state_of_charge_initial: a reservoir that starts empty.
+_EMPTY_RESERVOIR = 0.0
 
 # What the storage companion parquet holds. Sienna names no field for an inflow or for a
 # rating that changes, so both arrive beside the sidecar rather than in the system file.
@@ -198,9 +206,8 @@ class _HydroMapping:
     active_power_min: float
     p_min_pu: float
     marginal_cost: float
-    # Sienna's HydroDispatch states no reservoir, so all three cross the hub in the sidecar.
-    max_hours: float
-    state_of_charge_initial: float
+    # Sienna's HydroDispatch states no reservoir, so the storage record of the unit states it.
+    ext: StorageExtension
     inflow_mw: float
 
 
@@ -227,18 +234,20 @@ def _derive_hydro(
         marginal_cost=variable_proportional_term(
             row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE
         ),
-        max_hours=_carried(carried, "max_hours", DEFAULT_HYDRO_MAX_HOURS),
-        state_of_charge_initial=_carried(carried, "state_of_charge_initial", 0.0),
-        inflow_mw=_carried(carried, "inflow_mw", 0.0),
+        ext=carried,
+        inflow_mw=float(carried.inflow_mw or 0.0),
     )
 
 
-def _carried(record: Any, field_name: str, fallback: float) -> float:
-    """What the sidecar states for a field, or the PyPSA default where it states nothing."""
-    if record is None:
-        return fallback
-    value = getattr(record, field_name, None)
-    return fallback if value is None else float(value)
+def _fill_hydro_defaults(carried: dict[str, object]) -> dict[str, object]:
+    """The reservoir that the storage record states, with PyPSA's default where it states none."""
+    defaults = {
+        PyPSAStorageUnitCol.MAX_HOURS: DEFAULT_HYDRO_MAX_HOURS,
+        PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: _EMPTY_RESERVOIR,
+    }
+    return {
+        column: defaults[column] if value is None else value for column, value in carried.items()
+    }
 
 
 def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
@@ -251,11 +260,14 @@ def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
     reporter.record_p_min_pu_from_active_power_limits(m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
-    # HydroDispatch is sourced from a PyPSA Generator with no extensions sidecar, so the storage
-    # fields below have no Sienna source; each falls back to a PyPSA default. Lossy.
-    reporter.record_max_hours_default(m.name, m.max_hours)
+    record_carried_fields(reporter, sienna_type, m.ext, HYDRO_CARRIED)
+    # Sienna states no reservoir for a HydroDispatch, so a field the storage record does not
+    # state falls back to a PyPSA default. Lossy.
+    if m.ext.max_hours is None:
+        reporter.record_max_hours_default(m.name, DEFAULT_HYDRO_MAX_HOURS)
+    if m.ext.state_of_charge_initial is None:
+        reporter.record_state_of_charge_initial_default(m.name)
     reporter.record_efficiency_default(m.name, DEFAULT_STORAGE_EFFICIENCY)
-    reporter.record_state_of_charge_initial_default(m.name)
     reporter.record_cyclic_default(m.name)
     reporter.record_p_nom_extendable_default(m.name)
     _record_inflow(reporter, SiennaComponent.HYDRO_DISPATCH, m.name, m.inflow_mw)
@@ -269,11 +281,10 @@ def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.P_NOM: m.base_power,
         PyPSAStorageUnitCol.P_MIN_PU: m.p_min_pu,
         PyPSAStorageUnitCol.P_MAX_PU: m.rating,
-        PyPSAStorageUnitCol.MAX_HOURS: m.max_hours,
+        **_fill_hydro_defaults(build_carried_values(m.ext, HYDRO_CARRIED)),
         PyPSAStorageUnitCol.EFFICIENCY_STORE: DEFAULT_STORAGE_EFFICIENCY,
         PyPSAStorageUnitCol.EFFICIENCY_DISPATCH: DEFAULT_STORAGE_EFFICIENCY,
         PyPSAStorageUnitCol.MARGINAL_COST: m.marginal_cost,
-        PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: m.state_of_charge_initial,
         PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: False,
         # HydroDispatch is sourced from a PyPSA Generator and carries no extensions sidecar,
@@ -310,14 +321,10 @@ class _PhsMapping:
     p_nom_min_from_ext: bool
     # Sienna states one rating, no build, no inflow and no cycle, so each of these reaches a
     # PyPSA storage unit only through the sidecar.
-    p_nom_max: float | None
+    ext: StorageExtension
     overnight_cost: float | None
     # The network leaves out a cost that the record states with no discount rate.
     unpriced_cost: UnpricedCost | None
-    discount_rate: float | None
-    lifetime: float | None
-    build_year: int | None
-    cyclic_per_period: bool | None
     inflow_mw: float
 
 
@@ -355,13 +362,9 @@ def _derive_phs(
             operation_cost, SiennaStructField.DISCHARGE_VARIABLE_COST
         ),
         cyclic=float(operation_cost.get(SiennaStructField.ENERGY_SHORTAGE_COST, 0.0)) > 0.0,
-        p_nom_max=ext.p_nom_max,
+        ext=ext,
         overnight_cost=find_overnight_cost(extensions, ext),
         unpriced_cost=find_unpriced_cost(SiennaComponent.ENERGY_RESERVOIR_STORAGE, ext),
-        discount_rate=ext.discount_rate,
-        lifetime=ext.lifetime_years,
-        build_year=ext.build_year,
-        cyclic_per_period=ext.cyclic_state_of_charge_per_period,
         inflow_mw=float(ext.inflow_mw or 0.0),
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
@@ -398,37 +401,11 @@ def _record_phs(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
         reporter.record_p_nom_extendable_default(m.name)
     _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
     _record_p_nom_min(reporter, m)
-    _record_carried(reporter, m)
-
-
-# Each value a storage record carries into a PyPSA column, with the column and the unit.
-_CARRIED_STORAGE_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
-    ("p_nom_max", PyPSAStorageUnitCol.P_NOM_MAX, UNIT_MW),
-    ("overnight_cost_per_mw", PyPSAStorageUnitCol.OVERNIGHT_COST, UNIT_DOLLARS_PER_MW),
-    ("discount_rate", PyPSAStorageUnitCol.DISCOUNT_RATE, None),
-    ("lifetime_years", PyPSAStorageUnitCol.LIFETIME, UNIT_YEARS),
-    ("build_year", PyPSAStorageUnitCol.BUILD_YEAR, None),
-    (
-        "cyclic_state_of_charge_per_period",
-        PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD,
-        None,
-    ),
-)
-
-
-def _record_carried(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
-    values = (
-        m.p_nom_max,
-        m.overnight_cost,
-        m.discount_rate,
-        m.lifetime,
-        m.build_year,
-        m.cyclic_per_period,
-    )
-    sienna_type = SiennaComponent.ENERGY_RESERVOIR_STORAGE
-    for (field_name, column, unit), value in zip(_CARRIED_STORAGE_COLUMNS, values, strict=True):
-        if value is not None:
-            reporter.record_carried(sienna_type, m.name, field_name, column, value, unit)
+    record_carried_fields(reporter, sienna_type, m.ext, STORAGE_CARRIED)
+    if m.overnight_cost is not None:
+        record_carried_value(
+            reporter, sienna_type, m.name, STORAGE_OVERNIGHT_COST, m.overnight_cost
+        )
 
 
 def _record_p_nom_min(reporter: StorageUnitReporter, m: _PhsMapping) -> None:
@@ -460,11 +437,7 @@ def _phs_row(m: _PhsMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: m.cyclic,
         PyPSAStorageUnitCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
         PyPSAStorageUnitCol.P_NOM_MIN: m.p_nom_min,
-        PyPSAStorageUnitCol.P_NOM_MAX: m.p_nom_max,
         PyPSAStorageUnitCol.OVERNIGHT_COST: m.overnight_cost,
-        PyPSAStorageUnitCol.DISCOUNT_RATE: m.discount_rate,
-        PyPSAStorageUnitCol.LIFETIME: m.lifetime,
-        PyPSAStorageUnitCol.BUILD_YEAR: m.build_year,
-        PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD: m.cyclic_per_period,
+        **build_carried_values(m.ext, STORAGE_CARRIED),
         PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
     }

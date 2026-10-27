@@ -24,7 +24,6 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.pypsa_constants import (
     LINKS_DESTINATION_SCHEMA,
     PyPSABusCol,
@@ -32,7 +31,10 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALinkCol,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    CONVERSION_CARRIED,
     CONVERSION_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ConversionReporter
@@ -49,23 +51,6 @@ _TAKEN_NAME_WARNING = (
 _DEFAULT_P_NOM = 0.0
 _DEFAULT_EFFICIENCY = 1.0
 _P_MIN_PU = 0.0
-
-# Each stated field of a conversion record, the Link column it fills, and its unit.
-_MAPPED_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
-    ("bus0", PyPSALinkCol.BUS0, None),
-    ("bus1", PyPSALinkCol.BUS1, None),
-    ("bus2", PyPSALinkCol.BUS2, None),
-    ("efficiency2", PyPSALinkCol.EFFICIENCY2, None),
-    ("bus3", PyPSALinkCol.BUS3, None),
-    ("efficiency3", PyPSALinkCol.EFFICIENCY3, None),
-    ("carrier", PyPSALinkCol.CARRIER, None),
-    ("p_nom", PyPSALinkCol.P_NOM, UNIT_MW),
-    ("p_nom_extendable", PyPSALinkCol.P_NOM_EXTENDABLE, None),
-    ("p_nom_max", PyPSALinkCol.P_NOM_MAX, UNIT_MW),
-    ("efficiency", PyPSALinkCol.EFFICIENCY, None),
-    ("marginal_cost", PyPSALinkCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
-    ("p_max_pu", PyPSALinkCol.P_MAX_PU, None),
-)
 
 
 class SiennaToPypsaMapConversions(TranslationStep):
@@ -131,10 +116,7 @@ def _build_names(state: State, table: str, column: str) -> set[str]:
 
 
 def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> None:
-    for field_name, column, unit in _MAPPED_COLUMNS:
-        value = getattr(record, field_name)
-        if value is not None:
-            reporter.record_from_record(record.name, field_name, column, value, unit)
+    record_carried_fields(reporter, ExtensionKind.CONVERSION, record, CONVERSION_CARRIED)
     floor = _build_floor(record)
     if floor is not None:
         reporter.record_p_nom_min(record.name, floor)
@@ -146,25 +128,15 @@ def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> N
 
 def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
     return {
+        **build_carried_values(record, CONVERSION_CARRIED),
         PyPSALinkCol.NAME: record.name,
-        PyPSALinkCol.BUS0: record.bus0,
-        PyPSALinkCol.BUS1: record.bus1,
         PyPSALinkCol.P_NOM: _DEFAULT_P_NOM if record.p_nom is None else record.p_nom,
         PyPSALinkCol.P_MIN_PU: _P_MIN_PU,
-        PyPSALinkCol.P_MAX_PU: record.p_max_pu,
         PyPSALinkCol.EFFICIENCY: (
             _DEFAULT_EFFICIENCY if record.efficiency is None else record.efficiency
         ),
-        PyPSALinkCol.MARGINAL_COST: record.marginal_cost,
         PyPSALinkCol.ACTIVE: True,
-        PyPSALinkCol.CARRIER: record.carrier,
-        PyPSALinkCol.P_NOM_EXTENDABLE: record.p_nom_extendable,
         PyPSALinkCol.P_NOM_MIN: _build_floor(record),
-        PyPSALinkCol.P_NOM_MAX: record.p_nom_max,
-        PyPSALinkCol.BUS2: record.bus2,
-        PyPSALinkCol.EFFICIENCY2: record.efficiency2,
-        PyPSALinkCol.BUS3: record.bus3,
-        PyPSALinkCol.EFFICIENCY3: record.efficiency3,
     }
 
 

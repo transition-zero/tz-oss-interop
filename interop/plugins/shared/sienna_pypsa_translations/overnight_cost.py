@@ -11,7 +11,12 @@ import logging
 from typing import NamedTuple, TypeVar
 
 from interop.core.extensions import ExpansionExtension, ExtensionLookup
-from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import build_field_names
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MW
+from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol, PyPSAStorageUnitCol
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    MappedField,
+    build_field_names,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
     GeneratorReporter,
     StorageUnitReporter,
@@ -22,7 +27,13 @@ log = logging.getLogger(__name__)
 
 RecordT = TypeVar("RecordT", bound=ExpansionExtension)
 
-OVERNIGHT_COST_FIELDS = build_field_names(ExpansionExtension, "overnight_cost_per_mw")
+GENERATOR_OVERNIGHT_COST = MappedField(
+    "overnight_cost_per_mw", PyPSAGeneratorCol.OVERNIGHT_COST, UNIT_DOLLARS_PER_MW
+)
+STORAGE_OVERNIGHT_COST = MappedField(
+    "overnight_cost_per_mw", PyPSAStorageUnitCol.OVERNIGHT_COST, UNIT_DOLLARS_PER_MW
+)
+OVERNIGHT_COST_FIELDS = build_field_names(ExpansionExtension, GENERATOR_OVERNIGHT_COST)
 
 _UNPRICED_WARNING = (
     "%d %s(s) state an overnight cost and no discount rate, and PyPSA cannot annualise the "

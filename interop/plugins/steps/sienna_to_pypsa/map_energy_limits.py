@@ -21,6 +21,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX
 from interop.plugins.shared.pypsa_constants import PyPSADestinationTable, PyPSAGeneratorCol
 from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaTable
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import ANNUAL_BOUNDS
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
@@ -29,12 +30,6 @@ from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
 )
 
 log = logging.getLogger(__name__)
-
-# Each annual bound of a record, and the PyPSA column that holds it.
-_BOUNDS: tuple[tuple[str, str], ...] = (
-    ("e_sum_min", PyPSAGeneratorCol.E_SUM_MIN),
-    ("e_sum_max", PyPSAGeneratorCol.E_SUM_MAX),
-)
 
 _MAPPED_DERIVATION = (
     "the value of {year}, the year of the snapshots, which count for {hours:.1f} h, the whole "
@@ -168,22 +163,24 @@ def _list_bounds(reader: ExtensionReader, names: list[str]) -> list[EnergyBound]
     bounds: list[EnergyBound] = []
     for name in names:
         record = lookup.get_fields(name, ())
-        for field_name, column in _BOUNDS:
-            by_year = getattr(record, field_name)
+        for mapped in ANNUAL_BOUNDS:
+            by_year = getattr(record, mapped.field_name)
             if by_year:
-                bounds.append(EnergyBound(name, field_name, column, by_year))
+                bounds.append(EnergyBound(name, mapped.field_name, mapped.column, by_year))
     return bounds
 
 
 def _set_bounds(generators: pl.DataFrame, held: list[EnergyBound], year: int) -> pl.DataFrame:
     """The generators table, with the bound of the year in each column that a bound names."""
     columns = []
-    for _, column in _BOUNDS:
-        values = {bound.name: bound.by_year[year] for bound in held if bound.column == column}
+    for mapped in ANNUAL_BOUNDS:
+        values = {
+            bound.name: bound.by_year[year] for bound in held if bound.column == mapped.column
+        }
         columns.append(
             pl.col(PyPSAGeneratorCol.NAME)
             .replace_strict(values, default=None, return_dtype=pl.Float64)
-            .alias(column)
+            .alias(mapped.column)
         )
     return generators.with_columns(columns)
 
