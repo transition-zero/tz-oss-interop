@@ -181,6 +181,19 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
       | variable  | component | category | timestamp | value  |
       | objective |           |          |           | 1234.5 |
 
+  Scenario: A results directory that holds no file of a variable leaves the variable out, and the report names its folder
+    Given an expansion solve output in "investments_only"
+    And the expansion solve wrote the variable "BuildCapacity__SupplyTechnology__ThermalStandard__ContinuousInvestment" with the rows:
+      | time_index | name | value |
+      | 1          | gas  | 300   |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=investments_only source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "new_capacity" rows:
+      | variable     | component | category | timestamp           | value |
+      | new_capacity | gas       |          | 2030-01-01T00:00:00 | 300   |
+    And the log contains "power-systems-investments-to-results: 3 result variable(s) have no file in the directory that the solve wrote, so each is left out. Each one: installed_capacity (results_wide/expressions), objective (results/optimizer_stats.csv), production (results_wide/variables)"
+    And the file "decisions.md" contains "the directory that the solve wrote holds no file of ActivePowerVariable, ActiveOutPowerVariable or FlowActivePowerVariable under results_wide/variables, so the results have no production"
+
   Scenario: A results directory that holds no result file stops the run with one line that names it
     Given an empty results directory "not_expanded"
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=not_expanded source.series_json_path=psi/portfolio_series.json"
