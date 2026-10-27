@@ -214,9 +214,16 @@ def build_operating_mode_field(row: dict[str, Any]) -> list[OperatingMode] | Non
         if entry[_DETAIL] is None:
             mode[entry[_FIELD]] = entry[_SCALED]
         else:
-            mode.setdefault(entry[_FIELD], {})[entry[_DETAIL]] = entry[_SCALED]
+            mode.setdefault(entry[_FIELD], {})[_build_detail_key(entry)] = entry[_SCALED]
     modes = [OperatingMode(mode=mode, **fields) for mode, fields in sorted(by_mode.items())]
     return modes or None
+
+
+def _build_detail_key(entry: dict[str, Any]) -> str | int:
+    """A bound is keyed by its year, as an integer; any other detail by its member."""
+    if entry[_PARAMETER] in MODE_BOUND_PARAMETERS:
+        return int(entry[_DETAIL])
+    return str(entry[_DETAIL])
 
 
 def build_mode_events(row: dict[str, Any], owners: ValueOwners) -> list[TranslationEvent]:
