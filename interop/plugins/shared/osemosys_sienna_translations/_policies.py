@@ -47,7 +47,6 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     REGION_GROUP,
@@ -58,7 +57,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     MEMBERSHIP_FLAG,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
     EmissionParameter,
     PolicyParameter,
@@ -82,6 +80,7 @@ from interop.plugins.shared.osemosys_sienna_translations._emission_limits import
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
+    osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
@@ -91,7 +90,6 @@ from interop.plugins.shared.osemosys_sienna_translations._persisted import set_p
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
-    SkipReport,
     SkipRule,
     report_not_mapped,
 )
@@ -712,9 +710,7 @@ def _build_tag_check(
         .with_columns(express_report_name(member).alias(_TAG_NAME))
         .sort(REGION, member, YEAR)
     )
-    report = SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    report = osemosys_skip_report(
         component=member,
         name_col=_TAG_NAME,
         reason=(
@@ -798,9 +794,7 @@ def _build_membership_note(row: dict[str, Any]) -> str:
     )
 
 
-_MEMBERSHIP_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_MEMBERSHIP_REPORT = osemosys_skip_report(
     component=REGION_GROUP,
     name_col=REGION_GROUP,
     reason=(
