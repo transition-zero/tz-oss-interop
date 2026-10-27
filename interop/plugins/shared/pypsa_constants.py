@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import NamedTuple
 
 import polars as pl
 
@@ -659,10 +660,17 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.RAMP_LIMIT_DOWN: pl.Float64,
 }
 
-# Each further bus of a link after bus0 and bus1, and the efficiency that goes with it.
-LINK_FURTHER_PORTS: tuple[tuple[str, str], ...] = (
-    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
-    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
+
+class LinkPort(NamedTuple):
+    """A further bus column of a link after bus0 and bus1, and its efficiency column."""
+
+    bus: str
+    efficiency: str
+
+
+LINK_FURTHER_PORTS: tuple[LinkPort, ...] = (
+    LinkPort(PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
+    LinkPort(PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
 )
 
 SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

@@ -14,6 +14,7 @@ from interop.plugins.shared.pypsa_constants import (
     LINK_FURTHER_PORTS,
     PYPSA_OUTPUT_DECIMAL_PLACES,
     UNROUNDED_OUTPUT_COLUMNS,
+    LinkPort,
     PyPSABusCol,
     PyPSAComponent,
     PyPSADestinationTable,
@@ -137,7 +138,7 @@ def _list_named_ports(links: pl.DataFrame | None) -> list[str]:
     """The further bus columns of the links, so a bus that only they name is still checked."""
     if links is None:
         return []
-    return [bus for bus, _ in _list_extra_ports(links)]
+    return [port.bus for port in _list_extra_ports(links)]
 
 
 def _referenced_bus_names(tables: list[tuple[pl.DataFrame | None, list[str]]]) -> set[str]:
@@ -310,18 +311,18 @@ _NO_BUS = ""
 _NO_LOSS = 1.0
 
 
-def _list_extra_ports(links: pl.DataFrame) -> list[tuple[str, str]]:
+def _list_extra_ports(links: pl.DataFrame) -> list[LinkPort]:
     return [
         port
         for port in LINK_FURTHER_PORTS
-        if port[0] in links.columns and links[port[0]].is_not_null().any()
+        if port.bus in links.columns and links[port.bus].is_not_null().any()
     ]
 
 
-def _fill_extra_ports(links: pl.DataFrame, ports: list[tuple[str, str]]) -> pl.DataFrame:
+def _fill_extra_ports(links: pl.DataFrame, ports: list[LinkPort]) -> pl.DataFrame:
     return links.with_columns(
-        *[pl.col(bus).fill_null(_NO_BUS) for bus, _ in ports],
-        *[pl.col(efficiency).fill_null(_NO_LOSS) for _, efficiency in ports],
+        *[pl.col(port.bus).fill_null(_NO_BUS) for port in ports],
+        *[pl.col(port.efficiency).fill_null(_NO_LOSS) for port in ports],
     )
 
 
