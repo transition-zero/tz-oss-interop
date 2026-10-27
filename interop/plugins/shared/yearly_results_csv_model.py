@@ -26,42 +26,33 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
     TableKind,
 )
-from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    find_parameter_default,
-    list_set_members,
-)
+from interop.plugins.shared.osemosys_sienna_translations._canonical import list_set_members
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 
 # The column that holds the results component name of a member.
 COMPONENT = "component"
-# The column that holds the output ratio of a technology onto all its electricity fuels.
+# The column that holds the stated output ratio of a technology onto all its electricity fuels.
 RATIO = "ratio"
 # The column that holds the Sienna name of the storage that a technology discharges.
 STORAGE_COMPONENT = "storage_component"
 
-_STATED_COUNT = "stated_count"
-_FUEL_COUNT = "fuel_count"
-_NO_DEFAULT = 0.0
-
-
-class ElectricityRatios(NamedTuple):
-    """`stated` holds, for each technology, mode and year that the model states, the sum of the
-    stated output ratios onto electricity fuels and how many electricity fuels it covers. Each
-    other electricity fuel of the region takes `default`."""
-
-    stated: pl.DataFrame
-    fuel_counts: pl.DataFrame
-    default: float
+_NO_RATIO = 0.0
 
 
 class ResultsModel(NamedTuple):
     """`technologies` holds region, technology, component, category and kind; `pollutants`
-    holds region, pollutant and component. `storages` holds, for each technology that discharges
-    a storage, the region, the technology, the storage and its Sienna name."""
+    holds region, pollutant and component. `ratios` holds, for each technology, mode and year
+    that the model states, the sum of the stated output ratios onto electricity fuels.
+    `storages` holds, for each technology that discharges a storage, the region, the
+    technology, the storage and its Sienna name.
+
+    Like the Sienna translation, the results read only the ratios that the model states, so
+    the default of the parameter gives no technology an electricity output.
+    """
 
     technologies: pl.DataFrame
     pollutants: pl.DataFrame
-    ratios: ElectricityRatios
+    ratios: pl.DataFrame
     storages: pl.DataFrame
 
 
@@ -69,33 +60,25 @@ def read_results_model(state: State) -> ResultsModel:
     return ResultsModel(
         technologies=_read_technologies(state),
         pollutants=_build_pollutants(state),
-        ratios=_read_electricity_ratios(state),
+        ratios=_read_stated_ratios(state, _read_electricity_fuels(state)),
         storages=_read_storage_links(state),
     )
 
 
-def build_electricity_ratios(keys: pl.DataFrame, ratios: ElectricityRatios) -> pl.DataFrame:
-    """`keys` holds region, technology, operating_mode and year; the result adds `ratio`."""
-    unstated = pl.col(_FUEL_COUNT).fill_null(0) - pl.col(_STATED_COUNT).fill_null(0)
-    ratio = pl.col(RATIO).fill_null(0.0) + ratios.default * unstated
-    return (
-        keys.join(ratios.stated, on=[REGION, TECHNOLOGY, OPERATING_MODE, YEAR], how="left")
-        .join(ratios.fuel_counts, on=REGION, how="left")
-        .with_columns(ratio.alias(RATIO))
-        .drop(_STATED_COUNT, _FUEL_COUNT)
-    )
+def build_electricity_ratios(keys: pl.DataFrame, ratios: pl.DataFrame) -> pl.DataFrame:
+    """`keys` holds region, technology, operating_mode and year; the result adds `ratio`.
+
+    A key that the model states no electricity ratio for takes no output.
+    """
+    return keys.join(
+        ratios, on=[REGION, TECHNOLOGY, OPERATING_MODE, YEAR], how="left"
+    ).with_columns(pl.col(RATIO).fill_null(_NO_RATIO))
 
 
 def build_electricity_producers(model: ResultsModel) -> pl.DataFrame:
-    """The region and technology of each technology that can put out electricity.
-
-    With a positive default ratio, every technology of a region with an electricity fuel can.
-    """
-    ratios = model.ratios
-    if ratios.default > 0:
-        regions = ratios.fuel_counts.filter(pl.col(_FUEL_COUNT) > 0).select(REGION)
-        return model.technologies.join(regions, on=REGION, how="semi").select(REGION, TECHNOLOGY)
-    return ratios.stated.filter(pl.col(RATIO) > 0).select(REGION, TECHNOLOGY).unique()
+    """The region and technology of each technology that states an electricity output."""
+    stated = model.ratios.filter(pl.col(RATIO) > _NO_RATIO)
+    return stated.select(REGION, TECHNOLOGY).unique()
 
 
 def _read_technologies(state: State) -> pl.DataFrame:
@@ -160,16 +143,6 @@ def _build_pollutants(state: State) -> pl.DataFrame:
     return regions.join(pollutants, how="cross").with_columns(pl.col(POLLUTANT).alias(COMPONENT))
 
 
-def _read_electricity_ratios(state: State) -> ElectricityRatios:
-    default = find_parameter_default(state, FlowParameter.OUTPUT_ACTIVITY_RATIO)
-    electricity = _read_electricity_fuels(state)
-    return ElectricityRatios(
-        stated=_sum_stated_ratios(state, electricity),
-        fuel_counts=electricity.group_by(REGION).agg(pl.len().cast(pl.Int64).alias(_FUEL_COUNT)),
-        default=_NO_DEFAULT if default is None else float(default),
-    )
-
-
 def _read_electricity_fuels(state: State) -> pl.DataFrame:
     fuels = state.source_topology.get(build_table_key(TableKind.ANNOTATION, FUEL))
     if fuels is None:
@@ -178,7 +151,9 @@ def _read_electricity_fuels(state: State) -> pl.DataFrame:
     return fuels.filter(is_electricity).select(REGION, FUEL).collect()
 
 
-def _sum_stated_ratios(state: State, electricity: pl.DataFrame) -> pl.DataFrame:
+def _read_stated_ratios(state: State, electricity: pl.DataFrame) -> pl.DataFrame:
+    """The sum of the stated output ratios onto the electricity fuels, by technology, mode and
+    year."""
     ratios = state.source_time_series.get(
         (TableKind.PARAMETER, FlowParameter.OUTPUT_ACTIVITY_RATIO)
     )
@@ -187,10 +162,7 @@ def _sum_stated_ratios(state: State, electricity: pl.DataFrame) -> pl.DataFrame:
     return (
         ratios.join(electricity.lazy(), on=[REGION, FUEL], how="semi")
         .group_by(REGION, TECHNOLOGY, OPERATING_MODE, pl.col(YEAR).cast(pl.Int64))
-        .agg(
-            pl.col(VALUE_COL).sum().alias(RATIO),
-            pl.len().cast(pl.Int64).alias(_STATED_COUNT),
-        )
+        .agg(pl.col(VALUE_COL).sum().alias(RATIO))
         .collect()
     )
 
@@ -203,6 +175,5 @@ def _build_empty_stated_ratios() -> pl.DataFrame:
             OPERATING_MODE: pl.Utf8,
             YEAR: pl.Int64,
             RATIO: pl.Float64,
-            _STATED_COUNT: pl.Int64,
         }
     )
