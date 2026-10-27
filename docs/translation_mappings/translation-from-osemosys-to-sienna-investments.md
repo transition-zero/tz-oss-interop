@@ -71,9 +71,9 @@ those fuels, and of the technologies on them, for the first year only. Refer to
 
 ### Timeslice
 
-The portfolio gives each year its own representative days. A series of a year covers the days
-of that year from 1 January. The `representative_period` records of `extensions.json` hold the
-days of the first year only. Refer to [Time series](#time-series).
+Each year of the portfolio uses the representative days of the first year, moved to 1 January
+of that year. The `representative_period` records of `extensions.json` hold the days of the
+first year. Refer to [Time series](#time-series).
 
 ### The years of the plan
 
@@ -104,7 +104,7 @@ plan. Refer to [Size](translation-from-osemosys-to-sienna.md#size).
 | [A `STORAGE` whose discharging technology a plan may build](#storage-candidate--storagetechnology) | `StorageTechnology` |
 | [An `AggregateTransportTechnology` that a plan may build](#transport-candidate--aggregatetransporttechnology) | `AggregateTransportTechnology` |
 | [Each load of the base system](#demand--demandrequirement) | `DemandRequirement`, with a time series for each year |
-| [`AnnualEmissionLimit` of a pollutant that covers the whole model](#emission-limits--carboncaps-or-a-constraint-record) | One `CarbonCaps` for each year that states a limit |
+| [`AnnualEmissionLimit` of the first pollutant that covers the portfolio](#emission-limits--carboncaps-or-a-constraint-record) | One `CarbonCaps` for each year that states a limit |
 | [`AnnualEmissionLimit` of any other pollutant](#emission-limits--carboncaps-or-a-constraint-record) | A `constraint` record in `extensions.json` |
 | [A plant of the base system with the name of a candidate](#a-plant-that-already-runs--existingdevices-and-retirementpotential) | `ExistingDevices` and `RetirementPotential` on the candidate |
 | Each location of the base system | A `TopologyMapping` that names the buses of the area: one `<region>/<fuel>` bus for each electricity fuel at the location |
@@ -137,8 +137,9 @@ The **From** column gives the OSeMOSYS default name and then the canonical name 
   that it sends.
 - **Each cost is for one MW or one MWh of electricity.** A cost per capacity of the model is
   divided by the same ratio.
-- **The electricity ratios come from the first year.** A ratio that changes in a later year does
-  not change the portfolio.
+- **The electricity ratios come from the priced year.** A candidate reads its ratios in the year
+  whose capital cost it takes. A ratio that changes in another year does not change the
+  portfolio.
 
 ### Which technology is a candidate
 
@@ -239,7 +240,7 @@ charge side then states no bound and no price of its own.
 | `power_systems_type` | | `TwoTerminalGenericHVDCLine`, the type that the base system writes | `default` |
 | `start_region` | | The `Area` of the location where it takes in electricity at the operations mode | `derived` |
 | `end_region` | | The `Area` of the location where it puts electricity out | `derived` |
-| `capacity_limits` | MW | `capacity_limits_min` and `capacity_limits_max` of the first year in MW × the electricity input ratio. The type holds one bound for every year. | `derived` |
+| `capacity_limits` | MW | The smallest `capacity_limits_min` and the largest `capacity_limits_max` over the years in scope, in MW × the electricity input ratio. A year that states no maximum gives no maximum. The type holds one bound for every year. | `derived` |
 | `capital_costs.capital_cost` | $/MW | `capital_cost` of the priced year in $/MW / the electricity input ratio | `derived` |
 | `line_loss` | | `1 − the electricity output ratio / the electricity input ratio`, at the operations mode | `derived` |
 | `unit_size` | MW | `unit_size` of the first year in MW of electricity sent | `derived` |
@@ -263,20 +264,22 @@ The step writes one `DemandRequirement` for each load of the base system.
 | `value_of_lost_load`, `unserved_demand_curve` | | OSeMOSYS states no value of lost load. | `dropped` |
 
 The first year reads the series that the operations step wrote. Each later year computes its
-demand with the same formula, over its own days. The step reports a load of the base system
+demand with the same formula, over the days of the first year. The step reports a load of the base system
 that has no demand in a year, and a demand of a later year that the base system holds no load
 for.
 
 ## Emission limits → `CarbonCaps`, or a constraint record
 
 `CarbonCaps` names no region and no pollutant. So one cap limits the emissions of the whole
-portfolio. A pollutant **covers the whole model** when each technology that emits any pollutant
-emits it. The step reads every year in scope and every mode. The step counts the technologies
-of every region, so in a model of two regions a limit of one region covers the whole model only
-if each emitting technology of the model is in that region.
+portfolio. A pollutant **covers the portfolio** when each technology of the portfolio that emits
+any pollutant emits it. The technologies of the portfolio are the candidates, the technology
+that charges a storage candidate, and the components of the base system. The step reads every
+year in scope and every mode. The step counts the technologies of every region, so in a model
+of two regions a limit of one region covers the portfolio only if each emitting technology of
+the portfolio is in that region.
 
-A pollutant that covers the whole model gets one `CarbonCaps` for each year whose
-`AnnualEmissionLimit` (`annual_emission_limit`) is not -1:
+Only the first pollutant that covers the portfolio, in name order, gets a cap. It gets one
+`CarbonCaps` for each year whose `AnnualEmissionLimit` (`annual_emission_limit`) is not -1:
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
@@ -290,7 +293,7 @@ OSeMOSYS adds `annual_exogenous_emission` to the emissions that a limit holds. S
 limit less that emission.
 
 The operations step writes a `constraint` record of `extensions.json` for each pollutant with
-a limit, whether it covers the whole model or not. Refer to
+a limit, whether it covers the portfolio or not. Refer to
 [The policies of the model](translation-from-osemosys-to-sienna.md#the-policies-of-the-model).
 So the limits of each other pollutant are in that record:
 
@@ -304,7 +307,11 @@ So the limits of each other pollutant are in that record:
 | `members` | Each technology that emits the pollutant |
 
 `decisions.md` records each such pollutant as `COMPONENT_SKIPPED`, and one warning names three pollutants.
-A pollutant that covers the whole model and states a `model_period_emission_limit` records that
+Each other pollutant that covers the portfolio gets the same report, and its limits stay in its
+`constraint` record. A technology outside the portfolio that emits the capped pollutant emits
+nothing that the cap limits. `decisions.md` records its rate as `NOT_MAPPED`, and one warning
+says that the cap holds less than the limit counts.
+The pollutant that gets a cap and states a `model_period_emission_limit` records that
 limit as `NOT_MAPPED`, because `CarbonCaps` holds one year. The portfolio step takes the yearly
 limits of such a pollutant out of its `constraint` record, because `CarbonCaps` holds them. The
 record keeps the limit over the model period, or goes when the pollutant states none.
@@ -343,14 +350,16 @@ A `DemandRequirement` gets one series for each year. A `SupplyTechnology` gets o
 each year when its availability is not 1 in some hour of some year. The availability is
 `capacity_factor` × `availability_factor`, as the base system has it.
 
-Each year builds its own representative days from the calendar of that year.
+Each year uses the calendar of the first year: its hours and its representative days, moved to
+1 January of that year. So the MW × the hours × the weight of each series gives back the demand
+of its year.
 
 ## The financial data of the portfolio
 
 | Sienna field | From | Mapping |
 | --- | --- | --- |
 | `PortfolioFinancialData.base_year` | The cost year | `default` |
-| `PortfolioFinancialData.discount_rate` | `DiscountRate` (`discount_rate`) of the first region of the `region` set | `derived` |
+| `PortfolioFinancialData.discount_rate` | `DiscountRate` (`discount_rate`) of the first region of the `region` set. `decisions.md` records the rate of each other region that states another rate as `NOT_MAPPED`, and one warning names the regions. | `derived` |
 | `PortfolioFinancialData.inflation_rate`, `interest_rate` | `0.0`. OSeMOSYS states neither. | `default` |
 
 ## The `technology` records of `extensions.json`
@@ -391,7 +400,8 @@ later. A cost of 0 would make the technology free. So `capital_costs` holds the 
 priced year. The source field in `decisions.md` names that year. `extensions.json` holds the
 cost of each year.
 
-The fixed cost and the variable cost come from the first year.
+The electricity ratios of a candidate come from the same year. The fixed cost and the variable
+cost come from the first year.
 
 ### The rate is all-equity financing
 
@@ -430,8 +440,8 @@ the leg reads and what the solve loses.
 
 | OSeMOSYS | Effect |
 | --- | --- |
-| A pollutant that does not cover the whole model | Its limits are in a `constraint` record of `extensions.json`. Nothing applies them. |
-| `ModelPeriodEmissionLimit` of a pollutant that covers the whole model | `NOT_MAPPED`. A `CarbonCaps` holds one year. |
+| A pollutant that does not cover the portfolio, and each covering pollutant after the first | Its limits are in a `constraint` record of `extensions.json`. Nothing applies them. |
+| `ModelPeriodEmissionLimit` of the pollutant that gets a cap | `NOT_MAPPED`. A `CarbonCaps` holds one year. |
 | `AnnualEmissionLimitRegionGroup` and the other region group parameters | A `constraint` record holds them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | A `constraint` record holds them. No step applies them. No `EnergyShareRequirements` is written. |
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | A `constraint` record holds them. No step applies them. |
@@ -439,10 +449,10 @@ the leg reads and what the solve loses.
 | `TotalAnnualMaxCapacityInvestment` | It decides which technology is a candidate. `extensions.json` holds it. No field bounds the build of one year. |
 | `DepreciationMethod`, the salvage value | Not translated. |
 | The fixed and the variable cost of the years after the first year | `extensions.json` holds them. |
-| The capacity limits of a transport candidate after the first year | `extensions.json` holds them. |
+| The capacity limits of each year of a transport candidate | The candidate holds the smallest minimum and the largest maximum. `extensions.json` holds each year. |
 | The variable cost of a storage candidate | Not translated. A transport candidate keeps its variable cost in its `technology` record. |
 | A limit on the energy capacity of a storage | The canonical stage states none. |
-| The representative days of the years after the first year | Each series uses them, and `extensions.json` holds no record for them. |
+| The representative days of the years after the first year | Not read. Each later year uses the days of the first year. |
 | A plant of the base system that is not a candidate | It is in no technology. |
 | The trade parameters (`TradeRoute`, `CapitalCostTrade` and the other `*Trade*` parameters) | No step reads them. |
 | A fuel that is not electricity, and the technologies on it | No candidate. `extensions.json` holds the records of the first year, as the base system writes them. |
@@ -455,6 +465,6 @@ the leg reads and what the solve loses.
 | `OperationalLife` | The period over which the capital cost is recovered, and how long a built unit runs |
 | `DiscountRateIdv`, `DiscountRate` | A cost of capital with no debt in it |
 | `units: currency_year` | The year that each cost is quoted in |
-| The electricity ratios of the first year | The ratios of every year |
-| `AnnualEmissionLimit` | A limit on a pollutant of the region. It becomes a cap only when the pollutant covers the whole model. |
+| The electricity ratios of the priced year | The ratios of every year |
+| `AnnualEmissionLimit` | A limit on a pollutant of the region. It becomes a cap only for the first pollutant, in name order, that covers the portfolio. |
 | A residual capacity | The capacity of one plant, which belongs to the candidate of the same name only |
