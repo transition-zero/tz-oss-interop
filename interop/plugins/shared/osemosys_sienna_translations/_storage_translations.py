@@ -14,6 +14,7 @@ from interop.plugins.shared.constants import (
     UNIT_HOURS,
     UNIT_MVA,
     UNIT_MW,
+    UNSCALED,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
@@ -25,6 +26,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
+    WHOLE_CAPACITY,
     StorageParameter,
     SupplyParameter,
 )
@@ -130,12 +132,9 @@ _dest = partial(build_sienna_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
 _build_value = ComputedValues(_dest, STORAGE_NAME).build_translation
 _default = partial(default_translation, _dest, name_col=STORAGE_NAME)
 
-_FULL_RATING = 1.0
 _NO_POWER = 0.0
 _NO_COST = 0.0
-_CONVERSION_FACTOR = 1.0
 _NO_TARGET = 0.0
-_FULL = 1.0
 
 _ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every storage is available"
@@ -318,7 +317,7 @@ def _build_power() -> list[Translation]:
             _BASE_POWER_DERIVATION,
             UNIT_MVA,
         ),
-        _default(dest_col=_Col.RATING, value=_FULL_RATING, note=_RATING_NOTE),
+        _default(dest_col=_Col.RATING, value=WHOLE_CAPACITY, note=_RATING_NOTE),
         _default(
             dest_col=_Col.ACTIVE_POWER, value=_NO_POWER, note=_ACTIVE_POWER_NOTE, unit=UNIT_MW
         ),
@@ -424,7 +423,8 @@ def _build_energy() -> list[Translation]:
         _build_value(
             _Col.STORAGE_LEVEL_LIMITS,
             pl.struct(
-                pl.col(MIN_LEVEL).alias(MinMaxField.MIN), pl.lit(_FULL).alias(MinMaxField.MAX)
+                pl.col(MIN_LEVEL).alias(MinMaxField.MIN),
+                pl.lit(WHOLE_CAPACITY).alias(MinMaxField.MAX),
             ).cast(MIN_MAX_DTYPE),
             lambda old: [
                 _build_source(
@@ -450,7 +450,7 @@ def _build_energy() -> list[Translation]:
             ],
             _INITIAL_LEVEL_DERIVATION,
         ),
-        _default(dest_col=_Col.CONVERSION_FACTOR, value=_CONVERSION_FACTOR, note=_CONVERSION_NOTE),
+        _default(dest_col=_Col.CONVERSION_FACTOR, value=UNSCALED, note=_CONVERSION_NOTE),
         _default(dest_col=_Col.STORAGE_TARGET, value=_NO_TARGET, note=_TARGET_NOTE),
         _default(
             dest_col=_Col.CYCLE_LIMITS,
