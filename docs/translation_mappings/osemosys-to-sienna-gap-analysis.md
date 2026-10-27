@@ -262,7 +262,7 @@ portfolio, so the entries of [The portfolio](#the-portfolio) and
 | [The variable cost of a `RenewableDispatch`](#differences-that-are-not-a-loss) | Yes. PyPSA puts the cost in the objective with a positive sign. | Not measured |
 
 The other entries have the same effect on the PyPSA dispatch, because their cause comes before
-the Sienna system. [The comparison of the case study](../case_studies/aetos-comparison.md#the-pypsa-dispatch)
+the Sienna system. [The comparison of the case study](../case_studies/aetos-comparison.md#production-unserved-energy-and-emissions-in-both-dispatches)
 measures three of them: the production, the unserved energy and the emissions.
 
 ## Losses that the report does not name
