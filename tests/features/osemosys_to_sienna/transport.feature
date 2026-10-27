@@ -157,7 +157,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "decisions.md" contains "| `osemosys.output_activity_ratio.R1/ATDELINK.electricity at the flow back` = 0.75 |  |  | the flow back at the operating mode 2 takes in 1.0 and puts out 0.75 of electricity, so it loses 0.25 of what it sends; the line loses 0.4 both ways, and the operating_modes of its record keep the ratios |"
       And the log contains "1 cost(s) of a flow back differ from the cost of each MWh that the line sends at the operations mode, which is the one cost of the line. Technologies: R1/ATDELINK"
       And the file "decisions.md" contains "| `osemosys.variable_operation_cost.R1/ATDELINK.the flow back` = 1000.0 |  |  | the flow back at the operating mode 2 costs 1 "
-      And the file "decisions.md" contains "/MWh sent, and the line costs 0.8 "
+      And the file "decisions.md" contains "/MWh sent, and the variable cost of the line is 0.8 "
 
     Scenario: A flow back with the loss and the cost of the operations mode is not reported
       ATDELINK takes in 1.25 units of electricity in the flow back too, so it loses 0.4 of what
@@ -279,9 +279,9 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the log does not contain "line_loss states"
       And the log does not contain "residual_transport_capacity states"
 
-    Scenario: The emission penalty of an export is reported, because its record leaves it out of the cost
+    Scenario: The emission penalty of an export adds to the cost of its record
       ATEXPORT emits 0.5 t of CO2 for each MWh that it takes in, at a penalty of 10 $/t, which is
-      5 $ for each MWh.
+      5 $ for each MWh. It states no variable cost, so its record costs 5 $ for each MWh.
       Given the otoole set "EMISSION" holds "CO2"
       And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
@@ -299,9 +299,11 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | {match: "^(?P<country>[A-Z]{2})H2$", carrier: hydrogen, location: "{country}"}]}}                       |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "1 emission penalty(ies) of a conversion add to the cost of each MWh that it takes in in OSeMOSYS. Technologies: R1/ATEXPORT"
-      And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATEXPORT.the operations mode` = 500.0 |  |  | the technology emits CO2 at the operations mode, and the region charges emission_penalty 10 "
-      And the file "decisions.md" contains "/tonne, which adds 5 "
+      And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "marginal_cost" set to 5.0
+      And the log does not contain "emission penalty(ies)"
+      And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATEXPORT.CO2 at the operations mode` = 500.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0 | `sienna.conversion.ATEXPORT.extensions.marginal_cost emission penalty of CO2` = 5.0 "
+      And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0<br>`sienna.conversion.ATEXPORT.extensions.marginal_cost emission penalty of CO2` = 5.0 "
+      And the file "decisions.md" contains "| `sienna.conversion.ATEXPORT.extensions.marginal_cost` = 5.0 "
 
     Scenario: A line technology with no residual capacity and a capital cost is left out and reported
       When I translate the otoole model to Sienna for the year "2030"
@@ -621,19 +623,20 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the log contains "1 operating mode(s) of a line technology are neither the flow back nor an import, and extensions.json holds their values. Technologies: R1/ATDEODD"
       And the file "decisions.md" contains "| `osemosys.technology.R1/ATDEODD.operating_mode` = 2 |  |  | the line does not run the operating mode 2, which is neither the flow back nor an import; the operating_modes of its record keep its values |"
 
-    Scenario: The emission penalty of the operations mode of a line is reported, because the line cost leaves it out
+    Scenario: The emission penalty of the operations mode of a line adds to the cost of the line
       In mode 1 ATDEBUY emits 0.1 t of CO2 for each MWh that it sends, at a penalty of 20 $/t,
-      which is 2 $ for each MWh sent.
+      which is 2 $ for each MWh sent. With the variable cost of 1 $, each MWh sent costs 3 $.
       Given the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATDEBUY    | CO2      | 1                 | 2030 | 100   |
         | R1     | ATDEBUY    | CO2      | 2                 | 2030 | 400   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDEBUY" having "marginal_cost" set to 1.0
-      And the log contains "1 emission penalty(ies) of a line add to the cost of each MWh that it sends in OSeMOSYS. Technologies: R1/ATDEBUY"
-      And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATDEBUY.the operations mode` = 100.0 |  |  | the technology emits CO2 at the operations mode, and the region charges emission_penalty 20 "
-      And the file "decisions.md" contains "/tonne, which adds 2 "
+      And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDEBUY" having "marginal_cost" set to 3.0
+      And the log does not contain "emission penalty(ies)"
+      And the file "decisions.md" contains "| `osemosys.emission_rate.R1/ATDEBUY.CO2 at the operations mode` = 100.0<br>`osemosys.emission_penalty.R1/CO2` = 20.0<br>`osemosys.input_activity_ratio.R1/ATDEBUY.electricity at the operations mode` = 1.0 | `sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost emission penalty of CO2` = 2.0 "
+      And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATDEBUY.electricity at the operations mode` = 1.0<br>`sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost emission penalty of CO2` = 2.0 "
+      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATDEBUY.extensions.marginal_cost` = 3.0 "
 
     Scenario: An import reaches a PyPSA network as a generator of the carrier import
       The PyPSA leg reads the carrier from the generator record of extensions.json.

@@ -36,6 +36,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._link_penalties import (
+    build_link_penalty_events,
+    build_penalty_cost_sources,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     TECHNOLOGY_NAME,
 )
@@ -46,7 +50,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     AVAILABILITY,
     COST,
-    COST_MWH,
     DERATE,
     FROM_BUS,
     FROM_FUEL,
@@ -56,6 +59,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     IS_CONVERSION,
     LINE_NAME,
     LOSS,
+    MARGINAL_COST_MWH,
     OUTPUT_RATIO,
     RATING,
     RECEIVED_MW,
@@ -148,7 +152,8 @@ _LOSS_DERIVATION = (
 )
 _COST_DERIVATION = (
     "variable_operation_cost at the operations mode, in $/MWh, / the electricity "
-    "input_activity_ratio, for each MWh that the line sends; a Sienna line prices no flow"
+    "input_activity_ratio, plus the emission penalty of each pollutant that the mode emits, for "
+    "each MWh that the line sends; a Sienna line prices no flow"
 )
 
 
@@ -282,6 +287,7 @@ def _build_reports() -> list[Translation]:
         Translation(exprs=[], make_events=lambda old, _new: _build_conversion_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_stand_in_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_cost_events(old)),
+        Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(old)),
         Translation(exprs=[], make_events=lambda old, _new: _build_availability_events(old)),
         Translation(
             exprs=[],
@@ -327,16 +333,35 @@ def _build_dropped_derate_events(old: dict[str, Any]) -> list[TranslationEvent]:
 
 
 def _build_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    if not old[COST_MWH]:
+    """The marginal cost of the line, from the cost of the operations mode and each penalty."""
+    if not old[MARGINAL_COST_MWH]:
         return []
+    penalties = build_penalty_cost_sources(
+        old,
+        SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,
+        old[LINE_NAME],
+        _MARGINAL_COST_ATTRIBUTE,
+    )
     return build_derived(
         [
             _build_source(SupplyParameter.VARIABLE_OPERATION_COST, old, None, old[COST]),
             _build_ratio_sources(old)[0],
+            *penalties,
         ],
-        [_dest(old[LINE_NAME], _MARGINAL_COST_ATTRIBUTE, old[COST_MWH], UNIT_DOLLARS_PER_MWH)],
+        [
+            _dest(
+                old[LINE_NAME],
+                _MARGINAL_COST_ATTRIBUTE,
+                old[MARGINAL_COST_MWH],
+                UNIT_DOLLARS_PER_MWH,
+            )
+        ],
         _COST_DERIVATION,
     )
+
+
+def _build_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    return build_link_penalty_events(old, _dest, old[LINE_NAME], _MARGINAL_COST_ATTRIBUTE)
 
 
 TRANSPORT_TRANSLATIONS: list[Translation] = [
