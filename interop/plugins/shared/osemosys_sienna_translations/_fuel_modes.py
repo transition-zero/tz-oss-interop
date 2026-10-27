@@ -86,6 +86,11 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import Oper
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     TECHNOLOGY_NAME,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    RATED_COST_MWH,
+    read_rated_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import RATING_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     express_converted,
 )
@@ -133,6 +138,7 @@ _TECH_LOWER = "technology_lower"
 _TECH_UPPER = "technology_upper"
 _MODE_LOWER = "mode_lower"
 _MODE_UPPER = "mode_upper"
+_PER_ACTIVITY = 1.0
 _COUNTED_NOUN = "fuel technology mode(s)"
 _LISTED = SkippedNames(column=MODE_REPORT_NAME, label=TECHNOLOGIES_LABEL)
 
@@ -373,14 +379,10 @@ _BOUNDS: tuple[tuple[str, str, list[str]], ...] = (
 
 def _enrich_costs(state: State, operations: OperationsYear, modes: pl.DataFrame) -> pl.DataFrame:
     """$/MWh and t/MWh of activity: the variable cost, the emission rates and their penalty."""
-    units = operations.units
-    costs = read_parameter(state, SupplyParameter.VARIABLE_OPERATION_COST, operations.year)
-    costs = costs.select(*_MODE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(VARIABLE_COST))
-    table = modes.join(costs, on=_MODE_KEYS, how="left").with_columns(
-        pl.col(VARIABLE_COST).fill_null(NO_COST)
-    )
-    convert = units.convert_cost_per_energy_to_dollars_per_mwh
-    table = table.with_columns(express_converted(table, VARIABLE_COST, convert).alias(COST_MWH))
+    # A cost of a mode is for each MWh of its activity, which rates the mode.
+    rated = modes.select(*_MODE_KEYS, pl.lit(_PER_ACTIVITY).alias(RATING_RATIO))
+    costs = read_rated_costs(state, operations, rated).rename({RATED_COST_MWH: COST_MWH})
+    table = modes.join(costs, on=_MODE_KEYS, how="left")
     rates = _read_rates(state, operations, table)
     return table.join(rates, on=_MODE_KEYS, how="left").with_columns(
         pl.col(PENALTY_MWH).fill_null(NO_COST)

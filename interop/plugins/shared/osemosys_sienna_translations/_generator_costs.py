@@ -18,6 +18,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
 )
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
     express_per_output,
@@ -32,10 +33,12 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     FuelSupply,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
-from interop.plugins.shared.osemosys_sienna_translations._technologies import (
-    VARIABLE_COST,
-    read_variable_costs,
+from interop.plugins.shared.osemosys_sienna_translations._technologies import VARIABLE_COST
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    RATED_COST_MWH,
+    read_rated_costs,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_values import RATING_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 
 OWN_COST = "own_variable_cost"
@@ -64,11 +67,7 @@ def enrich_variable_costs(
     ratios = generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO)
     terms = _build_fuel_terms(state, operations, inputs.join(ratios, on=_KEYS), fuel_supply)
     table = generators.join(own, on=_KEYS, how="left").join(terms, on=_KEYS, how="left")
-    convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
-    table = table.with_columns(
-        express_per_output(express_converted(table, OWN_COST, convert)).alias(OWN_COST_MWH),
-        pl.col(FUEL_COST_MWH).fill_null(0.0),
-    )
+    table = table.with_columns(pl.col(FUEL_COST_MWH).fill_null(NO_COST))
     return table.with_columns(
         (pl.col(OWN_COST_MWH) + pl.col(FUEL_COST_MWH)).alias(VARIABLE_COST_MWH)
     )
@@ -87,9 +86,14 @@ def list_fuel_producers(technologies: pl.DataFrame) -> pl.DataFrame:
 def _read_own_costs(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:
-    keys = generators.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
-    stated = read_variable_costs(state, operations.year, keys)
-    return stated.select(*_KEYS, pl.col(VARIABLE_COST).alias(OWN_COST))
+    rated = generators.select(
+        *_KEYS,
+        pl.lit(operations.mode).alias(OPERATING_MODE),
+        pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO),
+    )
+    return read_rated_costs(state, operations, rated).select(
+        *_KEYS, pl.col(VARIABLE_COST).alias(OWN_COST), pl.col(RATED_COST_MWH).alias(OWN_COST_MWH)
+    )
 
 
 def _build_fuel_terms(
