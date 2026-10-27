@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
+    add_built_records,
     build_policies,
     list_model_years,
     report_policy_changes,
@@ -27,8 +27,6 @@ class OsemosysToSiennaMapPolicies(OperationsMapping):
 
     def map_components(self, state: State, operations: OperationsYear) -> None:
         policies = build_policies(state, list_model_years(state), operations.units)
-        append_extensions(state.destination_extensions, ExtensionKind.CONSTRAINT, policies.records)
-        for event in policies.events:
-            self._recorder.append(event)
+        add_built_records(state, policies.built, self._recorder)
         report_policy_changes(policies, self._recorder)
         set_policies_persisted(state, policies)

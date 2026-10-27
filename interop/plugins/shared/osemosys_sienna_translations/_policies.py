@@ -68,6 +68,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_for_years,
     read_yearly_values,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
 from interop.plugins.shared.osemosys_sienna_translations._emission_limits import (
     EMITTERS,
     PERIOD_NET_LIMIT,
@@ -235,21 +236,24 @@ class NotMappedCheck(NamedTuple):
     rule: SkipRule
 
 
+def _build_no_records() -> BuiltRecords[ConstraintExtension]:
+    return BuiltRecords(ExtensionKind.CONSTRAINT, [])
+
+
 @dataclass
 class Policies:
-    """The constraint records, their events, the rows of each parameter that they hold, and the
-    checks that report each value that the records do not hold.
+    """The constraint records and their events, the rows of each parameter that they hold, and
+    the checks that report each value that the records do not hold.
     """
 
-    records: list[ConstraintExtension] = field(default_factory=list)
-    events: list[TranslationEvent] = field(default_factory=list)
+    built: BuiltRecords[ConstraintExtension] = field(default_factory=_build_no_records)
     held: list[HeldRows] = field(default_factory=list)
     checks: list[NotMappedCheck] = field(default_factory=list)
 
     def add(self, other: Policies) -> None:
         """Add the records, the events, the held rows and the checks of other policies."""
-        self.records.extend(other.records)
-        self.events.extend(other.events)
+        self.built.records.extend(other.built.records)
+        self.built.events.extend(other.built.events)
         self.held.extend(other.held)
         self.checks.extend(other.checks)
 
@@ -468,12 +472,13 @@ def _read_horizon_limits(
 def _build_spec_policies(inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame) -> Policies:
     members = _group_members(inputs, spec, limits)
     by_record = limits.partition_by(_RECORD, as_dict=True)
+    records = [
+        _build_record(spec, rows, members.get(record, []))
+        for (record,), rows in sorted(by_record.items())
+    ]
+    events = [_build_limit_event(spec, row) for row in limits.iter_rows(named=True)]
     return Policies(
-        records=[
-            _build_record(spec, rows, members.get(record, []))
-            for (record,), rows in sorted(by_record.items())
-        ],
-        events=[_build_limit_event(spec, row) for row in limits.iter_rows(named=True)],
+        built=BuiltRecords(ExtensionKind.CONSTRAINT, records, events),
         held=_list_held_rows(inputs, spec, limits),
     )
 
