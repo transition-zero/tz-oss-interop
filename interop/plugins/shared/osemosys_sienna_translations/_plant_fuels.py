@@ -41,9 +41,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     IS_ELECTRICITY,
     read_fuel_buses,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     OWN_COST,
     OWN_COST_MWH,
@@ -60,6 +57,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_events impor
     build_region_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.translation_runner import DestinationFieldFactory
 from interop.ports.outbound.reporting import SourceField, TranslationEvent

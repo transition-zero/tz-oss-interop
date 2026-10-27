@@ -52,12 +52,8 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     GENERATOR_NAME,
     HAS_SERIES,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST,
-    FIXED_COST_MW_YEAR,
     FUEL_TERM_MWH,
     FUEL_TERMS,
     OWN_COST,
@@ -77,6 +73,14 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     AVAILABILITY_FACTOR,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    FIXED_COST,
+    FIXED_COST_MW_YEAR,
 )
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,

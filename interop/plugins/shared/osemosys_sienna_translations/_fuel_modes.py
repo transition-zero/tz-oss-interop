@@ -69,9 +69,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     IS_ELECTRICITY,
     read_fuel_buses,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     ACTIVITY_RATE_T_PER_MWH,
     PENALTY_PER_TONNE,
@@ -86,6 +83,9 @@ from interop.plugins.shared.osemosys_sienna_translations._left_out import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     express_converted,
 )

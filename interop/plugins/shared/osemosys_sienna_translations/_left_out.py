@@ -35,11 +35,11 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_parameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
