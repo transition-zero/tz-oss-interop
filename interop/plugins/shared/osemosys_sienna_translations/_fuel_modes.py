@@ -27,7 +27,6 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
@@ -37,7 +36,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     LOAD_NAME_SEPARATOR,
     NO_COST,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     ActivityParameter,
     SupplyParameter,
@@ -53,6 +51,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     BUILD_AVAILABILITY,
     BUILD_LIMIT,
@@ -98,7 +97,7 @@ from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
     SkipRule,
-    filter_component,
+    drop_skipped,
 )
 
 # One row for each operating mode, in OSeMOSYS words, before any record exists.
@@ -144,9 +143,7 @@ _LISTED = SkippedNames(column=MODE_REPORT_NAME, label=TECHNOLOGIES_LABEL)
 
 
 def _build_skip(reason: str, note: str, attribute_col: str | None = None) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=TECHNOLOGY,
         name_col=MODE_REPORT_NAME,
         reason=reason,
@@ -205,8 +202,7 @@ def build_fuel_modes_source(
         return modes
     modes = _enrich_capacity(state, operations, modes)
     modes = _enrich_bounds(state, operations, modes)
-    for rule in _SKIP_RULES:
-        modes, _ = filter_component(modes, rule.keep, rule.report, recorder)
+    modes = drop_skipped(modes, _SKIP_RULES, recorder)
     modes = _enrich_costs(state, operations, modes)
     return modes.sort(MODE_NAME)
 

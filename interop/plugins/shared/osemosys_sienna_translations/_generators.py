@@ -25,7 +25,6 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
@@ -59,7 +58,10 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_mode_parameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
+from interop.plugins.shared.osemosys_sienna_translations._events import (
+    build_osemosys_field,
+    osemosys_skip_report,
+)
 from interop.plugins.shared.osemosys_sienna_translations._flow_buses import (
     SplitFlow,
     read_flow_buses,
@@ -130,8 +132,8 @@ from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaC
 from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
-    SkipReport,
     SkipRule,
+    drop_skipped,
     filter_component,
 )
 from interop.plugins.shared.warning_text import name_a_few
@@ -168,9 +170,7 @@ _OUTPUT_FLOW = SplitFlow(
 )
 
 
-NO_CAPACITY_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_CAPACITY_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="have no residual capacity in the operations year",
@@ -179,9 +179,7 @@ NO_CAPACITY_SKIP = SkipReport(
     listed=_LISTED,
     attribute_col=RESIDUAL_CAPACITY,
 )
-NO_CARRIERS_ROW_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_CARRIERS_ROW_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="have a category that no carriers: row of the user mappings file names",
@@ -190,9 +188,7 @@ NO_CARRIERS_ROW_SKIP = SkipReport(
     listed=_LISTED,
     attribute_col=AnnotationColumn.CATEGORY,
 )
-NOT_A_GENERATOR_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NOT_A_GENERATOR_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="have a category whose carriers: row names a type that is not a generator",
@@ -204,9 +200,7 @@ NOT_A_GENERATOR_SKIP = SkipReport(
     listed=_LISTED,
     attribute_col=AnnotationColumn.CATEGORY,
 )
-NO_BUS_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_BUS_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="put out electricity only to fuels with no location",
@@ -214,9 +208,7 @@ NO_BUS_SKIP = SkipReport(
     note="no electricity fuel that the technology puts out has a location, so no bus can hold it",
     listed=_LISTED,
 )
-STRANDED_FUEL_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+STRANDED_FUEL_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="burn a fuel whose fuel_supply technologies cannot run in the operations year",
@@ -229,9 +221,7 @@ STRANDED_FUEL_SKIP = SkipReport(
     attribute_col=_STRANDED_FUEL,
     attribute_name=FUEL,
 )
-NO_ELECTRICITY_OUTPUT_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_ELECTRICITY_OUTPUT_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason="put out no electricity at the operations mode",
@@ -304,8 +294,7 @@ def _read_generators(
     technologies = technologies.join(
         _read_output_buses(state, operations), on=[REGION, TECHNOLOGY], how="left"
     )
-    for rule in _build_skip_rules(list_bus_names(state)):
-        technologies, _ = filter_component(technologies, rule.keep, rule.report, recorder)
+    technologies = drop_skipped(technologies, _build_skip_rules(list_bus_names(state)), recorder)
     report_split_flows(technologies, _OUTPUT_FLOW, recorder)
     return technologies
 
