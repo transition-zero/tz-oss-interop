@@ -157,11 +157,8 @@ class EnergyLimitMapper:
         reporter = GeneratorReporter(self._recorder)
         types = _build_sienna_types(state)
         for bound in bounds:
-            reporter.record_energy_bound_unmapped(
-                types.get(bound.name, ExtensionKind.GENERATOR),
-                bound.name,
-                f"{EXTENSIONS_PREFIX}{bound.field_name}",
-                note,
+            reporter.record_bound_unapplied(
+                types.get(bound.name, ExtensionKind.GENERATOR), bound.name, bound.field_name, note
             )
 
 

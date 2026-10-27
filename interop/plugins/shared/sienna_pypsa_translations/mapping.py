@@ -18,6 +18,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
+    SiennaLinkCol,
+    SiennaLoadCol,
+    SiennaStorageCol,
     SiennaStructField,
     SiennaTable,
     SiennaUnitSystem,
@@ -25,6 +28,15 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_pypsa_translations.constants import SIENNA_TO_PYPSA
 from interop.plugins.shared.translation_runner import SkipReport
 from interop.ports.errors import UserInputError
+
+# The name column and the type column of each source table that states a Sienna type.
+_TYPED_COLUMNS: dict[str, tuple[str, str]] = {
+    SiennaTable.GENERATORS: (SiennaGeneratorCol.NAME, SiennaGeneratorCol.SIENNA_TYPE),
+    SiennaTable.STORAGE: (SiennaStorageCol.NAME, SiennaStorageCol.SIENNA_TYPE),
+    SiennaTable.LOADS: (SiennaLoadCol.NAME, SiennaLoadCol.SIENNA_TYPE),
+    SiennaTable.LINES: (SiennaLineCol.NAME, SiennaLineCol.SIENNA_TYPE),
+    SiennaTable.LINKS: (SiennaLinkCol.NAME, SiennaLinkCol.SIENNA_TYPE),
+}
 
 
 def extendable_floor(rated: float, is_extendable: bool | None) -> float | None:
@@ -134,3 +146,12 @@ def bus_id_to_v_nom(state: State) -> dict[int, float]:
         row[SiennaACBusCol.ID]: float(row[SiennaACBusCol.BASE_VOLTAGE])
         for row in frame.iter_rows(named=True)
     }
+
+
+def find_source_types(state: State, table: str) -> dict[str, str] | None:
+    """The Sienna type of each component of a source table, by name; None if no table is staged."""
+    source = state.source_topology.get(table)
+    if source is None:
+        return None
+    name_column, type_column = _TYPED_COLUMNS[table]
+    return dict(source.select(name_column, type_column).collect().iter_rows())

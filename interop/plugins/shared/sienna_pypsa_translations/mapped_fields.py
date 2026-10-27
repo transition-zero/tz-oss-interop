@@ -9,6 +9,7 @@ set names `overnight_cost_per_mw`, which maps only beside a discount rate.
 from __future__ import annotations
 
 from interop.core.extensions import (
+    ActivityExtension,
     BusExtension,
     ControllableLineExtension,
     ConversionExtension,
@@ -124,4 +125,10 @@ FUEL_GENERATOR_MAPPED_FIELDS = build_field_names(
 # A load of a fuel that is not electricity has no Sienna load, so its record states the load.
 FUEL_LOAD_MAPPED_FIELDS = build_field_names(
     LoadExtension, "bus", "carrier", "p_set", "p_set_series"
+)
+
+# The energy bounds of a record: by year, and over the whole horizon.
+ANNUAL_BOUND_FIELDS = build_field_names(ActivityExtension, "e_sum_min", "e_sum_max")
+HORIZON_BOUND_FIELDS = build_field_names(
+    ActivityExtension, "e_sum_min_horizon", "e_sum_max_horizon"
 )

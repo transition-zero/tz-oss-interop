@@ -9,9 +9,11 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_time_series import drop_profiles_off_the_window
-from interop.plugins.shared.sienna_pypsa_translations.link_bounds import report_link_bounds
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ProfileReporter
+from interop.plugins.shared.sienna_pypsa_translations.unapplied_bounds import (
+    report_unapplied_bounds,
+)
 from interop.plugins.shared.staged_samples import choose_ensemble_samples
 from interop.plugins.steps.sienna_to_pypsa.map_buses import map_buses
 from interop.plugins.steps.sienna_to_pypsa.map_conversions import SiennaToPypsaMapConversions
@@ -27,7 +29,7 @@ from interop.plugins.steps.sienna_to_pypsa.map_transmission import SiennaToPypsa
 _DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
 _CHOOSE_ENSEMBLE_SAMPLES = "choose_ensemble_samples"
 _MAP_SNAPSHOT_WEIGHTINGS = "sienna_to_pypsa_map_snapshot_weightings"
-_REPORT_LINK_BOUNDS = "sienna_to_pypsa_report_link_bounds"
+_REPORT_UNAPPLIED_BOUNDS = "sienna_to_pypsa_report_unapplied_bounds"
 
 _WINDOW_ADVICE = (
     "Every TimeSeriesAssociation in one system has to cover the same snapshots, so check "
@@ -59,7 +61,7 @@ class SiennaToPypsaMapComponents(TranslationStep):
         map_buses(state, self._recorder, reader)
         for sub_step in self._sub_steps(reader):
             state = sub_step.run(state, params)
-        report_link_bounds(state, reader, self._scoped(_REPORT_LINK_BOUNDS))
+        report_unapplied_bounds(state, reader, self._scoped(_REPORT_UNAPPLIED_BOUNDS))
         self._drop_profiles_off_the_window(state)
         choose_ensemble_samples(state, self._ensemble_recorder, Framework.SIENNA)
         self._map_snapshot_weightings(state, reader)
