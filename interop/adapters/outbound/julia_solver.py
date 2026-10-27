@@ -491,35 +491,35 @@ def _read_slack_energy(jl: Any, slack: str) -> SlackEnergy | None:
     Copperplate and PTDF hold one slack for each AC subnetwork, named by its reference bus;
     DCP holds one for each bus. A read that fails gives a warning and None.
     """
-    totals = jl.seval(f"""
-        try
-            keys_ = filter(k -> startswith(k, "{slack}__"), list_variable_names(results))
-            if isempty(keys_)
-                nothing
-            else
-                bus_names = Dict(
-                    string(get_number(bus)) => get_name(bus)
-                    for bus in get_components(ACBus, sys)
-                )
-                step = Dates.Millisecond(PowerSimulations.get_resolution(problem))
-                step_hours = Dates.value(step) / 3_600_000
-                totals = Dict{{String, Float64}}()
-                for key in keys_
-                    table = read_variable(results, key; table_format = TableFormat.LONG)
-                    for row in eachrow(table)
-                        location = get(bus_names, string(row.name), string(row.name))
-                        totals[location] = get(totals, location, 0.0) + row.value * step_hours
+    from juliacall import JuliaError  # noqa: PLC0415
+
+    try:
+        totals = jl.seval(f"""
+            let keys_ = filter(k -> startswith(k, "{slack}__"), list_variable_names(results))
+                if isempty(keys_)
+                    nothing
+                else
+                    bus_names = Dict(
+                        string(get_number(bus)) => get_name(bus)
+                        for bus in get_components(ACBus, sys)
+                    )
+                    step = Dates.Millisecond(PowerSimulations.get_resolution(problem))
+                    step_hours = Dates.value(step) / 3_600_000
+                    totals = Dict{{String, Float64}}()
+                    for key in keys_
+                        table = read_variable(results, key; table_format = TableFormat.LONG)
+                        for row in eachrow(table)
+                            location = get(bus_names, string(row.name), string(row.name))
+                            totals[location] = get(totals, location, 0.0) + row.value * step_hours
+                        end
                     end
+                    [(location, energy) for (location, energy) in totals]
                 end
-                [(location, energy) for (location, energy) in totals]
             end
-        catch err
-            sprint(showerror, err)
-        end
-    """)
-    if totals is None:
+        """)
+    except JuliaError as exc:
+        log.warning("solve: could not read %s, so its energy is not reported: %s", slack, exc)
         return None
-    if isinstance(totals, str):
-        log.warning("solve: could not read %s, so its energy is not reported: %s", slack, totals)
+    if totals is None:
         return None
     return build_slack_energy((str(pair[0]), float(pair[1])) for pair in totals)

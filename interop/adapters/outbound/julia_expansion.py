@@ -219,7 +219,8 @@ def _run_expansion_inner(jl: Any, request: _ExpansionRequest) -> ExpansionOutcom
     """)
 
     log.info("=== 5. Solving ===")
-    run_status = jl.seval("PSIN.solve!(model)")
+    # The default, true, copies the whole JuMP model to a file that nothing reads, which is slow.
+    run_status = jl.seval("PSIN.solve!(model; export_optimization_problem = false)")
     objective = jl.seval("""
         global results = PSIN.OptimizationProblemResults(model)
         IS.Optimization.get_objective_value(results)
