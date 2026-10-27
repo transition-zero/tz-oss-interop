@@ -35,16 +35,11 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST,
-    FIXED_COST_MW_YEAR,
-    enrich_fixed_costs,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    PENALTY,
     RATE_T_PER_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
-    PENALTY,
     PENALTY_COST_MWH,
     build_penalty_terms,
 )
@@ -69,6 +64,11 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
     read_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    FIXED_COST,
+    FIXED_COST_MW_YEAR,
+    enrich_fixed_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
