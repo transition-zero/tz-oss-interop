@@ -38,6 +38,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
     build_bound_events,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import ComponentMapping
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
     build_derived,
@@ -105,6 +106,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
 from interop.plugins.shared.sienna_constants import (
     DEFAULT_CYCLE_LIMITS,
     EFFICIENCY_DTYPE,
+    ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
     MIN_MAX_DTYPE,
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
@@ -615,3 +617,8 @@ STORAGE_TRANSLATIONS: list[Translation] = [
     Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(old)),
     Translation(exprs=[], make_events=lambda old, _new: _build_extension_events(old)),
 ]
+STORAGE_MAPPING = ComponentMapping(
+    SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+    (STORAGE_TRANSLATIONS,),
+    ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
+)
