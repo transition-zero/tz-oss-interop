@@ -46,6 +46,10 @@ from interop.plugins.shared.osemosys_sienna_translations._activity import (
     enrich_capacity_to_activity,
     express_activity_mw,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
+    LOWER_BOUND,
+    UPPER_BOUND,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
 )
@@ -326,11 +330,11 @@ def _enrich_bounds(state: State, operations: OperationsYear, modes: pl.DataFrame
     is_single = pl.col(MODE_COUNT) == 1
     upper = _express_tightest(
         pl.when(pl.col(_MODE_UPPER) > 0).then(pl.col(_MODE_UPPER)),
-        pl.when(is_single & (pl.col(_TECH_UPPER) >= 0)).then(pl.col(_TECH_UPPER)),
+        pl.when(is_single & UPPER_BOUND.binds(pl.col(_TECH_UPPER))).then(pl.col(_TECH_UPPER)),
     ).list.min()
     lower = _express_tightest(
         pl.when(pl.col(_MODE_LOWER) > 0).then(pl.col(_MODE_LOWER)),
-        pl.when(is_single & (pl.col(_TECH_LOWER) > 0)).then(pl.col(_TECH_LOWER)),
+        pl.when(is_single & LOWER_BOUND.binds(pl.col(_TECH_LOWER))).then(pl.col(_TECH_LOWER)),
     ).list.max()
     table = table.with_columns(upper.alias(E_MAX_MWH), lower.alias(E_MIN_MWH))
     return table.with_columns(

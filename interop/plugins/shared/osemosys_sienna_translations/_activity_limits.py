@@ -8,7 +8,7 @@ and of a storage, and the input of a line and of a conversion.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -51,26 +51,34 @@ _KEYS = [REGION, TECHNOLOGY]
 
 
 class ActivityBound(NamedTuple):
-    """One annual activity parameter, the column that lists its bounds, what binds, and the
-    field of the extension record that holds it."""
+    """One annual activity parameter, the column that lists its bounds, whether a limit binds,
+    and the field of the extension record that holds it."""
 
     parameter: SupplyParameter
     column: str
-    binds: pl.Expr
+    binds: Callable[[pl.Expr], pl.Expr]
     extension_field: str
+
+
+def _express_is_positive(limit: pl.Expr) -> pl.Expr:
+    return limit > 0
+
+
+def _express_is_not_negative(limit: pl.Expr) -> pl.Expr:
+    return limit >= 0
 
 
 # A lower limit of 0 and a negative upper limit bind nothing, as OSeMOSYS states them.
 LOWER_BOUND = ActivityBound(
     SupplyParameter.ACTIVITY_LOWER_LIMIT,
     "activity_lower_limits",
-    pl.col(LIMIT) > 0,
+    _express_is_positive,
     "e_sum_min",
 )
 UPPER_BOUND = ActivityBound(
     SupplyParameter.ACTIVITY_UPPER_LIMIT,
     "activity_upper_limits",
-    pl.col(LIMIT) >= 0,
+    _express_is_not_negative,
     "e_sum_max",
 )
 ACTIVITY_BOUNDS = (LOWER_BOUND, UPPER_BOUND)
@@ -142,7 +150,7 @@ def _read_stated_bounds(state: State, rated: pl.DataFrame, bound: ActivityBound)
     return (
         read_parameter_all_years(state, bound.parameter, rated.select(_KEYS).unique())
         .select(*_KEYS, YEAR, pl.col(VALUE_COL).cast(pl.Float64).alias(LIMIT))
-        .filter(bound.binds)
+        .filter(bound.binds(pl.col(LIMIT)))
     )
 
 
