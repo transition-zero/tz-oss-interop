@@ -4,13 +4,13 @@ TwoTerminalGenericHVDCLine.
 At the operations mode, a transport technology takes in electricity at the bus of one fuel and
 puts it out at the bus of another, in another location. A conversion technology does the same
 between two electricity fuels of one location. Each becomes a line from the first bus to the
-second, in that direction. It sends at most its capacity in MW × its availability factor × its
-electricity input ratio, and it loses the share `1 - output ratio / input ratio` of what it
-sends. `_line_capacity` gives the capacity. When another mode takes electricity in at the second
-bus and puts it out at the first, the line also flows back, within the limits of that mode. A
-mode that puts out electricity at one end and takes in none is an import, which becomes a
-generator. The values of every other mode, and each value that a Sienna line has no field for,
-go to the line record of extensions.json.
+second, in that direction. It sends at most its capacity × its `capacity_to_activity_unit` /
+8760 h, in MW, × its availability factor × its electricity input ratio, and it loses the share
+`1 - output ratio / input ratio` of what it sends. `_line_capacity` gives the capacity. When
+another mode takes electricity in at the second bus and puts it out at the first, the line also
+flows back, within the limits of that mode. A mode that puts out electricity at one end and
+takes in none is an import, which becomes a generator. The values of every other mode, and each
+value that a Sienna line has no field for, go to the line record of extensions.json.
 """
 
 from __future__ import annotations
@@ -47,6 +47,10 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     TECHNOLOGIES_LABEL,
     WHOLE_CAPACITY,
     SupplyParameter,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    enrich_capacity_to_activity,
+    express_activity_mw,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
     ELECTRICITY_BUS,
@@ -158,7 +162,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_imports impo
     is_held_by_import_mode,
     read_import_modes,
 )
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
@@ -191,9 +194,12 @@ _FREE_BUILD_SCOPE = "free-build"
 _FLEET_MW = "fleet_mw"
 # The source value of the rating of a line with no limit: the output of the whole fleet.
 _FLEET = "the whole fleet"
-_FLEET_ATTRIBUTE = "Σ in MW × the largest electricity output_activity_ratio of each technology"
+_FLEET_ATTRIBUTE = (
+    "Σ residual_capacity × capacity_to_activity_unit / 8760 h, in MW, × the largest electricity "
+    "output_activity_ratio of each technology"
+)
 _STATED_TERM = "the capacity is "
-_STATED_TERM_END = " in MW × availability_factor"
+_STATED_TERM_END = " × capacity_to_activity_unit / 8760 h, in MW, × availability_factor"
 _BUILD_LIMIT_TERM = ", the most that the model builds at no cost in the year,"
 _FLEET_TERM = (
     "the model builds the technology at no cost and no limit binds it, so the capacity is the "
@@ -596,7 +602,8 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
     """
     stated = read_availability_factors(state, operations.year, lines.select(_KEYS))
     rated = lines.join(stated.rename({AVAILABILITY_FACTOR: AVAILABILITY}), on=_KEYS)
-    limited = express_converted(rated, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
+    rated = enrich_capacity_to_activity(state, operations.year, rated)
+    limited = express_activity_mw(rated, LINE_CAPACITY, operations.units)
     is_stand_in = pl.col(IS_UNLIMITED)
     is_derated = ~is_stand_in & (pl.col(AVAILABILITY) != WHOLE_CAPACITY)
     rated = rated.with_columns(

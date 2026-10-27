@@ -2,10 +2,10 @@
 
 An import mode puts out electricity at one end of a line and takes in no electricity. So it
 brings electricity from outside the model. The system holds it as a generator on the bus of
-that end. The generator rates at the residual capacity of the line in MW × the electricity
-output ratio of the mode. Its availability in each hour is that of the line: the capacity
-factor of the hour × the availability factor. For each MWh of output, it pays the variable cost
-of the mode and the penalty of each pollutant that the mode emits.
+that end. The generator rates at the capacity of the line × its `capacity_to_activity_unit` /
+8760 h, in MW, × the electricity output ratio of the mode. Its availability in each hour is that
+of the line: the capacity factor of the hour × the availability factor. For each MWh of output,
+it pays the variable cost of the mode and the penalty of each pollutant that the mode emits.
 """
 
 from __future__ import annotations
@@ -36,7 +36,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    CTAU,
     ELECTRICITY_OUTPUT_RATIO,
+    express_activity_mw,
     express_output_capacity,
     express_per_output,
 )
@@ -103,7 +105,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     LINE_NAME,
     TO_BUS,
 )
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
@@ -230,11 +231,11 @@ def build_imports_source(
     """One row for each import mode, with what its ThermalStandard and its record read, and the
     availability of each hour of each import whose hours differ.
 
-    `lines` holds the name and the capacity of each line.
+    `lines` holds the name, the capacity and the capacity_to_activity_unit of each line.
     """
     if imports.height == 0:
         return GeneratorSources(imports, pl.DataFrame())
-    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, LINE_CAPACITY, CAPACITY_PARAMETER)
+    held = lines.select(*_KEYS, LINE_NAME, TECHNOLOGY_NAME, LINE_CAPACITY, CAPACITY_PARAMETER, CTAU)
     table = _enrich_capacity(operations, imports.join(held, on=_KEYS))
     availability = build_availability(state, operations, table, GENERATOR_NAME)
     table = _enrich_own_costs(state, operations, availability.table)
@@ -313,7 +314,7 @@ def _read_flows(
 
 def _enrich_capacity(operations: OperationsYear, imports: pl.DataFrame) -> pl.DataFrame:
     name = pl.concat_str(LINE_NAME, pl.lit(_NAME_INFIX), OPERATING_MODE)
-    capacity = express_converted(imports, LINE_CAPACITY, operations.units.convert_capacity_to_mw)
+    capacity = express_activity_mw(imports, LINE_CAPACITY, operations.units)
     return imports.with_columns(
         name.alias(GENERATOR_NAME),
         pl.lit(SiennaComponent.THERMAL_STANDARD.value).alias(SIENNA_TYPE),

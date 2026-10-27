@@ -23,8 +23,10 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
+    ActivityParameter,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import CTAU
 from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
     ComponentMapping,
 )
@@ -185,6 +187,9 @@ def _build_capacity_sources(old: dict[str, Any]) -> list[SourceField]:
     rating = old[RATING]
     sources = [_build_rating_source(rating)]
     if not rating[RatingField.IS_STAND_IN]:
+        sources.append(
+            _build_source(ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, old, None, old[CTAU])
+        )
         sources.append(
             _build_source(SupplyParameter.AVAILABILITY_FACTOR, old, None, old[AVAILABILITY])
         )

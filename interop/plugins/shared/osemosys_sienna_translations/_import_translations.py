@@ -30,9 +30,11 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     IMPORT_CARRIER,
     NO_COST,
     REGION_NAME_SEPARATOR,
+    ActivityParameter,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    CTAU,
     ELECTRICITY_OUTPUT_RATIO,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
@@ -135,7 +137,8 @@ _BUS_DERIVATION = (
     "one end of the line"
 )
 _BASE_POWER_DERIVATION = (
-    "the capacity of the line in MW × the electricity output_activity_ratio of the import mode; "
+    "the capacity of the line × capacity_to_activity_unit / 8760 h, in MW, × the electricity "
+    "output_activity_ratio of the import mode; "
     "the capacity is residual_capacity of the operations year, or, for a line with none that the "
     "model builds at no cost, min(total_annual_max_capacity, "
     "total_annual_max_capacity_investment)"
@@ -275,6 +278,7 @@ def _build_base_power() -> Translation:
                     old[LINE_CAPACITY],
                     old[CAPACITY_UNIT],
                 ),
+                _build_source(ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, old, None, old[CTAU]),
                 _build_output_ratio_source(old),
             ],
             [_dest(old[GENERATOR_NAME], _Col.BASE_POWER, new[_Col.BASE_POWER], UNIT_MVA)],
