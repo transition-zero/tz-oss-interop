@@ -139,7 +139,7 @@ def _find_series_association(
     document: dict[str, Any], component_type: str, name: str, year: str
 ) -> dict[str, Any]:
     owner_id = find_sienna_component(document, component_type, name)["id"]
-    matching = [
+    matching: list[dict[str, Any]] = [
         association
         for association in document["time_series_associations"]
         if association["owner_type"] == component_type
