@@ -6,7 +6,6 @@ add to it. A plant of a type that no model covers stays out of the plan.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -18,8 +17,6 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.power_simulations_schema import PowerSimulationsCol
 from interop.plugins.shared.power_systems_investments_schema import (
     MODELLED_TECHNOLOGIES,
-    PORTFOLIO_PLANT_DEVICES_TABLE,
-    PlantDeviceColumn,
     PortfolioColumn,
     PortfolioComponent,
 )
@@ -48,9 +45,8 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     PLAN,
     record_not_mapped,
     record_translation,
+    warn_step,
 )
-
-log = logging.getLogger(__name__)
 
 # The existing plants that can stand as a technology of their own: the types a model covers.
 _SUPPLY_TYPES = frozenset(
@@ -107,15 +103,14 @@ _FALLBACK_RATE_DERIVATION = (
 )
 
 _LEFT_OUT_WARNING = (
-    "sienna-to-power-systems-investments: %d existing component(s) have no technology in the "
-    "plan, so their capacity is left out: %s"
+    "%d existing component(s) have no technology in the plan, so their capacity is left out: %s"
 )
 _RENAMED_WARNING = (
-    "sienna-to-power-systems-investments: %d existing plant(s) share a name with a technology "
+    "%d existing plant(s) share a name with a technology "
     "that does not name them, so each plant's own technology takes the name with /existing: %s"
 )
 _HYDRO_BUDGET_WARNING = (
-    "sienna-to-power-systems-investments: %d existing hydro plant(s) state a hydro_budget, which "
+    "%d existing hydro plant(s) state a hydro_budget, which "
     "PowerSystemsInvestments does not read for a supply technology: %s"
 )
 
@@ -184,7 +179,7 @@ class ExistingPlantBuilder:
         """Warn each existing plant that the plan leaves out, renames or reads in part."""
         for warning, names in self._left_out.list_warnings():
             if names:
-                log.warning(warning, len(names), name_a_few(names))
+                warn_step(warning, len(names), name_a_few(names))
 
     def _choose_plant_name(self, device: BaseDevice, taken: set[str]) -> str | None:
         """The name of the plant's own technology, or None when the plan cannot hold it."""
@@ -309,27 +304,6 @@ class ExistingPlantBuilder:
             destination_value=rate,
             derivation=derivation,
         )
-
-
-def build_plant_table(plants: list[PlantRow]) -> pl.DataFrame:
-    """The base system device of each technology made for an existing plant."""
-    return pl.DataFrame(
-        {
-            PlantDeviceColumn.TECHNOLOGY: [plant.technology.name for plant in plants],
-            PlantDeviceColumn.DEVICE: [plant.device.name for plant in plants],
-        },
-        schema={PlantDeviceColumn.TECHNOLOGY: pl.Utf8, PlantDeviceColumn.DEVICE: pl.Utf8},
-    )
-
-
-def build_profile_names(state: State) -> dict[tuple[str, str], str]:
-    """The base device each technology made for a plant takes its profile from, by its type and
-    name."""
-    table = state.destination_tables.get(PORTFOLIO_PLANT_DEVICES_TABLE)
-    if table is None:
-        return {}
-    pairs = table.select(PlantDeviceColumn.TECHNOLOGY, PlantDeviceColumn.DEVICE).iter_rows()
-    return {(_SUPPLY, technology): device for technology, device in pairs}
 
 
 def _build_no_technology_note(device: BaseDevice) -> str:

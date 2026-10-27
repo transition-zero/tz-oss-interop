@@ -14,7 +14,6 @@ add to.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -24,7 +23,6 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_EXISTING_DEVICES_TABLE,
-    PORTFOLIO_PLANT_DEVICES_TABLE,
     PortfolioColumn,
     SeriesDocument,
 )
@@ -49,14 +47,12 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     PLAN,
     record_not_mapped,
     record_translation,
+    warn_step,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_plants import (
     ExistingPlantBuilder,
     PlantRow,
-    build_plant_table,
 )
-
-log = logging.getLogger(__name__)
 
 _STORAGE = SiennaInvestmentsComponent.STORAGE_TECHNOLOGY.value
 _TRANSPORT = SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY.value
@@ -97,24 +93,24 @@ _CONSTANT_NOTE = (
 )
 
 _DROPPED_WARNING = (
-    "sienna-to-power-systems-investments: %d existing device name(s) are not components of the "
+    "%d existing device name(s) are not components of the "
     "base system under their technology's PowerSystems type, so each is left out: %s"
 )
 _UNKNOWN_TECHNOLOGY_WARNING = (
-    "sienna-to-power-systems-investments: %d ExistingDevices attribute(s) describe a technology "
+    "%d ExistingDevices attribute(s) describe a technology "
     "that the portfolio does not hold, so each is left out: %s"
 )
 _TRANSPORT_WARNING = (
-    "sienna-to-power-systems-investments: %d transport technology(ies) name existing links, "
+    "%d transport technology(ies) name existing links, "
     "which PowerSystemsInvestments cannot find as an ACBranch, so their existing capacity is "
     "left out: %s"
 )
 _SHARED_WARNING = (
-    "sienna-to-power-systems-investments: %d technology(ies) name existing devices that another "
+    "%d technology(ies) name existing devices that another "
     "technology holds, so each device counts for one technology only: %s"
 )
 _CONSTANT_WARNING = (
-    "sienna-to-power-systems-investments: PowerSystemsInvestments holds the existing capacity of "
+    "PowerSystemsInvestments holds the existing capacity of "
     "%d technology(ies) constant over every period and reads no retirement: %s"
 )
 
@@ -133,7 +129,7 @@ def map_existing_fleet(
     plants = builder.list_plants(fleet.unnamed, rows_by_type, state)
     fleet.add_plants(plants)
     mapper.set_floors(fleet, rows_by_type)
-    _set_tables(state, fleet, plants)
+    _set_tables(state, fleet)
     mapper.report(fleet)
     builder.warn()
     return plants
@@ -206,7 +202,7 @@ class _FleetMapper:
             self._report_constant(held)
         for warning, names in self._left_out.list_warnings():
             if names:
-                log.warning(warning, len(names), name_a_few(names))
+                warn_step(warning, len(names), name_a_few(names))
 
     def _report_constant(self, held: list[str]) -> None:
         record_not_mapped(
@@ -217,7 +213,7 @@ class _FleetMapper:
             value=len(held),
             derivation=_CONSTANT_NOTE,
         )
-        log.warning(_CONSTANT_WARNING, len(held), name_a_few(held))
+        warn_step(_CONSTANT_WARNING, len(held), name_a_few(held))
 
     def _add_row(
         self,
@@ -350,10 +346,9 @@ class _FleetMapper:
         )
 
 
-def _set_tables(state: State, fleet: _ExistingFleet, plants: list[PlantRow]) -> None:
-    """The devices the adapter attaches, and the device each plant's technology stands for."""
+def _set_tables(state: State, fleet: _ExistingFleet) -> None:
+    """The devices the adapter attaches."""
     state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = _build_table(fleet)
-    state.destination_tables[PORTFOLIO_PLANT_DEVICES_TABLE] = build_plant_table(plants)
 
 
 def _build_table(fleet: _ExistingFleet) -> pl.DataFrame:
