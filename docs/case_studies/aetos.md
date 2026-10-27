@@ -158,6 +158,11 @@ pattern. The pattern reads the technology code after the country code, for examp
 `DENGCCPH1`. The first row that matches a technology wins. Thus the row for `SOST`, which is
 solar thermal, must come before the row for `SO`, which is solar.
 
+The other fuels and the storages have no row, so each takes the location of its region,
+`REGION1`. A scope does not need a row for them. The scope step keeps each fuel and each
+storage that a technology in the scope uses, for example the coal `DECO` of the plant
+`DECOSTPH1`.
+
 ### The carriers
 
 Each `carriers:` row gives one category a Sienna component type and a prime mover. A
@@ -809,8 +814,13 @@ these changes:
 | `sink[0].output_system_json_file_path` | `outputs/subset/system.json` |
 | `sink[1].output_path` | `outputs/subset/portfolio.json` |
 
-The portfolio holds 92 `SupplyTechnology`, 2 `AggregateTransportTechnology` and 5
-`DemandRequirement`. The two transport technologies are `ESELFRPH1` and `ESELPTPH1`.
+The portfolio of our run holds 92 `SupplyTechnology`, 2 `AggregateTransportTechnology`, 5
+`DemandRequirement` and no `StorageTechnology`. The two transport technologies are `ESELFRPH1`
+and `ESELPTPH1`. The scope of that run left out each fuel and each storage with no location in
+the scope: every fuel other than electricity and gas, its supply, and every storage.
+The scope step now keeps each fuel and each storage that a technology in the scope uses, and
+the supply of each kept fuel. Thus a run with the current code gives more technologies. We did
+not run the subset again.
 
 Select `translate` again. Then give these answers:
 
@@ -933,10 +943,12 @@ are the entries that explain the large differences above:
   backstop. Its cost prices the gas plants of the two countries above the penalty of unserved
   energy, so the dispatch does not run them. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices).
-- **The expansion builds biomass, and the published solve builds wind and solar.** The package
-  reads no availability profile for a thermal candidate, so a biomass plant can run at its full
-  capacity in every hour. No emission limit binds, and the existing fleet does not retire. We
-  did not measure the effect of each cause by itself. Refer to
+- **The expansion builds biomass, and the published solve builds wind and solar.** The scope of
+  our run left out every fuel other than electricity and gas, so the plants that burn those
+  fuels paid no fuel cost. It also left out every storage. The package reads no availability
+  profile for a thermal candidate, so a biomass plant can run at its full capacity in every
+  hour. No emission limit binds, and the existing fleet does not retire. We did not measure the
+  effect of each cause by itself. Refer to
   [The expansion solve](../translation_mappings/osemosys-to-sienna-gap-analysis.md#the-expansion-solve).
 
 The published objective does not compare with the objective of a dispatch or of the

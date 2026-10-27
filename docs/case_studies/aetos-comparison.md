@@ -299,6 +299,13 @@ In the three years, the published run builds 64.8 GW of onshore wind and 64.8 GW
 five countries. The expansion builds 25.3 GW and 8.9 GW of two biomass technologies, and
 almost nothing else. These causes apply:
 
+- The scope of this run left out each fuel and each storage with no location in the scope.
+  The mappings file gives a location only to the electricity and the gas fuels. Thus the
+  subset kept no other fuel, for example coal, biomass, uranium or oil, and no supply of one.
+- The plants that burn those fuels thus paid no fuel cost and had no emissions. 81 plants that
+  burn no gas, about 155 GW, cost 0.1 to 8.8 USD/MWh. The biomass candidates cost 3.5 to
+  4.6 USD/MWh, against about 52 USD/MWh with their fuel. A gas plant paid about 90 USD/MWh.
+- The portfolio holds no `StorageTechnology` to store the output of wind and solar.
 - PowerSystemsInvestments.jl reads no availability profile for a thermal candidate. Thus a
   biomass plant can run at its full capacity in every hour.
 - No emission limit binds. The package builds no constraint from `CarbonCaps`.
@@ -306,6 +313,10 @@ almost nothing else. These causes apply:
   in every period.
 - The years between two periods carry no operations.
 - Trade has no loss, and a line flows both ways.
+
+The scope step now keeps each fuel and each storage that a technology in the scope uses, and
+the supply of each kept fuel. A run with the current code thus keeps these fuels, their
+supplies and the storages. We did not run the subset again.
 
 We did not measure the effect of each cause by itself. The published run optimises all 78
 countries over 35 years. Thus these totals are an observation, and not a test of the
