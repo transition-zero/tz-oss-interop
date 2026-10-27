@@ -118,10 +118,12 @@ _PRODUCTION_DERIVATION = (
     "extensions record marks as a conversion has no row"
 )
 _INSTALLED_CAPACITY_DERIVATION = (
-    "p_nom, the nameplate, for a generator; p_nom × p_max_pu for a storage unit or a link, and "
-    "once for a two-way link and its reverse link; p_nom × efficiency for a plant link; no row "
-    "for a link that its extensions record marks as a conversion → installed_capacity at 1 "
-    "January of the year"
+    "the capacity is p_nom_opt, the capacity that the solve built, for an extendable component "
+    "of a solved network that states one, else p_nom; the capacity, the nameplate, for a "
+    "generator; the capacity × p_max_pu for a storage unit or a link, and once for a two-way "
+    "link and its reverse link; the capacity × efficiency for a plant link; no row for a link "
+    "that its extensions record marks as a conversion → installed_capacity at 1 January of the "
+    "year"
 )
 
 
@@ -180,7 +182,11 @@ _ENERGY_SOURCES = [
 ]
 _PRODUCTION = AnnualDerivation(_ENERGY_SOURCES, _PRODUCTION_DERIVATION)
 _INSTALLED_CAPACITY = AnnualDerivation(
-    [_build_source(rated.component, PyPSAGeneratorCol.P_NOM) for rated in _RATED],
+    [
+        _build_source(rated.component, attribute)
+        for rated in _RATED
+        for attribute in (PyPSAGeneratorCol.P_NOM, PyPSAGeneratorCol.P_NOM_OPT)
+    ],
     _INSTALLED_CAPACITY_DERIVATION,
 )
 _EMISSIONS = AnnualDerivation(
@@ -446,7 +452,7 @@ def _build_categories(state: State, table: str, fuels: FuelComponents) -> pl.Laz
 def _build_capacity(state: State, years: pl.DataFrame, view: PypsaNetworkView) -> pl.DataFrame:
     """The MW rating of each component that puts out electricity, for each year of the solve."""
     ratings = [
-        _build_rating(state, rated, view.fuels)
+        _build_rating(state, rated, view)
         for rated in _RATED
         if state.source_topology.get(rated.table) is not None
     ]
@@ -458,18 +464,20 @@ def _build_capacity(state: State, years: pl.DataFrame, view: PypsaNetworkView) -
     return rated.collect().join(years, how="cross")
 
 
-def _build_rating(state: State, rated: _Rated, fuels: FuelComponents) -> pl.LazyFrame:
+def _build_rating(state: State, rated: _Rated, view: PypsaNetworkView) -> pl.LazyFrame:
     topology = state.source_topology[rated.table]
+    rating = _express_rating(topology, rated, view)
     return topology.select(
         pl.col(PYPSA_NAME_COLUMN).alias(ResultsCol.COMPONENT),
         pl.lit(str(rated.component)).alias(AnnualCol.COMPONENT_TYPE),
-        _express_rating(topology, rated, fuels).cast(pl.Float64).alias(ResultsCol.VALUE),
-    ).join(_build_categories(state, rated.table, fuels), on=ResultsCol.COMPONENT, how="left")
+        rating.cast(pl.Float64).alias(ResultsCol.VALUE),
+    ).join(_build_categories(state, rated.table, view.fuels), on=ResultsCol.COMPONENT, how="left")
 
 
-def _express_rating(topology: pl.LazyFrame, rated: _Rated, fuels: FuelComponents) -> pl.Expr:
-    """A plant link rates the electricity that it can put out, p_nom × efficiency."""
-    rating = _express_attribute(topology, rated, PyPSAGeneratorCol.P_NOM)
+def _express_rating(topology: pl.LazyFrame, rated: _Rated, view: PypsaNetworkView) -> pl.Expr:
+    """A plant link rates the electricity that it can put out, its capacity × efficiency."""
+    rating = _express_capacity(topology, rated, view.is_solved)
+    fuels = view.fuels
     if not rated.is_rated_by_p_max_pu:
         return rating
     available = rating * _express_attribute(topology, rated, PyPSALinkCol.P_MAX_PU)
@@ -478,6 +486,18 @@ def _express_rating(topology: pl.LazyFrame, rated: _Rated, fuels: FuelComponents
     is_plant = pl.col(PYPSA_NAME_COLUMN).is_in(list(fuels.plant_links))
     output = rating * _express_attribute(topology, rated, PyPSALinkCol.EFFICIENCY)
     return pl.when(is_plant).then(output).otherwise(available)
+
+
+def _express_capacity(topology: pl.LazyFrame, rated: _Rated, is_solved: bool) -> pl.Expr:
+    """p_nom_opt for an extendable component of a solved network that states one, else p_nom,
+    as the pypsa-to-sienna leg rates such a component."""
+    p_nom = _express_attribute(topology, rated, PyPSAGeneratorCol.P_NOM)
+    if not is_solved or PyPSAGeneratorCol.P_NOM_OPT not in topology.collect_schema().names():
+        return p_nom
+    built = pl.col(PyPSAGeneratorCol.P_NOM_OPT)
+    is_extendable = _express_attribute(topology, rated, PyPSAGeneratorCol.P_NOM_EXTENDABLE)
+    is_built = is_extendable.fill_null(False) & built.is_not_null()  # noqa: FBT003
+    return pl.when(is_built).then(built).otherwise(p_nom)
 
 
 def _express_attribute(topology: pl.LazyFrame, rated: _Rated, attribute: str) -> pl.Expr:
