@@ -280,7 +280,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
   "bus": 1,
   "active_power": 100.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 200.0,
   "active_power_limits": { "min": 50.0, "max": 200.0 },
   "base_power": 200.0,
   "operation_cost": {
@@ -331,7 +331,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 **Applies to carriers:** `solar`, `solar-utility`, `onwind`, `on-wind`, `offwind-ac`, `offwind-dc`, `off-wind`
 
-`RenewableDispatch` represents curtailable renewable generators — those whose output can be reduced below their available profile. It has no `active_power_limits` field; the maximum is defined entirely by the `max_active_power` time series (or `rating × base_power` if no time series exists). It has no `must_run` or `ramp_limits`.
+`RenewableDispatch` represents curtailable renewable generators — those whose output can be reduced below their available profile. It has no `active_power_limits` field; the maximum is defined entirely by the `max_active_power` time series (or `rating`, in MVA, if no time series exists). It has no `must_run` or `ramp_limits`.
 
 | Sienna field | Type / unit | PyPSA source | Transform | Mapping type | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -360,7 +360,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
   "base_power": 100.0,
@@ -392,9 +392,9 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `p_min_pu` | `n.generators_t.p_min_pu` | Not directly supported | — | `RenewableDispatch` has no time-varying lower limit. Use `0.0` for `active_power` |
 | `marginal_cost` | `n.generators_t.marginal_cost` | Not directly supported | — | Switch to `MarketBidCost` if time-varying marginal cost is needed |
 
-**Storage convention.** `PowerSimulations.jl/src/devices_models/devices/renewable_generation.jl`'s `get_default_time_series_names` registers `ActivePowerTimeSeriesParameter => "max_active_power"` for `RenewableGen` under `FixedOutput` and any `AbstractRenewableFormulation`. The formulation multiplies the stored series by `get_max_active_power(d)` (i.e. `rating × base_power`) at solve time. Storing the series in pu of `base_power`, with values in `[0, 1]`, matches this convention and mirrors the `PowerLoad` pattern used for demand. The translator must not pre-multiply by `p_nom`, since the multiplier is applied by the formulation.
+**Storage convention.** `PowerSimulations.jl/src/devices_models/devices/renewable_generation.jl`'s `get_default_time_series_names` registers `ActivePowerTimeSeriesParameter => "max_active_power"` for `RenewableGen` under `FixedOutput` and any `AbstractRenewableFormulation`. The formulation multiplies the stored series by `get_max_active_power(d)` (from the `rating`, in MVA) at solve time. Storing the series in pu of `base_power`, with values in `[0, 1]`, matches this convention and mirrors the `PowerLoad` pattern used for demand. The translator must not pre-multiply by `p_nom`, since the multiplier is applied by the formulation.
 
-**v1 implementation behaviour.** The translator skips the time series when the generator does not appear as a column in `n.generators_t.p_max_pu`, or when its per-unit profile is flat (`np.ptp(values) < 1e-9`). A flat profile carries the same information as the static `rating × base_power` ceiling already encoded on the component, so emitting it would only inflate the H5 sidecar. A column whose index does not match `n.snapshots` is treated as a hard error rather than silently coerced.
+**v1 implementation behaviour.** The translator skips the time series when the generator does not appear as a column in `n.generators_t.p_max_pu`, or when its per-unit profile is flat (`np.ptp(values) < 1e-9`). A flat profile carries the same information as the static `rating` ceiling already encoded on the component, so emitting it would only inflate the H5 sidecar. A column whose index does not match `n.snapshots` is treated as a hard error rather than silently coerced.
 
 ---
 
@@ -402,7 +402,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 **Applies to carriers:** `solar-rooftop`
 
-`RenewableNonDispatch` is the must-take type — the system always accepts whatever is available. It has **no `operation_cost` field**, **no `active_power_limits`**, and **no `reactive_power_limits`**. The maximum power is defined by `rating × base_power` and/or an attached `max_active_power` time series.
+`RenewableNonDispatch` is the must-take type — the system always accepts whatever is available. It has **no `operation_cost` field**, **no `active_power_limits`**, and **no `reactive_power_limits`**. The maximum power is defined by `rating` (MVA) and/or an attached `max_active_power` time series.
 
 | Sienna field | Type / unit | PyPSA source | Transform | Mapping type | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -429,7 +429,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 50.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
   "base_power": 50.0
@@ -479,7 +479,7 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
   "bus": 1,
   "active_power": 50.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "HY",
   "active_power_limits": { "min": 10.0, "max": 100.0 },
   "base_power": 100.0,

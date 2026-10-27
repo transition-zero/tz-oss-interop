@@ -798,7 +798,7 @@ class LineReporter(_Reporter):
         self._derived(
             sources=[self._source(sienna_type, name, SiennaLineCol.RATING, rating)],
             destinations=[self._destination(name, PyPSALineCol.S_NOM, s_nom, UNIT_MVA)],
-            derivation="rating * system base",
+            derivation="rating * base_power",
         )
 
     def record_resistance(
@@ -807,7 +807,7 @@ class LineReporter(_Reporter):
         self._derived(
             sources=[self._source(sienna_type, name, SiennaLineCol.R, r_pu)],
             destinations=[self._destination(name, PyPSALineCol.R, r_ohm, UNIT_OHM)],
-            derivation="r * v_nom^2 / system base",
+            derivation="r * v_nom^2 / base_power",
         )
 
     def record_reactance(
@@ -816,7 +816,7 @@ class LineReporter(_Reporter):
         self._derived(
             sources=[self._source(sienna_type, name, SiennaLineCol.X, x_pu)],
             destinations=[self._destination(name, PyPSALineCol.X, x_ohm, UNIT_OHM)],
-            derivation="x * v_nom^2 / system base",
+            derivation="x * v_nom^2 / base_power",
         )
 
     def record_susceptance(
@@ -825,7 +825,7 @@ class LineReporter(_Reporter):
         self._derived(
             sources=[self._source(sienna_type, name, SiennaLineCol.B, b_pu)],
             destinations=[self._destination(name, PyPSALineCol.B, b_siemens, UNIT_SIEMENS)],
-            derivation="(b.from + b.to) * system base / v_nom^2",
+            derivation="(b.from + b.to) * base_power / v_nom^2",
         )
 
     def record_conductance(
@@ -834,7 +834,7 @@ class LineReporter(_Reporter):
         self._derived(
             sources=[self._source(sienna_type, name, SiennaLineCol.G, g_pu)],
             destinations=[self._destination(name, PyPSALineCol.G, g_siemens, UNIT_SIEMENS)],
-            derivation="(g.from + g.to) * system base / v_nom^2",
+            derivation="(g.from + g.to) * base_power / v_nom^2",
         )
 
     def record_length(self, sienna_type: SiennaComponent, name: str, length: float) -> None:
