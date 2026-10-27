@@ -96,6 +96,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | R1     | ATGASNEW   | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATGASNEW   | ATELEC | 1                 | 2035 | 1     |
       | R1     | ATSOLAR    | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATSOLAR    | ATELEC | 1                 | 2035 | 1     |
       | R1     | ATLATESOLAR | ATELEC | 1                | 2035 | 1     |
       | R1     | ATBIO      | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATLOCKGASCC  | ATELEC | 1                 | 2030 | 1     |
@@ -337,6 +338,22 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATLATESOLAR" having "capital_costs.capital_cost.function_data.proportional_term" set to 500000.0
     And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATLATESOLAR.year 2035` = 500000000.0"
+
+  Scenario: A candidate that a plan cannot build in the earliest year takes the cost of the first year in which it can
+    ATSOLAR states a capital cost in 2030 and in 2035, but the model allows no investment in it
+    in 2030.
+    Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE      |
+      | R1     | ATGASNEW   | 2030 | 1000000000 |
+      | R1     | ATSOLAR    | 2030 | 600000000  |
+      | R1     | ATSOLAR    | 2035 | 400000000  |
+    And the otoole parameter "TotalAnnualMaxCapacityInvestment" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATSOLAR    | 2030 | 0     |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATSOLAR" having "capital_costs.capital_cost.function_data.proportional_term" set to 400000.0
+    And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATSOLAR.year 2035` = 400000000.0"
 
   Scenario: A transport candidate that the model states from a later year takes its ends and its ratios in that year
     ATDELINK takes in and puts out electricity in 2035 only, and its capital cost is of 2035.
