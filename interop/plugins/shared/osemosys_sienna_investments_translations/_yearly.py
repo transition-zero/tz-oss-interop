@@ -45,6 +45,10 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    enrich_capacity_to_activity,
+    express_activity_mw,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     build_year_grid,
     read_yearly_values,
@@ -82,12 +86,14 @@ TECHNOLOGY_YEAR_PARAMETERS: tuple[str, ...] = (
 def read_technology_years(
     state: State, plan: InvestmentPlan, technologies: pl.DataFrame
 ) -> pl.DataFrame:
-    """One row for each technology and year, with one column for each parameter of the year."""
+    """One row for each technology and year, with one column for each parameter of the year,
+    and the `capacity_to_activity_unit` of the technology."""
     keys = technologies.select(TECHNOLOGY_KEYS).unique()
     table = build_year_grid(keys, plan.years)
     for name in TECHNOLOGY_YEAR_PARAMETERS:
         values = read_yearly_values(state, name, keys, plan.years)
         table = table.join(values, on=[*TECHNOLOGY_KEYS, YEAR], how="left")
+    table = enrich_capacity_to_activity(state, plan.base_year, table)
     return table.with_columns(_express_is_buildable().alias(IS_BUILDABLE))
 
 
@@ -259,7 +265,8 @@ def _build_energy_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.Exp
 
 
 def _build_capacity_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.Expr]:
-    convert = units.convert_capacity_to_mw
+    """The capacity bounds of each year, in MW of electricity, rated by the
+    `capacity_to_activity_unit` of each technology."""
     pairs = (
         (SupplyParameter.RESIDUAL_CAPACITY, RESIDUAL_CAPACITY_MW),
         (InvestmentParameter.CAPACITY_LIMITS_MIN, CAPACITY_LIMITS_MIN_MW),
@@ -270,6 +277,6 @@ def _build_capacity_columns(table: pl.DataFrame, units: ModelUnits) -> list[pl.E
         (GrowthParameter.MAX_FLOOR, MAX_GROWTH_FLOOR_MW),
     )
     return [
-        (express_converted(table, column, convert) * pl.col(RATING_RATIO)).alias(target)
+        (express_activity_mw(table, column, units) * pl.col(RATING_RATIO)).alias(target)
         for column, target in pairs
     ]

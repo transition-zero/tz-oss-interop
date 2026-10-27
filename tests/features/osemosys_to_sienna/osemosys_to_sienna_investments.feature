@@ -76,6 +76,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | R1     | ATELEC | S1B2      | 2035 | 0.375 |
       | R1     | ATELEC | S2B1      | 2035 | 0.25  |
       | R1     | ATELEC | S2B2      | 2035 | 0.25  |
+    And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
     And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASCC    | 2030 | 0.5   |
@@ -226,6 +227,16 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with "financial_data.discount_rate" set to 0.07
     And the file "outputs/portfolio.json" parses as JSON with "financial_data.base_year" set to 2030
 
+  Scenario: A candidate rates its capacity limits with its own capacity_to_activity_unit
+    ATGASNEW runs 4380 GWh a year for each GW, so its 1 GW in 2030 is 500 MW, and its 0.2 GW
+    in 2035 is 100 MW.
+    Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+      | REGION | TECHNOLOGY | VALUE |
+      | R1     | ATGASNEW   | 4380  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capacity_limits" set to {"2030.0": {"min": 0.0, "max": 500.0}, "2035.0": {"min": 100.0}}
+
   Scenario: The portfolio and each candidate quote their costs in the currency year of the user mappings file
     Given a file "user_mappings.yaml" containing the lines:
       | line                                                                                                                         |
@@ -305,7 +316,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the otoole parameter "TotalTechnologyAnnualActivityUpperLimit" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASNEW   | 2035 | 2     |
-    And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 1 has the rows:
+    And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
       | REGION | TECHNOLOGY | VALUE |
       | R1     | ATGASNEW   | 8760  |
     When I translate the otoole model to a Sienna investments portfolio
