@@ -23,12 +23,13 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
-from interop.plugins.shared.pypsa_annual_results import (
-    PypsaAnnualResultsMapper,
-    build_reverse_links,
-    is_solved,
+from interop.plugins.shared.annual_results import (
+    build_results_destination,
+    build_results_source,
+    drop_components,
 )
+from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
+from interop.plugins.shared.pypsa_annual_results import PypsaAnnualResultsMapper
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_NAME_COLUMN,
     PyPSAComponent,
@@ -42,20 +43,18 @@ from interop.plugins.shared.pypsa_constants import (
 )
 from interop.plugins.shared.pypsa_fuel_components import (
     FuelComponents,
-    build_fuel_components,
     express_link_attribute,
 )
+from interop.plugins.shared.pypsa_network_view import PypsaNetworkView, build_network_view
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
     VARIABLE_DTYPE,
-    VARIABLE_UNIT,
     ResultsCol,
     ResultsUnit,
     ResultsVariable,
 )
 from interop.ports.outbound.reporting import (
-    DestinationField,
     EventKind,
     SourceField,
     TranslationEvent,
@@ -111,21 +110,22 @@ class PypsaToResultsMapObservations(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        fuels = build_fuel_components(state)
+        view = build_network_view(state)
+        fuels = view.fuels
         capacity = _capacity_by_carrier(state, fuels)
         pieces: list[pl.LazyFrame] = []
-        pieces += self._map_dispatch(state, fuels)
+        pieces += self._map_dispatch(state, view)
         pieces += self._map_available_capacity(capacity)
         # Load maps before surplus, which names the load row as one of its sources, but its
         # own rows keep their place so the results table reads in the same order as before.
         load_pieces = self._map_load(state, fuels)
         pieces += self._map_surplus(state, capacity, fuels)
-        pieces += self._map_flow(state, fuels)
+        pieces += self._map_flow(state, view)
         pieces += load_pieces
         pieces += self._map_price(state, fuels)
         pieces += self._map_snapshot_weight(state)
         pieces += self._map_objective(state)
-        pieces += PypsaAnnualResultsMapper(self._recorder).map_annual(state)
+        pieces += PypsaAnnualResultsMapper(self._recorder).map_annual(state, view)
 
         if pieces:
             results = (
@@ -139,7 +139,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         state.destination_tables[RESULTS_TABLE_KEY] = results
         return state
 
-    def _map_dispatch(self, state: State, fuels: FuelComponents) -> list[pl.LazyFrame]:
+    def _map_dispatch(self, state: State, view: PypsaNetworkView) -> list[pl.LazyFrame]:
         """Generation and storage active power, category = carrier, positive = into the bus.
 
         A generator of a fuel puts out no electricity, so it has no row. A plant link puts out
@@ -152,19 +152,19 @@ class PypsaToResultsMapObservations(TranslationStep):
         pieces: list[pl.LazyFrame] = []
         sources: list[SourceField] = []
         for table, component, carrier_col in specs:
-            ts = _fill_idle_dispatch(state, table, fuels.generators)
+            ts = _fill_idle_dispatch(state, table, view)
             topology = state.source_topology.get(table)
             if ts is None or topology is None:
                 continue
             pieces.append(_build_dispatch_piece(ts, topology, pl.col(carrier_col)))
-            sources.append(_build_dispatch_source(component, PyPSASolvedAttr.DISPATCH))
-        plants = _fill_idle_plant_dispatch(state, fuels.plant_links)
+            sources.append(_build_megawatt_source(component, PyPSASolvedAttr.DISPATCH))
+        plants = _fill_idle_plant_dispatch(state, view)
         links = state.source_topology.get(PyPSATable.LINKS)
         if plants is not None and links is not None:
             carrier = express_link_attribute(links, PyPSALinkCol.CARRIER)
             pieces.append(_build_dispatch_piece(plants, links, carrier))
             sources.append(
-                _build_dispatch_source(PyPSAComponent.LINK, PyPSASolvedAttr.FAR_END_FLOW)
+                _build_megawatt_source(PyPSAComponent.LINK, PyPSASolvedAttr.FAR_END_FLOW)
             )
         if pieces:
             self._emit(
@@ -212,15 +212,15 @@ class PypsaToResultsMapObservations(TranslationStep):
         self._emit(
             ResultsVariable.SURPLUS,
             [
-                _results_source(ResultsVariable.AVAILABLE_CAPACITY),
-                _results_source(ResultsVariable.LOAD),
+                build_results_source(ResultsVariable.AVAILABLE_CAPACITY),
+                build_results_source(ResultsVariable.LOAD),
             ],
             "available_capacity summed across categories minus load at the same timestamp "
             "-> surplus (MW the system could still cover)",
         )
         return [piece.select(_surplus_columns())]
 
-    def _map_flow(self, state: State, fuels: FuelComponents) -> list[pl.LazyFrame]:
+    def _map_flow(self, state: State, view: PypsaNetworkView) -> list[pl.LazyFrame]:
         """Line and link active power at bus0, category null, positive = bus0 -> bus1.
 
         A link that touches the bus of a fuel moves no electricity between two buses, so it
@@ -234,7 +234,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         sources: list[SourceField] = []
         for table, component in specs:
             ts = (
-                _fill_idle_link_flow(state, fuels.links)
+                _fill_idle_link_flow(state, view)
                 if table == PyPSATable.LINKS
                 else state.source_time_series.get((table, PyPSASolvedAttr.FLOW))
             )
@@ -243,15 +243,7 @@ class PypsaToResultsMapObservations(TranslationStep):
             pieces.append(
                 ts.select(_build_piece_columns(ResultsVariable.FLOW, category=_NULL_UTF8))
             )
-            sources.append(
-                SourceField(
-                    framework=Framework.PYPSA,
-                    component=component,
-                    name=ALL_COMPONENTS,
-                    attribute=PyPSASolvedAttr.FLOW,
-                    unit=ResultsUnit.MEGAWATT,
-                )
-            )
+            sources.append(_build_megawatt_source(component, PyPSASolvedAttr.FLOW))
         if pieces:
             self._emit(
                 ResultsVariable.FLOW,
@@ -286,7 +278,7 @@ class PypsaToResultsMapObservations(TranslationStep):
         ts = state.source_time_series.get((PyPSATable.BUSES, PyPSASolvedAttr.MARGINAL_PRICE))
         if ts is None:
             return []
-        ts = _drop_components(ts, fuels.buses)
+        ts = drop_components(ts, fuels.buses, PyPSATimeSeriesCol.COMPONENT)
         self._emit(
             ResultsVariable.PRICE,
             [
@@ -377,33 +369,10 @@ class PypsaToResultsMapObservations(TranslationStep):
             TranslationEvent(
                 kind=EventKind.VALUE_DERIVED,
                 sources=sources,
-                destinations=[
-                    DestinationField(
-                        framework=Framework.RESULTS,
-                        component=RESULTS_TABLE_KEY,
-                        name=str(variable),
-                        attribute=ResultsCol.VARIABLE,
-                        unit=VARIABLE_UNIT[variable],
-                    )
-                ],
+                destinations=[build_results_destination(variable)],
                 derivation=derivation,
             )
         )
-
-
-def _results_source(variable: ResultsVariable) -> SourceField:
-    """A results row this step already emitted, so a row derived from it names it directly.
-
-    Mirrors what ``_emit`` writes as that row's destination, which is what keeps a value
-    flowing X -> Y -> Z reported as two hops rather than one.
-    """
-    return SourceField(
-        framework=Framework.RESULTS,
-        component=RESULTS_TABLE_KEY,
-        name=str(variable),
-        attribute=ResultsCol.VARIABLE,
-        unit=VARIABLE_UNIT[variable],
-    )
 
 
 class _CapacityByCarrier(NamedTuple):
@@ -465,15 +434,15 @@ def _installed_capacities(
                 ]
             )
         )
-        sources.append(_build_capacity_source(spec.component, spec.p_nom_col))
+        sources.append(_build_megawatt_source(spec.component, spec.p_nom_col))
     plants = _find_plant_capacity(state, fuels)
     if plants is not None:
         capacities.append(plants)
-        sources.append(_build_capacity_source(PyPSAComponent.LINK, PyPSALinkCol.P_NOM))
+        sources.append(_build_megawatt_source(PyPSAComponent.LINK, PyPSALinkCol.P_NOM))
     return capacities, sources
 
 
-def _build_capacity_source(component: str, attribute: str) -> SourceField:
+def _build_megawatt_source(component: str, attribute: str) -> SourceField:
     return SourceField(
         framework=Framework.PYPSA,
         component=component,
@@ -524,10 +493,9 @@ def _surplus_columns() -> list[pl.Expr]:
     )
 
 
-def _merge_reverse_flow(state: State, flow: pl.LazyFrame) -> pl.LazyFrame:
+def _build_two_way_flow(flow: pl.LazyFrame, reverses: dict[str, str]) -> pl.LazyFrame:
     """The flow of each two-way link, less the p0 of its reverse link, positive from bus0 to
     bus1 of the two-way link."""
-    reverses = build_reverse_links(state)
     if not reverses:
         return flow
     component = pl.col(PyPSATimeSeriesCol.COMPONENT)
@@ -540,20 +508,22 @@ def _merge_reverse_flow(state: State, flow: pl.LazyFrame) -> pl.LazyFrame:
     )
 
 
-def _fill_idle_dispatch(state: State, table: str, excluded: frozenset[str]) -> pl.LazyFrame | None:
+def _fill_idle_dispatch(state: State, table: str, view: PypsaNetworkView) -> pl.LazyFrame | None:
     """The dispatch of a table, with 0 in each snapshot for each component that states no p,
-    without the components of `excluded`."""
+    without the generators of a fuel."""
+    excluded = view.fuels.generators
     dispatch = state.source_time_series.get((table, PyPSASolvedAttr.DISPATCH))
-    dispatch = None if dispatch is None else _drop_components(dispatch, excluded)
+    dispatch = None if dispatch is None else _drop_staged(dispatch, excluded)
     topology = state.source_topology.get(table)
     if topology is None:
         return dispatch
     names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT))
-    return _fill_idle(state, dispatch, _drop_components(names, excluded))
+    return _fill_idle(state, view, dispatch, _drop_staged(names, excluded))
 
 
-def _fill_idle_plant_dispatch(state: State, plants: frozenset[str]) -> pl.LazyFrame | None:
+def _fill_idle_plant_dispatch(state: State, view: PypsaNetworkView) -> pl.LazyFrame | None:
     """The electricity that each plant link puts out at bus1, -p1, with 0 where it states none."""
+    plants = view.fuels.plant_links
     if not plants:
         return None
     output = state.source_time_series.get((PyPSATable.LINKS, PyPSASolvedAttr.FAR_END_FLOW))
@@ -561,62 +531,49 @@ def _fill_idle_plant_dispatch(state: State, plants: frozenset[str]) -> pl.LazyFr
         kept = output.filter(pl.col(PyPSATimeSeriesCol.COMPONENT).is_in(list(plants)))
         output = kept.with_columns(-pl.col(PyPSATimeSeriesCol.VALUE))
     names = pl.LazyFrame({PyPSATimeSeriesCol.COMPONENT: sorted(plants)})
-    return _fill_idle(state, output, names)
+    return _fill_idle(state, view, output, names)
 
 
 def _find_electricity_loads(state: State, fuels: FuelComponents) -> pl.LazyFrame | None:
     loads = state.source_time_series.get((PyPSATable.LOADS, PyPSALoadCol.P_SET))
-    return None if loads is None else _drop_components(loads, fuels.loads)
+    return None if loads is None else _drop_staged(loads, fuels.loads)
 
 
-def _drop_components(frame: pl.LazyFrame, names: frozenset[str]) -> pl.LazyFrame:
-    if not names:
-        return frame
-    return frame.filter(~pl.col(PyPSATimeSeriesCol.COMPONENT).is_in(list(names)))
+def _drop_staged(series: pl.LazyFrame, names: frozenset[str]) -> pl.LazyFrame:
+    return drop_components(series, names, PyPSATimeSeriesCol.COMPONENT)
 
 
 def _build_dispatch_piece(
     dispatch: pl.LazyFrame, topology: pl.LazyFrame, carrier: pl.Expr
 ) -> pl.LazyFrame:
-    carriers = topology.select([pl.col("name"), carrier.alias(ResultsCol.CATEGORY)])
+    carriers = topology.select([pl.col(PYPSA_NAME_COLUMN), carrier.alias(ResultsCol.CATEGORY)])
     return dispatch.join(
-        carriers, left_on=PyPSATimeSeriesCol.COMPONENT, right_on="name", how="left"
+        carriers, left_on=PyPSATimeSeriesCol.COMPONENT, right_on=PYPSA_NAME_COLUMN, how="left"
     ).select(_build_piece_columns(ResultsVariable.DISPATCH, category=pl.col(ResultsCol.CATEGORY)))
 
 
-def _build_dispatch_source(component: str, attribute: str) -> SourceField:
-    return SourceField(
-        framework=Framework.PYPSA,
-        component=component,
-        name=ALL_COMPONENTS,
-        attribute=attribute,
-        unit=ResultsUnit.MEGAWATT,
-    )
-
-
-def _fill_idle_link_flow(state: State, excluded: frozenset[str]) -> pl.LazyFrame | None:
+def _fill_idle_link_flow(state: State, view: PypsaNetworkView) -> pl.LazyFrame | None:
     """The flow of each link, merged with its reverse link, with 0 in each snapshot for each
-    link whose two directions state no p0, without the links of `excluded`."""
+    link whose two directions state no p0, without the links of a fuel."""
+    excluded = view.fuels.links
     flow = state.source_time_series.get((PyPSATable.LINKS, PyPSASolvedAttr.FLOW))
-    flow = None if flow is None else _drop_components(flow, excluded)
-    merged = None if flow is None else _merge_reverse_flow(state, flow)
+    flow = None if flow is None else _drop_staged(flow, excluded)
+    merged = None if flow is None else _build_two_way_flow(flow, view.reverse_links)
     topology = state.source_topology.get(PyPSATable.LINKS)
     if topology is None:
         return merged
-    reverses = list(build_reverse_links(state))
-    names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT)).filter(
-        ~pl.col(PyPSATimeSeriesCol.COMPONENT).is_in(reverses)
-    )
-    return _fill_idle(state, merged, _drop_components(names, excluded))
+    names = topology.select(pl.col(PYPSA_NAME_COLUMN).alias(PyPSATimeSeriesCol.COMPONENT))
+    one_way = _drop_staged(names, frozenset(view.reverse_links) | excluded)
+    return _fill_idle(state, view, merged, one_way)
 
 
 def _fill_idle(
-    state: State, series: pl.LazyFrame | None, names: pl.LazyFrame
+    state: State, view: PypsaNetworkView, series: pl.LazyFrame | None, names: pl.LazyFrame
 ) -> pl.LazyFrame | None:
     """A solved series with 0 in each snapshot for each of `names` that it holds no row for;
     PyPSA's netCDF export leaves out a series that is 0 in every snapshot."""
     snapshots = _find_snapshots(state)
-    if snapshots is None or not is_solved(state):
+    if snapshots is None or not view.is_solved:
         return series
     if series is not None:
         stated = series.select(PyPSATimeSeriesCol.COMPONENT).unique()

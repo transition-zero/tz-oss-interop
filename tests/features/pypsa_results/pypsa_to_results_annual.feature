@@ -87,7 +87,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
       | installed_capacity | dam       | hydro    | 2030-01-01T00:00:00 | 5     |
       | installed_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
     And the file "decisions.md" contains "a link that its extensions record marks as a conversion has no row"
-    And the log contains "1 line(s) convert electricity at one location, so they have no production or installed_capacity row: step_down"
+    And the log contains "pypsa-to-results: 1 line(s) convert electricity at one location, so they have no production or installed_capacity row. Each one: step_down"
 
   Scenario: A link between two buses of one location with no mark counts as production, and the report says so
     The run reads no sidecar, so no record marks step_down as a conversion.
@@ -101,7 +101,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | step_down |          | 2030-01-01T00:00:00 | 300   |
-    And the log contains "1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json: step_down"
+    And the log contains "pypsa-to-results: 1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json. Each one: step_down"
 
   Scenario: A plant link that states no carrier still reports its dispatch
     A link that burns the fuel of a gas bus and puts out electricity at node_a is a plant. No
@@ -173,7 +173,7 @@ Feature: pypsa-to-results writes annual rows for a solve whose snapshots stand f
     And the network is saved as "inputs/unsolved.nc"
     When I run the pipeline "pypsa-to-results" with overrides "source.path=inputs/unsolved.nc"
     Then the pipeline exit code is 0
-    And the log contains "1 component(s) have a rating, but the solve states no output for them, so they have no production: peaker"
+    And the log contains "pypsa-to-results: 1 component(s) have a rating, but the solve states no output for them, so they have no production. Each one: peaker"
 
   Scenario: A sidecar with representative periods asks for annual rows when each snapshot counts once
     Given the snapshot weightings are 1 1 1 1

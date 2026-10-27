@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from pydantic import BaseModel
+
 from interop.core.results_format import RESULTS_FRAMEWORK
 from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
 
@@ -44,6 +46,7 @@ A real sample label is always a digit string, so this never collides with one.
 
 HOURS_PER_YEAR = 8760.0
 """The hours of a year that is not a leap year."""
+HOURS_PER_LEAP_YEAR = 8784.0
 MINUTES_PER_HOUR = 60.0
 SECONDS_PER_HOUR = 3600.0
 
@@ -52,6 +55,15 @@ UNSCALED = 1.0
 
 # How an event names a field that a record of extensions.json holds: `extensions.<field>`.
 EXTENSIONS_PREFIX = "extensions."
+
+
+def require_extension_attribute(record: type[BaseModel], field: str) -> str:
+    """The event attribute of one field of a sidecar record; it raises for a field the record
+    model does not state, so a renamed field fails where a module names it."""
+    if field not in record.model_fields:
+        raise KeyError(f"{record.__name__} states no field {field!r}")
+    return f"{EXTENSIONS_PREFIX}{field}"
+
 
 UNIT_KV = "kV"
 UNIT_MW = "MW"

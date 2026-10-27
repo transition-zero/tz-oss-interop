@@ -15,6 +15,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.plugins.shared.pypsa_constants import (
     ELECTRICITY_BUS_CARRIERS,
+    PYPSA_LINK_DEFAULTS,
     PYPSA_NAME_COLUMN,
     UNSET_BUS_CARRIER,
     PyPSABusCol,
@@ -25,14 +26,6 @@ from interop.plugins.shared.pypsa_constants import (
 )
 
 _ELECTRICITY_CARRIERS = (*ELECTRICITY_BUS_CARRIERS, UNSET_BUS_CARRIER)
-# PyPSA writes a static attribute only where a link differs from its default, so an absent
-# column holds the default.
-_LINK_DEFAULTS: dict[str, float | str] = {
-    PyPSALinkCol.P_NOM: 0.0,
-    PyPSALinkCol.EFFICIENCY: 1.0,
-    PyPSALinkCol.P_MAX_PU: 1.0,
-    PyPSALinkCol.CARRIER: "",
-}
 
 
 @dataclass(frozen=True)
@@ -80,7 +73,7 @@ def express_link_attribute(links: pl.LazyFrame, attribute: str) -> pl.Expr:
     """A static attribute of the links, or PyPSA's default where the file omits it."""
     if attribute in links.collect_schema().names():
         return pl.col(attribute)
-    return pl.lit(_LINK_DEFAULTS[attribute])
+    return pl.lit(PYPSA_LINK_DEFAULTS[attribute])
 
 
 def _build_fuel_buses(state: State) -> set[str]:
