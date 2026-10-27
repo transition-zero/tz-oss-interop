@@ -33,6 +33,8 @@ ENERGY_CAPITAL_COST_MWH = "energy_capital_cost_mwh"
 IS_BUILDABLE = "is_buildable"
 # The year whose capital cost a candidate states, and the same for the energy of a storage.
 CAPITAL_COST_YEAR = "capital_cost_year"
+# The year whose activity ratios rate the capacity of a candidate in MW.
+RATED_YEAR = "rated_year"
 ENERGY_COST_YEAR = "energy_cost_year"
 
 # The total capacity bounds of each year, as `MinMaxByKey` entries.

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import polars as pl
@@ -75,6 +76,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
     TECHNOLOGY_KEYS,
     build_year_values,
     drop_non_candidates,
+    enrich_by_rated_year,
+    enrich_rated_years,
     enrich_yearly_units,
     read_technology_years,
 )
@@ -172,7 +175,8 @@ def build_supply_candidates(
 ) -> SupplyCandidates:
     technologies = read_kind_technologies(state, TechnologyKind.SUPPLY_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
-    technologies = drop_non_candidates(technologies, yearly, [InvestmentParameter.CAPITAL_COST])
+    prices = [InvestmentParameter.CAPITAL_COST]
+    technologies = enrich_rated_years(drop_non_candidates(technologies, yearly, prices), yearly, prices)
     technologies = _enrich_ratings(state, plan, enrich_targets(technologies, mappings))
     technologies = _drop_skipped(technologies, list_area_names(state), recorder)
     yearly = _enrich_variable_costs(state, plan_years, technologies, yearly)
@@ -203,7 +207,14 @@ def build_supply_translations(cost_year: int, start: int) -> list[Translation]:
 
 
 def _enrich_ratings(state: State, plan: InvestmentPlan, technologies: pl.DataFrame) -> pl.DataFrame:
-    rated = enrich_electricity_output_ratios(state, plan.base_year, plan.mode, technologies)
+    """The electricity output ratio of each candidate, in the year whose cost it states."""
+    return enrich_by_rated_year(
+        technologies, partial(_enrich_rating, state, plan.mode), plan.base_year
+    )
+
+
+def _enrich_rating(state: State, mode: str, year: int, technologies: pl.DataFrame) -> pl.DataFrame:
+    rated = enrich_electricity_output_ratios(state, year, mode, technologies)
     return rated.with_columns(pl.col(ELECTRICITY_OUTPUT_RATIO).alias(RATING_RATIO))
 
 

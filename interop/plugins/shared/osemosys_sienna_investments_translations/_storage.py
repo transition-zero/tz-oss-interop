@@ -9,6 +9,7 @@ storage has one capacity, so the charge side then states no bound and no price o
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, NamedTuple
@@ -87,6 +88,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._yearly imp
     TECHNOLOGY_KEYS,
     build_first_priced_values,
     drop_non_candidates,
+    enrich_by_rated_year,
+    enrich_rated_years,
     enrich_yearly_units,
     read_technology_years,
 )
@@ -179,6 +182,9 @@ HAS_OWN_CHARGER = "has_own_charger"
 DURATION_HOURS = "duration_hours"
 
 _ONE_LINK = 1
+_PRICES = [InvestmentParameter.CAPITAL_COST, ENERGY_CAPITAL_COST]
+# The activity ratios of a storage, which change by year.
+_RATIO_COLUMNS = [CHARGE_RATIO, DISCHARGE_RATIO, RATING_RATIO]
 _ENERGY_COST_COLUMNS = {
     ENERGY_CAPITAL_COST: ENERGY_CAPITAL_COST,
     ENERGY_CAPITAL_COST_MWH: ENERGY_CAPITAL_COST_MWH,
@@ -205,18 +211,18 @@ class StorageCandidates:
 
 def build_storage_candidates(
     state: State,
-    base: OperationsYear,
+    plan_years: Mapping[int, OperationsYear],
     plan: InvestmentPlan,
     mappings: OsemosysSiennaCarrierMappings,
     recorder: ScopedRecorder,
 ) -> StorageCandidates:
+    base = plan_years[plan.base_year]
     storages = _enrich_sharing(read_discharged_storages(state, base, mappings))
     yearly = _read_storage_years(state, plan, storages)
-    storages = drop_non_candidates(
-        storages,
-        yearly,
-        [InvestmentParameter.CAPITAL_COST, ENERGY_CAPITAL_COST],
-        keys=[REGION, TECHNOLOGY],
+    storages = drop_non_candidates(storages, yearly, _PRICES, keys=TECHNOLOGY_KEYS)
+    storages = enrich_rated_years(storages, yearly, _PRICES)
+    storages = enrich_by_rated_year(
+        storages, partial(_enrich_rated_ratios, state, plan_years, mappings), plan.base_year
     )
     storages = _drop_skipped(storages, list_area_names(state), recorder)
     yearly = yearly.join(storages.select(_STORAGE_KEYS), on=_STORAGE_KEYS, how="semi")
@@ -257,6 +263,21 @@ def read_discharged_storages(
             pl.col(AnnotationColumn.LOCATION).alias(AREA),
         )
     )
+
+
+def _enrich_rated_ratios(
+    state: State,
+    plan_years: Mapping[int, OperationsYear],
+    mappings: OsemosysSiennaCarrierMappings,
+    year: int,
+    storages: pl.DataFrame,
+) -> pl.DataFrame:
+    """The charge and discharge ratios of each storage in `year`, which rate its capacity."""
+    stated = read_discharged_storages(state, plan_years[year], mappings).select(
+        *_STORAGE_KEYS, *_RATIO_COLUMNS
+    )
+    joined = storages.drop(_RATIO_COLUMNS).join(stated, on=_STORAGE_KEYS, how="left")
+    return joined.with_columns(pl.col(column).fill_null(0.0) for column in _RATIO_COLUMNS)
 
 
 def _read_storage_years(state: State, plan: InvestmentPlan, storages: pl.DataFrame) -> pl.DataFrame:

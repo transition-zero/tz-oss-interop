@@ -217,7 +217,9 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         base = plan_years[plan.base_year]
         candidates = _Candidates(
             supply=build_supply_candidates(state, plan_years, plan, self._mappings, self._recorder),
-            storage=build_storage_candidates(state, base, plan, self._mappings, self._recorder),
+            storage=build_storage_candidates(
+                state, plan_years, plan, self._mappings, self._recorder
+            ),
             transport=build_transport_candidates(state, plan, self._recorder),
         )
         tables: Sequence[tuple[pl.DataFrame, _BuildTranslations, _Schema, str]] = (

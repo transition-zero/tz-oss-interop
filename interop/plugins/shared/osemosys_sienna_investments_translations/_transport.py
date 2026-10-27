@@ -12,6 +12,7 @@ extensions.json holds the bounds of each year.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import polars as pl
@@ -68,6 +69,8 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 from interop.plugins.shared.osemosys_sienna_investments_translations._yearly import (
     TECHNOLOGY_KEYS,
     drop_non_candidates,
+    enrich_by_rated_year,
+    enrich_rated_years,
     enrich_yearly_units,
     read_technology_years,
 )
@@ -154,7 +157,8 @@ def build_transport_candidates(
 ) -> TransportCandidates:
     technologies = read_kind_technologies(state, TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
-    technologies = drop_non_candidates(technologies, yearly, [InvestmentParameter.CAPITAL_COST])
+    prices = [InvestmentParameter.CAPITAL_COST]
+    technologies = enrich_rated_years(drop_non_candidates(technologies, yearly, prices), yearly, prices)
     technologies = _enrich_ends(state, plan, technologies)
     technologies, _ = filter_component(technologies, _express_has_ends(), NO_ENDS_SKIP, recorder)
     technologies, _ = filter_component(
@@ -214,7 +218,12 @@ def build_transport_translations(cost_year: int, start: int) -> list[Translation
 
 
 def _enrich_ends(state: State, plan: InvestmentPlan, technologies: pl.DataFrame) -> pl.DataFrame:
-    ends = read_transport_ends(state, plan.base_year, plan.mode)
+    """The ends and the ratios of each candidate, in the year whose cost it states."""
+    return enrich_by_rated_year(technologies, partial(_enrich_end, state, plan.mode), plan.base_year)
+
+
+def _enrich_end(state: State, mode: str, year: int, technologies: pl.DataFrame) -> pl.DataFrame:
+    ends = read_transport_ends(state, year, mode)
     return technologies.join(ends, on=TECHNOLOGY_KEYS, how="left").with_columns(
         pl.col(INPUT_RATIO).fill_null(0.0).alias(RATING_RATIO)
     )
