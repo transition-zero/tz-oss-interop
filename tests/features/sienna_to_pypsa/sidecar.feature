@@ -124,6 +124,17 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     Then the file "outputs/extensions.json" parses as JSON generator extension record for "hydro" having "category" set to "hydro-dam"
     And the file "decisions.md" contains "| `sienna.generator.hydro.extensions.category` = hydro-dam | `pypsa.generator.hydro.extensions.category` = hydro-dam |"
 
+  Scenario: A hydro plant takes the reservoir that its storage record states
+    Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
+    And the system has a storage extension record "hydro" with "max_hours" set to 6.0
+    And the system has a storage extension record "hydro" with "state_of_charge_initial" set to 300.0
+    And the system is saved as "inputs/reservoir.json"
+    When I run translate against "inputs/reservoir.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "hydro" attribute "max_hours" is 6.0
+    And the PyPSA network "outputs/network.nc" storage unit "hydro" attribute "state_of_charge_initial" is 300.0
+    And the file "decisions.md" contains "| `sienna.HydroDispatch.hydro.extensions.max_hours` = 6.0 h | `pypsa.StorageUnit.hydro.max_hours` = 6.0 h | extensions.max_hours (PyPSA round-trip) |"
+    And the file "decisions.md" contains "| `sienna.HydroDispatch.hydro.extensions.state_of_charge_initial` = 300.0 MWh | `pypsa.StorageUnit.hydro.state_of_charge_initial` = 300.0 MWh | extensions.state_of_charge_initial (PyPSA round-trip) |"
+
   Scenario: A line keeps its cost, its loss and its hourly availability, and its other modes travel on
     The record states the availability factor 0.5, so the series of the capacity factor is
     applied at half its value.

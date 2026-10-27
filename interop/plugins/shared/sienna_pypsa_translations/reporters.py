@@ -1212,11 +1212,6 @@ class ConversionReporter(_Reporter):
 
     destination_component = PyPSAComponent.LINK
 
-    def record_from_record(
-        self, name: str, field_name: str, column: str, value: object, unit: str | None
-    ) -> None:
-        self.record_carried(ExtensionKind.CONVERSION, name, field_name, column, value, unit)
-
     def record_name_taken(self, name: str) -> None:
         self._not_mapped(
             sources=[self._source_field(ExtensionKind.CONVERSION, name, None, None)],
