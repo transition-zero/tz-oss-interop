@@ -143,7 +143,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "operating_modes" set to [{"mode": "2", "variable_cost": 1.0, "input_ratios": {"DEELEC": 1.0}, "output_ratios": {"ATELEC": 0.75}}]
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDELINK.electricity at the operating mode 2` = 0.75"
       And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATDELINK.ATELEC at the operations mode` = 1.25"
-      And the file "decisions.md" does not contain "this value of another mode is lost"
+      And the log contains "1 line technology(ies) state values at an operating mode that is neither the flow back nor an import, and the line does not run them; extensions.json holds them. Technologies: R1/ATDEODD"
 
     Scenario: A technology whose other mode is not the flow back runs one way, and the report names what it loses
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
