@@ -32,6 +32,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     IMPORT_CARRIER,
     IMPORT_NAME_PART,
     IMPORT_NAME_SEPARATOR,
+    NO_COST,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     SupplyParameter,
@@ -113,7 +114,6 @@ _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _BUSES = "buses"
 _ONE_BUS = 1
-_NO_COST = 0.0
 _NAME_INFIX = f"{IMPORT_NAME_SEPARATOR}{IMPORT_NAME_PART}{IMPORT_NAME_SEPARATOR}"
 # The values of an import mode, other than its flows, that its generator holds.
 _HELD_PARAMETERS = frozenset(
@@ -357,7 +357,7 @@ def _enrich_emissions(
     table = (
         imports.join(emissions, on=_MODE_KEYS, how="left")
         .join(penalties, on=_MODE_KEYS, how="left")
-        .with_columns(pl.col(EMISSION_COST_MWH).fill_null(_NO_COST))
+        .with_columns(pl.col(EMISSION_COST_MWH).fill_null(NO_COST))
     )
     total = pl.col(OWN_COST_MWH) + pl.col(EMISSION_COST_MWH)
     return table.with_columns(total.alias(OPERATION_COST_MWH))

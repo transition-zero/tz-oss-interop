@@ -43,6 +43,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TechnologyKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     WHOLE_CAPACITY,
@@ -184,7 +185,6 @@ _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATI
 _COUNTED_NOUN = "line technology(ies)"
 _LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
 _ONE_BUS = 1
-_NO_COST = 0.0
 _NO_FLOW = 0.0
 _SERIES_FILE = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
 _NO_IMPORTS = GeneratorSources(pl.DataFrame(), pl.DataFrame())
@@ -399,7 +399,7 @@ def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
 def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
     return ControllableLineExtension(
         name=row[LINE_NAME],
-        marginal_cost=row[COST_MWH] if row[COST_MWH] != _NO_COST else None,
+        marginal_cost=row[COST_MWH] if row[COST_MWH] != NO_COST else None,
         p_max_pu=row[DERATE],
         p_max_pu_series=_SERIES_FILE if has_series(row) else None,
         is_conversion=True if row[IS_CONVERSION] else None,

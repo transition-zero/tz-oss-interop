@@ -26,6 +26,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     IMPORT_CARRIER,
+    NO_COST,
     REGION_NAME_SEPARATOR,
     SupplyParameter,
 )
@@ -64,7 +65,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_translations
     FIXED_COST_ATTRIBUTE,
     GENERATOR_AVAILABLE_NOTE,
     GENERATOR_ID_NOTE,
-    NO_COST,
     PENALTY_ATTRIBUTE,
     PROPORTIONAL_TERM_ATTRIBUTE,
     build_commitment,
