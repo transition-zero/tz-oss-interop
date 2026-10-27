@@ -61,8 +61,6 @@ OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
         *CalendarParameter,
         *DemandParameter,
         *StorageParameter,
-        FlowParameter.INPUT_ACTIVITY_RATIO,
-        FlowParameter.OUTPUT_ACTIVITY_RATIO,
         FlowParameter.TECHNOLOGY_TO_STORAGE,
         FlowParameter.TECHNOLOGY_FROM_STORAGE,
     }
