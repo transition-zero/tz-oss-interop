@@ -21,7 +21,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
@@ -29,10 +28,12 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    ACTIVITY_RATE_T_PER_MWH,
     PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
+    STATED_RATE,
+    read_emission_rates,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PENALTY_COST_MWH,
@@ -41,7 +42,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import TECHNOLOGY_NAME
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import INPUT_RATIO
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     SkipReport,
@@ -49,7 +49,6 @@ from interop.plugins.shared.translation_runner import (
 )
 
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
-_STATED_RATE = "stated_rate"
 _REASON = "add to the cost of each MWh that it {verb} in OSeMOSYS"
 _IS_FREE = pl.col(PENALTY_COST_MWH) == NO_COST
 
@@ -73,7 +72,7 @@ def _build_penalty_report(component: str, verb: str) -> SkipReport:
         counted_noun=f"emission penalty(ies) of a {component}",
         note=_note_penalty,
         listed=SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL),
-        attribute_col=_STATED_RATE,
+        attribute_col=STATED_RATE,
         attribute_name="the operations mode",
     )
 
@@ -116,20 +115,12 @@ def _build_penalised_emissions(
         INPUT_RATIO,
         pl.lit(operations.mode).alias(OPERATING_MODE),
     )
-    rates = (
-        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .filter(pl.col(VALUE_COL) != 0)
-        .join(held, on=_MODE_KEYS)
-        .select(
-            REGION,
-            TECHNOLOGY_NAME,
-            POLLUTANT,
-            INPUT_RATIO,
-            pl.col(VALUE_COL).cast(pl.Float64).alias(_STATED_RATE),
-        )
-    )
-    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
-    per_input = express_converted(rates, _STATED_RATE, convert) / pl.col(INPUT_RATIO)
+    rates = read_emission_rates(state, operations, held).join(held, on=_MODE_KEYS)
+    per_input = pl.col(ACTIVITY_RATE_T_PER_MWH) / pl.col(INPUT_RATIO)
     return build_penalty_terms(
-        state, operations, rates.with_columns(per_input.alias(RATE_T_PER_MWH))
+        state,
+        operations,
+        rates.select(
+            REGION, TECHNOLOGY_NAME, POLLUTANT, STATED_RATE, per_input.alias(RATE_T_PER_MWH)
+        ),
     )
