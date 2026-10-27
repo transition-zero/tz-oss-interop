@@ -184,7 +184,7 @@ CONVERSION_CARRIED: tuple[MappedField, ...] = (
     MappedField("marginal_cost", PyPSALinkCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
     MappedField("p_max_pu", PyPSALinkCol.P_MAX_PU),
 )
-CONVERSION_MAPPED_FIELDS = build_field_names(ConversionExtension, *CONVERSION_CARRIED)
+CONVERSION_MAPPED_FIELDS = build_field_names(ConversionExtension, *CONVERSION_CARRIED, "p_nom_min")
 
 # A generator of a fuel that is not electricity has no Sienna component, so its record states
 # the whole generator; its emission rates and its annual bounds travel on.
@@ -203,6 +203,9 @@ FUEL_GENERATOR_MAPPED_FIELDS = build_field_names(
 FUEL_LOAD_MAPPED_FIELDS = build_field_names(
     LoadExtension, "bus", "carrier", "p_set", "p_set_series"
 )
+
+# A Generator, a StorageUnit and a Link all name the floor of an extendable build p_nom_min.
+STATED_FLOOR = MappedField("p_nom_min", PyPSAGeneratorCol.P_NOM_MIN, UNIT_MW)
 
 # The energy bounds of a record by year, each with the PyPSA Generator column that takes the
 # bound of one year, and the bounds over the whole horizon.

@@ -36,6 +36,11 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     build_carried_values,
     record_carried_fields,
 )
+from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    CapacityFloor,
+    choose_p_nom_min,
+    record_p_nom_min,
+)
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ConversionReporter
 from interop.plugins.shared.warning_text import name_a_few
@@ -117,9 +122,7 @@ def _build_names(state: State, table: str, column: str) -> set[str]:
 
 def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> None:
     record_carried_fields(reporter, ExtensionKind.CONVERSION, record, CONVERSION_CARRIED)
-    floor = _build_floor(record)
-    if floor is not None:
-        reporter.record_p_nom_min(record.name, floor)
+    record_p_nom_min(reporter, ExtensionKind.CONVERSION, record.name, _choose_floor(record))
     if record.p_nom is None:
         reporter.record_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
     if record.efficiency is None:
@@ -136,11 +139,10 @@ def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
             _DEFAULT_EFFICIENCY if record.efficiency is None else record.efficiency
         ),
         PyPSALinkCol.ACTIVE: True,
-        PyPSALinkCol.P_NOM_MIN: _build_floor(record),
+        PyPSALinkCol.P_NOM_MIN: _choose_floor(record).value,
     }
 
 
-def _build_floor(record: ConversionExtension) -> float | None:
+def _choose_floor(record: ConversionExtension) -> CapacityFloor:
     """PyPSA ignores the p_nom of an extendable link, so the capacity it has is a floor."""
-    has_capacity = record.p_nom is not None and record.p_nom > 0
-    return record.p_nom if record.p_nom_extendable and has_capacity else None
+    return choose_p_nom_min(record.p_nom_min, record.p_nom, record.p_nom_extendable)
