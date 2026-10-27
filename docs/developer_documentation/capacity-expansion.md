@@ -193,9 +193,15 @@ Two kinds of technology need a series in every slice, and the portfolio can stat
 
 - A `RenewableDispatch` or `HydroDispatch` technology with no series takes its base system
   profile, split into the representative days of every year. With no base system profile,
-  each of its slices states `1.0`, and the step warns.
-- A `DemandRequirement` with no series in a year has no demand in that year. Each slice of
-  that year states `0.0`, and the step warns.
+  each of its slices states `1.0`, and the step records and warns that.
+- A `DemandRequirement` with no series in a year takes the profile of the base system load
+  of its name, in MW. A load with no profile is a demand at its `max_active_power` in every
+  hour, so each slice of that year states that demand. With no load of its name, each slice of
+  that year states `0.0`. The step records and warns each of the two.
+
+A technology finds its base system profile by its own name. A technology that holds one
+existing device of another name, such as a plant that the plan renamed, finds it by the name
+of that device.
 
 With no `representative_period` records, the series of each year is one slice, weighted so
 that its hours stand for the whole year. The step warns.
@@ -207,16 +213,21 @@ the day, and warns.
 ### One representative day
 
 This applies to a portfolio that states no series of its own. A SiennaSchemas system states one
-profile per component over the whole snapshot window, and no representative days at all. A
-`RenewableDispatch` or `HydroDispatch` technology that the system states no profile for gets
-1.0 for every hour of the slice, and the step warns. The step therefore takes **the first 24 snapshots** as
-representative day 1. The weight is 8760 over the hours that the slice covers, so an hourly
-slice weighs 365 and a half-hourly slice weighs 730. The step derives one investment period per
-year the slices fall in, running that whole year. Clustering a real year into several representative
-days is not done here.
+profile per component over the whole snapshot window, and no representative days at all. The
+step therefore takes **the first 24 snapshots** of each base system profile as representative
+day 1. The weight is 8760 over the hours that the slice covers, so an hourly slice weighs 365
+and a half-hourly slice weighs 730. The step derives one investment period per year the slices
+fall in, running that whole year. Clustering a real year into several representative days is
+not done here.
 
 A demand profile is multiplied by the load's own `max_active_power`, because a SiennaSchemas
-system stores it per unit of that peak and the model reads `ops_demand` as MW.
+system stores it per unit of that peak and the model reads `ops_demand` as MW. A technology
+with no profile gets the series of the rules above: `1.0` for a `RenewableDispatch` or a
+`HydroDispatch`, and the `max_active_power` of a load with a static demand.
+
+When the base system states no profile at all, the plan still has one slice: 24 hours from the
+first hour of the portfolio's `base_year`, at an hourly resolution, weighted 365. The step
+records and warns that.
 
 ## An OSeMOSYS portfolio
 

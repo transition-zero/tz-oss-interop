@@ -29,5 +29,5 @@ Feature: the existing fleet of a PyPSA network reaches PowerSystemsInvestments
   Scenario: An existing renewable plant with no profile that no technology names runs at full availability
     Then the series document "psi/portfolio_series.json" gives "SupplyTechnology" "Ridge" the existing devices "Ridge"
     And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "Ridge" in the representative day 1 of the year "2020" starts at "2020-01-01T00:00:00" with weight 365 and holds 24 values that peak at 1
-    And the file "decisions.md" contains "so the slice of the plan states 1.0"
+    And the file "decisions.md" contains "so each slice of the year states 1.0"
     And the log contains "so each runs at its full capacity in every hour: REZ_Solar, Ridge"

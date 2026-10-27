@@ -67,9 +67,9 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._limits import (
     LimitsByYear,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._representative_days import (
+    derive_representative_day_series,
     list_portfolio_years,
 )
-from interop.plugins.steps.sienna_to_powersystemsinvestments._series import derive_series
 from interop.plugins.steps.sienna_to_powersystemsinvestments._transport import TransportLinks
 from interop.plugins.steps.sienna_to_powersystemsinvestments._unmodelled import report_unmodelled
 
@@ -240,7 +240,7 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
         context.limits.warn_lost()
         context.links.warn_lost()
         report_carbon_caps(state, self._recorder)
-        derive_series(state, self._recorder)
+        derive_representative_day_series(state, self._recorder)
         return state
 
     def _map_existing_fleet(
