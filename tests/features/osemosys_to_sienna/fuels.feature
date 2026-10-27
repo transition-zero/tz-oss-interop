@@ -230,11 +230,12 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       A row at the default of its parameter states nothing beyond the default, so the report
       leaves it out. So does a row whose values a record of extensions.json holds: the
       capital cost of the gas plant, the discount rate of its region and the days of each day
-      type. A parameter with no member column gets one event for each region, and a parameter
-      with no region column gets one event that counts its rows, as the trade route of gas
-      does: the translation keeps a trade route of electricity only. A residual capacity that
+      type. A parameter with no member column gets one event for each region, and a row that
+      names a route gets one event for its route, as the trade route of gas does: the
+      translation keeps a trade route of electricity only. A residual capacity that
       no component holds is reported too, and so is the capital cost of the gas well, which has
-      no capacity to run in the year. A parameter with no year
+      no capacity to run in the year. No plant buys gas from a well that cannot run, so its
+      variable cost is reported too, and no other variable cost is. A parameter with no year
       column holds in every year. A reserve margin with no tag binds nothing, so no record holds
       it.
       Given the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
@@ -261,20 +262,20 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
         | R1     | R1      | ATGAS | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "osemosys-to-sienna: capital_cost states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/ATGASWELL"
-      And the log contains "osemosys-to-sienna: reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 region(s): R1"
-      And the log contains "osemosys-to-sienna: depreciation_method states 1 row(s) for every year that no step of the pipeline applies or keeps, for 1 region(s): R1"
-      And the log contains "osemosys-to-sienna: transport_route states 1 row(s) for 2030 that no step of the pipeline applies or keeps"
-      And the log contains "osemosys-to-sienna: residual_capacity states 3 row(s) for 2030 that no step of the pipeline applies or keeps, for 3 technology(ies): R1/ATBATT, R1/ATBIO, R1/ATSPAREGASCC"
-      And the log does not contain "variable_operation_cost states"
+      And the log contains "osemosys-to-sienna: 1 technology(ies) whose capital_cost states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATGASWELL"
+      And the log contains "osemosys-to-sienna: 1 region(s) whose reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Regions: R1"
+      And the log contains "osemosys-to-sienna: 1 region(s) whose depreciation_method states 1 row(s) for every year that no step of the pipeline applies or keeps. Regions: R1"
+      And the log contains "osemosys-to-sienna: 1 route(s) whose transport_route states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Routes: R1/R1/ATGAS"
+      And the log contains "osemosys-to-sienna: 3 technology(ies) whose residual_capacity states 3 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATBATT, R1/ATBIO, R1/ATSPAREGASCC"
+      And the log contains "osemosys-to-sienna: 1 technology(ies) whose variable_operation_cost states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATGASWELL"
       And the log does not contain "fixed_cost states"
       And the log does not contain "discount_rate states"
       And the log does not contain "days_in_day_type states"
-      And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASWELL` = 50.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter, and no record of extensions.json holds it"
-      And the file "decisions.md" contains "`osemosys.reserve_margin.R1` = 1.15 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
-      And the file "decisions.md" contains "`osemosys.transport_route.all` |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
-      And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASCC` = 900.0 |  |"
-      And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATSOLAR` = 0.0 |  |"
+      And the file "decisions.md" contains "`osemosys.capital_cost.R1/ATGASWELL.year 2030` = 50.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter, and no record of extensions.json holds it"
+      And the file "decisions.md" contains "`osemosys.reserve_margin.R1.year 2030` = 1.15 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
+      And the file "decisions.md" contains "`osemosys.transport_route.R1/R1/ATGAS.year 2030` = 1.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
+      And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASCC.year 2030` = 900.0 |  |"
+      And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATSOLAR.year"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "overnight_cost_per_mw" set to 0.9
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "discount_rate" set to 0.07
       And the file "decisions.md" contains "| `osemosys.discount_rate.R1` = 0.07 | `sienna.ThermalStandard.ATGASCC.extensions.discount_rate` = 0.07 pu | the model states no technology_discount_rate for the member and the parameter has no default, so the discount_rate of the region applies; no Sienna field holds it |"
@@ -597,10 +598,10 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the log does not contain "R1/ATGAS, R1/ATHEAT"
 
     Scenario: A fuel bus that a plant draws from and that no technology can supply is reported
-      Each technology that makes ATGAS is left out: the operations year has no gas well, LNG
-      terminal or pipeline, ATSHUT may not run, and ATCOSTLY has no capacity. So the gas plant
-      and the gas demand draw from a bus that nothing supplies.
-      Given the otoole set "TECHNOLOGY" holds "ATGASCC DEGASWELL ATREFINERY ATSHUT ATCOSTLY"
+      No technology of the operations year makes ATGAS: the model has no gas well, LNG
+      terminal, pipeline, ATSHUT or ATCOSTLY. So the gas plant and the gas demand draw from a
+      bus that nothing supplies.
+      Given the otoole set "TECHNOLOGY" holds "ATGASCC DEGASWELL ATREFINERY"
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the log contains "have a load or a plant that draws from them, and no technology of the operations year supplies them, so a PyPSA network cannot meet that demand. Buses: R1/ATGAS"
@@ -617,7 +618,8 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE" without field "e_sum_max"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "e_sum_max" set to {"2030": 100000.0}
-      And the log contains "total_technology_annual_activity_upper_limit states 1 row(s) for 2030 that no step of the pipeline applies or keeps, for 1 technology(ies): R1/DEATPIPE"
+      And the log contains "1 technology(ies) whose total_technology_annual_activity_upper_limit states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/DEATPIPE"
+
 
     Scenario: A fuel technology that builds at no cost may build up to the capacity limit of the year
       The gas well may build 0.5 GW in 2030 and hold 2 GW in total, so it may hold 0.5 GW,

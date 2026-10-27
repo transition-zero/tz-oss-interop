@@ -172,7 +172,7 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the system is saved as "inputs/bounded_pipe.json"
     When I run translate against "inputs/bounded_pipe.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "pipe" has bus0 "R1/DEGAS"
-    And the log contains "1 annual energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: pipe.e_sum_max"
+    And the log contains "1 energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: pipe.e_sum_max"
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "pipe" having "e_sum_max" set to {"2020": 5000.0}
     And the file "decisions.md" contains "| `sienna.conversion.pipe.extensions.e_sum_max` |"
 
@@ -234,7 +234,7 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the system is saved as "inputs/bounded_line.json"
     When I run translate against "inputs/bounded_line.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "step_down" has bus0 "AT"
-    And the log contains "1 annual energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: step_down.e_sum_max"
+    And the log contains "1 energy bound(s) of a link stay in extensions.json and bind nothing, because a PyPSA Link has no e_sum_min or e_sum_max: step_down.e_sum_max"
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "step_down" having "e_sum_max" set to {"2020": 1000.0}
     And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "step_down" having "is_conversion" set to true
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down.extensions.e_sum_max` |"
