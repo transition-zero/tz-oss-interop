@@ -20,7 +20,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALinkCol,
     ReverseTimeSeriesMetadataCol,
 )
-from interop.plugins.shared.pypsa_time_series import append_metadata
+from interop.plugins.shared.pypsa_time_series import append_metadata, find_table_series
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LinkReporter
 from interop.plugins.shared.warning_text import name_a_few
 
@@ -88,8 +88,8 @@ class LinkSplitter:
 
 def add_reverse_series(state: State, splits: list[LinkSplit]) -> None:
     """Give each reverse link the series of its forward link, scaled by its own limit."""
-    metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
-    if metadata is None or not splits:
+    link_series = find_table_series(state, PyPSADestinationTable.LINKS)
+    if link_series is None or not splits:
         return
     copies = [
         {
@@ -98,16 +98,13 @@ def add_reverse_series(state: State, splits: list[LinkSplit]) -> None:
             ReverseTimeSeriesMetadataCol.SCALING_FACTOR: split.reverse_p_max_pu,
         }
         for split in splits
-        for row in _list_link_series(metadata, split.forward)
+        for row in _list_component_series(link_series, split.forward)
     ]
     append_metadata(state, copies)
 
 
-def _list_link_series(metadata: pl.DataFrame, name: str) -> list[dict[str, Any]]:
-    rows = metadata.filter(
-        (pl.col(ReverseTimeSeriesMetadataCol.COMPONENT_TABLE) == PyPSADestinationTable.LINKS)
-        & (pl.col(ReverseTimeSeriesMetadataCol.COMPONENT_NAME) == name)
-    )
+def _list_component_series(series: pl.DataFrame, name: str) -> list[dict[str, Any]]:
+    rows = series.filter(pl.col(ReverseTimeSeriesMetadataCol.COMPONENT_NAME) == name)
     return list(rows.iter_rows(named=True))
 
 

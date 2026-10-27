@@ -20,8 +20,9 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX
 from interop.plugins.shared.pypsa_constants import PyPSADestinationTable, PyPSAGeneratorCol
-from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaTable
+from interop.plugins.shared.sienna_constants import SiennaTable
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import ANNUAL_BOUNDS
+from interop.plugins.shared.sienna_pypsa_translations.mapping import find_source_types
 from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
@@ -114,7 +115,7 @@ class EnergyLimitMapper:
 
     def _record_mapped(self, state: State, held: list[EnergyBound], span: SnapshotSpan) -> None:
         reporter = GeneratorReporter(self._recorder)
-        types = _build_sienna_types(state)
+        types = find_source_types(state, SiennaTable.GENERATORS) or {}
         derivation = _MAPPED_DERIVATION.format(year=span.year, hours=span.represented_hours)
         for bound in held:
             value = bound.by_year[span.require_year()]
@@ -150,7 +151,7 @@ class EnergyLimitMapper:
 
     def _record_unmapped(self, state: State, bounds: list[EnergyBound], note: str) -> None:
         reporter = GeneratorReporter(self._recorder)
-        types = _build_sienna_types(state)
+        types = find_source_types(state, SiennaTable.GENERATORS) or {}
         for bound in bounds:
             reporter.record_bound_unapplied(
                 types.get(bound.name, ExtensionKind.GENERATOR), bound.name, bound.field_name, note
@@ -183,12 +184,3 @@ def _set_bounds(generators: pl.DataFrame, held: list[EnergyBound], year: int) ->
             .alias(mapped.column)
         )
     return generators.with_columns(columns)
-
-
-def _build_sienna_types(state: State) -> dict[str, str]:
-    """The Sienna type of each generator, which the report names as the source."""
-    source = state.source_topology.get(SiennaTable.GENERATORS)
-    if source is None:
-        return {}
-    rows = source.select(SiennaGeneratorCol.NAME, SiennaGeneratorCol.SIENNA_TYPE).collect()
-    return dict(rows.iter_rows())

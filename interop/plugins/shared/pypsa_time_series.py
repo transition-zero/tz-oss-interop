@@ -114,6 +114,14 @@ def metadata_row(
     }
 
 
+def find_table_series(state: State, table: str) -> pl.DataFrame | None:
+    """The metadata rows of the series of one destination table; None where no step wrote any."""
+    metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
+    if metadata is None:
+        return None
+    return metadata.filter(pl.col(ReverseTimeSeriesMetadataCol.COMPONENT_TABLE) == table)
+
+
 def append_metadata(state: State, rows: list[dict[str, Any]]) -> None:
     """Append reverse time-series metadata rows, concatenating across steps."""
     append_destination_rows(
