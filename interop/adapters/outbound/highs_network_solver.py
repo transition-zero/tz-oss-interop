@@ -19,6 +19,7 @@ from interop.ports.outbound.network_solver import (
 )
 from interop.ports.outbound.solver import DispatchOutcome, UnservedEnergy
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
+from interop.ports.warning_text import name_a_few
 
 if TYPE_CHECKING:
     import numpy as np
@@ -56,8 +57,6 @@ _UNSERVED_CARRIER = "unserved_energy"
 _SURPLUS_CARRIER = "surplus_energy"
 # network.meta key: the MWh of load that goes unserved at each bus.
 _UNSERVED_ENERGY_KEY = "unserved_energy_mwh"
-# How many generators a warning names.
-_NAMED_GENERATORS = 3
 
 
 class HighsNetworkSolver(NetworkSolverPort):
@@ -229,7 +228,7 @@ def _warn_if_windows_cut_energy_bounds(network: pypsa.Network, windows: list[Sol
             "which the network states for all its snapshots: %s",
             len(windows),
             len(bounded),
-            ", ".join(list(bounded)[:_NAMED_GENERATORS]),
+            name_a_few(bounded),
         )
 
 

@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict
 from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+from interop.ports.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
 
@@ -765,15 +766,15 @@ _UNHANDLED_FIELD_NOTE = (
     "a mapping in this translation reads this extension record, but no mapping maps this "
     "field and none relays it, so it is dropped rather than carried into the next sidecar"
 )
+_UNCONSUMED_WARNING = "%d extension record(s) reach no mapping, so each is dropped: %s"
 _UNHANDLED_FIELD_WARNING = (
     "%d field(s) of extension records reach no mapping and no relay, so each is dropped: %s"
 )
-# How many dropped fields a warning names before it counts the rest.
-_NAMED_FIELDS = 3
 
 
 def report_dropped(staged: StagedExtensions, framework: str, recorder: EventRecorder) -> None:
-    """Report every record staged here as dropped."""
+    """Report every record staged here as dropped, with one event each and one warning."""
+    labels = [f"{kind} {record.name}" for kind, records in staged.items() for record in records]
     for kind, records in staged.items():
         for record in records:
             recorder.append(
@@ -783,6 +784,8 @@ def report_dropped(staged: StagedExtensions, framework: str, recorder: EventReco
                     note=_UNCONSUMED_NOTE,
                 )
             )
+    if labels:
+        log.warning(_UNCONSUMED_WARNING, len(labels), name_a_few(labels))
 
 
 def build_stated_fields(record: ExtensionRecord) -> dict[str, Any]:
@@ -920,6 +923,19 @@ class ExtensionLookup(Generic[RecordT]):
         return self._records.get(name) or self._model(name=name)
 
 
+class DroppedField(NamedTuple):
+    """One stated field of a record that no mapping maps and no relay passes on."""
+
+    kind: ExtensionKind
+    record: ExtensionRecord
+    field_name: str
+
+    @property
+    def label(self) -> str:
+        """The kind, the record and the field, as a warning names them."""
+        return f"{self.kind} {self.record.name}.{self.field_name}"
+
+
 @dataclass
 class ExtensionConsumption:
     """The records and fields every reader of one hop has read, and the step to report a drop
@@ -941,51 +957,46 @@ class ExtensionConsumption:
 
     def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
         """Report each record no reader read, and each field nothing maps or relays."""
-        for kind, records in staged.items():
-            unread = [record for record in records if self.by_kind[kind].is_unread(record)]
-            report_dropped({kind: unread}, framework, self.recorder)
+        report_dropped(self._list_unread(staged), framework, self.recorder)
         dropped = self._list_dropped_fields(staged)
-        for kind, record, field_name in dropped:
-            self._record_dropped_field(kind, record, field_name, framework)
+        for one in dropped:
+            self._record_dropped_field(one, framework)
         if dropped:
-            labels = [f"{kind} {record.name}.{field_name}" for kind, record, field_name in dropped]
-            log.warning(_UNHANDLED_FIELD_WARNING, len(labels), _build_few_names(labels))
+            labels = [one.label for one in dropped]
+            log.warning(_UNHANDLED_FIELD_WARNING, len(labels), name_a_few(labels))
 
-    def _list_dropped_fields(
-        self, staged: StagedExtensions
-    ) -> list[tuple[ExtensionKind, ExtensionRecord, str]]:
+    def _list_unread(self, staged: StagedExtensions) -> StagedExtensions:
+        unread = {
+            kind: [record for record in records if self.by_kind[kind].is_unread(record)]
+            for kind, records in staged.items()
+        }
+        return {kind: records for kind, records in unread.items() if records}
+
+    def _list_dropped_fields(self, staged: StagedExtensions) -> list[DroppedField]:
         return [
-            (kind, record, field_name)
+            DroppedField(kind, record, field_name)
             for kind, records in staged.items()
             for record in records
             for field_name in self.by_kind[kind].list_unhandled_fields(record)
         ]
 
-    def _record_dropped_field(
-        self, kind: ExtensionKind, record: ExtensionRecord, field_name: str, framework: str
-    ) -> None:
-        value = getattr(record, field_name)
+    def _record_dropped_field(self, dropped: DroppedField, framework: str) -> None:
+        value = getattr(dropped.record, dropped.field_name)
         self.recorder.append(
             TranslationEvent(
                 kind=EventKind.NOT_MAPPED,
                 sources=[
                     SourceField(
                         framework=framework,
-                        component=kind,
-                        name=record.name,
-                        attribute=field_name,
+                        component=dropped.kind,
+                        name=dropped.record.name,
+                        attribute=dropped.field_name,
                         value=value if _is_scalar(value) else None,
                     )
                 ],
                 note=_UNHANDLED_FIELD_NOTE,
             )
         )
-
-
-def _build_few_names(labels: list[str]) -> str:
-    named = ", ".join(labels[:_NAMED_FIELDS])
-    rest = len(labels) - _NAMED_FIELDS
-    return named if rest <= 0 else f"{named}, and {rest} more"
 
 
 class ExtensionReader:

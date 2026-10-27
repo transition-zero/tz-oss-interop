@@ -10,13 +10,12 @@ import logging
 from collections.abc import Iterable
 from typing import NamedTuple
 
+from interop.ports.warning_text import name_a_few
+
 log = logging.getLogger(__name__)
 
 # A slack below this many MWh at a location is solver noise, not energy.
 SLACK_TOLERANCE_MWH = 1e-6
-
-# How many locations a warning names before it counts the rest.
-_NAMED_LOCATIONS = 3
 
 
 class LocationEnergy(NamedTuple):
@@ -56,16 +55,7 @@ def warn_slack_energy(slack: SlackEnergy, outcome: str) -> None:
     if not slack.locations:
         log.info("solve: no energy %s", outcome)
         return
-    named = ", ".join(
-        f"{entry.location} ({entry.energy_mwh:.6g} MWh)"
-        for entry in slack.locations[:_NAMED_LOCATIONS]
+    named = name_a_few(
+        f"{entry.location} ({entry.energy_mwh:.6g} MWh)" for entry in slack.locations
     )
-    rest = len(slack.locations) - _NAMED_LOCATIONS
-    counted = f" and {rest} more location(s)" if rest > 0 else ""
-    log.warning(
-        "solve: %.6g MWh %s at a penalty, the most at %s%s",
-        slack.total_mwh,
-        outcome,
-        named,
-        counted,
-    )
+    log.warning("solve: %.6g MWh %s at a penalty, the most at %s", slack.total_mwh, outcome, named)
