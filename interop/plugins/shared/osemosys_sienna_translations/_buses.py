@@ -21,6 +21,9 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     AnnotationColumn,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    ComponentMapping,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     osemosys_skip_report,
@@ -36,6 +39,7 @@ from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
     BUS_VOLTAGE_LIMIT_MAX,
     BUS_VOLTAGE_LIMIT_MIN,
+    BUSES_DESTINATION_SCHEMA,
     BUSTYPE_DTYPE,
     DEFAULT_BUS_ANGLE,
     DEFAULT_BUS_BASE_VOLTAGE,
@@ -202,3 +206,7 @@ BUS_TRANSLATIONS: list[Translation] = [
         ),
     ),
 ]
+
+BUS_MAPPING = ComponentMapping(
+    SiennaComponent.AC_BUS, (BUS_TRANSLATIONS,), BUSES_DESTINATION_SCHEMA
+)

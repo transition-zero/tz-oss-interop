@@ -52,6 +52,9 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import (
+    ComponentMapping,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     osemosys_skip_report,
@@ -72,6 +75,7 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
 )
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
+    LOADS_DESTINATION_SCHEMA,
     LoadConformity,
     SiennaComponent,
     SiennaLoadCol,
@@ -551,3 +555,9 @@ LOAD_BASE_POWER_TRANSLATIONS: list[Translation] = [
         ),
     )
 ]
+
+LOAD_MAPPING = ComponentMapping(
+    SiennaComponent.POWER_LOAD,
+    (LOAD_TRANSLATIONS, LOAD_BASE_POWER_TRANSLATIONS),
+    LOADS_DESTINATION_SCHEMA,
+)
