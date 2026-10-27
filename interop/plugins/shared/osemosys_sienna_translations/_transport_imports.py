@@ -10,7 +10,6 @@ of the mode and the penalty of each pollutant that the mode emits.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import polars as pl
@@ -34,6 +33,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     IMPORT_NAME_PART,
     IMPORT_NAME_SEPARATOR,
     OSEMOSYS_TO_SIENNA_PIPELINE,
+    TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
@@ -50,7 +50,6 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import (
     read_electricity_fuels,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
-from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     CAPACITY_MW,
     CAPACITY_UNIT,
@@ -100,11 +99,12 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.sienna_constants import SiennaComponent
-from interop.plugins.shared.translation_runner import SkipReport, filter_component
-from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
-
-log = logging.getLogger(__name__)
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    filter_component,
+    report_not_mapped,
+)
 
 # The electricity fuels that an import mode puts out, in name order.
 IMPORT_FUELS = "import_fuels"
@@ -121,8 +121,47 @@ _HELD_PARAMETERS = frozenset(
 )
 _MODE_NAME = "mode_name"
 _IMPORT_MODES = "import_modes"
+_IMPORT_MODE_COUNT = "import_mode_count"
 _ONE_IMPORT = 1
+_LISTED = SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL)
+_MODE_SEPARATOR = ", "
 _MODE_INFIX = f"{IMPORT_NAME_SEPARATOR}mode"
+
+_IMPORT_MODES_ATTRIBUTE = "import modes"
+_UNPLACED_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    name_col=TECHNOLOGY_NAME,
+    reason="put out an electricity fuel with no location, which no bus can hold",
+    counted_noun="import(s) of a line technology",
+    note=lambda row: (
+        f"at the {OPERATING_MODE} {row[OPERATING_MODE]}, the electricity fuel {row[FUEL]} has "
+        "no location, so no bus can hold what the mode imports"
+    ),
+    listed=_LISTED,
+    attribute_col=VALUE_COL,
+    attribute_name="electricity with no location",
+)
+_SHARED_CAPACITY_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=TECHNOLOGY,
+    name_col=TECHNOLOGY_NAME,
+    reason=(
+        "bind the sum of two or more import modes, and each import generator takes the whole "
+        "capacity of the line"
+    ),
+    counted_noun="shared capacity limit(s) of a line",
+    note=lambda row: (
+        f"the import modes {row[_IMPORT_MODES]} each become a ThermalStandard at the whole "
+        f"capacity of the line, {row[CAPACITY_PARAMETER]} = {row[LINE_CAPACITY]}, and the system "
+        "holds no limit on their sum, so together they can import more than the line can carry"
+    ),
+    listed=_LISTED,
+    attribute_col=_IMPORT_MODES,
+    attribute_name=_IMPORT_MODES_ATTRIBUTE,
+)
 
 UNLIMITED_IMPORT_SKIP = SkipReport(
     pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
@@ -150,13 +189,19 @@ def read_import_modes(
     """
     ends = lines.select(*_KEYS, TECHNOLOGY_NAME, FROM_BUS, TO_BUS, IS_UNLIMITED)
     outputs = _read_unfed_outputs(state, operations).join(ends, on=_KEYS)
-    has_bus = pl.col(ELECTRICITY_BUS).is_not_null()
-    _report_unplaced_outputs(outputs.filter(~has_bus), recorder)
-    modes = _build_import_modes(outputs.filter(has_bus)).with_columns(
+    placed, _ = report_not_mapped(
+        outputs, pl.col(ELECTRICITY_BUS).is_not_null(), _UNPLACED_REPORT, recorder
+    )
+    modes = _build_import_modes(placed).with_columns(
         pl.concat_str(TECHNOLOGY_NAME, pl.lit(_MODE_INFIX), OPERATING_MODE).alias(_MODE_NAME)
     )
     modes, _ = filter_component(modes, ~pl.col(IS_UNLIMITED), UNLIMITED_IMPORT_SKIP, recorder)
-    _report_shared_capacity(_build_shared_lines(modes, lines), recorder)
+    report_not_mapped(
+        _count_import_modes(modes, lines),
+        pl.col(_IMPORT_MODE_COUNT) == _ONE_IMPORT,
+        _SHARED_CAPACITY_REPORT,
+        recorder,
+    )
     return modes.drop(IS_UNLIMITED, TECHNOLOGY_NAME, _MODE_NAME)
 
 
@@ -241,81 +286,18 @@ def _build_import_modes(outputs: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _report_unplaced_outputs(outputs: pl.DataFrame, recorder: ScopedRecorder) -> None:
-    """Record each import of an electricity fuel with no location, and name a few lines."""
-    if outputs.height == 0:
-        return
-    for row in outputs.iter_rows(named=True):
-        recorder.append(_build_unplaced_event(row))
-    names = outputs[TECHNOLOGY_NAME].unique().sort().to_list()
-    log.warning(
-        "%s: %d line technology(ies) have a mode that imports an electricity fuel with no "
-        "location, so no generator holds that import. Technologies: %s",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        len(names),
-        name_a_few(names),
-    )
-
-
-def _build_shared_lines(modes: pl.DataFrame, lines: pl.DataFrame) -> pl.DataFrame:
-    """Each line with two or more import modes, with its capacity and those modes."""
+def _count_import_modes(modes: pl.DataFrame, lines: pl.DataFrame) -> pl.DataFrame:
+    """Each line with an import mode, with its capacity, its import modes and their count."""
     capacities = lines.select(*_KEYS, CAPACITY_PARAMETER, LINE_CAPACITY)
+    mode = pl.col(OPERATING_MODE).sort()
     return (
         modes.group_by(*_KEYS, TECHNOLOGY_NAME)
-        .agg(pl.col(OPERATING_MODE).sort().alias(_IMPORT_MODES))
-        .filter(pl.col(_IMPORT_MODES).list.len() > _ONE_IMPORT)
+        .agg(
+            mode.str.join(_MODE_SEPARATOR).alias(_IMPORT_MODES),
+            mode.len().alias(_IMPORT_MODE_COUNT),
+        )
         .join(capacities, on=_KEYS)
         .sort(TECHNOLOGY_NAME)
-    )
-
-
-def _report_shared_capacity(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:
-    """Record each line whose import generators each take its whole capacity, and name a few."""
-    if lines.height == 0:
-        return
-    for row in lines.iter_rows(named=True):
-        recorder.append(_build_shared_capacity_event(row))
-    names = lines[TECHNOLOGY_NAME].to_list()
-    log.warning(
-        "%s: %d line technology(ies) have two or more import modes, and each import generator "
-        "takes the whole capacity of the line, where OSeMOSYS shares it among the modes. "
-        "Technologies: %s",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        len(names),
-        name_a_few(names),
-    )
-
-
-def _build_shared_capacity_event(row: dict[str, Any]) -> TranslationEvent:
-    modes = ", ".join(row[_IMPORT_MODES])
-    return TranslationEvent(
-        kind=EventKind.NOT_MAPPED,
-        sources=[
-            build_osemosys_field(
-                row[CAPACITY_PARAMETER], row[TECHNOLOGY_NAME], None, row[LINE_CAPACITY]
-            )
-        ],
-        note=(
-            f"the import modes {modes} each become a ThermalStandard at the whole capacity of "
-            "the line, and the system holds no limit on their sum, so together they can import "
-            "more than the line can carry"
-        ),
-    )
-
-
-def _build_unplaced_event(row: dict[str, Any]) -> TranslationEvent:
-    detail = f"{OPERATING_MODE} {row[OPERATING_MODE]}, {row[FUEL]}"
-    return TranslationEvent(
-        kind=EventKind.NOT_MAPPED,
-        sources=[
-            build_osemosys_field(
-                FlowParameter.OUTPUT_ACTIVITY_RATIO, row[TECHNOLOGY_NAME], detail, row[VALUE_COL]
-            )
-        ],
-        note=(
-            f"the electricity fuel {row[FUEL]} has no location, so no bus can hold what the "
-            "mode imports"
-        ),
     )
 
 
