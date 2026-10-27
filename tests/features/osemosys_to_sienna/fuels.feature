@@ -468,7 +468,8 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" having "p_max_pu" set to 0.8
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" without field "p_nom_extendable"
       And the file "decisions.md" contains "`sienna.generator.ATGASWELL.extensions.marginal_cost` = 4.0 \$/MWh"
-      And the file "decisions.md" contains "| `osemosys.variable_operation_cost.R1/ATGASWELL.mode 1` = 2000.0<br>`osemosys.emission_rate.R1/ATGASWELL.CO2 at mode 1` = 200.0<br>`osemosys.emission_penalty.R1/ATGASWELL.CO2` | `sienna.generator.ATGASWELL.extensions.marginal_cost` = 4.0 \$/MWh |"
+      And the file "decisions.md" contains "| `osemosys.variable_operation_cost.R1/ATGASWELL.mode 1` = 2000.0<br>`osemosys.emission_rate.R1/ATGASWELL.CO2 at mode 1` = 200.0<br>`osemosys.emission_penalty.R1/ATGASWELL.CO2` = 10.0 | `sienna.generator.ATGASWELL.extensions.marginal_cost` = 4.0 \$/MWh |"
+      And the file "decisions.md" contains "| `osemosys.total_technology_annual_activity_upper_limit.R1/ATGASWELL` = 100.0<br>`osemosys.technology_activity_by_mode_upper_limit.R1/ATGASWELL.mode 1` | `sienna.generator.ATGASWELL.extensions.e_sum_max` = {2030: 100000.0} MWh |"
       And the file "decisions.md" contains "| `osemosys.residual_capacity.R1/ATGASLNG` = 2.0<br>`osemosys.capacity_to_activity_unit.R1/ATGASLNG` = 8760.0<br>`osemosys.output_activity_ratio.R1/ATGASLNG.ATGAS at mode 1` = 1.0 | `sienna.generator.ATGASLNG.extensions.p_nom` = 2000.0 MW |"
       And the log does not contain "variable_operation_cost states"
 

@@ -37,6 +37,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     WHOLE_CAPACITY,
     ActivityParameter,
     InvestmentParameter,
@@ -65,8 +66,10 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     IS_EXTENDABLE,
     MAX_ACTIVITY_MW,
     MODE_COUNT,
+    MODE_LOWER,
     MODE_NAME,
     MODE_REPORT_NAME,
+    MODE_UPPER,
     OUTPUTS,
     PENALTY_MWH,
     RATE_T_PER_MWH,
@@ -75,6 +78,8 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     RATIO,
     ROLE,
     SUPPLY,
+    TECHNOLOGY_LOWER,
+    TECHNOLOGY_UPPER,
     VARIABLE_COST,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
@@ -82,6 +87,10 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_CARRIER,
     FUEL_LOCATION,
     IS_ELECTRICITY,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    PENALTY,
+    STATED_RATE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PenaltyNote,
@@ -92,7 +101,6 @@ from interop.plugins.shared.osemosys_sienna_translations._persisted import set_p
 from interop.plugins.shared.pypsa_constants import LINK_FURTHER_PORTS
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
-_NO_COST = 0.0
 _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
 _FUEL_SCOPE = "fuel"
 _FUEL_PENALTY_SCOPE = "fuel-penalties"
@@ -236,7 +244,7 @@ def _build_rated_fields(row: dict[str, Any], year: int) -> dict[str, Any]:
         "p_nom_max": _build_rated_value(row[MAX_ACTIVITY_MW], rated)
         if row[IS_EXTENDABLE]
         else None,
-        "marginal_cost": marginal_cost if marginal_cost != _NO_COST else None,
+        "marginal_cost": marginal_cost if marginal_cost != NO_COST else None,
         "p_max_pu": row[AVAILABILITY] if row[AVAILABILITY] != WHOLE_CAPACITY else None,
         "emission_rates_t_per_mwh": _build_rates(row[RATES], rated),
         "e_sum_min": _build_yearly(row[E_MIN_MWH], rated, year),
@@ -324,13 +332,13 @@ def _build_parameter_sources(row: dict[str, Any], parameter: str) -> list[Source
         ]
     if parameter == SupplyParameter.EMISSION_RATE:
         return [
-            build_osemosys_field(
-                parameter, name, f"{rate[POLLUTANT]} at {mode}", rate[_STATED_RATE]
-            )
+            build_osemosys_field(parameter, name, f"{rate[POLLUTANT]} at {mode}", rate[STATED_RATE])
             for rate in rates
         ]
     if parameter == SupplyParameter.EMISSION_PENALTY:
-        return [build_osemosys_field(parameter, name, rate[POLLUTANT]) for rate in rates]
+        return [
+            build_osemosys_field(parameter, name, rate[POLLUTANT], rate[PENALTY]) for rate in rates
+        ]
     column = _STATED_COLUMNS.get(parameter)
     attribute = mode if parameter in _MODE_PARAMETERS else None
     return [
@@ -382,8 +390,6 @@ _FLOW_PORTS: dict[str, str] = {
     FlowParameter.INPUT_ACTIVITY_RATIO: INPUTS,
     FlowParameter.OUTPUT_ACTIVITY_RATIO: OUTPUTS,
 }
-# The field of each rate of a mode that holds the rate as the model states it.
-_STATED_RATE = "stated_rate"
 # The column of the mode row that holds the stated value of each other parameter.
 _STATED_COLUMNS: dict[str, str] = {
     SupplyParameter.RESIDUAL_CAPACITY: RESIDUAL,
@@ -395,6 +401,10 @@ _STATED_COLUMNS: dict[str, str] = {
     InvestmentParameter.MAX_CAPACITY_INVESTMENT: MAX_INVESTMENT,
     InvestmentParameter.CAPACITY_LIMITS_MAX: MAX_CAPACITY,
     AnnotationColumn.CATEGORY: AnnotationColumn.CATEGORY,
+    SupplyParameter.ACTIVITY_UPPER_LIMIT: TECHNOLOGY_UPPER,
+    SupplyParameter.ACTIVITY_LOWER_LIMIT: TECHNOLOGY_LOWER,
+    ActivityParameter.BY_MODE_UPPER_LIMIT: MODE_UPPER,
+    ActivityParameter.BY_MODE_LOWER_LIMIT: MODE_LOWER,
 }
 _MODE_PARAMETERS = (
     SupplyParameter.VARIABLE_OPERATION_COST,
