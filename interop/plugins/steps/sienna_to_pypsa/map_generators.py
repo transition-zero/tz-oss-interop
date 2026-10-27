@@ -51,6 +51,7 @@ from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     GENERATOR_CARRIER,
     GENERATOR_COMMITTABLE,
     GENERATOR_EXTENDABLE,
+    PLANT_LINK_FIELDS,
     RENEWABLE_CARRIED,
     RENEWABLE_MAPPED_FIELDS,
     THERMAL_CARRIED,
@@ -76,9 +77,17 @@ from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
+    RELAYED_BY_YEAR_DERIVATION,
+    RELAYED_TO_LINK_DERIVATION,
     GeneratorReporter,
     ThermalLimit,
 )
+
+# The fields that travel on whole and also map in part, each with the derivation of its relay.
+_PARTLY_MAPPED = {
+    **dict.fromkeys(ANNUAL_BOUND_FIELDS, RELAYED_BY_YEAR_DERIVATION),
+    **dict.fromkeys(PLANT_LINK_FIELDS, RELAYED_TO_LINK_DERIVATION),
+}
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit
 # multiplier that reconstructs p_max_pu is the component's get_max_active_power divided by
@@ -188,7 +197,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
     def _carry_on(self, state: State, names: list[str]) -> None:
         """Pass on each field of a generator's record that no PyPSA column holds."""
         lookup = self._extensions.read(ExtensionKind.GENERATOR)
-        relay_records(state, lookup, names, self._recorder, partly_mapped=ANNUAL_BOUND_FIELDS)
+        relay_records(state, lookup, names, self._recorder, partly_mapped=_PARTLY_MAPPED)
 
     def _record_generator_time_series(
         self, state: State, p_max_pu_scale_by_name: dict[str, float]

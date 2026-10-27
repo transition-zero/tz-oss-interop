@@ -231,6 +231,9 @@ FUEL_LOAD_CARRIED: tuple[MappedField, ...] = (
 )
 FUEL_LOAD_MAPPED_FIELDS = build_field_names(LoadExtension, *FUEL_LOAD_CARRIED, "p_set_series")
 
+# A plant whose fuels all have a bus of the network becomes a Link that maps these fields.
+PLANT_LINK_FIELDS = build_field_names(GeneratorExtension, "fuel_buses", "own_marginal_cost")
+
 # A Generator, a StorageUnit and a Link all name the floor of an extendable build p_nom_min.
 STATED_FLOOR = MappedField("p_nom_min", PyPSAGeneratorCol.P_NOM_MIN, UNIT_MW)
 
