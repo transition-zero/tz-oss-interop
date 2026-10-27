@@ -135,6 +135,7 @@ from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaC
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     capital_cost_struct,
     express_cost_type,
+    express_fuel_list,
     operation_cost_struct,
 )
 from interop.plugins.shared.sienna_constants import PRIME_MOVERS_DTYPE
@@ -401,12 +402,6 @@ def _build_limit_sources(old: dict[str, Any]) -> list[Any]:
     ]
 
 
-_FUEL_LIST = (
-    pl.when(pl.col(FUEL_TYPE).is_not_null())
-    .then(pl.concat_list(pl.col(FUEL_TYPE)))
-    .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8)))
-)
-
 _PENALTY_ATTRIBUTE = f"{S.OPERATION_COSTS} emission penalty"
 _PENALTY_DERIVATION = (
     "Σ over pollutants of the emission rate in t/MWh, with the rate of the fuel that the "
@@ -445,7 +440,7 @@ _SUPPLY_TRANSLATIONS: list[Translation] = [
     build_derived_translation(
         _COMPONENT,
         S.FUEL,
-        _FUEL_LIST,
+        express_fuel_list(FUEL_TYPE),
         lambda old: [
             build_technology_field(old, AnnotationColumn.CATEGORY, AnnotationColumn.CATEGORY)
         ],

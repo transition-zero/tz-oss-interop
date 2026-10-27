@@ -44,7 +44,7 @@ def build_financial_data_events(base_year: int) -> list[TranslationEvent]:
     return [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[_field(F.BASE_YEAR, base_year)],
+            destinations=[build_financial_data_field(F.BASE_YEAR, base_year)],
             note=(
                 "no PyPSA field states the year a cost is quoted in; taken from the step's "
                 "base_year parameter"
@@ -53,9 +53,9 @@ def build_financial_data_events(base_year: int) -> list[TranslationEvent]:
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[
-                _field(F.DISCOUNT_RATE, DEFAULT_PORTFOLIO_RATE),
-                _field(F.INFLATION_RATE, DEFAULT_PORTFOLIO_RATE),
-                _field(F.INTEREST_RATE, DEFAULT_PORTFOLIO_RATE),
+                build_financial_data_field(F.DISCOUNT_RATE, DEFAULT_PORTFOLIO_RATE),
+                build_financial_data_field(F.INFLATION_RATE, DEFAULT_PORTFOLIO_RATE),
+                build_financial_data_field(F.INTEREST_RATE, DEFAULT_PORTFOLIO_RATE),
             ],
             note=(
                 "PyPSA states a discount rate per component, which each technology's own "
@@ -65,7 +65,8 @@ def build_financial_data_events(base_year: int) -> list[TranslationEvent]:
     ]
 
 
-def _field(attribute: str, value: object) -> DestinationField:
+def build_financial_data_field(attribute: str, value: object) -> DestinationField:
+    """One field of the financial data of the portfolio, as the report names it."""
     return DestinationField(
         framework=Framework.SIENNA,
         component=PORTFOLIO_FINANCIAL_DATA_TABLE,
