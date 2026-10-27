@@ -77,6 +77,46 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | production | ATDE      |                    | 2031-01-01T00:00:00 | 4500  |
     And the file "decisions.md" contains "output_activity_ratio on each fuel whose carrier is electricity"
 
+  Scenario: Production joins each output ratio on its mode and year, and counts the electricity output only
+    ATDE carries electricity both ways. Mode 1 takes ATELEC to DEELEC, and mode 2 takes DEELEC
+    to ATELEC. Its output ratio differs by mode in 2030 and by year in mode 1, so it delivers
+    5 × 0.96 + 3 × 0.8 = 7.2 GWh in 2030 and (5 + 3) × 0.8 = 6.4 GWh in 2031. CHP puts out 0.4 of
+    electricity and 0.5 of heat for each unit of activity, so 10 units give 4 GWh.
+    Given the otoole set "TECHNOLOGY" holds "GASCC ATDE ATT GASX CHP"
+    And the otoole set "FUEL" holds "ATELEC ATELEC2 DEELEC GAS HEAT"
+    And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | GASCC      | ATELEC | 1                 | 2030 | 1     |
+      | R1     | GASCC      | ATELEC | 1                 | 2031 | 1     |
+      | R1     | ATDE       | DEELEC | 1                 | 2030 | 0.96  |
+      | R1     | ATDE       | DEELEC | 1                 | 2031 | 0.8   |
+      | R1     | ATDE       | ATELEC | 2                 | 2030 | 0.8   |
+      | R1     | ATDE       | ATELEC | 2                 | 2031 | 0.8   |
+      | R1     | GASX       | GAS    | 1                 | 2030 | 1     |
+      | R1     | GASX       | GAS    | 1                 | 2031 | 1     |
+      | R1     | CHP        | ATELEC | 1                 | 2030 | 0.4   |
+      | R1     | CHP        | ATELEC | 1                 | 2031 | 0.4   |
+      | R1     | CHP        | HEAT   | 1                 | 2030 | 0.5   |
+      | R1     | CHP        | HEAT   | 1                 | 2031 | 0.5   |
+    And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATDE       | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATDE       | ATELEC | 1                 | 2031 | 1     |
+      | R1     | ATDE       | DEELEC | 2                 | 2030 | 1     |
+      | R1     | ATDE       | DEELEC | 2                 | 2031 | 1     |
+      | R1     | CHP        | GAS    | 1                 | 2030 | 1     |
+      | R1     | CHP        | GAS    | 1                 | 2031 | 1     |
+    And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "ATDE 2" with the values "3 3"
+    And the results CSV has the row "TotalAnnualTechnologyActivityByMode" in "R1" for "CHP 1" with the values "10 10"
+    When I read the results CSV through aetos-to-results from the year "2030"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | ATDE      |          | 2030-01-01T00:00:00 | 7200  |
+      | production | ATDE      |          | 2031-01-01T00:00:00 | 6400  |
+      | production | CHP       |          | 2030-01-01T00:00:00 | 4000  |
+      | production | CHP       |          | 2031-01-01T00:00:00 | 4000  |
+
   Scenario: Emissions reach the results in t for each pollutant, and the objective in dollars
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
