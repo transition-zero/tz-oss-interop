@@ -40,8 +40,6 @@ IS_VARYING = "is_varying"
 
 _FACTOR = "factor"
 _TROUGH_FACTOR = "trough_factor"
-# A factor that the model does not state, and that has no default, keeps the whole capacity.
-
 _SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
     StagedTimeSeriesCol.COMPONENT: pl.Utf8,

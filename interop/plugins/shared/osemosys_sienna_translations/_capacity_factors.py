@@ -40,7 +40,7 @@ def build_capacity_factor_series(
     technologies: pl.DataFrame,
     value_col: str,
 ) -> pl.DataFrame:
-    """One row for each hour and each component whose technology states a factor below 1.
+    """One row for each hour and each component whose technology states a factor other than 1.
 
     `technologies` holds `region`, `technology` and the component name in `name`.
     """

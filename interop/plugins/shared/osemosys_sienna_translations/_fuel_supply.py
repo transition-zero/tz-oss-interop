@@ -50,8 +50,6 @@ COST_PER_OUTPUT = "cost_per_output"
 PRODUCER_EMISSION_RATE = "producer_emission_rate"
 EMISSION_RATE_PER_OUTPUT = "emission_rate_per_output"
 
-# The activity upper limit that OSeMOSYS reads as no limit.
-
 _PRICES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
     FUEL: pl.Utf8,
