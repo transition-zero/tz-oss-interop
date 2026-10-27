@@ -71,3 +71,23 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
       | production | link      |          | 2030-01-01T00:00:00 | 0      |
     And the log does not contain "fall in no representative period"
     And the file "decisions.md" contains "× the hours between two rows of the solve"
+
+  Scenario: A line whose sidecar marks its limit as a stand-in has no installed capacity
+    A source can state no binding limit for a line, so its active_power_limits_from.max is a
+    finite stand-in that never binds, not the capacity of the line.
+    Given the TwoTerminalGenericHVDCLine "link" has ext "has_stand_in_limit" set to true
+    And the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00
+    And the results have ThermalStandard dispatch for "gas" of 10 20
+    And the results have HVDC flow for "link" of 5 -3
+    And the results are saved in "results"
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 365
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "installed_capacity" rows:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 100   |
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | link      |          | 2030-01-01T00:00:00 | 2920  |
+    And the log contains "sienna-to-results: 1 line(s) state a stand-in limit that never binds, not a capacity, so they have no installed_capacity row. Each one: link"

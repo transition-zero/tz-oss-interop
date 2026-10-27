@@ -17,3 +17,12 @@ def build_conversion_lines(staged: StagedExtensions) -> frozenset[str]:
         for record in staged.get(ExtensionKind.CONTROLLABLE_LINE, [])
         if isinstance(record, ControllableLineExtension) and record.is_conversion
     )
+
+
+def build_stand_in_limit_lines(staged: StagedExtensions) -> frozenset[str]:
+    """The name of each line whose sidecar record marks its limit as a stand-in."""
+    return frozenset(
+        record.name
+        for record in staged.get(ExtensionKind.CONTROLLABLE_LINE, [])
+        if isinstance(record, ControllableLineExtension) and record.has_stand_in_limit
+    )

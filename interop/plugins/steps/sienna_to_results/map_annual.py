@@ -11,7 +11,8 @@ trade; the report names it, as it can be a conversion that an older sidecar does
 
 A TwoTerminalGenericHVDCLine whose `controllable_line` record marks it as a conversion between
 two electricity fuels of one location is neither production nor trade, so it has no production
-and no installed capacity row.
+and no installed capacity row. A line whose record marks its limit as a stand-in that never
+binds has production and no installed capacity row.
 """
 
 from __future__ import annotations
@@ -46,7 +47,10 @@ from interop.plugins.shared.constants import (
     StagedTimeSeriesCol,
     require_extension_attribute,
 )
-from interop.plugins.shared.conversion_lines import build_conversion_lines
+from interop.plugins.shared.conversion_lines import (
+    build_conversion_lines,
+    build_stand_in_limit_lines,
+)
 from interop.plugins.shared.results_constants import SIENNA_TO_RESULTS, ResultsCol, ResultsVariable
 from interop.plugins.shared.sienna_constants import (
     MinMaxField,
@@ -95,7 +99,7 @@ _PRODUCTION_DERIVATION = (
 _INSTALLED_CAPACITY_DERIVATION = (
     "base_power × rating for a generator, base_power × output_active_power_limits.max for a "
     "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine that is not a "
-    "conversion → installed_capacity at 1 January of the year"
+    "conversion and whose limit is not a stand-in → installed_capacity at 1 January of the year"
 )
 _PRODUCTION_SOURCES = [
     build_results_source(ResultsVariable.DISPATCH),
@@ -175,10 +179,13 @@ class AnnualResultsMapper:
         if weights.is_empty():
             return []
         conversions = build_conversion_lines(state.source_extensions)
+        stand_ins = build_stand_in_limit_lines(state.source_extensions) - conversions
         self._report_lines(state, conversions)
+        self._mapper.report_stand_in_limits(_LINE_TYPE, stand_ins)
         production = _build_all_production(hourly, weights).drop_links(conversions)
         capacity = _build_capacity(state, carrier_lookup, _build_years(weights))
-        return self._map_rows(reader, production, drop_components(capacity, conversions))
+        unrated = conversions | stand_ins
+        return self._map_rows(reader, production, drop_components(capacity, unrated))
 
     def _report_lines(self, state: State, conversions: frozenset[str]) -> None:
         """Report each conversion line, and each line inside one area that states no mark."""
