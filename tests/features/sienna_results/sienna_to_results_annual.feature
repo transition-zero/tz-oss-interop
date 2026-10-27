@@ -6,9 +6,9 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
   installed capacity and emissions, each at 1 January of the year of the solve.
 
   The invented system below has a gas plant, a solar plant, a rooftop solar plant with a fixed
-  output, a battery and an HVDC line. The solve covers four hours. The solve states the flow of
-the HVDC line in MW. The gas plant emits 0.5 t of
-  CO2 and 0.01 t of NOX for each MWh.
+  output, a battery, an HVDC line, an AC line and a load. The solve covers four hours. The solve
+  states the flow of the HVDC line in MW. The gas plant emits 0.5 t of CO2 and 0.01 t of NOX for
+  each MWh. The AC line and the load have hourly rows, and neither is production.
 
   Background:
     Given a Sienna system
@@ -22,16 +22,20 @@ the HVDC line in MW. The gas plant emits 0.5 t of
     And the RenewableDispatch "solar" has ext carrier "solar"
     And the system contains a RenewableNonDispatch "rooftop" on bus "node_b" with base_power 4 rating 1 active_power 0 prime_mover "PVe"
     And the RenewableNonDispatch "rooftop" has ext carrier "solar-rooftop"
-    And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 40 initial_level 0 rating 0.5 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
+    And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 40 initial_level 0 rating 0.5 input_max 1 output_max 0.8 efficiency_in 1 efficiency_out 1 discharge_cost 0
     And the system contains an HVDC line "link" from "node_a" to "node_b" with p_nom 20 efficiency 1
+    And the system contains a Line "line" from "node_a" to "node_b" with rating 30
+    And the system contains a PowerLoad "demand" on bus "node_b" with max_active_power 40
     And Sienna solve results
     And the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00 2030-01-01T02:00:00 2030-01-01T03:00:00
     And the results have ThermalStandard dispatch for "gas" of 10 20 30 40
     And the results have RenewableDispatch dispatch for "solar" of 0 5 5 0
     And the results have RenewableNonDispatch output for "rooftop" of 1 2 2 1
     And the results have EnergyReservoirStorage output for "battery" of 0 0 8 0
-    And the results have EnergyReservoirStorage input for "battery" of 4 0 0 0
+    And the results have EnergyReservoirStorage input for "battery" of 4 2 2 0
     And the results have HVDC flow for "link" of 5 -3 0 2
+    And the results have Line flow for "line" of 3 -4 6 -1
+    And the results have the PowerLoad parameter for "demand" of -10 -20 -30 -40
     And the results are saved in "results"
 
   Scenario: Production weights each hour by its period, and an HVDC line delivers its flow in either direction
@@ -45,7 +49,7 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | production | gas       | gas           | 2030-01-01T00:00:00 | 6500  |
       | production | solar     | solar         | 2030-01-01T00:00:00 | 750   |
       | production | rooftop   | solar-rooftop | 2030-01-01T00:00:00 | 450   |
-      | production | battery   | PHS           | 2030-01-01T00:00:00 | 400   |
+      | production | battery   | PHS           | 2030-01-01T00:00:00 | 300   |
       | production | link      |               | 2030-01-01T00:00:00 | 900   |
     And the file "decisions.md" contains "the energy that it delivers equals the energy that it sends"
 
@@ -75,12 +79,16 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | dispatch | solar     | solar         | 2030-01-01T01:00:00 | 5     |
       | dispatch | rooftop   | solar-rooftop | 2030-01-01T02:00:00 | 2     |
 
-  Scenario: The hourly flow of an HVDC line is the MW that the solve states
+  Scenario: The hourly flow of an HVDC line and of an AC line is the MW that the solve states
     Given the system is saved as "inputs/system.json"
     When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" has these "flow" rows:
       | variable | component | category | timestamp           | value |
+      | flow     | line      |          | 2030-01-01T00:00:00 | 3     |
+      | flow     | line      |          | 2030-01-01T01:00:00 | -4    |
+      | flow     | line      |          | 2030-01-01T02:00:00 | 6     |
+      | flow     | line      |          | 2030-01-01T03:00:00 | -1    |
       | flow     | link      |          | 2030-01-01T00:00:00 | 5     |
       | flow     | link      |          | 2030-01-01T01:00:00 | -3    |
       | flow     | link      |          | 2030-01-01T02:00:00 | 0     |
@@ -97,7 +105,7 @@ the HVDC line in MW. The gas plant emits 0.5 t of
       | installed_capacity | gas       | gas           | 2030-01-01T00:00:00 | 100   |
       | installed_capacity | solar     | solar         | 2030-01-01T00:00:00 | 50    |
       | installed_capacity | rooftop   | solar-rooftop | 2030-01-01T00:00:00 | 4     |
-      | installed_capacity | battery   | PHS           | 2030-01-01T00:00:00 | 10    |
+      | installed_capacity | battery   | PHS           | 2030-01-01T00:00:00 | 8     |
       | installed_capacity | link      |               | 2030-01-01T00:00:00 | 20    |
 
   Scenario: A storage takes the category that its sidecar record names
@@ -109,10 +117,10 @@ the HVDC line in MW. The gas plant emits 0.5 t of
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
-      | production | battery   | battery  | 2030-01-01T00:00:00 | 400   |
+      | production | battery   | battery  | 2030-01-01T00:00:00 | 300   |
     And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
       | variable           | component | category | timestamp           | value |
-      | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 10    |
+      | installed_capacity | battery   | battery  | 2030-01-01T00:00:00 | 8     |
 
   Scenario: An annual energy bound of a generator gives no warning, as the results map no network
     The pipeline reuses the Sienna to PyPSA mapping, and skips its energy bounds.
