@@ -250,8 +250,7 @@ def read_transport_ends(state: State, year: int, mode: str) -> pl.DataFrame:
     `from_buses` and `to_buses` count the buses of each end; a line needs one each.
     `from_locations` and `to_locations` count the locations of each end.
     """
-    ends = _read_mode_ends(state, year)
-    return ends.filter(pl.col(OPERATING_MODE) == mode).drop(OPERATING_MODE)
+    return _drop_other_modes(_read_mode_ends(state, year), mode)
 
 
 def build_transport_source(
@@ -261,14 +260,15 @@ def build_transport_source(
 
     Each end of a line is the bus of an electricity fuel.
     """
-    lines = _read_lines(state, operations)
+    mode_ends = _read_mode_ends(state, operations.year)
+    lines = _read_lines(state, operations, _drop_other_modes(mode_ends, operations.mode))
     for rule in _SKIP_RULES:
         lines, _ = filter_component(lines, rule.keep, rule.report, recorder)
     if lines.height == 0:
         return TransportSources(lines, pl.DataFrame(), _NO_IMPORTS)
     imports = read_import_modes(state, operations, lines, recorder)
     lines = enrich_import_flows(lines, imports)
-    lines = _enrich_reverse_modes(state, operations, lines)
+    lines = _enrich_reverse_modes(lines, mode_ends, operations.mode)
     lines = _enrich_ratings(state, operations, _enrich_fleet_output(state, operations, lines))
     lines = _enrich_costs(state, operations, lines)
     lines = enrich_other_mode_values(state, operations, lines)
@@ -415,6 +415,11 @@ def _read_mode_ends(state: State, year: int) -> pl.DataFrame:
     return ends[0].join(ends[1], on=_MODE_KEYS, how="full", coalesce=True)
 
 
+def _drop_other_modes(mode_ends: pl.DataFrame, mode: str) -> pl.DataFrame:
+    """The ends of each technology at the one mode."""
+    return mode_ends.filter(pl.col(OPERATING_MODE) == mode).drop(OPERATING_MODE)
+
+
 def _read_end(
     state: State, year: int, parameter: str, fuels: pl.DataFrame, columns: _EndColumns
 ) -> pl.DataFrame:
@@ -435,16 +440,15 @@ def _read_end(
     )
 
 
-def _read_lines(state: State, operations: OperationsYear) -> pl.DataFrame:
+def _read_lines(state: State, operations: OperationsYear, ends: pl.DataFrame) -> pl.DataFrame:
     """Every transport technology and every conversion of electricity alone, so that each
-    Sienna name knows of a clash in another region."""
+    Sienna name knows of a clash in another region, with its ends at the operations mode."""
     lines = _read_line_technologies(state, operations).with_columns(
         express_component_name(TECHNOLOGY).alias(LINE_NAME),
         express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME),
     )
     lines = enrich_residual_capacity(state, operations.year, lines)
     lines = enrich_line_capacity(state, operations, lines)
-    ends = read_transport_ends(state, operations.year, operations.mode)
     return lines.join(ends, on=_KEYS, how="left")
 
 
@@ -476,14 +480,13 @@ _SKIP_RULES = (
 
 
 def _enrich_reverse_modes(
-    state: State, operations: OperationsYear, lines: pl.DataFrame
+    lines: pl.DataFrame, mode_ends: pl.DataFrame, operations_mode: str
 ) -> pl.DataFrame:
     """The flow back: the first other mode that takes electricity in at the to end, and puts it
     out at the from end.
     """
     reverse = (
-        _read_mode_ends(state, operations.year)
-        .filter((pl.col(OPERATING_MODE) != operations.mode) & _express_has_ends())
+        mode_ends.filter((pl.col(OPERATING_MODE) != operations_mode) & _express_has_ends())
         .join(
             lines.select(*_KEYS, FROM_BUS, TO_BUS),
             left_on=[*_KEYS, FROM_BUS, TO_BUS],
