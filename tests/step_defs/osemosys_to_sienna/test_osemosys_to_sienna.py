@@ -9,7 +9,11 @@ from pytest_bdd import given, parsers, scenarios, when
 
 from tests.step_defs.conftest import invoke_translate
 
-scenarios("osemosys_to_sienna/osemosys_to_sienna.feature")
+scenarios(
+    "osemosys_to_sienna/calendar.feature",
+    "osemosys_to_sienna/buses_and_loads.feature",
+    "osemosys_to_sienna/operations_year.feature",
+)
 
 _PIPELINE = "osemosys-csv-to-sienna"
 _SOURCE_FRAMEWORK = "osemosys"
