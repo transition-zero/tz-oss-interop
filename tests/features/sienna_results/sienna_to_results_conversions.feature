@@ -45,8 +45,8 @@ Feature: sienna-to-results counts a conversion line neither as production nor as
       | variable | component | category | timestamp           | value |
       | flow     | step_down |          | 2030-01-01T00:00:00 | 20    |
     And the file "decisions.md" contains "A line that its extensions record marks as a conversion has no row."
-    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down` | `results.results.production.variable` MWh |  | the extensions record marks the line as a conversion"
-    And the log contains "1 line(s) convert electricity at one location, so they have no production or installed_capacity row: step_down"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down` |  |  | the extensions record marks the line as a conversion"
+    And the log contains "1 line(s) convert electricity at one location, so they have no production or installed_capacity row. Each one: step_down"
 
   Scenario: A line inside one area that states no mark counts as production, and the report says so
     The record of step_down states no is_conversion, for example in a sidecar of an older run.
@@ -56,5 +56,5 @@ Feature: sienna-to-results counts a conversion line neither as production nor as
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | step_down |          | 2030-01-01T00:00:00 | 5000  |
-    And the log contains "1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json: step_down"
+    And the log contains "1 line(s) join two buses of one area or one location and state no is_conversion mark, so they count as production and trade; mark each conversion in extensions.json. Each one: step_down"
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.step_down.extensions.is_conversion` |"
