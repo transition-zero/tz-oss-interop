@@ -9,7 +9,6 @@ import polars as pl
 
 from interop.core.extensions import ControllableLineExtension, ExtensionKind, companion_filename
 from interop.plugins.shared.constants import (
-    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MW,
     require_extension_attribute,
@@ -75,6 +74,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_FUEL,
     RatingField,
 )
+from interop.plugins.shared.pypsa_constants import PyPSALinkCol
 from interop.plugins.shared.sienna_constants import (
     IO_CURVE_DTYPE,
     MIN_MAX_DTYPE,
@@ -93,19 +93,20 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 _dest = partial(build_sienna_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE)
 _build_value = ComputedValues(_dest, LINE_NAME).build_translation
 _default = partial(default_translation, _dest, name_col=LINE_NAME)
+_require_attribute = partial(require_extension_attribute, ControllableLineExtension)
 
 _NO_POWER = 0.0
 _NO_LIMITS = {MinMaxField.MIN: _NO_POWER, MinMaxField.MAX: _NO_POWER}
 _OPERATIONS_MODE_ATTRIBUTE = "electricity at the operations mode"
-_MARGINAL_COST_ATTRIBUTE = f"{EXTENSIONS_PREFIX}marginal_cost"
+_MARGINAL_COST_ATTRIBUTE = _require_attribute(PyPSALinkCol.MARGINAL_COST)
 
 _ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available"
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
-_P_MAX_PU_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu"
-_IS_CONVERSION_ATTRIBUTE = f"{EXTENSIONS_PREFIX}is_conversion"
-_STAND_IN_ATTRIBUTE = require_extension_attribute(ControllableLineExtension, "has_stand_in_limit")
+_P_MAX_PU_ATTRIBUTE = _require_attribute(PyPSALinkCol.P_MAX_PU)
+_IS_CONVERSION_ATTRIBUTE = _require_attribute("is_conversion")
+_STAND_IN_ATTRIBUTE = _require_attribute("has_stand_in_limit")
 _DROPPED_DERATE_NOTE = (
     "the model builds the line at no cost and no limit binds it, so the factor that the model "
     "states limits nothing, and the record writes neither p_max_pu nor its series"
@@ -118,7 +119,7 @@ _STAND_IN_DERIVATION = (
     "the model builds the technology at no cost and no limit binds it, so the limits of the line "
     "are what the whole fleet of the year can put out, and not a capacity"
 )
-_P_MAX_PU_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}p_max_pu_series"
+_P_MAX_PU_SERIES_ATTRIBUTE = _require_attribute("p_max_pu_series")
 _COMPANION = companion_filename(ExtensionKind.CONTROLLABLE_LINE)
 _EACH_TIMESLICE = "each timeslice"
 _P_MAX_PU_DERIVATION = (

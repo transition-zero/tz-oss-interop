@@ -11,11 +11,12 @@ from typing import Any
 
 import polars as pl
 
+from interop.core.extensions import GeneratorExtension
 from interop.plugins.shared.constants import (
-    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MVA,
     UNIT_TONNES_PER_MWH,
+    require_extension_attribute,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
@@ -106,8 +107,8 @@ _Col = SiennaThermalGeneratorCol
 _dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
 _default = partial(default_translation, _dest, name_col=GENERATOR_NAME)
 
-_SOURCE_TECHNOLOGY_ATTRIBUTE = f"{EXTENSIONS_PREFIX}source_technology"
-_SOURCE_MODE_ATTRIBUTE = f"{EXTENSIONS_PREFIX}source_mode"
+_SOURCE_TECHNOLOGY_ATTRIBUTE = require_extension_attribute(GeneratorExtension, "source_technology")
+_SOURCE_MODE_ATTRIBUTE = require_extension_attribute(GeneratorExtension, "source_mode")
 
 _TYPE_NOTE = (
     "an import mode brings electricity from outside the model and states no plant, so it "
