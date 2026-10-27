@@ -111,7 +111,9 @@ class WrittenComponent:
         """What one MW of the component costs a year, as PyPSA annualises its build cost."""
         network = read_network(self.path)
         components = getattr(network.components, COMPONENTS[self.kind].frame)
-        actual = float(components.capital_cost.loc[self.name]) / float(network.nyears)
+        horizon_years = network.nyears
+        assert isinstance(horizon_years, float), f"expected one horizon in {self.path}"
+        actual = float(components.capital_cost.loc[self.name]) / horizon_years
         assert math.isclose(
             actual, expected, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE
         ), f"expected {self.kind} {self.name} to cost {expected} a year for each MW, got {actual}"
