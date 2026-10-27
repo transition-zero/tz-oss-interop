@@ -254,7 +254,6 @@ def _read_mode_rates(
     ).unique()
     rates = (
         read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .lazy()
         .filter(pl.col(VALUE_COL) != 0)
         .join(modes.lazy(), on=_MODE_KEYS)
         .select(
