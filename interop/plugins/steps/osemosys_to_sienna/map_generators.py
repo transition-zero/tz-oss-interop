@@ -14,20 +14,20 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     GENERATOR_NAME,
     GENERATOR_TYPE_MAPPINGS,
     SIENNA_TYPE,
+    ComponentMapping,
     GeneratorSources,
-    GeneratorTypeMapping,
     OperationsMapping,
     OperationsYear,
     StagedSeries,
     add_per_unit_series,
     build_generator_extensions,
     build_generators_source,
+    map_component_table,
     set_generator_values_persisted,
     warn_lost_costs,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
-from interop.plugins.shared.translation_runner import apply_translations, finalise
 
 
 class OsemosysToSiennaMapGenerators(OperationsMapping):
@@ -53,14 +53,11 @@ class OsemosysToSiennaMapGenerators(OperationsMapping):
         )
         set_generator_values_persisted(state, source.table)
 
-    def _map_type(
-        self, state: State, source: GeneratorSources, mapping: GeneratorTypeMapping
-    ) -> None:
+    def _map_type(self, state: State, source: GeneratorSources, mapping: ComponentMapping) -> None:
         table = source.table.filter(pl.col(SIENNA_TYPE) == mapping.sienna_type)
         if table.height == 0:
             return
-        destination = apply_translations(table, mapping.translations, self._recorder)
-        generators = finalise(destination, mapping.schema, self._recorder, mapping.sienna_type)
+        generators = map_component_table(table, mapping, self._recorder)
         state.destination_tables[mapping.sienna_type] = generators
         names = table[GENERATOR_NAME].implode()
         series = source.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(names))
