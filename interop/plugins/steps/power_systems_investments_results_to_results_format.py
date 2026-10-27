@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.annual_results import build_annual_rows, build_results_destination
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.power_systems_investments_results_constants import (
     HOUR_WEIGHTS_KEY,
@@ -32,50 +33,43 @@ from interop.plugins.shared.power_systems_investments_schema import SeriesDocume
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
-    VARIABLE_DTYPE,
-    VARIABLE_UNIT,
     ResultsCol,
     ResultsVariable,
 )
+from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
-    SourceField,
-    TranslationEvent,
-)
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 log = logging.getLogger(__name__)
 
-_FIRST_MONTH = 1
-_FIRST_DAY = 1
+POWER_SYSTEMS_INVESTMENTS_TO_RESULTS = "power-systems-investments-to-results"
+
 _RESULTS_COMPONENT = "results"
 _SLICE_KEYS = [StagedResultCol.YEAR, StagedResultCol.REPRESENTATIVE_DAY]
-_SIGNED_VALUE = "signed_value"
 
 _UNWEIGHTED_WARNING = (
-    "power-systems-investments-to-results: %d hour(s) of the solve fall in no slice of the "
-    "series document, so production leaves them out: %s"
+    "%d hour(s) of the solve fall in no slice of the series document, so production leaves "
+    "them out: %s"
 )
 _OVERLAPPING_SLICE_NOTE = (
     "the slice holds an hour that the slice {earlier} also holds, so it is left out, and "
     "production leaves out each of its hours that no other slice holds"
 )
 _OVERLAPPING_SLICE_WARNING = (
-    "power-systems-investments-to-results: %d slice(s) of the series document hold an hour that "
-    "an earlier slice holds, so each is left out: %s"
+    "%d slice(s) of the series document hold an hour that an earlier slice holds, so each is "
+    "left out: %s"
 )
 _SHARED_NAME_NOTE = (
     "the name belongs to the technology types {technologies}, and the results name a component "
     "by its name alone, so each row of the name is left out"
 )
 _SHARED_NAME_WARNING = (
-    "power-systems-investments-to-results: %d component name(s) belong to more than one "
-    "technology type of the solve, so the rows of each are left out: %s"
+    "%d component name(s) belong to more than one technology type of the solve, so the rows of "
+    "each are left out: %s"
 )
 _UNKNOWN_PERIOD_WARNING = (
-    "power-systems-investments-to-results: %d investment period(s) of the solve are not "
-    "periods of the series document, so their capacity rows are left out: %s"
+    "%d investment period(s) of the solve are not periods of the series document, so their "
+    "capacity rows are left out: %s"
 )
 
 
@@ -146,12 +140,12 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
             self._map_production(operations.filter(is_unshared), weights),
             self._map_objective(state),
         ]
-        state.destination_tables[RESULTS_TABLE_KEY] = pl.concat(pieces, how="vertical")
+        state.destination_tables[RESULTS_TABLE_KEY] = _build_results_table(pieces)
         return state
 
     def _map_capacity(
         self, investment: pl.DataFrame, period_years: pl.DataFrame, derivation: Derivation
-    ) -> pl.DataFrame:
+    ) -> pl.LazyFrame:
         rows = investment.filter(
             pl.col(StagedResultCol.RESULT).is_in([str(one) for one in derivation.sources])
         )
@@ -179,7 +173,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         self._report_overlapping_slices(left_out)
         return weights.join(_build_slice_keys(list(left_out)), on=_SLICE_KEYS, how="anti")
 
-    def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.DataFrame:
+    def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
         weighted = operations.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
         unweighted = (
             weighted.filter(pl.col(StagedResultCol.WEIGHT).is_null())
@@ -203,7 +197,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         self._record(_PRODUCTION)
         return _build_annual_results(production, _PRODUCTION)
 
-    def _map_objective(self, state: State) -> pl.DataFrame:
+    def _map_objective(self, state: State) -> pl.LazyFrame:
         source = state.source_topology.get(OBJECTIVE_KEY)
         if source is None:
             return _build_empty_results()
@@ -220,12 +214,12 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                         objective[OBJECTIVE_VALUE_COLUMN][0],
                     )
                 ],
-                destinations=[_build_destination(ResultsVariable.OBJECTIVE)],
+                destinations=[build_results_destination(ResultsVariable.OBJECTIVE)],
                 derivation=_OBJECTIVE_DERIVATION,
             )
         )
-        return objective.select(
-            pl.lit(str(ResultsVariable.OBJECTIVE)).cast(VARIABLE_DTYPE).alias(ResultsCol.VARIABLE),
+        return objective.lazy().select(
+            pl.lit(str(ResultsVariable.OBJECTIVE)).alias(ResultsCol.VARIABLE),
             pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.COMPONENT),
             pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY),
             pl.lit(None, dtype=RESULTS_SCHEMA[ResultsCol.TIMESTAMP]).alias(ResultsCol.TIMESTAMP),
@@ -245,7 +239,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                     )
                     for source in derivation.sources
                 ],
-                destinations=[_build_destination(derivation.destination)],
+                destinations=[build_results_destination(derivation.destination)],
                 derivation=derivation.text,
             )
         )
@@ -268,7 +262,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                 )
             )
         if shared:
-            log.warning(_SHARED_NAME_WARNING, len(shared), name_a_few(shared))
+            _warn(_SHARED_NAME_WARNING, len(shared), name_a_few(shared))
 
     def _report_overlapping_slices(self, left_out: dict[Slice, Slice]) -> None:
         for one, earlier in left_out.items():
@@ -286,7 +280,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                 )
             )
         if left_out:
-            log.warning(
+            _warn(
                 _OVERLAPPING_SLICE_WARNING, len(left_out), name_a_few(one.name for one in left_out)
             )
 
@@ -298,15 +292,13 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
             .to_list()
         )
         if unknown:
-            log.warning(
-                _UNKNOWN_PERIOD_WARNING, len(unknown), name_a_few(str(one) for one in unknown)
-            )
+            _warn(_UNKNOWN_PERIOD_WARNING, len(unknown), name_a_few(str(one) for one in unknown))
 
     def _warn_unweighted(self, unweighted: pl.DataFrame) -> None:
         if unweighted.is_empty():
             return
         hours = [stamp.isoformat() for stamp in unweighted[StagedResultCol.SNAPSHOT].to_list()]
-        log.warning(_UNWEIGHTED_WARNING, len(hours), name_a_few(hours))
+        _warn(_UNWEIGHTED_WARNING, len(hours), name_a_few(hours))
 
 
 def _list_shared_names(investment: pl.DataFrame, operations: pl.LazyFrame) -> dict[str, list[str]]:
@@ -343,30 +335,31 @@ def _express_output() -> pl.Expr:
     """The MW that a value puts out: |flow| for a transport technology, else the value."""
     value = pl.col(StagedResultCol.VALUE)
     is_flow = pl.col(StagedResultCol.RESULT) == str(InvestmentsResult.FLOW_ACTIVE_POWER)
-    return pl.when(is_flow).then(value.abs()).otherwise(value).alias(_SIGNED_VALUE)
+    return pl.when(is_flow).then(value.abs()).otherwise(value)
 
 
-def _build_annual_results(rows: pl.DataFrame, derivation: Derivation) -> pl.DataFrame:
-    return rows.select(
-        pl.lit(str(derivation.destination)).cast(VARIABLE_DTYPE).alias(ResultsCol.VARIABLE),
+def _build_annual_results(rows: pl.DataFrame, derivation: Derivation) -> pl.LazyFrame:
+    annual = rows.select(
         pl.col(StagedResultCol.COMPONENT).alias(ResultsCol.COMPONENT),
         pl.lit(None, dtype=pl.Utf8).alias(ResultsCol.CATEGORY),
-        pl.datetime(pl.col(StagedResultCol.YEAR), _FIRST_MONTH, _FIRST_DAY)
-        .cast(RESULTS_SCHEMA[ResultsCol.TIMESTAMP])
-        .alias(ResultsCol.TIMESTAMP),
-        pl.col(StagedResultCol.VALUE).cast(pl.Float64).alias(ResultsCol.VALUE),
+        pl.col(StagedResultCol.YEAR).alias(AnnualCol.YEAR),
+        pl.col(StagedResultCol.VALUE).alias(ResultsCol.VALUE),
     )
+    return build_annual_rows(annual, derivation.destination)
 
 
-def _build_empty_results() -> pl.DataFrame:
-    return pl.DataFrame(schema=RESULTS_SCHEMA)
+def _build_empty_results() -> pl.LazyFrame:
+    return pl.LazyFrame(schema=RESULTS_SCHEMA)
 
 
-def _build_destination(variable: ResultsVariable) -> DestinationField:
-    return DestinationField(
-        Framework.RESULTS,
-        str(variable),
-        str(variable),
-        str(variable),
-        unit=str(VARIABLE_UNIT[variable]),
+def _build_results_table(pieces: list[pl.LazyFrame]) -> pl.DataFrame:
+    combined = pl.concat(
+        [piece.cast(RESULTS_SCHEMA) for piece in pieces],  # type: ignore[arg-type]
+        how="vertical",
     )
+    return combined.collect()
+
+
+def _warn(template: str, *args: object) -> None:
+    """Write one warning of the step, after the name of its pipeline."""
+    log.warning(f"%s: {template}", POWER_SYSTEMS_INVESTMENTS_TO_RESULTS, *args)

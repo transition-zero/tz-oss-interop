@@ -69,6 +69,7 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
       | new_capacity | battery   |          | 2035-01-01T00:00:00 | 0     |
       | new_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
       | new_capacity | link      |          | 2035-01-01T00:00:00 | 0     |
+    And the file "decisions.md" contains "| `results.results.new_capacity.variable` MW |"
 
   Scenario: Installed capacity is the capacity that the model counts in the period of each year
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
