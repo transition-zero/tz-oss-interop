@@ -3,9 +3,10 @@
 A storage holds the `residual_storage_capacity` of the operations year. The technology that
 empties it through `technology_from_storage` gives its category, its bus and its base power. The
 bus is that of the electricity fuel that the technology puts out at that mode, and the base
-power is its residual capacity in MW × its electricity output ratio at that mode. The
-technology that fills it through `technology_to_storage` gives the most that it can draw. Sienna
-states the energy in hours of the base power, and each level as a share of the energy.
+power is the MW of activity of its residual capacity × its electricity output ratio at that
+mode. The technology that fills it through `technology_to_storage` gives the most that it can
+draw. Sienna states the energy in hours of the base power, and each level as a share of the
+energy.
 """
 
 from __future__ import annotations
