@@ -7,7 +7,7 @@ and when the model lets a plan add capacity to it in some year.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import polars as pl
 
@@ -37,6 +37,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._columns im
     MAX_GROWTH_RATE,
     MIN_GROWTH_MW,
     MIN_GROWTH_RATE,
+    RATED_YEAR,
     RATING_RATIO,
     RESIDUAL_CAPACITY_MW,
     UNIT_SIZE_MW,
@@ -58,6 +59,10 @@ from interop.plugins.shared.sienna_investments_constants import (
 )
 
 TECHNOLOGY_KEYS = [REGION, TECHNOLOGY]
+_ROW = "row"
+
+# Adds the columns that the activity ratios of one year give to the rows rated in that year.
+EnrichAtYear = Callable[[int, pl.DataFrame], pl.DataFrame]
 
 # The parameters of a technology that a plan reads for each year.
 TECHNOLOGY_YEAR_PARAMETERS: tuple[str, ...] = (
@@ -99,6 +104,44 @@ def drop_non_candidates(
     is_priced = pl.any_horizontal(pl.col(column) > 0 for column in price_columns)
     open_keys = yearly.filter(pl.col(IS_BUILDABLE) & is_priced).select(keys).unique()
     return candidates.join(open_keys, on=list(keys), how="semi")
+
+
+def enrich_rated_years(
+    candidates: pl.DataFrame,
+    yearly: pl.DataFrame,
+    price_columns: Sequence[str],
+    keys: Sequence[str] = TECHNOLOGY_KEYS,
+) -> pl.DataFrame:
+    """Add the year whose activity ratios rate each candidate.
+
+    It is the earliest year in which a plan can build the candidate at the first price of
+    `price_columns`, which the ratio converts to a price for each MW, so the cost and its ratio
+    come from one year. A candidate with no such year takes the earliest year that any price of
+    `price_columns` states.
+    """
+    is_rated = pl.col(price_columns[0]) > 0
+    is_priced = pl.any_horizontal(pl.col(column) > 0 for column in price_columns)
+    years = (
+        yearly.filter(pl.col(IS_BUILDABLE) & is_priced)
+        .sort(YEAR)
+        .group_by(keys)
+        .agg(pl.coalesce(pl.col(YEAR).filter(is_rated).first(), pl.col(YEAR).first()))
+        .rename({YEAR: RATED_YEAR})
+    )
+    return candidates.join(years, on=list(keys), how="left")
+
+
+def enrich_by_rated_year(
+    candidates: pl.DataFrame, enrich: EnrichAtYear, base_year: int
+) -> pl.DataFrame:
+    """Each group of candidates of one rated year, through `enrich` at that year, in the order
+    of `candidates`. A candidate with no rated year, and an empty table, take the base year."""
+    indexed = candidates.with_row_index(_ROW).with_columns(pl.col(RATED_YEAR).fill_null(base_year))
+    if indexed.is_empty():
+        return enrich(base_year, indexed).drop(_ROW)
+    groups = indexed.partition_by(RATED_YEAR, as_dict=True)
+    parts = [enrich(int(year), rows) for (year,), rows in groups.items()]
+    return pl.concat(parts, how="diagonal_relaxed").sort(_ROW).drop(_ROW)
 
 
 def build_first_priced_values(
