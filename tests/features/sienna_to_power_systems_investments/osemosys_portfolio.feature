@@ -106,6 +106,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       | R1     | ATSOLAROLD | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATROOF     | ATELEC | 1                 | 2030 | 1     |
       | R1     | ATSOLAROLD | ATELEC | 1                 | 2035 | 1     |
+    And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
     And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
       | REGION | TECHNOLOGY | YEAR | VALUE |
       | R1     | ATGASCC    | 2030 | 0.5   |
