@@ -28,6 +28,8 @@ log = logging.getLogger(__name__)
 
 _NO_LOSS = 1.0
 _NO_COST = 0.0
+# A one-way link moves no power from bus1 to bus0.
+_ONE_WAY_P_MIN_PU = 0.0
 _UNSPLIT_WARNING = (
     "%d extendable link(s) flow both ways and lose energy or cost money, so each stays one "
     "link whose flow back gains what its forward flow loses: %s"
@@ -47,29 +49,33 @@ class LinkSplit(NamedTuple):
     reverse_p_max_pu: float
 
 
+class SplitLinks(NamedTuple):
+    """The link rows, with a reverse row for each link that splits, and each split."""
+
+    rows: list[dict[str, Any]]
+    splits: list[LinkSplit]
+
+
 class LinkSplitter:
     """Splits each two-way link that loses energy or costs money into two one-way links."""
 
     def __init__(self, reporter: LinkReporter) -> None:
         self._reporter = reporter
 
-    def split_links(self, rows: list[dict[str, Any]]) -> list[LinkSplit]:
-        """Add a reverse row for each such link, and set the forward row to one way."""
+    def map_two_way_links(self, rows: list[dict[str, Any]]) -> SplitLinks:
+        """The rows with each such link one way, and a reverse row for each that splits."""
         two_way = [row for row in rows if _is_lossy_two_way(row)]
         self._report_unsplit([row for row in two_way if row[PyPSALinkCol.P_NOM_EXTENDABLE]])
         fixed = [row for row in two_way if not row[PyPSALinkCol.P_NOM_EXTENDABLE]]
         names = {row[PyPSALinkCol.NAME] for row in rows}
-        taken = [row for row in fixed if _build_reverse_name(row) in names]
-        self._report_taken(taken)
-        return [self._split(row, rows) for row in fixed if _build_reverse_name(row) not in names]
-
-    def _split(self, row: dict[str, Any], rows: list[dict[str, Any]]) -> LinkSplit:
-        reverse = _build_reverse_row(row)
-        rows.append(reverse)
-        p_min_pu = row[PyPSALinkCol.P_MIN_PU]
-        row[PyPSALinkCol.P_MIN_PU] = 0.0
-        self._reporter.record_split(row, reverse, p_min_pu)
-        return LinkSplit(row[PyPSALinkCol.NAME], reverse[PyPSALinkCol.NAME], -p_min_pu)
+        self._report_taken([row for row in fixed if _build_reverse_name(row) in names])
+        splitting = [row for row in fixed if _build_reverse_name(row) not in names]
+        reverse_rows = [_build_reverse_row(row) for row in splitting]
+        for row, reverse in zip(splitting, reverse_rows, strict=True):
+            self._reporter.record_split(row, reverse, row[PyPSALinkCol.P_MIN_PU])
+        split_names = {row[PyPSALinkCol.NAME] for row in splitting}
+        forward_rows = [_build_one_way_row(row, split_names) for row in rows]
+        return SplitLinks([*forward_rows, *reverse_rows], [_build_split(row) for row in splitting])
 
     def _report_taken(self, rows: list[dict[str, Any]]) -> None:
         names = [row[PyPSALinkCol.NAME] for row in rows]
@@ -115,6 +121,17 @@ def _is_lossy_two_way(row: dict[str, Any]) -> bool:
     return row[PyPSALinkCol.P_MIN_PU] < 0 and (is_lossy or is_costly)
 
 
+def _build_split(row: dict[str, Any]) -> LinkSplit:
+    return LinkSplit(row[PyPSALinkCol.NAME], _build_reverse_name(row), -row[PyPSALinkCol.P_MIN_PU])
+
+
+def _build_one_way_row(row: dict[str, Any], split_names: set[str]) -> dict[str, Any]:
+    """The forward row of a link that splits flows one way; every other row stays as it is."""
+    if row[PyPSALinkCol.NAME] not in split_names:
+        return row
+    return {**row, PyPSALinkCol.P_MIN_PU: _ONE_WAY_P_MIN_PU}
+
+
 def _build_reverse_name(row: dict[str, Any]) -> str:
     return f"{row[PyPSALinkCol.NAME]}{REVERSE_LINK_SUFFIX}"
 
@@ -125,6 +142,6 @@ def _build_reverse_row(row: dict[str, Any]) -> dict[str, Any]:
         PyPSALinkCol.NAME: _build_reverse_name(row),
         PyPSALinkCol.BUS0: row[PyPSALinkCol.BUS1],
         PyPSALinkCol.BUS1: row[PyPSALinkCol.BUS0],
-        PyPSALinkCol.P_MIN_PU: 0.0,
+        PyPSALinkCol.P_MIN_PU: _ONE_WAY_P_MIN_PU,
         PyPSALinkCol.P_MAX_PU: -row[PyPSALinkCol.P_MIN_PU],
     }

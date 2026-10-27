@@ -305,14 +305,17 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         self, state: State, rows: list[dict[str, Any]], reporter: LinkReporter
     ) -> None:
         """Write the links, with the flow back of each lossy two-way link as a link of its own."""
-        splits = LinkSplitter(reporter).split_links(rows)
+        split = LinkSplitter(reporter).map_two_way_links(rows)
         state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
-            rows, schema=LINKS_DESTINATION_SCHEMA
+            split.rows, schema=LINKS_DESTINATION_SCHEMA
         )
         stage_companion_columns(
-            state, ExtensionKind.CONTROLLABLE_LINE, _COMPANION_COLUMNS, _build_series_scaling(rows)
+            state,
+            ExtensionKind.CONTROLLABLE_LINE,
+            _COMPANION_COLUMNS,
+            _build_series_scaling(split.rows),
         )
-        add_reverse_series(state, splits)
+        add_reverse_series(state, split.splits)
 
 
 def _build_series_scaling(rows: list[dict[str, Any]]) -> dict[str, float]:
