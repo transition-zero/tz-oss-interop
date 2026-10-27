@@ -549,6 +549,30 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" with 48 values from 133.333333333333 to 400
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" that starts at "2035-01-01T00:00:00"
 
+  Scenario: A later year that loses the demand of a load, or adds the demand of a new one, is reported
+    In 2035 the model states no demand for ATELEC, which the base system holds, and 100 GWh for
+    DEELEC, which the base system does not hold.
+    Given the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | 876   |
+      | R1     | DEELEC | 2035 | 100   |
+    And the otoole parameter "SpecifiedDemandProfile" keyed by "REGION FUEL TIMESLICE YEAR" with default 0 has the rows:
+      | REGION | FUEL   | TIMESLICE | YEAR | VALUE |
+      | R1     | ATELEC | S1B1      | 2030 | 0.125 |
+      | R1     | ATELEC | S1B2      | 2030 | 0.375 |
+      | R1     | ATELEC | S2B1      | 2030 | 0.25  |
+      | R1     | ATELEC | S2B2      | 2030 | 0.25  |
+      | R1     | DEELEC | S1B1      | 2035 | 0.25  |
+      | R1     | DEELEC | S1B2      | 2035 | 0.25  |
+      | R1     | DEELEC | S2B1      | 2035 | 0.25  |
+      | R1     | DEELEC | S2B2      | 2035 | 0.25  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "decisions.md" contains "`osemosys.fuel.R1/DEELEC.specified_annual_demand` = 100.0"
+    And the log contains "1 load(s) have demand in 2035 but no load in the base system"
+    And the file "decisions.md" contains "`sienna.PowerLoad.ATELEC` |  |  | the model states no demand for the load in the year"
+    And the log contains "1 load(s) of the base system have no demand in 2035, so their requirement has no series for that year"
+
   Scenario: An output path in another directory takes the companions of the system and of the portfolio with it
     When I translate the otoole model to a Sienna investments portfolio, with only the system at "plans/system.json" and the portfolio at "plans/portfolio.json"
     Then the pipeline exit code is 0
