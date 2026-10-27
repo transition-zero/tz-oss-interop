@@ -5,6 +5,7 @@ source:
   params:
     results_dir: expanded
     series_json_path: psi/portfolio_series.json
+    portfolio_json_path: psi/portfolio.json
 steps:
   - name: power_systems_investments_results_to_results_format
 sinks:

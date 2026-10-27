@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.annual_results import build_annual_rows, build_results_destination
-from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
 from interop.plugins.shared.power_systems_investments_results_constants import (
     HOUR_WEIGHTS_KEY,
     INVESTMENT_RESULT_CSVS,
@@ -27,17 +27,25 @@ from interop.plugins.shared.power_systems_investments_results_constants import (
     OPERATIONS_RESULTS_KEY,
     OPTIMIZER_STATS_CSV,
     PERIOD_YEARS_KEY,
+    UNIT_SIZES_KEY,
     InvestmentsResult,
     ResultsCsvCol,
     StagedResultCol,
 )
-from interop.plugins.shared.power_systems_investments_schema import SeriesDocument
+from interop.plugins.shared.power_systems_investments_schema import (
+    PortfolioComponent,
+    SeriesDocument,
+)
 from interop.plugins.shared.representative_periods import Period
 from interop.plugins.shared.results_constants import (
     RESULTS_SCHEMA,
     RESULTS_TABLE_KEY,
     ResultsCol,
     ResultsVariable,
+)
+from interop.plugins.shared.sienna_investments_constants import (
+    SiennaStorageTechnologyCol,
+    SiennaSupplyTechnologyCol,
 )
 from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.plugins.shared.translation_runner import (
@@ -47,11 +55,15 @@ from interop.plugins.shared.translation_runner import (
     filter_component,
     report_not_mapped,
 )
+from interop.ports.outbound.expansion import INVESTMENT_FORMULATIONS, InvestmentTreatment
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 POWER_SYSTEMS_INVESTMENTS_TO_RESULTS = "power-systems-investments-to-results"
 
 _RESULTS_COMPONENT = "results"
+_INTEGER_FORMULATION = INVESTMENT_FORMULATIONS[InvestmentTreatment.INTEGER]
+_UNIT_COUNTS = [str(InvestmentsResult.BUILD_CAPACITY), str(InvestmentsResult.BUILD_POWER_CAPACITY)]
+_UNIT_SIZE_KEYS = [StagedResultCol.TECHNOLOGY, StagedResultCol.COMPONENT]
 _SLICE_KEYS = [StagedResultCol.YEAR, StagedResultCol.REPRESENTATIVE_DAY]
 _HOUR_ROW_KEYS = [
     StagedResultCol.RESULT,
@@ -116,6 +128,27 @@ _MISSING_VARIABLE_REPORT = SkipReport(
     counted_noun="result variable(s)",
     note=_note_missing_variable,
     listed=SkippedNames(column=_LISTED_VARIABLE, label=DROPPED_NAMES_LABEL),
+)
+
+
+def _note_unsized_build(row: dict[str, Any]) -> str:
+    return (
+        f"the integer solve builds {row[StagedResultCol.VALUE]:g} unit(s) in the investment period "
+        f"{row[StagedResultCol.PERIOD]}, and the portfolio states no unit size for the "
+        "technology, so new_capacity leaves the row out"
+    )
+
+
+_UNSIZED_BUILD_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=_RESULTS_COMPONENT,
+    name_col=StagedResultCol.COMPONENT,
+    reason="of an integer solve name a technology whose unit size the portfolio does not state",
+    counted_noun="build row(s)",
+    note=_note_unsized_build,
+    attribute_col=StagedResultCol.VALUE,
+    attribute_name=ResultsCsvCol.VALUE,
 )
 _SHARED_NAME_REPORT = SkipReport(
     pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
@@ -195,6 +228,10 @@ _PRODUCTION = Derivation(
     "storage technology gives its discharge, and a transport technology the |flow| it carries",
 )
 _OBJECTIVE_DERIVATION = "objective_value of the solve → objective"
+_UNIT_COUNT_DERIVATION = (
+    "the units that an integer solve builds in a period × the MW of one unit, unit_size in the "
+    "portfolio (unit_size_discharge for a storage technology) → the MW that the plan builds"
+)
 
 
 class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
@@ -211,7 +248,9 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         self._report_missing_variables(state, investment, operations)
         shared = self._choose_shared_names(investment, operations)
         is_unshared = ~pl.col(StagedResultCol.COMPONENT).is_in(shared)
-        investment = investment.filter(is_unshared)
+        investment = self._convert_unit_counts(
+            investment.filter(is_unshared), state.source_topology[UNIT_SIZES_KEY].collect()
+        )
         weights = self._choose_hour_weights(state.source_topology[HOUR_WEIGHTS_KEY].collect())
         pieces = [
             self._map_capacity(investment, period_years, _NEW_CAPACITY),
@@ -251,6 +290,47 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         rows.append(_build_objective_row(OBJECTIVE_KEY in state.source_topology))
         report_not_mapped(
             pl.DataFrame(rows), pl.col(_HAS_ROWS), _MISSING_VARIABLE_REPORT, self._recorder
+        )
+
+    def _convert_unit_counts(
+        self, investment: pl.DataFrame, unit_sizes: pl.DataFrame
+    ) -> pl.DataFrame:
+        """The investment rows, with each count of units that an integer solve builds in MW."""
+        is_count = (pl.col(StagedResultCol.FORMULATION) == _INTEGER_FORMULATION) & pl.col(
+            StagedResultCol.RESULT
+        ).is_in(_UNIT_COUNTS)
+        counts = investment.filter(is_count)
+        if counts.is_empty():
+            return investment
+        sized, _unsized = report_not_mapped(
+            counts.join(unit_sizes, on=_UNIT_SIZE_KEYS, how="left"),
+            pl.col(StagedResultCol.UNIT_SIZE).is_not_null(),
+            _UNSIZED_BUILD_REPORT,
+            self._recorder,
+        )
+        self._record_unit_conversion()
+        converted = sized.with_columns(
+            pl.col(StagedResultCol.VALUE) * pl.col(StagedResultCol.UNIT_SIZE)
+        ).drop(StagedResultCol.UNIT_SIZE)
+        return pl.concat([investment.filter(~is_count), converted])
+
+    def _record_unit_conversion(self) -> None:
+        self._recorder.append(
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[
+                    *_build_result_sources(_NEW_CAPACITY),
+                    _build_unit_size_source(
+                        PortfolioComponent.SUPPLY_TECHNOLOGY, SiennaSupplyTechnologyCol.UNIT_SIZE
+                    ),
+                    _build_unit_size_source(
+                        PortfolioComponent.STORAGE_TECHNOLOGY,
+                        SiennaStorageTechnologyCol.UNIT_SIZE_DISCHARGE,
+                    ),
+                ],
+                destinations=[build_results_destination(ResultsVariable.NEW_CAPACITY)],
+                derivation=_UNIT_COUNT_DERIVATION,
+            )
         )
 
     def _choose_shared_names(self, investment: pl.DataFrame, operations: pl.LazyFrame) -> list[str]:
@@ -335,19 +415,26 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         self._recorder.append(
             TranslationEvent(
                 kind=EventKind.VALUE_DERIVED,
-                sources=[
-                    SourceField(
-                        Framework.POWER_SYSTEMS_INVESTMENTS,
-                        _RESULTS_COMPONENT,
-                        str(source),
-                        str(source),
-                    )
-                    for source in derivation.sources
-                ],
+                sources=_build_result_sources(derivation),
                 destinations=[build_results_destination(derivation.destination)],
                 derivation=derivation.text,
             )
         )
+
+
+def _build_result_sources(derivation: Derivation) -> list[SourceField]:
+    return [
+        SourceField(
+            Framework.POWER_SYSTEMS_INVESTMENTS, _RESULTS_COMPONENT, str(source), str(source)
+        )
+        for source in derivation.sources
+    ]
+
+
+def _build_unit_size_source(component: PortfolioComponent, attribute: str) -> SourceField:
+    return SourceField(
+        Framework.POWER_SYSTEMS_INVESTMENTS, str(component), ALL_COMPONENTS, attribute
+    )
 
 
 def _list_staged_results(investment: pl.DataFrame, operations: pl.LazyFrame) -> set[str]:

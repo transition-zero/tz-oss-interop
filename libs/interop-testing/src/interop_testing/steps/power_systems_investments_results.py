@@ -1,7 +1,8 @@
 """pytest-bdd Given steps for the output of a PowerSystemsInvestments.jl expansion solve.
 
 ``Given an expansion solve output in "<dir>"`` creates the ``expansion_solve_builder`` fixture,
-and ``Given a series document "<path>"`` creates the ``series_document_builder`` fixture.
+``Given a series document "<path>"`` creates the ``series_document_builder`` fixture, and
+``Given a portfolio "<path>"`` creates the ``portfolio_builder`` fixture.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pytest_bdd import given, parsers
 
 from interop_testing.builders.power_systems_investments_results import (
     ExpansionSolveBuilder,
+    PortfolioBuilder,
     SeriesDocumentBuilder,
 )
 
@@ -68,3 +70,23 @@ def given_series_day(
     weight: float,
 ) -> None:
     series_document_builder.add_day(year, rep_day, first_hour, hours, weight)
+
+
+@given(parsers.parse('a portfolio "{path}"'), target_fixture="portfolio_builder")
+def given_portfolio(path: str) -> PortfolioBuilder:
+    return PortfolioBuilder(Path(path))
+
+
+@given(
+    parsers.parse(
+        'the portfolio has the {component_type} "{name}" with the {unit_size_field} {size:g}'
+    )
+)
+def given_portfolio_technology(
+    portfolio_builder: PortfolioBuilder,
+    component_type: str,
+    name: str,
+    unit_size_field: str,
+    size: float,
+) -> None:
+    portfolio_builder.add_technology(component_type, name, unit_size_field, size)

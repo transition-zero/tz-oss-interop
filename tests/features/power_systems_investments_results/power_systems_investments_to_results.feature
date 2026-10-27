@@ -71,6 +71,42 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
       | new_capacity | link      |          | 2035-01-01T00:00:00 | 0     |
     And the file "decisions.md" contains "| `results.results.new_capacity.variable` MW |"
 
+  Scenario: An integer solve builds whole units, so new capacity is the units times the unit size of the portfolio
+    Given a portfolio "psi/portfolio.json"
+    And the portfolio has the SupplyTechnology "gas" with the unit_size 100
+    And the portfolio has the StorageTechnology "battery" with the unit_size_discharge 25
+    And an expansion solve output in "expanded_integer"
+    And the expansion solve wrote the variable "BuildCapacity__SupplyTechnology__ThermalStandard__IntegerInvestment" with the rows:
+      | time_index | name | value |
+      | 1          | gas  | 3     |
+      | 2          | gas  | 1     |
+    And the expansion solve wrote the variable "BuildPowerCapacity__StorageTechnology__EnergyReservoirStorage__IntegerInvestment" with the rows:
+      | time_index | name    | value |
+      | 1          | battery | 2     |
+      | 2          | battery | 0     |
+    And the expansion solve wrote the variable "BuildCapacity__AggregateTransportTechnology__ACBranch__IntegerInvestment" with the rows:
+      | time_index | name | value |
+      | 1          | link | 4     |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded_integer source.series_json_path=psi/portfolio_series.json source.portfolio_json_path=psi/portfolio.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" has these "new_capacity" rows:
+      | variable     | component | category | timestamp           | value |
+      | new_capacity | gas       |          | 2030-01-01T00:00:00 | 300   |
+      | new_capacity | gas       |          | 2035-01-01T00:00:00 | 100   |
+      | new_capacity | battery   |          | 2030-01-01T00:00:00 | 50    |
+      | new_capacity | battery   |          | 2035-01-01T00:00:00 | 0     |
+    And the log contains "power-systems-investments-to-results: 1 build row(s) of an integer solve name a technology whose unit size the portfolio does not state, so each is left out. Each one: link"
+    And the file "decisions.md" contains "the units that an integer solve builds in a period × the MW of one unit"
+
+  Scenario: An integer solve with no portfolio to read stops the run with a line that names the path
+    Given an expansion solve output in "expanded_integer"
+    And the expansion solve wrote the variable "BuildCapacity__SupplyTechnology__ThermalStandard__IntegerInvestment" with the rows:
+      | time_index | name | value |
+      | 1          | gas  | 3     |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded_integer source.series_json_path=psi/portfolio_series.json source.portfolio_json_path=psi/absent.json"
+    Then the pipeline exit code is 1
+    And the log contains "Source node 'stage_power_systems_investments_results' cannot read the portfolio it was given: psi/absent.json"
+
   Scenario: Installed capacity is the capacity that the model counts in the period of each year
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
     Then the pipeline exit code is 0
