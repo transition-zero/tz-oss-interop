@@ -72,11 +72,6 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     FREE_BUILD_PARAMETERS,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    RESIDUAL_CAPACITY,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     OTHER_MODE_VALUES,
     PARAMETER,
@@ -112,6 +107,11 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_residual_capacity,
     read_availability_factors,
     read_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,

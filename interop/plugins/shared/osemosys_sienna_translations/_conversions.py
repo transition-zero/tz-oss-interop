@@ -67,10 +67,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    RESIDUAL_CAPACITY,
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
     read_left_out_technologies,
@@ -93,6 +89,10 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_residual_capacity,
     read_availability_factors,
     read_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    RESIDUAL_CAPACITY,
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     LINK_VALUES,

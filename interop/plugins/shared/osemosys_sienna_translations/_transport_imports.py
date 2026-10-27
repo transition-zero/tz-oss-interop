@@ -57,8 +57,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     GENERATOR_NAME,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     DETAIL,
@@ -69,14 +67,14 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     EMISSION_TERMS,
     OWN_RATE,
+    PENALTY,
+    PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
     OPERATION_COST_MWH,
-    PENALTY,
     PENALTY_COST_MWH,
-    PENALTY_PER_TONNE,
     PENALTY_TERMS,
     build_penalty_terms,
 )
@@ -88,6 +86,10 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import Oper
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
     read_variable_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     CAPACITY_PARAMETER,

@@ -30,18 +30,16 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    TECHNOLOGY_NAME,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PENALTY_COST_MWH,
-    PENALTY_PER_TONNE,
     build_penalty_terms,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import TECHNOLOGY_NAME
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import INPUT_RATIO
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.translation_runner import (

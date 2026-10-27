@@ -15,7 +15,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
     StagedSeries,
-    append_per_unit_series,
+    add_to_per_unit_series,
     build_import_extensions,
     build_import_translations,
     build_line_extensions,
@@ -89,4 +89,4 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
             series = StagedSeries(
                 SiennaComponent.THERMAL_STANDARD, SiennaSeriesName.MAX_ACTIVE_POWER, imports.series
             )
-            append_per_unit_series(state, series, generators)
+            add_to_per_unit_series(state, series, generators)

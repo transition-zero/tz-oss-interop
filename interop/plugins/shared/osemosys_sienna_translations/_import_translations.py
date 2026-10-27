@@ -46,7 +46,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     CAPACITY_UNIT,
     GENERATOR_NAME,
     OUTPUT_CAPACITY_MW,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import OWN_COST
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
@@ -54,27 +53,32 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     OWN_RATE,
     RATE_T_PER_MWH,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_events import (
+    CARRIER_ATTRIBUTE,
+    CATEGORY_ATTRIBUTE,
+    EMISSION_ATTRIBUTE,
+    PENALTY_ATTRIBUTE,
+    PROPORTIONAL_TERM_ATTRIBUTE,
+    build_penalty_events,
+    build_series_events,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     OPERATION_COST_MWH,
     PENALTY_COST_MWH,
     PENALTY_TERMS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
-    CARRIER_ATTRIBUTE,
-    CATEGORY_ATTRIBUTE,
-    EMISSION_ATTRIBUTE,
     FIXED_COST_ATTRIBUTE,
     GENERATOR_AVAILABLE_NOTE,
     GENERATOR_ID_NOTE,
-    PENALTY_ATTRIBUTE,
-    PROPORTIONAL_TERM_ATTRIBUTE,
     build_commitment,
-    build_penalty_events,
     build_power_defaults,
     build_reactive_limits,
-    build_series_events,
     build_thermal_power_limits,
     express_thermal_cost,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     CAPACITY_PARAMETER,
