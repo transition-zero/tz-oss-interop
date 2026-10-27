@@ -18,6 +18,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    MINUTES_PER_HOUR,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
@@ -36,7 +37,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
-    MINUTES_PER_HOUR,
     TECHNOLOGIES_LABEL,
     InvestmentParameter,
 )
@@ -111,10 +111,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    PRIME_MOVER,
-    SIENNA_TYPE,
-)
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
     TECHNOLOGY_STORAGES_COLUMNS,
     enrich_technology_storages,
@@ -137,6 +133,10 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     list_area_names,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    PRIME_MOVER,
+    SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
