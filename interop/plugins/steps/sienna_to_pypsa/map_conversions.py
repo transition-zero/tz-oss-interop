@@ -56,6 +56,7 @@ _TAKEN_NAME_WARNING = (
 _DEFAULT_P_NOM = 0.0
 _DEFAULT_EFFICIENCY = 1.0
 _P_MIN_PU = 0.0
+_ACTIVE = True
 
 
 class SiennaToPypsaMapConversions(TranslationStep):
@@ -127,6 +128,8 @@ def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> N
         reporter.record_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
     if record.efficiency is None:
         reporter.record_default(record.name, PyPSALinkCol.EFFICIENCY, _DEFAULT_EFFICIENCY)
+    reporter.record_default(record.name, PyPSALinkCol.P_MIN_PU, _P_MIN_PU)
+    reporter.record_default(record.name, PyPSALinkCol.ACTIVE, _ACTIVE)
 
 
 def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
@@ -138,7 +141,7 @@ def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
         PyPSALinkCol.EFFICIENCY: (
             _DEFAULT_EFFICIENCY if record.efficiency is None else record.efficiency
         ),
-        PyPSALinkCol.ACTIVE: True,
+        PyPSALinkCol.ACTIVE: _ACTIVE,
         PyPSALinkCol.P_NOM_MIN: _choose_floor(record).value,
     }
 

@@ -269,6 +269,8 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "a_inside" having "p_nom" set to 10.0
     And the file "outputs/extensions.json" parses as JSON conversion extension record for "R1/R2/ELC" having "bus0" set to "R1/ELC"
     And the file "decisions.md" contains "| `sienna.conversion.a_to_b.extensions.efficiency` = 0.9 | `pypsa.Link.a_to_b.efficiency` = 0.9 | extensions.efficiency (PyPSA round-trip) |"
+    And the file "decisions.md" contains "|  | `pypsa.Link.a_to_b.p_min_pu` = 0.0 |  | the conversion record states no p_min_pu, so PyPSA's own default applies |"
+    And the file "decisions.md" contains "|  | `pypsa.Link.a_to_b.active` = True |  | the conversion record states no active, so PyPSA's own default applies |"
 
   Scenario: A conversion that can extend keeps its capacity as a floor, unless its record states a floor
     Given the system has a conversion extension record "a_to_b" with "bus0" set to "node_a"
