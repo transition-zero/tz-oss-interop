@@ -102,7 +102,8 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | solar     |          | 2030-01-01T00:00:00 | 100   |
-    And the log contains "1 hour(s) of the solve fall in no slice of the series document, so production leaves them out: 2030-03-01T00:00:00"
+    And the log contains "power-systems-investments-to-results: 1 hour(s) of the solve fall in no slice of the series document and take no weight in production, so each is left out. Hours: 2030-03-01T00:00:00"
+    And the file "decisions.md" contains "`power-systems-investments.DateTime.2030-03-01T00:00:00` |  |  | the hour falls in no slice of the series document, so production leaves it out"
 
   Scenario: A slice that holds an hour an earlier slice holds is left out, so production counts the hour once
     Given the series document has the representative day 5 of the year "2030" from "2030-01-02T01:00:00" of 2 hours with weight 50
@@ -123,8 +124,8 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | gas       |          | 2030-01-01T00:00:00 | 8775  |
-    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5 of 2030"
-    And the file "decisions.md" contains "the slice holds an hour that the slice 2 of 2030 also holds"
+    And the log contains "power-systems-investments-to-results: 1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out. Each one: 5 of 2030"
+    And the file "decisions.md" contains "`power-systems-investments.rep_day.5 of 2030.weight` = 50.0 |  |  | the slice holds an hour that the slice 2 of 2030 also holds"
 
   Scenario: A slice that is left out takes no slice of another year that has the same number
     Given the series document has the representative day 5 of the year "2030" from "2030-01-02T01:00:00" of 2 hours with weight 50
@@ -137,7 +138,7 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
       | variable   | component | category | timestamp           | value |
       | production | solar     |          | 2035-01-01T00:00:00 | 20    |
-    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out: 5 of 2030"
+    And the log contains "1 slice(s) of the series document hold an hour that an earlier slice holds, so each is left out. Each one: 5 of 2030"
 
   Scenario: A name that two technology types share is left out, because the results cannot tell the two apart
     Given the expansion solve wrote the variable "ActivePowerVariable__SupplyTechnology__RenewableDispatch__BasicDispatch" with the rows:
@@ -155,8 +156,23 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
       | new_capacity | battery   |          | 2035-01-01T00:00:00 | 0     |
       | new_capacity | link      |          | 2030-01-01T00:00:00 | 20    |
       | new_capacity | link      |          | 2035-01-01T00:00:00 | 0     |
-    And the log contains "1 component name(s) belong to more than one technology type of the solve, so the rows of each are left out: gas"
+    And the log contains "power-systems-investments-to-results: 1 component name(s) belong to more than one technology type of the solve, so each is left out. Each one: gas"
     And the file "decisions.md" contains "SupplyTechnology__RenewableDispatch and SupplyTechnology__ThermalStandard"
+
+  Scenario: A capacity row of a period that the series document does not state is left out, and the report names it
+    Given the expansion solve wrote the variable "BuildCapacity__SupplyTechnology__ThermalStandard__ContinuousInvestment" with the rows:
+      | time_index | name | value |
+      | 1          | gas  | 300   |
+      | 2          | gas  | 100   |
+      | 3          | gas  | 70    |
+    When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "new_capacity" rows among others:
+      | variable     | component | category | timestamp           | value |
+      | new_capacity | gas       |          | 2030-01-01T00:00:00 | 300   |
+      | new_capacity | gas       |          | 2035-01-01T00:00:00 | 100   |
+    And the log contains "power-systems-investments-to-results: 1 capacity row(s) fall in an investment period that is not a period of the series document, so each is left out. Periods: 3"
+    And the file "decisions.md" contains "`power-systems-investments.results.gas.time_index` = 3 |  |  | the investment period is not a period of the series document, so the BuildCapacity row has no year, and the results leave it out"
 
   Scenario: The objective is the objective value of the solve
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
