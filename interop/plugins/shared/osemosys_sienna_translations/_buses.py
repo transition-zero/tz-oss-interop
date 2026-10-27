@@ -17,19 +17,23 @@ from interop.core.extensions import BusExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
-    ELECTRICITY_CARRIER,
     FUEL,
     REGION,
     AnnotationColumn,
 )
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_annotations
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
     build_sienna_field,
     osemosys_skip_report,
 )
-from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
+from interop.plugins.shared.osemosys_sienna_translations._fuels import (
+    FUEL_BUS,
+    FUEL_LOCATION,
+    IS_ELECTRICITY,
+    read_fuel_buses,
+)
+from interop.plugins.shared.osemosys_sienna_translations._fuels import FUEL_NAME as FUEL_NAME
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
     BUS_VOLTAGE_LIMIT_MAX,
@@ -52,7 +56,6 @@ from interop.plugins.shared.translation_runner import (
 )
 from interop.ports.outbound.reporting import SourceField
 
-FUEL_NAME = "fuel_name"
 # The bus of an electricity fuel, `<region>/<fuel>`, or null where the fuel has no location.
 ELECTRICITY_BUS = "electricity_bus"
 
@@ -84,14 +87,16 @@ NO_LOCATION_SKIP = osemosys_skip_report(
 def read_electricity_fuels(state: State) -> pl.DataFrame:
     """The region, the fuel, its name in a report, its location and its bus, for each
     electricity fuel."""
-    fuels = read_annotations(state, FUEL)
-    location = pl.col(AnnotationColumn.LOCATION)
-    return fuels.filter(pl.col(AnnotationColumn.CARRIER) == ELECTRICITY_CARRIER).select(
-        REGION,
-        FUEL,
-        express_report_name(FUEL).alias(FUEL_NAME),
-        location,
-        pl.when(location.is_not_null()).then(express_report_name(FUEL)).alias(ELECTRICITY_BUS),
+    return (
+        read_fuel_buses(state)
+        .filter(pl.col(IS_ELECTRICITY))
+        .select(
+            REGION,
+            FUEL,
+            FUEL_NAME,
+            pl.col(FUEL_LOCATION).alias(AnnotationColumn.LOCATION),
+            pl.col(FUEL_BUS).alias(ELECTRICITY_BUS),
+        )
     )
 
 
