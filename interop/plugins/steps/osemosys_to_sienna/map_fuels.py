@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from interop.core.extensions import ExtensionKind, GeneratorExtension, append_extensions
+from interop.core.extensions import (
+    ConversionExtension,
+    ExtensionKind,
+    GeneratorExtension,
+    append_extensions,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
@@ -35,7 +40,10 @@ class OsemosysToSiennaMapFuels(OperationsMapping):
         modes = build_fuel_modes_source(state, operations, self._recorder)
         loads = build_fuel_loads(state, build_fuel_loads_source(state, operations, self._recorder))
         built = build_fuel_records(modes, loads.buses, operations.year)
-        suppliers = [*built.generators, *built.conversions]
+        suppliers: list[GeneratorExtension | ConversionExtension] = [
+            *built.generators,
+            *built.conversions,
+        ]
         plants = _list_plants(state)
         report_unsupplied_fuel_buses(suppliers, loads.records, plants, self._recorder)
         staged = state.destination_extensions
