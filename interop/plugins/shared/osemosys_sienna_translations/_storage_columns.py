@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
+from interop.plugins.shared.osemosys_canonical.constants import REGION, FlowParameter
+from interop.plugins.shared.osemosys_sienna_constants import StorageParameter
+
 STORAGE_NAME = "storage_name"
 STORAGE_REPORT_NAME = "storage_report_name"
 ENERGY = "energy"
@@ -40,3 +45,72 @@ DISCHARGE_RATE_MW = "discharge_rate_mw"
 OUTPUT_LIMIT = "output_limit"
 EFFICIENCY_IN = "efficiency_in"
 EFFICIENCY_OUT = "efficiency_out"
+
+
+class StorageSide(NamedTuple):
+    """One direction of a storage, its charge or its discharge: the parameters that state it,
+    and the columns of the storage table that it fills."""
+
+    direction: str
+    link_parameter: FlowParameter
+    flow_parameter: FlowParameter
+    rate_parameter: StorageParameter
+    technology: str
+    technology_name: str
+    mode: str
+    links: str
+    link_value: str
+    capacity: str
+    availability: str
+    ratio: str
+    rate: str
+    rate_mw: str
+    limit: str
+    cost: str
+    cost_mwh: str
+
+    @property
+    def mode_keys(self) -> list[str]:
+        """The columns that name the technology and the mode of this side of a storage."""
+        return [REGION, self.technology, self.mode]
+
+
+CHARGE_SIDE = StorageSide(
+    direction="charge",
+    link_parameter=FlowParameter.TECHNOLOGY_TO_STORAGE,
+    flow_parameter=FlowParameter.INPUT_ACTIVITY_RATIO,
+    rate_parameter=StorageParameter.MAX_CHARGE_RATE,
+    technology=CHARGE_TECHNOLOGY,
+    technology_name=CHARGE_TECHNOLOGY_NAME,
+    mode=CHARGE_MODE,
+    links=CHARGE_LINKS,
+    link_value=CHARGE_LINK_VALUE,
+    capacity=CHARGE_CAPACITY,
+    availability=CHARGE_AVAILABILITY,
+    ratio=CHARGE_RATIO,
+    rate=CHARGE_RATE,
+    rate_mw=CHARGE_RATE_MW,
+    limit=INPUT_LIMIT,
+    cost=CHARGE_COST,
+    cost_mwh=CHARGE_COST_MWH,
+)
+DISCHARGE_SIDE = StorageSide(
+    direction="discharge",
+    link_parameter=FlowParameter.TECHNOLOGY_FROM_STORAGE,
+    flow_parameter=FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    rate_parameter=StorageParameter.MAX_DISCHARGE_RATE,
+    technology=DISCHARGE_TECHNOLOGY,
+    technology_name=DISCHARGE_TECHNOLOGY_NAME,
+    mode=DISCHARGE_MODE,
+    links=DISCHARGE_LINKS,
+    link_value=DISCHARGE_LINK_VALUE,
+    capacity=DISCHARGE_CAPACITY,
+    availability=DISCHARGE_AVAILABILITY,
+    ratio=DISCHARGE_RATIO,
+    rate=DISCHARGE_RATE,
+    rate_mw=DISCHARGE_RATE_MW,
+    limit=OUTPUT_LIMIT,
+    cost=DISCHARGE_COST,
+    cost_mwh=DISCHARGE_COST_MWH,
+)
+STORAGE_SIDES = (CHARGE_SIDE, DISCHARGE_SIDE)
