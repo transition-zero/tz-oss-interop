@@ -143,7 +143,36 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "operating_modes" set to [{"mode": "2", "variable_cost": 1.0, "input_ratios": {"DEELEC": 1.0}, "output_ratios": {"ATELEC": 0.75}}]
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDELINK.electricity at the operating mode 2` = 0.75"
       And the file "decisions.md" contains "`osemosys.input_activity_ratio.R1/ATDELINK.ATELEC at the operations mode` = 1.25"
-      And the log contains "1 line technology(ies) state values at an operating mode that is neither the flow back nor an import, and the line does not run them; extensions.json holds them. Technologies: R1/ATDEODD"
+      And the log contains "1 operating mode(s) of a line technology are neither the flow back nor an import, and extensions.json holds their values, so each is left out. Technologies: R1/ATDEODD"
+
+    Scenario: A flow back that loses or costs another share than the operations mode is reported
+      ATDELINK loses 1 - 0.75 / 1.25 = 0.4 of what it sends at mode 1, and 1 - 0.75 / 1 = 0.25
+      in the flow back at mode 2. Each MWh that it sends costs 1 / 1.25 = 0.8 $ at mode 1, and
+      1 / 1 = 1 $ in the flow back. The line applies the loss and the cost of mode 1 both ways.
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.4
+      And the log contains "1 loss(es) of a flow back differ from the loss at the operations mode, which the line applies both ways, so each is left out. Technologies: R1/ATDELINK"
+      And the file "decisions.md" contains "| `osemosys.output_activity_ratio.R1/ATDELINK.electricity at the flow back` = 0.75 |  |  | the flow back at the operating mode 2 takes in 1.0 and puts out 0.75 of electricity, so it loses 0.25 of what it sends; the line loses 0.4 both ways, and the operating_modes of its record keep the ratios |"
+      And the log contains "1 cost(s) of a flow back differ from the cost of each MWh that the line sends at the operations mode, which is the one cost of the line, so each is left out. Technologies: R1/ATDELINK"
+      And the file "decisions.md" contains "| `osemosys.variable_operation_cost.R1/ATDELINK.the flow back` = 1000.0 |  |  | the flow back at the operating mode 2 costs 1 "
+      And the file "decisions.md" contains "/MWh sent, and the line costs 0.8 "
+
+    Scenario: A flow back with the loss and the cost of the operations mode is not reported
+      ATDELINK takes in 1.25 units of electricity in the flow back too, so it loses 0.4 of what
+      it sends and pays 0.8 $ for each MWh that it sends, both ways.
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDELINK   | ATELEC | 1                 | 2030 | 1.25  |
+        | R1     | ATDELINK   | DEELEC | 2                 | 2030 | 1.25  |
+        | R1     | ATDEODD    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEODD    | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEIDLE   | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDESPARE  | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATSTEPDOWN | ATELEC | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log does not contain "of a flow back differ"
 
     Scenario: A technology whose other mode is not the flow back runs one way, and the report names what it loses
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
@@ -152,7 +181,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEODD" having "active_power_limits_from" set to {"min": 0.0, "max": 1000.0}
-      And the log contains "state values at an operating mode that is neither the flow back nor an import, and the line does not run them; extensions.json holds them. Technologies: R1/ATDEODD"
+      And the log contains "1 operating mode(s) of a line technology are neither the flow back nor an import, and extensions.json holds their values, so each is left out. Technologies: R1/ATDEODD"
+      And the file "decisions.md" contains "| `osemosys.technology.R1/ATDEODD.operating_mode` = 2 |  |  | the line does not run the operating mode 2, which is neither the flow back nor an import; the operating_modes of its record keep its values |"
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDEODD.operating_mode 2, DEELEC` = 0.5 | `sienna.TwoTerminalGenericHVDCLine.ATDEODD.extensions.operating_modes.2.output_ratios.DEELEC` = 0.5"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDEODD" having "p_max_pu_series" set to "controllable_lines.parquet"
       And the parquet file "outputs/controllable_lines.parquet" has columns "snapshot, name, p_max_pu"
@@ -533,7 +563,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
     Scenario: The report names only the modes that are neither the flow back nor an import
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the log contains "state values at an operating mode that is neither the flow back nor an import, and the line does not run them; extensions.json holds them. Technologies: R1/ATDEODD"
+      And the log contains "1 operating mode(s) of a line technology are neither the flow back nor an import, and extensions.json holds their values, so each is left out. Technologies: R1/ATDEODD"
+      And the file "decisions.md" contains "| `osemosys.technology.R1/ATDEODD.operating_mode` = 2 |  |  | the line does not run the operating mode 2, which is neither the flow back nor an import; the operating_modes of its record keep its values |"
 
     Scenario: An import reaches a PyPSA network as a generator of the carrier import
       The PyPSA leg reads the carrier from the generator record of extensions.json.

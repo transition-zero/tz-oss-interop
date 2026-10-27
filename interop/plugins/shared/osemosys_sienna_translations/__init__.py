@@ -101,7 +101,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
     build_transport_source,
     read_transport_ends,
     set_line_values_persisted,
-    warn_one_way_lines,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
     build_import_extensions,
@@ -170,5 +169,4 @@ __all__ = [
     "set_line_values_persisted",
     "set_operations_year",
     "set_storage_values_persisted",
-    "warn_one_way_lines",
 ]

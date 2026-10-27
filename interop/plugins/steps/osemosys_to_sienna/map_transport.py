@@ -21,7 +21,6 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_line_extensions,
     build_transport_source,
     set_line_values_persisted,
-    warn_one_way_lines,
 )
 from interop.plugins.shared.sienna_constants import (
     HVDC_DESTINATION_SCHEMA,
@@ -47,7 +46,6 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
         if source.table.height == 0:
             return
         destination = apply_translations(source.table, TRANSPORT_TRANSLATIONS, self._recorder)
-        warn_one_way_lines(source.table)
         state.destination_tables[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = finalise(
             destination,
             HVDC_DESTINATION_SCHEMA,

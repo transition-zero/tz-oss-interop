@@ -16,7 +16,6 @@ go to the line record of extensions.json.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
@@ -31,7 +30,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_MW
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
@@ -144,7 +143,10 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     OUTPUT_RATIO,
     RATING,
     RECEIVED_MW,
+    REVERSE_COST,
+    REVERSE_COST_MWH,
     REVERSE_INPUT_RATIO,
+    REVERSE_LOSS,
     REVERSE_MODE,
     REVERSE_OUTPUT_RATIO,
     REVERSE_RECEIVED_MW,
@@ -170,6 +172,7 @@ from interop.plugins.shared.translation_runner import (
     SkipReport,
     SkipRule,
     filter_component,
+    report_not_mapped,
 )
 from interop.plugins.shared.warning_text import name_a_few
 
@@ -253,6 +256,78 @@ NO_CAPACITY_SKIP = _build_skip(
     "the fleet of the operations year is its residual capacity, which holds none of it",
     RESIDUAL_CAPACITY,
 )
+_LOST_MODE = "lost_mode"
+_ONE_WAY_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=TECHNOLOGY,
+    name_col=TECHNOLOGY_NAME,
+    reason="are neither the flow back nor an import, and extensions.json holds their values",
+    counted_noun="operating mode(s) of a line technology",
+    note=lambda row: (
+        f"the line does not run the operating mode {row[_LOST_MODE]}, which is neither the flow "
+        "back nor an import; the operating_modes of its record keep its values"
+    ),
+    listed=_LISTED,
+    attribute_col=_LOST_MODE,
+    attribute_name=OPERATING_MODE,
+)
+# The values of the reverse mode that the flow back of a line holds.
+_REVERSE_PARAMETERS = frozenset({*_FLOWS, SupplyParameter.VARIABLE_OPERATION_COST})
+
+
+def _note_reverse_loss(row: dict[str, Any]) -> str:
+    return (
+        f"the flow back at the operating mode {row[REVERSE_MODE]} takes in "
+        f"{row[REVERSE_INPUT_RATIO]} and puts out {row[REVERSE_OUTPUT_RATIO]} of electricity, so "
+        f"it loses {row[REVERSE_LOSS]:g} of what it sends; the line loses {row[LOSS]:g} both "
+        "ways, and the operating_modes of its record keep the ratios"
+    )
+
+
+def _note_reverse_cost(row: dict[str, Any]) -> str:
+    return (
+        f"the flow back at the operating mode {row[REVERSE_MODE]} costs "
+        f"{row[REVERSE_COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent, and the line costs "
+        f"{row[COST_MWH]:g} {UNIT_DOLLARS_PER_MWH} sent both ways; the operating_modes of its "
+        "record keep the cost"
+    )
+
+
+_REVERSE_LOSS_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=FlowParameter.OUTPUT_ACTIVITY_RATIO,
+    name_col=TECHNOLOGY_NAME,
+    reason="differ from the loss at the operations mode, which the line applies both ways",
+    counted_noun="loss(es) of a flow back",
+    note=_note_reverse_loss,
+    listed=_LISTED,
+    attribute_col=REVERSE_OUTPUT_RATIO,
+    attribute_name="electricity at the flow back",
+)
+_REVERSE_COST_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
+    framework=OSEMOSYS_FRAMEWORK,
+    component=SupplyParameter.VARIABLE_OPERATION_COST,
+    name_col=TECHNOLOGY_NAME,
+    reason=(
+        "differ from the cost of each MWh that the line sends at the operations mode, which is "
+        "the one cost of the line"
+    ),
+    counted_noun="cost(s) of a flow back",
+    note=_note_reverse_cost,
+    listed=_LISTED,
+    attribute_col=REVERSE_COST,
+    attribute_name="the flow back",
+)
+_NO_FLOW_BACK = pl.col(REVERSE_MODE).is_null()
+_FLOW_BACK_RULES = (
+    SkipRule(_NO_FLOW_BACK | pl.col(REVERSE_LOSS).is_close(pl.col(LOSS)), _REVERSE_LOSS_REPORT),
+    SkipRule(
+        _NO_FLOW_BACK | pl.col(REVERSE_COST_MWH).is_close(pl.col(COST_MWH)), _REVERSE_COST_REPORT
+    ),
+)
 NO_ENDS_SKIP = _build_skip(
     "do not take in electricity at one bus and put it out at another at the operations mode",
     "a line needs one bus where the technology takes in electricity and another where it puts "
@@ -287,8 +362,10 @@ def build_transport_source(
     lines = _enrich_reverse_modes(lines, mode_ends, operations.mode)
     lines = _enrich_ratings(state, operations, _enrich_fleet_output(state, operations, lines))
     lines = _enrich_costs(state, operations, lines)
+    _report_flow_back(lines, recorder)
     lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
+    report_one_way_lines(lines, recorder)
     lines, series = _enrich_capacity_factors(state, operations, lines)
     import_sources = build_imports_source(state, operations, imports, lines)
     return TransportSources(lines.sort(LINE_NAME), series, import_sources)
@@ -371,45 +448,42 @@ def _enrich_extension_values(
     return modes.enrich(table)
 
 
-def warn_one_way_lines(lines: pl.DataFrame) -> None:
-    """Name the lines whose technology states values at a mode that is neither the flow back
-    nor an import.
+def report_one_way_lines(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:
+    """Record each mode of a line technology that is neither the flow back nor an import, and
+    warn."""
+    modes = [_list_lost_modes(line) for line in lines.iter_rows(named=True)]
+    lost = lines.select(TECHNOLOGY_NAME).with_columns(
+        pl.Series(_LOST_MODE, modes, dtype=pl.List(pl.Utf8))
+    )
+    report_not_mapped(
+        lost.explode(_LOST_MODE), pl.col(_LOST_MODE).is_null(), _ONE_WAY_REPORT, recorder
+    )
+
+
+def _list_lost_modes(line: dict[str, Any]) -> list[str]:
+    """The other modes whose values neither the line nor an import generator runs.
+
+    The flows and the cost of the reverse mode are the flow back, which `_report_flow_back`
+    reports where its loss or its cost differs.
     """
-    named = [
-        line[TECHNOLOGY_NAME] for line in lines.iter_rows(named=True) if _list_lost_values(line)
-    ]
-    if named:
-        log.warning(
-            "%s: %d line technology(ies) state values at an operating mode that is neither the "
-            "flow back nor an import, and the line does not run them; extensions.json holds "
-            "them. Technologies: %s",
-            OSEMOSYS_TO_SIENNA_PIPELINE,
-            len(named),
-            name_a_few(named),
-        )
-
-
-def _list_lost_values(line: dict[str, Any]) -> list[dict[str, Any]]:
-    """The values of the other modes that neither the line nor an import generator runs.
-
-    The flows of the reverse mode are the flow back, and a cost of the reverse mode that is
-    the cost of the operations mode is the one cost of the line.
-    """
-    return [
-        value
+    lost = {
+        value[OPERATING_MODE]
         for value in line[OTHER_MODE_VALUES] or []
         if not _is_held_by_reverse_mode(line, value) and not is_held_by_import_mode(line, value)
-    ]
+    }
+    return sorted(lost)
 
 
 def _is_held_by_reverse_mode(line: dict[str, Any], value: dict[str, Any]) -> bool:
     if value[OPERATING_MODE] != line[REVERSE_MODE]:
         return False
-    if value[PARAMETER] in _FLOWS:
-        return True
-    return value[PARAMETER] == SupplyParameter.VARIABLE_OPERATION_COST and math.isclose(
-        value[VALUE_COL], line[COST]
-    )
+    return value[PARAMETER] in _REVERSE_PARAMETERS
+
+
+def _report_flow_back(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:
+    """Record each flow back whose loss or cost the line does not apply, and warn."""
+    for rule in _FLOW_BACK_RULES:
+        report_not_mapped(lines, rule.keep, rule.report, recorder)
 
 
 def _read_mode_ends(state: State, year: int) -> pl.DataFrame:
@@ -539,6 +613,7 @@ def _enrich_ratings(state: State, operations: OperationsYear, lines: pl.DataFram
         (capacity * pl.col(INPUT_RATIO)).alias(SENT_MW),
         (capacity * pl.col(OUTPUT_RATIO)).alias(RECEIVED_MW),
         (1.0 - pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(LOSS),
+        (1.0 - pl.col(REVERSE_OUTPUT_RATIO) / pl.col(REVERSE_INPUT_RATIO)).alias(REVERSE_LOSS),
         (capacity * pl.col(REVERSE_INPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_SENT_MW),
         (capacity * pl.col(REVERSE_OUTPUT_RATIO)).fill_null(_NO_FLOW).alias(REVERSE_RECEIVED_MW),
     )
@@ -607,12 +682,23 @@ def _express_smallest_ratio() -> pl.Expr:
 
 
 def _enrich_costs(state: State, operations: OperationsYear, lines: pl.DataFrame) -> pl.DataFrame:
-    """The cost of each MWh that the line sends, from the cost of each unit of activity."""
-    keys = lines.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
-    stated = read_variable_costs(state, operations.year, keys).select(
-        *_KEYS, pl.col(VARIABLE_COST).alias(COST)
+    """The cost of each MWh that the line sends, from the cost of each unit of activity, at the
+    operations mode and in the flow back."""
+    forward = lines.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
+    reverse = lines.filter(~_NO_FLOW_BACK).select(
+        *_KEYS, pl.col(REVERSE_MODE).alias(OPERATING_MODE)
     )
-    table = lines.join(stated, on=_KEYS)
+    table = lines.join(_read_mode_costs(state, operations, forward, COST), on=_KEYS).join(
+        _read_mode_costs(state, operations, reverse, REVERSE_COST), on=_KEYS, how="left"
+    )
     convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
     per_sent = express_converted(table, COST, convert) / pl.col(INPUT_RATIO)
-    return table.with_columns(per_sent.alias(COST_MWH))
+    reverse_per_sent = express_converted(table, REVERSE_COST, convert) / pl.col(REVERSE_INPUT_RATIO)
+    return table.with_columns(per_sent.alias(COST_MWH), reverse_per_sent.alias(REVERSE_COST_MWH))
+
+
+def _read_mode_costs(
+    state: State, operations: OperationsYear, keys: pl.DataFrame, column: str
+) -> pl.DataFrame:
+    stated = read_variable_costs(state, operations.year, keys)
+    return stated.select(*_KEYS, pl.col(VARIABLE_COST).alias(column))
