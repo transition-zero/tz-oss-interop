@@ -155,12 +155,15 @@ CHARGE_TECHNOLOGY_OWNERS = ValueOwners(
     ExtensionKind.STORAGE, STORAGE_NAME, CHARGE_SIDE.technology_name, SIENNA_TYPE
 )
 # The rows of a discharging technology that the storage applies, beside those its record keeps.
+# Each flow row is at a mode that the storage runs, or in `operating_modes`.
 _DISCHARGE_APPLIED = (
     *RATED_PARAMETERS,
     SupplyParameter.FIXED_COST,
     SupplyParameter.CAPACITY_FACTOR,
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
 )
-# The rows of a separate charging technology that the storage applies; its record holds no mode.
+# The rows of a separate charging technology that the storage applies; no field holds its modes.
 _CHARGE_APPLIED = (SupplyParameter.RESIDUAL_CAPACITY, SupplyParameter.AVAILABILITY_FACTOR)
 STORAGE_OWNERS = ValueOwners(
     ExtensionKind.STORAGE, STORAGE_NAME, STORAGE_REPORT_NAME, SIENNA_TYPE, (REGION, STORAGE)
