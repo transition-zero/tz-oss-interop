@@ -72,11 +72,6 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
     FREE_BUILD_PARAMETERS,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    OTHER_MODE_VALUES,
-    PARAMETER,
-    enrich_other_mode_values,
-)
 from interop.plugins.shared.osemosys_sienna_translations._generators import GeneratorSources
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
@@ -95,8 +90,11 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     LINK_RUN_PARAMETERS,
+    MODE_BOUND_PARAMETERS,
+    ModeEntry,
     build_operating_mode_field,
     build_operating_modes,
+    list_mode_entries,
     set_mode_bounds_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
@@ -374,7 +372,6 @@ def build_transport_source(
     lines = _enrich_costs(state, operations, lines)
     _report_flow_back(lines, recorder)
     report_line_penalties(state, operations, lines, recorder)
-    lines = enrich_other_mode_values(state, operations, lines)
     lines = _enrich_extension_values(state, operations, lines)
     report_one_way_lines(lines, recorder)
     factored = _enrich_capacity_factors(state, operations, lines)
@@ -448,13 +445,17 @@ def _enrich_capacity_factors(
 def _enrich_extension_values(
     state: State, operations: OperationsYear, lines: pl.DataFrame
 ) -> pl.DataFrame:
-    """The values that a line rates on the electricity that it sends, and its other modes."""
+    """The values that a line rates on the electricity that it sends, and its other modes.
+
+    `operating_mode` is the operations mode, which the line runs.
+    """
     rated = lines.with_columns(
         pl.col(INPUT_RATIO).alias(RATING_RATIO),
         pl.lit(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value).alias(SIENNA_TYPE),
+        pl.lit(operations.mode).alias(OPERATING_MODE),
     )
     table = enrich_technology_values(state, operations, rated, LINK_VALUES)
-    held = lines.select(REGION, TECHNOLOGY, pl.lit(operations.mode).alias(OPERATING_MODE))
+    held = rated.select(_MODE_KEYS)
     bounds = enrich_activity_limits(state, operations, held, FlowParameter.INPUT_ACTIVITY_RATIO)
     table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
     modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
@@ -479,18 +480,21 @@ def _list_lost_modes(line: dict[str, Any]) -> list[str]:
     The flows and the cost of the reverse mode are the flow back, which `_report_flow_back`
     reports where its loss or its cost differs.
     """
-    lost = {
-        value[OPERATING_MODE]
-        for value in line[OTHER_MODE_VALUES] or []
-        if not _is_held_by_reverse_mode(line, value) and not is_held_by_import_mode(line, value)
-    }
+    lost = {entry.mode for entry in list_mode_entries(line) if _is_lost(line, entry)}
     return sorted(lost)
 
 
-def _is_held_by_reverse_mode(line: dict[str, Any], value: dict[str, Any]) -> bool:
-    if value[OPERATING_MODE] != line[REVERSE_MODE]:
+def _is_lost(line: dict[str, Any], entry: ModeEntry) -> bool:
+    """Whether no component runs the value; the line holds its bounds and its operations mode."""
+    if entry.mode == line[OPERATING_MODE] or entry.parameter in MODE_BOUND_PARAMETERS:
         return False
-    return value[PARAMETER] in _REVERSE_PARAMETERS
+    return not _is_held_by_reverse_mode(line, entry) and not is_held_by_import_mode(line, entry)
+
+
+def _is_held_by_reverse_mode(line: dict[str, Any], entry: ModeEntry) -> bool:
+    if entry.mode != line[REVERSE_MODE]:
+        return False
+    return entry.parameter in _REVERSE_PARAMETERS
 
 
 def _report_flow_back(lines: pl.DataFrame, recorder: ScopedRecorder) -> None:

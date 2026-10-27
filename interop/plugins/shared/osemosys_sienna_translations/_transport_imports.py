@@ -59,10 +59,8 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     OUTPUT_CAPACITY_MW,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    DETAIL,
     OWN_COST,
     OWN_COST_MWH,
-    PARAMETER,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     ACTIVITY_RATE_T_PER_MWH,
@@ -85,6 +83,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generators import (
     GeneratorSources,
     build_emission_rates,
 )
+from interop.plugins.shared.osemosys_sienna_translations._operating_modes import ModeEntry
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     VARIABLE_COST,
@@ -221,14 +220,14 @@ def enrich_import_flows(lines: pl.DataFrame, imports: pl.DataFrame) -> pl.DataFr
     return lines.join(flows, on=_KEYS, how="left")
 
 
-def is_held_by_import_mode(line: dict[str, Any], value: dict[str, Any]) -> bool:
+def is_held_by_import_mode(line: dict[str, Any], entry: ModeEntry) -> bool:
     """Whether the generator of an import mode of the line holds a value of another mode."""
     flows = line[IMPORT_FLOWS] or []
-    if value[OPERATING_MODE] not in {flow[OPERATING_MODE] for flow in flows}:
+    if entry.mode not in {flow[OPERATING_MODE] for flow in flows}:
         return False
-    if value[PARAMETER] == FlowParameter.OUTPUT_ACTIVITY_RATIO:
-        return {OPERATING_MODE: value[OPERATING_MODE], FUEL: value[DETAIL]} in flows
-    return value[PARAMETER] in _HELD_PARAMETERS
+    if entry.parameter == FlowParameter.OUTPUT_ACTIVITY_RATIO:
+        return {OPERATING_MODE: entry.mode, FUEL: entry.detail} in flows
+    return entry.parameter in _HELD_PARAMETERS
 
 
 def build_imports_source(
