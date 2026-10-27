@@ -73,7 +73,7 @@ Feature: compare joins two results tables and reports what differs
     And the file "outputs/summary.md" contains "| production | 1 | 0 | 0 | gen_a | - |"
     And the file "outputs/summary.md" does not contain "| production | coal |"
 
-  Scenario: compare gives a results pipeline that needs one its user mappings file
+  Scenario: compare asks for the user mappings file of a results pipeline that needs one
     # aetos-to-results stages an otoole model, which needs the units and the fuel carriers
     # of the user mappings file. GASCC makes 10 GWh in 2030 and holds 2 GW.
     Given an otoole model
