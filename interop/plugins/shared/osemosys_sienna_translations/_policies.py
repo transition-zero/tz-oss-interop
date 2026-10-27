@@ -185,7 +185,7 @@ POLICY_SPECS = (
         type=PolicyType.EMISSION_LIMIT,
         sense=ConstraintSense.AT_MOST,
         unit=UNIT_TONNES,
-        members=(MemberRule.GROUP_REGIONS, MemberRule.GROUP_TAGS),
+        members=(MemberRule.GROUP_REGIONS,),
         name=pl.concat_str(REGION_GROUP, POLLUTANT, separator=REGION_NAME_SEPARATOR),
         exogenous=PolicyParameter.REGION_GROUP_EXOGENOUS_EMISSION,
     ),
