@@ -38,12 +38,13 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
-    ActivityParameter,
     StorageParameter,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    CTAU,
     ELECTRICITY_RATIO,
+    enrich_capacity_to_activity,
     read_electricity_ratios,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
@@ -145,7 +146,6 @@ _TECHNOLOGY_STORAGES = "technology_storages"
 _CHARGE_TECHNOLOGY_STORAGES = "charge_technology_storages"
 _DISCHARGE_TECHNOLOGY_STORAGES = "discharge_technology_storages"
 _AVAILABILITY = "availability"
-_CAPACITY_TO_ACTIVITY = "capacity_to_activity"
 _SERIES_FILE = companion_filename(ExtensionKind.STORAGE)
 
 # The records of the storages: the values of the technology that discharges each one, and the
@@ -495,7 +495,7 @@ def _enrich_technologies(
         power = technologies.select(
             *_TECHNOLOGY_KEYS,
             pl.col(RESIDUAL_CAPACITY).alias(side.capacity),
-            pl.col(_CAPACITY_TO_ACTIVITY).alias(side.capacity_to_activity),
+            pl.col(CTAU).alias(side.capacity_to_activity),
             pl.col(_AVAILABILITY).alias(side.availability),
         )
         table = _enrich_side_technologies(table, power, side)
@@ -521,11 +521,10 @@ def _read_linked_technologies(
     availability = read_availability_factors(state, operations.year, keys).rename(
         {AVAILABILITY_FACTOR: _AVAILABILITY}
     )
-    activity = read_parameter_with_defaults(
-        state, ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, operations.year, keys
-    ).select(*_TECHNOLOGY_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_CAPACITY_TO_ACTIVITY))
-    technologies = technologies.join(availability, on=_TECHNOLOGY_KEYS, how="left").join(
-        activity, on=_TECHNOLOGY_KEYS, how="left"
+    technologies = enrich_capacity_to_activity(
+        state,
+        operations.year,
+        technologies.join(availability, on=_TECHNOLOGY_KEYS, how="left"),
     )
     return enrich_residual_capacity(state, operations.year, technologies)
 
