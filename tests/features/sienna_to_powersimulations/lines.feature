@@ -42,3 +42,15 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_from" equal to {"min": 0.0, "max": 1000.0}
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_to" equal to {"min": 0.0, "max": 500.0}
+
+  Scenario: an HVDC line with no operational flow limit gets symmetric end limits from its smallest rating
+    Given a Sienna system
+    And the system contains a bus "bus_a"
+    And the system contains a bus "bus_b"
+    And the system contains an HVDC line "link_1" from "bus_a" to "bus_b" with p_nom 1000.0 efficiency 0.5
+    And the HVDC line "link_1" states no operational flow limit
+    And the HVDC line "link_1" has converter ratings 800.0 at the from bus and 600.0 at the to bus
+    And the system is saved as "inputs/hvdc_rated.json"
+    When I run translate against Sienna system "inputs/hvdc_rated.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_from" equal to {"min": -600.0, "max": 600.0}
+    And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has field "active_power_limits_to" equal to {"min": -300.0, "max": 300.0}

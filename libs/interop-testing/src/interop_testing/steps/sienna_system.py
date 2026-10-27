@@ -285,6 +285,25 @@ def given_hvdc_line_unavailable(sienna_system_builder: SiennaSystemBuilder, name
     sienna_system_builder.set_link_available(name, available=False)
 
 
+@given(parsers.parse('the HVDC line "{name}" states no operational flow limit'))
+def given_hvdc_line_without_flow_limit(
+    sienna_system_builder: SiennaSystemBuilder, name: str
+) -> None:
+    sienna_system_builder.drop_link_operational_flow_limit(name)
+
+
+@given(
+    parsers.parse(
+        'the HVDC line "{name}" has converter ratings {rating_from:g} at the from bus '
+        "and {rating_to:g} at the to bus"
+    )
+)
+def given_hvdc_line_converter_ratings(
+    sienna_system_builder: SiennaSystemBuilder, name: str, rating_from: float, rating_to: float
+) -> None:
+    sienna_system_builder.set_link_converter_ratings(name, rating_from, rating_to)
+
+
 @given(parsers.parse('the HVDC line "{name}" is extendable in ext'))
 def given_hvdc_line_extendable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, name: str
