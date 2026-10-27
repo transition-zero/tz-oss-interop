@@ -16,7 +16,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
@@ -39,7 +39,6 @@ OPERATION_COST_MWH = "operation_cost_mwh"
 
 _KEYS = [REGION, TECHNOLOGY]
 _PENALTY_KEYS = [REGION, POLLUTANT]
-_NO_COST = 0.0
 
 
 def enrich_emission_penalties(
@@ -61,7 +60,7 @@ def enrich_emission_penalties(
         )
     )
     table = generators.join(listed, on=_KEYS, how="left").with_columns(
-        pl.col(EMISSION_COST_MWH).fill_null(_NO_COST)
+        pl.col(EMISSION_COST_MWH).fill_null(NO_COST)
     )
     total = pl.col(VARIABLE_COST_MWH) + pl.col(EMISSION_COST_MWH)
     return table.with_columns(total.alias(OPERATION_COST_MWH))

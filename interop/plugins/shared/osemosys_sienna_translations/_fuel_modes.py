@@ -39,6 +39,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
+    NO_COST,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     WHOLE_CAPACITY,
@@ -116,7 +117,6 @@ MAX_LINK_FUELS = 4
 _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _MODE_SUFFIX = "mode"
-_NO_COST = 0.0
 PENALTY = "penalty"
 _RATE = "rate"
 _STATED_RATE = "stated_rate"
@@ -393,13 +393,13 @@ def _enrich_costs(state: State, operations: OperationsYear, modes: pl.DataFrame)
     costs = read_parameter(state, SupplyParameter.VARIABLE_OPERATION_COST, operations.year)
     costs = costs.select(*_MODE_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(VARIABLE_COST))
     table = modes.join(costs, on=_MODE_KEYS, how="left").with_columns(
-        pl.col(VARIABLE_COST).fill_null(_NO_COST)
+        pl.col(VARIABLE_COST).fill_null(NO_COST)
     )
     convert = units.convert_cost_per_energy_to_dollars_per_mwh
     table = table.with_columns(express_converted(table, VARIABLE_COST, convert).alias(COST_MWH))
     rates = _read_rates(state, operations, table)
     return table.join(rates, on=_MODE_KEYS, how="left").with_columns(
-        pl.col(PENALTY_MWH).fill_null(_NO_COST)
+        pl.col(PENALTY_MWH).fill_null(NO_COST)
     )
 
 
@@ -416,7 +416,7 @@ def _read_rates(state: State, operations: OperationsYear, modes: pl.DataFrame) -
     rates = rates.with_columns(express_converted(rates, _STATED_RATE, convert).alias(_RATE))
     penalties = read_emission_penalties(state, operations, rates)
     priced = rates.join(penalties, on=[REGION, POLLUTANT], how="left").with_columns(
-        (pl.col(_RATE) * pl.col(PENALTY).fill_null(_NO_COST)).alias(PENALTY)
+        (pl.col(_RATE) * pl.col(PENALTY).fill_null(NO_COST)).alias(PENALTY)
     )
     return (
         priced.sort(POLLUTANT)
