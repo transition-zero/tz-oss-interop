@@ -9,11 +9,12 @@ of the base power of its owner takes 1.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.constants import UNSCALED, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_SIENNA_SERIES,
     SERIES_KEY_SEPARATOR,
@@ -31,9 +32,6 @@ SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedTimeSeriesCol.COMPONENT: pl.Utf8,
     StagedTimeSeriesCol.VALUE: pl.Float64,
 }
-
-# The divisor of a series per unit, and of a series whose peak is zero, which keeps its values.
-_UNSCALED = 1.0
 
 
 @dataclass(frozen=True)
@@ -71,37 +69,54 @@ def build_series_firsts(table: pl.DataFrame) -> dict[str, float]:
     return dict(firsts.iter_rows())
 
 
+class _Staging(NamedTuple):
+    """The table to stage under the key of a series, and the scaling factor of each owner."""
+
+    table: pl.LazyFrame
+    scales: dict[str, float]
+
+
 def add_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
     """Stage a series in MW and add one association row for each owner that it names.
 
     `owners` is the destination table of the owner type, with its `name` and `id`.
     """
+    _reject_staged(state, series)
     peaks = build_series_peaks(series.table)
-    scales = {name: peak or _UNSCALED for name, peak in peaks.items()}
-    _add_scaled_series(state, series, owners, scales)
+    scales = {name: peak or UNSCALED for name, peak in peaks.items()}
+    _add_scaled_series(state, series, owners, _Staging(series.table.lazy(), scales))
 
 
 def add_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
     """Stage a series per unit of the base power of each owner, and its association rows."""
-    names = series.table[StagedTimeSeriesCol.COMPONENT].unique().to_list()
-    _add_scaled_series(state, series, owners, dict.fromkeys(names, _UNSCALED))
+    _reject_staged(state, series)
+    staging = _Staging(series.table.lazy(), _build_unscaled(series))
+    _add_scaled_series(state, series, owners, staging)
 
 
-def append_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
+def add_to_per_unit_series(state: State, series: StagedSeries, owners: pl.DataFrame) -> None:
     """Stage a series per unit beside the series that an earlier step staged under its key."""
-    earlier = state.source_time_series.pop(series.key, None)
-    add_per_unit_series(state, series, owners)
-    if earlier is not None:
-        state.source_time_series[series.key] = pl.concat([earlier, series.table.lazy()])
+    earlier = state.source_time_series.get(series.key)
+    table = series.table.lazy() if earlier is None else pl.concat([earlier, series.table.lazy()])
+    _add_scaled_series(state, series, owners, _Staging(table, _build_unscaled(series)))
+
+
+def _reject_staged(state: State, series: StagedSeries) -> None:
+    if series.key in state.source_time_series:
+        raise ValueError(f"the series {series.key} is already staged")
+
+
+def _build_unscaled(series: StagedSeries) -> dict[str, float]:
+    """A series per unit keeps its values, so each owner takes the factor 1."""
+    names = series.table[StagedTimeSeriesCol.COMPONENT].unique().to_list()
+    return dict.fromkeys(names, UNSCALED)
 
 
 def _add_scaled_series(
-    state: State, series: StagedSeries, owners: pl.DataFrame, scales: dict[str, float]
+    state: State, series: StagedSeries, owners: pl.DataFrame, staging: _Staging
 ) -> None:
-    if series.key in state.source_time_series:
-        raise ValueError(f"the series {series.key} is already staged")
-    state.source_time_series[series.key] = series.table.lazy()
-    associations = _build_associations(series, owners, scales)
+    state.source_time_series[series.key] = staging.table
+    associations = _build_associations(series, owners, staging.scales)
     existing = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
     state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = (
         associations if existing is None else pl.concat([existing, associations])
