@@ -76,6 +76,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       Given the otoole set "FUEL" holds "ATELEC ATELECLV DEELEC ATGAS DEGAS ATH2"
       And the otoole set "TECHNOLOGY" holds "ATDELINK ATDEODD ATDEIDLE ATDESPARE ATGASWELL ATEXPORT ATSTEPDOWN ATSTEPUP ATELECTROLYSER DEATPIPE"
       And the otoole set "MODE_OF_OPERATION" holds "1 2"
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDELINK   | 2030 | 2     |
@@ -207,6 +208,19 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the log does not contain "fixed_cost states"
       And the log does not contain "total_technology_annual_activity_upper_limit states"
 
+    Scenario: A line rates its residual capacity with the capacity_to_activity_unit of its technology
+      ATDELINK runs 4380 GWh of activity a year for each GW, so its 2 GW are 1000 MW of activity.
+      The availability factor of 0.9 leaves 900 MW, so it sends at most 900 × 1.25 = 1125 MW and
+      delivers 900 × 0.75 = 675 MW.
+      Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATDELINK   | 4380  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": -675.0, "max": 1125.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": -900.0, "max": 675.0}
+      And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATDELINK` = 4380.0"
+
     Scenario: A trade route of electricity becomes a conversion record between two region and fuel pairs
       A trade route joins two regions and not two locations, so its ends name a region and a
       fuel rather than a bus.
@@ -317,7 +331,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
       And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATSTEPDOWN"
       And the file "decisions.md" contains "the model builds the technology at no cost and no limit binds it, so the capacity is the electricity that the whole fleet of the year can put out"
-      And the file "decisions.md" contains "`osemosys.residual_capacity.the whole fleet.Σ in MW × the largest electricity output_activity_ratio of each technology` = 3500.0 MW"
+      And the file "decisions.md" contains "`osemosys.residual_capacity.the whole fleet.Σ residual_capacity × capacity_to_activity_unit / 8760 h, in MW, × the largest electricity output_activity_ratio of each technology` = 3500.0 MW"
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to` ="
       And the file "decisions.md" does not contain "`osemosys.residual_capacity.R1/ATSTEPDOWN` = 0.0"
       And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_from`"
@@ -407,7 +421,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.bus1` = R1/ATELECLV |"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" having "bus0" set to "R1/ATELEC"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "ATEXPORT" without field "bus1"
-      And the file "decisions.md" contains "| `osemosys.residual_capacity.R1/ATEXPORT` = 0.0<br>`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0 | `sienna.conversion.ATEXPORT.extensions.p_nom` = 0.0 MW |"
+      And the file "decisions.md" contains "| `osemosys.residual_capacity.R1/ATEXPORT` = 0.0<br>`osemosys.capacity_to_activity_unit.R1/ATEXPORT` = 8760.0<br>`osemosys.input_activity_ratio.R1/ATEXPORT.electricity at the operations mode` = 1.0 | `sienna.conversion.ATEXPORT.extensions.p_nom` = 0.0 MW |"
       And the log does not contain "lifetime states"
 
   Rule: A mode of a transport technology that imports electricity becomes a generator at the end where it puts electricity out
@@ -425,6 +439,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the otoole set "TECHNOLOGY" holds "ATDEBUY ATDEODD ATPEAKER"
       And the otoole set "EMISSION" holds "CO2"
       And the otoole set "MODE_OF_OPERATION" holds "1 2 3"
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has no file
       And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | YEAR | VALUE |
         | R1     | ATDEBUY    | 2030 | 2     |
@@ -500,6 +515,18 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_from" set to {"min": -1620.0, "max": 1800.0}
       And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_to" set to {"min": -1800.0, "max": 1710.0}
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 1600.0
+
+    Scenario: An import rates on the capacity_to_activity_unit of its line
+      ATDEBUY runs 4380 GWh of activity a year for each GW, so its 2 GW are 1000 MW of activity,
+      and the import puts out 1000 × 0.8 = 800 MW, of which the availability factor leaves 720 MW.
+      Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATDEBUY    | 4380  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 800.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "active_power_limits" set to {"min": 0.0, "max": 720.0}
+      And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATDEBUY` = 4380.0<br>`osemosys.output_activity_ratio.R1/ATDEBUY.electricity at the operating mode 2` = 0.8 | `sienna.ThermalStandard.ATDEBUY/import/2.base_power` = 800.0 MVA"
 
     Scenario: Each of two import modes of one line becomes one ThermalStandard
       In mode 4 ATDEBUY also puts out 0.7 of a unit at DE and takes in no electricity.

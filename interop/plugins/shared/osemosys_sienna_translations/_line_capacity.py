@@ -23,6 +23,8 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_RATIO,
+    enrich_capacity_to_activity,
+    express_activity_mw,
     read_electricity_ratios,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
@@ -40,10 +42,9 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     IS_UNLIMITED,
     LINE_CAPACITY,
 )
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 
 _KEYS = [REGION, TECHNOLOGY]
-_CAPACITY_MW = "capacity_mw"
+_CAPACITY = "capacity"
 
 
 def enrich_line_capacity(
@@ -65,11 +66,12 @@ def enrich_line_capacity(
 
 
 def read_fleet_output_mw(state: State, operations: OperationsYear) -> float:
-    """Σ over every technology of its residual capacity in MW × its largest electricity output
-    ratio at any mode: the most electricity that the fleet of the year can put out."""
+    """Σ over every technology of its residual capacity in MW of activity × its largest
+    electricity output ratio at any mode: the most electricity that the fleet of the year can put
+    out."""
     year = operations.year
     residual = read_parameter(state, SupplyParameter.RESIDUAL_CAPACITY, year).select(
-        *_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_CAPACITY_MW)
+        *_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(_CAPACITY)
     )
     ratios = (
         read_electricity_ratios(state, year, FlowParameter.OUTPUT_ACTIVITY_RATIO)
@@ -77,6 +79,6 @@ def read_fleet_output_mw(state: State, operations: OperationsYear) -> float:
         .agg(pl.col(ELECTRICITY_RATIO).max())
     )
     table = residual.join(ratios.lazy(), on=_KEYS).collect()
-    convert = operations.units.convert_capacity_to_mw
-    output = express_converted(table, _CAPACITY_MW, convert) * pl.col(ELECTRICITY_RATIO)
+    table = enrich_capacity_to_activity(state, year, table)
+    output = express_activity_mw(table, _CAPACITY, operations.units) * pl.col(ELECTRICITY_RATIO)
     return float(table.select(output.sum()).item() or 0.0)

@@ -50,8 +50,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
+    ActivityParameter,
     SupplyParameter,
     TradeParameter,
+)
+from interop.plugins.shared.osemosys_sienna_translations._activity import (
+    CTAU,
+    enrich_capacity_to_activity,
+    express_activity_mw,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import find_parameter_default
@@ -109,7 +115,6 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_BUS,
     TO_FUEL,
 )
-from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.pypsa_constants import PyPSALinkCol
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
@@ -297,7 +302,8 @@ def _enrich_link(
         .join(read_availability_factors(state, operations.year, keys), on=_KEYS, how="left")
     )
     table = table.join(_read_costs(state, operations, table), on=_KEYS, how="left")
-    capacity = express_converted(table, RESIDUAL_CAPACITY, operations.units.convert_capacity_to_mw)
+    table = enrich_capacity_to_activity(state, operations.year, table)
+    capacity = express_activity_mw(table, RESIDUAL_CAPACITY, operations.units)
     return table.with_columns(
         (capacity * pl.col(INPUT_RATIO)).alias(PyPSALinkCol.P_NOM),
         (pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(PyPSALinkCol.EFFICIENCY),
@@ -450,7 +456,13 @@ def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
         _LinkValue(
             _OUTPUT_FUEL_ATTRIBUTE, record.output_fuel, None, [_OUTPUT], _OUTPUT_FUEL_DERIVATION
         ),
-        _LinkValue(_P_NOM_ATTRIBUTE, record.p_nom, UNIT_MW, [_RESIDUAL, _INPUT], _P_NOM_DERIVATION),
+        _LinkValue(
+            _P_NOM_ATTRIBUTE,
+            record.p_nom,
+            UNIT_MW,
+            [_RESIDUAL, _CAPACITY_TO_ACTIVITY, _INPUT],
+            _P_NOM_DERIVATION,
+        ),
         _LinkValue(
             _EFFICIENCY_ATTRIBUTE,
             record.efficiency,
@@ -497,6 +509,7 @@ _OPERATIONS_MODE = "electricity at the operations mode"
 _INPUT = _LinkSource(FlowParameter.INPUT_ACTIVITY_RATIO, INPUT_RATIO, _OPERATIONS_MODE)
 _OUTPUT = _LinkSource(FlowParameter.OUTPUT_ACTIVITY_RATIO, OUTPUT_RATIO, _OPERATIONS_MODE)
 _RESIDUAL = _LinkSource(SupplyParameter.RESIDUAL_CAPACITY, RESIDUAL_CAPACITY, None)
+_CAPACITY_TO_ACTIVITY = _LinkSource(ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT, CTAU, None)
 _COST = _LinkSource(SupplyParameter.VARIABLE_OPERATION_COST, VARIABLE_COST, "the operations mode")
 _AVAILABILITY = _LinkSource(SupplyParameter.AVAILABILITY_FACTOR, AVAILABILITY_FACTOR, None)
 _BUS0_DERIVATION = "the bus of the electricity fuel that the technology takes in, <region>/<fuel>"
@@ -506,7 +519,8 @@ _BUS1_DERIVATION = (
 _INPUT_FUEL_DERIVATION = "the electricity fuel that the technology takes in"
 _OUTPUT_FUEL_DERIVATION = "the electricity fuel that the technology puts out"
 _P_NOM_DERIVATION = (
-    "residual_capacity of the operations year, in MW, × the electricity input_activity_ratio"
+    "residual_capacity of the operations year × capacity_to_activity_unit / 8760 h, in MW, × the "
+    "electricity input_activity_ratio"
 )
 _EFFICIENCY_DERIVATION = (
     "the electricity output_activity_ratio / the electricity input_activity_ratio"
