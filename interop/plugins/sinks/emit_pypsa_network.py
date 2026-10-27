@@ -25,6 +25,7 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSAStorageUnitCol,
     ReverseTimeSeriesMetadataCol,
 )
+from interop.plugins.shared.pypsa_time_series import find_snapshot_window
 from interop.plugins.shared.series_batches import (
     FloatArray,
     list_component_batches,
@@ -86,8 +87,9 @@ def build_network(
     """
     network = pypsa.Network()
     metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
-    if metadata is not None and metadata.height > 0:
-        network.set_snapshots(list(_snapshots(metadata)))
+    window = find_snapshot_window(state)
+    if window is not None:
+        network.set_snapshots(window.list_snapshots())
     buses = state.destination_tables.get(PyPSADestinationTable.BUSES)
     generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
     storage_units = state.destination_tables.get(PyPSADestinationTable.STORAGE_UNITS)
@@ -123,22 +125,12 @@ def _set_snapshot_weightings(network: pypsa.Network, tables: dict[str, pl.LazyFr
     if weightings is None:
         return
     table = weightings.collect().to_pandas().set_index(PyPSASnapshotWeightingCol.SNAPSHOT)
-    held = table.index.intersection(network.snapshots)
     columns = [
         PyPSASnapshotWeightingCol.OBJECTIVE,
-        PyPSASnapshotWeightingCol.GENERATORS,
         PyPSASnapshotWeightingCol.STORES,
+        PyPSASnapshotWeightingCol.GENERATORS,
     ]
-    network.snapshot_weightings.loc[held, columns] = table.loc[held, columns]
-
-
-def _snapshots(metadata: pl.DataFrame) -> pd.DatetimeIndex:
-    first = metadata.row(0, named=True)
-    return pd.date_range(
-        start=pd.Timestamp(first[ReverseTimeSeriesMetadataCol.INITIAL_TIMESTAMP]),
-        periods=first[ReverseTimeSeriesMetadataCol.LENGTH],
-        freq=pd.Timedelta(seconds=first[ReverseTimeSeriesMetadataCol.RESOLUTION_SECONDS]),
-    )
+    network.snapshot_weightings = table[columns]
 
 
 def _list_named_ports(links: pl.DataFrame | None) -> list[str]:
