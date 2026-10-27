@@ -20,7 +20,6 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     REGION_GROUP,
@@ -33,7 +32,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     CalendarParameter,
     DemandParameter,
     EmissionParameter,
@@ -45,6 +43,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
     read_parameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._operations import (
     require_operations_year,
 )
@@ -191,9 +190,7 @@ def _read_stated_groups(state: State, parameter: str, year: int) -> UnappliedRow
 def _build_report(unapplied: UnappliedRows) -> SkipReport:
     grouping = unapplied.grouping
     rows = unapplied.groups[_ROW_COUNT].sum()
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=unapplied.parameter,
         name_col=_NAME,
         reason=(
