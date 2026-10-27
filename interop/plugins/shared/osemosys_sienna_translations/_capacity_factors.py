@@ -11,17 +11,14 @@ import polars as pl
 
 from interop.core.extensions import CompanionSeriesCol
 from interop.core.pipeline import State
+from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     TIMESLICE,
     VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import (
-    WHOLE_CAPACITY,
-    CalendarHourCol,
-    SupplyParameter,
-)
+from interop.plugins.shared.osemosys_sienna_constants import WHOLE_CAPACITY, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
@@ -52,26 +49,21 @@ def build_capacity_factor_series(
         .unique()
         .collect()
     )
-    timeslices = pl.DataFrame(
-        {TIMESLICE: list(operations.calendar.year_split)}, schema={TIMESLICE: pl.Utf8}
-    )
+    timeslices = operations.calendar.build_timeslice_table().select(TIMESLICE)
     factors = read_parameter_with_defaults(
         state,
         SupplyParameter.CAPACITY_FACTOR,
         operations.year,
         factored.join(timeslices, how="cross"),
     )
-    hours = operations.calendar.hours.select(CalendarHourCol.TIMESTAMP, CalendarHourCol.TIMESLICE)
-    return (
-        hours.join(factors, left_on=CalendarHourCol.TIMESLICE, right_on=TIMESLICE)
-        .join(technologies.select(*_KEYS, CompanionSeriesCol.NAME), on=_KEYS)
-        .select(
-            pl.col(CalendarHourCol.TIMESTAMP).alias(CompanionSeriesCol.SNAPSHOT),
-            pl.col(CompanionSeriesCol.NAME),
-            pl.col(VALUE_COL).cast(pl.Float64).fill_null(WHOLE_CAPACITY).alias(value_col),
-        )
-        .sort(CompanionSeriesCol.NAME, CompanionSeriesCol.SNAPSHOT)
-    )
+    named = factors.join(technologies.select(*_KEYS, CompanionSeriesCol.NAME), on=_KEYS)
+    filled = named.with_columns(pl.col(VALUE_COL).cast(pl.Float64).fill_null(WHOLE_CAPACITY))
+    hourly = operations.calendar.reshape_to_hours(filled, CompanionSeriesCol.NAME, VALUE_COL)
+    return hourly.select(
+        pl.col(StagedTimeSeriesCol.SNAPSHOT).alias(CompanionSeriesCol.SNAPSHOT),
+        pl.col(StagedTimeSeriesCol.COMPONENT).alias(CompanionSeriesCol.NAME),
+        pl.col(StagedTimeSeriesCol.VALUE).alias(value_col),
+    ).sort(CompanionSeriesCol.NAME, CompanionSeriesCol.SNAPSHOT)
 
 
 def express_has_capacity_factors(series: pl.DataFrame, name_col: str) -> pl.Expr:
