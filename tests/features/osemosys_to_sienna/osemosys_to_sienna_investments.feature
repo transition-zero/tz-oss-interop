@@ -362,11 +362,38 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "start_region" set to 1
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "end_region" set to 2
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "line_loss" set to 0.25
-    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capacity_limits" set to {"min": 0.0, "max": 2000.0}
+    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capacity_limits" set to {"min": 0.0}
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capital_costs.capital_cost.function_data.proportional_term" set to 200000.0
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "power_systems_type" set to "TwoTerminalGenericHVDCLine"
     And the file "decisions.md" contains "`sienna.AggregateTransportTechnology.ATDELINK.financial_data.capital_recovery_period`"
     And the file "decisions.md" does not contain "`sienna.AggregateTransportTechnology.ATDELINK.lifetime`"
+
+  Scenario: A transport candidate takes the largest maximum capacity of the years in scope, and the smallest minimum
+    AggregateTransportTechnology holds one capacity limit for every year. ATDELINK may hold no
+    capacity in 2030 and 2 GW in 2035, so a limit of 0 from 2030 alone would let no plan
+    build it.
+    Given the otoole parameter "TotalAnnualMaxCapacity" keyed by "REGION TECHNOLOGY YEAR" with default -1 has the rows:
+      | REGION | TECHNOLOGY  | YEAR | VALUE |
+      | R1     | ATGASNEW    | 2030 | 1     |
+      | R1     | ATDELINK    | 2030 | 0     |
+      | R1     | ATDELINK    | 2035 | 2     |
+      | R1     | ATFULLGASCC | 2030 | 0.3   |
+      | R1     | ATFULLGASCC | 2035 | 0.3   |
+    And the otoole parameter "TotalAnnualMinCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASNEW   | 2035 | 0.2   |
+      | R1     | ATDELINK   | 2030 | 0.5   |
+      | R1     | ATDELINK   | 2035 | 1     |
+    And the otoole parameter "CapitalCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE      |
+      | R1     | ATGASNEW   | 2030 | 1000000000 |
+      | R1     | ATDELINK   | 2030 | 200000000  |
+      | R1     | ATDELINK   | 2035 | 200000000  |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capacity_limits" set to {"min": 500.0, "max": 2000.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATDELINK" having "p_nom_max" set to {"2030": 0.0, "2035": 2000.0}
+    And the file "outputs/extensions.json" parses as JSON technology extension record for "ATDELINK" having "p_nom_min" set to {"2030": 500.0, "2035": 1000.0}
 
   Scenario: The demand of each year and the availability of each candidate reach the portfolio and its HDF5 companion
     When I translate the otoole model to a Sienna investments portfolio
