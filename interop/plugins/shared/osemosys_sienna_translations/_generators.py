@@ -12,6 +12,7 @@ fuel, so it is left out.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -28,6 +29,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
+    VALUE_COL,
     AnnotationColumn,
     FlowParameter,
     TechnologyKind,
@@ -54,10 +56,15 @@ from interop.plugins.shared.osemosys_sienna_translations._availability import (
     IS_VARYING,
     build_availability,
 )
-from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICITY_BUS
+from interop.plugins.shared.osemosys_sienna_translations._buses import (
+    ELECTRICITY_BUS,
+    read_electricity_fuels,
+)
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
+    read_mode_parameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._flow_buses import (
     SplitFlow,
     read_flow_buses,
@@ -136,6 +143,10 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     filter_component,
 )
+from interop.plugins.shared.warning_text import name_a_few
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 # The Sienna types that a supply technology can become, which are the types that have a mapping.
 GENERATOR_TYPES: tuple[SiennaComponent, ...] = tuple(
@@ -255,6 +266,7 @@ def build_generators_source(
     fuel_supply = build_fuel_supply(state, operations.year, operations.mode)
     generators = _read_generators(state, operations, mappings, recorder)
     generators = _drop_stranded(state, operations, generators, fuel_supply, recorder)
+    _report_other_outputs(state, operations, generators, recorder)
     if generators.height == 0:
         return GeneratorSources(generators, pl.DataFrame())
     generators = _enrich_capacity(operations, generators)
@@ -322,6 +334,57 @@ def _drop_stranded(
         table, pl.col(_STRANDED_FUEL).is_null(), STRANDED_FUEL_SKIP, recorder
     )
     return kept.drop(_STRANDED_FUEL)
+
+
+def _report_other_outputs(
+    state: State, operations: OperationsYear, generators: pl.DataFrame, recorder: ScopedRecorder
+) -> None:
+    """Record NOT_MAPPED for each fuel other than electricity that a generator puts out at the
+    operations mode, and warn once."""
+    electricity = read_electricity_fuels(state).select(REGION, FUEL)
+    outputs = (
+        read_mode_parameter(
+            state, FlowParameter.OUTPUT_ACTIVITY_RATIO, operations.year, operations.mode
+        )
+        .filter(pl.col(VALUE_COL) > 0)
+        .join(electricity, on=[REGION, FUEL], how="anti")
+        .join(generators.select(REGION, TECHNOLOGY, TECHNOLOGY_NAME), on=[REGION, TECHNOLOGY])
+        .sort(TECHNOLOGY_NAME, FUEL)
+    )
+    for row in outputs.iter_rows(named=True):
+        recorder.append(_build_other_output_event(row))
+    if outputs.height > 0:
+        _warn_other_outputs(outputs[TECHNOLOGY_NAME].unique().sort().to_list())
+
+
+def _build_other_output_event(row: dict[str, Any]) -> TranslationEvent:
+    return TranslationEvent(
+        kind=EventKind.NOT_MAPPED,
+        sources=[
+            build_osemosys_field(
+                FlowParameter.OUTPUT_ACTIVITY_RATIO,
+                row[TECHNOLOGY_NAME],
+                row[FUEL],
+                float(row[VALUE_COL]),
+            )
+        ],
+        note=(
+            f"a Sienna generator puts out electricity only, so the output of {row[FUEL]} at the "
+            "operations mode is left out"
+        ),
+    )
+
+
+def _warn_other_outputs(names: list[str]) -> None:
+    log.warning(
+        "%s: %d %s put out a fuel that is not electricity at the operations mode, so that "
+        "output is left out. %s: %s",
+        OSEMOSYS_TO_SIENNA_PIPELINE,
+        len(names),
+        _COUNTED_NOUN,
+        TECHNOLOGIES_LABEL,
+        name_a_few(names),
+    )
 
 
 def _read_output_buses(state: State, operations: OperationsYear) -> pl.DataFrame:

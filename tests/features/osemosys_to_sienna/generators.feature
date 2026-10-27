@@ -527,6 +527,17 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the log contains "2 supply technology(ies) burn a fuel whose fuel_supply technologies cannot run in the operations year, so each is left out. Technologies: R1/ATDEGASCC, R1/ATGASCC"
       And the file "decisions.md" contains "no fuel_supply technology that puts out R1/ATGAS can run in the operations year, so the plant has no fuel"
 
+    Scenario: A plant that also puts out a fuel that is not electricity at the operations mode records that output as left out
+      Given the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATGASCC    | DEGAS  | 1                 | 2030 | 0.5   |
+        | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC.DEGAS` = 0.5 |  |  | a Sienna generator puts out electricity only, so the output of DEGAS at the operations mode is left out"
+      And the log contains "1 supply technology(ies) put out a fuel that is not electricity at the operations mode, so that output is left out. Technologies: R1/ATGASCC"
+
     Scenario: The carrier of a generator is its category, which names its carriers row
       A plant with two input fuels and a plant with no input fuel each take the category.
       Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
