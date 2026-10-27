@@ -271,8 +271,9 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the log contains "1 region(s) state a discount_rate other than that of the first region, which the portfolio takes as its own"
 
   Scenario: The report of the parameters that no step applies leaves out the parameters of the portfolio
-    The portfolio step applies the capital cost, the lifetime and the emission limits, so the
-    report names none of them. It still names a parameter that no step applies.
+    The portfolio step applies the capital cost, the lifetime, the emission limits and the flow
+    ratios of each candidate, so the report names none of them. It still names a parameter that
+    no step applies, and the flow ratios of ATLOCKGASCC, which is no candidate.
     Given the otoole parameter "ReserveMargin" keyed by "REGION YEAR" with default 1 has the rows:
       | REGION | YEAR | VALUE |
       | R1     | 2030 | 1.15  |
@@ -282,6 +283,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the log does not contain "annual_emission_limit states"
     And the file "decisions.md" does not contain "`osemosys.capital_cost.R1/ATGASNEW` = 1000000000.0 |  |  |"
     And the log contains "osemosys-to-sienna: 1 region(s) whose reserve_margin states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Regions: R1"
+    And the log contains "osemosys-to-sienna: 1 technology(ies) whose input_activity_ratio states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATLOCKGASCC"
 
   Scenario: The cost of a fuel producer that only a candidate burns, and the cost of a transport candidate, count as kept
     Only the candidate ATGASNEW burns gas, so the cost of the gas well reaches its variable
