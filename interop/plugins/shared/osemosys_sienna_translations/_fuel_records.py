@@ -7,7 +7,7 @@ out, or the fuel that goes in at bus0 of a link. Each bus of such a fuel becomes
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -44,6 +44,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import CTAU
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -106,14 +107,17 @@ _FUEL_SCOPE = "fuel"
 _FUEL_PENALTY_SCOPE = "fuel-penalties"
 
 
-@dataclass
+@dataclass(frozen=True)
 class FuelRecords:
-    """The records of the modes and the buses of their fuels, and the event of each value."""
+    """The records of the modes and the buses of their fuels, each kind with its events."""
 
-    generators: list[GeneratorExtension] = field(default_factory=list)
-    conversions: list[ConversionExtension] = field(default_factory=list)
-    buses: list[BusExtension] = field(default_factory=list)
-    events: list[TranslationEvent] = field(default_factory=list)
+    generators: BuiltRecords[GeneratorExtension]
+    conversions: BuiltRecords[ConversionExtension]
+    buses: BuiltRecords[BusExtension]
+
+    def list_suppliers(self) -> list[GeneratorExtension | ConversionExtension]:
+        """The records that put a fuel out at a bus: the generators and the conversions."""
+        return [*self.generators.records, *self.conversions.records]
 
 
 class _Value(NamedTuple):
@@ -130,19 +134,25 @@ def build_fuel_records(modes: pl.DataFrame, loads: pl.DataFrame, year: int) -> F
     `loads` holds the fuel and its bus, carrier and location, for each load of a fuel that is
     not electricity.
     """
-    built = FuelRecords()
+    built = FuelRecords(
+        generators=BuiltRecords[GeneratorExtension](ExtensionKind.GENERATOR, []),
+        conversions=BuiltRecords[ConversionExtension](ExtensionKind.CONVERSION, []),
+        buses=BuiltRecords[BusExtension](ExtensionKind.BUS, []),
+    )
     for row in modes.iter_rows(named=True):
         if row[ROLE] == SUPPLY:
             generator = _build_generator(row, year)
-            built.generators.append(generator)
-            built.events.extend(_build_events(row, ExtensionKind.GENERATOR, generator))
+            built.generators.records.append(generator)
+            built.generators.events.extend(_build_events(row, ExtensionKind.GENERATOR, generator))
         else:
             conversion = _build_conversion(row, year)
-            built.conversions.append(conversion)
-            built.events.extend(_build_events(row, ExtensionKind.CONVERSION, conversion))
+            built.conversions.records.append(conversion)
+            built.conversions.events.extend(
+                _build_events(row, ExtensionKind.CONVERSION, conversion)
+            )
     for bus in _build_buses(modes, loads).iter_rows(named=True):
-        built.buses.append(_build_bus(bus))
-        built.events.extend(_build_bus_events(bus))
+        built.buses.records.append(_build_bus(bus))
+        built.buses.events.extend(_build_bus_events(bus))
     return built
 
 

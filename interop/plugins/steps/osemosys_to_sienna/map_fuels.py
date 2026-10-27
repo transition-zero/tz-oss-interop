@@ -4,17 +4,13 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from interop.core.extensions import (
-    ConversionExtension,
-    ExtensionKind,
-    GeneratorExtension,
-    append_extensions,
-)
+from interop.core.extensions import ExtensionKind, GeneratorExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
+    add_built_records,
     build_fuel_loads,
     build_fuel_loads_source,
     build_fuel_modes_source,
@@ -40,19 +36,14 @@ class OsemosysToSiennaMapFuels(OperationsMapping):
         modes = build_fuel_modes_source(state, operations, self._recorder)
         loads = build_fuel_loads(state, build_fuel_loads_source(state, operations, self._recorder))
         built = build_fuel_records(modes, loads.buses, operations.year)
-        suppliers: list[GeneratorExtension | ConversionExtension] = [
-            *built.generators,
-            *built.conversions,
-        ]
         plants = _list_plants(state)
-        report_unsupplied_fuel_buses(suppliers, loads.records, plants, self._recorder)
-        staged = state.destination_extensions
-        append_extensions(staged, ExtensionKind.BUS, built.buses)
-        append_extensions(staged, ExtensionKind.GENERATOR, built.generators)
-        append_extensions(staged, ExtensionKind.CONVERSION, built.conversions)
-        append_extensions(staged, ExtensionKind.LOAD, loads.records)
-        for event in [*built.events, *loads.events]:
-            self._recorder.append(event)
+        report_unsupplied_fuel_buses(
+            built.list_suppliers(), loads.loads.records, plants, self._recorder
+        )
+        add_built_records(state, built.generators, self._recorder)
+        add_built_records(state, built.conversions, self._recorder)
+        add_built_records(state, built.buses, self._recorder)
+        add_built_records(state, loads.loads, self._recorder)
         if loads.series is not None:
             state.destination_extension_series[ExtensionKind.LOAD] = loads.series.lazy()
         if modes.height > 0:

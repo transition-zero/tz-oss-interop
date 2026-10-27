@@ -7,7 +7,7 @@ companion parquet that holds its MW in each hour, as `p_set_series`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -23,6 +23,7 @@ from interop.core.pipeline import State
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_MW, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import FUEL, REGION, AnnotationColumn
 from interop.plugins.shared.osemosys_sienna_translations._buses import FUEL_NAME
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -54,14 +55,13 @@ _SERIES_DERIVATION = (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class FuelLoads:
-    """The load records, their series, the bus of each fuel, and the event of each value."""
+    """The load records and their events, their series, and the bus of each fuel."""
 
     buses: pl.DataFrame
-    records: list[LoadExtension] = field(default_factory=list)
-    series: pl.DataFrame | None = None
-    events: list[TranslationEvent] = field(default_factory=list)
+    loads: BuiltRecords[LoadExtension]
+    series: pl.DataFrame | None
 
 
 def build_fuel_loads(state: State, loads: LoadSources) -> FuelLoads:
@@ -69,13 +69,16 @@ def build_fuel_loads(state: State, loads: LoadSources) -> FuelLoads:
     table = _enrich_shapes(loads)
     fuels = read_fuel_buses(state).select(REGION, FUEL, FUEL_BUS, FUEL_CARRIER, FUEL_LOCATION)
     table = table.join(fuels, on=[REGION, FUEL], how="left")
-    built = FuelLoads(buses=table.select(FUEL, FUEL_BUS, FUEL_CARRIER, FUEL_LOCATION))
+    built = BuiltRecords[LoadExtension](ExtensionKind.LOAD, [])
     for row in table.iter_rows(named=True):
         record = _build_record(row)
         built.records.append(record)
         built.events.extend(_build_events(row, record))
-    built.series = _build_companion(loads.series, table.filter(~pl.col(_IS_FLAT)))
-    return built
+    return FuelLoads(
+        buses=table.select(FUEL, FUEL_BUS, FUEL_CARRIER, FUEL_LOCATION),
+        loads=built,
+        series=_build_companion(loads.series, table.filter(~pl.col(_IS_FLAT))),
+    )
 
 
 def _enrich_shapes(loads: LoadSources) -> pl.DataFrame:
