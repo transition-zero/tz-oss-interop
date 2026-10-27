@@ -14,6 +14,7 @@ import polars as pl
 
 from interop.core.extensions import (
     BusExtension,
+    ByYear,
     ConversionExtension,
     ExtensionKind,
     GeneratorExtension,
@@ -245,8 +246,8 @@ def _build_rates(rates: list[dict[str, Any]] | None, rated: float) -> dict[str, 
     return {rate[POLLUTANT]: rate[RATE_T_PER_MWH] / rated for rate in rates}
 
 
-def _build_yearly(value: float | None, rated: float, year: int) -> dict[str, float] | None:
-    return None if value is None else {str(year): value * rated}
+def _build_yearly(value: float | None, rated: float, year: int) -> ByYear | None:
+    return None if value is None else {year: value * rated}
 
 
 def _build_buses(modes: pl.DataFrame, loads: pl.DataFrame) -> pl.DataFrame:
