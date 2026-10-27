@@ -65,11 +65,14 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     PARAMETER,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    ACTIVITY_RATE_T_PER_MWH,
     EMISSION_TERMS,
     OWN_RATE,
     PENALTY,
     PENALTY_PER_TONNE,
     RATE_T_PER_MWH,
+    STATED_RATE,
+    read_emission_rates,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
@@ -369,20 +372,14 @@ def _read_emission_rates(
     state: State, operations: OperationsYear, imports: pl.DataFrame
 ) -> pl.DataFrame:
     """The `emission_rate` of each import mode, in t for each MWh of its output."""
-    rates = (
-        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .filter(pl.col(VALUE_COL) != 0)
-        .join(imports.select(*_MODE_KEYS, ELECTRICITY_OUTPUT_RATIO), on=_MODE_KEYS)
-        .select(
-            *_MODE_KEYS,
-            POLLUTANT,
-            pl.col(VALUE_COL).cast(pl.Float64).alias(OWN_RATE),
-            ELECTRICITY_OUTPUT_RATIO,
-        )
+    modes = imports.select(*_MODE_KEYS, ELECTRICITY_OUTPUT_RATIO)
+    rates = read_emission_rates(state, operations, modes).join(modes, on=_MODE_KEYS)
+    return rates.select(
+        *_MODE_KEYS,
+        POLLUTANT,
+        pl.col(STATED_RATE).alias(OWN_RATE),
+        express_per_output(pl.col(ACTIVITY_RATE_T_PER_MWH)).alias(RATE_T_PER_MWH),
     )
-    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
-    rate = express_per_output(express_converted(rates, OWN_RATE, convert))
-    return rates.with_columns(rate.alias(RATE_T_PER_MWH))
 
 
 def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
