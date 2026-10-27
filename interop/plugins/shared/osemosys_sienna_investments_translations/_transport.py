@@ -158,7 +158,9 @@ def build_transport_candidates(
     technologies = read_kind_technologies(state, TechnologyKind.AGGREGATE_TRANSPORT_TECHNOLOGY)
     yearly = read_technology_years(state, plan, technologies)
     prices = [InvestmentParameter.CAPITAL_COST]
-    technologies = enrich_rated_years(drop_non_candidates(technologies, yearly, prices), yearly, prices)
+    technologies = enrich_rated_years(
+        drop_non_candidates(technologies, yearly, prices), yearly, prices
+    )
     technologies = _enrich_ends(state, plan, technologies)
     technologies, _ = filter_component(technologies, _express_has_ends(), NO_ENDS_SKIP, recorder)
     technologies, _ = filter_component(
@@ -171,9 +173,7 @@ def build_transport_candidates(
     yearly = _enrich_variable_costs(state, plan, yearly)
     table = enrich_base_year_values(technologies, yearly, plan)
     limits = _build_plan_limits(yearly)
-    table = enrich_financial_values(
-        state, plan, table.join(limits, on=TECHNOLOGY_KEYS, how="left")
-    )
+    table = enrich_financial_values(state, plan, table.join(limits, on=TECHNOLOGY_KEYS, how="left"))
     return TransportCandidates(table, yearly)
 
 
@@ -219,7 +219,9 @@ def build_transport_translations(cost_year: int, start: int) -> list[Translation
 
 def _enrich_ends(state: State, plan: InvestmentPlan, technologies: pl.DataFrame) -> pl.DataFrame:
     """The ends and the ratios of each candidate, in the year whose cost it states."""
-    return enrich_by_rated_year(technologies, partial(_enrich_end, state, plan.mode), plan.base_year)
+    return enrich_by_rated_year(
+        technologies, partial(_enrich_end, state, plan.mode), plan.base_year
+    )
 
 
 def _enrich_end(state: State, mode: str, year: int, technologies: pl.DataFrame) -> pl.DataFrame:
