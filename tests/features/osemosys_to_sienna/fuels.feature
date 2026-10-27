@@ -620,6 +620,13 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "e_sum_max" set to {"2030": 100000.0}
       And the log contains "1 technology(ies) whose total_technology_annual_activity_upper_limit states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/DEATPIPE"
 
+    Scenario: The flows of each mode that a record holds are not reported, and those of a mode left out are
+      ATSHUT may not run and ATCOSTLY has no capacity, so each is left out, and the report
+      names their output rows only.
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "2 technology(ies) whose output_activity_ratio states 2 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATCOSTLY, R1/ATSHUT"
+      And the log does not contain "whose input_activity_ratio states"
 
     Scenario: A fuel technology that builds at no cost may build up to the capacity limit of the year
       The gas well may build 0.5 GW in 2030 and hold 2 GW in total, so it may hold 0.5 GW,
