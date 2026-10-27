@@ -17,6 +17,7 @@ from interop.core.reporting import EventRecorder
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.shared.yearly_results_csv_constants import (
     FIELD_SEPARATOR,
+    INDEX_FIELD_COUNT,
     LEADING_FIELD_COUNT,
     RESULTS_CSV_COMPONENT,
     SCALAR_FIELD_COUNT,
@@ -34,6 +35,8 @@ _FIELD_COUNT = "field_count"
 _INDEX_COUNT = "index_count"
 _STATED_VALUE = "stated_value"
 _ROW_COUNT = "row_count"
+_EXPECTED_COUNT = "expected_count"
+_NOTE = "note"
 
 _SHORT_ROW_NOTE = (
     "{count} row(s) hold fewer fields than the variable name, the region and one value for "
@@ -41,6 +44,14 @@ _SHORT_ROW_NOTE = (
 )
 _SHORT_ROW_WARNING = (
     "%d variable(s) of the results CSV have rows with too few values for the model years, "
+    "so those rows are left out: %s"
+)
+_WRONG_INDEX_NOTE = (
+    "{} row(s) hold {} index field(s), not the {} that the variable has, so each is left out"
+)
+_WRONG_INDEX_NOTE_SEPARATOR = "; "
+_WRONG_INDEX_WARNING = (
+    "%d variable(s) of the results CSV have rows with the wrong number of index fields, "
     "so those rows are left out: %s"
 )
 _UNREADABLE_VALUE_NOTE = "{count} value(s) are not a number, so each is left out"
@@ -74,6 +85,7 @@ class ParsedResults(NamedTuple):
 
     rows: pl.DataFrame
     short_rows: list[LeftOutRows]
+    wrong_index_rows: list[LeftOutRows]
     unreadable_values: list[LeftOutRows]
 
 
@@ -86,21 +98,33 @@ class ReportedSource(NamedTuple):
 
 _IS_SCALAR = pl.col(_FIELD_COUNT) == SCALAR_FIELD_COUNT
 _IS_LONG_ENOUGH = pl.col(_INDEX_COUNT) >= 0
+# A variable that INDEX_FIELD_COUNT does not name keeps every number of index fields.
+_EXPECTED_INDEX_COUNT = pl.col(YearlyResultsCol.VARIABLE).replace_strict(
+    {str(variable): count for variable, count in INDEX_FIELD_COUNT.items()},
+    default=None,
+    return_dtype=pl.Int64,
+)
+_HAS_WRONG_INDEX_COUNT = (
+    pl.col(YearlyResultsCol.INDEX).list.len() != _EXPECTED_INDEX_COUNT
+).fill_null(False)  # noqa: FBT003
 
 
 def parse_results_rows(raw: bytes, years: list[int]) -> ParsedResults:
     """`years` are the years of the value fields, in order."""
     fields = _enrich_with_index_count(_parse_fields(raw), years)
     rows = _parse_values(_reshape_kept_rows(fields, years))
+    kept = rows.filter(~_HAS_WRONG_INDEX_COUNT)
     return ParsedResults(
-        rows=rows,
+        rows=kept,
         short_rows=_list_short_rows(fields.filter(~_IS_SCALAR & ~_IS_LONG_ENOUGH), years),
-        unreadable_values=_list_unreadable_values(rows),
+        wrong_index_rows=_list_wrong_index_rows(rows.filter(_HAS_WRONG_INDEX_COUNT)),
+        unreadable_values=_list_unreadable_values(kept),
     )
 
 
 def report_left_out_rows(parsed: ParsedResults, source: ReportedSource) -> None:
     _report_left_out_rows(parsed.short_rows, _SHORT_ROW_WARNING, source)
+    _report_left_out_rows(parsed.wrong_index_rows, _WRONG_INDEX_WARNING, source)
     _report_left_out_rows(parsed.unreadable_values, _UNREADABLE_VALUE_WARNING, source)
 
 
@@ -177,6 +201,25 @@ def _list_short_rows(rows: pl.DataFrame, years: list[int]) -> list[LeftOutRows]:
         LeftOutRows(variable, _SHORT_ROW_NOTE.format(count=count, years=len(years)))
         for variable, count in counts.rows()
     ]
+
+
+def _list_wrong_index_rows(rows: pl.DataFrame) -> list[LeftOutRows]:
+    """One note for each variable, with one part for each number of index fields it holds."""
+    counts = (
+        rows.select(
+            YearlyResultsCol.VARIABLE,
+            pl.col(YearlyResultsCol.INDEX).list.len().alias(_INDEX_COUNT),
+            _EXPECTED_INDEX_COUNT.alias(_EXPECTED_COUNT),
+        )
+        .group_by(YearlyResultsCol.VARIABLE, _INDEX_COUNT, _EXPECTED_COUNT, maintain_order=True)
+        .agg(pl.len().alias(_ROW_COUNT))
+        .sort(_INDEX_COUNT)
+    )
+    note = pl.format(_WRONG_INDEX_NOTE, _ROW_COUNT, _INDEX_COUNT, _EXPECTED_COUNT)
+    notes = counts.group_by(YearlyResultsCol.VARIABLE, maintain_order=True).agg(
+        note.str.join(_WRONG_INDEX_NOTE_SEPARATOR).alias(_NOTE)
+    )
+    return [LeftOutRows(variable, text) for variable, text in notes.rows()]
 
 
 def _list_unreadable_values(rows: pl.DataFrame) -> list[LeftOutRows]:

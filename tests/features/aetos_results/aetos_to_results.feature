@@ -246,6 +246,7 @@ Feature: aetos-to-results reads a published results CSV into the results format
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
     And the log contains "have rows with the wrong number of index fields, so those rows are left out: AnnualEmissions"
+    And the file "decisions.md" contains "`aetos.results_csv.AnnualEmissions` |  |  | 1 row(s) hold 2 index field(s), not the 1 that the variable has, so each is left out |"
     And the results parquet "outputs/results.parquet" has these "emissions" rows:
       | variable  | component | category | timestamp           | value |
       | emissions | CO2       |          | 2030-01-01T00:00:00 | 1500  |
