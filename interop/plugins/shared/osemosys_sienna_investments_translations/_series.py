@@ -10,19 +10,20 @@ portfolio sink writes them to an HDF5 companion of its own.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import polars as pl
 
 from interop.core.pipeline import State
-from interop.plugins.shared.constants import StagedTimeSeriesCol
+from interop.plugins.shared.constants import UNSCALED, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_sienna_constants import (
     OSEMOSYS_PORTFOLIO_SERIES,
     SERIES_KEY_SEPARATOR,
     SERIES_YEAR_SEPARATOR,
     YEAR_FEATURE,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import build_sienna_field
 from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaTimeSeriesAssociationCol,
@@ -33,11 +34,12 @@ from interop.plugins.shared.sienna_investments_constants import (
     PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE,
 )
 from interop.plugins.shared.sienna_time_series import collect_ts_info, ts_association_row
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 # The series name of each series of the portfolio.
 PORTFOLIO_SERIES_NAME = SiennaSeriesName.MAX_ACTIVE_POWER
-# A portfolio series holds natural units, so the sink divides by one and no field multiplies.
-_UNSCALED = 1.0
+# The field of an owner that its series of every year fill, as the report names it.
+SERIES_FIELD = f"{PORTFOLIO_SERIES_NAME} time series, one for each year"
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,22 @@ class PortfolioSeries:
             OSEMOSYS_PORTFOLIO_SERIES,
             f"{self.owner_type}{SERIES_KEY_SEPARATOR}{self.attribute}",
         )
+
+
+def build_series_event(
+    owner: str,
+    name: str,
+    sources: Sequence[SourceField],
+    derivation: str,
+    unit: str | None = None,
+) -> TranslationEvent:
+    """The one event of the series of every year of one owner, in `unit`."""
+    return TranslationEvent(
+        kind=EventKind.VALUE_DERIVED,
+        sources=list(sources),
+        destinations=[build_sienna_field(owner, name, SERIES_FIELD, None, unit)],
+        derivation=derivation,
+    )
 
 
 def list_series_components(table: pl.LazyFrame) -> list[str]:
@@ -99,7 +117,7 @@ def _build_associations(series: PortfolioSeries, owner_ids: Mapping[str, int]) -
                 ts_info=ts_info,
                 source_table=source_table,
                 source_attribute=source_attribute,
-                scaling_factor=_UNSCALED,
+                scaling_factor=UNSCALED,
             ),
             col.TIME_SERIES_UUID: time_series_uuid(series.owner_type, name, series.attribute),
             col.FEATURES: features,

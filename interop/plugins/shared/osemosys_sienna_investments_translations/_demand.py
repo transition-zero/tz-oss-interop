@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 import polars as pl
 
@@ -25,7 +24,9 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_investments_translations._events import EACH_YEAR
 from interop.plugins.shared.osemosys_sienna_investments_translations._series import (
     PORTFOLIO_SERIES_NAME,
+    SERIES_FIELD,
     PortfolioSeries,
+    build_series_event,
     list_series_components,
 )
 from interop.plugins.shared.osemosys_sienna_translations import (
@@ -72,7 +73,6 @@ _EMPTY_SERIES = pl.DataFrame(
         StagedTimeSeriesCol.VALUE: pl.Float64,
     }
 )
-_SERIES_FIELD = f"{PORTFOLIO_SERIES_NAME} time series, one for each year"
 _SERIES_DERIVATION = (
     "the hourly MW of the load in each year of the plan, over the representative days of the "
     "earliest year, as the operations step derives it for the earliest year"
@@ -137,7 +137,7 @@ def _report_missing_loads(year: int, names: list[str], recorder: ScopedRecorder)
         recorder.append(
             TranslationEvent(
                 kind=EventKind.NOT_MAPPED,
-                destinations=[build_sienna_field(_OWNER, name, f"{_SERIES_FIELD}: {year}")],
+                destinations=[build_sienna_field(_OWNER, name, f"{SERIES_FIELD}: {year}")],
                 note=_NO_DEMAND_NOTE,
             )
         )
@@ -178,16 +178,11 @@ def _record_series(loads: Sequence[str], recorder: ScopedRecorder) -> None:
 
 
 def _build_series_event(name: str) -> TranslationEvent:
-    sources: list[Any] = [
+    sources = [
         build_osemosys_field(parameter, name, EACH_YEAR)
         for parameter in (
             DemandParameter.SPECIFIED_ANNUAL_DEMAND,
             DemandParameter.ACCUMULATED_ANNUAL_DEMAND,
         )
     ]
-    return TranslationEvent(
-        kind=EventKind.VALUE_DERIVED,
-        sources=sources,
-        destinations=[build_sienna_field(_OWNER, name, _SERIES_FIELD, None, UNIT_MW)],
-        derivation=_SERIES_DERIVATION,
-    )
+    return build_series_event(_OWNER, name, sources, _SERIES_DERIVATION, UNIT_MW)
