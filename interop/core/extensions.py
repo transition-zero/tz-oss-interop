@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, get_args, overload
+from typing import Any, Generic, Literal, NamedTuple, Self, TypeAlias, TypeVar, get_args, overload
 
 import polars as pl
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from interop.core.extension_records import ByBus as ByBus
 from interop.core.extension_records import ByFuel as ByFuel
@@ -375,6 +376,16 @@ class Extensions(BaseModel):
     representative_period: list[RepresentativePeriodExtension] = []
     technology: list[TechnologyExtension] = []
     conversion: list[ConversionExtension] = []
+
+    @model_validator(mode="after")
+    def _validate_unique_names(self) -> Self:
+        """Reject a kind that names one record twice, so every read of a name agrees."""
+        for kind in type(self).model_fields:
+            counts = Counter(record.name for record in getattr(self, kind))
+            repeated = sorted(name for name, count in counts.items() if count > 1)
+            if repeated:
+                raise ValueError(f"the {kind} records name {name_a_few(repeated)} more than once")
+        return self
 
 
 def _build_extension_models() -> dict[ExtensionKind, type[ExtensionRecord]]:

@@ -52,3 +52,12 @@ Feature: The extensions sidecar states each value in one shape
       | {"conversion": [{"name": "electrolyser", "bus0": "bus_AL"}]} |
     When I run translate against "inputs/network.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "decisions.md" contains "| `pypsa.conversion.electrolyser` |  |  | no mapping in this translation reads this extension record"
+
+  Scenario: a kind that names one record twice fails, and names the record
+    Two records of one kind with the same name would give a reader one or the other,
+    depending on how it reads them, so the file fails instead.
+    Given a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"generator": [{"name": "g", "carrier": "a"}, {"name": "g", "carrier": "b"}]} |
+    When I run translate against "inputs/network.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the printed output contains "the generator records name g more than once"
