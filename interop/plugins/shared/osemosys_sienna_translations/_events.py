@@ -4,18 +4,29 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
-from interop.plugins.shared.translation_runner import DestinationFieldFactory, Translation
+from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
+from interop.plugins.shared.translation_runner import (
+    DestinationFieldFactory,
+    SkipReport,
+    Translation,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
     SourceField,
     TranslationEvent,
+)
+
+# Every drop that the operations step reports is an OSeMOSYS value that the system leaves out.
+osemosys_skip_report = partial(
+    SkipReport, pipeline=OSEMOSYS_TO_SIENNA_PIPELINE, framework=OSEMOSYS_FRAMEWORK
 )
 
 

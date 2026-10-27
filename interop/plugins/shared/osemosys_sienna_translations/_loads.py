@@ -14,7 +14,6 @@ that peak.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -27,7 +26,6 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_MVA, UNIT_MW, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
-    OSEMOSYS_FRAMEWORK,
     REGION,
     TIMESLICE,
     VALUE_COL,
@@ -37,7 +35,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
     MIN_LOAD_BASE_POWER_MVA,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     CalendarHourCol,
     DemandParameter,
 )
@@ -55,6 +52,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
     build_sienna_source,
+    osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_BUS,
@@ -76,18 +74,16 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
 )
 from interop.plugins.shared.translation_runner import (
+    DROPPED_NAMES_LABEL,
     SkippedNames,
     SkipReport,
     SkipRule,
     Translation,
     default_translation,
-    filter_component,
+    drop_skipped,
+    report_not_mapped,
     row_position_id_translation,
 )
-from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
-
-log = logging.getLogger(__name__)
 
 # One row for each load, in OSeMOSYS words, before any Sienna column exists.
 LOAD_NAME = "load_name"
@@ -102,6 +98,8 @@ FIRST_MW = "first_mw"
 _PROFILE = "profile"
 _YEAR_SPLIT = "year_split"
 _HOURLY_MW = "hourly_mw"
+# The load and the timeslice of a demand profile value, `<load>/<timeslice>`.
+_LOAD_TIMESLICE = "load_timeslice"
 _NO_REACTIVE_POWER = 0.0
 
 _ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
@@ -123,10 +121,6 @@ _PEAK_DERIVATION = "the highest hour of the max_active_power series"
 _FIRST_DERIVATION = "the first hour of the max_active_power series"
 _BASE_POWER_DERIVATION = f"max(max_active_power, {MIN_LOAD_BASE_POWER_MVA}) MVA"
 _SERIES_ATTRIBUTE = f"{SiennaLoadCol.MAX_ACTIVE_POWER} time series"
-_LOST_DEMAND_NOTE = (
-    "the timeslice has a year_split of zero, so it holds no hour of the calendar and this share "
-    "of the demand is left out"
-)
 
 _SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     REGION: pl.Utf8,
@@ -142,9 +136,7 @@ _SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     StagedTimeSeriesCol.VALUE: pl.Float64,
 }
 
-NO_HOURLY_DEMAND_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_HOURLY_DEMAND_SKIP = osemosys_skip_report(
     component=FUEL,
     name_col=FUEL_NAME,
     reason="have an annual demand but no demand in any hour of the calendar",
@@ -237,7 +229,7 @@ def _build_loads(state: State, operations: OperationsYear, inputs: _LoadInputs) 
 
 def _build_reported_drop(recorder: ScopedRecorder) -> _DropRows:
     def drop(table: pl.DataFrame, rule: SkipRule) -> pl.DataFrame:
-        return filter_component(table, rule.keep, rule.report, recorder)[0]
+        return drop_skipped(table, [rule], recorder)
 
     return drop
 
@@ -281,9 +273,7 @@ def _read_demand(
 
 
 def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:
-    return SkipReport(
-        pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-        framework=OSEMOSYS_FRAMEWORK,
+    return osemosys_skip_report(
         component=FUEL,
         name_col=FUEL_NAME,
         reason=f"state a negative {parameter}",
@@ -344,41 +334,28 @@ def _report_demand_without_hours(
     specified: pl.DataFrame, year: int, recorder: ScopedRecorder
 ) -> None:
     """A profile above zero in a timeslice with no share of the year reaches no hour."""
-    lost = specified.filter((pl.col(_YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0))
-    for row in lost.iter_rows(named=True):
-        recorder.append(_build_lost_demand_event(row))
-    _warn_lost_demand(lost, year)
-
-
-def _warn_lost_demand(lost: pl.DataFrame, year: int) -> None:
-    if lost.is_empty():
-        return
-    names = sorted(
-        f"{load}{LOAD_NAME_SEPARATOR}{timeslice}"
-        for load, timeslice in lost.select(LOAD_NAME, TIMESLICE).iter_rows()
+    is_lost = ((pl.col(_YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0)).fill_null(False)  # noqa: FBT003
+    named = specified.with_columns(
+        pl.concat_str(LOAD_NAME, TIMESLICE, separator=LOAD_NAME_SEPARATOR).alias(_LOAD_TIMESLICE)
     )
-    log.warning(
-        "%s: %d demand profile value(s) above zero in %d fall in a timeslice whose year_split "
-        "is zero, so that demand reaches no hour and is left out. Each one: %s",
-        OSEMOSYS_TO_SIENNA_PIPELINE,
-        lost.height,
-        year,
-        name_a_few(names),
-    )
+    report_not_mapped(named, ~is_lost, _build_lost_demand_report(year), recorder)
 
 
-def _build_lost_demand_event(row: dict[str, Any]) -> TranslationEvent:
-    return TranslationEvent(
-        kind=EventKind.NOT_MAPPED,
-        sources=[
-            build_osemosys_field(
-                DemandParameter.SPECIFIED_DEMAND_PROFILE,
-                row[FUEL_NAME],
-                row[TIMESLICE],
-                row[_PROFILE],
-            )
-        ],
-        note=_LOST_DEMAND_NOTE,
+def _build_lost_demand_report(year: int) -> SkipReport:
+    return osemosys_skip_report(
+        component=FUEL,
+        name_col=FUEL_NAME,
+        reason=(
+            f"above zero in {year} fall in a timeslice whose year_split is zero, and reach no hour"
+        ),
+        counted_noun="demand profile value(s)",
+        note=lambda row: (
+            f"the timeslice {row[TIMESLICE]} has a year_split of zero, so it holds no hour of "
+            "the calendar and this share of the demand is left out"
+        ),
+        listed=SkippedNames(column=_LOAD_TIMESLICE, label=DROPPED_NAMES_LABEL),
+        attribute_col=_PROFILE,
+        attribute_name=DemandParameter.SPECIFIED_DEMAND_PROFILE,
     )
 
 
