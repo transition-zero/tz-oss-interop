@@ -307,28 +307,40 @@ def _build_bus_events(bus: dict[str, Any]) -> list[TranslationEvent]:
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[build_osemosys_field(FUEL, bus[FUEL_BUS], attribute, bus[column])],
+            sources=[build_osemosys_field(FUEL, bus[FUEL_BUS], value.attribute, bus[value.column])],
             destinations=[
                 build_sienna_field(
-                    ExtensionKind.BUS, bus[FUEL_BUS], f"{EXTENSIONS_PREFIX}{name}", bus[column]
+                    ExtensionKind.BUS,
+                    bus[FUEL_BUS],
+                    f"{EXTENSIONS_PREFIX}{value.field_name}",
+                    bus[value.column],
                 )
             ],
-            derivation=derivation,
+            derivation=value.derivation,
         )
-        for name, attribute, column, derivation in _BUS_VALUES
-        if bus[column] is not None
+        for value in _BUS_VALUES
+        if bus[value.column] is not None
     ]
 
 
+class _BusValue(NamedTuple):
+    """A field of a bus record, the annotation that states it, its column and how it derives."""
+
+    field_name: str
+    attribute: str
+    column: str
+    derivation: str
+
+
 _BUS_VALUES = (
-    (
+    _BusValue(
         "carrier",
         AnnotationColumn.CARRIER,
         FUEL_CARRIER,
         "the carrier of the fuel, or the name of the fuel where it states none; a fuel that "
         "is not electricity balances in its region, so its bus is <region>/<fuel>",
     ),
-    ("location", AnnotationColumn.LOCATION, FUEL_LOCATION, "the location of the fuel"),
+    _BusValue("location", AnnotationColumn.LOCATION, FUEL_LOCATION, "the location of the fuel"),
 )
 _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
 _CAPACITY = (
