@@ -15,8 +15,7 @@ from typing import NamedTuple
 
 from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.sienna_results_constants import MAX_PERIOD_HOURS
+from interop.plugins.shared.constants import HOURS_PER_LEAP_YEAR, Framework
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
@@ -24,7 +23,7 @@ log = logging.getLogger(__name__)
 
 ONE_HOUR = timedelta(hours=1)
 
-_WRONG_HOURS = "its hours, {hours}, is not between 1 and {most}"
+_WRONG_HOURS = "its hours, {hours}, is not between 1 and {most:g}"
 _WRONG_WEIGHT = "its weight, {weight}, is not a finite number of 0 or more"
 _ZONED_TIMESTAMP = (
     "its first_timestamp, {timestamp!r}, states a time zone, and the hours of the solve state none"
@@ -119,8 +118,8 @@ def _find_fault(record: RepresentativePeriodExtension) -> str | None:
 
 
 def _find_wrong_hours(record: RepresentativePeriodExtension) -> str | None:
-    if not 1 <= record.hours <= MAX_PERIOD_HOURS:
-        return _WRONG_HOURS.format(hours=record.hours, most=MAX_PERIOD_HOURS)
+    if not 1 <= record.hours <= HOURS_PER_LEAP_YEAR:
+        return _WRONG_HOURS.format(hours=record.hours, most=HOURS_PER_LEAP_YEAR)
     return None
 
 

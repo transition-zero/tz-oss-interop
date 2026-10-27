@@ -47,6 +47,7 @@ A real sample label is always a digit string, so this never collides with one.
 HOURS_PER_YEAR = 8760.0
 """The hours of a year that is not a leap year."""
 HOURS_PER_LEAP_YEAR = 8784.0
+"""The hours of a leap year, which is the most hours that one year holds."""
 MINUTES_PER_HOUR = 60.0
 SECONDS_PER_HOUR = 3600.0
 

@@ -145,9 +145,6 @@ WIDE_RESULT_SERIES: tuple[StagedSeriesSource, ...] = (
 SNAPSHOT_HOURS = 1.0
 """Hours one row of a solve result covers: the solve runs at an hourly resolution."""
 
-MAX_PERIOD_HOURS = 8784
-"""The most hours a representative period can hold: the hours of a leap year."""
-
 
 class AnnualCol(StrEnum):
     """Working columns of the annual rows, which the results table does not keep."""
