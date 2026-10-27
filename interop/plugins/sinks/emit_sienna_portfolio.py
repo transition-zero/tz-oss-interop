@@ -133,27 +133,17 @@ class EmitSiennaPortfolio(Sink):
                 f"{type(self).__name__} requires {EmitSiennaPortfolioParams.__name__}, "
                 f"got {type(params).__name__}"
             )
-        payload = self.build_payload(
-            state, params.base_system_file, params.time_series_storage_file
-        )
-        associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
-        if associations is not None and not associations.is_empty():
-            self._write_series_companion(params.time_series_path, state, payload)
+        associations = _find_series_associations(state)
+        payload = self.build_payload(state, associations, params)
+        if associations is not None:
+            with self._fs.open_write(params.time_series_path) as stream:
+                EmitSiennaH5Sidecar.write_associated_h5(state, associations, stream)
         serialised = serialise_portfolio_document(payload, params.indent)
         self._fs.write_bytes(params.output_path, serialised)
 
-    def _write_series_companion(
-        self, path: Location, state: State, payload: dict[str, Any]
-    ) -> None:
-        """Write the series of the portfolio, and name their companion in the document."""
-        associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
-        with self._fs.open_write(path) as stream:
-            EmitSiennaH5Sidecar.write_associated_h5(state, associations, stream)
-        payload[PortfolioDocument.TIME_SERIES_STORAGE_FILE] = location_name(path)
-
     @staticmethod
     def build_payload(
-        state: State, base_system_file: str, time_series_storage_file: str
+        state: State, associations: pl.DataFrame | None, params: EmitSiennaPortfolioParams
     ) -> dict[str, Any]:
         area_ids = _name_to_id(state.destination_tables.get(SiennaComponent.AREA))
         components: dict[str, Any] = {}
@@ -178,10 +168,10 @@ class EmitSiennaPortfolio(Sink):
             ),
             PortfolioDocument.REQUIREMENTS_ASSOCIATIONS: [],
             PortfolioDocument.TIME_SERIES_ASSOCIATIONS: _build_time_series_associations(
-                state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
+                associations
             ),
-            PortfolioDocument.BASE_SYSTEM_FILE: base_system_file,
-            PortfolioDocument.TIME_SERIES_STORAGE_FILE: time_series_storage_file,
+            PortfolioDocument.BASE_SYSTEM_FILE: params.base_system_file,
+            PortfolioDocument.TIME_SERIES_STORAGE_FILE: _choose_storage_file(associations, params),
         }
         financial_data = state.destination_tables.get(PORTFOLIO_FINANCIAL_DATA_TABLE)
         if financial_data is not None and not financial_data.is_empty():
@@ -189,6 +179,23 @@ class EmitSiennaPortfolio(Sink):
                 next(financial_data.iter_rows(named=True))
             )
         return payload
+
+
+def _find_series_associations(state: State) -> pl.DataFrame | None:
+    """The rows of the portfolio's own series, or None when it states no series."""
+    associations = state.destination_tables.get(PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE)
+    if associations is None or associations.is_empty():
+        return None
+    return associations
+
+
+def _choose_storage_file(
+    associations: pl.DataFrame | None, params: EmitSiennaPortfolioParams
+) -> str:
+    """The companion of the portfolio's own series, else the companion of the base system."""
+    if associations is None:
+        return params.time_series_storage_file
+    return location_name(params.time_series_path)
 
 
 def _name_to_id(table: pl.DataFrame | None) -> dict[str, int]:
@@ -247,7 +254,7 @@ def _build_by_key(entries: list[dict[str, Any]] | None) -> dict[str, Any] | None
 
 def _build_time_series_associations(table: pl.DataFrame | None) -> list[dict[str, Any]]:
     """One row for each series of the portfolio, with its features as an object."""
-    if table is None or table.is_empty():
+    if table is None:
         return []
     columns = [name for name in table.columns if name not in _INTERNAL_SERIES_COLUMNS]
     rows = table.select(columns).with_row_index(
