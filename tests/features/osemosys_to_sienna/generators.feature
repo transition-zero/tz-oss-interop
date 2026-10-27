@@ -231,10 +231,31 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the log contains "1 generator(s) burn a fuel that no fuel_supply technology puts out, so each pays no fuel cost for it. Technologies: R1/ATOILCT"
 
     Scenario: A plant that puts out half a unit of electricity for each unit of activity is rated and priced for its output
+      The oil plant burns 2.5 units of oil for each unit of activity, and emits 50 t/GWh of its
+      own. The refinery ATOILREF puts out half a unit of oil for each unit of activity, at
+      1000 USD/GWh and 20 t/GWh. So a unit of oil costs 2 $/MWh and emits 40 t/GWh. The plant
+      pays 4 + 2.5 × 2 / 0.5 = 14 $/MWh, and emits (50 + 2.5 × 40) / 0.5 / 1000 = 0.3 t/MWh.
+      Given the otoole set "TECHNOLOGY" holds "ATGASCC ATSOLAR ATWIND ATHYDRO ATBIO ATBATT ATOILCT DEGASCC ATDEGASCC ATSPAREGASCC ATGASWELL ATGASLNG DEGASWELL DEATPIPE ATOILREF"
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATOILCT    | ATELEC | 1                 | 2030 | 0.5   |
+        | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
+        | R1     | ATOILREF   | ATOIL  | 1                 | 2030 | 0.5   |
+      And the otoole parameter "VariableCost" keyed by "REGION TECHNOLOGY MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATOILCT    | 1                 | 2030 | 2000  |
+        | R1     | ATGASWELL  | 1                 | 2030 | 3000  |
+        | R1     | ATOILREF   | 1                 | 2030 | 1000  |
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATOILCT    | CO2      | 1                 | 2030 | 50    |
+        | R1     | ATOILREF   | CO2      | 1                 | 2030 | 20    |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "base_power" set to 25.0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" close to 14.0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "emission_rates_t_per_mwh" set to {"CO2": 0.3}
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATOILCT.electricity at the operations mode` = 0.5"
 
     Scenario: A technology that puts out no electricity at the operations mode is left out and reported
