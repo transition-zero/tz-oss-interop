@@ -90,7 +90,7 @@ class HourWeighter:
         """The weight of each hour of the solve that a period holds; it reports the rest."""
         periods = PeriodChooser(self._recorder, _LEFT_OUT_PERIOD_TEXT).choose_periods(records)
         hours = _build_solve_hours(frames)
-        step = _find_step(hours)
+        step = _build_step(hours)
         calendar = _build_calendar(periods, step)
         outside = hours.join(calendar, on=ResultsCol.TIMESTAMP, how="anti")
         self._report_hours_outside(outside, step)
@@ -129,7 +129,7 @@ def _build_calendar(periods: list[Period], step: timedelta) -> pl.DataFrame:
     return pl.DataFrame(rows, schema=_CALENDAR_SCHEMA, orient="row")
 
 
-def _find_step(hours: pl.DataFrame) -> timedelta:
+def _build_step(hours: pl.DataFrame) -> timedelta:
     """The time between two rows of the solve: the smallest gap between two timestamps, or one
     hour for a solve of one timestamp."""
     gaps = hours[ResultsCol.TIMESTAMP].sort().diff().drop_nulls()
