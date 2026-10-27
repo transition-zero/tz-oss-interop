@@ -122,6 +122,12 @@ _MARGINAL_COST = "marginal_cost"
 _KEYS = [REGION, TECHNOLOGY]
 _ROUTE_KEYS = (START_REGION, END_REGION, FUEL)
 _CLOSED = "is_closed"
+# The rows of a conversion technology that its record applies, beside those it keeps.
+_APPLIED_PARAMETERS = (
+    *RATED_PARAMETERS,
+    FlowParameter.INPUT_ACTIVITY_RATIO,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO,
+)
 
 CONVERSION_OWNERS = ValueOwners(
     ExtensionKind.CONVERSION, CONVERSION_NAME, TECHNOLOGY_NAME, _COMPONENT
@@ -276,7 +282,7 @@ def set_conversion_values_persisted(
         set_values_persisted(state, CONVERSION_OWNERS, conversions, LINK_VALUES)
         set_mode_bounds_persisted(state, CONVERSION_OWNERS, conversions)
         set_bounds_persisted(state, CONVERSION_OWNERS, conversions)
-        set_applied_rows(state, CONVERSION_OWNERS, conversions, RATED_PARAMETERS)
+        set_applied_rows(state, CONVERSION_OWNERS, conversions, _APPLIED_PARAMETERS)
     if routes.height > 0:
         set_values_persisted(state, ROUTE_OWNERS, routes, ROUTE_VALUES)
 
