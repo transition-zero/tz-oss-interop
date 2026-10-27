@@ -9,10 +9,10 @@ that tie each technology to the fleet of the base system.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, NamedTuple
+from typing import ClassVar
 
 import polars as pl
 from pydantic import BaseModel
@@ -75,16 +75,10 @@ from interop.plugins.shared.osemosys_sienna_translations import (
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
-    AREA_NAME,
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
-    TECHNOLOGY_NAME,
-    TECHNOLOGY_TYPE,
-    build_association_rows,
+    PortfolioMapper,
+    PortfolioTable,
     build_demand_translations,
-    build_existing_devices_translations,
-    build_retirement_potential_translations,
-    build_topology_mapping_translations,
-    build_topology_source_table,
 )
 from interop.plugins.shared.sienna_constants import (
     SIENNA_ID_COLUMN,
@@ -94,38 +88,16 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_investments_constants import (
     CARBON_CAPS_DESTINATION_SCHEMA,
     DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
-    EXISTING_DEVICES_DESTINATION_SCHEMA,
     PORTFOLIO_FINANCIAL_DATA_TABLE,
-    RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
-    SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA,
-    SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE,
-    SUPPLEMENTAL_ATTRIBUTE_ORDER,
-    TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
     SiennaInvestmentsComponent,
-    SiennaSupplementalAttribute,
 )
 from interop.plugins.shared.sienna_investments_sources import (
     GENERATOR_TYPES,
     build_demand_table,
     read_area_by_bus,
 )
-from interop.plugins.shared.translation_runner import Translation, apply_translations, finalise
-
-_Schema = dict[str, pl.DataType | type[pl.DataType]]
-_BuildTranslations = Callable[[int], list[Translation]]
 
 _STORAGE_KEYS = [REGION, STORAGE]
-
-
-class _Numbering:
-    """One id counter, which each table written under it takes its share of in turn.
-
-    An association names a component or an attribute by id alone, so ids are unique across the
-    components of a portfolio, and across its flat attribute array.
-    """
-
-    def __init__(self) -> None:
-        self.next_id = 1
 
 
 @dataclass(frozen=True)
@@ -135,34 +107,16 @@ class _Candidates:
     transport: TransportCandidates
 
 
-class _Attribute(NamedTuple):
-    schema: _Schema
-    build: _BuildTranslations
-    name_col: str
-    describes: Callable[[pl.DataFrame], list[str]]
-
-
-_ATTRIBUTES: dict[SiennaSupplementalAttribute, _Attribute] = {
-    SiennaSupplementalAttribute.EXISTING_DEVICES: _Attribute(
-        schema=EXISTING_DEVICES_DESTINATION_SCHEMA,
-        build=partial(build_existing_devices_translations, FLEET_SOURCE),
-        name_col=TECHNOLOGY_NAME,
-        describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
-    ),
-    SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: _Attribute(
-        schema=RETIREMENT_POTENTIAL_DESTINATION_SCHEMA,
-        build=partial(build_retirement_potential_translations, FLEET_SOURCE),
-        name_col=TECHNOLOGY_NAME,
-        describes=lambda source: source[TECHNOLOGY_TYPE].to_list(),
-    ),
-    SiennaSupplementalAttribute.TOPOLOGY_MAPPING: _Attribute(
-        schema=TOPOLOGY_MAPPING_DESTINATION_SCHEMA,
-        build=build_topology_mapping_translations,
-        name_col=AREA_NAME,
-        describes=lambda source: [str(SiennaComponent.AREA)] * source.height,
-    ),
-}
-
+_DEMAND_TABLE = PortfolioTable(
+    SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
+    DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
+    partial(build_demand_translations, LOADS_SOURCE),
+)
+_CARBON_CAPS_TABLE = PortfolioTable(
+    SiennaInvestmentsComponent.CARBON_CAPS,
+    CARBON_CAPS_DESTINATION_SCHEMA,
+    build_carbon_cap_translations,
+)
 
 log = logging.getLogger(__name__)
 
@@ -195,12 +149,13 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         if buses is None:
             return state
         plan_years = {year: build_plan_year(state, plan, year) for year in plan.years}
-        numbering = _Numbering()
-        candidates = self._map_candidates(state, plan, plan_years, numbering)
-        self._map_demand(state, numbering)
-        self._map_carbon_caps(state, plan, numbering, candidates)
+        mapper = PortfolioMapper(self._recorder, FLEET_SOURCE)
+        candidates = self._map_candidates(state, plan, plan_years, mapper)
+        self._map_demand(state, mapper)
+        self._map_carbon_caps(state, plan, mapper, candidates)
         self._map_series(state, plan_years, candidates)
-        self._map_supplemental_attributes(state, plan, buses, candidates)
+        fleet = build_fleet_table(state, plan, _list_fleet_families(candidates))
+        mapper.map_supplemental_attributes(state, fleet, buses)
         self._map_extensions(state, plan_years[plan.base_year], candidates)
         self._map_financial_data(state, plan)
         return state
@@ -212,9 +167,8 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         state: State,
         plan: InvestmentPlan,
         plan_years: Mapping[int, OperationsYear],
-        numbering: _Numbering,
+        mapper: PortfolioMapper,
     ) -> _Candidates:
-        base = plan_years[plan.base_year]
         candidates = _Candidates(
             supply=build_supply_candidates(state, plan_years, plan, self._mappings, self._recorder),
             storage=build_storage_candidates(
@@ -222,44 +176,43 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             ),
             transport=build_transport_candidates(state, plan, self._recorder),
         )
-        tables: Sequence[tuple[pl.DataFrame, _BuildTranslations, _Schema, str]] = (
+        tables: Sequence[tuple[pl.DataFrame, PortfolioTable]] = (
             (
                 candidates.supply.table,
-                partial(build_supply_translations, plan.cost_year),
-                SUPPLY_SCHEMA,
-                SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
+                PortfolioTable(
+                    SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
+                    SUPPLY_SCHEMA,
+                    partial(build_supply_translations, plan.cost_year),
+                ),
             ),
             (
                 candidates.storage.table,
-                partial(build_storage_translations, plan.cost_year),
-                STORAGE_SCHEMA,
-                SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+                PortfolioTable(
+                    SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
+                    STORAGE_SCHEMA,
+                    partial(build_storage_translations, plan.cost_year),
+                ),
             ),
             (
                 candidates.transport.table,
-                partial(build_transport_translations, plan.cost_year),
-                TRANSPORT_SCHEMA,
-                SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
+                PortfolioTable(
+                    SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY,
+                    TRANSPORT_SCHEMA,
+                    partial(build_transport_translations, plan.cost_year),
+                ),
             ),
         )
-        for table, build, schema, component in tables:
-            self._map_table(state, table, build, schema, component, numbering)
+        for table, spec in tables:
+            mapper.map_table(state, table, spec)
         return candidates
 
-    def _map_demand(self, state: State, numbering: _Numbering) -> None:
+    def _map_demand(self, state: State, mapper: PortfolioMapper) -> None:
         """One requirement for each load that the base system holds."""
         table = build_demand_table(state, read_area_by_bus(state))
-        self._map_table(
-            state,
-            table,
-            partial(build_demand_translations, LOADS_SOURCE),
-            DEMAND_REQUIREMENT_DESTINATION_SCHEMA,
-            SiennaInvestmentsComponent.DEMAND_REQUIREMENT,
-            numbering,
-        )
+        mapper.map_table(state, table, _DEMAND_TABLE)
 
     def _map_carbon_caps(
-        self, state: State, plan: InvestmentPlan, numbering: _Numbering, candidates: _Candidates
+        self, state: State, plan: InvestmentPlan, mapper: PortfolioMapper, candidates: _Candidates
     ) -> None:
         """The caps, and the constraint records that the operations step wrote without them."""
         portfolio = _build_portfolio_technologies(state, candidates)
@@ -269,36 +222,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         state.destination_extensions[ExtensionKind.CONSTRAINT] = capped.records
         for event in capped.events:
             self._recorder.append(event)
-        self._map_table(
-            state,
-            caps.table,
-            build_carbon_cap_translations,
-            CARBON_CAPS_DESTINATION_SCHEMA,
-            SiennaInvestmentsComponent.CARBON_CAPS,
-            numbering,
-        )
-
-    def _map_table(
-        self,
-        state: State,
-        table: pl.DataFrame,
-        build: _BuildTranslations,
-        schema: _Schema,
-        component: str,
-        numbering: _Numbering,
-    ) -> pl.DataFrame | None:
-        """Translate one source table, and take its share of the ids. An empty table maps none."""
-        if table.is_empty():
-            return None
-        out = finalise(
-            apply_translations(table, build(numbering.next_id), self._recorder),
-            schema,
-            self._recorder,
-            component,
-        )
-        state.destination_tables[component] = out
-        numbering.next_id += out.height
-        return out
+        mapper.map_table(state, caps.table, _CARBON_CAPS_TABLE)
 
     # --- the series ----------------------------------------------------------------------------
 
@@ -315,43 +239,6 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
                 state, plan_years, candidates.supply.table, self._recorder
             )
             set_portfolio_series(state, series, supply)
-
-    # --- the supplemental attributes -----------------------------------------------------------
-
-    def _map_supplemental_attributes(
-        self,
-        state: State,
-        plan: InvestmentPlan,
-        buses: pl.DataFrame,
-        candidates: _Candidates,
-    ) -> None:
-        """The three attributes, numbered from the one counter that the flat array shares."""
-        fleet = build_fleet_table(state, plan, _list_fleet_families(candidates))
-        sources = {
-            SiennaSupplementalAttribute.EXISTING_DEVICES: fleet,
-            SiennaSupplementalAttribute.RETIREMENT_POTENTIAL: fleet,
-            SiennaSupplementalAttribute.TOPOLOGY_MAPPING: build_topology_source_table(buses),
-        }
-        associations: list[pl.DataFrame] = []
-        numbering = _Numbering()
-        for kind in SUPPLEMENTAL_ATTRIBUTE_ORDER:
-            attribute = _ATTRIBUTES[kind]
-            source = sources[kind]
-            out = self._map_table(state, source, attribute.build, attribute.schema, kind, numbering)
-            if out is not None:
-                associations.append(
-                    build_association_rows(
-                        kind,
-                        out[SIENNA_ID_COLUMN].to_list(),
-                        source[attribute.name_col].to_list(),
-                        attribute.describes(source),
-                    )
-                )
-        state.destination_tables[SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS_TABLE] = (
-            pl.concat(associations)
-            if associations
-            else pl.DataFrame(schema=SUPPLEMENTAL_ATTRIBUTE_ASSOCIATION_SCHEMA)
-        )
 
     # --- the records of extensions.json and the portfolio financial data ----------------------
 

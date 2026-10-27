@@ -15,6 +15,7 @@ from ._existing import (
     build_retirement_potential_translations,
 )
 from ._financials import build_financial_data_events, build_portfolio_financial_data
+from ._portfolio import BuildTranslations, PortfolioMapper, PortfolioTable, Schema
 from ._shared import (
     FOM_CHARGE_COL,
     FOM_CHARGE_DERIVATION,
@@ -64,7 +65,11 @@ __all__ = [
     "SIENNA_TO_POWER_SYSTEMS_INVESTMENTS",
     "SIDECAR_RETIREMENT_DERIVATION",
     "STORAGE_UNIT_SOURCE",
+    "BuildTranslations",
     "InvestmentsSource",
+    "PortfolioMapper",
+    "PortfolioTable",
+    "Schema",
     "build_expansion_skips",
     "AREA_NAME",
     "build_carbon_cap_skips",
