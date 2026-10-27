@@ -23,7 +23,7 @@ import logging
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
+from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, get_args, overload
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict
@@ -377,20 +377,18 @@ class Extensions(BaseModel):
     conversion: list[ConversionExtension] = []
 
 
-EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
-    ExtensionKind.BUS: BusExtension,
-    ExtensionKind.GENERATOR: GeneratorExtension,
-    ExtensionKind.LOAD: LoadExtension,
-    ExtensionKind.LINE: LineExtension,
-    ExtensionKind.CONTROLLABLE_LINE: ControllableLineExtension,
-    ExtensionKind.STORAGE: StorageExtension,
-    ExtensionKind.RESERVE: ReserveExtension,
-    ExtensionKind.CONSTRAINT: ConstraintExtension,
-    ExtensionKind.NETWORK: NetworkExtension,
-    ExtensionKind.REPRESENTATIVE_PERIOD: RepresentativePeriodExtension,
-    ExtensionKind.TECHNOLOGY: TechnologyExtension,
-    ExtensionKind.CONVERSION: ConversionExtension,
-}
+def _build_extension_models() -> dict[ExtensionKind, type[ExtensionRecord]]:
+    """The record model of each kind, read off the fields of the document."""
+    fields = Extensions.model_fields
+    if set(fields) != set(ExtensionKind):
+        raise TypeError(
+            f"the Extensions fields {sorted(fields)} must name each ExtensionKind once, "
+            f"and only those: {sorted(str(kind) for kind in ExtensionKind)}"
+        )
+    return {ExtensionKind(kind): get_args(info.annotation)[0] for kind, info in fields.items()}
+
+
+EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = _build_extension_models()
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
 # it describes.

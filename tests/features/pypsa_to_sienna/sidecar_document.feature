@@ -43,3 +43,12 @@ Feature: The extensions sidecar states each value in one shape
       | {"representative_period": [{"name": "day_1", "first_timestamp": "spring", "hours": 24, "weight": 365}]} |
     When I run translate against "inputs/network.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the printed output contains "representative_period.0.first_timestamp"
+
+  Scenario: a record of the last kind that the document holds is staged and reported
+    The record model of each kind comes from the fields of the document, so a kind that the
+    document holds is never left out of staging.
+    Given a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"conversion": [{"name": "electrolyser", "bus0": "bus_AL"}]} |
+    When I run translate against "inputs/network.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "decisions.md" contains "| `pypsa.conversion.electrolyser` |  |  | no mapping in this translation reads this extension record"
