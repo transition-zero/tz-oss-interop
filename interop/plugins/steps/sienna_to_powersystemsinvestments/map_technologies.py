@@ -20,7 +20,6 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_simulations_schema import PSInputOutputCurve
 from interop.plugins.shared.power_systems_investments_schema import (
-    PORTFOLIO_EXISTING_DEVICES_TABLE,
     PSIP_MODULE,
     TECHNOLOGY_FINANCIAL_DATA_TYPE,
     PortfolioColumn,
@@ -57,7 +56,7 @@ from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_translation,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._existing_fleet import (
-    ExistingFleetMapper,
+    map_existing_fleet,
 )
 from interop.plugins.steps.sienna_to_powersystemsinvestments._limits import (
     LimitRow,
@@ -205,18 +204,13 @@ class SiennaToPowerSystemsInvestmentsMapTechnologies(TranslationStep):
     def _map_existing_fleet(
         self, state: State, rows_by_type: dict[str, list[dict[str, Any]]]
     ) -> None:
-        """Give the plan the fleet that already runs, and the devices the adapter attaches."""
-        mapper = ExistingFleetMapper(self._recorder)
-        fleet = mapper.build_fleet(state)
+        """Give the plan the fleet that already runs, and a technology for each unnamed plant."""
+        plants = map_existing_fleet(state, rows_by_type, self._recorder)
+        if not plants:
+            return
         supply = rows_by_type.setdefault(SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value, [])
-        all_rows = [row for rows in rows_by_type.values() for row in rows]
-        for plant in mapper.list_plants(fleet, all_rows, state):
+        for plant in plants:
             supply.append(_map_existing_plant(plant.row, plant.operation_cost, self._recorder))
-        if not supply:
-            del rows_by_type[SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value]
-        mapper.set_floors(fleet, rows_by_type)
-        state.destination_tables[PORTFOLIO_EXISTING_DEVICES_TABLE] = mapper.build_table(fleet)
-        mapper.report(fleet)
 
 
 class _PlanContext(NamedTuple):
