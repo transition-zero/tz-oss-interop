@@ -234,3 +234,35 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "decisions.md" contains "`osemosys.region_group_generation_fraction_requirement.G1.year 2035` = 0.5 | `sienna.constraint.G1/renewable_share.extensions.limits.year 2035` = 0.5 pu"
     And the log does not contain "region_group_generation_fraction_requirement states"
     And the log does not contain "renewable_tag_technology states"
+
+  Scenario: A model that states its emissions in Mt gives each limit in t, and a region group that changes its regions is reported
+    G1 holds R1 in 2030 and R2 in 2035, and its record keeps the regions of 2030.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole set "REGIONGROUP" holds "G1"
+    And the otoole parameter "RegionGroupTagRegion" keyed by "REGIONGROUP REGION YEAR" with default 0 has the rows:
+      | REGIONGROUP | REGION | YEAR | VALUE |
+      | G1          | R1     | 2030 | 1     |
+      | G1          | R2     | 2035 | 1     |
+    And the otoole parameter "AnnualEmissionLimit" keyed by "REGION EMISSION YEAR" with default -1 has the rows:
+      | REGION | EMISSION | YEAR | VALUE |
+      | R1     | CO2      | 2030 | 1.5   |
+    And the otoole parameter "AnnualExogenousEmission" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+      | REGION | EMISSION | YEAR | VALUE |
+      | R1     | CO2      | 2030 | 0.5   |
+    And the otoole parameter "ModelPeriodEmissionLimit" keyed by "REGION EMISSION" with default -1 has the rows:
+      | REGION | EMISSION | VALUE |
+      | R1     | CO2      | 5     |
+    And the otoole parameter "AnnualEmissionLimitRegionGroup" keyed by "REGIONGROUP EMISSION YEAR" with default -1 has the rows:
+      | REGIONGROUP | EMISSION | YEAR | VALUE |
+      | G1          | CO2      | 2030 | 2     |
+      | G1          | CO2      | 2035 | 3     |
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                              |
+      | osemosys: {units: {energy: GWh, emissions: Mt}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/CO2" having "limits" set to [{"period": "year", "value": 1000000.0, "unit": "t", "investment_period": 2030}, {"period": "horizon", "value": 5000000.0, "unit": "t"}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "limits" set to [{"period": "year", "value": 2000000.0, "unit": "t", "investment_period": 2030}, {"period": "year", "value": 3000000.0, "unit": "t", "investment_period": 2035}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "G1/CO2" having "members" set to [{"name": "R1", "member_class": "region"}]
+    And the log contains "1 year(s) of a region group hold other regions in a year with a limit than in the earliest year that states them, and each constraint record keeps the regions of that earliest year. Region groups: G1/2035"
+    And the file "decisions.md" contains "| `osemosys.region_group.G1.region_group_tag_region` = R2 |  |  | the regions of 2035; each constraint record of G1 counts R1, the regions of 2030"
