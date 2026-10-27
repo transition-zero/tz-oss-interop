@@ -152,8 +152,7 @@ _APPLIED_PARAMETERS = (
     FlowParameter.INPUT_ACTIVITY_RATIO,
     FlowParameter.OUTPUT_ACTIVITY_RATIO,
 )
-# A fuel producer gives its cost, its output ratio and its emission rate to each plant that burns
-# its fuel.
+# A fuel producer gives its cost, output ratio and emission rate to each plant that burns its fuel.
 _PRODUCER_PARAMETERS = (
     SupplyParameter.VARIABLE_OPERATION_COST,
     FlowParameter.OUTPUT_ACTIVITY_RATIO,
