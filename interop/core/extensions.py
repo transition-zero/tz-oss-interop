@@ -729,8 +729,11 @@ class ExtensionLookup(Generic[RecordT]):
         self._consumed.fields.setdefault(name, set()).update(mapped)
         return self._find_or_build(name)
 
-    def relay(self, name: str) -> RecordT:
-        """A record of the stated fields of ``name`` that no mapping maps, marked as relayed."""
+    def build_relayed(self, name: str) -> RecordT:
+        """A record of the stated fields of ``name`` that no mapping maps, marked as relayed.
+
+        This records no event, so the caller hands the record to the call that relays it.
+        """
         handled = self._consumed.fields.setdefault(name, set())
         left = {
             field_name: value
