@@ -39,6 +39,8 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     FUEL_COL,
     GENERATOR_SOURCE,
     LOAD_TYPE_COL,
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
     PYPSA_TO_SIENNA_INVESTMENTS,
@@ -131,6 +133,8 @@ _LOADS = InvestmentsSource(
     component=PyPSAComponent.LOAD,
     display=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].display,
     plural=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].plural,
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (

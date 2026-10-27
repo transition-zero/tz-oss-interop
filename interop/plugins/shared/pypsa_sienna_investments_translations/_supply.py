@@ -34,6 +34,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     PRIME_MOVER_COL,
     PYPSA_TO_SIENNA_INVESTMENTS,
     REGION_COL,
+    SIDECAR_RETIREMENT_DERIVATION,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
     InvestmentsSource,
@@ -82,6 +83,11 @@ GENERATOR_SOURCE = InvestmentsSource(
     component=PyPSAComponent.GENERATOR,
     display=PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS].display,
     plural=PYPSA_COMPONENT_NAMING[PyPSATable.GENERATORS].plural,
+    retirement_derivation=SIDECAR_RETIREMENT_DERIVATION,
+    retirement_cost_note=(
+        "RetirementPotential requires a retirement cost and PyPSA prices no retirement, so "
+        "retiring a device costs nothing"
+    ),
 )
 _dest = partial(sienna_dest_field, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY)
 

@@ -30,6 +30,8 @@ from interop.plugins.shared.pypsa_constants import (
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     FOM_CHARGE_COL,
     FOM_CHARGE_DERIVATION,
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
@@ -92,6 +94,8 @@ STORAGE_UNIT_SOURCE = InvestmentsSource(
     component=PyPSAComponent.STORAGE_UNIT,
     display=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].display,
     plural=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 
