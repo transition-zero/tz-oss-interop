@@ -28,6 +28,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
     ActivityParameter,
@@ -132,7 +133,6 @@ _build_value = ComputedValues(_dest, STORAGE_NAME).build_translation
 _default = partial(default_translation, _dest, name_col=STORAGE_NAME)
 
 _NO_POWER = 0.0
-_NO_COST = 0.0
 _NO_TARGET = 0.0
 
 _ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
@@ -533,11 +533,11 @@ def _build_cost() -> Translation:
         cost_type=pl.lit(SiennaCostType.STORAGE),
         charge_variable_cost=variable_cost_curve(pl.col(CHARGE_COST_MWH)),
         discharge_variable_cost=variable_cost_curve(pl.col(DISCHARGE_COST_MWH)),
-        fixed=pl.lit(_NO_COST),
-        start_up=pl.lit(_NO_COST),
-        shut_down=pl.lit(_NO_COST),
-        energy_shortage_cost=pl.lit(_NO_COST),
-        energy_surplus_cost=pl.lit(_NO_COST),
+        fixed=pl.lit(NO_COST),
+        start_up=pl.lit(NO_COST),
+        shut_down=pl.lit(NO_COST),
+        energy_shortage_cost=pl.lit(NO_COST),
+        energy_surplus_cost=pl.lit(NO_COST),
     ).cast(STORAGE_COST_DTYPE)
     return _build_value(
         _Col.OPERATION_COST, cost, _build_cost_sources, _COST_DERIVATION, UNIT_DOLLARS_PER_MWH

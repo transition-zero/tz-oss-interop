@@ -24,6 +24,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     WHOLE_CAPACITY,
     StorageParameter,
     SupplyParameter,
@@ -78,7 +79,6 @@ from interop.plugins.shared.osemosys_sienna_translations._units import (
 _STORAGE_KEYS = [REGION, STORAGE]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _EMPTY = 0.0
-_NO_COST = 0.0
 
 
 def enrich_ratings(
@@ -238,7 +238,7 @@ def _enrich_penalties(
         .agg(term.alias(side.penalty_terms), pl.col(PENALTY_COST_MWH).sum().alias(side.penalty_mwh))
     )
     return storages.join(listed, on=side.mode_keys, how="left").with_columns(
-        pl.col(side.penalty_mwh).fill_null(_NO_COST)
+        pl.col(side.penalty_mwh).fill_null(NO_COST)
     )
 
 
