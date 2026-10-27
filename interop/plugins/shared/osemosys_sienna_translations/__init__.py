@@ -39,10 +39,12 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     GENERATOR_NAME,
     SIENNA_TYPE,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_events import (
+    warn_lost_costs,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
     GENERATOR_TYPE_MAPPINGS,
     GeneratorTypeMapping,
-    warn_lost_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import (
     GeneratorSources,
