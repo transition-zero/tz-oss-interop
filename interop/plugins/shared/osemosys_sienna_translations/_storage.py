@@ -241,7 +241,7 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     set_mode_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, discharging)
     set_bounds_persisted(state, STORAGE_TECHNOLOGY_OWNERS, discharging)
     set_applied_rows(state, STORAGE_TECHNOLOGY_OWNERS, discharging, _DISCHARGE_APPLIED)
-    charging = _select_chargers(storages).select(REGION, TECHNOLOGY)
+    charging = _build_chargers(storages).select(REGION, TECHNOLOGY)
     set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
     set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
 
@@ -279,7 +279,7 @@ def _enrich_extension_values(
         state, operations, technologies.drop(RATING_RATIO), FlowParameter.OUTPUT_ACTIVITY_RATIO
     ).drop(OPERATING_MODE)
     charging = enrich_technology_values(
-        state, operations, _select_chargers(storages), CHARGE_VALUES
+        state, operations, _build_chargers(storages), CHARGE_VALUES
     ).drop(RATING_RATIO)
     own = enrich_technology_values(
         state,
@@ -290,17 +290,17 @@ def _enrich_extension_values(
     ).drop(RATING_RATIO)
     discharge_keys = [REGION, DISCHARGE_SIDE.technology]
     table = (
-        _join_technologies(storages, discharging, DISCHARGE_SIDE)
-        .pipe(_join_technologies, bounds, DISCHARGE_SIDE)
+        _enrich_side_technologies(storages, discharging, DISCHARGE_SIDE)
+        .pipe(_enrich_side_technologies, bounds, DISCHARGE_SIDE)
         .join(own, on=_STORAGE_KEYS, how="left")
-        .pipe(_join_technologies, charging, CHARGE_SIDE)
+        .pipe(_enrich_side_technologies, charging, CHARGE_SIDE)
     )
-    held = _list_held_modes(storages)
+    held = _build_held_modes(storages)
     modes = build_operating_modes(state, operations, held, LINK_RUN_PARAMETERS)
     return modes.enrich(table, discharge_keys)
 
 
-def _join_technologies(
+def _enrich_side_technologies(
     storages: pl.DataFrame, technologies: pl.DataFrame, side: StorageSide
 ) -> pl.DataFrame:
     """`storages` with the columns of `technologies`, keyed by `technology`, on one side."""
@@ -308,7 +308,7 @@ def _join_technologies(
     return storages.join(renamed, on=[REGION, side.technology], how="left")
 
 
-def _select_chargers(storages: pl.DataFrame) -> pl.DataFrame:
+def _build_chargers(storages: pl.DataFrame) -> pl.DataFrame:
     """Each technology that charges a storage that another technology discharges."""
     return (
         storages.filter(_express_charges_itself().not_())
@@ -321,7 +321,7 @@ def _select_chargers(storages: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _list_held_modes(storages: pl.DataFrame) -> pl.DataFrame:
+def _build_held_modes(storages: pl.DataFrame) -> pl.DataFrame:
     """The modes of the discharging technology that the storage runs: the discharge mode, and
     the charge mode when the same technology charges the storage."""
     rows_by_side = (
@@ -479,14 +479,14 @@ def _enrich_technologies(
         SIENNA_TYPE,
         PRIME_MOVER,
     )
-    table = _join_technologies(storages, targets, DISCHARGE_SIDE)
+    table = _enrich_side_technologies(storages, targets, DISCHARGE_SIDE)
     for side in STORAGE_SIDES:
         power = technologies.select(
             *_TECHNOLOGY_KEYS,
             pl.col(RESIDUAL_CAPACITY).alias(side.capacity),
             pl.col(_AVAILABILITY).alias(side.availability),
         )
-        table = _join_technologies(table, power, side)
+        table = _enrich_side_technologies(table, power, side)
     table = enrich_storage_buses(state, operations, _enrich_ratios(state, operations, table))
     return table.with_columns(
         _express_technology_name(side.technology).alias(side.technology_name)
