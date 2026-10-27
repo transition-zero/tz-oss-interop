@@ -13,6 +13,7 @@ import polars as pl
 from interop.core.extensions import ExtensionKind, TechnologyExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import require_extension_attribute
 from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
@@ -96,8 +97,11 @@ TRANSPORT_FIELDS = {
     "p_nom_min": YearlyField(CAPACITY_LIMITS_MIN_MW, InvestmentParameter.CAPACITY_LIMITS_MIN),
     "p_nom_max": YearlyField(CAPACITY_LIMITS_MAX_MW, InvestmentParameter.CAPACITY_LIMITS_MAX),
 }
+_FIELD_ATTRIBUTES = {
+    name: require_extension_attribute(TechnologyExtension, name)
+    for name in {**SUPPLY_FIELDS, **STORAGE_FIELDS, **TRANSPORT_FIELDS}
+}
 
-_EXTENSIONS_FIELD = "extensions.technology"
 _COMPONENT = "component"
 _PRODUCERS = "producers"
 _OWNERS = ValueOwners(ExtensionKind.TECHNOLOGY, CANDIDATE_NAME, REPORT_NAME, _COMPONENT)
@@ -238,7 +242,7 @@ def _build_event(
             for field in fields.values()
         ],
         destinations=[
-            build_sienna_field(component, row[CANDIDATE_NAME], f"{_EXTENSIONS_FIELD}.{name}")
+            build_sienna_field(component, row[CANDIDATE_NAME], _FIELD_ATTRIBUTES[name])
             for name in fields
         ],
         derivation=_DERIVATION,
