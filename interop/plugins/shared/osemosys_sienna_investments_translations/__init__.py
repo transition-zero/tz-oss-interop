@@ -40,6 +40,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._fleet impo
     FLEET_SOURCE,
     FleetFamily,
     build_fleet_table,
+    build_portfolio_technologies,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._plan import (
     InvestmentPlan,
@@ -54,6 +55,7 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._storage im
     STORAGE_SCHEMA,
     StorageCandidates,
     build_storage_candidates,
+    build_storage_technology_keys,
     build_storage_translations,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._supply import (
@@ -104,6 +106,8 @@ __all__ = [
     "drop_capped_limits",
     "build_demand_series",
     "build_fleet_table",
+    "build_portfolio_technologies",
+    "build_storage_technology_keys",
     "build_osemosys_financial_data",
     "build_osemosys_financial_events",
     "build_plan_year",

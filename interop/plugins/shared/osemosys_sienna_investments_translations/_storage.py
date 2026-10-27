@@ -233,6 +233,12 @@ def build_storage_translations(cost_year: int, start: int) -> list[Translation]:
     ]
 
 
+def build_storage_technology_keys(storages: pl.DataFrame) -> pl.DataFrame:
+    """The region and the technology of each technology that charges or discharges a storage."""
+    chargers = storages.select(REGION, pl.col(CHARGE_TECHNOLOGY).alias(TECHNOLOGY))
+    return pl.concat([storages.select(REGION, TECHNOLOGY), chargers]).unique()
+
+
 # --- the candidates --------------------------------------------------------------------------
 
 

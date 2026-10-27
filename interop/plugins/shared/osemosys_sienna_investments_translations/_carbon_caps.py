@@ -1,16 +1,17 @@
-"""OSeMOSYS emission limits of a pollutant that covers the whole model -> Sienna CarbonCaps.
+"""OSeMOSYS emission limits of a pollutant that covers the whole portfolio -> Sienna CarbonCaps.
 
-`CarbonCaps` names no region and no pollutant, so one cap limits the emissions of the whole
-portfolio. A pollutant covers the whole model when each technology that emits any pollutant
-emits it. Such a pollutant gets one `CarbonCaps` for each year whose `annual_emission_limit`
-states a limit. The report names each other pollutant, whose limits the constraint record of
-the operations step holds in extensions.json. OSeMOSYS adds `annual_exogenous_emission` to the
-emissions that a limit holds, so the cap is the limit less that emission.
+SiennaSchemas' `CarbonCaps` holds no region and no pollutant, so one cap limits the emissions
+of the whole portfolio. A pollutant covers the portfolio when each technology of the portfolio
+that emits any pollutant emits it; a technology that the portfolio leaves out emits nothing in
+it. The first such pollutant, in name order, gets one `CarbonCaps` for each year whose
+`annual_emission_limit` states a limit. The report names each other pollutant, whose limits the
+constraint record of the operations step holds in extensions.json, and each left-out technology
+that emits the capped pollutant. OSeMOSYS adds `annual_exogenous_emission` to the emissions
+that a limit holds, so the cap is the limit less that emission.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
@@ -30,10 +31,14 @@ from interop.plugins.shared.constants import UNIT_MEGATONNES, UNIT_YEARS, Framew
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
+    TECHNOLOGY,
     YEAR,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    TECHNOLOGIES_LABEL,
+    TECHNOLOGY_COUNTED_NOUN,
     TONNES_PER_MEGATONNE,
+    SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_investments_translations._columns import (
     CANDIDATE_NAME,
@@ -68,6 +73,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
     build_sienna_source,
 )
+from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     NO_RETIREMENT_COST_NOTE,
     NO_RETIREMENT_DERIVATION,
@@ -78,11 +84,14 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaCarbonCapsCol,
     SiennaInvestmentsComponent,
 )
-from interop.plugins.shared.translation_runner import Translation, filter_component
-from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.translation_runner import (
+    SkippedNames,
+    SkipReport,
+    Translation,
+    filter_component,
+    report_not_mapped,
+)
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
-
-log = logging.getLogger(__name__)
 
 C = SiennaCarbonCapsCol
 _COMPONENT = SiennaInvestmentsComponent.CARBON_CAPS
@@ -91,6 +100,11 @@ _KEYS = [REGION, POLLUTANT]
 MAX_MTONS = "max_mtons"
 
 _CAP_NAME_SEPARATOR = "/"
+# The technologies of the portfolio that emit a pollutant, and each emitter of a capped one.
+_HELD_EMITTERS = "held_emitters"
+_EMITTER_NAME = "emitter_name"
+_IS_HELD = "is_held"
+_POLLUTANTS_LABEL = "Pollutants"
 
 POLLUTANT_SOURCE = InvestmentsSource(
     framework=Framework.OSEMOSYS,
@@ -104,13 +118,41 @@ POLLUTANT_SOURCE = InvestmentsSource(
 
 SCOPED_POLLUTANT_SKIP = POLLUTANT_SOURCE.skip(
     name_col=REPORT_NAME,
-    reason="state an emission limit that not every emitting technology is under, which no "
-    "CarbonCaps can hold, and extensions.json holds the limits",
+    reason="state an emission limit that not every emitting technology of the portfolio is "
+    "under, which no CarbonCaps can hold, and extensions.json holds the limits",
     note=lambda row: (
-        f"{len(row[EMITTERS] or [])} technology(ies) emit the pollutant, and a CarbonCaps holds "
-        "every emission of the whole portfolio, so the limits go to extensions.json as a "
-        "constraint record"
+        f"{len(row[_HELD_EMITTERS] or [])} technology(ies) of the portfolio emit the pollutant, "
+        "and a CarbonCaps holds every emission of the whole portfolio, so the limits go to "
+        "extensions.json as a constraint record"
     ),
+)
+
+SECOND_POLLUTANT_SKIP = POLLUTANT_SOURCE.skip(
+    name_col=REPORT_NAME,
+    reason="cover the portfolio after a pollutant that comes first in name order, and a "
+    "CarbonCaps names no pollutant, so extensions.json holds the limits",
+    note=(
+        "a CarbonCaps names no pollutant, so only the first pollutant in name order that covers "
+        "the portfolio reaches CarbonCaps, and the limits go to extensions.json as a constraint "
+        "record"
+    ),
+)
+
+LEFT_OUT_EMITTER_REPORT = SkipReport(
+    pipeline=OSEMOSYS_TO_SIENNA_INVESTMENTS,
+    framework=Framework.OSEMOSYS,
+    component=SupplyParameter.EMISSION_RATE,
+    name_col=_EMITTER_NAME,
+    reason="emit the pollutant of a CarbonCaps but are not in the portfolio, so the cap holds "
+    "less than the limit counts",
+    counted_noun=TECHNOLOGY_COUNTED_NOUN,
+    note=(
+        "OSeMOSYS counts the emissions of the technology under the limit, and the portfolio "
+        "holds no such technology, so the CarbonCaps does not count them"
+    ),
+    listed=SkippedNames(column=_EMITTER_NAME, label=TECHNOLOGIES_LABEL),
+    attribute_col=REPORT_NAME,
+    attribute_name=POLLUTANT,
 )
 
 _LIMITS_ATTRIBUTE = "extensions.limits"
@@ -124,6 +166,14 @@ _PERIOD_NOTE = (
     "extensions.json keeps the limit over the period only"
 )
 
+PERIOD_LIMIT_REPORT = POLLUTANT_SOURCE.skip(
+    name_col=REPORT_NAME,
+    reason="state a limit over the whole model period, which CarbonCaps cannot hold",
+    note=_PERIOD_NOTE,
+    listed=SkippedNames(column=REPORT_NAME, label=_POLLUTANTS_LABEL),
+    attribute_col=PERIOD_LIMIT,
+)
+
 
 class CarbonCaps(NamedTuple):
     """One row for each `CarbonCaps`, and the name of each pollutant that the caps hold."""
@@ -132,16 +182,21 @@ class CarbonCaps(NamedTuple):
     pollutants: frozenset[str]
 
 
-def build_carbon_caps(state: State, plan: InvestmentPlan, recorder: ScopedRecorder) -> CarbonCaps:
-    """One row for each `CarbonCaps`: a pollutant that covers the whole model, in one year."""
-    pollutants = _read_pollutants(state, plan)
+def build_carbon_caps(
+    state: State, plan: InvestmentPlan, portfolio: pl.DataFrame, recorder: ScopedRecorder
+) -> CarbonCaps:
+    """One row for each `CarbonCaps`: the pollutant that covers the portfolio, in one year.
+
+    `portfolio` holds the region and the technology of each technology of the portfolio.
+    """
+    pollutants = _read_pollutants(state, plan, portfolio)
     yearly = read_annual_limits(state, plan.years, plan.units, pollutants)
     pollutants = enrich_period_limits(state, plan.base_year, plan.units, pollutants)
-    limited = drop_unlimited(pollutants, yearly)
-    covering, _ = filter_component(limited, pl.col(COVERS_MODEL), SCOPED_POLLUTANT_SKIP, recorder)
-    _report_period_limits(covering, recorder)
-    names = frozenset(covering[CANDIDATE_NAME].to_list())
-    return CarbonCaps(_build_caps_table(covering, yearly), names)
+    capped = _drop_uncapped(drop_unlimited(pollutants, yearly), recorder)
+    _report_left_out_emitters(capped, portfolio, recorder)
+    _report_period_limits(capped, recorder)
+    names = frozenset(capped[CANDIDATE_NAME].to_list())
+    return CarbonCaps(_build_caps_table(capped, yearly), names)
 
 
 def drop_capped_limits(
@@ -209,33 +264,58 @@ def build_carbon_cap_translations(start: int) -> list[Translation]:
 # --- the pollutants --------------------------------------------------------------------------
 
 
-def _read_pollutants(state: State, plan: InvestmentPlan) -> pl.DataFrame:
-    return read_pollutants(state, plan.years).rename(
+def _read_pollutants(state: State, plan: InvestmentPlan, portfolio: pl.DataFrame) -> pl.DataFrame:
+    pollutants = read_pollutants(state, plan.years).rename(
         {POLLUTANT_NAME: CANDIDATE_NAME, POLLUTANT_REPORT_NAME: REPORT_NAME}
+    )
+    return _enrich_portfolio_cover(pollutants, portfolio)
+
+
+def _enrich_portfolio_cover(pollutants: pl.DataFrame, portfolio: pl.DataFrame) -> pl.DataFrame:
+    """Each pollutant covers the portfolio when each emitter of the portfolio emits it."""
+    emitted = _list_emitters(pollutants).join(portfolio, on=[REGION, TECHNOLOGY], how="semi")
+    all_emitters = emitted.select(REGION, TECHNOLOGY).unique().height
+    held = emitted.group_by(_KEYS).agg(pl.col(TECHNOLOGY).sort().alias(_HELD_EMITTERS))
+    covers = (pl.col(_HELD_EMITTERS).list.len() == all_emitters) & (all_emitters > 0)
+    return pollutants.drop(COVERS_MODEL).join(held, on=_KEYS, how="left").with_columns(
+        covers.fill_null(False).alias(COVERS_MODEL)  # noqa: FBT003
     )
 
 
-def _report_period_limits(covering: pl.DataFrame, recorder: ScopedRecorder) -> None:
+def _list_emitters(pollutants: pl.DataFrame) -> pl.DataFrame:
+    """One row for each pollutant and each technology that emits it in some year."""
+    return (
+        pollutants.select(*_KEYS, REPORT_NAME, pl.col(EMITTERS).alias(TECHNOLOGY))
+        .explode(TECHNOLOGY)
+        .drop_nulls(TECHNOLOGY)
+    )
+
+
+def _drop_uncapped(limited: pl.DataFrame, recorder: ScopedRecorder) -> pl.DataFrame:
+    """The one pollutant that reaches CarbonCaps: the first in name order that covers the
+    portfolio."""
+    covering, _ = filter_component(limited, pl.col(COVERS_MODEL), SCOPED_POLLUTANT_SKIP, recorder)
+    is_first = pl.col(REPORT_NAME) == pl.col(REPORT_NAME).min()
+    capped, _ = filter_component(covering, is_first, SECOND_POLLUTANT_SKIP, recorder)
+    return capped
+
+
+def _report_left_out_emitters(
+    capped: pl.DataFrame, portfolio: pl.DataFrame, recorder: ScopedRecorder
+) -> None:
+    """A technology out of the portfolio emits under the limit, but under no CarbonCaps."""
+    held = portfolio.with_columns(pl.lit(value=True).alias(_IS_HELD))
+    emitters = (
+        _list_emitters(capped)
+        .join(held, on=[REGION, TECHNOLOGY], how="left")
+        .with_columns(express_report_name(TECHNOLOGY).alias(_EMITTER_NAME))
+    )
+    report_not_mapped(emitters, pl.col(_IS_HELD), LEFT_OUT_EMITTER_REPORT, recorder)
+
+
+def _report_period_limits(capped: pl.DataFrame, recorder: ScopedRecorder) -> None:
     """A pollutant that reaches CarbonCaps loses its limit over the whole model period."""
-    lost = covering.filter(pl.col(PERIOD_NET_LIMIT_T).is_not_null())
-    for row in lost.iter_rows(named=True):
-        recorder.append(
-            TranslationEvent(
-                kind=EventKind.NOT_MAPPED,
-                sources=[
-                    build_osemosys_field(PERIOD_LIMIT, row[REPORT_NAME], None, row[PERIOD_LIMIT])
-                ],
-                note=_PERIOD_NOTE,
-            )
-        )
-    if lost.height:
-        log.warning(
-            "%s: %d pollutant(s) state a limit over the whole model period, which CarbonCaps "
-            "cannot hold. Pollutants: %s",
-            OSEMOSYS_TO_SIENNA_INVESTMENTS,
-            lost.height,
-            name_a_few(sorted(lost[REPORT_NAME].to_list())),
-        )
+    report_not_mapped(capped, pl.col(PERIOD_NET_LIMIT_T).is_null(), PERIOD_LIMIT_REPORT, recorder)
 
 
 # --- the caps and the constraint records -----------------------------------------------------
@@ -259,15 +339,15 @@ def _build_caps_table(covering: pl.DataFrame, yearly: pl.DataFrame) -> pl.DataFr
 
 
 _IDENTITY = Identity(
-    kind_note="every technology that emits a pollutant emits this one, so its limit holds the "
-    "whole model, as a CarbonCaps does",
+    kind_note="every technology of the portfolio that emits a pollutant emits this one, so its "
+    "limit holds the whole portfolio, as a CarbonCaps does",
     member=CandidateMember(POLLUTANT, REPORT_NAME),
     name_derivation="the pollutant, then the year of its limit",
     available_note="a limit that the model states is one that it applies",
 )
 
 
-def _limit_sources(old: dict[str, Any]) -> list[Any]:
+def _build_limit_sources(old: dict[str, Any]) -> list[Any]:
     detail = f"year {old[YEAR]}"
     return [
         build_osemosys_field(ANNUAL_LIMIT, old[REPORT_NAME], detail, old[ANNUAL_LIMIT]),
@@ -280,7 +360,7 @@ _CAP_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         C.TARGET_YEAR,
         pl.col(YEAR),
-        _limit_sources,
+        _build_limit_sources,
         "the year of the annual_emission_limit",
         UNIT_YEARS,
     ),
@@ -288,7 +368,7 @@ _CAP_TRANSLATIONS: list[Translation] = [
         _COMPONENT,
         C.MAX_MTONS,
         pl.col(MAX_MTONS),
-        _limit_sources,
+        _build_limit_sources,
         "(annual_emission_limit - annual_exogenous_emission) in Mt, because OSeMOSYS adds the "
         "exogenous emission to the emissions that the limit holds",
         UNIT_MEGATONNES,

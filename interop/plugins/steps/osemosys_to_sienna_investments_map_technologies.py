@@ -50,7 +50,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations import (
     build_osemosys_financial_data,
     build_osemosys_financial_events,
     build_plan_year,
+    build_portfolio_technologies,
     build_storage_candidates,
+    build_storage_technology_keys,
     build_storage_translations,
     build_supply_candidates,
     build_supply_translations,
@@ -194,7 +196,7 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
         numbering = _Numbering()
         candidates = self._map_candidates(state, plan, plan_years, numbering)
         self._map_demand(state, numbering)
-        self._map_carbon_caps(state, plan, numbering)
+        self._map_carbon_caps(state, plan, numbering, candidates)
         self._map_series(state, plan_years, candidates)
         self._map_supplemental_attributes(state, plan, buses, candidates)
         self._map_extensions(state, plan_years[plan.base_year], candidates)
@@ -252,9 +254,12 @@ class OsemosysToSiennaInvestmentsMapTechnologies(TranslationStep):
             numbering,
         )
 
-    def _map_carbon_caps(self, state: State, plan: InvestmentPlan, numbering: _Numbering) -> None:
+    def _map_carbon_caps(
+        self, state: State, plan: InvestmentPlan, numbering: _Numbering, candidates: _Candidates
+    ) -> None:
         """The caps, and the constraint records that the operations step wrote without them."""
-        caps = build_carbon_caps(state, plan, self._recorder)
+        portfolio = _build_portfolio_technologies(state, candidates)
+        caps = build_carbon_caps(state, plan, portfolio, self._recorder)
         constraints = state.destination_extensions.get(ExtensionKind.CONSTRAINT, [])
         capped = drop_capped_limits(constraints, caps.pollutants)
         state.destination_extensions[ExtensionKind.CONSTRAINT] = capped.records
@@ -422,6 +427,18 @@ def _list_fleet_families(candidates: _Candidates) -> list[FleetFamily]:
             base_types=(SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,),
         ),
     ]
+
+
+def _build_portfolio_technologies(state: State, candidates: _Candidates) -> pl.DataFrame:
+    """The technologies of the candidates, and of the components of the base system."""
+    families = _list_fleet_families(candidates)
+    keys = [
+        candidates.supply.table.select(TECHNOLOGY_KEYS),
+        build_storage_technology_keys(candidates.storage.table),
+        candidates.transport.table.select(TECHNOLOGY_KEYS),
+    ]
+    base_types = [base_type for family in families for base_type in family.base_types]
+    return build_portfolio_technologies(state, pl.concat(keys), base_types)
 
 
 def _read_ids(state: State, component: str) -> dict[str, int]:
