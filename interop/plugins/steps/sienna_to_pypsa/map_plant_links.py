@@ -26,6 +26,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     LINK_FURTHER_PORTS,
     LINKS_DESTINATION_SCHEMA,
+    PYPSA_LINK_DEFAULTS,
     LinkPort,
     PyPSABusCol,
     PyPSADestinationTable,
@@ -33,8 +34,13 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALinkCol,
     ReverseTimeSeriesMetadataCol,
 )
-from interop.plugins.shared.pypsa_destination import append_destination_rows
-from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaGeneratorCol, SiennaTable
+from interop.plugins.shared.pypsa_destination import (
+    append_destination_rows,
+    list_destination_names,
+)
+from interop.plugins.shared.pypsa_time_series import find_table_series
+from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaTable
+from interop.plugins.shared.sienna_pypsa_translations.mapping import find_source_types
 from interop.plugins.shared.sienna_pypsa_translations.reporters import PlantLinkReporter
 from interop.plugins.shared.warning_text import name_a_few
 
@@ -44,7 +50,9 @@ _KEPT_WARNING = (
     "%d plant(s) state the buses of their fuels, but each %s, so each stays a Generator that "
     "pays the Sienna price of its fuel: %s"
 )
-_NO_COST = 0.0
+_NO_COST = float(PYPSA_LINK_DEFAULTS[PyPSALinkCol.MARGINAL_COST])
+_ACTIVE = bool(PYPSA_LINK_DEFAULTS[PyPSALinkCol.ACTIVE])
+_NOT_EXTENDABLE = bool(PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_NOM_EXTENDABLE])
 # The commitment of the generator, which the Link keeps column by column.
 _KEPT_COLUMNS = (
     (PyPSAGeneratorCol.P_MIN_PU, PyPSALinkCol.P_MIN_PU),
@@ -165,8 +173,8 @@ class PlantLinkMapper:
             PyPSALinkCol.P_NOM: generator[PyPSAGeneratorCol.P_NOM] * ratio,
             PyPSALinkCol.EFFICIENCY: 1.0 / ratio,
             PyPSALinkCol.MARGINAL_COST: (record.own_marginal_cost or _NO_COST) / ratio,
-            PyPSALinkCol.ACTIVE: True,
-            PyPSALinkCol.P_NOM_EXTENDABLE: False,
+            PyPSALinkCol.ACTIVE: _ACTIVE,
+            PyPSALinkCol.P_NOM_EXTENDABLE: _NOT_EXTENDABLE,
             **{link: generator[column] for column, link in _KEPT_COLUMNS},
         }
         further = list(zip(fuels[1:], LINK_FURTHER_PORTS, strict=False))
@@ -192,8 +200,7 @@ class PlantLinkMapper:
 
 
 def _build_bus_names(state: State) -> set[str]:
-    buses = state.destination_tables.get(PyPSADestinationTable.BUSES)
-    return set() if buses is None else set(buses[PyPSABusCol.NAME].to_list())
+    return set(list_destination_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME))
 
 
 def _list_plants(
@@ -228,13 +235,10 @@ def _build_extendable_names(generators: pl.DataFrame) -> set[str]:
 
 
 def _build_series_names(state: State, attribute: str) -> set[str]:
-    metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
-    if metadata is None:
+    series = find_table_series(state, PyPSADestinationTable.GENERATORS)
+    if series is None:
         return set()
-    held = metadata.filter(
-        (pl.col(ReverseTimeSeriesMetadataCol.COMPONENT_TABLE) == PyPSADestinationTable.GENERATORS)
-        & (pl.col(ReverseTimeSeriesMetadataCol.ATTRIBUTE) == attribute)
-    )
+    held = series.filter(pl.col(ReverseTimeSeriesMetadataCol.ATTRIBUTE) == attribute)
     return set(held[ReverseTimeSeriesMetadataCol.COMPONENT_NAME].to_list())
 
 
@@ -284,13 +288,8 @@ _KEPT_REASONS = (
 
 
 def _build_thermal_names(state: State) -> set[str]:
-    source = state.source_topology.get(SiennaTable.GENERATORS)
-    if source is None:
-        return set()
-    thermal = source.filter(
-        pl.col(SiennaGeneratorCol.SIENNA_TYPE) == SiennaComponent.THERMAL_STANDARD
-    )
-    return set(thermal.select(SiennaGeneratorCol.NAME).collect().to_series().to_list())
+    types = find_source_types(state, SiennaTable.GENERATORS) or {}
+    return {name for name, kind in types.items() if kind == SiennaComponent.THERMAL_STANDARD}
 
 
 def _set_link_series(state: State, names: set[str]) -> None:
