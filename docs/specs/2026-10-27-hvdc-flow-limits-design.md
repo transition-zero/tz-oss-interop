@@ -30,8 +30,10 @@ tz-oss-interop raised an error when a valid document left out a converter rating
 1. **Writers.** `pypsa-to-sienna` and `plexos-to-sienna` write `rating` and
    `operational_flow_limit`. They do not write `rating_from` or `rating_to`, because
    neither source format states a converter rating.
-   - PyPSA: `rating = p_nom`. `from_to_max = p_nom * p_max_pu`. `to_from_max =
-     -p_nom * p_min_pu` when `p_min_pu < 0`, else 0.0.
+   - PyPSA: `from_to_max = p_nom * p_max_pu`. `to_from_max = -p_nom * p_min_pu` when
+     `p_min_pu < 0`, else 0.0. `rating` is the largest of `p_nom`, `from_to_max` and
+     `to_from_max`. A reader caps each flow bound at the rating, so a `p_min_pu` below -1
+     must raise the rating.
    - PLEXOS: `from_to_max` is `Max Flow`. `to_from_max` is `-Min Flow` when `Min Flow < 0`,
      else 0.0. `rating` is the larger of the two.
    - Both minimums are 0.0. A positive PyPSA `p_min_pu` stays in the `extensions.json`

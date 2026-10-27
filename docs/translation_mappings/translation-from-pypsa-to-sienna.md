@@ -1291,7 +1291,7 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 | — | `active_power_flow` | Set to `0.0` | PyPSA has `p0`/`p1` result fields, not an initial condition; initialise to 0 |
 | `bus0` | `arc` (from) | resolve name → bus `id` | `arc` is the integer `id` of an `Arc` whose `from_id`/`to_id` are the bus `id`s of `bus0`/`bus1` |
 | `bus1` | `arc` (to) | Name lookup → `ACBus` | Same Arc; both buses must already exist in the system |
-| `p_nom` | `rating` | Direct copy | The transfer rating of the DC line (MW); use `p_nom_opt` if available after solve |
+| `p_nom` | `rating` | `max(p_nom, p_nom × p_max_pu, −p_nom × p_min_pu)` | The transfer rating of the DC line (MW); use `p_nom_opt` if available after solve. It is `p_nom` unless a flow bound is larger, for example `p_min_pu < −1`. A reader caps each flow bound at the rating |
 | `p_nom × p_max_pu` | `operational_flow_limit.from_to_max` | Multiply | The forward flow bound (MW). The loss model carries the efficiency, so no limit is scaled by it |
 | `p_nom × p_min_pu` | `operational_flow_limit.to_from_max` | Multiply; see directionality | If `p_min_pu < 0`: `−p_nom × p_min_pu` (positive MW). Otherwise `0.0` |
 | — | `operational_flow_limit.from_to_min`, `.to_from_min` | Set to `0.0` | A positive `p_min_pu` travels in `ext["p_min_pu"]` instead |
