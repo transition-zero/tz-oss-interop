@@ -481,6 +481,10 @@ class SiennaSystemBuilder:
         link["rating_from"] = rating_from
         link["rating_to"] = rating_to
 
+    def set_link_constant_loss(self, name: str, megawatts: float) -> None:
+        self._check_not_saved(f"constant loss for HVDC line {name!r}")
+        self._link_by_name(name)["loss"]["function_data"]["constant_term"] = megawatts
+
     def add_time_series(
         self, owner_type: str, owner_name: str, name: str, values: list[float]
     ) -> None:
