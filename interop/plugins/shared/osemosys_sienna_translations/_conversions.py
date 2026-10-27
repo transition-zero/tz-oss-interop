@@ -22,6 +22,7 @@ import polars as pl
 
 from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
@@ -72,6 +73,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
     read_left_out_technologies,
+)
+from interop.plugins.shared.osemosys_sienna_translations._link_penalties import (
+    report_conversion_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -224,7 +228,9 @@ class ConversionRecords:
     events: list[TranslationEvent] = field(default_factory=list)
 
 
-def build_conversions_source(state: State, operations: OperationsYear) -> pl.DataFrame:
+def build_conversions_source(
+    state: State, operations: OperationsYear, recorder: ScopedRecorder
+) -> pl.DataFrame:
     """One row for each export whose fuels are all electricity."""
     kind = pl.col(AnnotationColumn.KIND)
     conversions = (
@@ -238,6 +244,7 @@ def build_conversions_source(state: State, operations: OperationsYear) -> pl.Dat
     if conversions.height == 0:
         return conversions
     conversions = _enrich_link(state, operations, conversions)
+    report_conversion_penalties(state, operations, conversions, recorder)
     rated = conversions.with_columns(pl.col(INPUT_RATIO).alias(RATING_RATIO))
     table = enrich_technology_values(state, operations, rated, LINK_VALUES)
     held = conversions.select(*_KEYS, pl.lit(operations.mode).alias(OPERATING_MODE))
