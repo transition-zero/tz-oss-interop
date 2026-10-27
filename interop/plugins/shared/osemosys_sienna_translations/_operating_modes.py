@@ -34,10 +34,12 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
     YEAR,
     FlowParameter,
-    TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import ActivityParameter, SupplyParameter
-from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
+from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_parameter,
+    read_parameter_all_years,
+)
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -248,15 +250,12 @@ def _read_mode_rows(
 def _read_rows(
     state: State, operations: OperationsYear, technologies: pl.DataFrame, value: ModeValue
 ) -> pl.DataFrame:
-    """A bound reads every year, through the lazy table; any other value reads the year."""
-    if not value.is_bound:
-        return read_parameter(state, value.parameter, operations.year).join(
-            technologies, on=_KEYS, how="semi"
-        )
-    table = state.source_time_series.get((TableKind.PARAMETER, value.parameter))
-    if table is None:
-        return read_parameter(state, value.parameter, operations.year)
-    return table.join(technologies.lazy(), on=_KEYS, how="semi").collect()
+    """A bound reads every year; any other value reads the operations year."""
+    if value.is_bound:
+        return read_parameter_all_years(state, value.parameter, technologies)
+    return read_parameter(state, value.parameter, operations.year).join(
+        technologies, on=_KEYS, how="semi"
+    )
 
 
 # --- the events --------------------------------------------------------------------------------

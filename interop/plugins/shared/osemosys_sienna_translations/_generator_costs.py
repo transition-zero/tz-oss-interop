@@ -15,11 +15,9 @@ from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
-    POLLUTANT,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
-    FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
@@ -54,20 +52,9 @@ FUEL_COST_MWH = "fuel_cost_mwh"
 VARIABLE_COST_MWH = "variable_cost_mwh"
 FIXED_COST = "fixed_cost"
 FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
-OTHER_MODE_VALUES = "other_mode_values"
-PARAMETER = "parameter"
-DETAIL = "detail"
 
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_TERM = "fuel_term"
-# The parameters whose rows at another operating mode the operations system leaves out, each
-# with the key column that its rows add to the technology.
-_MODE_PARAMETERS: dict[str, str | None] = {
-    SupplyParameter.VARIABLE_OPERATION_COST: None,
-    FlowParameter.INPUT_ACTIVITY_RATIO: FUEL,
-    FlowParameter.OUTPUT_ACTIVITY_RATIO: FUEL,
-    SupplyParameter.EMISSION_RATE: POLLUTANT,
-}
 
 
 def enrich_variable_costs(
@@ -121,35 +108,6 @@ def enrich_fixed_costs(
     return table.with_columns(fixed.alias(FIXED_COST_MW_YEAR))
 
 
-def enrich_other_mode_values(
-    state: State, operations: OperationsYear, technologies: pl.DataFrame
-) -> pl.DataFrame:
-    """The stated values of each operating mode other than the operations mode."""
-    return _enrich_listed_values(
-        technologies, _read_other_mode_values(state, operations, technologies)
-    )
-
-
-def _read_other_mode_values(
-    state: State, operations: OperationsYear, technologies: pl.DataFrame
-) -> pl.DataFrame:
-    return pl.concat(
-        [
-            _read_other_mode_rows(state, operations, technologies, parameter, detail)
-            for parameter, detail in _MODE_PARAMETERS.items()
-        ]
-    )
-
-
-def _enrich_listed_values(technologies: pl.DataFrame, values: pl.DataFrame) -> pl.DataFrame:
-    listed = (
-        values.sort(PARAMETER, OPERATING_MODE, DETAIL)
-        .group_by(_KEYS)
-        .agg(pl.struct(PARAMETER, OPERATING_MODE, DETAIL, VALUE_COL).alias(OTHER_MODE_VALUES))
-    )
-    return technologies.join(listed, on=_KEYS, how="left")
-
-
 def _read_own_costs(
     state: State, operations: OperationsYear, generators: pl.DataFrame
 ) -> pl.DataFrame:
@@ -186,26 +144,4 @@ def _build_fuel_terms(
             ).alias(FUEL_TERMS),
             pl.col(FUEL_TERM_MWH).sum().alias(FUEL_COST_MWH),
         )
-    )
-
-
-def _read_other_mode_rows(
-    state: State,
-    operations: OperationsYear,
-    generators: pl.DataFrame,
-    parameter: str,
-    detail: str | None,
-) -> pl.DataFrame:
-    rows = (
-        read_parameter(state, parameter, operations.year)
-        .filter((pl.col(OPERATING_MODE) != operations.mode) & (pl.col(VALUE_COL) != 0))
-        .join(generators.select(_KEYS), on=_KEYS, how="semi")
-    )
-    detail_expr = pl.lit(None, dtype=pl.Utf8) if detail is None else pl.col(detail)
-    return rows.select(
-        *_KEYS,
-        pl.lit(parameter).alias(PARAMETER),
-        OPERATING_MODE,
-        detail_expr.alias(DETAIL),
-        pl.col(VALUE_COL).cast(pl.Float64),
     )

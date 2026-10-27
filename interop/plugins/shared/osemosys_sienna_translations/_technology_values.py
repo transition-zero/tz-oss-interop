@@ -35,7 +35,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     VALUE_COL,
     YEAR,
-    TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_LIMIT,
@@ -48,6 +47,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     find_parameter_default,
     read_parameter,
+    read_parameter_all_years,
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -420,12 +420,11 @@ def _select_year(value: TechnologyValue) -> list[pl.Expr]:
 def _read_rows(
     state: State, operations: OperationsYear, keys: pl.DataFrame, value: TechnologyValue
 ) -> pl.DataFrame:
-    """A value of every year reads the lazy table of every year; another reads the year."""
-    table = state.source_time_series.get((TableKind.PARAMETER, value.parameter))
-    if not value.is_every_year or table is None:
-        rows = read_parameter(state, value.parameter, operations.year)
-        return rows.join(keys, on=keys.columns, how="semi")
-    return table.join(keys.lazy(), on=keys.columns, how="semi").collect()
+    """A value of every year reads every year; another reads the operations year."""
+    if value.is_every_year:
+        return read_parameter_all_years(state, value.parameter, keys)
+    rows = read_parameter(state, value.parameter, operations.year)
+    return rows.join(keys, on=keys.columns, how="semi")
 
 
 def _group_details(rows: pl.DataFrame, value: TechnologyValue, keys: list[str]) -> pl.DataFrame:

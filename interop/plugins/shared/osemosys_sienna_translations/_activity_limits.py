@@ -24,11 +24,11 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
     YEAR,
     FlowParameter,
-    TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_parameter_all_years,
     read_parameter_for_years,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
@@ -139,15 +139,10 @@ def _list_bounds(
 
 def _read_stated_bounds(state: State, rated: pl.DataFrame, bound: ActivityBound) -> pl.DataFrame:
     """The rows of the technologies in every year, which a parameter table holds a few of."""
-    schema = {REGION: pl.Utf8, TECHNOLOGY: pl.Utf8, YEAR: pl.Utf8, LIMIT: pl.Float64}
-    table = state.source_time_series.get((TableKind.PARAMETER, bound.parameter))
-    if table is None:
-        return pl.DataFrame(schema=schema)
     return (
-        table.join(rated.select(_KEYS).lazy(), on=_KEYS, how="semi")
+        read_parameter_all_years(state, bound.parameter, rated.select(_KEYS).unique())
         .select(*_KEYS, YEAR, pl.col(VALUE_COL).cast(pl.Float64).alias(LIMIT))
         .filter(bound.binds)
-        .collect()
     )
 
 
