@@ -40,7 +40,6 @@ from interop.plugins.shared.results_constants import (
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.shared.yearly_results_csv_constants import (
-    INDEX_FIELD_COUNT,
     RESULTS_CSV_COMPONENT,
     YEARLY_RESULTS_KEY,
     OsemosysResultVariable,
@@ -65,18 +64,9 @@ from interop.ports.outbound.reporting import (
 log = logging.getLogger(__name__)
 
 _REPORT_NAME = "report_name"
-_INDEX_COUNT = "index_count"
 _FIRST_MONTH = 1
 _FIRST_DAY = 1
 
-_WRONG_INDEX_NOTE = (
-    "{count} row(s) hold {found} index field(s), not the {expected} that the variable has, "
-    "so each is left out"
-)
-_WRONG_INDEX_WARNING = (
-    "%d variable(s) of the results CSV have rows with the wrong number of index fields, "
-    "so those rows are left out: %s"
-)
 _NO_PRODUCTION_NOTE = (
     "no technology puts out a fuel whose carrier is electricity, so production has no rows; "
     "give each electricity fuel `carrier: electricity` in the user mappings file"
@@ -196,7 +186,6 @@ class AetosResultsToResultsFormat(TranslationStep):
 
     def run(self, state: State, params: BaseModel | None) -> State:
         stated = _read_stated_variables(state)
-        self._report_wrong_index_counts(stated)
         inputs = MappingInputs(
             _reshape_variables(stated), read_results_model(state), parse_units(state)
         )
@@ -337,25 +326,6 @@ class AetosResultsToResultsFormat(TranslationStep):
             warning = report.warning.format(variable=variable)
             log.warning(warning, len(names), name_a_few(names))
 
-    def _report_wrong_index_counts(
-        self, stated: dict[OsemosysResultVariable, pl.DataFrame]
-    ) -> None:
-        notes = {
-            variable: note
-            for variable, rows in stated.items()
-            if (note := _find_wrong_index_note(variable, rows)) is not None
-        }
-        for variable, note in notes.items():
-            self._recorder.append(
-                TranslationEvent(
-                    kind=EventKind.COMPONENT_SKIPPED,
-                    sources=[_build_csv_source(variable)],
-                    note=note,
-                )
-            )
-        if notes:
-            log.warning(_WRONG_INDEX_WARNING, len(notes), name_a_few(notes))
-
     def _report_no_production(self) -> None:
         self._recorder.append(
             TranslationEvent(
@@ -406,41 +376,14 @@ def _read_stated_variables(state: State) -> dict[OsemosysResultVariable, pl.Data
     }
 
 
-def _find_wrong_index_note(variable: OsemosysResultVariable, rows: pl.DataFrame) -> str | None:
-    expected = INDEX_FIELD_COUNT.get(variable)
-    if expected is None:
-        return None
-    counts = (
-        rows.select(pl.col(YearlyResultsCol.INDEX).list.len().alias(_INDEX_COUNT))
-        .filter(pl.col(_INDEX_COUNT) != expected)
-        .group_by(_INDEX_COUNT)
-        .len()
-        .sort(_INDEX_COUNT)
-    )
-    notes = [
-        _WRONG_INDEX_NOTE.format(count=count, found=found, expected=expected)
-        for found, count in counts.rows()
-    ]
-    return "; ".join(notes) if notes else None
-
-
 def _reshape_variables(
     stated: dict[OsemosysResultVariable, pl.DataFrame],
 ) -> dict[OsemosysResultVariable, pl.DataFrame]:
     """One row for each year; the source has reported each value that is not a number."""
     return {
-        variable: _reshape_by_year(_drop_wrong_index_counts(variable, rows)).drop_nulls(
-            YearlyResultsCol.VALUE
-        )
+        variable: _reshape_by_year(rows).drop_nulls(YearlyResultsCol.VALUE)
         for variable, rows in stated.items()
     }
-
-
-def _drop_wrong_index_counts(variable: OsemosysResultVariable, rows: pl.DataFrame) -> pl.DataFrame:
-    expected = INDEX_FIELD_COUNT.get(variable)
-    if expected is None:
-        return rows
-    return rows.filter(pl.col(YearlyResultsCol.INDEX).list.len() == expected)
 
 
 def _reshape_by_year(rows: pl.DataFrame) -> pl.DataFrame:
