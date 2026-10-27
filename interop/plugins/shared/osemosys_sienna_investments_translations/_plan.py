@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
+
+import polars as pl
 
 from interop.core.pipeline import State
+from interop.plugins.shared.osemosys_sienna_constants import CalendarHourCol, CalendarPeriodCol
 from interop.plugins.shared.osemosys_sienna_translations import (
+    Calendar,
     ModelUnits,
     OperationsYear,
     build_calendar,
@@ -42,5 +47,25 @@ def find_investment_plan(state: State) -> InvestmentPlan | None:
 
 
 def build_plan_year(state: State, plan: InvestmentPlan, year: int) -> OperationsYear:
-    """One year of the plan, with the representative days of that year."""
-    return OperationsYear(year, plan.units, build_calendar(state, year), plan.mode)
+    """One year of the plan, on the representative days of the base year, from 1 January of
+    the year.
+
+    The expansion weights every year by the representative periods of the base year, so the MW
+    of each year must use the hours and the weights of those days to give back its demand.
+    """
+    calendar = build_calendar(state, plan.base_year)
+    return OperationsYear(year, plan.units, _build_moved_calendar(calendar, plan, year), plan.mode)
+
+
+def _build_moved_calendar(calendar: Calendar, plan: InvestmentPlan, year: int) -> Calendar:
+    """The same hours and periods, from 1 January of `year`."""
+    offset = _start_of(year) - _start_of(plan.base_year)
+    return replace(
+        calendar,
+        hours=calendar.hours.with_columns(pl.col(CalendarHourCol.TIMESTAMP) + offset),
+        periods=calendar.periods.with_columns(pl.col(CalendarPeriodCol.FIRST_TIMESTAMP) + offset),
+    )
+
+
+def _start_of(year: int) -> datetime:
+    return datetime(year, 1, 1)

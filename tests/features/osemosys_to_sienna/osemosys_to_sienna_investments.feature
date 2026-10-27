@@ -450,6 +450,26 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2030" with 48 values that peak at 0.8
     And the portfolio "outputs/portfolio.json" has a series of "SupplyTechnology" "ATSOLAR" for the year "2035" with 48 values that peak at 0.9
 
+  Scenario: The demand of a later year takes the representative days of the earliest year
+    The expansion weights each year by the representative days of the earliest year. So the
+    MW of 2035 divide its demand by the hours of the timeslices in 2030, and the 2035 demand of
+    1752 GWh comes back over those days. With the year_split of 2035 itself, S2B2 would hold
+    88.9 MW, not 133.3 MW.
+    Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
+      | TIMESLICE | YEAR | VALUE  |
+      | S1B1      | 2030 | 0.125  |
+      | S1B2      | 2030 | 0.375  |
+      | S2B1      | 2030 | 0.125  |
+      | S2B2      | 2030 | 0.375  |
+      | S1B1      | 2035 | 0.0625 |
+      | S1B2      | 2035 | 0.1875 |
+      | S2B1      | 2035 | 0.1875 |
+      | S2B2      | 2035 | 0.5625 |
+    When I translate the otoole model to a Sienna investments portfolio
+    Then the pipeline exit code is 0
+    And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" with 48 values from 133.333333333333 to 400
+    And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" that starts at "2035-01-01T00:00:00"
+
   Scenario: An output path in another directory takes the companions of the system and of the portfolio with it
     When I translate the otoole model to a Sienna investments portfolio, with only the system at "plans/system.json" and the portfolio at "plans/portfolio.json"
     Then the pipeline exit code is 0

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
+from typing import Any
 
 import h5py
 from pytest_bdd import parsers, then
@@ -90,7 +91,53 @@ def assert_portfolio_series(
     path: str, component_type: str, name: str, year: str, length: int, peak: float
 ) -> None:
     """A series of the portfolio, found by its feature `year` in the HDF5 companion it names."""
+    values = _read_portfolio_series(path, component_type, name, year)
+    assert len(values) == length, f"expected {length} values, got {len(values)}"
+    assert math.isclose(max(values), peak, rel_tol=1e-9), f"expected peak {peak}, got {max(values)}"
+
+
+@then(
+    parsers.parse(
+        'the portfolio "{path}" has a series of "{component_type}" "{name}" for the year'
+        ' "{year}" with {length:d} values from {low:g} to {peak:g}'
+    )
+)
+def assert_portfolio_series_range(
+    path: str, component_type: str, name: str, year: str, length: int, low: float, peak: float
+) -> None:
+    """The lowest and the highest value of a series of the portfolio."""
+    values = _read_portfolio_series(path, component_type, name, year)
+    assert len(values) == length, f"expected {length} values, got {len(values)}"
+    assert math.isclose(min(values), low, rel_tol=1e-9), f"expected low {low}, got {min(values)}"
+    assert math.isclose(max(values), peak, rel_tol=1e-9), f"expected peak {peak}, got {max(values)}"
+
+
+@then(
+    parsers.parse(
+        'the portfolio "{path}" has a series of "{component_type}" "{name}" for the year'
+        ' "{year}" that starts at "{timestamp}"'
+    )
+)
+def assert_portfolio_series_start(
+    path: str, component_type: str, name: str, year: str, timestamp: str
+) -> None:
+    """The first timestamp of a series of the portfolio, as its association states it."""
+    association = _find_series_association(read_json(path), component_type, name, year)
+    actual = association["initial_timestamp"]
+    assert actual == timestamp, f"expected the series to start at {timestamp!r}, got {actual!r}"
+
+
+def _read_portfolio_series(path: str, component_type: str, name: str, year: str) -> list[float]:
     document = read_json(path)
+    association = _find_series_association(document, component_type, name, year)
+    storage = Path(path).parent / document["time_series_storage_file"]
+    with h5py.File(storage, "r") as hf:
+        return list(hf[f"time_series/{association['time_series_uuid']}/data"][:])
+
+
+def _find_series_association(
+    document: dict[str, Any], component_type: str, name: str, year: str
+) -> dict[str, Any]:
     owner_id = find_sienna_component(document, component_type, name)["id"]
     matching = [
         association
@@ -100,11 +147,7 @@ def assert_portfolio_series(
         and association["features"].get("year") == year
     ]
     assert len(matching) == 1, f"expected 1 series of {name!r} for {year}, got {matching!r}"
-    storage = Path(path).parent / document["time_series_storage_file"]
-    with h5py.File(storage, "r") as hf:
-        values = list(hf[f"time_series/{matching[0]['time_series_uuid']}/data"][:])
-    assert len(values) == length, f"expected {length} values, got {len(values)}"
-    assert math.isclose(max(values), peak, rel_tol=1e-9), f"expected peak {peak}, got {max(values)}"
+    return matching[0]
 
 
 @then(

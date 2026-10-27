@@ -1,6 +1,7 @@
 """The hourly series of the portfolio: one for each owner and each year of the plan.
 
-A series covers the representative days of one year, from 1 January of that year. Its feature
+A series covers the representative days of the base year, from 1 January of its own year, as
+the expansion weights every year by the representative periods of the base year. Its feature
 `year` names the year, as PowerSystemsInvestments.jl reads a series of an investment period. The
 values are in natural units: MW of demand, or the per-unit availability of a technology. The
 portfolio sink writes them to an HDF5 companion of its own.
