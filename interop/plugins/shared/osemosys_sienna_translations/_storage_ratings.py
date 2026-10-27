@@ -90,14 +90,15 @@ def enrich_ratings(
     discharge caps it.
     """
     units = operations.units
-    table = _enrich_rates(state, operations, storages).with_columns(
-        (_express_capacity_mw(units, DISCHARGE_SIDE) * pl.col(DISCHARGE_SIDE.ratio)).alias(
-            POWER_MW
-        ),
+    table = _enrich_rates(state, operations, storages)
+    table = table.with_columns(
+        _express_activity_mw(table, units, side).alias(side.activity_mw) for side in STORAGE_SIDES
+    ).with_columns(
+        (pl.col(DISCHARGE_SIDE.activity_mw) * pl.col(DISCHARGE_SIDE.ratio)).alias(POWER_MW),
         units.convert_energy_to_mwh(pl.col(ENERGY)).alias(ENERGY_MWH),
     )
     return table.with_columns(
-        *(_express_limit(units, side).alias(side.limit) for side in STORAGE_SIDES),
+        *(_express_limit(side).alias(side.limit) for side in STORAGE_SIDES),
         (pl.col(ENERGY_MWH) / pl.col(POWER_MW)).alias(STORAGE_HOURS),
         (pl.col(CHARGE_SIDE.link_value) / pl.col(CHARGE_SIDE.ratio)).alias(EFFICIENCY_IN),
         (pl.col(DISCHARGE_SIDE.ratio) / pl.col(DISCHARGE_SIDE.link_value)).alias(EFFICIENCY_OUT),
@@ -150,17 +151,32 @@ def enrich_storage_fixed_costs(
     )
 
 
-def _express_capacity_mw(units: ModelUnits, side: StorageSide) -> pl.Expr:
-    return units.convert_capacity_to_mw(pl.col(side.capacity))
+def _express_activity_mw(table: pl.DataFrame, units: ModelUnits, side: StorageSide) -> pl.Expr:
+    """MW of activity: the capacity × its yearly activity over 8760 h, or the capacity in the
+    capacity unit where the model states no capacity_to_activity_unit."""
+    capacity = pl.col(side.capacity)
+    is_stated = pl.col(side.capacity_to_activity).is_not_null()
+    yearly = capacity * pl.col(side.capacity_to_activity)
+    stated = _convert_where(table, is_stated, yearly, units.convert_energy_to_mwh)
+    unstated = _convert_where(table, ~is_stated, capacity, units.convert_capacity_to_mw)
+    return pl.when(is_stated).then(stated / HOURS_PER_YEAR).otherwise(unstated)
 
 
-def _express_limit(units: ModelUnits, side: StorageSide) -> pl.Expr:
+def _convert_where(
+    table: pl.DataFrame, rows: pl.Expr, value: pl.Expr, convert: Callable[[pl.Expr], pl.Expr]
+) -> pl.Expr:
+    """The value in Sienna units; a unit that no row of `rows` needs is not asked for."""
+    is_needed = table.select(rows.any()).item()
+    return convert(value) if is_needed else value
+
+
+def _express_limit(side: StorageSide) -> pl.Expr:
     """The most power of one side, per unit of the base power.
 
     A rate caps the storage side, so the cap takes the grid side of that rate.
     """
     ratio = pl.col(side.ratio)
-    derated = _express_capacity_mw(units, side) * ratio * pl.col(side.availability)
+    derated = pl.col(side.activity_mw) * ratio * pl.col(side.availability)
     capped = pl.col(side.rate_mw) * ratio / pl.col(side.link_value)
     return pl.min_horizontal(derated, capped) / pl.col(POWER_MW)
 

@@ -18,6 +18,10 @@ DISCHARGE_MODE = "discharge_mode"
 DISCHARGE_LINKS = "discharge_links"
 CHARGE_CAPACITY = "charge_capacity"
 DISCHARGE_CAPACITY = "discharge_capacity"
+CHARGE_CAPACITY_TO_ACTIVITY = "charge_capacity_to_activity"
+DISCHARGE_CAPACITY_TO_ACTIVITY = "discharge_capacity_to_activity"
+CHARGE_ACTIVITY_MW = "charge_activity_mw"
+DISCHARGE_ACTIVITY_MW = "discharge_activity_mw"
 CHARGE_RATIO = "charge_input_ratio"
 DISCHARGE_RATIO = "discharge_output_ratio"
 POWER_MW = "power_mw"
@@ -67,6 +71,8 @@ class StorageSide(NamedTuple):
     links: str
     link_value: str
     capacity: str
+    capacity_to_activity: str
+    activity_mw: str
     availability: str
     ratio: str
     rate: str
@@ -94,6 +100,8 @@ CHARGE_SIDE = StorageSide(
     links=CHARGE_LINKS,
     link_value=CHARGE_LINK_VALUE,
     capacity=CHARGE_CAPACITY,
+    capacity_to_activity=CHARGE_CAPACITY_TO_ACTIVITY,
+    activity_mw=CHARGE_ACTIVITY_MW,
     availability=CHARGE_AVAILABILITY,
     ratio=CHARGE_RATIO,
     rate=CHARGE_RATE,
@@ -115,6 +123,8 @@ DISCHARGE_SIDE = StorageSide(
     links=DISCHARGE_LINKS,
     link_value=DISCHARGE_LINK_VALUE,
     capacity=DISCHARGE_CAPACITY,
+    capacity_to_activity=DISCHARGE_CAPACITY_TO_ACTIVITY,
+    activity_mw=DISCHARGE_ACTIVITY_MW,
     availability=DISCHARGE_AVAILABILITY,
     ratio=DISCHARGE_RATIO,
     rate=DISCHARGE_RATE,

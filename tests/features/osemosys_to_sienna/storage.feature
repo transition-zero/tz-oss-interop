@@ -61,10 +61,11 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       | osemosys: {units: {energy: GWh}, objects: {fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}]}} |
 
   Rule: A storage with energy becomes an EnergyReservoirStorage that the technology linked to it rates
-    The invented storages below are at AT. The pumped-storage plant ATPHS charges the storage
-    ATPHSS in mode 1 and discharges it in mode 2. It takes in 1.25 units of electricity for each
-    unit of its activity when it charges, and puts 0.9 of a unit into the storage. It puts out
-    0.8 when it discharges. Each other storage is left out for one reason:
+    The invented storages below are at AT. One GW of each technology runs 8760 GWh of activity
+    in a year. The pumped-storage plant ATPHS charges the storage ATPHSS in mode 1 and discharges
+    it in mode 2. It takes in 1.25 units of electricity for each unit of its activity when it
+    charges, and puts 0.9 of a unit into the storage. It puts out 0.8 when it discharges. Each
+    other storage is left out for one reason:
 
     - ATBATS has no residual storage capacity in 2030.
     - ATFLYS has a discharging technology whose category no carriers: row names.
@@ -90,6 +91,9 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
         | R1     | HTHEAT     | 2030 | 0.01  |
         | R1     | ATNOOUT    | 2030 | 0.01  |
         | R1     | ATNOIN     | 2030 | 0.01  |
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATPHS      | 8760  |
       And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
         | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
         | R1     | ATPHS      | ATELEC  | 1                 | 2030 | 1.25  |
@@ -212,6 +216,37 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 7.5
       And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATPHS.CO2 at the discharge mode 2` = 400.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8 | `sienna.EnergyReservoirStorage.ATPHSS.operation_cost discharge emission penalty of CO2` = 5.0 \$/MWh"
       And the file "decisions.md" contains "`sienna.EnergyReservoirStorage.ATPHSS.operation_cost charge emission penalty of CO2` = 1.0 \$/MWh"
+
+    Scenario: A storage is rated on the activity that the capacity to activity unit of its technology states
+      One GW of ATPHS runs 4380 GWh of activity in a year, which is 50 MW of activity. It puts
+      out 0.8 MW of electricity for each MW of activity, so the storage is rated at 40 MW.
+      Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE |
+        | R1     | ATPHS      | 4380  |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "base_power" set to 40.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "storage_capacity" set to 20.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 1.5625
+      And the file "decisions.md" contains "`osemosys.residual_capacity.R1/ATPHS` = 0.1<br>`osemosys.capacity_to_activity_unit.R1/ATPHS` = 4380.0<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8 | `sienna.EnergyReservoirStorage.ATPHSS.base_power` = 40.0 MVA"
+
+    Scenario: A separate charging technology is rated on the activity that its own capacity to activity unit states
+      ATBATT discharges ATPHSS at 50 MW of activity, and puts out 0.9 MW for each, so the storage
+      is rated at 45 MW. ATPHS charges it. One GW of ATPHS runs 3153.6 GWh in a year, which is
+      36 MW of activity, and it takes in 1.25 MW for each, so it draws 45 MW.
+      Given the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATBATT     | ATPHSS  | 2                 | 1     |
+      And the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
+        | REGION | TECHNOLOGY | VALUE  |
+        | R1     | ATPHS      | 3153.6 |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "base_power" set to 45.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "input_active_power_limits.max" set to 1.0
 
     Scenario: The availability, the charge and discharge rates and the fixed cost of a storage are applied
       Given the otoole parameter "AvailabilityFactor" keyed by "REGION TECHNOLOGY YEAR" with default 1 has the rows:
