@@ -68,7 +68,9 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._events imp
     PRICED_YEAR,
     TECHNOLOGY_SOURCE,
     CandidateMember,
+    CandidateRules,
     Identity,
+    build_candidate_rules,
     build_derived_translation,
     build_identity_translations,
     build_lifetime_translations,
@@ -134,7 +136,6 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_REPORT_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
-    build_no_carriers_row_note,
     list_area_names,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
@@ -165,7 +166,7 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     default_translation,
-    filter_component,
+    drop_skipped,
 )
 from interop.ports.outbound.reporting import SourceField
 
@@ -312,16 +313,7 @@ def _drop_skipped(
     storages: pl.DataFrame, areas: list[str], recorder: ScopedRecorder
 ) -> pl.DataFrame:
     """Take out the candidates that each rule drops; the link rule comes first."""
-    storages = _apply_rules(storages, _build_link_rules(), recorder)
-    return _apply_rules(storages, _build_skip_rules(areas), recorder)
-
-
-def _apply_rules(
-    storages: pl.DataFrame, rules: list[SkipRule], recorder: ScopedRecorder
-) -> pl.DataFrame:
-    for rule in rules:
-        storages, _ = filter_component(storages, rule.keep, rule.report, recorder)
-    return storages
+    return drop_skipped(storages, [*_build_link_rules(), *_build_skip_rules(areas)], recorder)
 
 
 def _express_has_one_link() -> pl.Expr:
@@ -344,6 +336,11 @@ def _build_link_rules() -> list[SkipRule]:
     ]
 
 
+_RULES = CandidateRules(
+    types=(SiennaComponent.ENERGY_RESERVOIR_STORAGE,), type_noun="storage", member_noun="storage"
+)
+
+
 def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
     skip = TECHNOLOGY_SOURCE.skip
     return [
@@ -363,43 +360,7 @@ def _build_skip_rules(areas: list[str]) -> list[SkipRule]:
                 attribute_col=STORAGE_REPORT_NAME,
             ),
         ),
-        SkipRule(
-            pl.col(SIENNA_TYPE).is_not_null(),
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and have a category that no carriers: row names",
-                note=lambda row: build_no_carriers_row_note(row[AnnotationColumn.CATEGORY]),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.CATEGORY,
-            ),
-        ),
-        SkipRule(
-            pl.col(SIENNA_TYPE) == SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and discharge a storage, but have a carriers: row that "
-                "names a type that is not a storage",
-                note=lambda row: (
-                    f"the carriers: row of the category names {row[SIENNA_TYPE]}, which a "
-                    "storage cannot become"
-                ),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.CATEGORY,
-            ),
-        ),
-        SkipRule(
-            pl.col(AnnotationColumn.LOCATION).is_in(areas),
-            skip(
-                name_col=REPORT_NAME,
-                reason="may be built and have a location that holds no electricity bus",
-                note=(
-                    "no electricity fuel with a bus is at the location, so the storage is in no "
-                    "region"
-                ),
-                listed=_LISTED,
-                attribute_col=AnnotationColumn.LOCATION,
-            ),
-        ),
+        *build_candidate_rules(areas, _RULES),
         SkipRule(
             (pl.col(DISCHARGE_RATIO) > 0) & (pl.col(CHARGE_RATIO) > 0),
             skip(
