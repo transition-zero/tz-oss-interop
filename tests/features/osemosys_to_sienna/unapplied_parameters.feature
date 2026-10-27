@@ -86,3 +86,14 @@ Feature: osemosys-csv-to-sienna reports each row of a parameter that no step of 
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "bus" set to 1
     And the log contains "output_activity_ratio states"
     And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC"
+
+  Scenario: A row that names a route and no region is reported by its route
+    A trade route of the heat ATHEAT has no component in the operations system.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole parameter "TradeRoute" keyed by "REGION _REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | _REGION | FUEL   | YEAR | VALUE |
+      | R1     | R2      | ATHEAT | 2030 | 1     |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the log contains "1 route(s) whose transport_route states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Routes: R1/R2/ATHEAT"
+    And the file "decisions.md" contains "| `osemosys.transport_route.R1/R2/ATHEAT.year 2030` = 1.0 |  |  | 1 row(s) for 2030; no step of the pipeline applies this parameter"
