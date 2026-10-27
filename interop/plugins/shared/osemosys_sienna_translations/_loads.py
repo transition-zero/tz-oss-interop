@@ -202,6 +202,12 @@ def build_load_series(
     return _build_loads(state, operations, _LoadInputs(fuels, _drop_silently, recorder)).series
 
 
+def read_load_demands(state: State, year: int) -> pl.DataFrame:
+    """The annual demand of each load of the year, as the model states it, with no report."""
+    fuels = _read_located_electricity_fuels(state)
+    return _enrich_load_names(_read_demands(state, year, fuels, _drop_silently))
+
+
 @dataclass(frozen=True)
 class _LoadInputs:
     """The fuels whose demand becomes a load, with the bus of each, and how rows drop."""

@@ -9,19 +9,18 @@ on those days, and the events of that year name the year in their step.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_MW, Framework, StagedTimeSeriesCol
-from interop.plugins.shared.osemosys_canonical.constants import FUEL
+from interop.plugins.shared.osemosys_canonical.constants import FUEL, YEAR
 from interop.plugins.shared.osemosys_sienna_constants import (
     SERIES_YEAR_SEPARATOR,
     DemandParameter,
 )
-from interop.plugins.shared.osemosys_sienna_investments_translations._events import EACH_YEAR
 from interop.plugins.shared.osemosys_sienna_investments_translations._series import (
     PORTFOLIO_SERIES_NAME,
     PortfolioSeries,
@@ -41,6 +40,7 @@ from interop.plugins.shared.osemosys_sienna_translations._loads import (
     ANNUAL_DEMAND,
     DEMAND_PARAMETER,
     LOAD_NAME,
+    read_load_demands,
 )
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     NO_RETIREMENT_COST_NOTE,
@@ -128,7 +128,8 @@ def build_demand_series(
             else _build_year_loads(state, operations, recorder)
         )
         series.append(_build_kept_series(year, year_loads, loads, recorder))
-    _record_series(loads, recorder)
+    unit = plan_years[base_year].units.energy_unit
+    _record_series(_read_yearly_demands(state, plan_years, loads), unit, recorder)
     return series
 
 
@@ -197,17 +198,32 @@ def _build_new_load_report(year: int, parameter: DemandParameter) -> SkipReport:
     )
 
 
-def _record_series(loads: Sequence[str], recorder: ScopedRecorder) -> None:
-    for name in loads:
-        recorder.append(_build_series_event(name))
+def _read_yearly_demands(
+    state: State, plan_years: Mapping[int, OperationsYear], loads: Sequence[str]
+) -> pl.DataFrame:
+    """The fuel and the demand parameter of each base system load, with its demand each year."""
+    stated = pl.concat(
+        [
+            read_load_demands(state, year).with_columns(pl.lit(year, dtype=pl.Int64).alias(YEAR))
+            for year in sorted(plan_years)
+        ]
+    )
+    base_loads = pl.DataFrame({LOAD_NAME: sorted(loads)}, schema={LOAD_NAME: pl.Utf8})
+    return (
+        base_loads.join(stated, on=LOAD_NAME, how="inner", maintain_order="left_right")
+        .group_by(LOAD_NAME, FUEL_NAME, DEMAND_PARAMETER, maintain_order=True)
+        .agg(YEAR, ANNUAL_DEMAND)
+    )
 
 
-def _build_series_event(name: str) -> TranslationEvent:
-    sources = [
-        build_osemosys_field(parameter, name, EACH_YEAR)
-        for parameter in (
-            DemandParameter.SPECIFIED_ANNUAL_DEMAND,
-            DemandParameter.ACCUMULATED_ANNUAL_DEMAND,
-        )
-    ]
-    return build_series_event(_OWNER, name, sources, _SERIES_DERIVATION, UNIT_MW)
+def _record_series(demands: pl.DataFrame, unit: str | None, recorder: ScopedRecorder) -> None:
+    for row in demands.iter_rows(named=True):
+        recorder.append(_build_series_event(row, unit))
+
+
+def _build_series_event(row: dict[str, Any], unit: str | None) -> TranslationEvent:
+    by_year = {
+        str(year): demand for year, demand in zip(row[YEAR], row[ANNUAL_DEMAND], strict=True)
+    }
+    source = build_osemosys_field(FUEL, row[FUEL_NAME], row[DEMAND_PARAMETER], by_year, unit)
+    return build_series_event(_OWNER, row[LOAD_NAME], [source], _SERIES_DERIVATION, UNIT_MW)
