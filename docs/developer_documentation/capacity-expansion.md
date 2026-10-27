@@ -41,10 +41,6 @@ The expansion adapter declares the two packages on top of the packages that a di
 on, so a dispatch never installs them. Both pins resolve beside the dispatch solver, so the
 first expansion adds them to the one Julia environment that serves dispatch and expansion.
 
-The pin of the solver package was `f68d202`. An upstream rewrite of `al/storage_integer`
-removed that commit, so the pin is now `8bfed9f`, the head of the rewritten branch. Both
-commits have the author date 3 August 2026.
-
 ## The envelope
 
 The package reads one flat `components` list under `data`, and a `__metadata__` block on
@@ -263,12 +259,17 @@ two periods carry no operations.
 
 ## Running it
 
-The `solve` command's model type `sienna-investments` takes the portfolio path and two
-answers the data does not state:
+The `solve` command's model type `sienna-investments` takes the portfolio path and these
+answers, which the data does not state:
 
 - **the balance model**: `single-region`, `multi-region` or `nodal`;
 - **the investment treatment**: `continuous` builds any amount of capacity, `integer` builds
-  whole units only and is much slower.
+  whole units only and is much slower;
+- **the discount rate**: a blank answer keeps the rate that the portfolio states, and a
+  number replaces it (see "The discount rate" below);
+- **the HiGHS answers**, as a dispatch asks them: the solver algorithm, presolve, crossover,
+  and a time limit in seconds, where a blank answer means no limit;
+- **the output directory**, which is `expanded` beside the portfolio by default.
 
 Everything else the portfolio states. The adapter names one formulation triple per technology
 type the portfolio holds, and none for a type it does not:

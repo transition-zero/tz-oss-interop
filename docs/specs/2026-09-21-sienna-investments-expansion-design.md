@@ -24,12 +24,16 @@ Four things stand in the way.
 
 ## What runs, proved by running it
 
-The design rests on seven probes against Julia 1.11.9. These are the two commits they used:
+The design rests on seven probes against Julia 1.11.9. These are the two commits that the
+adapter pins:
 
 | Package | Branch | Commit | Date |
 |---|---|---|---|
-| PowerSystemsInvestments.jl | `al/storage_integer` | `f68d202694e17e7a0a0156490d2b7c2e9167bdb7` | 3 Aug 2026 |
+| PowerSystemsInvestments.jl | `al/storage_integer` | `8bfed9f2e8cb254ac0121c5dec8d7804dace2c8d` | 3 Aug 2026 |
 | PowerSystemsInvestmentsPortfolios.jl | `main` | `d72d61c1be2f7cdd5d54d7464b902973eead77b3` | 6 Aug 2026 |
+
+The probes ran on `f68d202`, the earlier head of `al/storage_integer`. An upstream rewrite of
+the branch replaced that commit with `8bfed9f`, which has the same author date.
 
 That pair came from comparing every name each solver branch calls on the data package against
 every name the data package's `main` branch defines. Of 26 solver branches, 14 still ask for
