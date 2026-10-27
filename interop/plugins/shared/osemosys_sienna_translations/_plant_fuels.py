@@ -9,7 +9,8 @@ the penalty of the own emissions of the plant, in $/MWh of electricity.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -43,17 +44,25 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     TECHNOLOGY_NAME,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import OWN_COST_MWH
+from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
+    OWN_COST,
+    OWN_COST_MWH,
+)
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
     OWN_RATE,
+    PENALTY,
     PENALTY_PER_TONNE,
     STATED_OWN_RATES,
     read_emission_penalties,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_events import (
+    build_output_ratio_source,
+    build_region_name,
+)
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
 from interop.plugins.shared.translation_runner import DestinationFieldFactory
-from interop.ports.outbound.reporting import TranslationEvent
+from interop.ports.outbound.reporting import SourceField, TranslationEvent
 
 FUEL_BUSES = "fuel_buses"
 OWN_RATES = "own_rates"
@@ -111,44 +120,88 @@ def build_plant_fuel_events(
     dest: DestinationFieldFactory, old: dict[str, Any], name_col: str
 ) -> list[TranslationEvent]:
     """One event for each of the three fields, where the generator burns a fuel with a bus."""
-    name = old[name_col]
-    report = old[TECHNOLOGY_NAME]
-    values = (
-        (
-            FUEL_BUSES,
-            build_fuel_buses_field(old),
-            None,
-            (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO),
-            _FUEL_BUSES_DERIVATION,
-        ),
-        (
-            "own_marginal_cost",
-            build_own_cost_field(old),
-            UNIT_DOLLARS_PER_MWH,
-            (
-                SupplyParameter.VARIABLE_OPERATION_COST,
-                SupplyParameter.EMISSION_RATE,
-                SupplyParameter.EMISSION_PENALTY,
-            ),
-            _OWN_COST_DERIVATION,
-        ),
-        (
-            "own_emission_rates_t_per_mwh",
-            build_own_rates_field(old),
-            UNIT_TONNES_PER_MWH,
-            (SupplyParameter.EMISSION_RATE, FlowParameter.OUTPUT_ACTIVITY_RATIO),
-            _OWN_RATES_DERIVATION,
-        ),
-    )
     return [
         build_derived(
-            [build_osemosys_field(parameter, report) for parameter in parameters],
-            [dest(name, f"{EXTENSIONS_PREFIX}{field}", value, unit)],
-            derivation,
+            field.build_sources(old),
+            [dest(old[name_col], f"{EXTENSIONS_PREFIX}{field.field}", value, field.unit)],
+            field.derivation,
         )[0]
-        for field, value, unit, parameters, derivation in values
-        if value is not None
+        for field in _PLANT_FUEL_FIELDS
+        if (value := field.build_value(old)) is not None
     ]
+
+
+def _build_fuel_bus_sources(old: dict[str, Any]) -> list[SourceField]:
+    report = old[TECHNOLOGY_NAME]
+    inputs = [
+        build_osemosys_field(
+            FlowParameter.INPUT_ACTIVITY_RATIO, report, bus[FUEL], bus[INPUT_RATIO]
+        )
+        for bus in old[FUEL_BUSES] or []
+    ]
+    return [*inputs, build_output_ratio_source(old)]
+
+
+def _build_own_cost_sources(old: dict[str, Any]) -> list[SourceField]:
+    cost = build_osemosys_field(
+        SupplyParameter.VARIABLE_OPERATION_COST, old[TECHNOLOGY_NAME], None, old[OWN_COST]
+    )
+    emissions = [
+        source
+        for rate in old[OWN_RATES] or []
+        for source in (
+            _build_own_rate_source(old, rate),
+            build_osemosys_field(
+                SupplyParameter.EMISSION_PENALTY,
+                build_region_name(old, rate[POLLUTANT]),
+                None,
+                rate[PENALTY],
+            ),
+        )
+    ]
+    return [cost, *emissions, build_output_ratio_source(old)]
+
+
+def _build_own_rate_sources(old: dict[str, Any]) -> list[SourceField]:
+    rates = [_build_own_rate_source(old, rate) for rate in old[OWN_RATES] or []]
+    return [*rates, build_output_ratio_source(old)]
+
+
+def _build_own_rate_source(old: dict[str, Any], rate: dict[str, Any]) -> SourceField:
+    return build_osemosys_field(
+        SupplyParameter.EMISSION_RATE, old[TECHNOLOGY_NAME], rate[POLLUTANT], rate[OWN_RATE]
+    )
+
+
+class _PlantFuelField(NamedTuple):
+    """One field of the record that the fuels of a plant fill, and how its event reads."""
+
+    field: str
+    unit: str | None
+    build_value: Callable[[dict[str, Any]], Any]
+    build_sources: Callable[[dict[str, Any]], list[SourceField]]
+    derivation: str
+
+
+_PLANT_FUEL_FIELDS = (
+    _PlantFuelField(
+        FUEL_BUSES, None, build_fuel_buses_field, _build_fuel_bus_sources, _FUEL_BUSES_DERIVATION
+    ),
+    _PlantFuelField(
+        "own_marginal_cost",
+        UNIT_DOLLARS_PER_MWH,
+        build_own_cost_field,
+        _build_own_cost_sources,
+        _OWN_COST_DERIVATION,
+    ),
+    _PlantFuelField(
+        "own_emission_rates_t_per_mwh",
+        UNIT_TONNES_PER_MWH,
+        build_own_rates_field,
+        _build_own_rate_sources,
+        _OWN_RATES_DERIVATION,
+    ),
+)
 
 
 def _build_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFrame) -> pl.DataFrame:
@@ -158,10 +211,10 @@ def _build_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFra
     return (
         inputs.join(fuels, on=[REGION, FUEL])
         .join(generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO), on=_KEYS)
-        .select(*_KEYS, FUEL_BUS, ratio)
+        .select(*_KEYS, FUEL_BUS, FUEL, INPUT_RATIO, ratio)
         .sort([_FUEL_RATIO, FUEL_BUS], descending=[True, False])
         .group_by(_KEYS, maintain_order=True)
-        .agg(pl.struct(FUEL_BUS, _FUEL_RATIO).alias(FUEL_BUSES))
+        .agg(pl.struct(FUEL_BUS, FUEL, INPUT_RATIO, _FUEL_RATIO).alias(FUEL_BUSES))
     )
 
 
@@ -193,7 +246,7 @@ def _build_own_rates(
         priced.sort(POLLUTANT)
         .group_by(_KEYS)
         .agg(
-            pl.struct(POLLUTANT, _RATE).alias(OWN_RATES),
+            pl.struct(POLLUTANT, OWN_RATE, PENALTY, _RATE).alias(OWN_RATES),
             (pl.col(_RATE) * pl.col(PENALTY_PER_TONNE)).sum().alias(_OWN_PENALTY),
         )
     )
