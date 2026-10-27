@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from interop.core.extensions import ExtensionKind, append_extensions
+from interop.core.extensions import ExtensionKind, GeneratorExtension, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
@@ -14,6 +14,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_fuel_loads_source,
     build_fuel_modes_source,
     build_fuel_records,
+    report_unsupplied_fuel_buses,
     set_fuel_values_persisted,
 )
 
@@ -34,6 +35,9 @@ class OsemosysToSiennaMapFuels(OperationsMapping):
         modes = build_fuel_modes_source(state, operations, self._recorder)
         loads = build_fuel_loads(state, build_fuel_loads_source(state, operations, self._recorder))
         built = build_fuel_records(modes, loads.buses, operations.year)
+        suppliers = [*built.generators, *built.conversions]
+        plants = _list_plants(state)
+        report_unsupplied_fuel_buses(suppliers, loads.records, plants, self._recorder)
         staged = state.destination_extensions
         append_extensions(staged, ExtensionKind.BUS, built.buses)
         append_extensions(staged, ExtensionKind.GENERATOR, built.generators)
@@ -45,3 +49,11 @@ class OsemosysToSiennaMapFuels(OperationsMapping):
             state.destination_extension_series[ExtensionKind.LOAD] = loads.series.lazy()
         if modes.height > 0:
             set_fuel_values_persisted(state, modes)
+
+
+def _list_plants(state: State) -> list[GeneratorExtension]:
+    """The generator records that the generators step wrote and that burn a fuel with a bus."""
+    staged = state.destination_extensions.get(ExtensionKind.GENERATOR, [])
+    return [
+        record for record in staged if isinstance(record, GeneratorExtension) and record.fuel_buses
+    ]

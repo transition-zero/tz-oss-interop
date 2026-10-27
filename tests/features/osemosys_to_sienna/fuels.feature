@@ -549,6 +549,42 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON load extension record for "ATGAS/accumulated" having "bus" set to "R1/ATGAS"
       And the file "outputs/extensions.json" parses as JSON load extension record for "ATGAS/accumulated" having "p_set" close to 100.0
 
+    Scenario: A fuel bus that has a load and no supply is reported
+      The gas plant also puts out 0.8 units of heat for each unit of electricity, which no
+      record holds. So the heat demand of 876 GWh is a load of 100 MW at R1/ATHEAT, and no
+      technology supplies that bus.
+      Given the otoole set "FUEL" holds "ATELEC DEELEC GAS ATGAS DEGAS ATOIL ATHEAT"
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATGASCC    | ATHEAT | 1                 | 2030 | 0.8   |
+        | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
+        | R1     | ATGASLNG   | ATGAS  | 1                 | 2030 | 1     |
+        | R1     | DEGASWELL  | DEGAS  | 1                 | 2030 | 1     |
+        | R1     | DEATPIPE   | ATGAS  | 1                 | 2030 | 0.99  |
+        | R1     | DEATPIPE   | DEGAS  | 2                 | 2030 | 0.98  |
+        | R1     | ATREFINERY | ATOIL  | 1                 | 2030 | 0.8   |
+      And the otoole parameter "AccumulatedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+        | REGION | FUEL   | YEAR | VALUE |
+        | R1     | DEELEC | 2030 | 876   |
+        | R1     | ATHEAT | 2030 | 876   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/extensions.json" parses as JSON load extension record for "ATHEAT/accumulated" having "bus" set to "R1/ATHEAT"
+      And the log contains "osemosys-to-sienna: 1 fuel bus(es) have a load or a plant that draws from them, and no technology of the operations year supplies them, so a PyPSA network cannot meet that demand. Buses: R1/ATHEAT"
+      And the file "decisions.md" contains "| `osemosys.fuel.R1/ATHEAT` |  |  | the load(s) ATHEAT/accumulated draw from the bus, and no technology of the operations year supplies it"
+      And the log does not contain "R1/ATGAS, R1/ATHEAT"
+
+    Scenario: A fuel bus that a plant draws from and that no technology can supply is reported
+      Each technology that makes ATGAS is left out: the operations year has no gas well, LNG
+      terminal or pipeline, ATSHUT may not run, and ATCOSTLY has no capacity. So the gas plant
+      and the gas demand draw from a bus that nothing supplies.
+      Given the otoole set "TECHNOLOGY" holds "ATGASCC DEGASWELL ATREFINERY ATSHUT ATCOSTLY"
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "have a load or a plant that draws from them, and no technology of the operations year supplies them, so a PyPSA network cannot meet that demand. Buses: R1/ATGAS"
+      And the file "decisions.md" contains "| `osemosys.fuel.R1/ATGAS` |  |  | the load(s) ATGAS/accumulated and the plant(s) ATGASCC draw from the bus, and no technology of the operations year supplies it"
+
     Scenario: A limit of a technology that runs in two modes binds their sum, so the report names it
       Each mode of the pipeline is a link of its own, and no one link can hold a limit on the
       sum of the two.

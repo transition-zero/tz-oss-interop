@@ -129,6 +129,9 @@ from interop.plugins.shared.osemosys_sienna_translations._unapplied_parameters i
     report_unapplied_parameters,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
+from interop.plugins.shared.osemosys_sienna_translations._unsupplied_fuels import (
+    report_unsupplied_fuel_buses,
+)
 
 __all__ = [
     "BUS_MAPPING",
@@ -190,6 +193,7 @@ __all__ = [
     "report_policy_changes",
     "report_unapplied_parameters",
     "report_unread_defaults",
+    "report_unsupplied_fuel_buses",
     "require_model_year",
     "set_conversion_values_persisted",
     "set_days_persisted",
