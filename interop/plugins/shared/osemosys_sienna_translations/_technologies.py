@@ -22,7 +22,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     FUEL_TYPE,
     PRIME_MOVER,
     RESIDUAL_CAPACITY,

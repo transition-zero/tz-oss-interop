@@ -1,4 +1,4 @@
-"""What a generator costs to run, in $/MWh, and what its capacity costs, in $/MW/yr.
+"""What a generator costs to run, in $/MWh.
 
 The variable cost is the `variable_operation_cost` of the technology at the operations mode,
 plus a fuel term for each fuel that it takes in: `input_activity_ratio` × the cost of the
@@ -17,16 +17,10 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     OPERATING_MODE,
     REGION,
     TECHNOLOGY,
-    VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
     express_per_output,
-)
-from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    find_parameter_default,
-    read_parameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuel_supply import (
     COST_PER_OUTPUT,
@@ -50,8 +44,6 @@ FUEL_TERMS = "fuel_terms"
 FUEL_TERM_MWH = "fuel_term_mwh"
 FUEL_COST_MWH = "fuel_cost_mwh"
 VARIABLE_COST_MWH = "variable_cost_mwh"
-FIXED_COST = "fixed_cost"
-FIXED_COST_MW_YEAR = "fixed_cost_mw_year"
 
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_TERM = "fuel_term"
@@ -90,22 +82,6 @@ def list_fuel_producers(technologies: pl.DataFrame) -> pl.DataFrame:
     terms = technologies.select(REGION, pl.col(FUEL_TERMS)).explode(FUEL_TERMS, empty_as_null=True)
     producer = pl.col(FUEL_TERMS).struct.field(PRODUCER)
     return terms.select(REGION, producer.alias(TECHNOLOGY)).drop_nulls().unique()
-
-
-def enrich_fixed_costs(
-    state: State, operations: OperationsYear, generators: pl.DataFrame
-) -> pl.DataFrame:
-    """A generator with no stated fixed cost, in a model whose default is zero, has none."""
-    stated = read_parameter(state, SupplyParameter.FIXED_COST, operations.year).select(
-        *_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(FIXED_COST)
-    )
-    table = generators.join(stated, on=_KEYS, how="left")
-    default = find_parameter_default(state, SupplyParameter.FIXED_COST)
-    if default:
-        table = table.with_columns(pl.col(FIXED_COST).fill_null(default))
-    convert = operations.units.convert_cost_per_capacity_to_dollars_per_mw
-    fixed = express_per_output(express_converted(table, FIXED_COST, convert))
-    return table.with_columns(fixed.alias(FIXED_COST_MW_YEAR))
 
 
 def _read_own_costs(

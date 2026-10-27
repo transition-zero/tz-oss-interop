@@ -1,16 +1,15 @@
-"""The columns of the generator source table, in OSeMOSYS words, before any Sienna column."""
+"""The columns that name a generator, its capacity and its record, in the generator source table."""
 
 from __future__ import annotations
 
 from interop.core.extensions import ExtensionKind
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import ValueOwners
 
 GENERATOR_NAME = "generator_name"
-TECHNOLOGY_NAME = "technology_name"
-SIENNA_TYPE = "sienna_type"
-PRIME_MOVER = "prime_mover"
-FUEL_TYPE = "fuel_type"
-RESIDUAL_CAPACITY = "residual_capacity"
 CAPACITY_UNIT = "capacity_unit"
 CAPACITY_MW = "capacity_mw"
 HAS_SERIES = "has_series"

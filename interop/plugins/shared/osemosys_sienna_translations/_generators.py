@@ -85,13 +85,8 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
     GENERATOR_OWNERS,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
-    RESIDUAL_CAPACITY,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST_MW_YEAR,
-    enrich_fixed_costs,
     enrich_variable_costs,
     list_fuel_producers,
 )
@@ -127,6 +122,15 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     enrich_residual_capacity,
     enrich_targets,
     list_bus_names,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    FIXED_COST_MW_YEAR,
+    enrich_fixed_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     COMPONENT_VALUES,

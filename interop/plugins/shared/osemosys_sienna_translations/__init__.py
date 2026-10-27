@@ -37,7 +37,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     GENERATOR_NAME,
-    SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_events import (
     warn_lost_costs,
@@ -73,6 +72,9 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     add_per_unit_series,
     add_series,
     add_to_per_unit_series,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CANDIDATE_VALUES,

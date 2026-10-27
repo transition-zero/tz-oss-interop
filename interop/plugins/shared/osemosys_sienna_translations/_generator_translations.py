@@ -41,18 +41,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     CAPACITY_UNIT,
-    FUEL_TYPE,
     GENERATOR_NAME,
     GENERATOR_OWNERS,
     HAS_SERIES,
     OUTPUT_CAPACITY_MW,
-    PRIME_MOVER,
-    RESIDUAL_CAPACITY,
-    SIENNA_TYPE,
-    TECHNOLOGY_NAME,
-)
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_events import (
     FOM_ATTRIBUTE,
@@ -75,6 +67,16 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
 )
 from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
     build_plant_fuel_events,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    FUEL_TYPE,
+    PRIME_MOVER,
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+    TECHNOLOGY_NAME,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    FIXED_COST,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     COMPONENT_VALUES,
