@@ -9,7 +9,6 @@ capacity, not on what one period builds, so no minimum reaches the package.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, NamedTuple
 
 from interop.core.reporting import ScopedRecorder
@@ -24,9 +23,9 @@ from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
     record_not_mapped,
     record_translation,
+    warn_step,
 )
-
-log = logging.getLogger(__name__)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._periods import convert_year_key
 
 _NO_MINIMUM = 0.0
 
@@ -39,7 +38,7 @@ _MIN_NOTE = (
     "installed capacity of a year, so no yearly minimum reaches it"
 )
 _LOST_WARNING = (
-    "sienna-to-power-systems-investments: %d technology(ies) state capacity limits that change "
+    "%d technology(ies) state capacity limits that change "
     "by year or a yearly minimum, and PowerSystemsInvestments holds one limit for every period, "
     "so each takes its largest yearly maximum and no minimum: %s"
 )
@@ -71,7 +70,7 @@ class LimitsByYear:
 
     def warn_lost(self) -> None:
         if self._changed:
-            log.warning(_LOST_WARNING, len(self._changed), name_a_few(self._changed))
+            warn_step(_LOST_WARNING, len(self._changed), name_a_few(self._changed))
 
     def _record(
         self,
@@ -141,11 +140,3 @@ def _drop_nulls(entry: dict[str, Any]) -> dict[str, Any]:
         for field in (MinMaxField.MIN, MinMaxField.MAX)
         if entry.get(field) is not None
     }
-
-
-def convert_year_key(key: str) -> str:
-    """A year key as the series features state it, so ``"2030.0"`` and ``"2030"`` match."""
-    try:
-        return str(int(float(key)))
-    except ValueError:
-        return key

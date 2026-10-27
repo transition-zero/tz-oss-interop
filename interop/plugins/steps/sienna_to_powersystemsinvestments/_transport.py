@@ -9,7 +9,6 @@ a link, such as one technology for each direction, gets a link in the plan that 
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from interop.core.reporting import ScopedRecorder
@@ -18,9 +17,10 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaInvestmentsComponent,
 )
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.steps.sienna_to_powersystemsinvestments._events import record_not_mapped
-
-log = logging.getLogger(__name__)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
+    record_not_mapped,
+    warn_step,
+)
 
 _NO_LOSS = 0.0
 _COMPONENT = SiennaInvestmentsComponent.AGGREGATE_TRANSPORT_TECHNOLOGY.value
@@ -32,7 +32,7 @@ _LOSS_NOTE = (
     "lossless instead"
 )
 _LOSS_WARNING = (
-    "sienna-to-power-systems-investments: %d transport technology(ies) state a loss, which "
+    "%d transport technology(ies) state a loss, which "
     "PowerSystemsInvestments would turn into energy on a reverse flow, so each is lossless: %s"
 )
 _DIRECTION_NOTE = (
@@ -40,7 +40,7 @@ _DIRECTION_NOTE = (
     "too, so the direction that the source states does not bound the flow"
 )
 _DIRECTION_WARNING = (
-    "sienna-to-power-systems-investments: PowerSystemsInvestments flows %d transport "
+    "PowerSystemsInvestments flows %d transport "
     "technology(ies) both ways, whatever direction the source states: %s"
 )
 
@@ -71,9 +71,9 @@ class TransportLinks:
 
     def warn_lost(self) -> None:
         if self._lossy:
-            log.warning(_LOSS_WARNING, len(self._lossy), name_a_few(self._lossy))
+            warn_step(_LOSS_WARNING, len(self._lossy), name_a_few(self._lossy))
         if self._links:
-            log.warning(_DIRECTION_WARNING, len(self._links), name_a_few(self._links))
+            warn_step(_DIRECTION_WARNING, len(self._links), name_a_few(self._links))
 
     def _set_lossless(self, row: dict[str, Any], name: str) -> None:
         loss = row.get(SiennaAggregateTransportTechnologyCol.LINE_LOSS)

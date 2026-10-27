@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from interop.core.reporting import ScopedRecorder
@@ -13,9 +12,10 @@ from interop.plugins.shared.power_systems_investments_schema import (
 )
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.steps.sienna_to_powersystemsinvestments._events import record_not_mapped
-
-log = logging.getLogger(__name__)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
+    record_not_mapped,
+    warn_step,
+)
 
 _MODELLED = frozenset((str(model.component), model.parameter) for model in MODELLED_TECHNOLOGIES)
 # The components whose type the adapter looks a model up for; a requirement is not one of them.
@@ -33,7 +33,7 @@ _UNMODELLED_NOTE = (
     "this type is left out of the plan"
 )
 _UNMODELLED_WARNING = (
-    "sienna-to-power-systems-investments: %d technology(ies) are of a type that no "
+    "%d technology(ies) are of a type that no "
     "PowerSystemsInvestments model covers, so the plan leaves each out: %s"
 )
 
@@ -51,7 +51,7 @@ def report_unmodelled(
                 left_out.append(row[PortfolioColumn.NAME])
                 _record(component, row, recorder)
     if left_out:
-        log.warning(_UNMODELLED_WARNING, len(left_out), name_a_few(left_out))
+        warn_step(_UNMODELLED_WARNING, len(left_out), name_a_few(left_out))
 
 
 def _find_parameter(component: str, row: dict[str, Any]) -> str | None:

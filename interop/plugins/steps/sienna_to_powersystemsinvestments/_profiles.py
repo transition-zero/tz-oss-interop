@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.power_systems_investments_schema import (
@@ -13,9 +11,10 @@ from interop.plugins.shared.power_systems_investments_schema import (
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.steps.sienna_to_powersystemsinvestments._events import record_not_mapped
-
-log = logging.getLogger(__name__)
+from interop.plugins.steps.sienna_to_powersystemsinvestments._events import (
+    record_not_mapped,
+    warn_step,
+)
 
 PROFILED_SUPPLY_TYPES = frozenset(
     {SiennaComponent.RENEWABLE_DISPATCH.value, SiennaComponent.HYDRO_DISPATCH.value}
@@ -27,7 +26,7 @@ _UNPROFILED_NOTE = (
     "so a technology of this type runs up to its capacity in every hour"
 )
 _UNPROFILED_WARNING = (
-    "sienna-to-power-systems-investments: %d supply technology(ies) state a profile that "
+    "%d supply technology(ies) state a profile that "
     "PowerSystemsInvestments does not read for their type, so each runs up to its capacity in "
     "every hour: %s"
 )
@@ -53,4 +52,4 @@ def report_unprofiled(names: list[str], recorder: ScopedRecorder) -> None:
             derivation=_UNPROFILED_NOTE,
         )
     if names:
-        log.warning(_UNPROFILED_WARNING, len(names), name_a_few(names))
+        warn_step(_UNPROFILED_WARNING, len(names), name_a_few(names))

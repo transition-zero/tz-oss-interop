@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.pypsa_sienna_investments_translations import (
+    SIENNA_TO_POWER_SYSTEMS_INVESTMENTS,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -13,8 +17,15 @@ from interop.ports.outbound.reporting import (
     TranslationEvent,
 )
 
+log = logging.getLogger(__name__)
+
 PLAN = "plan"
 """The name an event gives the whole plan, where no one component holds the value."""
+
+
+def warn_step(template: str, *args: object) -> None:
+    """Write one warning of the step, after the name of its pipeline."""
+    log.warning(f"%s: {template}", SIENNA_TO_POWER_SYSTEMS_INVESTMENTS, *args)
 
 
 def record_translation(

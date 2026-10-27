@@ -38,6 +38,7 @@ from interop.ports.outbound.reporting import EventKind, SourceField, Translation
 PYPSA_TO_SIENNA_INVESTMENTS = "pypsa-to-sienna-investments"
 PLEXOS_TO_SIENNA_INVESTMENTS = "plexos-to-sienna-investments"
 OSEMOSYS_TO_SIENNA_INVESTMENTS = "osemosys-to-sienna-investments"
+SIENNA_TO_POWER_SYSTEMS_INVESTMENTS = "sienna-to-power-systems-investments"
 
 # How a source that reads the extensions sidecar states the year that a device leaves service.
 SIDECAR_RETIREMENT_DERIVATION = "the retirement year the extensions sidecar carries, per device"
