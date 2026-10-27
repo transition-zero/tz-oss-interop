@@ -12,8 +12,10 @@ limit for each year in scope that states one, and names the members that the lim
 - A reserve margin: the ratio of the tagged capacity to the tagged peak demand, for each year.
   Its members are the tagged technologies and fuels.
 
-A tag keeps the value of the earliest year that states one. Each value of a year with a limit
-that differs from it is reported.
+A technology member takes the name of its component: the technology, after its region when two
+regions hold a technology of that name and kind. A fuel member takes the name of its bus, which
+is the region and the fuel. A tag keeps the value of the earliest year that states one. Each
+value of a year with a limit that differs from it is reported.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TECHNOLOGY,
     VALUE_COL,
     YEAR,
+    AnnotationColumn,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     MEMBERSHIP_FLAG,
@@ -54,6 +57,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     PolicyType,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_annotations,
     read_parameter_for_years,
     read_yearly_values,
 )
@@ -73,6 +77,10 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
 )
+from interop.plugins.shared.osemosys_sienna_translations._names import (
+    express_component_name,
+    express_report_name,
+)
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._units import (
     ModelUnits,
@@ -84,6 +92,7 @@ from interop.ports.outbound.reporting import EventKind, TranslationEvent
 log = logging.getLogger(__name__)
 
 _NAME = "name"
+_MEMBER_NAME = "member_name"
 _LIMIT = "limit"
 _EXOGENOUS = "exogenous"
 _NO_SHARE = 0.0
@@ -163,6 +172,7 @@ def _build_emission_policies(state: State, years: Sequence[int], units: ModelUni
     pollutants = enrich_period_limits(state, years[0], units, pollutants)
     limited = drop_unlimited(pollutants, yearly)
     by_pollutant = yearly.partition_by(POLLUTANT_KEYS, as_dict=True)
+    names = _read_member_names(state, TECHNOLOGY)
     policies = Policies(
         held=[(parameter, limited.select(POLLUTANT_KEYS)) for parameter in _EMISSION_PARAMETERS]
     )
@@ -176,7 +186,7 @@ def _build_emission_policies(state: State, years: Sequence[int], units: ModelUni
                 carrier_attribute=row[POLLUTANT],
                 sense=ConstraintSense.AT_MOST,
                 limits=limits,
-                members=_build_members(row[EMITTERS] or [], TECHNOLOGY),
+                members=_build_named_members(names, row[REGION], row[EMITTERS] or []),
             )
         )
         policies.events.extend(
@@ -291,7 +301,7 @@ def _build_tagged_policies(
 
     `limits` holds `region`, `year` and the value of each year.
     """
-    tagged = [_read_tags(state, years, tag) for tag in tags]
+    tagged = [_name_tags(state, _read_tags(state, years, tag)) for tag in tags]
     policies = Policies(held=[(parameter, limits.select(REGION))])
     regions = limits.select(REGION).unique()
     for tag, rows in zip(tags, tagged, strict=True):
@@ -410,18 +420,47 @@ def _read_tags(state: State, years: Sequence[int], parameter: str) -> pl.DataFra
     )
 
 
+def _name_tags(state: State, tags: pl.DataFrame) -> pl.DataFrame:
+    member = _choose_member_column(tags)
+    return tags.join(_read_member_names(state, member), on=[REGION, member], how="left")
+
+
 def _build_tag_members(tags: pl.DataFrame, region: str, parameter: str) -> list[ConstraintMember]:
     member = _choose_member_column(tags)
+    rows = tags.filter(pl.col(REGION) == region).select(_MEMBER_NAME, VALUE_COL).rows()
     return [
         ConstraintMember(
             name=name, member_class=member, coefficient=value, coefficient_property=parameter
         )
-        for name, value in tags.filter(pl.col(REGION) == region).select(member, VALUE_COL).rows()
+        for name, value in rows
     ]
 
 
 def _choose_member_column(tags: pl.DataFrame) -> str:
     return TECHNOLOGY if TECHNOLOGY in tags.columns else FUEL
+
+
+def _read_member_names(state: State, member: str) -> pl.DataFrame:
+    """The region, the member and the name of the component of each member of the set."""
+    annotations = read_annotations(state, member).select(REGION, member, *_list_kind(member))
+    if member != TECHNOLOGY:
+        return annotations.with_columns(express_report_name(member).alias(_MEMBER_NAME))
+    # A component group names its technologies over the technologies of its own kind.
+    kinds = annotations.partition_by(AnnotationColumn.KIND)
+    return pl.concat(
+        [kind.with_columns(express_component_name(member).alias(_MEMBER_NAME)) for kind in kinds]
+    ).drop(AnnotationColumn.KIND)
+
+
+def _list_kind(member: str) -> list[str]:
+    return [AnnotationColumn.KIND] if member == TECHNOLOGY else []
+
+
+def _build_named_members(
+    names: pl.DataFrame, region: str, members: Sequence[str]
+) -> list[ConstraintMember]:
+    named = names.filter((pl.col(REGION) == region) & pl.col(TECHNOLOGY).is_in(list(members)))
+    return _build_members(named.sort(_MEMBER_NAME)[_MEMBER_NAME].to_list(), TECHNOLOGY)
 
 
 def _read_group_regions(state: State, years: Sequence[int]) -> pl.DataFrame:

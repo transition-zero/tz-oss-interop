@@ -106,10 +106,10 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "CO2" having "limits" set to [{"period": "year", "value": 900.0, "unit": "t", "investment_period": 2030}, {"period": "year", "value": 800.0, "unit": "t", "investment_period": 2035}, {"period": "horizon", "value": 5000.0, "unit": "t"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "CO2" having "members" set to [{"name": "ATGASCC", "member_class": "technology"}, {"name": "ATGASWELL", "member_class": "technology"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "limits" set to [{"period": "year", "value": 0.3, "unit": "pu", "investment_period": 2030}]
-    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "members" set to [{"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}, {"name": "ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "renewable_tag_fuel"}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/renewable_share" having "members" set to [{"name": "ATSOLAR", "member_class": "technology", "coefficient": 1.0, "coefficient_property": "renewable_tag_technology"}, {"name": "R1/ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "renewable_tag_fuel"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "sense" set to ">="
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "limits" set to [{"period": "year", "value": 1.2, "unit": "pu", "investment_period": 2030}, {"period": "year", "value": 1.0, "unit": "pu", "investment_period": 2035}]
-    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "reserve_margin_tag_fuel"}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/reserve_margin" having "members" set to [{"name": "ATGASCC", "member_class": "technology", "coefficient": 0.9, "coefficient_property": "reserve_margin_tag_technology"}, {"name": "R1/ATELEC", "member_class": "fuel", "coefficient": 1.0, "coefficient_property": "reserve_margin_tag_fuel"}]
     And the file "decisions.md" contains "`osemosys.annual_emission_limit.R1/CO2.year 2030` | `sienna.constraint.CO2.extensions.limits.year 2030` = 900.0 t"
     And the log does not contain "annual_emission_limit states"
     And the log does not contain "generation_fraction_requirement states"
@@ -166,3 +166,45 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     And the file "decisions.md" contains "`osemosys.annual_emission_limit_region_group.G1/CO2.year 2030` | `sienna.constraint.G1/CO2.extensions.limits.year 2030` = 650.0 t"
     And the log does not contain "annual_emission_limit_region_group states"
     And the log does not contain "region_group_tag_region states"
+
+
+  Scenario: Each technology member of a policy takes the name of its component
+    ATGASCC is a supply technology in both regions, so its generators are R1/ATGASCC and
+    R2/ATGASCC. ATOILCT is a supply technology in R1 only, so its generator is ATOILCT.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole set "TECHNOLOGY" holds "ATGASCC ATOILCT"
+    And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | YEAR | VALUE |
+      | R1     | ATGASCC    | 2030 | 0.5   |
+      | R2     | ATGASCC    | 2030 | 0.5   |
+      | R1     | ATOILCT    | 2030 | 0.1   |
+    And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+      | R2     | ATGASCC    | ATELEC | 1                 | 2030 | 1     |
+      | R1     | ATOILCT    | ATELEC | 1                 | 2030 | 1     |
+    And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+      | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+      | R1     | ATGASCC    | CO2      | 1                 | 2030 | 100   |
+      | R2     | ATGASCC    | CO2      | 1                 | 2030 | 100   |
+      | R1     | ATOILCT    | CO2      | 1                 | 2030 | 300   |
+    And the otoole parameter "AnnualEmissionLimit" keyed by "REGION EMISSION YEAR" with default -1 has the rows:
+      | REGION | EMISSION | YEAR | VALUE |
+      | R1     | CO2      | 2030 | 1000  |
+      | R2     | CO2      | 2030 | 500   |
+    And a file "user_mappings.yaml" containing the lines:
+      | line                                                                                                                         |
+      | osemosys: {                                                                                                                  |
+      | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                                             |
+      | objects: {                                                                                                                   |
+      | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"}],                                |
+      | technologies: [{match: "GASCC$", category: gas-cc}, {match: "OILCT$", category: oil-ct}]}}                                   |
+      | carriers: [                                                                                                                  |
+      | {osemosys_category: gas-cc, sienna_component_type: ThermalStandard, sienna_fuel_type: NATURAL_GAS, sienna_prime_mover_type: CC}, |
+      | {osemosys_category: oil-ct, sienna_component_type: ThermalStandard, sienna_fuel_type: DISTILLATE_FUEL_OIL, sienna_prime_mover_type: CT}] |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "R1/ATGASCC" having "prime_mover_type" set to "CC"
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "prime_mover_type" set to "CT"
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/CO2" having "members" set to [{"name": "ATOILCT", "member_class": "technology"}, {"name": "R1/ATGASCC", "member_class": "technology"}]
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R2/CO2" having "members" set to [{"name": "R2/ATGASCC", "member_class": "technology"}]
