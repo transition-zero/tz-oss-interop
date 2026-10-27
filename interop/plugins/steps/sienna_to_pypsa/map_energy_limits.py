@@ -28,7 +28,7 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters import Generator
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_pypsa.map_snapshot_weightings import (
     SnapshotSpan,
-    find_snapshot_span,
+    build_snapshot_span,
 )
 
 log = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ class SiennaToPypsaMapEnergyLimits(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         reader = state.extension_reader(self._recorder)
         EnergyLimitMapper(self._recorder).map_energy_limits(
-            state, reader, find_snapshot_span(state)
+            state, reader, build_snapshot_span(state)
         )
         return state
 

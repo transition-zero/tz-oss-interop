@@ -27,9 +27,6 @@ from interop.plugins.shared.pypsa_time_series import (
 # the key is the reading hop's own.
 COMPANION_OWNER = "extensions_companion"
 
-# A companion states its values in the unit PyPSA reads, so a column rides with no scaling.
-UNSCALED = 1.0
-
 
 @dataclass(frozen=True)
 class CompanionColumn:

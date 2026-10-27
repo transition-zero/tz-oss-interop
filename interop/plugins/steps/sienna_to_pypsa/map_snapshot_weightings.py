@@ -21,7 +21,12 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_HOURS, Framework
+from interop.plugins.shared.constants import (
+    HOURS_PER_LEAP_YEAR,
+    HOURS_PER_YEAR,
+    UNIT_HOURS,
+    Framework,
+)
 from interop.plugins.shared.pypsa_constants import (
     SNAPSHOT_WEIGHTINGS_SCHEMA,
     PyPSADestinationTable,
@@ -45,11 +50,10 @@ log = logging.getLogger(__name__)
 
 # A whole year is 365 or 366 days for any year, as a model that weights its year at 8760 h
 # states a leap year that way too.
-_HOURS_IN_WHOLE_YEARS = (365 * 24.0, 366 * 24.0)
+_HOURS_IN_WHOLE_YEARS = (HOURS_PER_YEAR, HOURS_PER_LEAP_YEAR)
 # A model that splits its year into fractions states weights whose sum misses the year by a
 # rounding of this relative size.
 _WHOLE_YEAR_TOLERANCE = 1e-3
-_WEIGHTING_TABLE = "snapshot_weightings"
 _WEIGHT_ATTRIBUTE = "weight"
 
 _LEFT_OUT_PERIOD_TEXT = LeftOutPeriodText(
@@ -110,7 +114,7 @@ class SnapshotSpan(NamedTuple):
         )
 
 
-def find_snapshot_span(state: State) -> SnapshotSpan:
+def build_snapshot_span(state: State) -> SnapshotSpan:
     """What the snapshots of the network span, weighted as an earlier step weighted them."""
     window = find_snapshot_window(state)
     if window is None:
@@ -140,13 +144,13 @@ class SnapshotWeightingMapper:
         snapshots = window.list_snapshots()
         if not records:
             return _build_span(snapshots, [_UNWEIGHTED] * len(snapshots))
-        counted = self._weight_snapshots(records, window)
+        counted = self._derive_snapshot_hours(records, window)
         state.destination_time_series[PyPSADestinationTable.SNAPSHOT_WEIGHTINGS] = (
             _build_weightings(snapshots, counted, window.snapshot_hours)
         )
         return _build_span(snapshots, counted)
 
-    def _weight_snapshots(
+    def _derive_snapshot_hours(
         self, records: list[RepresentativePeriodExtension], window: SnapshotWindow
     ) -> list[float]:
         """The hours each snapshot counts for, with an event for each period and each gap."""
@@ -256,7 +260,7 @@ def _build_weighting_destination(
 ) -> DestinationField:
     return DestinationField(
         framework=Framework.PYPSA,
-        component=_WEIGHTING_TABLE,
+        component=PyPSADestinationTable.SNAPSHOT_WEIGHTINGS,
         name=f"{first.isoformat()} to {last.isoformat()}",
         attribute=PyPSASnapshotWeightingCol.OBJECTIVE,
         value=value,

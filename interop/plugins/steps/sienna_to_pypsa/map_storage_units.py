@@ -15,6 +15,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import UNSCALED
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
     PyPSACarrier,
@@ -37,7 +38,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTable,
 )
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
-    UNSCALED,
     CompanionColumn,
     stage_companion_columns,
 )

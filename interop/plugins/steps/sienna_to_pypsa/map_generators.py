@@ -15,6 +15,7 @@ from interop.core.extensions import (
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.constants import UNSCALED
 from interop.plugins.shared.pypsa_constants import (
     DEFAULT_SNAPSHOT_MINUTES,
     GENERATORS_DESTINATION_SCHEMA,
@@ -41,7 +42,6 @@ from interop.plugins.shared.sienna_constants import (
     ThermalFuel,
 )
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
-    UNSCALED,
     CompanionColumn,
     stage_companion_columns,
 )

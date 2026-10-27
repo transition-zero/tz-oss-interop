@@ -336,8 +336,8 @@ def _build_link_row(
 ) -> dict[str, Any]:
     """The Link of one TwoTerminalGenericHVDCLine, with an event for each value."""
     name = row[SiennaLinkCol.NAME]
-    ends = _record_ends(reporter, row, bus_names)
-    efficiency = _record_efficiency(reporter, row)
+    ends = _map_ends(reporter, row, bus_names)
+    efficiency = _derive_efficiency(reporter, row)
     limits = _reconstruct_link_power_limits(
         reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
     )
@@ -358,7 +358,7 @@ def _build_link_row(
     }
 
 
-def _record_ends(
+def _map_ends(
     reporter: LinkReporter, row: dict[str, Any], bus_names: dict[int, str]
 ) -> dict[str, Any]:
     """The name, the two buses and the availability of the Link."""
@@ -376,7 +376,7 @@ def _record_ends(
     }
 
 
-def _record_efficiency(reporter: LinkReporter, row: dict[str, Any]) -> float:
+def _derive_efficiency(reporter: LinkReporter, row: dict[str, Any]) -> float:
     """1 - the proportional term of the loss curve of the line."""
     function_data = row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA]
     loss_term = float(function_data[SiennaStructField.PROPORTIONAL_TERM])
