@@ -169,6 +169,18 @@ def translate_the_otoole_model_in_scope(
     return translate_with_overrides(otoole_model_builder, overrides)
 
 
+@when(
+    parsers.parse('I translate the otoole model to Sienna for the years "{years}" in the year "{year}"'),
+    target_fixture="pipeline_exit_code",
+)
+def translate_the_otoole_model_in_years(
+    otoole_model_builder: OtooleModelBuilder, years: str, year: str
+) -> int:
+    """Give the scope step its years as text, and keep every location."""
+    overrides = [f"step[0].years={years}", f"step[1].year={year}"]
+    return translate_with_overrides(otoole_model_builder, overrides)
+
+
 def translate_with_overrides(
     otoole_model_builder: OtooleModelBuilder, step_overrides: list[str]
 ) -> int:

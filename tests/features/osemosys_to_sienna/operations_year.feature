@@ -64,10 +64,50 @@ Feature: osemosys-csv-to-sienna translates the model year that the pipeline asks
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "max_active_power" set to 200.0
 
+  Scenario: The earliest year in scope is the year of the system, when the scope leaves out an earlier model year
+    Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
+      | TIMESLICE | YEAR | VALUE |
+      | S1B1      | 2030 | 0.125 |
+      | S1B2      | 2030 | 0.375 |
+      | S2B1      | 2030 | 0.125 |
+      | S2B2      | 2030 | 0.375 |
+      | S1B1      | 2035 | 0.125 |
+      | S1B2      | 2035 | 0.375 |
+      | S2B1      | 2035 | 0.125 |
+      | S2B2      | 2035 | 0.375 |
+    And the otoole parameter "DaySplit" keyed by "DAILYTIMEBRACKET YEAR" with default 0.00137 has the rows:
+      | DAILYTIMEBRACKET | YEAR | VALUE    |
+      | B1               | 2030 | 0.000685 |
+      | B2               | 2030 | 0.002055 |
+      | B1               | 2035 | 0.000685 |
+      | B2               | 2035 | 0.002055 |
+    And the otoole parameter "SpecifiedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL   | YEAR | VALUE |
+      | R1     | ATELEC | 2030 | 876   |
+      | R1     | ATELEC | 2035 | 1752  |
+    And the otoole parameter "SpecifiedDemandProfile" keyed by "REGION FUEL TIMESLICE YEAR" with default 0 has the rows:
+      | REGION | FUEL   | TIMESLICE | YEAR | VALUE |
+      | R1     | ATELEC | S1B1      | 2030 | 0.125 |
+      | R1     | ATELEC | S1B2      | 2030 | 0.375 |
+      | R1     | ATELEC | S2B1      | 2030 | 0.25  |
+      | R1     | ATELEC | S2B2      | 2030 | 0.25  |
+      | R1     | ATELEC | S1B1      | 2035 | 0.125 |
+      | R1     | ATELEC | S1B2      | 2035 | 0.375 |
+      | R1     | ATELEC | S2B1      | 2035 | 0.25  |
+      | R1     | ATELEC | S2B2      | 2035 | 0.25  |
+    When I translate the otoole model to Sienna for the years "2035" in the year "earliest"
+    Then the pipeline exit code is 0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "max_active_power" set to 400.0
+
   Scenario: A year that is not a model year stops the run
     When I translate the otoole model to Sienna for the year "2031"
     Then the pipeline exit code is 1
-    And the log contains "The model years are: 2030, 2035."
+    And the log contains "2031, which is not a year in scope. The years in scope are: 2030, 2035."
+
+  Scenario: A model year that the scope leaves out stops the run
+    When I translate the otoole model to Sienna for the years "2035" in the year "2030"
+    Then the pipeline exit code is 1
+    And the log contains "2030, which is not a year in scope. The years in scope are: 2035."
 
   Scenario: The REPL asks for the model year, because the pipeline states none
     When I translate the otoole model to Sienna in the REPL and answer the year "2030" and the locations "AT"
