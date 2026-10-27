@@ -104,6 +104,7 @@ Feature: osemosys-csv-to-sienna turns electricity fuels into buses and demand in
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "bus" set to 1
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 1 is named "max_active_power"
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with length 48
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 0.5, 18 × 0.5, 6 × 1, 18 × 0.333333333333
 
   Scenario: An accumulated annual demand becomes a flat load of its own
     When I translate the otoole model to Sienna for the year "2030"
