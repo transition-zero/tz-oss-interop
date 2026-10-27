@@ -133,10 +133,14 @@ an `ExistingDevices` attribute after the read, because the envelope cannot carry
 
 The model counts the capacity that a technology already holds through its `ExistingDevices`:
 the names of base system components of the technology's PowerSystems type, at their rating
-in MW. The step reads the `ExistingDevices` attributes of the portfolio and settles four things:
+in MW. The step reads the `ExistingDevices` attributes of the portfolio and settles these things:
 
 - **A name the base system does not hold under the type is left out.** The model stops on a
   name that it cannot find. The step records each such name as not mapped, and warns.
+- **A device counts for one technology only.** The model sums the devices of each technology
+  on its own, so a device that two technologies name counts twice. The step gives each device
+  to the technology of its own name, else to the first technology that names it. It records
+  the device as not mapped on each other technology, and warns.
 - **A limit holds at least the existing devices.** The model bounds existing plus built
   capacity by `max`, so the step lifts a `max` below the rating of the devices to that rating.
 - **A minimum loses the existing devices.** The model bounds the capacity that each period

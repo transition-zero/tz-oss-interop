@@ -6,8 +6,10 @@ envelope cannot carry an attribute, because the reader gives each component a fr
 the series companion carries the names and the adapter attaches them after the read.
 
 The model looks each name up under the technology's PowerSystems type and stops on a name it
-cannot find, so only names that the base system holds under that type reach it. An existing
-plant that no technology names becomes a technology of its own that the plan cannot add to.
+cannot find, so only names that the base system holds under that type reach it. The model sums
+the devices of each technology on its own, so each device reaches one technology only. An
+existing plant that no technology names becomes a technology of its own that the plan cannot
+add to.
 """
 
 from __future__ import annotations
@@ -75,6 +77,10 @@ _TRANSPORT_NOTE = (
     "the model looks an existing device of a transport technology up as an ACBranch, and the "
     "base system holds it as another type, so the existing capacity of the link is left out"
 )
+_SHARED_NOTE = (
+    "another technology of the plan holds this existing device, and the model counts a device "
+    "once for each technology that names it, so this technology leaves it out"
+)
 _MAX_DERIVATION = (
     "the model bounds existing plus built capacity by max, so max is at least the rating of "
     "the existing devices"
@@ -100,6 +106,10 @@ _TRANSPORT_WARNING = (
     "sienna-to-power-systems-investments: %d transport technology(ies) name existing links, "
     "which PowerSystemsInvestments cannot find as an ACBranch, so their existing capacity is "
     "left out: %s"
+)
+_SHARED_WARNING = (
+    "sienna-to-power-systems-investments: %d technology(ies) name existing devices that another "
+    "technology holds, so each device counts for one technology only: %s"
 )
 _CONSTANT_WARNING = (
     "sienna-to-power-systems-investments: PowerSystemsInvestments holds the existing capacity of "
@@ -132,6 +142,7 @@ class _ExistingFleet:
     """The existing devices of each technology, and the plants that no technology names."""
 
     devices: dict[Technology, list[BaseDevice]] = field(default_factory=dict)
+    stated: dict[Technology, list[str]] = field(default_factory=dict)
     unnamed: list[BaseDevice] = field(default_factory=list)
     mentioned: set[tuple[str | None, str]] = field(default_factory=set)
 
@@ -147,12 +158,14 @@ class _LeftOut:
     dropped: list[str] = field(default_factory=list)
     unknown_technologies: list[str] = field(default_factory=list)
     transport: list[str] = field(default_factory=list)
+    shared: list[str] = field(default_factory=list)
 
     def list_warnings(self) -> list[tuple[str, list[str]]]:
         return [
             (_DROPPED_WARNING, self.dropped),
             (_UNKNOWN_TECHNOLOGY_WARNING, self.unknown_technologies),
             (_TRANSPORT_WARNING, self.transport),
+            (_SHARED_WARNING, self.shared),
         ]
 
 
@@ -169,6 +182,7 @@ class _FleetMapper:
         fleet = _ExistingFleet()
         for row in list_staged_devices(state):
             self._add_row(fleet, row, technologies, base)
+        self._give_each_device_one_technology(fleet)
         fleet.unnamed = [device for key, device in base.items() if key not in fleet.mentioned]
         return fleet
 
@@ -237,9 +251,21 @@ class _FleetMapper:
             self._left_out.dropped.extend(f"{technology.name}/{name}" for name in unknown)
             self._record_left_out(technology, unknown, _UNKNOWN_DEVICE_NOTE)
         fleet.devices.setdefault(technology, []).extend(kept)
+        fleet.stated.setdefault(technology, []).extend(names)
         fleet.mentioned.update((device.sienna_type, device.name) for device in kept)
-        if kept:
-            self._record_attached(technology, names, kept)
+
+    def _give_each_device_one_technology(self, fleet: _ExistingFleet) -> None:
+        """Keep each device on the one technology that holds it, and record the others."""
+        owners = _choose_owners(fleet.devices)
+        for technology, devices in fleet.devices.items():
+            owned = [device for device in devices if owners[_get_key(device)] == technology]
+            lost = [device.name for device in devices if owners[_get_key(device)] != technology]
+            fleet.devices[technology] = owned
+            if lost:
+                self._left_out.shared.append(technology.name)
+                self._record_left_out(technology, lost, _SHARED_NOTE)
+            if owned:
+                self._record_attached(technology, fleet.stated[technology], owned)
 
     def _add_transport(
         self, fleet: _ExistingFleet, technology: Technology, names: list[str]
@@ -340,6 +366,23 @@ def _build_table(fleet: _ExistingFleet) -> pl.DataFrame:
             SeriesDocument.DEVICES: pl.List(pl.Utf8),
         },
     )
+
+
+def _choose_owners(
+    devices: dict[Technology, list[BaseDevice]],
+) -> dict[tuple[str, str], Technology]:
+    """The technology that holds each device: the one of its own name, else the first to name it."""
+    owners: dict[tuple[str, str], Technology] = {}
+    for technology, held in devices.items():
+        for device in held:
+            current = owners.get(_get_key(device))
+            if current is None or (technology.name == device.name != current.name):
+                owners[_get_key(device)] = technology
+    return owners
+
+
+def _get_key(device: BaseDevice) -> tuple[str, str]:
+    return (device.sienna_type, device.name)
 
 
 def _list_floors(technology: Technology, devices: list[BaseDevice]) -> list[tuple[str, float]]:
