@@ -102,9 +102,8 @@ class FuelRecords:
 
 
 class _Value(NamedTuple):
-    """One field of a record, the parameters that it reads, its unit and how it derives."""
+    """The parameters that one field of a record reads, its unit and how it derives."""
 
-    field: str
     parameters: tuple[str, ...]
     unit: str | None
     derivation: str
@@ -278,17 +277,15 @@ def _build_bus(bus: dict[str, Any]) -> BusExtension:
 def _build_events(
     row: dict[str, Any], kind: ExtensionKind, record: GeneratorExtension | ConversionExtension
 ) -> list[TranslationEvent]:
-    stated = record.model_dump(exclude={"name"}, exclude_none=True)
-    return [
-        _build_event(row, kind, value, stated[value.field])
-        for value in _VALUES
-        if value.field in stated
-    ]
+    """One event for each field that the record states; a field with no `_VALUES` row raises."""
+    stated = record.model_dump(exclude={"name"}, exclude_none=True, exclude_unset=True)
+    return [_build_event(row, kind, field_name, value) for field_name, value in stated.items()]
 
 
 def _build_event(
-    row: dict[str, Any], kind: ExtensionKind, value: _Value, stated: Any
+    row: dict[str, Any], kind: ExtensionKind, field_name: str, stated: Any
 ) -> TranslationEvent:
+    value = _VALUES[field_name]
     attribute = f"mode {row[OPERATING_MODE]}"
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
@@ -298,7 +295,7 @@ def _build_event(
         ],
         destinations=[
             build_sienna_field(
-                kind, row[MODE_NAME], f"{EXTENSIONS_PREFIX}{value.field}", stated, value.unit
+                kind, row[MODE_NAME], f"{EXTENSIONS_PREFIX}{field_name}", stated, value.unit
             )
         ],
         derivation=value.derivation,
@@ -339,75 +336,64 @@ _CAPACITY = (
     *_FLOWS,
 )
 _RATED = "for each MWh of the fuel that rates the component"
-_VALUES = (
-    _Value(
-        "bus",
+_VALUES: dict[str, _Value] = {
+    "bus": _Value(
         (FlowParameter.OUTPUT_ACTIVITY_RATIO,),
         None,
         "the bus of the fuel that the mode puts out",
     ),
-    _Value(
-        "carrier",
+    "carrier": _Value(
         (AnnotationColumn.CATEGORY,),
         None,
         "the category of the technology, else the carrier of its fuel",
     ),
-    _Value(
-        "bus0",
+    "bus0": _Value(
         (FlowParameter.INPUT_ACTIVITY_RATIO,),
         None,
         "the bus of the largest fuel that the mode takes in",
     ),
-    _Value(
-        "bus1",
+    "bus1": _Value(
         (FlowParameter.OUTPUT_ACTIVITY_RATIO,),
         None,
         "the bus of the largest fuel that the mode puts out",
     ),
-    _Value("bus2", _FLOWS, None, "the bus of a third fuel of the mode"),
-    _Value("bus3", _FLOWS, None, "the bus of a fourth fuel of the mode"),
-    _Value(
-        "input_fuel",
+    "bus2": _Value(_FLOWS, None, "the bus of a third fuel of the mode"),
+    "bus3": _Value(_FLOWS, None, "the bus of a fourth fuel of the mode"),
+    "input_fuel": _Value(
         (FlowParameter.INPUT_ACTIVITY_RATIO,),
         None,
         "the largest fuel that the mode takes in",
     ),
-    _Value(
-        "output_fuel",
+    "output_fuel": _Value(
         (FlowParameter.OUTPUT_ACTIVITY_RATIO,),
         None,
         "the largest fuel that the mode puts out",
     ),
-    _Value(
-        "efficiency", _FLOWS, None, "output_activity_ratio of bus1 / input_activity_ratio of bus0"
+    "efficiency": _Value(
+        _FLOWS, None, "output_activity_ratio of bus1 / input_activity_ratio of bus0"
     ),
-    _Value(
-        "efficiency2",
+    "efficiency2": _Value(
         _FLOWS,
         None,
         "the ratio of the third fuel / input_activity_ratio of bus0, negative for an input",
     ),
-    _Value(
-        "efficiency3",
+    "efficiency3": _Value(
         _FLOWS,
         None,
         "the ratio of the fourth fuel / input_activity_ratio of bus0, negative for an input",
     ),
-    _Value(
-        "p_nom",
+    "p_nom": _Value(
         _CAPACITY,
         UNIT_MW,
         f"residual_capacity × capacity_to_activity_unit, in MWh, / 8760 h, {_RATED}",
     ),
-    _Value(
-        "p_nom_extendable",
+    "p_nom_extendable": _Value(
         FREE_BUILD_PARAMETERS,
         None,
         "capital_cost and fixed_cost are 0, and the year may build more capacity, so the model "
         "builds capacity of the technology at no cost",
     ),
-    _Value(
-        "p_nom_max",
+    "p_nom_max": _Value(
         (
             InvestmentParameter.CAPACITY_LIMITS_MAX,
             SupplyParameter.RESIDUAL_CAPACITY,
@@ -418,8 +404,7 @@ _VALUES = (
         "min(total_annual_max_capacity, residual_capacity + total_annual_max_capacity_investment), "
         f"converted as p_nom is, {_RATED}",
     ),
-    _Value(
-        "marginal_cost",
+    "marginal_cost": _Value(
         (
             SupplyParameter.VARIABLE_OPERATION_COST,
             SupplyParameter.EMISSION_RATE,
@@ -428,28 +413,24 @@ _VALUES = (
         UNIT_DOLLARS_PER_MWH,
         f"(variable_operation_cost + Σ emission_rate × emission_penalty) in $/MWh, {_RATED}",
     ),
-    _Value(
-        "p_max_pu",
+    "p_max_pu": _Value(
         (SupplyParameter.AVAILABILITY_FACTOR,),
         None,
         "availability_factor of the operations year",
     ),
-    _Value(
-        "emission_rates_t_per_mwh",
+    "emission_rates_t_per_mwh": _Value(
         (SupplyParameter.EMISSION_RATE,),
         UNIT_TONNES_PER_MWH,
         f"emission_rate, in t/MWh of activity, {_RATED}",
     ),
-    _Value(
-        "e_sum_min",
+    "e_sum_min": _Value(
         (SupplyParameter.ACTIVITY_LOWER_LIMIT, ActivityParameter.BY_MODE_LOWER_LIMIT),
         UNIT_MWH,
         f"the larger lower limit of the mode and of a one-mode technology, in MWh, {_RATED}",
     ),
-    _Value(
-        "e_sum_max",
+    "e_sum_max": _Value(
         (SupplyParameter.ACTIVITY_UPPER_LIMIT, ActivityParameter.BY_MODE_UPPER_LIMIT),
         UNIT_MWH,
         f"the smaller upper limit of the mode and of a one-mode technology, in MWh, {_RATED}",
     ),
-)
+}
