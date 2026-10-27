@@ -189,9 +189,11 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
   Scenario: A plant that burns a second fuel draws it at bus2, and decisions.md names each column of the Link
     The plant burns 2 MWh of gas and 0.5 MWh of gas from DE for each MWh of electricity, so
     bus2 takes -0.5 / 2 = -0.25 MWh for each MWh that goes in at bus0. The Generator of the
-    plant states a discount rate, which the Link does not hold.
+    plant states a discount rate, an efficiency and a marginal cost, which the Link does not
+    hold.
     Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0, "R1/DEGAS": 0.5}
     And the ThermalStandard "gas" has ext "discount_rate" set to 0.07
+    And the ThermalStandard "gas" has ext "efficiency" set to 0.4
     And the system is saved as "inputs/two_fuels.json"
     When I run translate against "inputs/two_fuels.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "gas" has bus0 "R1/ATGAS"
@@ -201,6 +203,8 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the file "decisions.md" contains "| `pypsa.Generator.gas.carrier` = CCGT | `pypsa.Link.gas.carrier` = CCGT | the Generator of the plant moves to the Link"
     And the file "decisions.md" contains "`pypsa.Generator.gas.discount_rate` = 0.07"
     And the file "decisions.md" contains "the Link that replaces it does not hold it"
+    And the file "decisions.md" contains "| `pypsa.Generator.gas.marginal_cost` = 25.0 |  |  | the Generator of the plant states the column, and the Link that replaces it does not hold it |"
+    And the file "decisions.md" contains "| `pypsa.Generator.gas.efficiency` = 0.4 |  |  | the Generator of the plant states the column, and the Link that replaces it does not hold it |"
 
   Scenario: The availability of a plant in each hour moves to its Link
     Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}
