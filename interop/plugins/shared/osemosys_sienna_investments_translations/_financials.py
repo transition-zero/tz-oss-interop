@@ -18,20 +18,18 @@ from interop.plugins.shared.osemosys_sienna_investments_translations._technologi
 from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
+    build_financial_data_field,
     build_portfolio_financial_data,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     DEFAULT_PORTFOLIO_RATE,
-    PORTFOLIO_FINANCIAL_DATA_TABLE,
     SiennaPortfolioFinancialDataCol,
 )
 from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, report_not_mapped
-from interop.ports.outbound.reporting import DestinationField, EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 F = SiennaPortfolioFinancialDataCol
 
-# The record describes the portfolio, so the report names it after its field.
-_RECORD_NAME = "financial_data"
 _BASE_YEAR_NOTE = (
     "units: currency_year of the user mappings file when it states one, else the earliest "
     "year in scope"
@@ -71,14 +69,14 @@ def build_osemosys_financial_events(
     events = [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[_build_field(F.BASE_YEAR, plan.cost_year)],
+            destinations=[build_financial_data_field(F.BASE_YEAR, plan.cost_year)],
             note=_BASE_YEAR_NOTE,
         ),
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[
-                _build_field(F.INFLATION_RATE, DEFAULT_PORTFOLIO_RATE),
-                _build_field(F.INTEREST_RATE, DEFAULT_PORTFOLIO_RATE),
+                build_financial_data_field(F.INFLATION_RATE, DEFAULT_PORTFOLIO_RATE),
+                build_financial_data_field(F.INTEREST_RATE, DEFAULT_PORTFOLIO_RATE),
             ],
             note=_OTHER_RATES_NOTE,
         ),
@@ -104,16 +102,6 @@ def _build_rate_event(rate: RegionRate) -> TranslationEvent:
         sources=[
             build_osemosys_field(InvestmentParameter.DISCOUNT_RATE, rate.region, REGION, rate.rate)
         ],
-        destinations=[_build_field(F.DISCOUNT_RATE, rate.rate)],
+        destinations=[build_financial_data_field(F.DISCOUNT_RATE, rate.rate)],
         derivation=_RATE_DERIVATION,
-    )
-
-
-def _build_field(attribute: str, value: object) -> DestinationField:
-    return DestinationField(
-        framework=Framework.SIENNA,
-        component=PORTFOLIO_FINANCIAL_DATA_TABLE,
-        name=_RECORD_NAME,
-        attribute=attribute,
-        value=value,
     )
