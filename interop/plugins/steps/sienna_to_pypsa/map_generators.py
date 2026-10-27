@@ -182,7 +182,10 @@ class SiennaToPypsaMapGenerators(TranslationStep):
         """Pass on each field of a generator's record that no PyPSA column holds."""
         staged = self._extensions.read(ExtensionKind.GENERATOR)
         relay_records(
-            state, ExtensionKind.GENERATOR, [staged.relay(name) for name in names], self._recorder
+            state,
+            ExtensionKind.GENERATOR,
+            [staged.build_relayed(name) for name in names],
+            self._recorder,
         )
 
     def _record_generator_time_series(

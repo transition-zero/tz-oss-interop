@@ -97,7 +97,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
             relay_records(
                 state,
                 ExtensionKind.LOAD,
-                [records.relay(name) for name in max_active_power_by_name],
+                [records.build_relayed(name) for name in max_active_power_by_name],
                 self._recorder,
             )
         return state

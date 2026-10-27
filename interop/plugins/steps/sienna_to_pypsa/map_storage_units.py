@@ -145,13 +145,16 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         """Pass on each unmapped field of a unit's records, with a hydro unit's generator record."""
         storage = self._extensions.read(ExtensionKind.STORAGE)
         relay_records(
-            state, ExtensionKind.STORAGE, [storage.relay(name) for name in names], self._recorder
+            state,
+            ExtensionKind.STORAGE,
+            [storage.build_relayed(name) for name in names],
+            self._recorder,
         )
         generators = self._extensions.read(ExtensionKind.GENERATOR)
         relay_records(
             state,
             ExtensionKind.GENERATOR,
-            [generators.relay(name) for name in hydro_names],
+            [generators.build_relayed(name) for name in hydro_names],
             self._recorder,
         )
 
