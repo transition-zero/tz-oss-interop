@@ -313,9 +313,22 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "cyclic_state_of_charge_per_season" set to true
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "cyclic_state_of_charge_per_period" set to false
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "e_sum_max" set to {"2030": 800.0}
-      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" without field "operating_modes"
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "operating_modes" set to [{"mode": "1", "output_ratios": {"ATWATER": 1.0}}]
       And the log does not contain "storage_balance_day states"
       And the log does not contain "energy_capital_cost states"
+
+    Scenario: A fuel that is not electricity at a mode that a storage runs reaches its operating modes
+      ATPHS burns 2 units of the fuel ATGAS for each unit of its activity when it discharges. The
+      storage applies the electricity at that mode only, so the record keeps the gas draw.
+      Given the otoole set "FUEL" holds "ATELEC DEELEC ATWATER HTHEATF ATGAS"
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | ATELEC | 1                 | 2030 | 1.25  |
+        | R1     | ATPHS      | ATGAS  | 2                 | 2030 | 2     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "efficiency.in" set to 0.72
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "operating_modes" set to [{"mode": "1", "output_ratios": {"ATWATER": 1.0}}, {"mode": "2", "input_ratios": {"ATGAS": 2.0}}]
 
     Scenario: A storage that states no discount rate takes the default that the model declares for storage_discount_rate
       The region states its own rate, but OSeMOSYS gives a storage with no row the default of
