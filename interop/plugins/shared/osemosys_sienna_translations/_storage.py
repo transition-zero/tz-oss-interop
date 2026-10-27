@@ -178,18 +178,6 @@ class StorageSources:
     series: pl.DataFrame
 
 
-def read_storage_links(state: State, year: int) -> pl.DataFrame:
-    """The technology and mode that charge each storage, those that discharge it, and counts.
-
-    When two or more rows link a storage in one direction, the first by name is kept, and the
-    count says so.
-    """
-    charge, discharge = (_read_links(state, year, side) for side in STORAGE_SIDES)
-    return charge.join(discharge, on=_STORAGE_KEYS, how="full", coalesce=True).with_columns(
-        pl.col(side.links).fill_null(0) for side in STORAGE_SIDES
-    )
-
-
 def build_storages_source(
     state: State,
     operations: OperationsYear,
@@ -355,21 +343,6 @@ def _express_charges_itself() -> pl.Expr:
 # --- the storages and their links -------------------------------------------------------------
 
 
-def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
-    return (
-        read_parameter(state, side.link_parameter, year)
-        .filter(pl.col(VALUE_COL) > 0)
-        .sort(TECHNOLOGY, OPERATING_MODE)
-        .group_by(_STORAGE_KEYS)
-        .agg(
-            pl.col(TECHNOLOGY).first().alias(side.technology),
-            pl.col(OPERATING_MODE).first().alias(side.mode),
-            pl.len().alias(side.links),
-            pl.col(VALUE_COL).cast(pl.Float64).first().alias(side.link_value),
-        )
-    )
-
-
 def _read_storages(state: State, operations: OperationsYear) -> pl.DataFrame:
     """Every storage, so that each Sienna name knows of a clash in another region."""
     storages = (
@@ -386,11 +359,38 @@ def _read_storages(state: State, operations: OperationsYear) -> pl.DataFrame:
         operations.year,
         storages.select(_STORAGE_KEYS),
     ).select(*_STORAGE_KEYS, pl.col(VALUE_COL).fill_null(0.0).alias(ENERGY))
-    links = read_storage_links(state, operations.year)
+    links = _read_storage_links(state, operations.year)
     return (
         storages.join(energy, on=_STORAGE_KEYS, how="left")
         .join(links, on=_STORAGE_KEYS, how="left")
         .with_columns(pl.col(side.links).fill_null(0) for side in STORAGE_SIDES)
+    )
+
+
+def _read_storage_links(state: State, year: int) -> pl.DataFrame:
+    """The technology and mode that charge each storage, those that discharge it, and counts.
+
+    When two or more rows link a storage in one direction, the first by name is kept, and the
+    count says so.
+    """
+    charge, discharge = (_read_links(state, year, side) for side in STORAGE_SIDES)
+    return charge.join(discharge, on=_STORAGE_KEYS, how="full", coalesce=True).with_columns(
+        pl.col(side.links).fill_null(0) for side in STORAGE_SIDES
+    )
+
+
+def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
+    return (
+        read_parameter(state, side.link_parameter, year)
+        .filter(pl.col(VALUE_COL) > 0)
+        .sort(TECHNOLOGY, OPERATING_MODE)
+        .group_by(_STORAGE_KEYS)
+        .agg(
+            pl.col(TECHNOLOGY).first().alias(side.technology),
+            pl.col(OPERATING_MODE).first().alias(side.mode),
+            pl.len().alias(side.links),
+            pl.col(VALUE_COL).cast(pl.Float64).first().alias(side.link_value),
+        )
     )
 
 
