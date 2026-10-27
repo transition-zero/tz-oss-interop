@@ -68,7 +68,9 @@ from interop.plugins.shared.osemosys_sienna_translations._emission_limits import
     POLLUTANT_KEYS,
     POLLUTANT_NAME,
     POLLUTANT_REPORT_NAME,
+    NetLimit,
     drop_unlimited,
+    enrich_net_limit,
     enrich_period_limits,
     read_annual_limits,
     read_pollutants,
@@ -82,10 +84,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
-from interop.plugins.shared.osemosys_sienna_translations._units import (
-    ModelUnits,
-    express_converted,
-)
+from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
@@ -96,7 +95,7 @@ _MEMBER_NAME = "member_name"
 _LIMIT = "limit"
 _EXOGENOUS = "exogenous"
 _NO_SHARE = 0.0
-_NO_EMISSION = 0.0
+_GROUP_NET_LIMIT = NetLimit(_LIMIT, _EXOGENOUS, VALUE_COL)
 _LIMITS_ATTRIBUTE = "extensions.limits"
 # The parameter that states a limit over the whole model period.
 _PERIOD_PARAMETERS = {ConstraintPeriod.HORIZON: EmissionParameter.MODEL_PERIOD_EMISSION_LIMIT}
@@ -222,11 +221,8 @@ def _build_group_emission_policies(
     exogenous = read_parameter_for_years(
         state, PolicyParameter.REGION_GROUP_EXOGENOUS_EMISSION, years
     ).select(*keys, YEAR, pl.col(VALUE_COL).cast(pl.Float64).alias(_EXOGENOUS))
-    net = limits.join(exogenous, on=[*keys, YEAR], how="left").with_columns(
-        (pl.col(_LIMIT) - pl.col(_EXOGENOUS).fill_null(_NO_EMISSION)).alias(VALUE_COL)
-    )
-    net = net.with_columns(
-        express_converted(net, VALUE_COL, units.convert_emissions_to_tonnes).alias(VALUE_COL)
+    net = enrich_net_limit(
+        limits.join(exogenous, on=[*keys, YEAR], how="left"), _GROUP_NET_LIMIT, units
     )
     regions = _read_group_regions(state, years)
     policies = Policies(

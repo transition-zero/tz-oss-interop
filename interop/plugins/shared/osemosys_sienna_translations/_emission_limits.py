@@ -9,6 +9,7 @@ each technology that emits any pollutant emits it.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import NamedTuple
 
 import polars as pl
 
@@ -57,6 +58,18 @@ _HAS_LIMIT = "has_limit"
 _NO_EMISSION = 0.0
 
 
+class NetLimit(NamedTuple):
+    """The columns of a stated limit, of its exogenous emission and of the net limit in t."""
+
+    limit: str
+    exogenous: str
+    net: str
+
+
+_ANNUAL_NET_LIMIT = NetLimit(ANNUAL_LIMIT, EXOGENOUS, NET_LIMIT_T)
+_PERIOD_NET_LIMIT = NetLimit(PERIOD_LIMIT, PERIOD_EXOGENOUS, PERIOD_NET_LIMIT_T)
+
+
 def read_pollutants(state: State, years: Sequence[int]) -> pl.DataFrame:
     """Each pollutant of each region, with the technologies that emit it in some year."""
     regions = pl.DataFrame({REGION: list_set_members(state, REGION)}, schema={REGION: pl.Utf8})
@@ -90,17 +103,14 @@ def read_annual_limits(
     limits = read_yearly_values(state, ANNUAL_LIMIT, keys, years).join(
         read_yearly_values(state, EXOGENOUS, keys, years), on=[*POLLUTANT_KEYS, YEAR]
     )
-    limited = limits.filter(pl.col(ANNUAL_LIMIT) != NO_LIMIT).with_columns(
-        (pl.col(ANNUAL_LIMIT) - pl.col(EXOGENOUS).fill_null(_NO_EMISSION)).alias(NET_LIMIT_T)
-    )
-    net = express_converted(limited, NET_LIMIT_T, units.convert_emissions_to_tonnes)
-    return limited.with_columns(net.alias(NET_LIMIT_T)).sort(*POLLUTANT_KEYS, YEAR)
+    net = enrich_net_limit(limits, _ANNUAL_NET_LIMIT, units)
+    return net.filter(pl.col(NET_LIMIT_T).is_not_null()).sort(*POLLUTANT_KEYS, YEAR)
 
 
 def enrich_period_limits(
     state: State, year: int, units: ModelUnits, pollutants: pl.DataFrame
 ) -> pl.DataFrame:
-    """The limit over the whole model period, net of its exogenous emission, in t."""
+    """Add the limit over the whole model period, net of its exogenous emission, in t."""
     keys = pollutants.select(POLLUTANT_KEYS)
     for name in (PERIOD_LIMIT, PERIOD_EXOGENOUS):
         stated = read_parameter_with_defaults(state, name, year, keys)
@@ -108,14 +118,16 @@ def enrich_period_limits(
             stated.select(*POLLUTANT_KEYS, pl.col(VALUE_COL).cast(pl.Float64).alias(name)),
             on=POLLUTANT_KEYS,
         )
-    limited = pl.col(PERIOD_LIMIT).is_not_null() & (pl.col(PERIOD_LIMIT) != NO_LIMIT)
-    table = pollutants.with_columns(
-        pl.when(limited)
-        .then(pl.col(PERIOD_LIMIT) - pl.col(PERIOD_EXOGENOUS).fill_null(_NO_EMISSION))
-        .alias(PERIOD_NET_LIMIT_T)
-    )
-    net = express_converted(table, PERIOD_NET_LIMIT_T, units.convert_emissions_to_tonnes)
-    return table.with_columns(net.alias(PERIOD_NET_LIMIT_T))
+    return enrich_net_limit(pollutants, _PERIOD_NET_LIMIT, units)
+
+
+def enrich_net_limit(table: pl.DataFrame, columns: NetLimit, units: ModelUnits) -> pl.DataFrame:
+    """Add the limit less its exogenous emission, in t. A limit of -1 or none gives no net limit."""
+    limit = pl.col(columns.limit)
+    net = limit - pl.col(columns.exogenous).fill_null(_NO_EMISSION)
+    table = table.with_columns(pl.when(limit != NO_LIMIT).then(net).alias(columns.net))
+    converted = express_converted(table, columns.net, units.convert_emissions_to_tonnes)
+    return table.with_columns(converted.alias(columns.net))
 
 
 def drop_unlimited(pollutants: pl.DataFrame, yearly: pl.DataFrame) -> pl.DataFrame:
