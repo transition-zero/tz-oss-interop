@@ -74,9 +74,11 @@ class OsemosysToSiennaMapComponents(TranslationStep):
                 _build_group_recorder(recorder, OsemosysToSiennaMapStorage),
                 osemosys_sienna_mappings,
             ),
-            OsemosysToSiennaMapTransport(_scoped(recorder, OsemosysToSiennaMapTransport.step_name)),
+            OsemosysToSiennaMapTransport(
+                _build_group_recorder(recorder, OsemosysToSiennaMapTransport)
+            ),
             OsemosysToSiennaMapConversions(
-                _scoped(recorder, OsemosysToSiennaMapConversions.step_name)
+                _build_group_recorder(recorder, OsemosysToSiennaMapConversions)
             ),
         )
 
