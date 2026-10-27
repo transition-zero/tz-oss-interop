@@ -41,6 +41,10 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_hvdc_flow import (
+    FLOW_BOUNDS_DERIVATION,
+    build_hvdc_flow_bounds,
+)
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -876,13 +880,14 @@ def _convert_hvdc_loss(
         )
         return ps_loss.model_dump()
 
-    curve_type = loss.get(SiennaStructField.CURVE_TYPE)
+    curve = loss[SiennaStructField.VALUE_CURVE]
+    curve_type = curve.get(SiennaStructField.CURVE_TYPE)
     if curve_type != SiennaCurveType.INPUT_OUTPUT:
         raise ValueError(
             f"Unsupported loss curve_type {curve_type!r} for {sienna_type} {comp_name!r}. "
             f"Only INPUT_OUTPUT curves are currently supported for TwoTerminalGenericHVDCLine."
         )
-    fd = loss.get(SiennaStructField.FUNCTION_DATA, {})
+    fd = curve.get(SiennaStructField.FUNCTION_DATA, {})
     if not isinstance(fd, dict):
         raise ValueError(
             f"Expected dict for loss.function_data on {sienna_type} {comp_name!r}, "
@@ -899,7 +904,7 @@ def _convert_hvdc_loss(
             proportional_term=float(fd.get(SiennaStructField.PROPORTIONAL_TERM, 0.0)),
             constant_term=float(fd.get(SiennaStructField.CONSTANT_TERM, 0.0)),
         ),
-        input_at_zero=loss.get(SiennaStructField.INPUT_AT_ZERO),
+        input_at_zero=curve.get(SiennaStructField.INPUT_AT_ZERO),
     )
     recorder.append(
         TranslationEvent(
@@ -920,6 +925,58 @@ def _convert_hvdc_loss(
         )
     )
     return ps_loss.model_dump()
+
+
+_HVDC_LIMITS_DERIVATION = (
+    f"{FLOW_BOUNDS_DERIVATION}; the to-end limits are the from-end limits times "
+    "(1 - loss proportional term)"
+)
+_HVDC_RATING_COLUMNS = (
+    SiennaLinkCol.RATING,
+    SiennaLinkCol.RATING_FROM,
+    SiennaLinkCol.RATING_TO,
+    SiennaLinkCol.OPERATIONAL_FLOW_LIMIT,
+)
+
+
+def _convert_hvdc_ratings(
+    out: dict[str, Any], ps_loss: dict[str, Any], comp_name: str, recorder: ScopedRecorder
+) -> None:
+    """Replace the ratings and the flow limit of an HVDC row with the end limits PS.jl states."""
+    hvdc_type = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE.value
+    bounds = build_hvdc_flow_bounds(out)
+    stated = {column: out.pop(column, None) for column in _HVDC_RATING_COLUMNS}
+    loss_term = float(ps_loss[SiennaStructField.FUNCTION_DATA][SiennaStructField.PROPORTIONAL_TERM])
+    efficiency = 1.0 - loss_term
+    limits = {
+        PowerSimulationsCol.ACTIVE_POWER_LIMITS_FROM: {
+            SiennaStructField.MIN: bounds.minimum,
+            SiennaStructField.MAX: bounds.maximum,
+        },
+        PowerSimulationsCol.ACTIVE_POWER_LIMITS_TO: {
+            SiennaStructField.MIN: bounds.minimum * efficiency,
+            SiennaStructField.MAX: bounds.maximum * efficiency,
+        },
+    }
+    out.update(limits)
+    sources = [
+        SourceField(Framework.SIENNA, hvdc_type, comp_name, column, value)
+        for column, value in stated.items()
+        if value is not None
+    ]
+    for attribute, value in limits.items():
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=sources,
+                destinations=[
+                    DestinationField(
+                        Framework.POWER_SIMULATIONS, hvdc_type, comp_name, attribute, value
+                    )
+                ],
+                derivation=_HVDC_LIMITS_DERIVATION,
+            )
+        )
 
 
 def _map_arc_backed_component(
@@ -947,9 +1004,11 @@ def _map_arc_backed_component(
             out.setdefault("rating_c", None)
 
         if sienna_type == SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE:
-            out[PowerSimulationsCol.LOSS] = _convert_hvdc_loss(
+            ps_loss = _convert_hvdc_loss(
                 out.get(SiennaLinkCol.LOSS), sienna_type.value, comp_name, recorder
             )
+            out[PowerSimulationsCol.LOSS] = ps_loss
+            _convert_hvdc_ratings(out, ps_loss, comp_name, recorder)
 
         record_arc_backed_translation(
             recorder, sienna_type.value, comp_name, comp_id, comp_uuid, arc_id, arc_uuid

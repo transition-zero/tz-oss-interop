@@ -1144,8 +1144,8 @@ A PyPSA `Link` represents a controllable directed power flow branch with no phys
 
 **Key translation decisions:**
 1. **Scope filter (v1):** Only Links where both `bus0` and `bus1` connect to AC or DC electricity buses are translated. Links involving non-electricity carriers (H₂, gas, heat) are deferred. In all tested sample files, cross-carrier Links do not appear.
-2. **Efficiency → loss:** PyPSA `efficiency ∈ (0, 1]` maps to Sienna `loss = InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0))`. Efficiency=1.0 (lossless) → proportional_term=0.0. Efficiency=0.97 → proportional_term=0.03.
-3. **Directionality:** PyPSA `p_min_pu` determines bidirectionality. `p_min_pu = 0` (the PyPSA default) → unidirectional; `p_min_pu = -1` (Breakthrough/elec_s_70) → bidirectional. The `active_power_limits_from.min` reflects this.
+2. **Efficiency → loss:** PyPSA `efficiency ∈ (0, 1]` maps to Sienna `loss = LossCurve(power_units=NATURAL_UNITS, value_curve=InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0)))`. Efficiency=1.0 (lossless) → proportional_term=0.0. Efficiency=0.97 → proportional_term=0.03.
+3. **Directionality:** PyPSA `p_min_pu` determines bidirectionality. `p_min_pu = 0` (the PyPSA default) → unidirectional; `p_min_pu = -1` (Breakthrough/elec_s_70) → bidirectional. The `operational_flow_limit.to_from_max` reflects this: it is `0.0` for a unidirectional link.
 4. **No impedance conversion needed:** Links have no `r`/`x`/`b`/`g`; all power limits are in MW.
 5. **Multi-port Links (bus2, bus3, …)** are out of scope for v1. No tested sample file uses them.
 
@@ -1182,19 +1182,24 @@ Source: `SiennaSchemas/Operations/Branch/TwoTerminalGenericHVDCLine.json` (commi
   "available": true,
   "active_power_flow": 0.0,
   "arc": 1,
-  "active_power_limits_from": { "min": -2500.0, "max": 2500.0 },
-  "active_power_limits_to": { "min": -2500.0, "max": 2500.0 },
+  "rating": 2500.0,
+  "operational_flow_limit": {
+    "from_to_min": 0.0, "from_to_max": 2500.0, "to_from_min": 0.0, "to_from_max": 2500.0
+  },
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
-    "input_at_zero": null
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
   }
 }
 ```
 
-Field notes: `arc` is the integer `id` of the `Arc` joining the from/to buses. `active_power_limits_*` / `reactive_power_limits_*` are `{min, max}` pairs in MW / MVAR. `loss` is a `TwoTerminalLoss` (here an `InputOutputCurve`): a linear loss of `proportional_term` MW per MW of flow, i.e. `1 - efficiency` (so `efficiency = 0.97` → `0.03`). `loss` is optional — a lossless link omits it or sets `proportional_term: 0.0`.
+Field notes: `arc` is the integer `id` of the `Arc` joining the from/to buses. `rating` is the transfer rating of the DC line, in MW. `rating_from` and `rating_to` are the optional converter ratings at the two ends; an absent converter rating adds no limit beyond `rating`. `operational_flow_limit` is optional. It bounds the flow in each direction, in addition to the ratings: `from_to_*` for flow from the from bus to the to bus, and `to_from_*` for the reverse flow. Each of its four values is 0 or more. When it is absent, the line can move power both ways up to its smallest rating. `reactive_power_limits_*` are `{min, max}` pairs in MVAR. `loss` is a `LossCurve` that holds its `power_units` and a `value_curve` (here an `InputOutputCurve`): a linear loss of `proportional_term` MW per MW of flow, i.e. `1 - efficiency` (so `efficiency = 0.97` → `0.03`). `loss` is optional — a lossless link omits it or sets `proportional_term: 0.0`.
 
 ---
 
@@ -1286,13 +1291,14 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 | — | `active_power_flow` | Set to `0.0` | PyPSA has `p0`/`p1` result fields, not an initial condition; initialise to 0 |
 | `bus0` | `arc` (from) | resolve name → bus `id` | `arc` is the integer `id` of an `Arc` whose `from_id`/`to_id` are the bus `id`s of `bus0`/`bus1` |
 | `bus1` | `arc` (to) | Name lookup → `ACBus` | Same Arc; both buses must already exist in the system |
-| `p_nom × p_min_pu` | `active_power_limits_from.min` | Multiply; see directionality | If `p_min_pu ≥ 0`: min = 0.0. If `p_min_pu < 0`: min = `p_nom × p_min_pu` (negative MW) |
-| `p_nom × p_max_pu` | `active_power_limits_from.max` | Multiply | `p_nom × p_max_pu` (MW); use `p_nom_opt` if available after solve |
-| `p_nom × p_min_pu × efficiency` | `active_power_limits_to.min` | Multiply + efficiency | For bidirectional: min = `p_nom × p_min_pu × efficiency` |
-| `p_nom × p_max_pu × efficiency` | `active_power_limits_to.max` | Multiply + efficiency | `p_nom × p_max_pu × efficiency` (MW arriving at bus1) |
+| `p_nom` | `rating` | `max(p_nom, p_nom × p_max_pu, −p_nom × p_min_pu)` | The transfer rating of the DC line (MW); use `p_nom_opt` if available after solve. It is `p_nom` unless a flow bound is larger, for example `p_min_pu < −1`. A reader caps each flow bound at the rating |
+| `p_nom × p_max_pu` | `operational_flow_limit.from_to_max` | Multiply | The forward flow bound (MW). The loss model carries the efficiency, so no limit is scaled by it |
+| `p_nom × p_min_pu` | `operational_flow_limit.to_from_max` | Multiply; see directionality | If `p_min_pu < 0`: `−p_nom × p_min_pu` (positive MW). Otherwise `0.0` |
+| — | `operational_flow_limit.from_to_min`, `.to_from_min` | Set to `0.0` | A positive `p_min_pu` travels in `ext["p_min_pu"]` instead |
+| — | `rating_from`, `rating_to` | Leave out | A PyPSA Link states no converter ratings. An absent converter rating adds no limit beyond `rating` |
 | — | `reactive_power_limits_from` | Set to `(min=0.0, max=0.0)` | PyPSA Links carry no reactive power; DC assumption |
 | — | `reactive_power_limits_to` | Set to `(min=0.0, max=0.0)` | Same |
-| `efficiency` | `loss` | `InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0))` | efficiency=1.0 → proportional_term=0.0; efficiency=0.97 → proportional_term=0.03 |
+| `efficiency` | `loss` | `LossCurve(power_units=NATURAL_UNITS, value_curve=InputOutputCurve(LinearFunctionData(proportional_term=1-efficiency, constant_term=0.0)))` | efficiency=1.0 → proportional_term=0.0; efficiency=0.97 → proportional_term=0.03 |
 | `marginal_cost` | `ext["marginal_cost"]` | Store in ext | No native Sienna field; preserve for downstream use |
 | `capital_cost` | `ext["capital_cost"]` | Store in ext | For capacity expansion context |
 | `p_nom_extendable` | `ext["p_nom_extendable"]` | Store in ext | Sienna has no native expansion mechanism (see below) |
@@ -1317,10 +1323,11 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
   "available": true,
   "active_power_flow": 0.0,
   "arc": 2,
-  "active_power_limits_from": { "min": 0.0, "max": 2000.0 },
-  "active_power_limits_to": { "min": 0.0, "max": 1940.0 },
+  "rating": 2000.0,
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
-  "reactive_power_limits_to": { "min": 0.0, "max": 0.0 }
+  "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
+  "base_power": 100.0,
+  "power_units": "NATURAL_UNITS"
 }
 ```
 
@@ -1330,19 +1337,23 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 
 PyPSA Links are inherently directed: power flows from `bus0` toward `bus1`. Whether the flow can reverse depends on `p_min_pu`:
 
-| `p_min_pu` value | Interpretation | `active_power_limits_from` | Example source |
+| `p_min_pu` value | Interpretation | `operational_flow_limit` (`from_to_max`, `to_from_max`) | Example source |
 | --- | --- | --- | --- |
-| `0.0` (default) | Unidirectional — no reverse flow | `(min=0.0, max=p_nom)` | `network.nc`, APG |
-| `-1.0` | Fully bidirectional — can flow either way | `(min=-p_nom, max=p_nom)` | Breakthrough elec_s_70, ac-dc-meshed |
-| `-0.9` | Bidirectional but asymmetric | `(min=-0.9×p_nom, max=p_nom)` | ac-dc-meshed |
+| `0.0` (default) | Unidirectional — no reverse flow | `(p_nom, 0.0)` | `network.nc`, APG |
+| `-1.0` | Fully bidirectional — can flow either way | `(p_nom, p_nom)` | Breakthrough elec_s_70, ac-dc-meshed |
+| `-0.9` | Bidirectional but asymmetric | `(p_nom, 0.9×p_nom)` | ac-dc-meshed |
 
-Sienna `TwoTerminalGenericHVDCLine.active_power_limits_from` accepts negative min values to represent reverse flow capability. The convention is:
-- Positive flow = from bus0 to bus1 (consistent with PyPSA convention)
-- Negative flow = from bus1 to bus0 (reverse)
+Sienna `TwoTerminalGenericHVDCLine.operational_flow_limit` states each direction as a positive magnitude. The convention is:
+- `from_to_*` = flow from bus0 to bus1 (consistent with PyPSA convention)
+- `to_from_*` = flow from bus1 to bus0 (reverse)
 
-**For `active_power_limits_to`:** The to-end limits reflect what arrives at `bus1` after losses:
-- `max = p_nom × p_max_pu × efficiency`
-- `min = p_nom × p_min_pu × efficiency` (negative if bidirectional)
+`rating_from` and `rating_to` are converter ratings, not direction bounds. A `rating_to` of `0.0` says the converter at bus1 is rated at 0 MW, so the link could deliver nothing. That is why the translator leaves both out.
+
+**Reading back:** a Sienna reader takes the smallest of `rating`, `rating_from` and `rating_to` as the bound on the flow each way. When `operational_flow_limit` is present, `from_to_max` and `to_from_max` lower that bound. When it is absent, the line can move power both ways up to that bound. The readers do not read `from_to_min` or `to_from_min`.
+
+**For PowerSimulations.jl:** PowerSimulations.jl takes `active_power_limits_from` and `active_power_limits_to` `{min, max}` pairs. The PowerSimulations writer derives them from the bounds above. The to-end limits reflect what arrives at `bus1` after losses:
+- `active_power_limits_from = (min=−reverse bound, max=forward bound)`
+- `active_power_limits_to = active_power_limits_from × (1 − loss proportional term)`
 
 This preserves the physics that arriving power is less than (or equal to, if lossless) sent power.
 
@@ -1352,21 +1363,21 @@ This preserves the physics that arriving power is less than (or equal to, if los
 
 PyPSA `efficiency` is a per-unit fraction: `p1 = efficiency × |p0|`. The inverse is `1 - efficiency` = fractional loss.
 
-Sienna `TwoTerminalGenericHVDCLine.loss` is typed `TwoTerminalLoss` (`InputOutputCurve | IncrementalCurve`). Use `InputOutputCurve(LinearFunctionData(proportional_term, constant_term=0.0))` where `proportional_term` is MW of loss per MW of flow.
+Sienna `TwoTerminalGenericHVDCLine.loss` is a `LossCurve`. It holds `power_units` and a `value_curve` (`InputOutputCurve | IncrementalCurve`). Use `LossCurve(power_units=NATURAL_UNITS, value_curve=InputOutputCurve(LinearFunctionData(proportional_term, constant_term=0.0)))` where `proportional_term` is MW of loss per MW of flow.
 
 **Mapping:**
 
 ```
-loss = InputOutputCurve(LinearFunctionData(proportional_term = 1.0 - efficiency, constant_term = 0.0))
+loss = LossCurve(power_units = NATURAL_UNITS, value_curve = InputOutputCurve(LinearFunctionData(proportional_term = 1.0 - efficiency, constant_term = 0.0)))
 ```
 
-| PyPSA `efficiency` | Sienna `loss` | Meaning |
+| PyPSA `efficiency` | Sienna `loss.value_curve` | Meaning |
 | --- | --- | --- |
 | `1.0` (lossless) | `InputOutputCurve(LinearFunctionData(proportional_term=0.0, constant_term=0.0))` | No losses |
 | `0.97` | `InputOutputCurve(LinearFunctionData(proportional_term=0.03, constant_term=0.0))` | 3% proportional loss |
 | `0.95` | `InputOutputCurve(LinearFunctionData(proportional_term=0.05, constant_term=0.0))` | 5% proportional loss |
 
-**Time-varying efficiency:** If `efficiency` appears in `n.links_t`, it varies per timestep. The `TwoTerminalLoss` (`InputOutputCurve`) is static — time-varying efficiency cannot be represented natively. For v1, use the static `efficiency` column value. If the time-varying series is present, store a flag in `ext["has_time_varying_efficiency"] = true` so downstream systems are aware.
+**Time-varying efficiency:** If `efficiency` appears in `n.links_t`, it varies per timestep. The `LossCurve` is static — time-varying efficiency cannot be represented natively. For v1, use the static `efficiency` column value. If the time-varying series is present, store a flag in `ext["has_time_varying_efficiency"] = true` so downstream systems are aware.
 
 **Constant loss component:** PyPSA `efficiency` implies only proportional loss. If a constant loss term (e.g. no-load station consumption) is needed, it must be added outside of PyPSA’s standard Link model.
 
@@ -1378,7 +1389,7 @@ PyPSA supports capacity expansion via `p_nom_extendable=True` with bounds `[p_no
 
 **v1 approach:**
 
-1. If `p_nom_extendable=False`: use `p_nom` directly for power limits.
+1. If `p_nom_extendable=False`: use `p_nom` directly for the rating and the flow limit.
 2. If `p_nom_extendable=True` and `p_nom_opt > 0` (post-solve): use `p_nom_opt` as the effective capacity — the optimiser has already determined the installed size.
 3. If `p_nom_extendable=True` and `p_nom_opt = 0` or absent (pre-solve): use `p_nom` as a fallback lower bound. Store all expansion metadata in `ext`.
 
@@ -1397,10 +1408,10 @@ In all tested sample files, `p_nom_extendable=True` is common (every link in `ne
 
 PyPSA allows `p_min_pu` and `p_max_pu` to be time series (in `n.links_t`). When present, they override the static values per timestep.
 
-Sienna `TwoTerminalGenericHVDCLine` stores fixed `active_power_limits_from/to` — no native time-varying limits. For v1:
-- Use the static `p_min_pu`/`p_max_pu` columns for power limit construction.
+Sienna `TwoTerminalGenericHVDCLine` stores a fixed `operational_flow_limit` — no native time-varying limits. For v1:
+- Use the static `p_min_pu`/`p_max_pu` columns for the flow limit.
 - If time-varying versions exist in `n.links_t`, store a flag in `ext["has_time_varying_p_min_pu"]` / `ext["has_time_varying_p_max_pu"]`.
-- Do not attempt to attach `TimeSeriesData` to the power limits field; Sienna does not support this.
+- Do not attempt to attach `TimeSeriesData` to the flow limit field; Sienna does not support this.
 
 ---
 
@@ -1411,7 +1422,7 @@ Sienna `TwoTerminalGenericHVDCLine` stores fixed `active_power_limits_from/to` �
 - **46 links** total; all pass electricity filter
 - `carrier = "DC"` on all Links; all endpoint buses are AC carriers
 - `p_min_pu = -1.0` → fully bidirectional
-- `efficiency = 1.0` → `InputOutputCurve(LinearFunctionData(proportional_term=0.0, ...))` (no losses)
+- `efficiency = 1.0` → `loss.value_curve = InputOutputCurve(LinearFunctionData(proportional_term=0.0, ...))` (no losses)
 - `p_nom_extendable = True` on all; `p_nom_opt` values present (post-solve network)
 - No `bus2`/`bus3` in any row
 - Typical `p_nom` range: 100–1000 MW
@@ -1421,7 +1432,7 @@ Sienna `TwoTerminalGenericHVDCLine` stores fixed `active_power_limits_from/to` �
 - **128 links** total; all pass electricity filter
 - `carrier` values: `"interconnector-GBR-FRA"`, `"interconnector-GBR-IRL"`, etc.
 - `p_min_pu = 0.0` → unidirectional
-- `efficiency = 0.97` → `InputOutputCurve(LinearFunctionData(proportional_term=0.03, ...))`
+- `efficiency = 0.97` → `loss.value_curve = InputOutputCurve(LinearFunctionData(proportional_term=0.03, ...))`
 - `p_nom_extendable = True` on all
 - No `bus2`/`bus3`
 
@@ -1472,19 +1483,24 @@ Sienna (SiennaSchemas JSON):
   "available": true,
   "active_power_flow": 0.0,
   "arc": 1,
-  "active_power_limits_from": { "min": 0.0, "max": 2500.0 },
-  "active_power_limits_to": { "min": 0.0, "max": 2425.0 },
+  "rating": 2500.0,
+  "operational_flow_limit": {
+    "from_to_min": 0.0, "from_to_max": 2500.0, "to_from_min": 0.0, "to_from_max": 0.0
+  },
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
-    "input_at_zero": null
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.03, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
   }
 }
 ```
 
-Capacity uses `p_nom_opt` (2500 MW). `arc` is the integer `id` of the `Arc` (GB→FR). `active_power_limits_to.max = 2500 × 0.97 = 2425`. `loss.proportional_term = 1 − efficiency = 0.03`.
+Capacity uses `p_nom_opt` (2500 MW). `arc` is the integer `id` of the `Arc` (GB→FR). Unidirectional, so `operational_flow_limit.to_from_max = 0.0`. `rating_from` and `rating_to` are left out. `loss.value_curve.function_data.proportional_term = 1 − efficiency = 0.03`. The PowerSimulations writer gives `active_power_limits_to.max = 2500 × 0.97 = 2425`.
 
 #### Bidirectional elec_s_70 HVDC Link (efficiency=1.0)
 
@@ -1511,19 +1527,24 @@ Sienna (SiennaSchemas JSON):
   "available": true,
   "active_power_flow": 0.0,
   "arc": 2,
-  "active_power_limits_from": { "min": -720.0, "max": 720.0 },
-  "active_power_limits_to": { "min": -720.0, "max": 720.0 },
+  "rating": 720.0,
+  "operational_flow_limit": {
+    "from_to_min": 0.0, "from_to_max": 720.0, "to_from_min": 0.0, "to_from_max": 720.0
+  },
   "reactive_power_limits_from": { "min": 0.0, "max": 0.0 },
   "reactive_power_limits_to": { "min": 0.0, "max": 0.0 },
   "loss": {
-    "curve_type": "INPUT_OUTPUT",
-    "function_data": { "function_type": "LINEAR", "proportional_term": 0.0, "constant_term": 0.0 },
-    "input_at_zero": null
+    "power_units": "NATURAL_UNITS",
+    "value_curve": {
+      "curve_type": "INPUT_OUTPUT",
+      "function_data": { "function_type": "LINEAR", "proportional_term": 0.0, "constant_term": 0.0 },
+      "input_at_zero": null
+    }
   }
 }
 ```
 
-Capacity uses `p_nom_opt` (720 MW). Bidirectional, so `active_power_limits_*.min = -720`. `efficiency = 1.0` → `loss.proportional_term = 0.0` (lossless).
+Capacity uses `p_nom_opt` (720 MW). Bidirectional, so `operational_flow_limit.to_from_max = 720`. `efficiency = 1.0` → `loss.value_curve.function_data.proportional_term = 0.0` (lossless).
 
 ---
 
@@ -1535,8 +1556,8 @@ These PyPSA `Link` features are explicitly out of scope for v1 translation:
 | --- | --- | --- |
 | **Cross-carrier Links** (bus0/bus1 on non-electricity carriers) | No Sienna equivalent for multi-energy network branches | Define custom extension types or store as `ext`-only objects |
 | **Multi-port Links** (bus2, bus3, bus4) | `TwoTerminalGenericHVDCLine` is two-port only | Split into N pairwise Links as an approximation, or introduce a new Sienna component |
-| **Time-varying efficiency** (`n.links_t.efficiency`) | `TwoTerminalLoss` (`InputOutputCurve`) is static | v1 uses the static `loss`; record a `has_time_varying_efficiency` flag in the `ext` sidecar |
-| **Time-varying p_min_pu / p_max_pu** | Power limits are static in `TwoTerminalGenericHVDCLine` | v1 uses static limits; record a `has_time_varying_p_min_pu`/`_max_pu` flag in the `ext` sidecar |
+| **Time-varying efficiency** (`n.links_t.efficiency`) | The `LossCurve` is static | v1 uses the static `loss`; record a `has_time_varying_efficiency` flag in the `ext` sidecar |
+| **Time-varying p_min_pu / p_max_pu** | The flow limit is static in `TwoTerminalGenericHVDCLine` | v1 uses static limits; record a `has_time_varying_p_min_pu`/`_max_pu` flag in the `ext` sidecar |
 | **Ramp limits** (`ramp_limit_up/down`) | No field in `TwoTerminalGenericHVDCLine` | Store in `ext`; ignored by Sienna operations |
 | **`TwoTerminalVSCLine`** | 30+ VSC-specific fields; PyPSA `Link` provides none | Only use if source data explicitly encodes VSC converter parameters |
 | **`TwoTerminalLCCLine`** | LCC thyristor-specific; not appropriate for generic Links | Only use if source data explicitly encodes LCC converter parameters |
@@ -1545,11 +1566,11 @@ These PyPSA `Link` features are explicitly out of scope for v1 translation:
 
 ### Open Questions
 
-1. **`active_power_limits_to` with bidirectional + losses:** For a bidirectional Link with `efficiency < 1.0`, the loss applies asymmetrically depending on flow direction. Current mapping applies `efficiency` uniformly to both ends. Is this the correct Sienna interpretation of `TwoTerminalLoss` (`InputOutputCurve`) for reverse flow?
-2. **`p_set` Links:** Some PyPSA networks use non-extendable, non-optimised Links with `p_set` (fixed dispatch). These represent must-run injections. Should they translate to a `TwoTerminalGenericHVDCLine` with `active_power_limits_from = active_power_limits_to = (min=p_set, max=p_set)`, or should they be represented differently?
+1. **PowerSimulations `active_power_limits_to` with bidirectional + losses:** For a bidirectional Link with `efficiency < 1.0`, the loss applies asymmetrically depending on flow direction. Current mapping applies `efficiency` uniformly to both ends. Is this the correct Sienna interpretation of the `LossCurve` for reverse flow?
+2. **`p_set` Links:** Some PyPSA networks use non-extendable, non-optimised Links with `p_set` (fixed dispatch). These represent must-run injections. Should they translate to a `TwoTerminalGenericHVDCLine` with `operational_flow_limit.from_to_min = from_to_max = p_set`, or should they be represented differently?
 3. **Bus carrier `"DC"`:** In Breakthrough-style networks, Links connect AC buses but carry carrier `"DC"`. The endpoint buses themselves have carrier `"AC"`. The `is_electricity_bus` filter accepts AC, DC, and empty — but what if there are pure DC bus nodes (`DCBus` in Sienna) that should connect to DC branches instead? Needs clarification on when `ACBus` vs `DCBus` is appropriate.
-4. **`p_nom = 0` and `p_nom_opt = 0`:** A Link with both values at zero produces a `TwoTerminalGenericHVDCLine` with `active_power_limits_from = (min=0.0, max=0.0)` — effectively non-functional. Should such Links be skipped or included as available=false?
-5. **Round-trip reconstruction:** When reconstructing PyPSA from Sienna, `efficiency` must be recovered from `1 - loss.proportional_term` (where `loss` is an `InputOutputCurve`). Is the `ext["carrier"]` field sufficient to reconstruct a PyPSA Link correctly, or do we need to also preserve `p_min_pu`/`p_max_pu` explicitly in `ext`?
+4. **`p_nom = 0` and `p_nom_opt = 0`:** A Link with both values at zero produces a `TwoTerminalGenericHVDCLine` with `rating = 0.0` and all four `operational_flow_limit` values at `0.0` — effectively non-functional. Should such Links be skipped or included as available=false?
+5. **Round-trip reconstruction:** When reconstructing PyPSA from Sienna, `efficiency` must be recovered from `1 - loss.value_curve.function_data.proportional_term` (where `loss.value_curve` is an `InputOutputCurve`). Is the `ext["carrier"]` field sufficient to reconstruct a PyPSA Link correctly, or do we need to also preserve `p_min_pu`/`p_max_pu` explicitly in `ext`?
 6. **`marginal_cost` in `ext`:** PowerSimulations.jl uses `OperationalCost` subtypes for dispatch cost. Should `marginal_cost` be written into a `ThermalGenerationCost`like wrapper attached to the component, or is `ext` the right home for v1?
 
 ---

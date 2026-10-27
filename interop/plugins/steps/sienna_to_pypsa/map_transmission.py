@@ -30,6 +30,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_hvdc_flow import HvdcFlowBounds, build_hvdc_flow_bounds
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     bus_id_to_v_nom,
@@ -165,17 +166,18 @@ class _LinkPowerLimits:
 def _reconstruct_link_power_limits(
     reporter: LinkReporter,
     name: str,
-    limits_from: dict[str, float],
+    bounds: HvdcFlowBounds,
     ext: ControllableLineExtension,
 ) -> _LinkPowerLimits:
-    """Invert the forward ``active_power_limits_from`` split back into p_nom/p_min_pu/p_max_pu.
+    """Invert the forward flow bounds back into p_nom/p_min_pu/p_max_pu.
 
-    Forward writes ``max = capacity * p_max_pu`` and ``min = capacity * p_min_pu`` (only when
-    p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu therefore cannot be
-    read off the limits alone; both travel in the ext sidecar so the round-trip stays lossless.
+    Forward writes ``from_to_max = capacity * p_max_pu`` and ``to_from_max = -capacity *
+    p_min_pu`` (only when p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu
+    therefore cannot be read off the bounds alone; both travel in the ext sidecar so the
+    round-trip stays lossless.
     """
-    limit_max = float(limits_from[SiennaStructField.MAX])
-    limit_min = float(limits_from[SiennaStructField.MIN])
+    limit_max = bounds.maximum
+    limit_min = bounds.minimum
     p_max_pu = ext.p_max_pu
     if p_max_pu is None:
         p_nom = limit_max
@@ -278,15 +280,15 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
             ext = extensions.get(name)
             loss_term = float(
-                row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
-                    SiennaStructField.PROPORTIONAL_TERM
-                ]
+                row[SiennaLinkCol.LOSS][SiennaStructField.VALUE_CURVE][
+                    SiennaStructField.FUNCTION_DATA
+                ][SiennaStructField.PROPORTIONAL_TERM]
             )
             efficiency = 1.0 - loss_term
             reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
             reporter.record_available(name, available, available)
             limits = _reconstruct_link_power_limits(
-                reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
+                reporter, name, build_hvdc_flow_bounds(row), ext
             )
             reporter.record_efficiency(name, loss_term, efficiency)
             carrier = ext.carrier
