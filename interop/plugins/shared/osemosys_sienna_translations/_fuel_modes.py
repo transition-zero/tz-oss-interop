@@ -66,6 +66,13 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     TECHNOLOGY_NAME,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    ACTIVITY_RATE_T_PER_MWH,
+    PENALTY_PER_TONNE,
+    STATED_RATE,
+    read_emission_penalties,
+    read_emission_rates,
+)
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     HAS_FLOWS,
     IS_ALL_ELECTRICITY,
@@ -117,9 +124,7 @@ MAX_LINK_FUELS = 4
 _KEYS = [REGION, TECHNOLOGY]
 _MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _MODE_SUFFIX = "mode"
-PENALTY = "penalty"
-_RATE = "rate"
-_STATED_RATE = "stated_rate"
+_PENALTY_COST = "penalty_cost"
 _TECH_LOWER = "technology_lower"
 _TECH_UPPER = "technology_upper"
 _MODE_LOWER = "mode_lower"
@@ -405,39 +410,23 @@ def _enrich_costs(state: State, operations: OperationsYear, modes: pl.DataFrame)
 
 def _read_rates(state: State, operations: OperationsYear, modes: pl.DataFrame) -> pl.DataFrame:
     """One list of pollutant rates for each mode that emits, and the penalty of the list."""
-    units = operations.units
-    rates = (
-        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .filter(pl.col(VALUE_COL) != 0)
-        .join(modes.select(_MODE_KEYS), on=_MODE_KEYS, how="semi")
-        .select(*_MODE_KEYS, POLLUTANT, pl.col(VALUE_COL).cast(pl.Float64).alias(_STATED_RATE))
-    )
-    convert = units.convert_emissions_per_energy_to_tonnes_per_mwh
-    rates = rates.with_columns(express_converted(rates, _STATED_RATE, convert).alias(_RATE))
+    rates = read_emission_rates(state, operations, modes)
     penalties = read_emission_penalties(state, operations, rates)
     priced = rates.join(penalties, on=[REGION, POLLUTANT], how="left").with_columns(
-        (pl.col(_RATE) * pl.col(PENALTY).fill_null(NO_COST)).alias(PENALTY)
+        (pl.col(ACTIVITY_RATE_T_PER_MWH) * pl.col(PENALTY_PER_TONNE)).alias(_PENALTY_COST)
     )
     return (
         priced.sort(POLLUTANT)
         .group_by(_MODE_KEYS)
         .agg(
-            pl.struct(POLLUTANT, _STATED_RATE, pl.col(_RATE).alias(RATE_T_PER_MWH)).alias(RATES),
-            pl.col(PENALTY).sum().alias(PENALTY_MWH),
+            pl.struct(
+                POLLUTANT,
+                STATED_RATE,
+                pl.col(ACTIVITY_RATE_T_PER_MWH).alias(RATE_T_PER_MWH),
+            ).alias(RATES),
+            pl.col(_PENALTY_COST).sum().alias(PENALTY_MWH),
         )
     )
-
-
-def read_emission_penalties(
-    state: State, operations: OperationsYear, rates: pl.DataFrame
-) -> pl.DataFrame:
-    """The penalty of each region and pollutant of `rates`, in $/t."""
-    keys = rates.select(REGION, POLLUTANT).unique()
-    penalties = read_parameter_with_defaults(
-        state, SupplyParameter.EMISSION_PENALTY, operations.year, keys
-    ).select(REGION, POLLUTANT, pl.col(VALUE_COL).cast(pl.Float64).alias(PENALTY))
-    convert = operations.units.convert_cost_per_emissions_to_dollars_per_tonne
-    return penalties.with_columns(express_converted(penalties, PENALTY, convert))
 
 
 # --- the rules ----------------------------------------------------------------------------
