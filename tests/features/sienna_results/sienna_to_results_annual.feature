@@ -143,6 +143,32 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
       | emissions | CO2       |          | 2030-01-01T00:00:00 | 3250  |
       | emissions | NOX       |          | 2030-01-01T00:00:00 | 65    |
 
+  Scenario: A solve whose periods sit in two years writes each annual row at 1 January of its year
+    The solve below replaces the solve of the background. It covers two hours in July of each year.
+    Given Sienna solve results
+    And the results cover snapshots 2030-07-01T00:00:00 2030-07-01T01:00:00 2031-07-01T00:00:00 2031-07-01T01:00:00
+    And the results have ThermalStandard dispatch for "gas" of 10 20 30 40
+    And the results are saved in "two_year_results"
+    And the system has a representative period "summer_2030" from "2030-07-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "summer_2031" from "2031-07-01T00:00:00" of 2 hours with weight 50
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=two_year_results"
+    Then the pipeline exit code is 0
+    And the results parquet "outputs/results.parquet" holds these "production" rows among others:
+      | variable   | component | category | timestamp           | value |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 3000  |
+      | production | gas       | gas      | 2031-01-01T00:00:00 | 3500  |
+    And the results parquet "outputs/results.parquet" holds these "installed_capacity" rows among others:
+      | variable           | component | category | timestamp           | value |
+      | installed_capacity | gas       | gas      | 2030-01-01T00:00:00 | 100   |
+      | installed_capacity | gas       | gas      | 2031-01-01T00:00:00 | 100   |
+    And the results parquet "outputs/results.parquet" has these "emissions" rows:
+      | variable  | component | category | timestamp           | value |
+      | emissions | CO2       |          | 2030-01-01T00:00:00 | 1500  |
+      | emissions | NOX       |          | 2030-01-01T00:00:00 | 30    |
+      | emissions | CO2       |          | 2031-01-01T00:00:00 | 1750  |
+      | emissions | NOX       |          | 2031-01-01T00:00:00 | 35    |
+
   Scenario: Hours in no representative period are left out of the year, and reported as one run
     Given the system has a representative period "day_1" from "2030-01-01T00:00:00" of 1 hours with weight 100
     And the system has a representative period "day_2" from "2030-01-01T03:00:00" of 1 hours with weight 50
