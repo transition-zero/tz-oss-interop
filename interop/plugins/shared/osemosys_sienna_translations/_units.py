@@ -73,9 +73,9 @@ class ModelUnits:
     capacity_unit: str | None = None
     energy_unit: str | None = None
     emissions_unit: str | None = None
+    currency_unit: str | None = None
     tonnes_per_emission: float | None = None
     dollars_per_currency: float | None = None
-    currency_code: str | None = None
     currency_year: int | None = None
 
     def convert_capacity_to_mw(self, value: Quantity) -> Quantity:
@@ -123,9 +123,9 @@ def parse_units(state: State) -> ModelUnits:
         capacity_unit=stated.get(UnitQuantity.CAPACITY),
         energy_unit=stated.get(UnitQuantity.ENERGY),
         emissions_unit=stated.get(UnitQuantity.EMISSIONS),
+        currency_unit=currency,
         tonnes_per_emission=_parse_unit(stated, UnitQuantity.EMISSIONS, _TONNES_PER_EMISSION_UNIT),
         dollars_per_currency=None if currency is None else _parse_currency_scale(currency),
-        currency_code=None if currency is None else _parse_currency_code(currency),
         currency_year=None if currency_year is None else _parse_currency_year(currency_year),
     )
 
@@ -171,10 +171,6 @@ def _parse_currency_scale(currency: str) -> float:
     if scale not in _CURRENCY_SCALE_WORDS:
         raise _build_unknown_currency_error(currency)
     return _CURRENCY_SCALE_WORDS[scale]
-
-
-def _parse_currency_code(currency: str) -> str:
-    return _require_currency_match(currency).group("code")
 
 
 def _require_currency_match(currency: str) -> re.Match[str]:

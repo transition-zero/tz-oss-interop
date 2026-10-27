@@ -94,7 +94,7 @@ _EMISSIONS_DERIVATION = (
     "1 January of the year, because the Sienna system keys an emission rate by the pollutant alone"
 )
 _OBJECTIVE_DERIVATION = (
-    "Σ ModelPeriodCostByRegion × the scale of the model currency → objective in {unit}"
+    "Σ ModelPeriodCostByRegion × the scale of {unit} → objective, in the same currency"
 )
 
 
@@ -292,7 +292,7 @@ class AetosResultsToResultsFormat(TranslationStep):
         rows = inputs.variables[_OBJECTIVE.source]
         if rows.is_empty():
             return _build_empty_results()
-        self._record_derivation(_OBJECTIVE, inputs.units.currency_code)
+        self._record_derivation(_OBJECTIVE, inputs.units.currency_unit)
         total = inputs.units.convert_currency_to_dollars(pl.col(YearlyResultsCol.VALUE).sum())
         return rows.select(
             pl.lit(str(ResultsVariable.OBJECTIVE)).alias(ResultsCol.VARIABLE),
