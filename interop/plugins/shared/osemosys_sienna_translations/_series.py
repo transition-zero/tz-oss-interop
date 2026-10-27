@@ -26,6 +26,12 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.sienna_time_series import collect_ts_info, ts_association_row
 
+SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
+    StagedTimeSeriesCol.COMPONENT: pl.Utf8,
+    StagedTimeSeriesCol.VALUE: pl.Float64,
+}
+
 # The divisor of a series per unit, and of a series whose peak is zero, which keeps its values.
 _UNSCALED = 1.0
 

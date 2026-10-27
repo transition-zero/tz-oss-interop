@@ -72,6 +72,9 @@ Feature: osemosys-csv-to-sienna turns the timeslices of one model year into repr
 
   Scenario: A model with no seasons for its timeslices gets one hour for each timeslice
     Given the otoole parameter "Conversionls" keyed by "TIMESLICE SEASON" with default 0 has no file
+    And the otoole parameter "DaysInDayType" keyed by "SEASON DAYTYPE YEAR" with default 7 has the rows:
+      | SEASON | DAYTYPE | YEAR | VALUE |
+      | S1     | 1       | 2030 | 7     |
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the log contains "so each timeslice becomes one hour"
@@ -81,6 +84,7 @@ Feature: osemosys-csv-to-sienna turns the timeslices of one model year into repr
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B2" having "weight" close to 3285
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B1" having "first_timestamp" set to "2030-01-01T02:00:00"
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B1" without field "season"
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B1" without field "days_in_day_type"
 
   Scenario: A day whose timeslices give different weights takes their mean
     Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
@@ -93,6 +97,23 @@ Feature: osemosys-csv-to-sienna turns the timeslices of one model year into repr
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight" close to 186.1313869
     And the file "decisions.md" contains "so the day takes their mean"
+
+  Scenario: A day whose timeslices give different weights keeps the annual energy of each timeslice
+    The two timeslices of S1 give the weights 365 and 121.7, so the day weighs their mean, 243.3.
+    The demand of each timeslice scales by its own weight / the weight of the day, so each
+    timeslice keeps its energy and the load meets 876 GWh in the year.
+    Given the otoole parameter "YearSplit" keyed by "TIMESLICE YEAR" with default 0 has the rows:
+      | TIMESLICE | YEAR | VALUE |
+      | S1B1      | 2030 | 0.25  |
+      | S1B2      | 2030 | 0.25  |
+      | S2B1      | 2030 | 0.125 |
+      | S2B2      | 2030 | 0.375 |
+    When I translate the otoole model to Sienna for the year "2030"
+    Then the pipeline exit code is 0
+    And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight" close to 243.3090024
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "max_active_power" set to 200.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 0.375, 18 × 0.375, 6 × 1, 18 × 0.333333333333
+    And the file "decisions.md" contains "the weight of the timeslice / the weight of its day"
 
   Scenario: A membership that names a daily time bracket outside its set gives one hour for each timeslice
     Given a pipeline "osemosys-stray-bracket" that puts the timeslice "S2B2" in the daily time bracket "B3" before the translation

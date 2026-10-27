@@ -6,7 +6,9 @@ PowerLoad for an electricity fuel, and a load record of extensions.json for anot
 The specified annual demand of a fuel becomes a load named for the fuel. In each hour of the
 calendar, the load is `specified_annual_demand (MWh) × specified_demand_profile /
 (year_split × 8760 h)` of the timeslice of that hour. The accumulated annual demand of a fuel
-becomes a second load, `<fuel>/accumulated`, flat at `accumulated_annual_demand (MWh) / 8760 h`.
+becomes a second load, `<fuel>/accumulated`, at `accumulated_annual_demand (MWh) / 8760 h`.
+Each hour then takes the energy scale of its timeslice, so that the energy of each timeslice in
+the year stays the same where its day takes the mean weight of its timeslices.
 
 A load states its peak as `max_active_power`. Its series is in MW, and the sink divides it by
 that peak.
@@ -35,13 +37,16 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     HOURS_PER_YEAR,
     LOAD_NAME_SEPARATOR,
     MIN_LOAD_BASE_POWER_MVA,
-    CalendarHourCol,
     DemandParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import (
     ELECTRICITY_BUS,
     FUEL_NAME,
     read_electricity_fuels,
+)
+from interop.plugins.shared.osemosys_sienna_translations._calendar import (
+    ENERGY_SCALE,
+    YEAR_SPLIT,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
@@ -61,6 +66,7 @@ from interop.plugins.shared.osemosys_sienna_translations._names import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._series import (
+    SERIES_SCHEMA,
     build_series_firsts,
     build_series_peaks,
 )
@@ -98,7 +104,6 @@ PEAK_MW = "peak_mw"
 FIRST_MW = "first_mw"
 
 _PROFILE = "profile"
-_YEAR_SPLIT = "year_split"
 _HOURLY_MW = "hourly_mw"
 # The load and the timeslice of a demand profile value, `<load>/<timeslice>`.
 _LOAD_TIMESLICE = "load_timeslice"
@@ -114,11 +119,14 @@ _NAME_DERIVATION = (
     f"'{LOAD_NAME_SEPARATOR}{ACCUMULATED_LOAD_SUFFIX}' for accumulated annual demand"
 )
 _BUS_DERIVATION = "the bus of the electricity fuel, <region>/<fuel>"
+_SCALE_DERIVATION = "× the weight of the timeslice / the weight of its day"
 _SPECIFIED_DERIVATION = (
     "specified_annual_demand (MWh) × specified_demand_profile / (year_split × 8760 h) of the "
-    "timeslice of each hour"
+    f"timeslice of each hour, {_SCALE_DERIVATION}"
 )
-_ACCUMULATED_DERIVATION = "accumulated_annual_demand (MWh) / 8760 h in each hour"
+_ACCUMULATED_DERIVATION = (
+    f"accumulated_annual_demand (MWh) / 8760 h in each hour, {_SCALE_DERIVATION}"
+)
 _PEAK_DERIVATION = "the highest hour of the max_active_power series"
 _FIRST_DERIVATION = "the first hour of the max_active_power series"
 _BASE_POWER_DERIVATION = f"max(max_active_power, {MIN_LOAD_BASE_POWER_MVA}) MVA"
@@ -131,11 +139,6 @@ _SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     LOAD_BUS: pl.Utf8,
     DEMAND_PARAMETER: pl.Utf8,
     ANNUAL_DEMAND: pl.Float64,
-}
-_SERIES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    StagedTimeSeriesCol.SNAPSHOT: pl.Datetime("us"),
-    StagedTimeSeriesCol.COMPONENT: pl.Utf8,
-    StagedTimeSeriesCol.VALUE: pl.Float64,
 }
 
 NO_HOURLY_DEMAND_SKIP = osemosys_skip_report(
@@ -214,7 +217,7 @@ def _build_loads(state: State, operations: OperationsYear, inputs: _LoadInputs) 
     drop = inputs.drop
     demands = _enrich_load_names(_read_demands(state, operations.year, inputs.fuels, drop))
     if demands.height == 0:
-        return LoadSources(demands, pl.DataFrame(schema=_SERIES_SCHEMA))
+        return LoadSources(demands, pl.DataFrame(schema=SERIES_SCHEMA))
     demands = demands.with_columns(
         operations.units.convert_energy_to_mwh(pl.col(ANNUAL_DEMAND)).alias(ANNUAL_DEMAND_MWH),
         pl.lit(operations.units.energy_unit, dtype=pl.Utf8).alias(ENERGY_UNIT),
@@ -307,10 +310,13 @@ def _build_series(
 ) -> pl.DataFrame:
     specified = _build_specified_demand(state, operations, demands)
     _report_demand_without_hours(specified, operations.year, recorder)
-    hourly = specified.select(LOAD_NAME, TIMESLICE, _HOURLY_MW)
-    return pl.concat(
-        [_reshape_to_series(operations, hourly), _build_accumulated_series(operations, demands)]
+    hourly = pl.concat(
+        [
+            specified.select(LOAD_NAME, TIMESLICE, _HOURLY_MW),
+            _build_accumulated_demand(operations, demands),
+        ]
     )
+    return operations.calendar.reshape_to_hours(hourly, LOAD_NAME, _HOURLY_MW)
 
 
 def _build_specified_demand(
@@ -320,7 +326,7 @@ def _build_specified_demand(
     specified = demands.filter(
         pl.col(DEMAND_PARAMETER) == DemandParameter.SPECIFIED_ANNUAL_DEMAND
     ).select(LOAD_NAME, REGION, FUEL, FUEL_NAME, ANNUAL_DEMAND_MWH)
-    timeslices = _build_year_split_table(operations)
+    timeslices = operations.calendar.build_timeslice_table()
     keys = specified.select(REGION, FUEL).join(timeslices.select(TIMESLICE), how="cross")
     profile = read_parameter_with_defaults(
         state, DemandParameter.SPECIFIED_DEMAND_PROFILE, operations.year, keys
@@ -336,7 +342,7 @@ def _report_demand_without_hours(
     specified: pl.DataFrame, year: int, recorder: ScopedRecorder
 ) -> None:
     """A profile above zero in a timeslice with no share of the year reaches no hour."""
-    is_lost = ((pl.col(_YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0)).fill_null(False)  # noqa: FBT003
+    is_lost = ((pl.col(YEAR_SPLIT) <= 0) & (pl.col(_PROFILE) > 0)).fill_null(False)  # noqa: FBT003
     named = specified.with_columns(
         pl.concat_str(LOAD_NAME, TIMESLICE, separator=LOAD_NAME_SEPARATOR).alias(_LOAD_TIMESLICE)
     )
@@ -361,47 +367,22 @@ def _build_lost_demand_report(year: int) -> SkipReport:
     )
 
 
-def _build_year_split_table(operations: OperationsYear) -> pl.DataFrame:
-    year_split = operations.calendar.year_split
-    return pl.DataFrame(
-        {TIMESLICE: list(year_split), _YEAR_SPLIT: list(year_split.values())},
-        schema={TIMESLICE: pl.Utf8, _YEAR_SPLIT: pl.Float64},
-    )
-
-
 def _express_specified_mw() -> pl.Expr:
     """A timeslice with no share of the year holds no hour, so its demand is zero."""
-    hours = pl.col(_YEAR_SPLIT) * HOURS_PER_YEAR
+    hours = pl.col(YEAR_SPLIT) * HOURS_PER_YEAR
     energy = pl.col(ANNUAL_DEMAND_MWH) * pl.col(_PROFILE).fill_null(0.0)
-    return pl.when(hours > 0).then(energy / hours).otherwise(0.0)
+    return pl.when(hours > 0).then(energy / hours * pl.col(ENERGY_SCALE)).otherwise(0.0)
 
 
-def _build_accumulated_series(operations: OperationsYear, demands: pl.DataFrame) -> pl.DataFrame:
+def _build_accumulated_demand(operations: OperationsYear, demands: pl.DataFrame) -> pl.DataFrame:
+    """One row for each load of accumulated demand and each timeslice, with its MW."""
     accumulated = demands.filter(
         pl.col(DEMAND_PARAMETER) == DemandParameter.ACCUMULATED_ANNUAL_DEMAND
     )
-    flat = accumulated.select(
-        LOAD_NAME, (pl.col(ANNUAL_DEMAND_MWH) / HOURS_PER_YEAR).alias(_HOURLY_MW)
-    )
-    hours = operations.calendar.hours.select(CalendarHourCol.TIMESTAMP)
-    return hours.join(flat, how="cross").select(
-        pl.col(CalendarHourCol.TIMESTAMP).alias(StagedTimeSeriesCol.SNAPSHOT),
-        pl.col(LOAD_NAME).alias(StagedTimeSeriesCol.COMPONENT),
-        pl.col(_HOURLY_MW).alias(StagedTimeSeriesCol.VALUE),
-    )
-
-
-def _reshape_to_series(operations: OperationsYear, hourly: pl.DataFrame) -> pl.DataFrame:
-    """One row for each hour of the calendar and each load, from one row for each timeslice."""
-    hours = operations.calendar.hours.select(CalendarHourCol.TIMESTAMP, CalendarHourCol.TIMESLICE)
-    return (
-        hours.join(hourly, on=CalendarHourCol.TIMESLICE)
-        .select(
-            pl.col(CalendarHourCol.TIMESTAMP).alias(StagedTimeSeriesCol.SNAPSHOT),
-            pl.col(LOAD_NAME).alias(StagedTimeSeriesCol.COMPONENT),
-            pl.col(_HOURLY_MW).alias(StagedTimeSeriesCol.VALUE),
-        )
-        .cast(pl.Schema(_SERIES_SCHEMA))
+    timeslices = operations.calendar.build_timeslice_table()
+    flat_mw = pl.col(ANNUAL_DEMAND_MWH) / HOURS_PER_YEAR
+    return accumulated.join(timeslices, how="cross").select(
+        LOAD_NAME, TIMESLICE, (flat_mw * pl.col(ENERGY_SCALE)).alias(_HOURLY_MW)
     )
 
 
