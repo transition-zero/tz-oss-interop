@@ -12,11 +12,13 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
+from interop.core.extensions import GeneratorExtension
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_DOLLARS_PER_TONNE,
     UNIT_TONNES_PER_MWH,
+    require_extension_attribute,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
@@ -104,10 +106,12 @@ PROPORTIONAL_TERM_ATTRIBUTE = (
 _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
 PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "
 SERIES_ATTRIBUTE = f"{SiennaSeriesName.MAX_ACTIVE_POWER} time series"
-FOM_ATTRIBUTE = "extensions.fom_charge_per_mw_year"
-EMISSION_ATTRIBUTE = "extensions.emission_rates_t_per_mwh."
-CATEGORY_ATTRIBUTE = "extensions.category"
-CARRIER_ATTRIBUTE = "extensions.carrier"
+FOM_ATTRIBUTE = require_extension_attribute(GeneratorExtension, "fom_charge_per_mw_year")
+EMISSION_ATTRIBUTE = (
+    f"{require_extension_attribute(GeneratorExtension, 'emission_rates_t_per_mwh')}."
+)
+CATEGORY_ATTRIBUTE = require_extension_attribute(GeneratorExtension, "category")
+CARRIER_ATTRIBUTE = require_extension_attribute(GeneratorExtension, "carrier")
 _EACH_TIMESLICE = "each timeslice"
 _AVAILABILITY_DERIVATION = (
     "capacity_factor of the timeslice of each hour × availability_factor, per unit of "
