@@ -24,10 +24,8 @@ log = logging.getLogger(__name__)
 
 ONE_HOUR = timedelta(hours=1)
 
-_ABSENT_FIELD = "it states no first_timestamp, hours or weight"
 _WRONG_HOURS = "its hours, {hours}, is not between 1 and {most}"
 _WRONG_WEIGHT = "its weight, {weight}, is not a finite number of 0 or more"
-_WRONG_TIMESTAMP = "its first_timestamp, {timestamp!r}, is not an ISO 8601 date and time"
 _ZONED_TIMESTAMP = (
     "its first_timestamp, {timestamp!r}, states a time zone, and the hours of the solve state none"
 )
@@ -113,7 +111,6 @@ def _build_period_source(name: str) -> SourceField:
 def _find_fault(record: RepresentativePeriodExtension) -> str | None:
     """Why a record cannot weight its hours, or `None` when it can."""
     checks: tuple[Callable[[RepresentativePeriodExtension], str | None], ...] = (
-        _find_absent_field,
         _find_wrong_hours,
         _find_wrong_weight,
         _find_wrong_timestamp,
@@ -121,41 +118,26 @@ def _find_fault(record: RepresentativePeriodExtension) -> str | None:
     return next((fault for check in checks if (fault := check(record)) is not None), None)
 
 
-def _find_absent_field(record: RepresentativePeriodExtension) -> str | None:
-    if record.first_timestamp is None or record.hours is None or record.weight is None:
-        return _ABSENT_FIELD
-    return None
-
-
 def _find_wrong_hours(record: RepresentativePeriodExtension) -> str | None:
-    if record.hours is not None and not 1 <= record.hours <= MAX_PERIOD_HOURS:
+    if not 1 <= record.hours <= MAX_PERIOD_HOURS:
         return _WRONG_HOURS.format(hours=record.hours, most=MAX_PERIOD_HOURS)
     return None
 
 
 def _find_wrong_weight(record: RepresentativePeriodExtension) -> str | None:
     weight = record.weight
-    if weight is not None and not (math.isfinite(weight) and weight >= 0):
+    if not (math.isfinite(weight) and weight >= 0):
         return _WRONG_WEIGHT.format(weight=weight)
     return None
 
 
 def _find_wrong_timestamp(record: RepresentativePeriodExtension) -> str | None:
     timestamp = record.first_timestamp
-    if timestamp is None:
-        return None
-    try:
-        first_hour = datetime.fromisoformat(timestamp)
-    except ValueError:
-        return _WRONG_TIMESTAMP.format(timestamp=timestamp)
-    if first_hour.tzinfo is not None:
-        return _ZONED_TIMESTAMP.format(timestamp=timestamp)
+    if timestamp.tzinfo is not None:
+        return _ZONED_TIMESTAMP.format(timestamp=timestamp.isoformat())
     return None
 
 
 def _parse_period(record: RepresentativePeriodExtension) -> Period:
     """The period of a record that `_find_fault` accepts."""
-    if record.first_timestamp is None or record.hours is None or record.weight is None:
-        raise ValueError(f"representative period {record.name!r} has a fault")
-    first_hour = datetime.fromisoformat(record.first_timestamp)
-    return Period(record.name, first_hour, record.hours, record.weight)
+    return Period(record.name, record.first_timestamp, record.hours, record.weight)
