@@ -16,12 +16,18 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
+    POLLUTANT,
+    REGION,
     STORAGE,
     TECHNOLOGY,
     AnnotationColumn,
     FlowParameter,
 )
-from interop.plugins.shared.osemosys_sienna_constants import StorageParameter, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    REGION_NAME_SEPARATOR,
+    StorageParameter,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._activity_limits import (
     build_bound_events,
 )
@@ -41,6 +47,10 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_costs import
     FIXED_COST,
     FIXED_COST_MW_YEAR,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    PENALTY,
+    PENALTY_COST_MWH,
+)
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     build_mode_events,
 )
@@ -58,7 +68,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     CHARGE_LINK_VALUE,
     CHARGE_MODE,
     CHARGE_RATE,
-    CHARGE_RATIO,
+    CHARGE_SIDE,
     CHARGE_TECHNOLOGY_NAME,
     DISCHARGE_AVAILABILITY,
     DISCHARGE_CAPACITY,
@@ -67,7 +77,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     DISCHARGE_LINK_VALUE,
     DISCHARGE_MODE,
     DISCHARGE_RATE,
-    DISCHARGE_RATIO,
+    DISCHARGE_SIDE,
     DISCHARGE_TECHNOLOGY_NAME,
     EFFICIENCY_IN,
     EFFICIENCY_OUT,
@@ -78,9 +88,12 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     MIN_LEVEL,
     OUTPUT_LIMIT,
     POWER_MW,
+    STATED_RATE,
     STORAGE_HOURS,
     STORAGE_NAME,
     STORAGE_REPORT_NAME,
+    STORAGE_SIDES,
+    StorageSide,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CHARGE_VALUES,
@@ -184,7 +197,12 @@ _INITIAL_LEVEL_DERIVATION = (
 _COST_DERIVATION = (
     "charge = variable_operation_cost at the charge mode, in $/MWh, / the electricity "
     "input_activity_ratio; discharge = variable_operation_cost at the discharge mode, in $/MWh, "
-    "/ the electricity output_activity_ratio"
+    "/ the electricity output_activity_ratio; each plus the emission penalty of each pollutant "
+    "at that mode"
+)
+_PENALTY_DERIVATION = (
+    "emission_rate of the pollutant at the {direction} mode, in t/MWh of activity, × "
+    "emission_penalty of the pollutant in the region, in $/t, / the electricity {flow} at that mode"
 )
 
 
@@ -198,22 +216,22 @@ def _build_mode_attribute(direction: str, mode: str) -> str:
     return f"electricity at the {direction} mode {mode}"
 
 
-def _build_output_ratio_source(old: dict[str, Any]) -> SourceField:
+def _build_ratio_source(old: dict[str, Any], side: StorageSide) -> SourceField:
+    """The electricity that the technology of one side takes in or puts out at its mode."""
     return _build_source(
-        FlowParameter.OUTPUT_ACTIVITY_RATIO,
-        old[DISCHARGE_TECHNOLOGY_NAME],
-        _build_mode_attribute(_DISCHARGE_DIRECTION, old[DISCHARGE_MODE]),
-        old[DISCHARGE_RATIO],
+        side.flow_parameter,
+        old[side.technology_name],
+        _build_mode_attribute(side.direction, old[side.mode]),
+        old[side.ratio],
     )
+
+
+def _build_output_ratio_source(old: dict[str, Any]) -> SourceField:
+    return _build_ratio_source(old, DISCHARGE_SIDE)
 
 
 def _build_input_ratio_source(old: dict[str, Any]) -> SourceField:
-    return _build_source(
-        FlowParameter.INPUT_ACTIVITY_RATIO,
-        old[CHARGE_TECHNOLOGY_NAME],
-        _build_mode_attribute(_CHARGE_DIRECTION, old[CHARGE_MODE]),
-        old[CHARGE_RATIO],
-    )
+    return _build_ratio_source(old, CHARGE_SIDE)
 
 
 def _build_energy_source(old: dict[str, Any]) -> SourceField:
@@ -456,6 +474,7 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
             old[CHARGE_COST],
         ),
         _build_input_ratio_source(old),
+        *_build_penalty_cost_sources(old, CHARGE_SIDE),
         _build_source(
             SupplyParameter.VARIABLE_OPERATION_COST,
             old[DISCHARGE_TECHNOLOGY_NAME],
@@ -463,6 +482,62 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
             old[DISCHARGE_COST],
         ),
         _build_output_ratio_source(old),
+        *_build_penalty_cost_sources(old, DISCHARGE_SIDE),
+    ]
+
+
+def _build_penalty_cost_sources(old: dict[str, Any], side: StorageSide) -> list[SourceField]:
+    return [
+        build_sienna_source(
+            SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+            old[STORAGE_NAME],
+            _build_penalty_attribute(side, term),
+            term[PENALTY_COST_MWH],
+            UNIT_DOLLARS_PER_MWH,
+        )
+        for term in old[side.penalty_terms] or []
+    ]
+
+
+def _build_penalty_attribute(side: StorageSide, term: dict[str, Any]) -> str:
+    return f"{_Col.OPERATION_COST} {side.direction} emission penalty of {term[POLLUTANT]}"
+
+
+def _build_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
+    """One event for each pollutant at the mode of each side: the rate and the penalty give a
+    cost for each MWh of electricity."""
+    return [
+        TranslationEvent(
+            kind=EventKind.VALUE_DERIVED,
+            sources=[
+                _build_source(
+                    SupplyParameter.EMISSION_RATE,
+                    old[side.technology_name],
+                    f"{term[POLLUTANT]} at the {side.direction} mode {old[side.mode]}",
+                    term[STATED_RATE],
+                ),
+                _build_source(
+                    SupplyParameter.EMISSION_PENALTY,
+                    f"{old[REGION]}{REGION_NAME_SEPARATOR}{term[POLLUTANT]}",
+                    None,
+                    term[PENALTY],
+                ),
+                _build_ratio_source(old, side),
+            ],
+            destinations=[
+                _dest(
+                    old[STORAGE_NAME],
+                    _build_penalty_attribute(side, term),
+                    term[PENALTY_COST_MWH],
+                    UNIT_DOLLARS_PER_MWH,
+                )
+            ],
+            derivation=_PENALTY_DERIVATION.format(
+                direction=side.direction, flow=side.flow_parameter
+            ),
+        )
+        for side in STORAGE_SIDES
+        for term in old[side.penalty_terms] or []
     ]
 
 
@@ -549,6 +624,7 @@ STORAGE_TRANSLATIONS: list[Translation] = [
     *_build_power(),
     *_build_energy(),
     _build_cost(),
+    Translation(exprs=[], make_events=lambda old, _new: _build_penalty_events(old)),
     Translation(exprs=[], make_events=lambda old, _new: _build_fixed_cost_events(old)),
     Translation(exprs=[], make_events=lambda old, _new: _build_extension_events(old)),
 ]

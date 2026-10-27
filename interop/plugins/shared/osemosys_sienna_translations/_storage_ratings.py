@@ -3,7 +3,8 @@
 The base power is the residual capacity of the discharging technology in MW × its electricity
 output ratio at the discharge mode. Each side of the storage, its charge and its discharge, gives
 one power limit: its derated capacity, capped by the grid side of its rate. Each cost is the
-variable cost of the technology at the mode of its side, for each MWh of electricity.
+variable cost of the technology at the mode of its side, plus the emission penalty of each
+pollutant that it emits there, for each MWh of electricity.
 """
 
 from __future__ import annotations
@@ -16,22 +17,36 @@ from interop.core.pipeline import State
 from interop.plugins.shared.constants import HOURS_PER_YEAR
 from interop.plugins.shared.osemosys_canonical.constants import (
     OPERATING_MODE,
+    POLLUTANT,
     REGION,
     STORAGE,
     TECHNOLOGY,
     VALUE_COL,
 )
-from interop.plugins.shared.osemosys_sienna_constants import WHOLE_CAPACITY, StorageParameter
+from interop.plugins.shared.osemosys_sienna_constants import (
+    WHOLE_CAPACITY,
+    StorageParameter,
+    SupplyParameter,
+)
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_parameter,
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     FIXED_COST,
     FIXED_COST_MW_YEAR,
     enrich_fixed_costs,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    RATE_T_PER_MWH,
+)
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    PENALTY,
+    PENALTY_COST_MWH,
+    build_penalty_terms,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
@@ -46,6 +61,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     LEVEL_START,
     MIN_LEVEL,
     POWER_MW,
+    STATED_RATE,
     STORAGE_HOURS,
     STORAGE_SIDES,
     StorageSide,
@@ -60,7 +76,9 @@ from interop.plugins.shared.osemosys_sienna_translations._units import (
 )
 
 _STORAGE_KEYS = [REGION, STORAGE]
+_MODE_KEYS = [REGION, TECHNOLOGY, OPERATING_MODE]
 _EMPTY = 0.0
+_NO_COST = 0.0
 
 
 def enrich_ratings(
@@ -101,13 +119,18 @@ def enrich_levels(state: State, operations: OperationsYear, storages: pl.DataFra
 
 
 def enrich_costs(state: State, operations: OperationsYear, storages: pl.DataFrame) -> pl.DataFrame:
-    """The cost of each MWh drawn at the charge mode, and of each MWh put out at the other."""
+    """The cost of each MWh drawn at the charge mode, and of each MWh put out at the other: the
+    variable cost of the mode, and the emission penalty of each pollutant that it emits."""
     table = storages
     for side in STORAGE_SIDES:
         table = table.join(_read_mode_costs(state, operations, storages, side), on=side.mode_keys)
+        table = _enrich_penalties(state, operations, table, side)
     convert = operations.units.convert_cost_per_energy_to_dollars_per_mwh
     return table.with_columns(
-        (express_converted(table, side.cost, convert) / pl.col(side.ratio)).alias(side.cost_mwh)
+        (
+            express_converted(table, side.cost, convert) / pl.col(side.ratio)
+            + pl.col(side.penalty_mwh)
+        ).alias(side.cost_mwh)
         for side in STORAGE_SIDES
     )
 
@@ -183,3 +206,51 @@ def _read_mode_costs(
         pl.col(OPERATING_MODE).alias(side.mode),
         pl.col(VARIABLE_COST).alias(side.cost),
     )
+
+
+def _enrich_penalties(
+    state: State, operations: OperationsYear, storages: pl.DataFrame, side: StorageSide
+) -> pl.DataFrame:
+    """The emission penalty of each pollutant at the mode of one side, in $/MWh of electricity."""
+    priced = build_penalty_terms(
+        state, operations, _read_mode_rates(state, operations, storages, side)
+    )
+    term = pl.struct(POLLUTANT, STATED_RATE, RATE_T_PER_MWH, PENALTY, PENALTY_COST_MWH)
+    listed = (
+        priced.sort(POLLUTANT)
+        .group_by(side.mode_keys)
+        .agg(term.alias(side.penalty_terms), pl.col(PENALTY_COST_MWH).sum().alias(side.penalty_mwh))
+    )
+    return storages.join(listed, on=side.mode_keys, how="left").with_columns(
+        pl.col(side.penalty_mwh).fill_null(_NO_COST)
+    )
+
+
+def _read_mode_rates(
+    state: State, operations: OperationsYear, storages: pl.DataFrame, side: StorageSide
+) -> pl.DataFrame:
+    """The emission rate of each pollutant at the mode of one side, in t/MWh of electricity."""
+    modes = storages.select(
+        REGION,
+        pl.col(side.technology).alias(TECHNOLOGY),
+        pl.col(side.mode).alias(OPERATING_MODE),
+        side.ratio,
+    ).unique()
+    rates = (
+        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
+        .lazy()
+        .filter(pl.col(VALUE_COL) != 0)
+        .join(modes.lazy(), on=_MODE_KEYS)
+        .select(
+            REGION,
+            pl.col(TECHNOLOGY).alias(side.technology),
+            pl.col(OPERATING_MODE).alias(side.mode),
+            POLLUTANT,
+            side.ratio,
+            pl.col(VALUE_COL).cast(pl.Float64).alias(STATED_RATE),
+        )
+        .collect()
+    )
+    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
+    rate = express_converted(rates, STATED_RATE, convert) / pl.col(side.ratio)
+    return rates.with_columns(rate.alias(RATE_T_PER_MWH))
