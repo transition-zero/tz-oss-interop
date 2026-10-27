@@ -58,8 +58,8 @@ _SERIES_BATCH_ROWS = 1_000_000
 
 _UNOWNED_NOTE = "the portfolio holds no component of this type and id, so its series is left out"
 _UNOWNED_WARNING = (
-    "stage_sienna_portfolio_json: %d portfolio series name an owner that the portfolio does not "
-    "hold, so each is left out: %s"
+    "%s: %d portfolio series name an owner that the portfolio does not hold, so each is left "
+    "out: %s"
 )
 
 
@@ -155,7 +155,7 @@ class StageSiennaPortfolioJson(StagesExtensionsSidecar, StagedSource):
             )
         if unowned:
             names = [f"{owner_type}/{owner_id}" for owner_type, owner_id in unowned]
-            log.warning(_UNOWNED_WARNING, len(names), name_a_few(names))
+            log.warning(_UNOWNED_WARNING, self.name, len(names), name_a_few(names))
 
     def _read_json(self, path: InputFile, description: str) -> dict[str, Any]:
         if not self._fs.can_read(path):
