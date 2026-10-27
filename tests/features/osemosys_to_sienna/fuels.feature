@@ -223,7 +223,7 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the log does not contain "total_technology_annual_activity_lower_limit states"
       And the log does not contain "total_technology_annual_activity_upper_limit states"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASWELL" having "e_sum_max" set to {"2030": 5000.0}
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.e_sum_min` = {'2030': 500.0} MWh"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATOILCT.extensions.e_sum_min` = {2030: 500.0} MWh"
 
     Scenario: Each parameter whose values no step applies and no record keeps is reported, with the members or the regions that it states values for
       A row at the default of its parameter states nothing beyond the default, so the report
