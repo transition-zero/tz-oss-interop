@@ -345,7 +345,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.variable_operation_cost.value_curve.function_data.proportional_term" set to 42.0
     And the file "outputs/extensions.json" parses as JSON technology extension record for "ATGASNEW" having "marginal_cost" set to {"2030": 42.0, "2035": 7.0}
-    And the file "decisions.md" contains "`sienna.SupplyTechnology.ATGASNEW.operation_costs emission penalty` = 35.0 \$/MWh | Σ over pollutants of the emission rate in t/MWh"
+    And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATGASNEW.CO2` = 350.0<br>`osemosys.output_activity_ratio.R1/ATGASNEW.electricity at the operations mode` = 1.0<br>`osemosys.emission_penalty.R1/CO2.the earliest year in scope` = 100.0 | `sienna.SupplyTechnology.ATGASNEW.operation_costs emission penalty` = 35.0 \$/MWh | Σ over pollutants of the emission rate in t/MWh"
     And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASNEW.the earliest year in scope` = 7.0 \$/MWh"
 
   Scenario: A candidate with no capital cost in the earliest year takes the cost of the first year in which a plan can build it at a cost
