@@ -89,20 +89,21 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | objective |           |          |           | 123500000 |
     And the file "decisions.md" contains "`aetos.results_csv.ModelPeriodCostByRegion` million USD |"
 
-  Scenario: The rows of a technology that puts out no electricity are left out and reported
+  Scenario: The rows of a technology that puts out no electricity are left out and reported once
+    GASX states rows in two technology variables, and the report names it once for all three.
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "1 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX"
-    And the log contains "1 technology(ies) put out no electricity, so their production rows are left out: R1/GASX"
-    And the file "decisions.md" contains "`aetos.technology.R1/GASX`"
+    And the log contains "aetos-to-results: 1 technology(ies) put out no electricity, so each is left out. Each one: R1/GASX"
+    And the section "Components skipped" of "decisions.md" contains "`aetos.technology.R1/GASX`" 1 times
+    And the file "decisions.md" contains "| `aetos.technology.R1/GASX` |  |  | the technology puts out no fuel whose carrier is electricity, and the results compare electricity only, so its installed_capacity, new_capacity and production rows are left out |"
 
   Scenario: The capacity and production of a technology that converts electricity at one location are left out and reported once
     The capacity of a conversion is in units of its activity, not in the capacity unit, and the
     Sienna system leaves such a technology out, so ATT has no row in any of the three variables.
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "1 technology(ies) convert electricity at one location, so their installed_capacity, new_capacity and production rows are left out: R1/ATT"
-    And the log does not contain "so their production rows are left out: R1/ATT"
+    And the log contains "aetos-to-results: 1 technology(ies) convert electricity at one location, so each is left out. Each one: R1/ATT"
+    And the section "Components skipped" of "decisions.md" contains "`aetos.technology.R1/ATT`" 1 times
     And the file "decisions.md" contains "the technology converts one electricity fuel into another at one location, and the Sienna system leaves such a technology out, so its installed_capacity, new_capacity and production rows are left out"
 
   Scenario: A technology that discharges a storage states its capacity and production under the name of the storage
@@ -168,14 +169,14 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | installed_capacity | ATPUMP    |          | 2031-01-01T00:00:00 | 200   |
     And the file "decisions.md" does not contain "`aetos.technology.R1/ATPUMP.technology_from_storage`"
     And the file "decisions.md" does not contain "`aetos.technology.R1/ATDRY.technology_from_storage`"
-    And the log contains "3 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX, R1/ATT, R1/ATDRY"
+    And the log contains "aetos-to-results: 4 technology(ies) put out no electricity, so each is left out. Each one: R1/ATDE, R1/ATDRY, R1/ATT and 1 more"
 
   Scenario: The rows of a technology that the model does not hold are left out and reported
     Given the results CSV has the row "TotalCapacityAnnual" in "R1" for "GHOST" with the values "1 1"
     When I read the results CSV through aetos-to-results from the year "2030"
     Then the pipeline exit code is 0
-    And the log contains "1 technology(ies) of the results CSV are not technologies of the model, so their installed_capacity rows are left out: R1/GHOST"
-    And the log does not contain "put out no electricity, so their installed_capacity rows are left out: R1/GASX, R1/GHOST"
+    And the log contains "aetos-to-results: 1 technology(ies) of the results CSV are not technologies of the model, so each is left out. Each one: R1/GHOST"
+    And the log contains "aetos-to-results: 1 technology(ies) put out no electricity, so each is left out. Each one: R1/GASX"
 
   Scenario: In a model of two regions, each technology takes one name from the whole model
     # GASCC puts out electricity in R1 only, so its R2 capacity is left out. Its R1 name keeps
@@ -188,7 +189,7 @@ Feature: aetos-to-results reads a published results CSV into the results format
       | variable           | component | category           | timestamp           | value |
       | installed_capacity | R1/GASCC  | gas-combined-cycle | 2030-01-01T00:00:00 | 2000  |
       | installed_capacity | R1/GASCC  | gas-combined-cycle | 2031-01-01T00:00:00 | 3000  |
-    And the log contains "2 technology(ies) put out no electricity, so their installed_capacity rows are left out: R1/GASX, R2/GASCC"
+    And the log contains "aetos-to-results: 2 technology(ies) put out no electricity, so each is left out. Each one: R1/GASX, R2/GASCC"
 
   Scenario: In a model of two regions, the emissions of a pollutant sum over the regions under its plain name
     # The Sienna system keys an emission rate by the pollutant alone, so both sides name it CO2.
