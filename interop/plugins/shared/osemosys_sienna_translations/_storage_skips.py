@@ -17,7 +17,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     StorageParameter,
     SupplyParameter,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import SIENNA_TYPE
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
     CHARGE_SIDE,
     DISCHARGE_SIDE,
@@ -28,6 +27,7 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
 from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     build_no_carriers_row_note,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import SIENNA_TYPE
 from interop.plugins.shared.translation_runner import SkippedNames, SkipReport
 
 _COUNTED_NOUN = "storage(s)"

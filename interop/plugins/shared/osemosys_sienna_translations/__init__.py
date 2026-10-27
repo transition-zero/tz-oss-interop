@@ -72,9 +72,6 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     add_series,
     add_to_per_unit_series,
 )
-from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
-    SIENNA_TYPE,
-)
 from interop.plugins.shared.osemosys_sienna_translations._storage import (
     build_storage_extensions,
     build_storages_source,
@@ -82,6 +79,9 @@ from interop.plugins.shared.osemosys_sienna_translations._storage import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
     STORAGE_TRANSLATIONS,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    SIENNA_TYPE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CANDIDATE_VALUES,

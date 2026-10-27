@@ -47,16 +47,8 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field as _build_source,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    PRIME_MOVER,
-    SIENNA_TYPE,
-)
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST,
-    FIXED_COST_MW_YEAR,
-)
+from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import PENALTY
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
-    PENALTY,
     PENALTY_COST_MWH,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -95,6 +87,14 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     STORAGE_REPORT_NAME,
     STORAGE_SIDES,
     StorageSide,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    PRIME_MOVER,
+    SIENNA_TYPE,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import (
+    FIXED_COST,
+    FIXED_COST_MW_YEAR,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CHARGE_VALUES,

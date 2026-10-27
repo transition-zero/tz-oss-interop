@@ -64,14 +64,6 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     build_capacity_factor_series,
     express_has_capacity_factors,
 )
-from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
-    PRIME_MOVER,
-    RESIDUAL_CAPACITY,
-    SIENNA_TYPE,
-)
-from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
-    FIXED_COST_MW_YEAR,
-)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_component_name,
     express_report_name,
@@ -123,6 +115,12 @@ from interop.plugins.shared.osemosys_sienna_translations._technologies import (
     list_bus_names,
     read_availability_factors,
 )
+from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
+    PRIME_MOVER,
+    RESIDUAL_CAPACITY,
+    SIENNA_TYPE,
+)
+from interop.plugins.shared.osemosys_sienna_translations._technology_costs import FIXED_COST_MW_YEAR
 from interop.plugins.shared.osemosys_sienna_translations._technology_values import (
     CHARGE_VALUES,
     DISCHARGE_TECHNOLOGY_VALUES,
