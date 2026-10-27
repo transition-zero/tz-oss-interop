@@ -21,7 +21,6 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
     OPERATING_MODE,
-    OSEMOSYS_FRAMEWORK,
     POLLUTANT,
     REGION,
     TECHNOLOGY,
@@ -33,7 +32,6 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     IMPORT_NAME_PART,
     IMPORT_NAME_SEPARATOR,
     NO_COST,
-    OSEMOSYS_TO_SIENNA_PIPELINE,
     TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
@@ -51,6 +49,7 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import (
     read_electricity_fuels,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_parameter
+from interop.plugins.shared.osemosys_sienna_translations._events import osemosys_skip_report
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     CAPACITY_MW,
     CAPACITY_UNIT,
@@ -106,7 +105,6 @@ from interop.plugins.shared.osemosys_sienna_translations._units import express_c
 from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
-    SkipReport,
     filter_component,
     report_not_mapped,
 )
@@ -132,9 +130,7 @@ _MODE_SEPARATOR = ", "
 _MODE_INFIX = f"{IMPORT_NAME_SEPARATOR}mode"
 
 _IMPORT_MODES_ATTRIBUTE = "import modes"
-_UNPLACED_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_UNPLACED_REPORT = osemosys_skip_report(
     component=FlowParameter.OUTPUT_ACTIVITY_RATIO,
     name_col=TECHNOLOGY_NAME,
     reason="put out an electricity fuel with no location, which no bus can hold",
@@ -147,9 +143,7 @@ _UNPLACED_REPORT = SkipReport(
     attribute_col=VALUE_COL,
     attribute_name="electricity with no location",
 )
-_SHARED_CAPACITY_REPORT = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+_SHARED_CAPACITY_REPORT = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=TECHNOLOGY_NAME,
     reason=(
@@ -167,9 +161,7 @@ _SHARED_CAPACITY_REPORT = SkipReport(
     attribute_name=_IMPORT_MODES_ATTRIBUTE,
 )
 
-UNLIMITED_IMPORT_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+UNLIMITED_IMPORT_SKIP = osemosys_skip_report(
     component=TECHNOLOGY,
     name_col=_MODE_NAME,
     reason="import on a line that the model builds at no cost with no limit",
