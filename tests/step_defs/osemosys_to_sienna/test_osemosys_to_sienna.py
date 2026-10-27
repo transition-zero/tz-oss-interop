@@ -170,7 +170,9 @@ def translate_the_otoole_model_in_scope(
 
 
 @when(
-    parsers.parse('I translate the otoole model to Sienna for the years "{years}" in the year "{year}"'),
+    parsers.parse(
+        'I translate the otoole model to Sienna for the years "{years}" in the year "{year}"'
+    ),
     target_fixture="pipeline_exit_code",
 )
 def translate_the_otoole_model_in_years(

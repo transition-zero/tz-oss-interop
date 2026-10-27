@@ -19,16 +19,15 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     ELECTRICITY_CARRIER,
     FUEL,
-    OSEMOSYS_FRAMEWORK,
     REGION,
     AnnotationColumn,
 )
-from interop.plugins.shared.osemosys_sienna_constants import OSEMOSYS_TO_SIENNA_PIPELINE
 from interop.plugins.shared.osemosys_sienna_translations._canonical import read_annotations
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
     build_sienna_field,
+    osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import express_report_name
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
@@ -46,7 +45,6 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
-    SkipReport,
     Translation,
     default_translation,
     filter_component,
@@ -73,9 +71,7 @@ _NAME_DERIVATION = (
 )
 _AREA_DERIVATION = "the location of the electricity fuel -> area"
 
-NO_LOCATION_SKIP = SkipReport(
-    pipeline=OSEMOSYS_TO_SIENNA_PIPELINE,
-    framework=OSEMOSYS_FRAMEWORK,
+NO_LOCATION_SKIP = osemosys_skip_report(
     component=FUEL,
     name_col=FUEL_NAME,
     reason="of electricity have no location",
