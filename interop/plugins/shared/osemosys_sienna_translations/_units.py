@@ -21,7 +21,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     MetadataTable,
     TableKind,
 )
-from interop.plugins.shared.osemosys_sienna_constants import UnitQuantity
+from interop.plugins.shared.osemosys_sienna_constants import TONNES_PER_MEGATONNE, UnitQuantity
 from interop.ports.errors import UserInputError
 
 # A value that a conversion multiplies: one number, or a column of a table.
@@ -43,7 +43,12 @@ _MWH_PER_ENERGY_UNIT: dict[str, float] = {
     "PJ": 1e15 / _JOULES_PER_MWH,
     "EJ": 1e18 / _JOULES_PER_MWH,
 }
-_TONNES_PER_EMISSION_UNIT: dict[str, float] = {"t": 1.0, "kt": 1e3, "Mt": _MEGA, "Gt": 1e9}
+_TONNES_PER_EMISSION_UNIT: dict[str, float] = {
+    "t": 1.0,
+    "kt": 1e3,
+    "Mt": TONNES_PER_MEGATONNE,
+    "Gt": 1e9,
+}
 _CURRENCY_SCALE_WORDS: dict[str, float] = {
     "thousand": 1e3,
     "million": _MEGA,

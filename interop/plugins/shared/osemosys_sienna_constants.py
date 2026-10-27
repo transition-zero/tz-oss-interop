@@ -19,7 +19,6 @@ OPERATIONS_YEAR_KEY = ("osemosys_sienna_operations", "year")
 # extensions.json holds, which the report of the unapplied parameters reads.
 OSEMOSYS_SIENNA_PERSISTED = "osemosys_sienna_persisted"
 
-HOURS_PER_YEAR = 8760.0
 HOURS_PER_DAY = 24
 # A daily time bracket this close to a whole number of hours takes that number of hours.
 WHOLE_HOUR_TOLERANCE = 0.05
@@ -217,7 +216,6 @@ YEAR_FEATURE = "year"
 OSEMOSYS_PORTFOLIO_SERIES = "osemosys_sienna_portfolio_series"
 # The character between the attribute and the year in the second part of that key.
 SERIES_YEAR_SEPARATOR = "/"
-MINUTES_PER_HOUR = 60.0
 TONNES_PER_MEGATONNE = 1e6
 
 
