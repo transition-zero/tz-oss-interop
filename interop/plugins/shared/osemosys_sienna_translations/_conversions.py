@@ -16,6 +16,7 @@ which `_transport` builds.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -24,7 +25,6 @@ from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
-    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
     UNIT_MW,
@@ -32,6 +32,7 @@ from interop.plugins.shared.constants import (
     UNIT_MWH_PER_MW,
     UNIT_PER_UNIT,
     UNIT_YEARS,
+    require_extension_attribute,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
@@ -117,13 +118,11 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_FUEL,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import express_converted
+from interop.plugins.shared.pypsa_constants import PyPSALinkCol
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 CONVERSION_NAME = "conversion_name"
 _COMPONENT = "component"
-_P_NOM = "p_nom"
-_EFFICIENCY = "efficiency"
-_MARGINAL_COST = "marginal_cost"
 _KEYS = [REGION, TECHNOLOGY]
 _ROUTE_KEYS = (START_REGION, END_REGION, FUEL)
 _CLOSED = "is_closed"
@@ -157,15 +156,15 @@ _ROUTE_ENERGY_DERIVATION = (
 ROUTE_VALUES: tuple[TechnologyValue, ...] = (
     TechnologyValue(
         TradeParameter.RESIDUAL_CAPACITY,
-        _P_NOM,
+        PyPSALinkCol.P_NOM,
         Scale.CAPACITY,
         UNIT_MW,
         derivation=_ROUTE_CAPACITY_DERIVATION,
     ),
-    TechnologyValue(TradeParameter.LOSS, _EFFICIENCY, Scale.COMPLEMENT, UNIT_PER_UNIT),
+    TechnologyValue(TradeParameter.LOSS, PyPSALinkCol.EFFICIENCY, Scale.COMPLEMENT, UNIT_PER_UNIT),
     TechnologyValue(
         TradeParameter.AVAILABILITY_FACTOR,
-        "p_max_pu",
+        PyPSALinkCol.P_MAX_PU,
         Scale.NONE,
         UNIT_PER_UNIT,
         _STATED != WHOLE_CAPACITY,
@@ -319,10 +318,10 @@ def _enrich_link(
     convert = units.convert_cost_per_energy_to_dollars_per_mwh
     capacity = express_converted(table, RESIDUAL_CAPACITY, units.convert_capacity_to_mw)
     return table.with_columns(
-        (capacity * pl.col(INPUT_RATIO)).alias(_P_NOM),
-        (pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(_EFFICIENCY),
+        (capacity * pl.col(INPUT_RATIO)).alias(PyPSALinkCol.P_NOM),
+        (pl.col(OUTPUT_RATIO) / pl.col(INPUT_RATIO)).alias(PyPSALinkCol.EFFICIENCY),
         (express_converted(table, VARIABLE_COST, convert) / pl.col(INPUT_RATIO)).alias(
-            _MARGINAL_COST
+            PyPSALinkCol.MARGINAL_COST
         ),
     )
 
@@ -335,9 +334,9 @@ def _build_extension(row: dict[str, Any]) -> ConversionExtension:
         bus1=row[TO_BUS],
         input_fuel=row[FROM_FUEL],
         output_fuel=row[TO_FUEL],
-        p_nom=row[_P_NOM],
-        efficiency=row[_EFFICIENCY],
-        marginal_cost=row[_MARGINAL_COST] or None,
+        p_nom=row[PyPSALinkCol.P_NOM],
+        efficiency=row[PyPSALinkCol.EFFICIENCY],
+        marginal_cost=row[PyPSALinkCol.MARGINAL_COST] or None,
         p_max_pu=_find_derate(row[AVAILABILITY_FACTOR]),
         operating_modes=build_operating_mode_field(row),
         e_sum_min=build_yearly_limits(row[LOWER_BOUND.column]),
@@ -420,13 +419,27 @@ class _LinkSource(NamedTuple):
 
 
 class _LinkValue(NamedTuple):
-    """One field of a conversion record that the PyPSA Link states, and how it is derived."""
+    """One field of a conversion record that the PyPSA Link states, and how it is derived.
 
-    field: str
+    `attribute` is the `extensions.<field>` of the event.
+    """
+
+    attribute: str
     value: Any
     unit: str | None
     sources: list[_LinkSource]
     derivation: str
+
+
+_require_attribute = partial(require_extension_attribute, ConversionExtension)
+_BUS0_ATTRIBUTE = _require_attribute(PyPSALinkCol.BUS0)
+_BUS1_ATTRIBUTE = _require_attribute(PyPSALinkCol.BUS1)
+_INPUT_FUEL_ATTRIBUTE = _require_attribute("input_fuel")
+_OUTPUT_FUEL_ATTRIBUTE = _require_attribute("output_fuel")
+_P_NOM_ATTRIBUTE = _require_attribute(PyPSALinkCol.P_NOM)
+_EFFICIENCY_ATTRIBUTE = _require_attribute(PyPSALinkCol.EFFICIENCY)
+_MARGINAL_COST_ATTRIBUTE = _require_attribute(PyPSALinkCol.MARGINAL_COST)
+_P_MAX_PU_ATTRIBUTE = _require_attribute(PyPSALinkCol.P_MAX_PU)
 
 
 def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[TranslationEvent]:
@@ -445,49 +458,31 @@ def _build_events(row: dict[str, Any], record: ConversionExtension) -> list[Tran
 
 def _list_link_values(record: ConversionExtension) -> list[_LinkValue]:
     return [
-        _LinkValue("bus0", record.bus0, None, [_INPUT], _BUS0_DERIVATION),
-        _LinkValue("bus1", record.bus1, None, [_OUTPUT], _BUS1_DERIVATION),
+        _LinkValue(_BUS0_ATTRIBUTE, record.bus0, None, [_INPUT], _BUS0_DERIVATION),
+        _LinkValue(_BUS1_ATTRIBUTE, record.bus1, None, [_OUTPUT], _BUS1_DERIVATION),
         _LinkValue(
-            "input_fuel",
-            record.input_fuel,
-            None,
-            [_INPUT],
-            _INPUT_FUEL_DERIVATION,
+            _INPUT_FUEL_ATTRIBUTE, record.input_fuel, None, [_INPUT], _INPUT_FUEL_DERIVATION
         ),
         _LinkValue(
-            "output_fuel",
-            record.output_fuel,
-            None,
-            [_OUTPUT],
-            _OUTPUT_FUEL_DERIVATION,
+            _OUTPUT_FUEL_ATTRIBUTE, record.output_fuel, None, [_OUTPUT], _OUTPUT_FUEL_DERIVATION
         ),
+        _LinkValue(_P_NOM_ATTRIBUTE, record.p_nom, UNIT_MW, [_RESIDUAL, _INPUT], _P_NOM_DERIVATION),
         _LinkValue(
-            _P_NOM,
-            record.p_nom,
-            UNIT_MW,
-            [_RESIDUAL, _INPUT],
-            _P_NOM_DERIVATION,
-        ),
-        _LinkValue(
-            _EFFICIENCY,
+            _EFFICIENCY_ATTRIBUTE,
             record.efficiency,
             None,
             [_OUTPUT, _INPUT],
             _EFFICIENCY_DERIVATION,
         ),
         _LinkValue(
-            _MARGINAL_COST,
+            _MARGINAL_COST_ATTRIBUTE,
             record.marginal_cost,
             UNIT_DOLLARS_PER_MWH,
             [_COST, _INPUT],
             _MARGINAL_COST_DERIVATION,
         ),
         _LinkValue(
-            "p_max_pu",
-            record.p_max_pu,
-            None,
-            [_AVAILABILITY],
-            _P_MAX_PU_DERIVATION,
+            _P_MAX_PU_ATTRIBUTE, record.p_max_pu, None, [_AVAILABILITY], _P_MAX_PU_DERIVATION
         ),
     ]
 
@@ -505,7 +500,7 @@ def _build_link_event(row: dict[str, Any], value: _LinkValue) -> TranslationEven
             build_sienna_field(
                 ExtensionKind.CONVERSION,
                 row[CONVERSION_NAME],
-                f"{EXTENSIONS_PREFIX}{value.field}",
+                value.attribute,
                 value.value,
                 value.unit,
             )
