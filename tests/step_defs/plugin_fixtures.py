@@ -417,6 +417,29 @@ def given_unprovisioned_fake_expansion_plugin() -> None:
     )
 
 
+_JULIA_EXPANSION_PROBE_PY = """\
+from typing import Any, ClassVar
+
+from interop.adapters.outbound.julia_expansion import JuliaExpansionAdapter
+from interop.ports.errors import UserInputError
+
+
+class JuliaExpansionProbe(JuliaExpansionAdapter):
+    name: ClassVar[str] = "julia_expansion_probe"
+
+    def is_provisioned(self) -> bool:
+        return True
+
+    def _bootstrap_julia(self) -> Any:
+        raise UserInputError("the probe reached Julia")
+"""
+
+
+@given("a Julia expansion adapter that stops where Julia would start, in project plugins")
+def given_julia_expansion_probe_plugin() -> None:
+    write_project_plugin("adapters", "julia_expansion_probe", _JULIA_EXPANSION_PROBE_PY)
+
+
 @given("a staging probe step plugin")
 def given_staging_probe_step_plugin() -> None:
     write_project_plugin("steps", "staging_probe", _STAGING_PROBE_STEP_PY)

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
-from pytest_bdd import parsers, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 from tests.step_defs.conftest import join_printed_messages
 from tests.step_defs.solve_steps import invoke_expand, invoke_expand_cancelling, invoke_solve
@@ -135,3 +137,23 @@ def when_expand_cancelling_solver(monkeypatch: pytest.MonkeyPatch, path: str) ->
 def assert_last_prompt(recorded_selects: list[dict[str, Any]], message: str) -> None:
     asked = [record["message"] for record in recorded_selects]
     assert asked and asked[-1] == message, f"expected {message!r} as the last prompt, got {asked}"
+
+
+_JULIA_CODE_IN_A_DATE = '2030-01-01"); run(`touch pwned`); Date("2030-01-01'
+
+
+def _write_series_companion(path: str, start: str) -> None:
+    companion = Path(path)
+    companion.parent.mkdir(parents=True, exist_ok=True)
+    document = {"periods": [{"start": start, "end": "2030-12-31"}], "records": []}
+    companion.write_text(json.dumps(document), encoding="utf-8")
+
+
+@given(parsers.parse('a series companion "{path}" whose first period starts with Julia code'))
+def given_series_companion_with_julia_code(path: str) -> None:
+    _write_series_companion(path, _JULIA_CODE_IN_A_DATE)
+
+
+@given(parsers.parse('a series companion "{path}" with one period of 2030'))
+def given_series_companion_of_2030(path: str) -> None:
+    _write_series_companion(path, "2030-01-01")

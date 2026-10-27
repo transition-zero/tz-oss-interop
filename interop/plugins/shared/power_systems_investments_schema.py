@@ -17,6 +17,8 @@ from enum import StrEnum
 from typing import Any, NamedTuple
 
 from interop.plugins.shared.sienna_constants import SiennaComponent
+from interop.ports.outbound.expansion import SERIES_JSON_SUFFIX as SERIES_JSON_SUFFIX
+from interop.ports.outbound.expansion import SeriesDocument as SeriesDocument
 
 PSIP_MODULE = "PowerSystemsInvestmentsPortfolios"
 """The Julia module every portfolio component names in its ``__metadata__`` block."""
@@ -30,9 +32,6 @@ BASE_SYSTEM_SUFFIX = "_base_system.json"
 
 For ``portfolio.json`` it opens ``portfolio_base_system.json`` in the same directory.
 """
-
-SERIES_JSON_SUFFIX = "_series.json"
-"""The companion holding the series the envelope cannot carry."""
 
 
 class PortfolioEnvelope:
@@ -169,28 +168,6 @@ HOURS_PER_YEAR = 8760.0
 
 PORTFOLIO_SERIES_YEAR = "year"
 """The feature a portfolio series states its year under, and the staged column that holds it."""
-
-
-class SeriesDocument:
-    """Keys of the companion document holding the series the envelope drops."""
-
-    PERIODS = "periods"
-    RECORDS = "records"
-    EXISTING_DEVICES = "existing_devices"
-    DEVICES = "devices"
-
-    START = "start"
-    END = "end"
-
-    COMPONENT_TYPE = "component_type"
-    COMPONENT_NAME = "component_name"
-    SERIES_NAME = "series_name"
-    YEAR = "year"
-    REPRESENTATIVE_DAY = "rep_day"
-    WEIGHT = "weight"
-    INITIAL_TIMESTAMP = "initial_timestamp"
-    RESOLUTION_SECONDS = "resolution_seconds"
-    VALUES = "values"
 
 
 def build_component_metadata(

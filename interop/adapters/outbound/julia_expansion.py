@@ -12,26 +12,25 @@ import logging
 import math
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from interop.adapters.outbound.julia_packages import declare_julia_packages
 from interop.adapters.outbound.julia_strings import build_julia_path_text
-from interop.plugins.shared.power_systems_investments_schema import (
-    MODELLED_TECHNOLOGIES,
-    SERIES_JSON_SUFFIX,
-    SeriesDocument,
-)
+from interop.plugins.shared.power_systems_investments_schema import MODELLED_TECHNOLOGIES
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.expansion import (
+    INVESTMENT_FORMULATIONS,
+    SERIES_JSON_SUFFIX,
     BalanceModel,
     ExpansionOutcome,
     ExpansionPort,
+    ExpansionResultsLayout,
     InvestmentTreatment,
+    PortfolioSeries,
 )
 from interop.ports.outbound.solver import HiGHSOptions
 
@@ -43,11 +42,6 @@ _BALANCE_MODELS: dict[BalanceModel, str] = {
     BalanceModel.SINGLE_REGION: "SingleRegionBalanceModel",
     BalanceModel.MULTI_REGION: "MultiRegionBalanceModel",
     BalanceModel.NODAL: "NodalBalanceModel",
-}
-
-_INVESTMENT_FORMULATIONS: dict[InvestmentTreatment, str] = {
-    InvestmentTreatment.CONTINUOUS: "ContinuousInvestment",
-    InvestmentTreatment.INTEGER: "IntegerInvestment",
 }
 
 # One formulation triple per technology type: how a plan may build it, how it runs, and how
@@ -62,16 +56,6 @@ _TECHNOLOGY_MODELS: tuple[tuple[str, str], ...] = tuple(
 
 # How far from proven optimality a mixed-integer run may stop, matching the dispatch path.
 _MILP_REL_GAP = 0.01
-
-
-@dataclass(frozen=True)
-class _OperationalSlice:
-    """One representative day every technology states a profile over."""
-
-    year: str
-    rep_day: int
-    weight: float
-    timestamps: tuple[str, ...]
 
 
 class JuliaExpansionConfig(BaseModel):
@@ -152,7 +136,7 @@ class _ExpansionRequest:
     """Everything one run needs, past the Julia session itself."""
 
     portfolio_json_path: Path
-    document: dict[str, Any]
+    document: PortfolioSeries
     output_dir: Path
     balance_model: BalanceModel
     investment_treatment: InvestmentTreatment
@@ -168,41 +152,29 @@ def _build_series_path(portfolio_json_path: Path) -> Path:
     return portfolio_json_path.parent / f"{stem}{SERIES_JSON_SUFFIX}"
 
 
-def _read_series_document(series_path: Path) -> dict[str, Any]:
+def _read_series_document(series_path: Path) -> PortfolioSeries:
+    """The companion, parsed before any of it reaches Julia source."""
     if not series_path.is_file():
         raise UserInputError(
             f"the portfolio names no time series of its own, and its companion "
             f"{series_path} is not there. Run the translation that writes both."
         )
-    document: dict[str, Any] = json.loads(series_path.read_text(encoding="utf-8"))
-    return document
+    try:
+        return PortfolioSeries.model_validate(json.loads(series_path.read_text(encoding="utf-8")))
+    except (ValueError, ValidationError) as exc:
+        raise UserInputError(
+            f"{series_path.as_posix()} does not hold a series document that the expansion can "
+            f"read: {_describe_unreadable(exc)}"
+        ) from exc
 
 
-def _build_slices(document: dict[str, Any]) -> list[_OperationalSlice]:
-    """One slice per (year, representative day) the records fall in, in the model's own order."""
-    by_key: dict[tuple[str, int], _OperationalSlice] = {}
-    for record in document[SeriesDocument.RECORDS]:
-        key = (record[SeriesDocument.YEAR], record[SeriesDocument.REPRESENTATIVE_DAY])
-        by_key.setdefault(key, _build_slice(record))
-    return [by_key[key] for key in sorted(by_key)]
-
-
-def _build_slice(record: dict[str, Any]) -> _OperationalSlice:
-    return _OperationalSlice(
-        year=record[SeriesDocument.YEAR],
-        rep_day=record[SeriesDocument.REPRESENTATIVE_DAY],
-        weight=record[SeriesDocument.WEIGHT],
-        timestamps=tuple(_build_timestamps(record)),
-    )
-
-
-def _build_timestamps(record: dict[str, Any]) -> list[str]:
-    """The instant of every value in one slice, which the model indexes its variables by."""
-    start = datetime.fromisoformat(record[SeriesDocument.INITIAL_TIMESTAMP])
-    step = timedelta(seconds=record[SeriesDocument.RESOLUTION_SECONDS])
-    return [
-        (start + step * index).isoformat() for index in range(len(record[SeriesDocument.VALUES]))
-    ]
+def _describe_unreadable(exc: ValueError) -> str:
+    """The first fault of a document that does not parse, and where it is."""
+    if not isinstance(exc, ValidationError):
+        return str(exc)
+    first = exc.errors()[0]
+    location = ".".join(str(part) for part in first["loc"])
+    return f"{location}: {first['msg']} ({exc.error_count()} fault(s) in all)"
 
 
 def _build_highs_args(highs: HiGHSOptions, investment_treatment: InvestmentTreatment) -> str:
@@ -290,7 +262,7 @@ _DEFINE_GET_ONE_COMPONENT = """
 """
 
 
-def _attach_series(jl: Any, document: dict[str, Any]) -> None:
+def _attach_series(jl: Any, document: PortfolioSeries) -> None:
     """Put each record on the component that came off disk, under the features it is read by."""
     jl.seval(_DEFINE_GET_ONE_COMPONENT)
     attach = jl.seval("""
@@ -305,21 +277,21 @@ def _attach_series(jl: Any, document: dict[str, Any]) -> None:
             return nothing
         end
     """)
-    for record in document[SeriesDocument.RECORDS]:
+    for record in document.records:
         attach(
             jl.portfolio,
-            record[SeriesDocument.COMPONENT_TYPE],
-            record[SeriesDocument.COMPONENT_NAME],
-            record[SeriesDocument.SERIES_NAME],
-            record[SeriesDocument.YEAR],
-            record[SeriesDocument.REPRESENTATIVE_DAY],
-            _build_timestamps(record),
-            record[SeriesDocument.VALUES],
+            record.component_type,
+            record.component_name,
+            record.series_name,
+            record.year,
+            record.rep_day,
+            [stamp.isoformat() for stamp in record.list_timestamps()],
+            record.values,
         )
-    log.info("attached %d time series", len(document[SeriesDocument.RECORDS]))
+    log.info("attached %d time series", len(document.records))
 
 
-def _attach_existing_devices(jl: Any, document: dict[str, Any]) -> None:
+def _attach_existing_devices(jl: Any, document: PortfolioSeries) -> None:
     """Give each technology the base system components that it already holds."""
     jl.seval(_DEFINE_GET_ONE_COMPONENT)
     attach = jl.seval("""
@@ -331,28 +303,26 @@ def _attach_existing_devices(jl: Any, document: dict[str, Any]) -> None:
             return nothing
         end
     """)
-    records = document.get(SeriesDocument.EXISTING_DEVICES, [])
+    records = document.existing_devices
     for attribute_id, record in enumerate(records, start=1):
         attach(
-            jl.portfolio,
-            record[SeriesDocument.COMPONENT_TYPE],
-            record[SeriesDocument.COMPONENT_NAME],
-            attribute_id,
-            record[SeriesDocument.DEVICES],
+            jl.portfolio, record.component_type, record.component_name, attribute_id, record.devices
         )
     log.info("attached the existing devices of %d technologies", len(records))
 
 
 def _build_template(jl: Any, request: _ExpansionRequest) -> None:
     """The periods a plan builds over, the days it is run over, and the network it respects."""
-    slices = _build_slices(request.document)
+    slices = request.document.list_slices()
     discount_rate = _set_discount_rate(jl, request.discount_rate)
+    # Each bound is a parsed date, so its text holds nothing but the date.
     periods = ", ".join(
-        f'(Date("{period[SeriesDocument.START]}"), Date("{period[SeriesDocument.END]}"))'
-        for period in request.document[SeriesDocument.PERIODS]
+        f'(Date("{period.start.isoformat()}"), Date("{period.end.isoformat()}"))'
+        for period in request.document.periods
     )
     operational_days = ", ".join(
-        "[" + ", ".join(f'DateTime("{stamp}")' for stamp in one.timestamps) + "]" for one in slices
+        "[" + ", ".join(f'DateTime("{stamp.isoformat()}")' for stamp in one.timestamps) + "]"
+        for one in slices
     )
     weights = ", ".join(str(float(one.weight)) for one in slices)
     jl.seval(f"""
@@ -388,7 +358,7 @@ def _set_discount_rate(jl: Any, stated: float | None) -> float:
 
 def _set_technology_models(jl: Any, investment_treatment: InvestmentTreatment) -> list[str]:
     """One formulation triple per type the portfolio holds, and none for a type it does not."""
-    investment = _INVESTMENT_FORMULATIONS[investment_treatment]
+    investment = INVESTMENT_FORMULATIONS[investment_treatment]
     set_models: list[str] = []
     for technology_type, operations in _TECHNOLOGY_MODELS:
         if not _has_any(jl, technology_type):
@@ -429,26 +399,28 @@ def _has_any(jl: Any, technology_type: str) -> bool:
 
 def _write_results(jl: Any, output_dir: Path) -> None:
     """One CSV per decision and per stored expression, and the optimizer's statistics."""
+    layout = ExpansionResultsLayout
     jl.seval(f"""
         let
             out = "{build_julia_path_text(output_dir)}"
             for (folder, names, read) in (
-                    ("variables", IS.Optimization.list_variable_names(results),
+                    ("{layout.VARIABLES_DIR}", IS.Optimization.list_variable_names(results),
                      PSIN.read_variable),
-                    ("expressions", IS.Optimization.list_expression_names(results),
+                    ("{layout.EXPRESSIONS_DIR}", IS.Optimization.list_expression_names(results),
                      IS.Optimization.read_expression))
-                root = joinpath(out, "results_wide", folder)
+                root = joinpath(out, "{layout.WIDE_DIR}", folder)
                 mkpath(root)
                 for name in names
                     try
-                        CSV.write(joinpath(root, string(name, ".csv")), read(results, name))
+                        CSV.write(joinpath(root, string(name, "{layout.CSV_SUFFIX}")),
+                                  read(results, name))
                     catch err
                         @warn "result export failed" name=name exception=err
                     end
                 end
             end
-            mkpath(joinpath(out, "results"))
-            CSV.write(joinpath(out, "results", "optimizer_stats.csv"),
+            mkpath(joinpath(out, "{layout.STATISTICS_DIR}"))
+            CSV.write(joinpath(out, "{layout.STATISTICS_DIR}", "{layout.OPTIMIZER_STATS_FILE}"),
                       IS.Optimization.read_optimizer_stats(results))
         end
     """)

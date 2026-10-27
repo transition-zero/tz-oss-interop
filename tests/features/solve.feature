@@ -234,3 +234,23 @@ Feature: solve command runs the Sienna solver on a translated model
     Then the printed output contains "Solve cancelled"
     And the printed output does not contain "SUCCESSFULLY_FINALIZED"
     And the file "outputs/expansion-call.txt" does not exist
+
+  Scenario: a period bound that is not a date stops the expansion before Julia reads it
+    The adapter writes each period bound into Julia source, so a bound must parse as a date
+    before any Julia runs.
+    Given a Julia expansion adapter that stops where Julia would start, in project plugins
+    And adapters.yaml binds expansion to "julia_expansion_probe"
+    And a file "outputs/portfolio.json" exists
+    And a series companion "outputs/portfolio_series.json" whose first period starts with Julia code
+    When I dispatch the expand command for "outputs/portfolio.json"
+    Then a user error is printed containing "outputs/portfolio_series.json does not hold a series document that the expansion can read"
+    And a user error is printed containing "periods.0.start"
+    And the printed output does not contain "the probe reached Julia"
+
+  Scenario: a readable series companion reaches the point where Julia starts
+    Given a Julia expansion adapter that stops where Julia would start, in project plugins
+    And adapters.yaml binds expansion to "julia_expansion_probe"
+    And a file "outputs/portfolio.json" exists
+    And a series companion "outputs/portfolio_series.json" with one period of 2030
+    When I dispatch the expand command for "outputs/portfolio.json"
+    Then a user error is printed containing "the probe reached Julia"

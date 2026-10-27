@@ -32,12 +32,10 @@ from interop.plugins.shared.power_systems_investments_schema import (
     PORTFOLIO_PERIODS_TABLE,
     PORTFOLIO_SERIES_TABLE,
     PSIP_MODULE,
-    SERIES_JSON_SUFFIX,
     TIME_SERIES_STORAGE_TYPE,
     PortfolioColumn,
     PortfolioComponent,
     PortfolioEnvelope,
-    SeriesDocument,
     build_component_metadata,
 )
 from interop.plugins.shared.sienna_constants import SYSTEM_BASE_MVA
@@ -48,6 +46,7 @@ from interop.plugins.sinks.emit_power_simulations_system_json import (
     EmitPowerSimulationsSystemJson,
     reject_other_base_power,
 )
+from interop.ports.outbound.expansion import SERIES_JSON_SUFFIX, PortfolioSeries, SeriesDocument
 from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -162,14 +161,21 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
 
 def build_series(state: State) -> dict[str, Any]:
     """The series and the existing devices the adapter attaches after the read, and the periods
-    the slices fall in."""
-    return {
-        SeriesDocument.PERIODS: _list_rows(state.destination_tables.get(PORTFOLIO_PERIODS_TABLE)),
-        SeriesDocument.RECORDS: _list_rows(state.destination_tables.get(PORTFOLIO_SERIES_TABLE)),
-        SeriesDocument.EXISTING_DEVICES: _list_rows(
-            state.destination_tables.get(PORTFOLIO_EXISTING_DEVICES_TABLE)
-        ),
-    }
+    the slices fall in, checked against the document that the adapter reads."""
+    series = PortfolioSeries.model_validate(
+        {
+            SeriesDocument.PERIODS: _list_rows(
+                state.destination_tables.get(PORTFOLIO_PERIODS_TABLE)
+            ),
+            SeriesDocument.RECORDS: _list_rows(
+                state.destination_tables.get(PORTFOLIO_SERIES_TABLE)
+            ),
+            SeriesDocument.EXISTING_DEVICES: _list_rows(
+                state.destination_tables.get(PORTFOLIO_EXISTING_DEVICES_TABLE)
+            ),
+        }
+    )
+    return series.model_dump(mode="json")
 
 
 def _build_components(state: State) -> list[dict[str, Any]]:
