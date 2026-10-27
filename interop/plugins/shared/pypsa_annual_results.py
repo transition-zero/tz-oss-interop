@@ -216,7 +216,7 @@ class PypsaAnnualResultsMapper:
         self._mapper = AnnualRowsMapper(recorder, ResultsLeg(Framework.PYPSA, PYPSA_TO_RESULTS))
 
     def map_annual(self, state: State, view: PypsaNetworkView) -> list[pl.LazyFrame]:
-        weights = self._choose_annual_weights(state)
+        weights = self._build_annual_weights(state)
         if weights.is_empty():
             return []
         self._report_lines(state, view)
@@ -232,7 +232,7 @@ class PypsaAnnualResultsMapper:
             *self._map_emissions(state, activity, view.fuels),
         ]
 
-    def _choose_annual_weights(self, state: State) -> pl.DataFrame:
+    def _build_annual_weights(self, state: State) -> pl.DataFrame:
         """The weight of each snapshot of a year that the snapshots stand for, or none.
 
         The representative periods of a sidecar state that their weights fill each year, as
