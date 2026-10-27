@@ -234,6 +234,50 @@ Feature: The scope step leaves out the locations and the years that a run does n
     And the file "decisions.md" contains "`osemosys.region_group.G1` |  |  | it loses the region(s) R1, which the scope leaves out, so each limit of it covers only the regions that stay"
     And the log contains "1 region group(s) lose a region that the scope leaves out, so each limit of the group covers only the regions that stay: G1"
 
+  Scenario: A list of years that leaves out the first year leaves out each value for the whole model period, and the start level of each storage
+    Given the otoole set "STORAGE" holds "ATBATS"
+    And the otoole set "EMISSION" holds "CO2"
+    And the otoole parameter "TotalTechnologyModelPeriodActivityUpperLimit" keyed by "REGION TECHNOLOGY" with default -1 has the rows:
+      | REGION | TECHNOLOGY | VALUE |
+      | R1     | ATGAS      | 100   |
+    And the otoole parameter "ModelPeriodEmissionLimit" keyed by "REGION EMISSION" with default -1 has the rows:
+      | REGION | EMISSION | VALUE |
+      | R1     | CO2      | 50    |
+    And the otoole parameter "StorageLevelStart" keyed by "REGION STORAGE" with default 0 has the rows:
+      | REGION | STORAGE | VALUE |
+      | R1     | ATBATS  | 5     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years "2031"
+    When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/total_technology_model_period_activity_upper_limit.parquet" has the rows:
+      | region | technology | value |
+    And the canonical table "canonical/parameters/model_period_emission_limit.parquet" has the rows:
+      | region | pollutant | value |
+    And the canonical table "canonical/parameters/storage_level_start.parquet" has the rows:
+      | region | storage | value |
+    And the file "decisions.md" contains "`osemosys.parameter.total_technology_model_period_activity_upper_limit` |  |  | it states one value for the whole model period, and the scope leaves out 1 year(s), so no value of it is kept"
+    And the file "decisions.md" contains "`osemosys.parameter.storage_level_start` |  |  | it states the level at the start of the first model year 2030, which the scope leaves out, so no value of it is kept"
+    And the log contains "Left out the values of 3 parameter table(s) that the years of the scope change: model_period_emission_limit, storage_level_start, total_technology_model_period_activity_upper_limit"
+
+  Scenario: A list of years that keeps the first year keeps the start level of each storage
+    Given the otoole set "STORAGE" holds "ATBATS"
+    And the otoole parameter "TotalTechnologyModelPeriodActivityUpperLimit" keyed by "REGION TECHNOLOGY" with default -1 has the rows:
+      | REGION | TECHNOLOGY | VALUE |
+      | R1     | ATGAS      | 100   |
+    And the otoole parameter "StorageLevelStart" keyed by "REGION STORAGE" with default 0 has the rows:
+      | REGION | STORAGE | VALUE |
+      | R1     | ATBATS  | 5     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years "2030"
+    When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/parameters/total_technology_model_period_activity_upper_limit.parquet" has the rows:
+      | region | technology | value |
+    And the canonical table "canonical/parameters/storage_level_start.parquet" has the rows:
+      | region | storage | value |
+      | R1     | ATBATS  | 5     |
+
   Scenario: Empty lists keep the whole stage
     Given a pipeline "scoped" that stages an otoole model and keeps the locations "" and the years ""
     When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"

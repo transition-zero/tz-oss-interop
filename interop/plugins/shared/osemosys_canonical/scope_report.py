@@ -9,6 +9,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION_GROUP,
     TECHNOLOGY,
     YEAR,
+    TableKind,
 )
 from interop.plugins.shared.osemosys_canonical.events import (
     SourceName,
@@ -55,6 +56,10 @@ _REGION_GROUP_NOTE = (
     "it loses the region(s) {regions}, which the scope leaves out, so each limit of it covers "
     "only the regions that stay"
 )
+_TABLE_REPORT = SourceReport(
+    EventKind.NOT_MAPPED,
+    "Left out the values of %d parameter table(s) that the years of the scope change: %s",
+)
 
 
 def report_scope_drop(drop: ScopeDrop, recorder: EventRecorder) -> None:
@@ -62,6 +67,7 @@ def report_scope_drop(drop: ScopeDrop, recorder: EventRecorder) -> None:
     report_source_events(_KEPT_REPORT, _build_kept_notes(drop.kept), recorder)
     groups = _build_region_group_notes(drop.region_groups)
     report_source_events(_REGION_GROUP_REPORT, groups, recorder)
+    report_source_events(_TABLE_REPORT, _build_table_notes(drop.tables), recorder)
 
 
 def _report_left_out(drop: ScopeDrop, recorder: EventRecorder) -> None:
@@ -125,3 +131,7 @@ def _build_region_group_notes(groups: dict[str, list[str]]) -> dict[SourceName, 
         SourceName(REGION_GROUP, group): _REGION_GROUP_NOTE.format(regions=", ".join(regions))
         for group, regions in groups.items()
     }
+
+
+def _build_table_notes(tables: dict[str, str]) -> dict[SourceName, str]:
+    return {SourceName(TableKind.PARAMETER, name): tables[name] for name in sorted(tables)}
