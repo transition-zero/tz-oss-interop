@@ -6,9 +6,10 @@ fields that only it holds.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -29,7 +30,9 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    OSEMOSYS_TO_SIENNA_PIPELINE,
     REGION_NAME_SEPARATOR,
+    TECHNOLOGIES_LABEL,
     SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
@@ -130,7 +133,10 @@ from interop.plugins.shared.translation_runner import (
     default_translation,
     row_position_id_translation,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 # Every Sienna generator type names its shared fields alike, so these name them for all four.
 _Col = SiennaThermalGeneratorCol
@@ -414,19 +420,11 @@ def _build_reports(dest: DestinationFieldFactory) -> list[Translation]:
     ]
 
 
-def _build_cost_term_reports(dest: DestinationFieldFactory) -> list[Translation]:
-    """The fuel terms and the penalties that add to the operation cost of the type."""
+def _build_cost_term_reports(dest: DestinationFieldFactory | None) -> list[Translation]:
+    """The fuel terms and the penalties of the operation cost; with no `dest`, the type has none."""
     return [
         Translation(exprs=[], make_events=lambda old, _new: _build_fuel_term_events(dest, old)),
         Translation(exprs=[], make_events=lambda old, _new: build_penalty_events(dest, old)),
-    ]
-
-
-def _build_lost_cost_term_reports() -> list[Translation]:
-    """The fuel terms and the penalties of a type that has no operation cost."""
-    return [
-        Translation(exprs=[], make_events=lambda old, _new: _build_lost_fuel_term_events(old)),
-        Translation(exprs=[], make_events=lambda old, _new: _build_lost_penalty_events(old)),
     ]
 
 
@@ -451,16 +449,22 @@ def build_series_events(
 
 
 def _build_fuel_term_events(
-    dest: DestinationFieldFactory, old: dict[str, Any]
+    dest: DestinationFieldFactory | None, old: dict[str, Any]
 ) -> list[TranslationEvent]:
     return [_build_fuel_term_event(dest, old, term) for term in old[FUEL_TERMS] or []]
 
 
 def _build_fuel_term_event(
-    dest: DestinationFieldFactory, old: dict[str, Any], term: dict[str, Any]
+    dest: DestinationFieldFactory | None, old: dict[str, Any], term: dict[str, Any]
 ) -> TranslationEvent:
     if term[PRODUCER] is None:
         return _build_no_producer_event(old, term)
+    if dest is None:
+        return TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=_build_fuel_term_sources(old, term),
+            note=_LOST_FUEL_TERM_NOTE.format(fuel=term[FUEL]),
+        )
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=_build_fuel_term_sources(old, term),
@@ -475,19 +479,6 @@ def _build_fuel_term_event(
         derivation=_FUEL_TERM_DERIVATION,
         note=_build_producer_note(term),
     )
-
-
-def _build_lost_fuel_term_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    return [
-        _build_no_producer_event(old, term)
-        if term[PRODUCER] is None
-        else TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=_build_fuel_term_sources(old, term),
-            note=_LOST_FUEL_TERM_NOTE.format(fuel=term[FUEL]),
-        )
-        for term in old[FUEL_TERMS] or []
-    ]
 
 
 def _build_no_producer_event(old: dict[str, Any], term: dict[str, Any]) -> TranslationEvent:
@@ -605,37 +596,38 @@ def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[S
 
 
 def build_penalty_events(
-    dest: DestinationFieldFactory, old: dict[str, Any]
+    dest: DestinationFieldFactory | None, old: dict[str, Any]
 ) -> list[TranslationEvent]:
-    """One event for each pollutant: the emission rate and the penalty give a cost per MWh."""
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=_build_penalty_sources(old, term),
-            destinations=[
-                dest(
-                    old[GENERATOR_NAME],
-                    f"{PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
-                    term[PENALTY_COST_MWH],
-                    UNIT_DOLLARS_PER_MWH,
-                )
-            ],
-            derivation=_PENALTY_DERIVATION,
-            note=f"the penalty is {term[PENALTY_PER_TONNE]:g} {UNIT_DOLLARS_PER_TONNE}",
-        )
-        for term in old[PENALTY_TERMS] or []
-    ]
+    """One event for each pollutant: the emission rate and the penalty give a cost per MWh.
+
+    With no `dest`, the type has no operation cost, so each penalty is NOT_MAPPED.
+    """
+    return [_build_penalty_event(dest, old, term) for term in old[PENALTY_TERMS] or []]
 
 
-def _build_lost_penalty_events(old: dict[str, Any]) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
+def _build_penalty_event(
+    dest: DestinationFieldFactory | None, old: dict[str, Any], term: dict[str, Any]
+) -> TranslationEvent:
+    if dest is None:
+        return TranslationEvent(
             kind=EventKind.NOT_MAPPED,
             sources=_build_penalty_sources(old, term),
             note=_LOST_PENALTY_NOTE.format(pollutant=term[POLLUTANT]),
         )
-        for term in old[PENALTY_TERMS] or []
-    ]
+    return TranslationEvent(
+        kind=EventKind.VALUE_DERIVED,
+        sources=_build_penalty_sources(old, term),
+        destinations=[
+            dest(
+                old[GENERATOR_NAME],
+                f"{PENALTY_ATTRIBUTE}{term[POLLUTANT]}",
+                term[PENALTY_COST_MWH],
+                UNIT_DOLLARS_PER_MWH,
+            )
+        ],
+        derivation=_PENALTY_DERIVATION,
+        note=f"the penalty is {term[PENALTY_PER_TONNE]:g} {UNIT_DOLLARS_PER_TONNE}",
+    )
 
 
 def _build_penalty_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
@@ -690,18 +682,7 @@ def _build_operation_cost(
     return [
         Translation(
             exprs=[cost.cast(dtype).alias(_Col.OPERATION_COST)],
-            make_events=lambda old, _new: build_derived(
-                _build_cost_sources(old),
-                [
-                    dest(
-                        old[GENERATOR_NAME],
-                        PROPORTIONAL_TERM_ATTRIBUTE,
-                        old[OPERATION_COST_MWH],
-                        UNIT_DOLLARS_PER_MWH,
-                    )
-                ],
-                _VARIABLE_COST_DERIVATION,
-            ),
+            make_events=lambda old, _new: _build_variable_cost_events(dest, old),
         ),
         Translation(
             exprs=[],
@@ -716,26 +697,98 @@ def _build_operation_cost(
     ]
 
 
+def _build_variable_cost_events(
+    dest: DestinationFieldFactory | None, old: dict[str, Any]
+) -> list[TranslationEvent]:
+    """The proportional term of the cost curve; with no `dest`, a variable cost that is lost.
+
+    The fuel terms and the penalties report themselves, so a lost cost names the own cost only.
+    """
+    if dest is not None:
+        return build_derived(
+            _build_cost_sources(old),
+            [
+                dest(
+                    old[GENERATOR_NAME],
+                    PROPORTIONAL_TERM_ATTRIBUTE,
+                    old[OPERATION_COST_MWH],
+                    UNIT_DOLLARS_PER_MWH,
+                )
+            ],
+            _VARIABLE_COST_DERIVATION,
+        )
+    if not old[OWN_COST]:
+        return []
+    return [
+        TranslationEvent(
+            kind=EventKind.NOT_MAPPED,
+            sources=_build_own_cost_sources(old),
+            note=_LOST_COST_NOTE,
+        )
+    ]
+
+
 def _express_variable_curve() -> pl.Expr:
     return variable_cost_curve(pl.col(OPERATION_COST_MWH))
 
 
-def _build_lost_cost() -> Translation:
-    """A RenewableNonDispatch has no operation cost, so a cost above zero is lost."""
-    return Translation(
-        exprs=[],
-        make_events=lambda old, _new: (
-            [
-                TranslationEvent(
-                    kind=EventKind.NOT_MAPPED,
-                    sources=_build_own_cost_sources(old),
-                    note=_LOST_COST_NOTE,
-                )
-            ]
-            if old[OPERATION_COST_MWH] != 0
-            else []
-        ),
-    )
+# --- the warnings about a cost that the system leaves out -----------------------------------
+
+
+class _LostCost(NamedTuple):
+    """A cost that a generator states and its Sienna generator does not pay, and the warning."""
+
+    is_lost: pl.Expr
+    counted_noun: str
+    reason: str
+
+
+def _express_has_fuel_term(is_counted: pl.Expr) -> pl.Expr:
+    """Whether one fuel term of the generator meets `is_counted`, on the producer of the term."""
+    return pl.col(FUEL_TERMS).list.eval(is_counted).list.any().fill_null(False)  # noqa: FBT003
+
+
+_PRODUCER = pl.element().struct.field(PRODUCER)
+_IS_WITHOUT_COST = pl.col(SIENNA_TYPE) == SiennaComponent.RENEWABLE_NON_DISPATCH
+_NO_COST_FIELD = "and the type has no operation_cost field, so the cost is left out"
+_LOST_COSTS = (
+    _LostCost(
+        _express_has_fuel_term(_PRODUCER.is_null()),
+        "generator(s)",
+        "burn a fuel that no fuel_supply technology puts out, so each pays no fuel cost for it",
+    ),
+    _LostCost(
+        _IS_WITHOUT_COST & (pl.col(OWN_COST).fill_null(NO_COST) != NO_COST),
+        f"{SiennaComponent.RENEWABLE_NON_DISPATCH} generator(s)",
+        f"state a variable cost, {_NO_COST_FIELD}",
+    ),
+    _LostCost(
+        _IS_WITHOUT_COST & _express_has_fuel_term(_PRODUCER.is_not_null()),
+        f"{SiennaComponent.RENEWABLE_NON_DISPATCH} generator(s)",
+        f"pay for a fuel, {_NO_COST_FIELD}",
+    ),
+    _LostCost(
+        _IS_WITHOUT_COST & (pl.col(PENALTY_TERMS).list.len().fill_null(0) > 0),
+        f"{SiennaComponent.RENEWABLE_NON_DISPATCH} generator(s)",
+        f"pay an emission penalty, {_NO_COST_FIELD}",
+    ),
+)
+
+
+def warn_lost_costs(generators: pl.DataFrame) -> None:
+    """One warning for each kind of cost that the events record as not mapped."""
+    for lost in _LOST_COSTS:
+        names = sorted(generators.filter(lost.is_lost)[TECHNOLOGY_NAME].to_list())
+        if names:
+            log.warning(
+                "%s: %d %s %s. %s: %s",
+                OSEMOSYS_TO_SIENNA_PIPELINE,
+                len(names),
+                lost.counted_noun,
+                lost.reason,
+                TECHNOLOGIES_LABEL,
+                name_a_few(names),
+            )
 
 
 # --- the fields of one type ---------------------------------------------------------------
@@ -881,8 +934,8 @@ def _build_renewable_non_dispatch() -> list[Translation]:
     return [
         *_build_shared(dest),
         _build_power_factor(dest),
-        *_build_lost_cost_term_reports(),
-        _build_lost_cost(),
+        *_build_cost_term_reports(None),
+        Translation(exprs=[], make_events=lambda old, _new: _build_variable_cost_events(None, old)),
     ]
 
 

@@ -42,6 +42,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_columns impo
 from interop.plugins.shared.osemosys_sienna_translations._generator_translations import (
     GENERATOR_TYPE_MAPPINGS,
     GeneratorTypeMapping,
+    warn_lost_costs,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import (
     GeneratorSources,
@@ -120,5 +121,6 @@ __all__ = [
     "require_model_year",
     "set_days_persisted",
     "set_generator_values_persisted",
+    "warn_lost_costs",
     "set_operations_year",
 ]
