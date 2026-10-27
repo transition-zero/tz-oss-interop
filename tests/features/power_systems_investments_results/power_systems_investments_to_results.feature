@@ -106,6 +106,18 @@ Feature: power-systems-investments-to-results writes the annual rows of an expan
 
   Scenario: A slice that holds an hour an earlier slice holds is left out, so production counts the hour once
     Given the series document has the representative day 5 of the year "2030" from "2030-01-02T01:00:00" of 2 hours with weight 50
+    And the expansion solve wrote the variable "ActivePowerVariable__SupplyTechnology__ThermalStandard__BasicDispatch" with the rows:
+      | DateTime              | name | value |
+      | 2030-01-01T00:00:00.0 | gas  | 10    |
+      | 2030-01-01T01:00:00.0 | gas  | 20    |
+      | 2030-01-02T00:00:00.0 | gas  | 30    |
+      | 2030-01-02T01:00:00.0 | gas  | 40    |
+      | 2030-01-02T01:00:00.0 | gas  | 15    |
+      | 2030-01-02T02:00:00.0 | gas  | 25    |
+      | 2035-01-01T00:00:00.0 | gas  | 50    |
+      | 2035-01-01T01:00:00.0 | gas  | 60    |
+      | 2035-01-02T00:00:00.0 | gas  | 70    |
+      | 2035-01-02T01:00:00.0 | gas  | 80    |
     When I run the pipeline "power-systems-investments-to-results" with overrides "source.results_dir=expanded source.series_json_path=psi/portfolio_series.json"
     Then the pipeline exit code is 0
     And the results parquet "outputs/results.parquet" holds these "production" rows among others:
