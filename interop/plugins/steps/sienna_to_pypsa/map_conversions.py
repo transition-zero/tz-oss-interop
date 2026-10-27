@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 from typing import Any, ClassVar
 
-import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import (
@@ -29,6 +28,10 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSABusCol,
     PyPSADestinationTable,
     PyPSALinkCol,
+)
+from interop.plugins.shared.pypsa_destination import (
+    append_destination_rows,
+    list_destination_names,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
     CONVERSION_CARRIED,
@@ -72,8 +75,8 @@ class SiennaToPypsaMapConversions(TranslationStep):
         records = lookup.list_records()
         if not records:
             return state
-        buses = _build_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME)
-        links = _build_names(state, PyPSADestinationTable.LINKS, PyPSALinkCol.NAME)
+        buses = set(list_destination_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME))
+        links = set(list_destination_names(state, PyPSADestinationTable.LINKS, PyPSALinkCol.NAME))
         joining = [record for record in records if _is_joining_buses(record, buses)]
         self._report_taken_names([record.name for record in joining if record.name in links])
         self._map_links(state, lookup, [record for record in joining if record.name not in links])
@@ -102,11 +105,7 @@ class SiennaToPypsaMapConversions(TranslationStep):
             lookup.get_fields(record.name, CONVERSION_MAPPED_FIELDS)
             _record_link(reporter, record)
             rows.append(_build_link_row(record))
-        new = pl.DataFrame(rows, schema=LINKS_DESTINATION_SCHEMA)
-        existing = state.destination_tables.get(PyPSADestinationTable.LINKS)
-        state.destination_tables[PyPSADestinationTable.LINKS] = (
-            new if existing is None else pl.concat([existing, new])
-        )
+        append_destination_rows(state, PyPSADestinationTable.LINKS, rows, LINKS_DESTINATION_SCHEMA)
 
 
 def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
@@ -114,11 +113,6 @@ def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
     ends = {record.bus0, record.bus1}
     further = {bus for bus in (record.bus2, record.bus3) if bus is not None}
     return len(ends) == 2 and ends | further <= buses
-
-
-def _build_names(state: State, table: str, column: str) -> set[str]:
-    frame = state.destination_tables.get(table)
-    return set() if frame is None else set(frame[column].to_list())
 
 
 def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> None:
