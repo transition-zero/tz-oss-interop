@@ -19,10 +19,13 @@ from interop.plugins.shared.annual_results import build_annual_rows, build_resul
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.power_systems_investments_results_constants import (
     HOUR_WEIGHTS_KEY,
+    INVESTMENT_RESULT_CSVS,
     INVESTMENT_RESULTS_KEY,
     OBJECTIVE_KEY,
     OBJECTIVE_VALUE_COLUMN,
+    OPERATIONS_RESULT_CSVS,
     OPERATIONS_RESULTS_KEY,
+    OPTIMIZER_STATS_CSV,
     PERIOD_YEARS_KEY,
     InvestmentsResult,
     ResultsCsvCol,
@@ -38,6 +41,7 @@ from interop.plugins.shared.results_constants import (
 )
 from interop.plugins.shared.sienna_results_constants import AnnualCol
 from interop.plugins.shared.translation_runner import (
+    DROPPED_NAMES_LABEL,
     SkippedNames,
     SkipReport,
     filter_component,
@@ -62,6 +66,16 @@ _FIRST_HOUR = "first_hour"
 _EARLIER_SLICE = "earlier_slice"
 _HOUR_NAME = "hour"
 _HOUR_FORMAT = "%Y-%m-%dT%H:%M:%S"
+_VARIABLE = "variable"
+_RESULT_NAMES = "results"
+_PLACE = "place"
+_LISTED_VARIABLE = "listed_variable"
+_HAS_ROWS = "has_rows"
+
+# The folder that holds the files of each result, as the solve writes them.
+_RESULT_FOLDERS: dict[str, str] = {
+    str(csvs.result): csvs.folder for csvs in (*INVESTMENT_RESULT_CSVS, *OPERATIONS_RESULT_CSVS)
+}
 
 
 def _note_shared_name(row: dict[str, Any]) -> str:
@@ -86,6 +100,23 @@ def _note_unknown_period(row: dict[str, Any]) -> str:
     )
 
 
+def _note_missing_variable(row: dict[str, Any]) -> str:
+    return (
+        f"the directory that the solve wrote holds no file of {row[_RESULT_NAMES]} under "
+        f"{row[_PLACE]}, so the results have no {row[_VARIABLE]}"
+    )
+
+
+_MISSING_VARIABLE_REPORT = SkipReport(
+    pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
+    framework=Framework.POWER_SYSTEMS_INVESTMENTS,
+    component=_RESULTS_COMPONENT,
+    name_col=_RESULT_NAMES,
+    reason="have no file in the directory that the solve wrote",
+    counted_noun="result variable(s)",
+    note=_note_missing_variable,
+    listed=SkippedNames(column=_LISTED_VARIABLE, label=DROPPED_NAMES_LABEL),
+)
 _SHARED_NAME_REPORT = SkipReport(
     pipeline=POWER_SYSTEMS_INVESTMENTS_TO_RESULTS,
     framework=Framework.POWER_SYSTEMS_INVESTMENTS,
@@ -177,6 +208,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         period_years = state.source_topology[PERIOD_YEARS_KEY].collect()
         investment = state.source_topology[INVESTMENT_RESULTS_KEY].collect()
         operations = state.source_time_series[OPERATIONS_RESULTS_KEY]
+        self._report_missing_variables(state, investment, operations)
         shared = self._choose_shared_names(investment, operations)
         is_unshared = ~pl.col(StagedResultCol.COMPONENT).is_in(shared)
         investment = investment.filter(is_unshared)
@@ -207,6 +239,20 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         self._record(derivation)
         return _build_annual_results(dated, derivation)
 
+    def _report_missing_variables(
+        self, state: State, investment: pl.DataFrame, operations: pl.LazyFrame
+    ) -> None:
+        """Record each variable that no file of the solve states, and warn once for the lot."""
+        staged = _list_staged_results(investment, operations)
+        rows = [
+            _build_variable_row(derivation, staged)
+            for derivation in (_NEW_CAPACITY, _INSTALLED_CAPACITY, _PRODUCTION)
+        ]
+        rows.append(_build_objective_row(OBJECTIVE_KEY in state.source_topology))
+        report_not_mapped(
+            pl.DataFrame(rows), pl.col(_HAS_ROWS), _MISSING_VARIABLE_REPORT, self._recorder
+        )
+
     def _choose_shared_names(self, investment: pl.DataFrame, operations: pl.LazyFrame) -> list[str]:
         """The component names that more than one technology type states; it reports each."""
         _unshared, shared = filter_component(
@@ -232,7 +278,7 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
 
     def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
         # The solve writes a row for each hour of each slice, so an hour two slices hold has two.
-        first_rows = operations.unique(_HOUR_ROW_KEYS, keep="first", maintain_order=True)
+        first_rows = operations.filter(pl.struct(_HOUR_ROW_KEYS).is_first_distinct())
         weighted = first_rows.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
         report_not_mapped(
             _list_solve_hours(weighted),
@@ -302,6 +348,52 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
                 derivation=derivation.text,
             )
         )
+
+
+def _list_staged_results(investment: pl.DataFrame, operations: pl.LazyFrame) -> set[str]:
+    """Each result of the solve that the staged tables hold a row of."""
+    results = pl.concat(
+        [
+            investment.lazy().select(StagedResultCol.RESULT),
+            operations.select(StagedResultCol.RESULT),
+        ]
+    )
+    return set(results.unique().collect()[StagedResultCol.RESULT])
+
+
+def _build_variable_row(derivation: Derivation, staged: set[str]) -> dict[str, Any]:
+    sources = [str(source) for source in derivation.sources]
+    return _build_missing_row(
+        derivation.destination,
+        _join_names(sources),
+        _RESULT_FOLDERS[sources[0]],
+        has_rows=not staged.isdisjoint(sources),
+    )
+
+
+def _build_objective_row(has_rows: bool) -> dict[str, Any]:
+    return _build_missing_row(
+        ResultsVariable.OBJECTIVE, OBJECTIVE_VALUE_COLUMN, OPTIMIZER_STATS_CSV, has_rows=has_rows
+    )
+
+
+def _build_missing_row(
+    variable: ResultsVariable, results: str, place: str, *, has_rows: bool
+) -> dict[str, Any]:
+    return {
+        _VARIABLE: str(variable),
+        _RESULT_NAMES: results,
+        _PLACE: place,
+        _LISTED_VARIABLE: f"{variable} ({place})",
+        _HAS_ROWS: has_rows,
+    }
+
+
+def _join_names(names: list[str]) -> str:
+    """The names in a sentence: "a", "a or b", or "a, b or c"."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} or {names[-1]}"
 
 
 def _list_technologies_by_name(investment: pl.DataFrame, operations: pl.LazyFrame) -> pl.DataFrame:
