@@ -3,6 +3,8 @@
 A component runs the modes that it holds: a generator and a line the operations mode, a
 storage its charge mode and its discharge mode. The cost, the flows and the emissions of each
 other mode, in the operations year, go to the `operating_modes` field of the extension record.
+A component holds the electricity flows of a mode that it runs, so a flow of another fuel at
+that mode goes to the field too, unless the component holds every flow of the mode.
 So do the bounds of each mode, held or not, in every year, and the emissions of a mode that a
 storage, a line or a conversion runs, which no field of those holds. Each value is for one MWh
 of the activity of the mode.
@@ -36,6 +38,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import ActivityParameter, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_all_years,
@@ -133,17 +136,22 @@ _MODE_VALUES = (
         is_bound=True,
     ),
 )
-# The values of a mode that a generator runs, which the generator holds itself.
+_FLOW_PARAMETERS = frozenset(
+    {FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO}
+)
+# The values of a mode that a generator runs, which the generator holds itself for every fuel:
+# it pays for the fuels that it takes in, and reports a fuel other than electricity that it
+# puts out.
 GENERATOR_RUN_PARAMETERS = frozenset(
     {
         SupplyParameter.VARIABLE_OPERATION_COST,
-        FlowParameter.INPUT_ACTIVITY_RATIO,
-        FlowParameter.OUTPUT_ACTIVITY_RATIO,
+        *_FLOW_PARAMETERS,
         SupplyParameter.EMISSION_RATE,
     }
 )
-# The values of a mode that a storage, a line or a conversion runs: it states no emission rate.
-LINK_RUN_PARAMETERS = GENERATOR_RUN_PARAMETERS - {SupplyParameter.EMISSION_RATE}
+# The values of a mode that a storage, a line or a conversion runs. It holds only the
+# electricity flows of the mode, and states no emission rate.
+LINK_RUN_PARAMETERS = frozenset({SupplyParameter.VARIABLE_OPERATION_COST})
 # The bounds of a mode, whose rows a record holds for each technology that it names.
 MODE_BOUND_PARAMETERS: tuple[str, ...] = tuple(
     value.parameter for value in _MODE_VALUES if value.is_bound
@@ -172,7 +180,8 @@ def build_operating_modes(
     """The mode values of each technology in `held`, which lists the modes that it runs.
 
     `held` holds `region`, `technology` and `operating_mode`. A mode that the component runs
-    keeps out each value of `run_parameters`, which the component holds itself.
+    keeps out each value of `run_parameters`, which the component holds itself, and its
+    electricity flows.
     """
     technologies = held.select(_KEYS).unique()
     rows = pl.concat(
@@ -229,6 +238,8 @@ def _read_mode_rows(
     rows = _read_rows(state, operations, technologies, value)
     if value.parameter in run_parameters:
         rows = rows.join(held, on=[*_KEYS, OPERATING_MODE], how="anti")
+    elif value.parameter in _FLOW_PARAMETERS:
+        rows = _drop_held_electricity(state, rows, held)
     rows = rows.filter(pl.col(VALUE_COL) != _NO_VALUE).with_columns(
         pl.col(VALUE_COL).cast(pl.Float64)
     )
@@ -245,6 +256,18 @@ def _read_mode_rows(
         scaled.alias(_SCALED),
         pl.lit(value.unit).alias(_UNIT),
     )
+
+
+def _drop_held_electricity(state: State, rows: pl.DataFrame, held: pl.DataFrame) -> pl.DataFrame:
+    """The flow rows without those of an electricity fuel at a mode that the component runs."""
+    electricity = read_electricity_fuels(state).select(REGION, FUEL)
+    held_electricity = (
+        rows.join(held, on=[*_KEYS, OPERATING_MODE], how="semi")
+        .join(electricity, on=[REGION, FUEL], how="semi")
+        .select(*_KEYS, OPERATING_MODE, FUEL)
+        .unique()
+    )
+    return rows.join(held_electricity, on=[*_KEYS, OPERATING_MODE, FUEL], how="anti")
 
 
 def _read_rows(
