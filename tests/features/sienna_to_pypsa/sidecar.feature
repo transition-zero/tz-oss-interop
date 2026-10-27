@@ -78,7 +78,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "max_growth" set to {"2020": 0.0}
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "operating_modes" set to [{"mode": "2", "variable_cost": 3.0}]
     And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" without field "carrier"
-    And the file "decisions.md" contains "| `sienna.generator.gas.extensions.max_growth` | `pypsa.generator.gas.extensions.max_growth` | relayed unchanged to extensions.json, as PyPSA has no attribute for it |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
+    And the file "decisions.md" contains "| `sienna.generator.gas.extensions.max_growth` = {'2020': 0.0} | `pypsa.generator.gas.extensions.max_growth` = {'2020': 0.0} | relayed unchanged to extensions.json, as PyPSA has no attribute for it |  | sienna-to-pypsa | sienna_to_pypsa_map_generators |"
 
   Scenario: A floor that the sidecar states wins over the rating of an extendable plant
     Given the ThermalStandard "gas" is p_nom_extendable in ext

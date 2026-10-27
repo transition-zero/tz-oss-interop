@@ -4,7 +4,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader
+from interop.core.extensions import ExtensionKind, ExtensionLookup, ExtensionReader, RecordT
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
@@ -28,16 +28,6 @@ _DROP_PROFILES_OFF_THE_WINDOW = "drop_profiles_off_the_window"
 _CHOOSE_ENSEMBLE_SAMPLES = "choose_ensemble_samples"
 _MAP_SNAPSHOT_WEIGHTINGS = "sienna_to_pypsa_map_snapshot_weightings"
 _REPORT_LINK_BOUNDS = "sienna_to_pypsa_report_link_bounds"
-
-# The kinds that travel on whole. PyPSA states none of them, other than the weights of the
-# representative periods, which also become the snapshot weightings.
-_RELAYED_KINDS: tuple[ExtensionKind, ...] = (
-    ExtensionKind.RESERVE,
-    ExtensionKind.CONSTRAINT,
-    ExtensionKind.NETWORK,
-    ExtensionKind.REPRESENTATIVE_PERIOD,
-    ExtensionKind.TECHNOLOGY,
-)
 
 _WINDOW_ADVICE = (
     "Every TimeSeriesAssociation in one system has to cover the same snapshots, so check "
@@ -82,9 +72,20 @@ class SiennaToPypsaMapComponents(TranslationStep):
         weightings.map_weightings(state, reader, find_snapshot_window(state))
 
     def _relay_unread(self, state: State, reader: ExtensionReader) -> None:
-        """Carry each kind that travels on whole to the destination sidecar."""
-        for kind in _RELAYED_KINDS:
-            relay_records(state, kind, reader.relay(kind), self._recorder)
+        """Carry each kind that travels on whole to the destination sidecar.
+
+        PyPSA states none of these kinds, other than the weights of the representative
+        periods, which also become the snapshot weightings.
+        """
+        self._relay_whole(state, reader.read(ExtensionKind.RESERVE))
+        self._relay_whole(state, reader.read(ExtensionKind.CONSTRAINT))
+        self._relay_whole(state, reader.read(ExtensionKind.NETWORK))
+        self._relay_whole(state, reader.read(ExtensionKind.REPRESENTATIVE_PERIOD))
+        self._relay_whole(state, reader.read(ExtensionKind.TECHNOLOGY))
+
+    def _relay_whole(self, state: State, lookup: ExtensionLookup[RecordT]) -> None:
+        names = [record.name for record in lookup.list_records()]
+        relay_records(state, lookup, names, self._recorder)
 
     def _sub_steps(self, reader: ExtensionReader) -> tuple[TranslationStep, ...]:
         return (

@@ -7,40 +7,47 @@ read it. Each field that travels records one event, so the report says where it 
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 
 from interop.core.extensions import (
+    EXTENSION_MODELS,
     ExtensionKind,
+    ExtensionLookup,
     ExtensionRecord,
+    RecordT,
     append_extensions,
-    build_stated_fields,
     names_companion_series,
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ExtensionRelayReporter
 
+_KIND_BY_MODEL: dict[type[ExtensionRecord], ExtensionKind] = {
+    model: kind for kind, model in EXTENSION_MODELS.items()
+}
+
 
 def relay_records(
     state: State,
-    kind: ExtensionKind,
-    records: Sequence[ExtensionRecord],
+    lookup: ExtensionLookup[RecordT],
+    names: Iterable[str],
     recorder: ScopedRecorder,
 ) -> None:
-    """Add each record that states a field, and its companion series, to the PyPSA sidecar."""
-    stated = [record for record in records if record.has_any_value()]
+    """Relay the fields of each named record that no mapping maps, with their companion series."""
+    stated = [record for record in map(lookup.build_relayed, names) if record.has_any_value()]
     if not stated:
         return
+    kind = _KIND_BY_MODEL[type(stated[0])]
     append_extensions(state.destination_extensions, kind, stated)
     reporter = ExtensionRelayReporter(recorder, kind)
     for record in stated:
-        for field_name, value in build_stated_fields(record).items():
-            reporter.record_relayed(record.name, field_name, _build_report_value(value))
+        for field_name, value in _build_report_values(record).items():
+            reporter.record_relayed(record.name, field_name, value)
     series = state.source_extension_series.get(kind)
     if series is not None and names_companion_series(kind, stated):
         state.destination_extension_series[kind] = series
 
 
-def _build_report_value(value: object) -> object:
-    """The value the report shows: a number, a string or a flag, and nothing longer."""
-    return value if isinstance(value, str | int | float | bool) else None
+def _build_report_values(record: ExtensionRecord) -> dict[str, object]:
+    """Each stated field of a record, in the shape that extensions.json writes it."""
+    return record.model_dump(mode="json", exclude={"name"}, exclude_none=True, exclude_unset=True)
