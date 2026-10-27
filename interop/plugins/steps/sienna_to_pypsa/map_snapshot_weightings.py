@@ -113,6 +113,12 @@ class SnapshotSpan(NamedTuple):
     def has_snapshots(self) -> bool:
         return self.snapshot_count > 0
 
+    def require_year(self) -> int:
+        """The one calendar year of every snapshot; a span over two years has none."""
+        if self.year is None:
+            raise ValueError("the snapshots span more than one calendar year")
+        return self.year
+
     @property
     def is_whole_year(self) -> bool:
         return self.year is not None and any(

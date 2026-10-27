@@ -15,7 +15,7 @@ from typing import ClassVar, NamedTuple
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader
+from interop.core.extensions import ByYear, ExtensionKind, ExtensionReader
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX
@@ -66,7 +66,7 @@ class EnergyBound(NamedTuple):
     name: str
     field_name: str
     column: str
-    by_year: dict[str, float]
+    by_year: ByYear
 
 
 class SiennaToPypsaMapEnergyLimits(TranslationStep):
@@ -108,7 +108,7 @@ class EnergyLimitMapper:
 
     def _map_year(self, state: State, bounds: list[EnergyBound], span: SnapshotSpan) -> None:
         """Write the bound of the year of the snapshots, and report each bound that has none."""
-        year = str(span.year)
+        year = span.require_year()
         held = [bound for bound in bounds if year in bound.by_year]
         self._report_no_year(state, [bound for bound in bounds if year not in bound.by_year], year)
         self._record_mapped(state, held, span)
@@ -122,7 +122,7 @@ class EnergyLimitMapper:
         types = _build_sienna_types(state)
         derivation = _MAPPED_DERIVATION.format(year=span.year, hours=span.represented_hours)
         for bound in held:
-            value = bound.by_year[str(span.year)]
+            value = bound.by_year[span.require_year()]
             reporter.record_energy_bound(
                 types.get(bound.name, ExtensionKind.GENERATOR),
                 bound.name,
@@ -146,7 +146,7 @@ class EnergyLimitMapper:
         labels = [f"{bound.name}.{bound.field_name}" for bound in bounds]
         log.warning(_NO_SNAPSHOTS_WARNING, len(bounds), name_a_few(labels))
 
-    def _report_no_year(self, state: State, bounds: list[EnergyBound], year: str) -> None:
+    def _report_no_year(self, state: State, bounds: list[EnergyBound], year: int) -> None:
         if not bounds:
             return
         self._record_unmapped(state, bounds, _NO_YEAR_NOTE.format(year=year))
@@ -178,7 +178,7 @@ def _list_bounds(reader: ExtensionReader, names: list[str]) -> list[EnergyBound]
     return bounds
 
 
-def _set_bounds(generators: pl.DataFrame, held: list[EnergyBound], year: str) -> pl.DataFrame:
+def _set_bounds(generators: pl.DataFrame, held: list[EnergyBound], year: int) -> pl.DataFrame:
     """The generators table, with the bound of the year in each column that a bound names."""
     columns = []
     for _, column in _BOUNDS:
