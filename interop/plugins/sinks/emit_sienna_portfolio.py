@@ -250,7 +250,9 @@ def _build_time_series_associations(table: pl.DataFrame | None) -> list[dict[str
     if table is None or table.is_empty():
         return []
     columns = [name for name in table.columns if name not in _INTERNAL_SERIES_COLUMNS]
-    rows = table.select(columns).with_row_index(name=SiennaTimeSeriesAssociationCol.ID, offset=1)
+    rows = table.select(columns).with_row_index(
+        name=SiennaTimeSeriesAssociationCol.ASSOCIATION_ID, offset=1
+    )
     features = SiennaTimeSeriesAssociationCol.FEATURES
     return [
         drop_absent_fields({**row, features: json.loads(row[features])})
