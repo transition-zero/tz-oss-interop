@@ -7,15 +7,15 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind, companion_filename
+from interop.core.extensions import ExtensionKind, StorageExtension, companion_filename
 from interop.plugins.shared.constants import (
-    EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW_YEAR,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MVA,
     UNIT_MW,
     UNSCALED,
+    require_extension_attribute,
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
@@ -141,10 +141,10 @@ _ACTIVE_POWER_NOTE = "OSeMOSYS states no initial dispatch; active_power defaults
 _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaults to 0.0"
 _CHARGE_DIRECTION = "charge"
 _DISCHARGE_DIRECTION = "discharge"
-_FOM_ATTRIBUTE = f"{EXTENSIONS_PREFIX}fom_charge_per_mw_year"
-_CARRIER_ATTRIBUTE = f"{EXTENSIONS_PREFIX}carrier"
+_FOM_ATTRIBUTE = require_extension_attribute(StorageExtension, "fom_charge_per_mw_year")
+_CARRIER_ATTRIBUTE = require_extension_attribute(StorageExtension, "carrier")
 _CARRIER_DERIVATION = "the category of the discharging technology, which names its carriers: row"
-_RATING_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}rating_series"
+_RATING_SERIES_ATTRIBUTE = require_extension_attribute(StorageExtension, "rating_series")
 _COMPANION = companion_filename(ExtensionKind.STORAGE)
 _RATING_SERIES_DERIVATION = (
     "capacity_factor of the discharging technology in the timeslice of each hour, in the "
