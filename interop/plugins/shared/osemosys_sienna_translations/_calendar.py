@@ -27,6 +27,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     ALL_COMPONENTS,
+    HOURS_PER_YEAR,
     UNIT_HOURS,
     UNSCALED,
     StagedTimeSeriesCol,
@@ -41,7 +42,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 from interop.plugins.shared.osemosys_sienna_constants import (
     DAYS_IN_DAY_TYPE,
     HOURS_PER_DAY,
-    HOURS_PER_YEAR,
     MEMBERSHIP_FLAG,
     OSEMOSYS_TO_SIENNA_PIPELINE,
     PERIOD_NAME_SEPARATOR,
@@ -380,11 +380,13 @@ def _read_members_by_timeslice(
     state: State, source: _MembershipSource, year: int
 ) -> dict[str, list[str]]:
     rows = read_parameter(state, source.parameter, year)
-    members = rows.filter(pl.col(VALUE_COL) == MEMBERSHIP_FLAG)
+    members = (
+        rows.filter(pl.col(VALUE_COL) == MEMBERSHIP_FLAG).select(TIMESLICE, source.column).collect()
+    )
     if members.height == 0:
         raise _NoDayStructure(f"the model states no {source.parameter}")
     by_timeslice: dict[str, list[str]] = {}
-    for timeslice, member in members.select(TIMESLICE, source.column).iter_rows():
+    for timeslice, member in members.iter_rows():
         by_timeslice.setdefault(timeslice, []).append(member)
     return by_timeslice
 
