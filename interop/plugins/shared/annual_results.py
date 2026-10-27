@@ -59,6 +59,14 @@ _UNMARKED_REASON = (
     "join two buses of one area or one location and state no is_conversion mark, so they count "
     "as production and trade; mark each conversion in extensions.json"
 )
+_STAND_IN_NOTE = (
+    "the extensions record marks active_power_limits_from.max as a stand-in that never binds, "
+    "not the capacity of the line, so the line has no installed_capacity row"
+)
+_STAND_IN_REASON = (
+    "state a stand-in limit that never binds, not a capacity, so they have no "
+    "installed_capacity row"
+)
 _UNPRODUCED_REASON = (
     "have a rating, but the solve states no output for them, so they have no production"
 )
@@ -210,6 +218,11 @@ class AnnualRowsMapper:
         """Record each line that joins two buses of one place and states no conversion mark."""
         report = self._build_report(component_type, _LINES, _UNMARKED_REASON, _UNMARKED_NOTE)
         self._report_names(names, replace(report, attribute_col=_MARK, attribute_name=_MARK_NAME))
+
+    def report_stand_in_limits(self, component_type: str, names: frozenset[str]) -> None:
+        """Record each line whose limit is a stand-in, which has no installed_capacity row."""
+        report = self._build_report(component_type, _LINES, _STAND_IN_REASON, _STAND_IN_NOTE)
+        self._report_names(names, report)
 
     def _report_unproduced(self, capacity: pl.DataFrame) -> None:
         rows = capacity.unique(ResultsCol.COMPONENT, maintain_order=True)
