@@ -1,8 +1,9 @@
 """Reads of the canonical OSeMOSYS stage, for one operations year.
 
 A parameter table is sparse: a key that the model does not state takes the default in
-`metadata/defaults`. Each read of a parameter filters on the year before it collects, so a
-read stays small on a model with millions of parameter rows.
+`metadata/defaults`. A parameter table can hold one row for each timeslice, so a read of a
+parameter gives a `LazyFrame` filtered on the year. The caller selects its columns or
+aggregates before it collects, as the `State` docstring requires.
 """
 
 from __future__ import annotations
@@ -51,25 +52,25 @@ def read_annotations(state: State, set_name: str) -> pl.DataFrame:
     return state.source_topology[build_table_key(TableKind.ANNOTATION, set_name)].collect()
 
 
-def read_parameter(state: State, name: str, year: int) -> pl.DataFrame:
+def read_parameter(state: State, name: str, year: int) -> pl.LazyFrame:
     """The rows that the model states for a parameter, at one year when it has a year column."""
     table = state.source_time_series.get((TableKind.PARAMETER, name))
     if table is None:
         return _build_empty_parameter(name)
     if YEAR in table.collect_schema().names():
-        table = table.filter(pl.col(YEAR) == str(year))
-    return table.collect()
+        return table.filter(pl.col(YEAR) == str(year))
+    return table
 
 
-def read_parameter_for_years(state: State, name: str, years: Sequence[int]) -> pl.DataFrame:
+def read_parameter_for_years(state: State, name: str, years: Sequence[int]) -> pl.LazyFrame:
     """The rows that the model states for a parameter keyed by year, in the given years."""
     table = state.source_time_series.get((TableKind.PARAMETER, name))
     if table is None:
         return _build_empty_parameter(name)
-    return table.filter(pl.col(YEAR).is_in([str(year) for year in years])).collect()
+    return table.filter(pl.col(YEAR).is_in([str(year) for year in years]))
 
 
-def read_mode_parameter(state: State, name: str, year: int, mode: str) -> pl.DataFrame:
+def read_mode_parameter(state: State, name: str, year: int, mode: str) -> pl.LazyFrame:
     """The rows that the model states for a parameter keyed by operating mode, at one mode."""
     return read_parameter(state, name, year).filter(pl.col(OPERATING_MODE) == mode)
 
@@ -83,8 +84,9 @@ def read_parameter_with_defaults(
     comes from another parameter keeps a null where the model states no value.
     """
     stated = read_parameter(state, name, year)
-    stated = stated.drop(YEAR) if YEAR in stated.columns else stated
-    joined = keys.join(stated, on=keys.columns, how="left")
+    if YEAR in stated.collect_schema().names():
+        stated = stated.drop(YEAR)
+    joined = keys.lazy().join(stated, on=keys.columns, how="left").collect()
     default = find_parameter_default(state, name)
     return joined if default is None else joined.with_columns(pl.col(VALUE_COL).fill_null(default))
 
@@ -122,7 +124,7 @@ def read_yearly_values(
         pl.col(VALUE_COL).cast(pl.Float64).alias(name),
     )
     grid = build_year_grid(keys, years)
-    table = grid.join(stated, on=[*keys.columns, YEAR], how="left")
+    table = grid.lazy().join(stated, on=[*keys.columns, YEAR], how="left").collect()
     default = find_parameter_default(state, name)
     if default is None:
         return table
@@ -134,6 +136,6 @@ def build_year_grid(keys: pl.DataFrame, years: Sequence[int]) -> pl.DataFrame:
     return keys.join(pl.DataFrame({YEAR: list(years)}, schema={YEAR: pl.Int64}), how="cross")
 
 
-def _build_empty_parameter(name: str) -> pl.DataFrame:
+def _build_empty_parameter(name: str) -> pl.LazyFrame:
     columns = load_canonical_schema().parameters[name].column_names
-    return pl.DataFrame(schema={**dict.fromkeys(columns, pl.Utf8), VALUE_COL: pl.Float64})
+    return pl.LazyFrame(schema={**dict.fromkeys(columns, pl.Utf8), VALUE_COL: pl.Float64})
