@@ -548,8 +548,8 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | ATGASWELL  | ATGAS  | 1                 | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC.DEGAS` = 0.5 |  |  | a Sienna generator puts out electricity only, so the output of DEGAS at the operations mode is left out"
-      And the log contains "1 supply technology(ies) put out a fuel that is not electricity at the operations mode, so that output is left out. Technologies: R1/ATGASCC"
+      And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATGASCC.fuel that is not electricity` = 0.5 |  |  | a Sienna generator puts out electricity only, so the output of DEGAS at the operations mode is left out"
+      And the log contains "1 fuel output(s) of a supply technology are not electricity at the operations mode, so each is left out. Technologies: R1/ATGASCC"
 
     Scenario: The carrier of a generator is its category, which names its carriers row
       A plant with two input fuels and a plant with no input fuel each take the category.
