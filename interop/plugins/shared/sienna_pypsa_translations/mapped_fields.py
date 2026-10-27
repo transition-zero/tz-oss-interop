@@ -25,13 +25,16 @@ from interop.core.extensions import (
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
+    UNIT_KM,
     UNIT_MW,
     UNIT_MWH,
     UNIT_YEARS,
 )
 from interop.plugins.shared.pypsa_constants import (
     PyPSAGeneratorCol,
+    PyPSALineCol,
     PyPSALinkCol,
+    PyPSALoadCol,
     PyPSAStorageUnitCol,
 )
 
@@ -107,18 +110,23 @@ RENEWABLE_CARRIED: tuple[MappedField, ...] = (
 )
 THERMAL_CARRIED = (*RENEWABLE_CARRIED, MappedField("efficiency", PyPSAGeneratorCol.EFFICIENCY))
 
+# The fields of a generator record that win over the value a generator takes without them.
+GENERATOR_CARRIER = MappedField("carrier", PyPSAGeneratorCol.CARRIER)
+GENERATOR_COMMITTABLE = MappedField("committable", PyPSAGeneratorCol.COMMITTABLE)
+GENERATOR_EXTENDABLE = MappedField("p_nom_extendable", PyPSAGeneratorCol.P_NOM_EXTENDABLE)
+
 # A renewable plant has no fuel to convert and no commitment, so its record keeps both fields.
 RENEWABLE_MAPPED_FIELDS = build_field_names(
     GeneratorExtension,
     *RENEWABLE_CARRIED,
-    "carrier",
-    "p_nom_extendable",
+    GENERATOR_CARRIER,
+    GENERATOR_EXTENDABLE,
     "p_nom_min",
     "marginal_cost_series",
 )
 
 THERMAL_MAPPED_FIELDS = RENEWABLE_MAPPED_FIELDS | build_field_names(
-    GeneratorExtension, *THERMAL_CARRIED, "committable"
+    GeneratorExtension, *THERMAL_CARRIED, GENERATOR_COMMITTABLE
 )
 
 # A hydro unit becomes a PyPSA StorageUnit, which takes its reservoir from the storage record
@@ -127,8 +135,9 @@ HYDRO_CARRIED: tuple[MappedField, ...] = (
     MappedField("max_hours", PyPSAStorageUnitCol.MAX_HOURS, UNIT_HOURS),
     MappedField("state_of_charge_initial", PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL, UNIT_MWH),
 )
+STORAGE_INFLOW = MappedField("inflow_mw", PyPSAStorageUnitCol.INFLOW, UNIT_MW)
 HYDRO_MAPPED_FIELDS = build_field_names(
-    StorageExtension, *HYDRO_CARRIED, "inflow_mw", "inflow_series", "rating_series"
+    StorageExtension, *HYDRO_CARRIED, STORAGE_INFLOW, "inflow_series", "rating_series"
 )
 
 STORAGE_CARRIED: tuple[MappedField, ...] = (
@@ -141,31 +150,44 @@ STORAGE_CARRIED: tuple[MappedField, ...] = (
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD,
     ),
 )
+STORAGE_CARRIER = MappedField("carrier", PyPSAStorageUnitCol.CARRIER)
+STORAGE_EXTENDABLE = MappedField("p_nom_extendable", PyPSAStorageUnitCol.P_NOM_EXTENDABLE)
 STORAGE_MAPPED_FIELDS = build_field_names(
     StorageExtension,
     *STORAGE_CARRIED,
-    "carrier",
-    "p_nom_extendable",
+    STORAGE_CARRIER,
+    STORAGE_EXTENDABLE,
+    STORAGE_INFLOW,
     "p_nom_min",
-    "inflow_mw",
     "inflow_series",
     "rating_series",
 )
 
-LOAD_MAPPED_FIELDS = build_field_names(LoadExtension, "carrier", "type", "sign")
-
-LINE_MAPPED_FIELDS = build_field_names(
-    LineExtension, "length", "num_parallel", "carrier", "s_nom_extendable"
+LOAD_CARRIED: tuple[MappedField, ...] = (
+    MappedField("carrier", PyPSALoadCol.CARRIER),
+    MappedField("type", PyPSALoadCol.TYPE),
+    MappedField("sign", PyPSALoadCol.SIGN),
 )
+LOAD_MAPPED_FIELDS = build_field_names(LoadExtension, *LOAD_CARRIED)
 
+LINE_CARRIED: tuple[MappedField, ...] = (
+    MappedField("length", PyPSALineCol.LENGTH, UNIT_KM),
+    MappedField("num_parallel", PyPSALineCol.NUM_PARALLEL),
+    MappedField("carrier", PyPSALineCol.CARRIER),
+    MappedField("s_nom_extendable", PyPSALineCol.S_NOM_EXTENDABLE),
+)
+LINE_MAPPED_FIELDS = build_field_names(LineExtension, *LINE_CARRIED)
+
+LINK_CARRIED: tuple[MappedField, ...] = (
+    MappedField("carrier", PyPSALinkCol.CARRIER),
+    MappedField("marginal_cost", PyPSALinkCol.MARGINAL_COST, UNIT_DOLLARS_PER_MWH),
+    MappedField("p_nom_extendable", PyPSALinkCol.P_NOM_EXTENDABLE),
+)
+# Sienna folds both limits of a link into its power limits, so the record restores each.
+LINK_P_MAX_PU = MappedField("p_max_pu", PyPSALinkCol.P_MAX_PU)
+LINK_P_MIN_PU = MappedField("p_min_pu", PyPSALinkCol.P_MIN_PU)
 LINK_MAPPED_FIELDS = build_field_names(
-    ControllableLineExtension,
-    "carrier",
-    "marginal_cost",
-    "p_nom_extendable",
-    "p_max_pu",
-    "p_min_pu",
-    "p_max_pu_series",
+    ControllableLineExtension, *LINK_CARRIED, LINK_P_MAX_PU, LINK_P_MIN_PU, "p_max_pu_series"
 )
 
 # The fields of a conversion record whose value goes into its PyPSA Link column as it is.

@@ -26,7 +26,12 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTable,
     SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import LOAD_MAPPED_FIELDS
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    LOAD_CARRIED,
+    LOAD_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
+)
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     build_power_units_skip_report,
     bus_id_to_name,
@@ -83,13 +88,8 @@ class SiennaToPypsaMapLoads(TranslationStep):
             max_active_power_by_name[name] = p_set
             reporter.record_bus(name, bus_id, bus_name)
             reporter.record_p_set(name, p_set, p_set)
-            if ext.carrier is not None:
-                reporter.record_carrier_from_ext(name, ext.carrier)
-            if ext.type is not None:
-                reporter.record_type_from_ext(name, ext.type)
-            if ext.sign is not None:
-                sienna_type = row.get(SiennaLoadCol.SIENNA_TYPE, SiennaComponent.POWER_LOAD)
-                reporter.record_carried(sienna_type, name, "sign", PyPSALoadCol.SIGN, ext.sign)
+            sienna_type = row.get(SiennaLoadCol.SIENNA_TYPE, SiennaComponent.POWER_LOAD)
+            record_carried_fields(reporter, sienna_type, ext, LOAD_CARRIED)
             rows.append(
                 {
                     PyPSALoadCol.NAME: name,
@@ -97,9 +97,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
                     PyPSALoadCol.P_SET: p_set,
                     # Null rather than "": the sink leaves PyPSA's own default in place for
                     # a row that carries no value, and the sidecar states none.
-                    PyPSALoadCol.CARRIER: ext.carrier,
-                    PyPSALoadCol.TYPE: ext.type,
-                    PyPSALoadCol.SIGN: ext.sign,
+                    **build_carried_values(ext, LOAD_CARRIED),
                 }
             )
 
