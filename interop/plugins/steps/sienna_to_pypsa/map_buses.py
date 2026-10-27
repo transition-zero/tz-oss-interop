@@ -71,6 +71,7 @@ def _map_fuel_buses(
     for record in fuels:
         records.get_fields(record.name, FUEL_BUS_MAPPED_FIELDS)
         reporter.record_fuel_bus(record.name, record.carrier, record.location)
+        reporter.record_fuel_bus_defaults(record.name, _FUEL_BUS_V_NOM, _FUEL_BUS_CONTROL)
     return [_build_fuel_bus_row(record) for record in fuels]
 
 
@@ -79,8 +80,9 @@ def _is_fuel_bus(record: BusExtension, electricity: set[str]) -> bool:
     return record.name not in electricity and record.carrier is not None and not is_electricity
 
 
-# PyPSA's own nominal voltage, as a bus of a fuel has none.
+# PyPSA's own nominal voltage and control, as a bus of a fuel has neither.
 _FUEL_BUS_V_NOM = 1.0
+_FUEL_BUS_CONTROL = PyPSABusControl.PQ
 
 
 def _build_fuel_bus_row(record: BusExtension) -> dict[str, Any]:
@@ -88,7 +90,7 @@ def _build_fuel_bus_row(record: BusExtension) -> dict[str, Any]:
         PyPSABusCol.NAME: record.name,
         PyPSABusCol.V_NOM: _FUEL_BUS_V_NOM,
         PyPSABusCol.CARRIER: record.carrier,
-        PyPSABusCol.CONTROL: PyPSABusControl.PQ,
+        PyPSABusCol.CONTROL: _FUEL_BUS_CONTROL,
         PyPSABusCol.LOCATION: record.location or UNSET_BUS_LOCATION,
     }
 

@@ -247,6 +247,27 @@ class BusReporter(_Reporter):
         self.record_carried(ExtensionKind.BUS, name, "carrier", PyPSABusCol.CARRIER, carrier)
         if location is not None:
             self.record_carried(ExtensionKind.BUS, name, "location", PyPSABusCol.LOCATION, location)
+        else:
+            self._default_applied(
+                destinations=[self._destination(name, PyPSABusCol.LOCATION, None)],
+                note=_FUEL_BUS_LOCATION_NOTE,
+            )
+
+    def record_fuel_bus_defaults(self, name: str, v_nom: float, control: PyPSABusControl) -> None:
+        """The voltage and the control of a bus of a fuel, which has neither."""
+        self._default_applied(
+            destinations=[self._destination(name, PyPSABusCol.V_NOM, v_nom, UNIT_KV)],
+            note=_FUEL_BUS_V_NOM_NOTE,
+        )
+        self._default_applied(
+            destinations=[self._destination(name, PyPSABusCol.CONTROL, control)],
+            note=_FUEL_BUS_CONTROL_NOTE,
+        )
+
+
+_FUEL_BUS_V_NOM_NOTE = "a bus of a fuel has no voltage, so v_nom takes PyPSA's own default"
+_FUEL_BUS_CONTROL_NOTE = "a bus of a fuel controls no voltage, so control takes PyPSA's own default"
+_FUEL_BUS_LOCATION_NOTE = "the bus record states no location, so the bus takes none"
 
 
 class ThermalLimit(NamedTuple):
@@ -1222,7 +1243,7 @@ class ConversionReporter(_Reporter):
             note=_TAKEN_NAME_NOTE,
         )
 
-    def record_default(self, name: str, column: str, value: float) -> None:
+    def record_default(self, name: str, column: str, value: object) -> None:
         self._default_applied(
             destinations=[self._destination(name, column, value)],
             note=_DEFAULT_LINK_NOTE.format(column=column),
