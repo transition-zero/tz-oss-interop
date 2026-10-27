@@ -51,18 +51,20 @@ def require_operations_year(state: State) -> int:
 
 
 def require_model_year(state: State, requested: int | Literal["earliest"]) -> int:
-    """The requested year, or the earliest model year. Another year stops the run."""
+    """The requested year, or the earliest year in scope. Another year stops the run.
+
+    The scope step leaves out the years outside the scope, so the model years are the years in
+    scope.
+    """
     years = list_model_years(state)
     if isinstance(requested, str):
         if not years:
-            raise UserInputError(
-                "The parameter `year` is `earliest`, but the model states no year."
-            )
+            raise UserInputError("The parameter `year` is `earliest`, but no year is in scope.")
         return years[0]
     if requested not in years:
         listed = ", ".join(str(year) for year in years) or "none"
         raise UserInputError(
-            f"The parameter `year` is {requested}, which is not a year of the model. "
-            f"The model years are: {listed}."
+            f"The parameter `year` is {requested}, which is not a year in scope. "
+            f"The years in scope are: {listed}."
         )
     return requested
