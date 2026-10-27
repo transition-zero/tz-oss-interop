@@ -382,6 +382,7 @@ def _read_storage_links(state: State, year: int) -> pl.DataFrame:
 def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
     return (
         read_parameter(state, side.link_parameter, year)
+        .lazy()
         .filter(pl.col(VALUE_COL) > 0)
         .sort(TECHNOLOGY, OPERATING_MODE)
         .group_by(_STORAGE_KEYS)
@@ -391,6 +392,7 @@ def _read_links(state: State, year: int, side: StorageSide) -> pl.DataFrame:
             pl.len().alias(side.links),
             pl.col(VALUE_COL).cast(pl.Float64).first().alias(side.link_value),
         )
+        .collect()
     )
 
 
