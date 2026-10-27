@@ -272,7 +272,9 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "rating_series" set to "storage.parquet"
       And the parquet file "outputs/storage.parquet" has 48 rows
       And the parquet file "outputs/storage.parquet" has columns "snapshot, name, rating_pu"
-      And the file "decisions.md" contains "`osemosys.capacity_factor.R1/ATPHS.each timeslice` | `sienna.EnergyReservoirStorage.ATPHSS.extensions.rating_series` = storage.parquet"
+      And the file "decisions.md" contains "`osemosys.capacity_factor.R1/ATPHS.S1B1` = 0.5 | `sienna.EnergyReservoirStorage.ATPHSS.extensions.rating_series` = storage.parquet"
+      And the file "decisions.md" contains "`osemosys.availability_factor.R1/ATPHS` = 0.5<br>`osemosys.storage_max_discharge_rate.R1/ATPHSS` = 175.2<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8<br>`osemosys.technology_from_storage.R1/ATPHS.ATPHSS` = 1.0<br>`sienna.EnergyReservoirStorage.ATPHSS.base_power` = 80.0 MVA | `sienna.EnergyReservoirStorage.ATPHSS.output_active_power_limits`"
+      And the file "decisions.md" contains "`osemosys.storage_max_charge_rate.R1/ATPHSS` = 438.0<br>`osemosys.input_activity_ratio.R1/ATPHS.electricity at the charge mode 1` = 1.25<br>`osemosys.technology_to_storage.R1/ATPHS.ATPHSS` = 0.9<br>`sienna.EnergyReservoirStorage.ATPHSS.base_power` = 80.0 MVA | `sienna.EnergyReservoirStorage.ATPHSS.input_active_power_limits`"
 
     Scenario: The values of a storage that Sienna has no field for reach extensions.json under the PyPSA names
       The power of the storage costs 1 $/MW of activity of ATPHS, which puts out 0.8 MW of

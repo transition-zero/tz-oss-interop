@@ -22,6 +22,8 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     STORAGE,
     TECHNOLOGY,
+    TIMESLICE,
+    VALUE_COL,
     AnnotationColumn,
     FlowParameter,
 )
@@ -67,20 +69,15 @@ from interop.plugins.shared.osemosys_sienna_translations._storage import (
     has_series,
 )
 from interop.plugins.shared.osemosys_sienna_translations._storage_columns import (
-    CHARGE_AVAILABILITY,
+    CAPACITY_FACTORS,
     CHARGE_COST,
     CHARGE_COST_MWH,
-    CHARGE_LINK_VALUE,
     CHARGE_MODE,
-    CHARGE_RATE,
     CHARGE_SIDE,
     CHARGE_TECHNOLOGY_NAME,
-    DISCHARGE_AVAILABILITY,
     DISCHARGE_COST,
     DISCHARGE_COST_MWH,
-    DISCHARGE_LINK_VALUE,
     DISCHARGE_MODE,
-    DISCHARGE_RATE,
     DISCHARGE_SIDE,
     DISCHARGE_TECHNOLOGY_NAME,
     EFFICIENCY_IN,
@@ -153,7 +150,6 @@ _CARRIER_ATTRIBUTE = f"{EXTENSIONS_PREFIX}carrier"
 _CARRIER_DERIVATION = "the category of the discharging technology, which names its carriers: row"
 _RATING_SERIES_ATTRIBUTE = f"{EXTENSIONS_PREFIX}rating_series"
 _COMPANION = companion_filename(ExtensionKind.STORAGE)
-_EACH_TIMESLICE = "each timeslice"
 _RATING_SERIES_DERIVATION = (
     "capacity_factor of the discharging technology in the timeslice of each hour, in the "
     "companion parquet; a Sienna storage applies no factor in each hour"
@@ -329,18 +325,8 @@ def _build_power() -> list[Translation]:
             _Col.OUTPUT_ACTIVE_POWER_LIMITS,
             _express_limits(OUTPUT_LIMIT),
             lambda old: [
-                _build_source(
-                    SupplyParameter.AVAILABILITY_FACTOR,
-                    old[DISCHARGE_TECHNOLOGY_NAME],
-                    None,
-                    old[DISCHARGE_AVAILABILITY],
-                ),
-                _build_source(
-                    StorageParameter.MAX_DISCHARGE_RATE,
-                    old[STORAGE_REPORT_NAME],
-                    None,
-                    old[DISCHARGE_RATE],
-                ),
+                _build_availability_source(old, DISCHARGE_SIDE),
+                *_build_rate_sources(old, DISCHARGE_SIDE),
                 _build_base_power_source(old),
             ],
             _OUTPUT_LIMITS_DERIVATION,
@@ -350,19 +336,8 @@ def _build_power() -> list[Translation]:
             _express_limits(INPUT_LIMIT),
             lambda old: [
                 *_build_capacity_sources(old, CHARGE_SIDE),
-                _build_input_ratio_source(old),
-                _build_source(
-                    SupplyParameter.AVAILABILITY_FACTOR,
-                    old[CHARGE_TECHNOLOGY_NAME],
-                    None,
-                    old[CHARGE_AVAILABILITY],
-                ),
-                _build_source(
-                    StorageParameter.MAX_CHARGE_RATE,
-                    old[STORAGE_REPORT_NAME],
-                    None,
-                    old[CHARGE_RATE],
-                ),
+                _build_availability_source(old, CHARGE_SIDE),
+                *_build_rate_sources(old, CHARGE_SIDE),
                 _build_base_power_source(old),
             ],
             _INPUT_LIMITS_DERIVATION,
@@ -374,20 +349,10 @@ def _build_power() -> list[Translation]:
                 pl.col(EFFICIENCY_OUT).alias(SiennaStructField.OUT),
             ).cast(EFFICIENCY_DTYPE),
             lambda old: [
-                _build_link_source(
-                    old,
-                    FlowParameter.TECHNOLOGY_TO_STORAGE,
-                    CHARGE_TECHNOLOGY_NAME,
-                    CHARGE_LINK_VALUE,
-                ),
+                _build_link_source(old, CHARGE_SIDE),
                 _build_input_ratio_source(old),
                 _build_output_ratio_source(old),
-                _build_link_source(
-                    old,
-                    FlowParameter.TECHNOLOGY_FROM_STORAGE,
-                    DISCHARGE_TECHNOLOGY_NAME,
-                    DISCHARGE_LINK_VALUE,
-                ),
+                _build_link_source(old, DISCHARGE_SIDE),
             ],
             _EFFICIENCY_DERIVATION,
         ),
@@ -416,11 +381,23 @@ def _express_limits(maximum: str) -> pl.Expr:
     ).cast(MIN_MAX_DTYPE)
 
 
-def _build_link_source(
-    old: dict[str, Any], parameter: str, technology_col: str, value_col: str
-) -> SourceField:
-    """The value of the row that links the technology to the storage."""
-    return _build_source(parameter, old[technology_col], old[STORAGE], old[value_col])
+def _build_availability_source(old: dict[str, Any], side: StorageSide) -> SourceField:
+    return _build_source(
+        SupplyParameter.AVAILABILITY_FACTOR, old[side.technology_name], None, old[side.availability]
+    )
+
+
+def _build_rate_sources(old: dict[str, Any], side: StorageSide) -> list[SourceField]:
+    """The rate of one side, which states the storage side, and what turns it to the grid side."""
+    rate = _build_source(side.rate_parameter, old[STORAGE_REPORT_NAME], None, old[side.rate])
+    return [rate, _build_ratio_source(old, side), _build_link_source(old, side)]
+
+
+def _build_link_source(old: dict[str, Any], side: StorageSide) -> SourceField:
+    """The value of the row that links the technology of one side to the storage."""
+    return _build_source(
+        side.link_parameter, old[side.technology_name], old[STORAGE], old[side.link_value]
+    )
 
 
 def _build_energy() -> list[Translation]:
@@ -617,8 +594,10 @@ def _build_extension_events(old: dict[str, Any]) -> list[TranslationEvent]:
                     _build_source(
                         SupplyParameter.CAPACITY_FACTOR,
                         old[DISCHARGE_TECHNOLOGY_NAME],
-                        _EACH_TIMESLICE,
+                        factor[TIMESLICE],
+                        factor[VALUE_COL],
                     )
+                    for factor in old[CAPACITY_FACTORS] or []
                 ],
                 [_dest(old[STORAGE_NAME], _RATING_SERIES_ATTRIBUTE, _COMPANION)],
                 _RATING_SERIES_DERIVATION,

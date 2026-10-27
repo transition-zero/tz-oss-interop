@@ -53,6 +53,8 @@ CHARGE_PENALTY_TERMS = "charge_penalty_terms"
 CHARGE_PENALTY_MWH = "charge_penalty_mwh"
 DISCHARGE_PENALTY_TERMS = "discharge_penalty_terms"
 DISCHARGE_PENALTY_MWH = "discharge_penalty_mwh"
+# The capacity factor of each timeslice that the discharging technology states.
+CAPACITY_FACTORS = "capacity_factors"
 # The emission rate of a pollutant at a mode, as the model states it, in a penalty term.
 STATED_RATE = "stated_rate"
 
