@@ -46,6 +46,12 @@ POWER_SYSTEMS_INVESTMENTS_TO_RESULTS = "power-systems-investments-to-results"
 
 _RESULTS_COMPONENT = "results"
 _SLICE_KEYS = [StagedResultCol.YEAR, StagedResultCol.REPRESENTATIVE_DAY]
+_HOUR_ROW_KEYS = [
+    StagedResultCol.RESULT,
+    StagedResultCol.TECHNOLOGY,
+    StagedResultCol.COMPONENT,
+    StagedResultCol.SNAPSHOT,
+]
 
 _UNWEIGHTED_WARNING = (
     "%d hour(s) of the solve fall in no slice of the series document, so production leaves "
@@ -174,7 +180,9 @@ class PowerSystemsInvestmentsResultsToResultsFormat(TranslationStep):
         return weights.join(_build_slice_keys(list(left_out)), on=_SLICE_KEYS, how="anti")
 
     def _map_production(self, operations: pl.LazyFrame, weights: pl.DataFrame) -> pl.LazyFrame:
-        weighted = operations.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
+        # The solve writes a row for each hour of each slice, so an hour two slices hold has two.
+        first_rows = operations.unique(_HOUR_ROW_KEYS, keep="first", maintain_order=True)
+        weighted = first_rows.join(weights.lazy(), on=StagedResultCol.SNAPSHOT, how="left")
         unweighted = (
             weighted.filter(pl.col(StagedResultCol.WEIGHT).is_null())
             .select(pl.col(StagedResultCol.SNAPSHOT).unique().sort())
