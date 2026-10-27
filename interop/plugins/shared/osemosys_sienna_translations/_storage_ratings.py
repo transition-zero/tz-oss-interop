@@ -27,18 +27,19 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     NO_COST,
     WHOLE_CAPACITY,
     StorageParameter,
-    SupplyParameter,
 )
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
-    read_parameter,
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_emissions import (
+    ACTIVITY_RATE_T_PER_MWH,
     PENALTY,
     RATE_T_PER_MWH,
+    STATED_RATE,
+    read_emission_rates,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     PENALTY_COST_MWH,
@@ -57,7 +58,6 @@ from interop.plugins.shared.osemosys_sienna_translations._storage_columns import
     LEVEL_START,
     MIN_LEVEL,
     POWER_MW,
-    STATED_RATE,
     STORAGE_HOURS,
     STORAGE_SIDES,
     StorageSide,
@@ -252,20 +252,13 @@ def _read_mode_rates(
         pl.col(side.mode).alias(OPERATING_MODE),
         side.ratio,
     ).unique()
-    rates = (
-        read_parameter(state, SupplyParameter.EMISSION_RATE, operations.year)
-        .filter(pl.col(VALUE_COL) != 0)
-        .join(modes.lazy(), on=_MODE_KEYS)
-        .select(
-            REGION,
-            pl.col(TECHNOLOGY).alias(side.technology),
-            pl.col(OPERATING_MODE).alias(side.mode),
-            POLLUTANT,
-            side.ratio,
-            pl.col(VALUE_COL).cast(pl.Float64).alias(STATED_RATE),
-        )
-        .collect()
+    rates = read_emission_rates(state, operations, modes).join(modes, on=_MODE_KEYS)
+    return rates.select(
+        REGION,
+        pl.col(TECHNOLOGY).alias(side.technology),
+        pl.col(OPERATING_MODE).alias(side.mode),
+        POLLUTANT,
+        side.ratio,
+        STATED_RATE,
+        (pl.col(ACTIVITY_RATE_T_PER_MWH) / pl.col(side.ratio)).alias(RATE_T_PER_MWH),
     )
-    convert = operations.units.convert_emissions_per_energy_to_tonnes_per_mwh
-    rate = express_converted(rates, STATED_RATE, convert) / pl.col(side.ratio)
-    return rates.with_columns(rate.alias(RATE_T_PER_MWH))
