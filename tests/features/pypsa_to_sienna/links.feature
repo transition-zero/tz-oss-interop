@@ -53,6 +53,17 @@ Feature: pypsa_to_sienna translates PyPSA Link rows to Sienna TwoTerminalGeneric
     And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_b" having "loss.value_curve.function_data.proportional_term" set to 0.0
     And every "TwoTerminalGenericHVDCLine" component in the written Sienna system is valid SiennaSchemas 0.2
 
+  Scenario: a link whose reverse bound is larger than its capacity is rated at that bound
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 100.0
+    And the network contains bus "bus_2" carrier "AC" v_nom 100.0
+    And the network contains link "link_r" from "bus_1" to "bus_2" with capacity 1000.0 MW efficiency 1.0 min dispatch fraction -1.5
+    And the network is saved as "inputs/reverse.nc"
+    When I run translate against "inputs/reverse.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_r" having "rating" set to 1500.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_r" having "operational_flow_limit.from_to_max" set to 1000.0
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "link_r" having "operational_flow_limit.to_from_max" set to 1500.0
+
   Scenario: extendable link with optimised capacity rates from p_nom_opt and cites it
     Given a PyPSA network
     And the network contains bus "bus_1" carrier "AC" v_nom 100.0
