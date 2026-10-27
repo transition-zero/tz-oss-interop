@@ -46,7 +46,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
-    sienna_dest_field,
 )
 from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
@@ -58,6 +57,7 @@ from interop.plugins.shared.sienna_cost_curves import (
     linear_value_curve,
     variable_cost_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     CAPITAL_COST_DTYPE,
     GENERIC_OPERATION_COST_DTYPE,
@@ -89,7 +89,7 @@ GENERATOR_SOURCE = InvestmentsSource(
         "retiring a device costs nothing"
     ),
 )
-_dest = partial(sienna_dest_field, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY)
+_dest = partial(build_sienna_field, SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY)
 
 S = SiennaSupplyTechnologyCol
 

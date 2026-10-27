@@ -36,7 +36,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     fill_capacity_columns,
     pypsa_source_field,
     rated_from,
-    sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_translations._units import (
@@ -63,6 +62,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
@@ -87,8 +87,8 @@ _SERIES_RATING_DERIVATION = "effective_p_nom * peak of the p_max_pu series (rati
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
-_dest = partial(sienna_dest_field, SiennaComponent.RENEWABLE_DISPATCH)
-_dest_nd = partial(sienna_dest_field, SiennaComponent.RENEWABLE_NON_DISPATCH)
+_dest = partial(build_sienna_field, SiennaComponent.RENEWABLE_DISPATCH)
+_dest_nd = partial(build_sienna_field, SiennaComponent.RENEWABLE_NON_DISPATCH)
 
 
 def fill_renewable_defaults(table: pl.DataFrame) -> pl.DataFrame:

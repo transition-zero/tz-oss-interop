@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
+from functools import partial
 from statistics import fmean
 from typing import Any, NamedTuple
 
@@ -21,11 +22,10 @@ import polars as pl
 from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import ALL_COMPONENTS, UNIT_HOURS, Framework
+from interop.plugins.shared.constants import ALL_COMPONENTS, UNIT_HOURS
 from interop.plugins.shared.osemosys_canonical.constants import (
     DAILY_TIME_BRACKET,
     DAY_TYPE,
-    OSEMOSYS_FRAMEWORK,
     SEASON,
     TIMESLICE,
     VALUE_COL,
@@ -48,13 +48,10 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter,
     read_parameter_with_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._events import build_osemosys_field
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
-from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
-    SourceField,
-    TranslationEvent,
-)
+from interop.plugins.shared.sienna_events import build_sienna_field
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 log = logging.getLogger(__name__)
 
@@ -248,7 +245,9 @@ def build_days_events(records: Sequence[RepresentativePeriodExtension]) -> list[
     return [
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
-            sources=[_build_osemosys_field(DAYS_IN_DAY_TYPE, record.name, record.days_in_day_type)],
+            sources=[
+                build_osemosys_field(DAYS_IN_DAY_TYPE, record.name, value=record.days_in_day_type)
+            ],
             destinations=[
                 _build_period_field(record.name, DAYS_IN_DAY_TYPE, record.days_in_day_type)
             ],
@@ -545,32 +544,14 @@ def _build_periods_table(periods: list[_Period]) -> pl.DataFrame:
 # --- the report ------------------------------------------------------------------------
 
 
-def _build_period_field(
-    name: str, attribute: str, value: Any, unit: str | None = None
-) -> DestinationField:
-    return DestinationField(
-        framework=Framework.SIENNA,
-        component=ExtensionKind.REPRESENTATIVE_PERIOD,
-        name=name,
-        attribute=attribute,
-        value=value,
-        unit=unit,
-    )
-
-
-def _build_osemosys_field(
-    component: str, name: str, value: Any = None, unit: str | None = None
-) -> SourceField:
-    return SourceField(
-        framework=OSEMOSYS_FRAMEWORK, component=component, name=name, value=value, unit=unit
-    )
+_build_period_field = partial(build_sienna_field, ExtensionKind.REPRESENTATIVE_PERIOD)
 
 
 def _build_mode_event(calendar: Calendar) -> TranslationEvent:
     derivation = _REPRESENTATIVE_DERIVATION if calendar.is_representative else _TIMESLICE_DERIVATION
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
-        sources=[_build_osemosys_field(TIMESLICE, ALL_COMPONENTS)],
+        sources=[build_osemosys_field(TIMESLICE, ALL_COMPONENTS)],
         destinations=[_build_period_field(ALL_COMPONENTS, _CALENDAR_ATTRIBUTE, calendar.mode)],
         derivation=derivation,
         note=calendar.fallback_reason,
@@ -581,7 +562,9 @@ def _build_rounding_event(bracket: BracketHours) -> TranslationEvent:
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=[
-            _build_osemosys_field(CalendarParameter.DAY_SPLIT, bracket.bracket, bracket.day_split)
+            build_osemosys_field(
+                CalendarParameter.DAY_SPLIT, bracket.bracket, value=bracket.day_split
+            )
         ],
         destinations=[
             _build_period_field(
@@ -613,13 +596,13 @@ def _build_weight_event(
 def _list_weight_sources(calendar: Calendar, row: dict[str, Any]) -> list[SourceField]:
     if calendar.is_representative:
         return [
-            _build_osemosys_field(SEASON, row[CalendarPeriodCol.SEASON]),
-            _build_osemosys_field(DAY_TYPE, row[CalendarPeriodCol.DAY_TYPE]),
+            build_osemosys_field(SEASON, row[CalendarPeriodCol.SEASON]),
+            build_osemosys_field(DAY_TYPE, row[CalendarPeriodCol.DAY_TYPE]),
         ]
     timeslice = row[CalendarPeriodCol.NAME]
     return [
-        _build_osemosys_field(
-            CalendarParameter.YEAR_SPLIT, timeslice, calendar.year_split[timeslice]
+        build_osemosys_field(
+            CalendarParameter.YEAR_SPLIT, timeslice, value=calendar.year_split[timeslice]
         )
     ]
 

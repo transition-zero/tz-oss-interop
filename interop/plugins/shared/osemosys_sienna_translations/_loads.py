@@ -48,10 +48,7 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._events import (
-    build_derived,
     build_osemosys_field,
-    build_sienna_field,
-    build_sienna_source,
     osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
@@ -72,6 +69,11 @@ from interop.plugins.shared.sienna_constants import (
     LoadConformity,
     SiennaComponent,
     SiennaLoadCol,
+)
+from interop.plugins.shared.sienna_events import (
+    build_derived,
+    build_sienna_field,
+    build_sienna_source,
 )
 from interop.plugins.shared.translation_runner import (
     DROPPED_NAMES_LABEL,

@@ -48,7 +48,6 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
-    sienna_dest_field,
 )
 from interop.plugins.shared.sienna_constants import (
     EFFICIENCY_DTYPE,
@@ -62,6 +61,7 @@ from interop.plugins.shared.sienna_cost_curves import (
     ZERO_IO_CURVE,
     linear_value_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     STORAGE_CAPITAL_COST_DTYPE,
     STORAGE_OPERATION_COST_DTYPE,
@@ -81,7 +81,7 @@ from interop.plugins.shared.translation_runner import (
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
-_dest = partial(sienna_dest_field, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY)
+_dest = partial(build_sienna_field, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY)
 
 S = SiennaStorageTechnologyCol
 
