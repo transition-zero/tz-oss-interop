@@ -192,7 +192,7 @@ Feature: The scope step leaves out the locations and the years that a run does n
     And the log contains "Kept 3 component(s) whose location is outside the scope, because a component in the scope needs each: R1/DECO, R1/DEHYDSSH1, R1/DECO00I00"
     And the log contains "Left out 5 component(s) that are outside the scope: FRCO00I00, FRCOSTPH1, ATE1 and 2 more (2 technology, 3 fuel)"
 
-  Scenario: A region whose location is outside the scope and that holds no flow of a technology in the scope is left out, and a region group that loses it is reported
+  Scenario: A region whose location is outside the scope, that holds no flow of a technology in the scope and no member at a location in the scope, is left out, and a region group that loses it is reported
     Given the otoole set "REGION" holds "R1 R2"
     And the otoole set "REGIONGROUP" holds "G1"
     And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
@@ -215,6 +215,9 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | REGIONGROUP | REGION | YEAR | VALUE |
       | G1          | R1     | 2030 | 1     |
       | G1          | R2     | 2030 | 1     |
+    And the otoole parameter "AccumulatedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL | YEAR | VALUE |
+      | R2     | DEE1 | 2030 | 2     |
     And the otoole model is written to config "model/config.yaml" and directory "model/csv"
     And a pipeline "scoped" that stages an otoole model and keeps the locations "DE" and the years ""
     When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
@@ -230,9 +233,28 @@ Feature: The scope step leaves out the locations and the years that a run does n
     And the canonical table "canonical/parameters/region_group_tag_region.parquet" has the rows:
       | region_group | region | year | value |
       | G1           | R2     | 2030 | 1     |
-    And the file "decisions.md" contains "`osemosys.region.R1` |  |  | its location is outside the scope, and no technology in the scope has a flow in it, so each row of it is left out"
+    And the file "decisions.md" contains "`osemosys.region.R1` |  |  | its location is outside the scope, no technology in the scope has a flow in it, and it holds no member at a location in the scope, so each row of it is left out"
     And the file "decisions.md" contains "`osemosys.region_group.G1` |  |  | it loses the region(s) R1, which the scope leaves out, so each limit of it covers only the regions that stay"
     And the log contains "1 region group(s) lose a region that the scope leaves out, so each limit of the group covers only the regions that stay: G1"
+
+  Scenario: A region whose location is outside the scope stays when it holds a fuel at a location in the scope
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole parameter "AccumulatedAnnualDemand" keyed by "REGION FUEL YEAR" with default 0 has the rows:
+      | REGION | FUEL | YEAR | VALUE |
+      | R1     | DEE1 | 2030 | 2     |
+      | R2     | DEE1 | 2030 | 5     |
+    And the otoole model is written to config "model/config.yaml" and directory "model/csv"
+    And a pipeline "scoped" that stages an otoole model and keeps the locations "DE" and the years ""
+    When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/sets/region.parquet" has the rows:
+      | value |
+      | R1    |
+      | R2    |
+    And the canonical table "canonical/parameters/accumulated_annual_demand.parquet" has the rows:
+      | region | fuel | year | value |
+      | R1     | DEE1 | 2030 | 2     |
+      | R2     | DEE1 | 2030 | 5     |
 
   Scenario: A list of years that leaves out the first year leaves out each value for the whole model period, and the start level of each storage
     Given the otoole set "STORAGE" holds "ATBATS"

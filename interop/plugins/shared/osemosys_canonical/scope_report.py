@@ -24,8 +24,8 @@ _LEFT_OUT_WARNING = "Left out %d component(s) that are outside the scope: %s (%s
 _LOCATED_NOTE = "its location is outside the scope, so each row of it is left out"
 _MEMBER_NOTES = {
     REGION: (
-        "its location is outside the scope, and no technology in the scope has a flow in it, so "
-        "each row of it is left out"
+        "its location is outside the scope, no technology in the scope has a flow in it, and it "
+        "holds no member at a location in the scope, so each row of it is left out"
     ),
     YEAR: "the scope years do not hold it, so each row of it is left out",
 }

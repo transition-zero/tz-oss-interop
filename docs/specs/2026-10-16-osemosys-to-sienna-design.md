@@ -136,8 +136,9 @@ technology with an end outside the scope. An empty parameter keeps everything.
 
 The step keeps each fuel and storage that a technology in scope uses. It also keeps a
 technology at the location of its region that uses only members that stay, such as the supply
-of a kept fuel. It drops a region whose location is outside the scope and that holds no flow of
-a technology in scope. It reports each region group that loses a region. When `years` drops a
+of a kept fuel. It drops a region whose location is outside the scope, that holds no flow of
+a technology in scope, and where no parameter states a member at a location in scope. It reports
+each region group that loses a region. When `years` drops a
 year, the step empties each table of model-period values. When it drops the first year, it also
 empties `storage_level_start`. `decisions.md` names each member, pair and table that the step
 removes or keeps.

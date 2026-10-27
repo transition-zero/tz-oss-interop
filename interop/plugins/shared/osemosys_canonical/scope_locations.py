@@ -241,16 +241,43 @@ def _list_regions_outside(
     located: dict[str, pl.DataFrame],
     links: pl.DataFrame,
 ) -> list[str]:
-    """A region leaves when its own location is outside the scope and no technology in the
-    scope has a flow in it, so a model with one region keeps that region."""
+    """A region leaves when its own location is outside the scope, no technology in the scope
+    has a flow in it, and it holds no member whose stated location is in the scope."""
     annotation = _find_annotation(state, REGION)
     if annotation is None or TECHNOLOGY not in located:
         return []
     in_scope = _build_in_scope_keys(located, TECHNOLOGY)
-    holding = links.join(in_scope, on=[REGION, TECHNOLOGY], how="semi").select(REGION)
+    flowing = links.join(in_scope, on=[REGION, TECHNOLOGY], how="semi").select(REGION)
+    holding = pl.concat([flowing, _list_regions_of_located_members(state, located)])
     outside = annotation.filter(~express_is_in_scope(locations)).collect()
     regions = outside.join(holding, on=REGION, how="anti").get_column(REGION)
     return regions.unique().sort().to_list()
+
+
+def _list_regions_of_located_members(
+    state: State, located: dict[str, pl.DataFrame]
+) -> pl.DataFrame:
+    """Each region where a parameter states a row of a member whose location is in the scope."""
+    is_located_in_scope = pl.col(_IS_IN_SCOPE_COL) & pl.col(AnnotationColumn.LOCATION).is_not_null()
+    keys = {
+        set_name: rows.filter(is_located_in_scope).select(REGION, set_name)
+        for set_name, rows in located.items()
+    }
+    found = [
+        _list_regions_holding(table, set_name, key)
+        for (kind, _), table in state.source_time_series.items()
+        if kind == TableKind.PARAMETER
+        for set_name, key in keys.items()
+        if not key.is_empty() and {REGION, set_name} <= set(table.collect_schema().names())
+    ]
+    regions = pl.DataFrame(schema={REGION: pl.String})
+    return pl.concat([regions, *found]).unique() if found else regions
+
+
+def _list_regions_holding(table: pl.LazyFrame, set_name: str, key: pl.DataFrame) -> pl.DataFrame:
+    columns = [pl.col(REGION).cast(pl.String), pl.col(set_name).cast(pl.String)]
+    rows = table.select(columns).join(key.lazy(), on=[REGION, set_name], how="semi")
+    return rows.select(REGION).unique().collect()
 
 
 def _enrich_with_dropped_regions(
