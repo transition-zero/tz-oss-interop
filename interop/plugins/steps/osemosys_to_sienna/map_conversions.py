@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from interop.core.extensions import ExtensionKind, append_extensions
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_sienna_translations import (
     OperationsMapping,
     OperationsYear,
+    add_built_records,
     build_conversion_records,
     build_conversions_source,
     build_routes_source,
@@ -29,8 +29,5 @@ class OsemosysToSiennaMapConversions(OperationsMapping):
     def map_components(self, state: State, operations: OperationsYear) -> None:
         conversions = build_conversions_source(state, operations, self._recorder)
         routes = build_routes_source(state, operations)
-        built = build_conversion_records(conversions, routes)
-        append_extensions(state.destination_extensions, ExtensionKind.CONVERSION, built.records)
-        for event in built.events:
-            self._recorder.append(event)
+        add_built_records(state, build_conversion_records(conversions, routes), self._recorder)
         set_conversion_values_persisted(state, conversions, routes)

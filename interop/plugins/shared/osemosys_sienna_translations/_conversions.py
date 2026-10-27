@@ -15,7 +15,6 @@ which `_transport` builds.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, NamedTuple
 
@@ -64,6 +63,7 @@ from interop.plugins.shared.osemosys_sienna_translations._activity_limits import
 )
 from interop.plugins.shared.osemosys_sienna_translations._buses import read_electricity_fuels
 from interop.plugins.shared.osemosys_sienna_translations._canonical import find_parameter_default
+from interop.plugins.shared.osemosys_sienna_translations._component_mapping import BuiltRecords
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -220,14 +220,6 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
 )
 
 
-@dataclass
-class ConversionRecords:
-    """The conversion records, and the events of each value that they hold."""
-
-    records: list[ConversionExtension] = field(default_factory=list)
-    events: list[TranslationEvent] = field(default_factory=list)
-
-
 def build_conversions_source(
     state: State, operations: OperationsYear, recorder: ScopedRecorder
 ) -> pl.DataFrame:
@@ -268,17 +260,20 @@ def build_routes_source(state: State, operations: OperationsYear) -> pl.DataFram
     return table.sort(CONVERSION_NAME)
 
 
-def build_conversion_records(conversions: pl.DataFrame, routes: pl.DataFrame) -> ConversionRecords:
+def build_conversion_records(
+    conversions: pl.DataFrame, routes: pl.DataFrame
+) -> BuiltRecords[ConversionExtension]:
     """One record for each conversion and each trade route, each built once with its events."""
-    built = ConversionRecords()
+    records: list[ConversionExtension] = []
+    events: list[TranslationEvent] = []
     for row in conversions.iter_rows(named=True):
         record = _build_extension(row)
-        built.records.append(record)
-        built.events.extend(_build_events(row, record))
+        records.append(record)
+        events.extend(_build_events(row, record))
     for row in routes.iter_rows(named=True):
-        built.records.append(_build_route(row))
-        built.events.extend(build_value_events(row, ROUTE_VALUES, ROUTE_OWNERS))
-    return built
+        records.append(_build_route(row))
+        events.extend(build_value_events(row, ROUTE_VALUES, ROUTE_OWNERS))
+    return BuiltRecords(ExtensionKind.CONVERSION, records, events)
 
 
 def set_conversion_values_persisted(
