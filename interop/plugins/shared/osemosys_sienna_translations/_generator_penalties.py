@@ -19,7 +19,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
 )
-from interop.plugins.shared.osemosys_sienna_constants import NO_COST
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     VARIABLE_COST_MWH,
 )
