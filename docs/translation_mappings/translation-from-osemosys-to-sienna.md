@@ -35,7 +35,7 @@ The operations pipelines run these nodes, in this order:
 | Node | What it does |
 | --- | --- |
 | `stage_osemosys_csv` or `stage_tz_osemosys_json` | Writes the canonical stage. |
-| `osemosys_canonical_drop_outside_scope` | Removes the locations and the years outside the scope that you give. |
+| `osemosys_canonical_drop_outside_scope` | Removes the members, the regions and the years outside the scope that you give. Keeps what a technology in the scope uses. |
 | `osemosys_to_sienna_map_components` | Writes the buses, the loads, the generators, the storages and the lines of one model year, and the records of the fuels that are not electricity. |
 | `sienna_relate_components` | Writes one `Area` for each bus area, and one `Arc` for each line. |
 | `osemosys_to_sienna_report_unapplied_parameters` | Records each parameter of the model that no step applies. |
@@ -153,9 +153,34 @@ parameters:
 The step removes each technology, fuel and storage outside the scope from its set, its
 annotation table and every parameter table. A member is in scope when every part of its
 location is in `locations`. So a technology at `DE~FR` needs both `DE` and `FR`. A member with
-no location stays. The step also removes each year outside `years` from every table. A year
-that the model does not hold has no effect. `decisions.md` names what the step removes, and one
-warning names three of them.
+no location stays. These members also stay:
+
+- each fuel and storage that a technology in the scope uses through a flow or a storage link,
+  in the region of that use;
+- each technology at the location of its region whose flows and storage links name only
+  members that stay, for example the supply of a fuel that stays.
+
+The step removes a region when all of these hold:
+
+- the location of the region is outside the scope;
+- no technology in the scope has a flow in the region;
+- no parameter states, in the region, a member at a location in the scope.
+
+The step filters `region`, `start_region` and `end_region`. A region group that loses a region
+gets a `NOT_MAPPED` event, and one warning names the groups.
+
+The step also removes each year outside `years` from every table. When it removes a year, it
+empties each table of model-period values:
+`total_technology_model_period_activity_lower_limit`,
+`total_technology_model_period_activity_upper_limit`, `model_period_emission_limit` and
+`model_period_exogenous_emission`. Each one gets a `NOT_MAPPED` event. When it removes the first
+model year, it also empties `storage_level_start`. One warning names the tables.
+
+A location or a year that the model does not hold stops the run. The message lists the
+locations or the years of the model.
+
+`decisions.md` has one row for each member, each region, each table and each (region, member)
+pair that the step removes or keeps. One warning names three of them.
 
 The REPL shows a list that a pipeline file states as text separated by commas. Enter keeps it.
 
@@ -210,8 +235,9 @@ the MW of one unit of `units: capacity`.
   left out. `decisions.md` records it as `COMPONENT_SKIPPED`, and one warning names three of
   them. A value that the system cannot hold goes to `extensions.json`, or `decisions.md` records
   it as `NOT_MAPPED`.
-- **A missing parameter stops the run.** A `year` that is not a model year, and a unit that a
-  conversion needs and that `units:` does not state, each stop the run with a message.
+- **A missing parameter stops the run.** A `year` that is not a model year, a location or a
+  year of the scope that the model does not hold, and a unit that a conversion needs and that
+  `units:` does not state, each stop the run with a message.
 - **A name comes from the member.** A component takes the name of its technology, fuel or
   storage. When two regions hold a member of the same name, the name starts with
   `<region>/`.
@@ -349,7 +375,7 @@ names. These checks leave a technology out, in this order:
 | `name` | | The technology | `direct` |
 | `bus` | | The bus of the largest electricity fuel that it puts out at the operations mode | `derived` |
 | `prime_mover_type` | | The carriers row of the category | `mapped by you` |
-| `base_power` | MVA | `ResidualCapacity` (`residual_capacity`) of the operations year in MW × the electricity `OutputActivityRatio` (`output_activity_ratio`) at the operations mode | `derived` |
+| `base_power` | MVA | `ResidualCapacity` (`residual_capacity`) of the operations year × `CapacityToActivityUnit` (`capacity_to_activity_unit`) in MWh / 8760 h × the electricity `OutputActivityRatio` (`output_activity_ratio`) at the operations mode | `derived` |
 | `rating` | pu | `1.0`. The generator rates at its whole base power, and its availability limits it in each hour. | `default` |
 | `active_power` / `reactive_power` | MW / MVAR | `0.0` | `default` |
 | `available` | | `true` | `default` |
@@ -357,6 +383,15 @@ names. These checks leave a technology out, in this order:
 The electricity output ratio is the sum of `output_activity_ratio` over the electricity fuels.
 Each cost and each emission rate below is for each MWh of electricity output. So each one is
 divided by that ratio.
+
+`CapacityToActivityUnit` gives the activity that one unit of capacity runs in a year, so the
+capacity in MW is that activity / 8760 h. A model that declares no `CapacityToActivityUnit`
+takes the canonical default of 1. A canonical stage with no default for it converts the
+capacity with `units: capacity`.
+
+A Sienna generator puts out electricity only. Each other fuel that a generator puts out at the
+operations mode is left out. `decisions.md` records its `output_activity_ratio` as `NOT_MAPPED`,
+and one warning names three technologies.
 
 ### The availability of each hour
 
@@ -491,16 +526,16 @@ One technology can do both. These checks leave a storage out, in this order:
 | `bus` | | The bus of the largest electricity fuel that the discharging technology puts out at the discharge mode | `derived` |
 | `prime_mover_type` | | The carriers row of the category of the discharging technology | `mapped by you` |
 | `storage_technology_type` | | `OTHER_MECH`, because OSeMOSYS states no storage technology | `default` |
-| `base_power` | MVA | `residual_capacity` of the discharging technology in MW × its electricity `output_activity_ratio` at the discharge mode | `derived` |
+| `base_power` | MVA | `residual_capacity` of the discharging technology × its `capacity_to_activity_unit` in MWh / 8760 h × its electricity `output_activity_ratio` at the discharge mode | `derived` |
 | `rating` | pu | `1.0` | `default` |
 | `output_active_power_limits` | pu | min = 0. max = the lower of `base_power` × the `availability_factor` of the discharging technology, and `StorageMaxDischargeRate` (`storage_max_discharge_rate`) in MWh / 8760 h × the electricity `output_activity_ratio` at the discharge mode / `technology_from_storage`. Then / `base_power`. | `derived` |
-| `input_active_power_limits` | pu | min = 0. max = the lower of `residual_capacity` of the charging technology in MW × its electricity `input_activity_ratio` at the charge mode × its `availability_factor`, and `StorageMaxChargeRate` (`storage_max_charge_rate`) in MWh / 8760 h × that `input_activity_ratio` / `technology_to_storage`. Then / `base_power`. | `derived` |
+| `input_active_power_limits` | pu | min = 0. max = the lower of `residual_capacity` of the charging technology × its `capacity_to_activity_unit` in MWh / 8760 h × its electricity `input_activity_ratio` at the charge mode × its `availability_factor`, and `StorageMaxChargeRate` (`storage_max_charge_rate`) in MWh / 8760 h × that `input_activity_ratio` / `technology_to_storage`. Then / `base_power`. | `derived` |
 | `efficiency.in` | | `technology_to_storage` / the electricity `input_activity_ratio` at the charge mode | `derived` |
 | `efficiency.out` | | The electricity `output_activity_ratio` at the discharge mode / `technology_from_storage` | `derived` |
 | `storage_capacity` | h | `residual_storage_capacity` of the operations year in MWh / `base_power` | `derived` |
 | `storage_level_limits` | pu | `(MinStorageCharge (min_storage_charge), 1.0)`, held between 0 and 1 | `derived` |
 | `initial_storage_capacity_level` | pu | `StorageLevelStart` (`storage_level_start`) in MWh / `residual_storage_capacity` in MWh, held between 0 and 1 | `derived` |
-| `operation_cost` | $/MWh | A `StorageCost`. The charge cost is `variable_operation_cost` at the charge mode / the electricity input ratio. The discharge cost is `variable_operation_cost` at the discharge mode / the electricity output ratio. Every other cost is 0. | `derived` |
+| `operation_cost` | $/MWh | A `StorageCost`. The charge cost is (`variable_operation_cost` + Σ `emission_rate` × `emission_penalty`) at the charge mode / the electricity input ratio. The discharge cost is the same sum at the discharge mode / the electricity output ratio. Every other cost is 0. | `derived` |
 | `conversion_factor` | | `1.0`, because the energy and the level are both in MWh | `default` |
 | `storage_target` | pu | `0.0` | `default` |
 | `cycle_limits` | | `10000` | `default` |
@@ -566,7 +601,10 @@ production nor as trade.
 
 A `variable_operation_cost` above 0 goes to the `controllable_line` record of
 `extensions.json`, as `marginal_cost` in $/MWh sent: the cost / the electricity input ratio. A
-Sienna line prices no flow. An `availability_factor` below 1 goes to `p_max_pu`, because the
+Sienna line prices no flow. The emission penalty of the operations mode is not in
+`marginal_cost`. `decisions.md` records each penalised pollutant of a line as `NOT_MAPPED`, with
+its rate, and one warning names the technologies. The `conversion` record of an export does the
+same. An `availability_factor` below 1 goes to `p_max_pu`, because the
 limits of the line hold it inside one number.
 
 The step does not apply the `capacity_factor` of a transport technology to the system. The
@@ -744,6 +782,7 @@ The step leaves out a mode, records it as `COMPONENT_SKIPPED` and warns once for
 | It takes in and puts out more than four fuels | A link of this translation has four buses at most. |
 | It exports more than three fuels | An export puts out nothing, so its link leaves `bus1` empty and holds three inputs at most. |
 | It has no residual capacity, and the model builds none at no cost | The fleet of the year holds none of it. |
+| Its `availability_factor` in the year is 0 | It can run at none of its capacity in the year. |
 | Its annual activity upper limit is 0 | It may not run in the year. |
 
 ### The values of a mode
@@ -813,8 +852,8 @@ gives no field.
 | `max_growth_rate` | | `CapacityAdditionalMaxGrowthRate` (`capacity_additional_max_growth_rate`): new capacity per unit of the total capacity of the year before | none: `Carrier.max_relative_growth` weighs the new capacity of the period before |
 | `min_growth_rate` | | `CapacityAdditionalMinGrowthRate` (`capacity_additional_min_growth_rate`) | none |
 | `max_growth_floor` | MW | `CapacityAdditionalMaxFloor` (`capacity_additional_max_floor`) | none |
-| `e_sum_min_horizon` | MWh | `TotalTechnologyModelPeriodActivityLowerLimit` (`total_technology_model_period_activity_lower_limit`), above 0, × the electricity ratio of the operations year | `e_sum_min` |
-| `e_sum_max_horizon` | MWh | `TotalTechnologyModelPeriodActivityUpperLimit` (`total_technology_model_period_activity_upper_limit`), 0 or above, × that ratio | `e_sum_max` |
+| `e_sum_min_horizon` | MWh | `TotalTechnologyModelPeriodActivityLowerLimit` (`total_technology_model_period_activity_lower_limit`), above 0, × the electricity ratio of the operations year. None when the scope removes a year. | `e_sum_min` |
+| `e_sum_max_horizon` | MWh | `TotalTechnologyModelPeriodActivityUpperLimit` (`total_technology_model_period_activity_upper_limit`), 0 or above, × that ratio. None when the scope removes a year. | `e_sum_max` |
 | `capacity_factor_min` | | `TotalAnnualMinCapacityFactor` (`total_annual_min_capacity_factor`) | none |
 | `production_share_min`, `production_share_max` | | `TechnologyMinProductionTarget` and `TechnologyMaxProductionTarget`, for each fuel | none |
 | `capacity_to_activity_unit` | MWh/MW | `CapacityToActivityUnit` (`capacity_to_activity_unit`) in MWh for each MW. It is 8760 when the model agrees with `units:`. | none |
@@ -868,13 +907,17 @@ that states one. The investments pipelines write the same records.
 | `AnnualEmissionLimit` (`annual_emission_limit`) and `ModelPeriodEmissionLimit` (`model_period_emission_limit`) of a pollutant | The pollutant | `primary_energy`, with `carrier_attribute` the pollutant | `<=` | For each year: the limit − `AnnualExogenousEmission`, in t. Over the model period (`period: horizon`): the limit − `ModelPeriodExogenousEmission`, in t. | Each technology that emits the pollutant |
 | `AnnualEmissionLimitRegionGroup` of a pollutant | `<region group>/<pollutant>` | `primary_energy` | `<=` | For each year: the limit − `AnnualExogenousEmissionRegionGroup`, in t | The regions of the group in `RegionGroupTagRegion` |
 | `REMinProductionTarget` (`generation_fraction_requirement`) above 0 | `<region>/renewable_share` | `renewable_share` | `>=` | For each year, the share | The technologies of `RETagTechnology` and the fuels of `RETagFuel`, each with its tag as `coefficient` |
-| `RegionGroupREMinProductionTarget` above 0 | `<region group>/renewable_share` | `renewable_share` | `>=` | For each year, the share | The regions of the group |
+| `RegionGroupREMinProductionTarget` above 0 | `<region group>/renewable_share` | `renewable_share` | `>=` | For each year, the share | The regions of the group, then the technologies of `RETagTechnology` and the fuels of `RETagFuel` in those regions, each with its tag as `coefficient` |
 | `ReserveMargin` (`reserve_margin`), for a region with a tag | `<region>/reserve_margin` | `reserve_margin` | `>=` | For each year, the margin, or its default | The technologies of `ReserveMarginTagTechnology` and the fuels of `ReserveMarginTagFuel`, each with its tag as `coefficient` |
 
 A limit of a year is a `limits` entry with `period: year` and `investment_period`, the year. A
-tag that changes from year to year keeps the value of the earliest year that states one.
-`decisions.md` records each value of a year with a limit that differs from it as `NOT_MAPPED`,
-and one warning names three tags.
+technology member takes the name of its component: the technology, with `<region>/` in front
+when two regions hold a technology of that name and kind. A fuel member takes the name of its
+bus, for example `R1/ATELEC`. A tag that changes from year to year keeps the value of the
+earliest year that states one. A region group keeps the regions of the earliest year that
+states them. `decisions.md` records each value of a year with a limit that differs from the
+kept one as `NOT_MAPPED`, and one warning names three tags or region groups. When the scope
+removes a year, no record has a limit over the model period.
 
 ---
 
@@ -901,6 +944,9 @@ The step builds the hours of the operations year from four parameters:
    series is hourly and in time order.
 5. The weight of a day is `year_split / day_split` of its timeslices. When the timeslices of a
    day give different weights, the day takes their mean, and `decisions.md` gives the values.
+   Each timeslice then gets an energy scale: its own weight / the weight of its day. A load
+   multiplies its MW in the timeslice by the scale, so the energy of each timeslice in the year
+   stays the same. A day whose timeslices give one weight has a scale of 1.
 
 Each day becomes one `representative_period` record in `extensions.json`:
 
@@ -926,7 +972,8 @@ Then each timeslice is one hour, in the order of the `timeslice` set. Each hour 
 record named for its timeslice, with `hours` 1 and the weight `year_split × 8760`. The weight of
 such a record is the number of hours that it stands for, not a number of days.
 
-In both cases, the sum of `hours × weight` over the records is about 8760.
+When each day takes the weight of its timeslices, the sum of `hours × weight` over the records
+is about 8760. When a day takes a mean weight, the sum can differ from 8760.
 
 ### Units
 
@@ -962,9 +1009,13 @@ plant, at the operations mode:
   fuel.
 - A tie goes to the first technology name.
 - A technology of any other kind, for example a pipeline, is not a producer.
-- A producer whose `total_technology_annual_activity_upper_limit` in the year is 0 makes
-  nothing, so it is not a producer.
-- A fuel with no producer gives no fuel cost. `decisions.md` records the fuel as `NOT_MAPPED`.
+- A producer must be able to run in the operations year. It must have residual capacity or a
+  build at no cost, an `availability_factor` above 0, and a
+  `total_technology_annual_activity_upper_limit` that is not 0.
+- A plant whose fuel has producers, and none of them can run, is left out. `decisions.md`
+  records it as `COMPONENT_SKIPPED`, and one warning names three.
+- A fuel with no producer gives no fuel cost. `decisions.md` records the fuel as `NOT_MAPPED`,
+  and one warning names three plants.
 
 A fuel has one location, so the producer in the region makes the fuel at the place where the
 plant takes it in. The note of each fuel term gives the number of producers that the rule chose
@@ -1002,8 +1053,10 @@ The line runs the operations mode and the flow back. An import mode becomes a ge
 to [An import mode → `ThermalStandard`](#an-import-mode--thermalstandard). The
 `operating_modes` of the line record hold each other mode, and the ratios of the flow back. One
 warning names three lines that state values at a mode that is neither the flow back nor an
-import. A line states one loss, so the loss of the flow back is in the ratios of its
-`operating_modes` entry only.
+import. A line applies the loss and the cost of the operations mode in both directions. When
+the loss of the flow back, `1 − output ratio / input ratio`, or its cost for each MWh sent
+differs, `decisions.md` records the value of the flow back as `NOT_MAPPED`, and one warning
+names three lines. The ratios of the flow back are in its `operating_modes` entry.
 
 ### Storage
 
@@ -1030,11 +1083,12 @@ one `NOT_MAPPED` event for each member that it states values for, and one warnin
 three. A row at the default of the parameter states nothing, so it does not count. For example:
 
 ```
-osemosys-to-sienna: total_technology_annual_activity_upper_limit states 39 row(s) for 2021 that no step of the pipeline applies or keeps, for 39 technology(ies): ...
+osemosys-to-sienna: 39 technology(ies) whose total_technology_annual_activity_upper_limit states 39 row(s) for 2021 that no step of the pipeline applies or keeps. Technologies: ...
 ```
 
 A component notes each row of its technology that it applies or that its record keeps: the
-residual capacity, the availability, the costs and the emission rates among them. The report
+residual capacity, the availability, the costs, the emission rates and the flow rows of
+`input_activity_ratio` and `output_activity_ratio` among them. The report
 counts only those rows as applied. So a row of a technology that has no component and no record,
 for example the residual capacity of a supply technology with no carriers row, is reported. So
 are the capacity factor of a technology that charges a storage that another technology
@@ -1059,7 +1113,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 
 | OSeMOSYS | Effect |
 | --- | --- |
-| Fuels that are not electricity, and their technologies | No Sienna component. The `bus`, `generator`, `conversion` and `load` records hold them as PyPSA components, and the Sienna to PyPSA hop builds them. The Sienna dispatch still prices a fuel at its cheapest producer. |
+| Fuels that are not electricity, and their technologies | No Sienna component. The `bus`, `generator`, `conversion` and `load` records hold them as PyPSA components, and the Sienna to PyPSA hop builds them. The Sienna dispatch still prices a fuel at its cheapest producer that can run in the year. |
 | A storage of a fuel that is not electricity | Not translated. The storage step reports it, as its technologies put out no electricity. |
 | A trade route of a fuel that is not electricity | Not translated. The report of the parameters that no step applies names it. |
 | The capital cost, the fixed cost and the life of a technology of a fuel that is not electricity | No record holds them. The report of the parameters that no step applies names them. |
@@ -1070,7 +1124,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | The `constraint` records hold them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | The `constraint` records hold them. No step applies them. |
 | `StorageBalanceDay`, `StorageBalanceSeason`, `StorageBalanceYear`, `StorageMaxHours` | The `storage` records hold them. No step applies them to the system. |
-| `CapacityToActivityUnit` | The records hold it. The records of the fuels that are not electricity convert their capacity with it. No other step reads it. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
+| `CapacityToActivityUnit` | The records hold it. A generator, a storage and the records of the fuels that are not electricity convert their capacity with it. A line and an import generator do not read it. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
 | The values of another operating mode | The `operating_modes` of the records hold them. Refer to [Technology](#technology). |
 | The `capacity_factor` of a storage or a transport technology | The companion parquet holds it. The system does not apply it. |
 | `DepreciationMethod` | Not translated. No record holds a region. |
@@ -1086,13 +1140,13 @@ convention, the translator gives wrong values.
 
 | Value | Assumed as |
 | --- | --- |
-| `units:` | The units of your values. `CapacityToActivityUnit` must agree with them: for example 31.536 PJ for each GW-year. |
+| `units:` | The units of your values. `CapacityToActivityUnit` must agree with them: for example 31.536 PJ for each GW-year. A line rates its capacity with `units: capacity`, and a generator and a storage rate theirs with `CapacityToActivityUnit`. |
 | The electricity fuels | Each fuel whose annotation states `carrier: electricity`. A fuel that you do not mark is not electricity. |
 | Mode `1` | The mode that the system runs, when the model holds it |
 | `AvailabilityFactor` | A derate in each hour, not a limit on the energy of the year |
 | `StorageMaxChargeRate`, `StorageMaxDischargeRate` | Energy in a year, in the unit of `units: energy`. A value of 0 states no limit. |
 | `StorageLevelStart` | The level at the start of the operations year |
 | `TechnologyToStorage`, `TechnologyFromStorage` | One technology and one mode in each direction |
-| The cheapest `fuel_supply` technology of a fuel | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
+| The cheapest `fuel_supply` technology of a fuel that can run in the year | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
 | A fuel technology with no residual capacity, no capital cost and no fixed cost | Capacity that the model builds at no cost, so its PyPSA component is extendable |
 | A category | One Sienna type, one prime mover and, for a thermal type, one fuel |
