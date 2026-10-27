@@ -16,7 +16,7 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ValidationError
 
-from interop.adapters.outbound.julia_packages import JuliaEnvironment
+from interop.adapters.outbound.julia_packages import EXPANSION_PACKAGES, JuliaEnvironment
 from interop.adapters.outbound.julia_session import (
     MIP_GAP_ATTRIBUTE,
     HiGHSAttribute,
@@ -79,6 +79,7 @@ class JuliaExpansionAdapter(ExpansionPort):
     def __init__(self, config: JuliaExpansionConfig | None = None) -> None:
         settings = config or JuliaExpansionConfig()
         self._environment = JuliaEnvironment(
+            packages=EXPANSION_PACKAGES,
             dev_checkout_paths={
                 "PowerSystemsInvestments": settings.powersystemsinvestments_jl_path,
                 "PowerSystemsInvestmentsPortfolios": (

@@ -28,20 +28,9 @@ class JuliaPackage:
         return {"version": self.version} if self.version is not None else {}
 
 
-@dataclass(frozen=True)
-class JuliaEnvironment:
-    """What one adapter installs into Julia: the local checkouts it uses and how it names them.
-
-    A package with no checkout path comes from its registry release or its pinned revision.
-    """
-
-    dev_checkout_paths: Mapping[str, Path | None]
-    description: str
-
-
 # Versions are pinned to the releases the solve pipeline was developed against;
 # unpinned packages are constrained transitively by the pinned ones.
-JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
+DISPATCH_PACKAGES: tuple[JuliaPackage, ...] = (
     JuliaPackage("PowerSystems", "bcd98974-b02a-5e2f-9ee0-a103f5c450dd", "~5.9"),
     JuliaPackage("PowerSimulations", "e690365d-45e2-57bb-ac84-44ba829e73c4", "~0.34"),
     JuliaPackage("HydroPowerSimulations", "fc1677e0-6ad7-4515-bf3a-bd6bf20a0b1b", "~0.15"),
@@ -51,11 +40,15 @@ JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
     JuliaPackage("TimeSeries", "9e3dc215-6440-5c97-bce1-76c03772f85e"),
     JuliaPackage("CSV", "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"),
     JuliaPackage("DataFrames", "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"),
+)
+"""What a dispatch runs on."""
+
+EXPANSION_PACKAGES: tuple[JuliaPackage, ...] = (
+    *DISPATCH_PACKAGES,
     # Neither investments package has a registry release that runs: PowerSystemsInvestments is
     # not in the General registry, and its only branch that calls nothing
     # PowerSystemsInvestmentsPortfolios lacks needs that package ahead of its 0.1.0 release.
-    # The solver pin is commit 8bfed9f of al/storage_integer; an upstream rewrite of that branch
-    # removed the earlier pin, f68d202.
+    # The solver pin is commit 8bfed9f, the head of al/storage_integer.
     JuliaPackage(
         "PowerSystemsInvestments",
         "bed98974-b02a-5e2f-9ee0-a103f5c450dd",
@@ -69,10 +62,23 @@ JULIA_PACKAGES: tuple[JuliaPackage, ...] = (
         rev="d72d61c1be2f7cdd5d54d7464b902973eead77b3",
     ),
 )
+"""What an expansion runs on: the dispatch set, and the two investments packages on top."""
 
 
-def declare_julia_packages(dev_checkout_paths: Mapping[str, Path | None]) -> None:
-    """Declare the Julia dependencies with juliapkg before juliacall imports.
+@dataclass(frozen=True)
+class JuliaEnvironment:
+    """What one adapter installs into Julia, the local checkouts it uses, and how it names them.
+
+    A package with no checkout path comes from its registry release or its pinned revision.
+    """
+
+    packages: tuple[JuliaPackage, ...]
+    dev_checkout_paths: Mapping[str, Path | None]
+    description: str
+
+
+def declare_julia_packages(environment: JuliaEnvironment) -> None:
+    """Declare the Julia dependencies of one adapter with juliapkg before juliacall imports.
 
     juliapkg resolves the declarations on `import juliacall`: it finds a compatible Julia
     (downloading one if none is installed) and installs the declared packages into its
@@ -81,8 +87,8 @@ def declare_julia_packages(dev_checkout_paths: Mapping[str, Path | None]) -> Non
     """
     import juliapkg  # noqa: PLC0415
 
-    for package in JULIA_PACKAGES:
-        checkout = dev_checkout_paths.get(package.name)
+    for package in environment.packages:
+        checkout = environment.dev_checkout_paths.get(package.name)
         if checkout is None:
             juliapkg.add(package.name, package.uuid, **package.build_location())
         else:

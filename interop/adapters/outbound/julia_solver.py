@@ -11,7 +11,7 @@ from interop.adapters.outbound.balance_slacks import (
     build_slack_energy,
     warn_balance_slacks,
 )
-from interop.adapters.outbound.julia_packages import JuliaEnvironment
+from interop.adapters.outbound.julia_packages import DISPATCH_PACKAGES, JuliaEnvironment
 from interop.adapters.outbound.julia_session import (
     MIP_GAP_ATTRIBUTE,
     HiGHSAttribute,
@@ -91,6 +91,7 @@ class JuliaSolveAdapter(SolverPort):
     def __init__(self, config: JuliaSolveConfig | None = None) -> None:
         settings = config or JuliaSolveConfig()
         self._environment = JuliaEnvironment(
+            packages=DISPATCH_PACKAGES,
             dev_checkout_paths={
                 "PowerSystems": settings.powersystems_jl_path,
                 "PowerSimulations": settings.powersimulations_jl_path,

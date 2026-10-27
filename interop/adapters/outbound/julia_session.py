@@ -38,7 +38,7 @@ def is_julia_provisioned(environment: JuliaEnvironment) -> bool:
     the last successful resolution, i.e. nothing would be downloaded; it never installs
     anything itself.
     """
-    declare_julia_packages(environment.dev_checkout_paths)
+    declare_julia_packages(environment)
     import juliapkg  # noqa: PLC0415
 
     return bool(juliapkg.resolve(dry_run=True))
@@ -47,7 +47,7 @@ def is_julia_provisioned(environment: JuliaEnvironment) -> bool:
 def require_julia(environment: JuliaEnvironment) -> Any:
     """The Julia `Main` module, once the declared packages are installed."""
     os.environ.setdefault("PYTHON_JULIACALL_HANDLE_SIGNALS", "yes")
-    declare_julia_packages(environment.dev_checkout_paths)
+    declare_julia_packages(environment)
     log.info(
         "Preparing the Julia environment. The first run downloads Julia and %s and compiles "
         "them. Later runs start much faster.",
