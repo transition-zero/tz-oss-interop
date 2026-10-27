@@ -47,12 +47,18 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_sienna_field,
 )
 from interop.plugins.shared.osemosys_sienna_translations._free_build import (
+    CAPITAL_COST,
+    FIXED_COST,
     FREE_BUILD_PARAMETERS,
+    MAX_CAPACITY,
+    MAX_INVESTMENT,
+    RESIDUAL,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     ACTIVITY_MW,
     AVAILABILITY,
     COST_MWH,
+    CTAU,
     E_MAX_MWH,
     E_MIN_MWH,
     INPUTS,
@@ -69,6 +75,7 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     RATIO,
     ROLE,
     SUPPLY,
+    VARIABLE_COST,
 )
 from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     FUEL_BUS,
@@ -83,7 +90,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.pypsa_constants import LINK_FURTHER_PORTS
-from interop.ports.outbound.reporting import EventKind, TranslationEvent
+from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _NO_COST = 0.0
 _FUEL_SCOPE = "fuel"
@@ -287,12 +294,12 @@ def _build_event(
     row: dict[str, Any], kind: ExtensionKind, field_name: str, stated: Any
 ) -> TranslationEvent:
     value = _VALUES[field_name]
-    attribute = f"mode {row[OPERATING_MODE]}"
     return TranslationEvent(
         kind=EventKind.VALUE_DERIVED,
         sources=[
-            build_osemosys_field(parameter, row[MODE_REPORT_NAME], attribute)
+            source
             for parameter in value.parameters
+            for source in _build_parameter_sources(row, parameter)
         ],
         destinations=[
             build_sienna_field(
@@ -301,6 +308,32 @@ def _build_event(
         ],
         derivation=value.derivation,
     )
+
+
+def _build_parameter_sources(row: dict[str, Any], parameter: str) -> list[SourceField]:
+    """The values of one parameter that a field reads: each flow, each rate, or one value."""
+    name = row[MODE_REPORT_NAME]
+    mode = f"mode {row[OPERATING_MODE]}"
+    rates = row[RATES] or []
+    if parameter in _FLOW_PORTS:
+        return [
+            build_osemosys_field(parameter, name, f"{port[FUEL]} at {mode}", port[RATIO])
+            for port in row[_FLOW_PORTS[parameter]]
+        ]
+    if parameter == SupplyParameter.EMISSION_RATE:
+        return [
+            build_osemosys_field(
+                parameter, name, f"{rate[POLLUTANT]} at {mode}", rate[_STATED_RATE]
+            )
+            for rate in rates
+        ]
+    if parameter == SupplyParameter.EMISSION_PENALTY:
+        return [build_osemosys_field(parameter, name, rate[POLLUTANT]) for rate in rates]
+    column = _STATED_COLUMNS.get(parameter)
+    attribute = mode if parameter in _MODE_PARAMETERS else None
+    return [
+        build_osemosys_field(parameter, name, attribute, None if column is None else row[column])
+    ]
 
 
 def _build_bus_events(bus: dict[str, Any]) -> list[TranslationEvent]:
@@ -343,6 +376,30 @@ _BUS_VALUES = (
     _BusValue("location", AnnotationColumn.LOCATION, FUEL_LOCATION, "the location of the fuel"),
 )
 _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
+# The ports of a mode that hold each flow parameter.
+_FLOW_PORTS: dict[str, str] = {
+    FlowParameter.INPUT_ACTIVITY_RATIO: INPUTS,
+    FlowParameter.OUTPUT_ACTIVITY_RATIO: OUTPUTS,
+}
+# The field of each rate of a mode that holds the rate as the model states it.
+_STATED_RATE = "stated_rate"
+# The column of the mode row that holds the stated value of each other parameter.
+_STATED_COLUMNS: dict[str, str] = {
+    SupplyParameter.RESIDUAL_CAPACITY: RESIDUAL,
+    ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT: CTAU,
+    SupplyParameter.AVAILABILITY_FACTOR: AVAILABILITY,
+    SupplyParameter.VARIABLE_OPERATION_COST: VARIABLE_COST,
+    InvestmentParameter.CAPITAL_COST: CAPITAL_COST,
+    SupplyParameter.FIXED_COST: FIXED_COST,
+    InvestmentParameter.MAX_CAPACITY_INVESTMENT: MAX_INVESTMENT,
+    InvestmentParameter.CAPACITY_LIMITS_MAX: MAX_CAPACITY,
+    AnnotationColumn.CATEGORY: AnnotationColumn.CATEGORY,
+}
+_MODE_PARAMETERS = (
+    SupplyParameter.VARIABLE_OPERATION_COST,
+    ActivityParameter.BY_MODE_UPPER_LIMIT,
+    ActivityParameter.BY_MODE_LOWER_LIMIT,
+)
 _CAPACITY = (
     SupplyParameter.RESIDUAL_CAPACITY,
     ActivityParameter.CAPACITY_TO_ACTIVITY_UNIT,

@@ -467,6 +467,8 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" having "p_max_pu" set to 0.8
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASLNG" without field "p_nom_extendable"
       And the file "decisions.md" contains "`sienna.generator.ATGASWELL.extensions.marginal_cost` = 4.0 \$/MWh"
+      And the file "decisions.md" contains "| `osemosys.variable_operation_cost.R1/ATGASWELL.mode 1` = 2000.0<br>`osemosys.emission_rate.R1/ATGASWELL.CO2 at mode 1` = 200.0<br>`osemosys.emission_penalty.R1/ATGASWELL.CO2` | `sienna.generator.ATGASWELL.extensions.marginal_cost` = 4.0 \$/MWh |"
+      And the file "decisions.md" contains "| `osemosys.residual_capacity.R1/ATGASLNG` = 2.0<br>`osemosys.capacity_to_activity_unit.R1/ATGASLNG` = 8760.0<br>`osemosys.output_activity_ratio.R1/ATGASLNG.ATGAS at mode 1` = 1.0 | `sienna.generator.ATGASLNG.extensions.p_nom` = 2000.0 MW |"
       And the log does not contain "variable_operation_cost states"
 
     Scenario: A fuel technology that cannot run in the year is left out and reported
@@ -490,6 +492,7 @@ Feature: osemosys-csv-to-sienna turns the fuels that are not electricity of one 
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE/mode2" having "bus0" set to "R1/ATGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE/mode2" having "bus1" set to "R1/DEGAS"
       And the file "outputs/extensions.json" parses as JSON conversion extension record for "DEATPIPE/mode2" having "efficiency" set to 0.98
+      And the file "decisions.md" contains "| `osemosys.input_activity_ratio.R1/DEATPIPE/mode2.ATGAS at mode 2` = 1.0<br>`osemosys.output_activity_ratio.R1/DEATPIPE/mode2.DEGAS at mode 2` = 0.98 | `sienna.conversion.DEATPIPE/mode2.extensions.efficiency` = 0.98 |"
 
     Scenario: The emission penalty that only a pipeline applies is not reported
       The pipeline emits 2 t of CH4 for each GWh that it moves, which is 0.002 t/MWh. At 30 $/t
