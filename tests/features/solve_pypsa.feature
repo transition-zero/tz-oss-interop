@@ -209,6 +209,7 @@ Feature: Solve a PyPSA network
     When I run solve on "inputs/short.nc" from "2026-09-01" to "2026-09-01" with unserved energy "penalised" into "outputs/solved"
     Then the solve reported success
     And the printed output contains "unserved_energy=60 MWh"
+    And the printed output contains "objective=601000"
     And the solved network "outputs/solved/short.nc" records 60 MWh of unserved energy at "bus_1"
     And the solved network "outputs/solved/short.nc" has no generator "bus_1 unserved energy"
     And the solved network "outputs/solved/short.nc" has generator "gen" dispatch 50 50
