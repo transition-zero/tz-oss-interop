@@ -85,7 +85,6 @@ def read_pollutants(state: State, years: Sequence[int]) -> pl.DataFrame:
     )
     rates = (
         read_parameter_for_years(state, SupplyParameter.EMISSION_RATE, years)
-        .lazy()
         .filter(pl.col(VALUE_COL) != 0)
         .select(*POLLUTANT_KEYS, TECHNOLOGY)
         .unique()
