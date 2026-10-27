@@ -14,6 +14,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import REGION, TECHNOLOGY, VALUE_COL
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     NO_LIMIT,
     InvestmentParameter,
     SupplyParameter,
@@ -34,12 +35,11 @@ BUILD_LIMIT = "build_limit"
 BUILD_LIMIT_PARAMETER = "build_limit_parameter"
 
 _KEYS = [REGION, TECHNOLOGY]
-_NO_COST = 0.0
 _NO_CAPACITY = 0.0
 _PARAMETERS = (
     (SupplyParameter.RESIDUAL_CAPACITY, RESIDUAL, _NO_CAPACITY),
-    (InvestmentParameter.CAPITAL_COST, CAPITAL_COST, _NO_COST),
-    (SupplyParameter.FIXED_COST, FIXED_COST, _NO_COST),
+    (InvestmentParameter.CAPITAL_COST, CAPITAL_COST, NO_COST),
+    (SupplyParameter.FIXED_COST, FIXED_COST, NO_COST),
     (InvestmentParameter.MAX_CAPACITY_INVESTMENT, MAX_INVESTMENT, NO_LIMIT),
     (InvestmentParameter.CAPACITY_LIMITS_MAX, MAX_CAPACITY, NO_LIMIT),
 )
@@ -71,7 +71,7 @@ def enrich_free_build(state: State, year: int, technologies: pl.DataFrame) -> pl
 
 
 def _express_is_free_to_build() -> pl.Expr:
-    is_free = (pl.col(CAPITAL_COST) == _NO_COST) & (pl.col(FIXED_COST) == _NO_COST)
+    is_free = (pl.col(CAPITAL_COST) == NO_COST) & (pl.col(FIXED_COST) == NO_COST)
     may_build = pl.col(MAX_INVESTMENT) != 0
     has_room = (pl.col(MAX_CAPACITY) == NO_LIMIT) | (pl.col(MAX_CAPACITY) > pl.col(RESIDUAL))
     return is_free & may_build & has_room

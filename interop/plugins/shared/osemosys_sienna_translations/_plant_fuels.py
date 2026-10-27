@@ -27,7 +27,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
     FlowParameter,
 )
-from interop.plugins.shared.osemosys_sienna_constants import SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
@@ -63,7 +63,6 @@ _KEYS = [REGION, TECHNOLOGY]
 _FUEL_RATIO = "fuel_ratio"
 _RATE = "rate"
 _OWN_PENALTY = "own_penalty"
-_NO_COST = 0.0
 _FUEL_BUSES_DERIVATION = (
     "input_activity_ratio / the electricity output_activity_ratio, by the bus of the fuel, "
     "<region>/<fuel>"
@@ -89,7 +88,7 @@ def enrich_plant_fuels(
     buses = _build_fuel_buses(state, generators, inputs)
     rates = _build_own_rates(state, operations, generators)
     table = generators.join(buses, on=_KEYS, how="left").join(rates, on=_KEYS, how="left")
-    own_cost = pl.col(OWN_COST_MWH).fill_null(_NO_COST) + pl.col(_OWN_PENALTY).fill_null(_NO_COST)
+    own_cost = pl.col(OWN_COST_MWH).fill_null(NO_COST) + pl.col(_OWN_PENALTY).fill_null(NO_COST)
     return table.with_columns(own_cost.alias(OWN_OPERATION_COST_MWH)).drop(_OWN_PENALTY)
 
 
@@ -189,6 +188,6 @@ def _build_own_rates(
         .group_by(_KEYS)
         .agg(
             pl.struct(POLLUTANT, _RATE).alias(OWN_RATES),
-            (pl.col(_RATE) * pl.col(PENALTY).fill_null(_NO_COST)).sum().alias(_OWN_PENALTY),
+            (pl.col(_RATE) * pl.col(PENALTY).fill_null(NO_COST)).sum().alias(_OWN_PENALTY),
         )
     )

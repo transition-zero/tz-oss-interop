@@ -15,6 +15,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     AnnotationColumn,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
+    NO_COST,
     WHOLE_CAPACITY,
     SupplyParameter,
 )
@@ -46,7 +47,6 @@ AVAILABILITY_FACTOR = "availability_factor"
 VARIABLE_COST = "variable_cost"
 
 _KEYS = [REGION, TECHNOLOGY]
-_NO_COST = 0.0
 _TARGET_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     AnnotationColumn.CATEGORY: pl.Utf8,
     SIENNA_TYPE: pl.Utf8,
@@ -75,7 +75,7 @@ def read_variable_costs(state: State, year: int, keys: pl.DataFrame) -> pl.DataF
     stated = read_parameter_with_defaults(
         state, SupplyParameter.VARIABLE_OPERATION_COST, year, keys
     )
-    cost = pl.col(VALUE_COL).cast(pl.Float64).fill_null(_NO_COST)
+    cost = pl.col(VALUE_COL).cast(pl.Float64).fill_null(NO_COST)
     return stated.select(*_KEYS, OPERATING_MODE, cost.alias(VARIABLE_COST))
 
 
