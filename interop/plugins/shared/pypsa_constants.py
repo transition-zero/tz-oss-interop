@@ -445,6 +445,7 @@ PYPSA_STORAGE_UNIT_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSAStorageUnitCol.P_MAX_PU: 1.0,
     PyPSAStorageUnitCol.MARGINAL_COST: 0.0,
     PyPSAStorageUnitCol.CARRIER: "",
+    PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: 0.0,
 }
 PYPSA_LINK_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSALinkCol.P_NOM: 0.0,
@@ -454,6 +455,19 @@ PYPSA_LINK_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSALinkCol.EFFICIENCY: 1.0,
     PyPSALinkCol.MARGINAL_COST: 0.0,
     PyPSALinkCol.CARRIER: "",
+    PyPSALinkCol.ACTIVE: True,
+    PyPSALinkCol.BUS2: "",
+    PyPSALinkCol.EFFICIENCY2: 1.0,
+    PyPSALinkCol.BUS3: "",
+    PyPSALinkCol.EFFICIENCY3: 1.0,
+}
+PYPSA_BUS_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSABusCol.V_NOM: 1.0,
+    PyPSABusCol.CONTROL: PyPSABusControl.PQ,
+}
+PYPSA_LINE_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSALineCol.LENGTH: 0.0,
+    PyPSALineCol.NUM_PARALLEL: 1.0,
 }
 
 # Six places holds a per-unit factor down to a millionth of a component's own rating, which

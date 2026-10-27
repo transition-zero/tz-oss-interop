@@ -17,6 +17,7 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNSCALED
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_STORAGE_UNIT_DEFAULTS,
     STORAGE_UNITS_DESTINATION_SCHEMA,
     PyPSACarrier,
     PyPSADestinationTable,
@@ -79,7 +80,7 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUn
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 # PyPSA's own state_of_charge_initial: a reservoir that starts empty.
-_EMPTY_RESERVOIR = 0.0
+_EMPTY_RESERVOIR = PYPSA_STORAGE_UNIT_DEFAULTS[PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL]
 
 # What the storage companion parquet holds. Sienna names no field for an inflow or for a
 # rating that changes, so both arrive beside the sidecar rather than in the system file.

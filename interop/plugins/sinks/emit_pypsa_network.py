@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.pypsa_constants import (
     LINK_FURTHER_PORTS,
+    PYPSA_LINK_DEFAULTS,
     PYPSA_OUTPUT_DECIMAL_PLACES,
     UNROUNDED_OUTPUT_COLUMNS,
     LinkPort,
@@ -306,11 +307,6 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
     )
 
 
-# PyPSA's own value for a link that names no further bus: no bus, and an efficiency of 1.
-_NO_BUS = ""
-_NO_LOSS = 1.0
-
-
 def _list_extra_ports(links: pl.DataFrame) -> list[LinkPort]:
     return [
         port
@@ -321,8 +317,11 @@ def _list_extra_ports(links: pl.DataFrame) -> list[LinkPort]:
 
 def _fill_extra_ports(links: pl.DataFrame, ports: list[LinkPort]) -> pl.DataFrame:
     return links.with_columns(
-        *[pl.col(port.bus).fill_null(_NO_BUS) for port in ports],
-        *[pl.col(port.efficiency).fill_null(_NO_LOSS) for port in ports],
+        *[pl.col(port.bus).fill_null(PYPSA_LINK_DEFAULTS[port.bus]) for port in ports],
+        *[
+            pl.col(port.efficiency).fill_null(PYPSA_LINK_DEFAULTS[port.efficiency])
+            for port in ports
+        ],
     )
 
 

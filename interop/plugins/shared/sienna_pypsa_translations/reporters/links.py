@@ -11,7 +11,12 @@ from interop.plugins.shared.constants import (
     UNIT_MW,
     Framework,
 )
-from interop.plugins.shared.pypsa_constants import LinkPort, PyPSAComponent, PyPSALinkCol
+from interop.plugins.shared.pypsa_constants import (
+    PYPSA_LINK_DEFAULTS,
+    LinkPort,
+    PyPSAComponent,
+    PyPSALinkCol,
+)
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaGeneratorCol,
@@ -41,7 +46,7 @@ _UNSPLIT_NOTE = (
     "p_nom; its flow back gains what its forward flow loses"
 )
 # An efficiency of 1 loses nothing, so a link that splits at it splits for its cost.
-_NO_LOSS = 1.0
+_NO_LOSS = PYPSA_LINK_DEFAULTS[PyPSALinkCol.EFFICIENCY]
 _TAKEN_NOTE = (
     "another link holds the name {reverse_name}, so the link stays one two-way link; its flow "
     "back gains what its forward flow loses, and the PyPSA results count {reverse_name} with it"

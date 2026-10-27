@@ -15,6 +15,7 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.plugins.shared.pypsa_constants import (
+    PYPSA_LINK_DEFAULTS,
     REVERSE_LINK_SUFFIX,
     PyPSADestinationTable,
     PyPSALinkCol,
@@ -26,10 +27,10 @@ from interop.plugins.shared.warning_text import name_a_few
 
 log = logging.getLogger(__name__)
 
-_NO_LOSS = 1.0
-_NO_COST = 0.0
+_NO_LOSS = PYPSA_LINK_DEFAULTS[PyPSALinkCol.EFFICIENCY]
+_NO_COST = PYPSA_LINK_DEFAULTS[PyPSALinkCol.MARGINAL_COST]
 # A one-way link moves no power from bus1 to bus0.
-_ONE_WAY_P_MIN_PU = 0.0
+_ONE_WAY_P_MIN_PU = PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_MIN_PU]
 _UNSPLIT_WARNING = (
     "%d extendable link(s) flow both ways and lose energy or cost money, so each stays one "
     "link whose flow back gains what its forward flow loses: %s"

@@ -20,6 +20,8 @@ from interop.plugins.shared.pypsa_constants import (
     DEFAULT_SYSTEM_BASE_MVA,
     LINES_DESTINATION_SCHEMA,
     LINKS_DESTINATION_SCHEMA,
+    PYPSA_LINE_DEFAULTS,
+    PYPSA_LINK_DEFAULTS,
     PyPSADestinationTable,
     PyPSALineCol,
     PyPSALinkCol,
@@ -67,9 +69,10 @@ _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
 # The Sienna type of every link that this step maps.
 _LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
 
-# PyPSA's own defaults, applied where the sidecar states nothing for a line.
-_DEFAULT_LENGTH = 0.0
-_DEFAULT_NUM_PARALLEL = 1.0
+# PyPSA's own defaults, applied where the sidecar states nothing for a line or a link.
+_DEFAULT_LENGTH = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.LENGTH])
+_DEFAULT_NUM_PARALLEL = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.NUM_PARALLEL])
+_DEFAULT_P_MAX_PU = float(PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_MAX_PU])
 
 
 def _from_to_total(from_to: dict[str, float]) -> float:
@@ -321,11 +324,11 @@ class SiennaToPypsaMapTransmission(TranslationStep):
 
 
 def _build_series_scaling(rows: list[dict[str, Any]]) -> dict[str, float]:
-    """The static p_max_pu of each link, which multiplies its series; PyPSA's default is 1."""
+    """The static p_max_pu of each link, which multiplies its series, or PyPSA's default."""
     return {
         row[PyPSALinkCol.NAME]: row[PyPSALinkCol.P_MAX_PU]
         if row[PyPSALinkCol.P_MAX_PU] is not None
-        else 1.0
+        else _DEFAULT_P_MAX_PU
         for row in rows
     }
 

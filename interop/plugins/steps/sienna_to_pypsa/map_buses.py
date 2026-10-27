@@ -16,6 +16,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     BUSES_DESTINATION_SCHEMA,
     ELECTRICITY_BUS_CARRIERS,
+    PYPSA_BUS_DEFAULTS,
     UNSET_BUS_LOCATION,
     PyPSABusCol,
     PyPSABusControl,
@@ -81,8 +82,8 @@ def _is_fuel_bus(record: BusExtension, electricity: set[str]) -> bool:
 
 
 # PyPSA's own nominal voltage and control, as a bus of a fuel has neither.
-_FUEL_BUS_V_NOM = 1.0
-_FUEL_BUS_CONTROL = PyPSABusControl.PQ
+_FUEL_BUS_V_NOM = float(PYPSA_BUS_DEFAULTS[PyPSABusCol.V_NOM])
+_FUEL_BUS_CONTROL = PyPSABusControl(str(PYPSA_BUS_DEFAULTS[PyPSABusCol.CONTROL]))
 
 
 def _build_fuel_bus_row(record: BusExtension) -> dict[str, Any]:
