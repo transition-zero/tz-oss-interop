@@ -96,9 +96,21 @@ def serialise_system_document(
 
 
 def serialise_portfolio_document(payload: dict[str, Any], indent: int) -> bytes:
-    """The portfolio document as the SDK writes it: validated, stamped, with its keys sorted."""
-    document = PortfolioDocument(**payload)
-    return _read_written(lambda target: write_portfolio_document(document, target, indent=indent))
+    """The portfolio document as the SDK writes it: validated, stamped, with its keys sorted.
+
+    The association rows do not follow the SDK model yet, as in the system document. They
+    join the document after the validation of the rest, and the warning that the SDK
+    serialiser raises for them is dropped.
+    """
+    associations = SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS
+    document = PortfolioDocument(**{**payload, associations: []}).model_copy(
+        update={associations: payload[associations]}
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return _read_written(
+            lambda target: write_portfolio_document(document, target, indent=indent)
+        )
 
 
 def _read_written(write: Callable[[Path], None]) -> bytes:
