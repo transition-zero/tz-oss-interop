@@ -422,7 +422,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "unit_size_mw" set to 5.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "p_nom_max" set to 2000.0
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth" set to 500.0
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth" set to {"2030": 500.0}
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "e_sum_max_horizon" set to 5000.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "capacity_to_activity_unit" set to 8760.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "production_share_max" set to {"ATELEC": 0.4}
@@ -431,7 +431,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "e_sum_min_horizon" set to 2000.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "capacity_factor_min" set to 0.3
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "production_share_min" set to {"ATELEC": 0.2}
-      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth_rate" set to 0.1
+      And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "max_growth_rate" set to {"2030": 0.1}
       And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATGASCC` = 8760.0 | `sienna.ThermalStandard.ATGASCC.extensions.capacity_to_activity_unit` = 8760.0 MWh/MW"
       And the log does not contain "capacity_to_activity_unit states"
       And the log does not contain "technology_activity_by_mode_upper_limit states"

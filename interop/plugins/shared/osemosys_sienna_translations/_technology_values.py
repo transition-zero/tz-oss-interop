@@ -34,6 +34,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
     VALUE_COL,
+    YEAR,
     TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
@@ -66,6 +67,7 @@ RATING_RATIO = "rating_ratio"
 
 _STATED_PREFIX = "stated."
 _ORIGIN_PREFIX = "origin."
+_YEAR_PREFIX = "year."
 _FROM_DEFAULT = "default"
 _FROM_FALLBACK = "fallback"
 _VALUE_SCALED = "value_scaled"
@@ -98,8 +100,9 @@ class TechnologyValue(NamedTuple):
     `detail` names a key column whose members key the field, which is then a dict. A value with a
     `fallback`, a parameter keyed by region, fills a member that states none with the default
     of its parameter, else with the fallback; a value with no fallback leaves the member empty.
-    A value of every year reads each year in scope rather than the operations year. A
-    `derivation` replaces the text that the scale gives the event.
+    A value of every year reads each year in scope rather than the operations year. A value
+    by year gives a field keyed by the operations year. A `derivation` replaces the text that
+    the scale gives the event.
     """
 
     parameter: str
@@ -110,6 +113,7 @@ class TechnologyValue(NamedTuple):
     detail: str | None = None
     fallback: str | None = None
     is_every_year: bool = False
+    is_by_year: bool = False
     derivation: str | None = None
 
     @property
@@ -123,6 +127,10 @@ class TechnologyValue(NamedTuple):
     @property
     def origin_column(self) -> str:
         return f"{_ORIGIN_PREFIX}{self.field}"
+
+    @property
+    def year_column(self) -> str:
+        return f"{_YEAR_PREFIX}{self.field}"
 
 
 @dataclass(frozen=True)
@@ -148,6 +156,7 @@ _GROWTH_VALUES = (
         Scale.CAPACITY,
         UNIT_MW,
         _STATED_VALUE != NO_LIMIT,
+        is_by_year=True,
     ),
     TechnologyValue(
         GrowthParameter.MIN_CAPACITY_INVESTMENT,
@@ -155,10 +164,25 @@ _GROWTH_VALUES = (
         Scale.CAPACITY,
         UNIT_MW,
         _STATED_VALUE > _NO_BOUND,
+        is_by_year=True,
     ),
-    TechnologyValue(GrowthParameter.MAX_GROWTH_RATE, "max_growth_rate", Scale.NONE, UNIT_PER_UNIT),
-    TechnologyValue(GrowthParameter.MIN_GROWTH_RATE, "min_growth_rate", Scale.NONE, UNIT_PER_UNIT),
-    TechnologyValue(GrowthParameter.MAX_FLOOR, "max_growth_floor", Scale.CAPACITY, UNIT_MW),
+    TechnologyValue(
+        GrowthParameter.MAX_GROWTH_RATE,
+        "max_growth_rate",
+        Scale.NONE,
+        UNIT_PER_UNIT,
+        is_by_year=True,
+    ),
+    TechnologyValue(
+        GrowthParameter.MIN_GROWTH_RATE,
+        "min_growth_rate",
+        Scale.NONE,
+        UNIT_PER_UNIT,
+        is_by_year=True,
+    ),
+    TechnologyValue(
+        GrowthParameter.MAX_FLOOR, "max_growth_floor", Scale.CAPACITY, UNIT_MW, is_by_year=True
+    ),
 )
 # The values of a technology that a portfolio candidate holds beside its yearly values.
 CANDIDATE_VALUES: tuple[TechnologyValue, ...] = (
@@ -321,7 +345,7 @@ def enrich_technology_values(
 
 def build_value_fields(row: dict[str, Any], values: Sequence[TechnologyValue]) -> dict[str, Any]:
     """The fields of a record that the values of one row fill, without the absent ones."""
-    fields = {value.field: _build_field(row[value.column], value) for value in values}
+    fields = {value.field: _build_field(row, value) for value in values}
     return {name: field for name, field in fields.items() if field is not None}
 
 
@@ -379,10 +403,18 @@ def _read_value(
         *keys,
         pl.col(VALUE_COL).alias(value.stated_column),
         pl.col(_VALUE_SCALED).alias(value.column),
+        *_select_year(value),
     )
     if value.fallback is None:
         return table
     return _fill_fallback(state, operations, members.select(keys), table, value)
+
+
+def _select_year(value: TechnologyValue) -> list[pl.Expr]:
+    """The year of a value by year, as an integer, so the field can key by it."""
+    if not value.is_by_year:
+        return []
+    return [pl.col(YEAR).cast(pl.Int64).alias(value.year_column)]
 
 
 def _read_rows(
@@ -474,9 +506,12 @@ def _build_energy_per_capacity(units: ModelUnits) -> Callable[[pl.Expr], pl.Expr
 # --- the record and the events -----------------------------------------------------------------
 
 
-def _build_field(cell: Any, value: TechnologyValue) -> Any:
+def _build_field(row: dict[str, Any], value: TechnologyValue) -> Any:
+    cell = row[value.column]
     if cell is None:
         return None
+    if value.is_by_year:
+        return {row[value.year_column]: cell}
     if value.detail is None:
         return cell
     return {entry[_DETAIL]: entry[_VALUE] for entry in cell} or None
@@ -529,7 +564,7 @@ def _choose_derivation(row: dict[str, Any], value: TechnologyValue) -> str:
 
 
 def _build_entry(row: dict[str, Any], value: TechnologyValue) -> dict[str, Any]:
-    return {_DETAIL: None, _STATED: row[value.stated_column], _VALUE: row[value.column]}
+    return {_DETAIL: None, _STATED: row[value.stated_column], _VALUE: _build_field(row, value)}
 
 
 def _build_attribute(value: TechnologyValue, detail: str | None) -> str:
