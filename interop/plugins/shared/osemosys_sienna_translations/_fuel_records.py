@@ -42,6 +42,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     InvestmentParameter,
     SupplyParameter,
 )
+from interop.plugins.shared.osemosys_sienna_translations._activity import CTAU
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
@@ -58,7 +59,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     ACTIVITY_MW,
     AVAILABILITY,
     COST_MWH,
-    CTAU,
     E_MAX_MWH,
     E_MIN_MWH,
     INPUTS,

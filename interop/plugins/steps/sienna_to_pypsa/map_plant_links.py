@@ -26,6 +26,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
     LINK_FURTHER_PORTS,
     LINKS_DESTINATION_SCHEMA,
+    LinkPort,
     PyPSABusCol,
     PyPSADestinationTable,
     PyPSAGeneratorCol,
@@ -169,14 +170,14 @@ class PlantLinkMapper:
             **{link: generator[column] for column, link in _KEPT_COLUMNS},
         }
         further = list(zip(fuels[1:], LINK_FURTHER_PORTS, strict=False))
-        for (bus, share), (bus_column, efficiency_column) in further:
-            row[bus_column] = bus
-            row[efficiency_column] = -share / ratio
+        for (bus, share), port in further:
+            row[port.bus] = bus
+            row[port.efficiency] = -share / ratio
         self._record_link(generator, row, [ports for _, ports in further])
         return row
 
     def _record_link(
-        self, generator: dict[str, Any], row: dict[str, Any], ports: list[tuple[str, str]]
+        self, generator: dict[str, Any], row: dict[str, Any], ports: list[LinkPort]
     ) -> None:
         name = row[PyPSALinkCol.NAME]
         self._reporter.record_link(name, row, generator[PyPSAGeneratorCol.P_NOM])
