@@ -4,7 +4,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
   becomes a RenewableDispatch row. RenewableDispatch is curtailable: it has no active_power_limits,
   ramp_limits, must_run, or fuel_type. Its rating is p_nom times the static p_max_pu, or times
   the peak of the p_max_pu series where one exists. A time-varying series becomes a
-  max_active_power time series, stored as a shape whose peak is 1.0. operation_cost is a
+  max_active_power time series, stored in MW: the series times p_nom. operation_cost is a
   RenewableGenerationCost.
 
   Scenario: solar generator translates to RenewableDispatch with renewable cost and rating
@@ -85,7 +85,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
       | offwind-dc    | WS          |
       | off-wind      | WS          |
 
-  Scenario: time-varying p_max_pu rates at the series peak and stores a peak-1.0 shape
+  Scenario: time-varying p_max_pu rates at the series peak and stores the series in MW
     Given a PyPSA network
     And the network has 3 snapshots at 60 minute intervals
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0

@@ -4,7 +4,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
   the system always accepts whatever is available. RenewableNonDispatch has no operation_cost
   field, no active_power_limits, and no reactive_power_limits; its ceiling is the rating
   (p_nom times the static p_max_pu, or times the peak of the p_max_pu series) and a
-  max_active_power time series stored as a peak-1.0 shape. A non-zero PyPSA marginal_cost has no
+  max_active_power time series stored in MW (the series times p_nom). A non-zero PyPSA marginal_cost has no
   Sienna home and is recorded as NOT_MAPPED (information lost).
 
   Scenario: solar-rooftop generator translates to RenewableNonDispatch with no cost field
@@ -55,7 +55,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Then the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "active_power" set to 40.0
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 40.0
 
-  Scenario: time-varying p_max_pu rates at the series peak and stores a peak-1.0 shape
+  Scenario: time-varying p_max_pu rates at the series peak and stores the series in MW
     Given a PyPSA network
     And the network has 3 snapshots at 60 minute intervals
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
