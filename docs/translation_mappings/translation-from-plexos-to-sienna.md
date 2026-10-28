@@ -207,9 +207,11 @@ connects nothing, so the translator leaves it out and records it.
 | --- | --- | --- | --- |
 | `name` | | `Line.name` | `direct` |
 | `arc` | | The `Arc` of `Node From` and `Node To` | `derived` |
-| `rating_from` | MW | `Max Flow` | `derived` |
-| `rating_to` | MW | `-Min Flow` where `Min Flow` is negative, else `0.0` | `derived` |
-| `rating` | MW | The larger of `rating_from` and `rating_to` | `derived` |
+| `operational_flow_limit.from_to_max` | MW | `Max Flow` | `derived` |
+| `operational_flow_limit.to_from_max` | MW | `-Min Flow` where `Min Flow` is negative, else `0.0` | `derived` |
+| `operational_flow_limit.from_to_min` / `.to_from_min` | MW | `0.0` | `default` |
+| `rating` | MW | The larger of `from_to_max` and `to_from_max` | `derived` |
+| `rating_from` / `rating_to` | | not written, because PLEXOS states no converter rating | `dropped` |
 | `reactive_power_limits_from` / `_to` | MVAR | `(0.0, 0.0)` | `default` |
 | `loss` | | A `LossCurve` with a zero-loss curve, so the line has no loss | `default` |
 | `available` | | `True` | `default` |
