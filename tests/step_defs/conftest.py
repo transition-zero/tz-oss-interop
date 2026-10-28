@@ -208,6 +208,15 @@ def assert_prompt_offered_default(message: str, value: str) -> None:
     assert value in defaults, f"prompt {message!r} defaults were {defaults}, expected {value!r}"
 
 
+@then(parsers.parse('the prompt "{message}" offered the path "{value}" as its default'))
+def assert_prompt_offered_path(message: str, value: str) -> None:
+    """A path default matches by its parts, so a separator of the host does not count."""
+    defaults = [d for m, d in _recorded_prompt_defaults if m.startswith(message)]
+    assert any(d and Path(d) == Path(value) for d in defaults), (
+        f"prompt {message!r} defaults were {defaults}, expected the path {value!r}"
+    )
+
+
 @then(parsers.parse('the prompt "{message}" was asked'))
 def assert_prompt_asked(message: str) -> None:
     asked = [prompt for prompt, _default in _recorded_prompt_defaults]
