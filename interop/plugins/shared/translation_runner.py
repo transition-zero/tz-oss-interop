@@ -3,6 +3,7 @@
 A filter step can be broken down as:
 1. Filtering source components with ``filter_component`` to select components by a condition,
     emit COMPONENT_SKIPPED events for the rest, and warn once naming a few of them.
+    ``report_not_mapped`` does the same for rows whose component survives, with NOT_MAPPED.
 2. One or more sequences of ``Translation``, each applied by ``apply_translations`` to create
     new columns and emit the corresponding DEFAULT_APPLIED or VALUE_DERIVED events.
 3. ``finalise`` to select only the appropriate destination columns from the table, and
@@ -331,8 +332,11 @@ def report_not_mapped(
     report: SkipReport,
     recorder: ScopedRecorder,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    """Split table into (kept, not_mapped), record NOT_MAPPED for each row that the condition
-    does not keep, and warn once for the lot."""
+    """Split table into (kept, not_mapped), record each row not mapped, and warn once for the lot.
+
+    The twin of ``filter_component`` for a row whose component survives: each row the
+    condition does not keep takes a ``NOT_MAPPED`` event rather than ``COMPONENT_SKIPPED``.
+    """
     keep = condition.fill_null(False)  # noqa: FBT003
     kept = table.filter(keep)
     not_mapped = table.filter(~keep)
