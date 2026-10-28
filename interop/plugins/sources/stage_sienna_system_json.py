@@ -12,10 +12,12 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_SOURCE_AREAS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
     Hdf5TimeSeriesStore,
     SiennaACBusCol,
     SiennaArcCol,
+    SiennaAreaCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
@@ -111,11 +113,17 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     components = system.get(SiennaSchemasSystem.COMPONENTS, {})
 
     area_name_by_id = {
-        area[SiennaACBusCol.ID]: area[SiennaACBusCol.NAME]
+        area[SiennaAreaCol.ID]: area[SiennaAreaCol.NAME]
         for area in components.get(SiennaComponent.AREA, [])
     }
 
     frames: dict[str, pl.LazyFrame] = {}
+    area_rows = [
+        {SiennaAreaCol.ID: area_id, SiennaAreaCol.NAME: area_name}
+        for area_id, area_name in area_name_by_id.items()
+    ]
+    _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
+
     bus_rows = [_bus_row(c, area_name_by_id) for c in components.get(SiennaComponent.AC_BUS, [])]
     _stage_table(bus_rows, SIENNA_SOURCE_BUSES_SCHEMA, SiennaTable.BUSES, staging_dir, frames)
 

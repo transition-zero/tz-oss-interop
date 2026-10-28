@@ -129,6 +129,15 @@ def assert_select_offered_default(message: str, value: str) -> None:
     assert value in defaults, f"select {message!r} defaults were {defaults}, expected {value!r}"
 
 
+@then(parsers.parse('the select prompt "{message}" offered no default'))
+def assert_select_offered_no_default(message: str) -> None:
+    defaults = [record["default"] for record in _recorded_selects if record["message"] == message]
+    assert defaults, f"select {message!r} was never asked; asked: {_recorded_selects}"
+    assert all(default is None for default in defaults), (
+        f"select {message!r} defaults were {defaults}, expected none"
+    )
+
+
 @then(parsers.parse('the select prompt "{message}" offered exactly "{choices}"'))
 def assert_select_offered_exactly(message: str, choices: str) -> None:
     expected = [choice.strip() for choice in choices.split(",")]
@@ -197,6 +206,23 @@ def prompt_defaults() -> Iterator[list[tuple[str, str]]]:
 def assert_prompt_offered_default(message: str, value: str) -> None:
     defaults = [d for m, d in _recorded_prompt_defaults if m.startswith(message)]
     assert value in defaults, f"prompt {message!r} defaults were {defaults}, expected {value!r}"
+
+
+@then(parsers.parse('the prompt "{message}" offered the path "{value}" as its default'))
+def assert_prompt_offered_path(message: str, value: str) -> None:
+    """A path default matches by its parts, so a separator of the host does not count."""
+    defaults = [d for m, d in _recorded_prompt_defaults if m.startswith(message)]
+    assert any(d and Path(d) == Path(value) for d in defaults), (
+        f"prompt {message!r} defaults were {defaults}, expected the path {value!r}"
+    )
+
+
+@then(parsers.parse('the prompt "{message}" was asked'))
+def assert_prompt_asked(message: str) -> None:
+    asked = [prompt for prompt, _default in _recorded_prompt_defaults]
+    assert any(prompt.startswith(message) for prompt in asked), (
+        f"no prompt starts with {message!r}; asked: {asked}"
+    )
 
 
 def _stub_questionary_text_by_prompt(
@@ -325,6 +351,7 @@ STANDARD_PRIME_MOVER_MAP: dict[str, tuple[str, str]] = {
     "solar-rooftop": ("RenewableNonDispatch", "PVe"),
     "hydro": ("HydroDispatch", "HY"),
     "PHS": ("EnergyReservoirStorage", "PS"),
+    "li-ion": ("EnergyReservoirStorage", "BA"),
 }
 
 
@@ -404,45 +431,8 @@ def invoke_validate(
     _dispatch(Command.VALIDATE, make_container())
 
 
-def invoke_solve(
-    monkeypatch: pytest.MonkeyPatch,
-    sienna_json_path: str,
-    network_model: str,
-    output_dir: str = "solved",
-    model_type: str = "sienna",
-    download_consent: bool = True,
-    unit_commitment: str = "exact",
-    solver: str = "simplex",
-    presolve: str = "choose",
-    run_crossover: str = "choose",
-    time_limit_seconds: str = "",
-) -> None:
-    """Stub every solve prompt (selects, download consent, paths, text), then dispatch solve."""
-    stub_questionary_attr(monkeypatch, "path", iter([sienna_json_path, output_dir]))
-    stub_questionary_attr(
-        monkeypatch,
-        "select",
-        iter([model_type, network_model, unit_commitment, solver, presolve, run_crossover]),
-    )
-    stub_questionary_attr(monkeypatch, "confirm", iter([download_consent]))
-    stub_questionary_attr(monkeypatch, "text", iter([time_limit_seconds]))
-    _dispatch(Command.SOLVE, make_container())
-
-
-def invoke_solve_pypsa(
-    monkeypatch: pytest.MonkeyPatch,
-    network_path: str,
-    output_dir: str,
-    start: str = "",
-    end: str = "",
-    unit_commitment: str = "exact",
-    window: str = "month",
-    look_ahead_days: str = "",
-) -> None:
-    """Stub the pypsa solve prompts (model type, paths, dates, UC, window), then dispatch."""
-    stub_questionary_attr(monkeypatch, "select", iter(["pypsa", unit_commitment, window]))
-    stub_questionary_attr(monkeypatch, "path", iter([network_path, output_dir]))
-    stub_questionary_attr(monkeypatch, "text", iter([start, end, look_ahead_days]))
+def dispatch_solve() -> None:
+    """Run the solve command once, answering each prompt from the stubs already in place."""
     _dispatch(Command.SOLVE, make_container())
 
 
@@ -493,12 +483,15 @@ def invoke_compare_run(
     framework_a: str,
     framework_b: str,
     path_answers: dict[str, str],
+    text_answers: Mapping[str, str] | None = None,
 ) -> None:
     """Run compare from the REPL main menu, recording prompt defaults."""
     stub_questionary_attr(
         monkeypatch, "select", iter([Command.COMPARE, framework_a, framework_b, Command.QUIT])
     )
     _stub_questionary_path_by_prompt(monkeypatch, path_answers)
+    if text_answers is not None:
+        _stub_questionary_text_by_prompt(monkeypatch, text_answers)
     run(make_container())
 
 
@@ -704,11 +697,6 @@ def assert_written_into_project_once(caplog: pytest.LogCaptureFixture, filename:
     )
 
 
-@given(parsers.parse('adapters.yaml binds solver to "{name}"'))
-def given_solver_binding(name: str) -> None:
-    write_adapters_config(f"bindings:\n  solver: {name}\nadapters: {{}}\n")
-
-
 @given(parsers.parse('I have run init at "{target}"'))
 def given_have_run_init(target: str) -> None:
     with make_container()() as scope:
@@ -790,143 +778,6 @@ def run_interop_with_argv(
 @then(parsers.parse("the headless exit code is {code:d}"))
 def assert_headless_exit_code(headless_exit_code: int, code: int) -> None:
     assert headless_exit_code == code, f"expected exit code {code}, got {headless_exit_code}"
-
-
-@when(
-    parsers.parse('I run solve on "{network_path}" from "{start}" to "{end}" into "{output_dir}"')
-)
-def run_solve_pypsa(
-    monkeypatch: pytest.MonkeyPatch, network_path: str, start: str, end: str, output_dir: str
-) -> None:
-    invoke_solve_pypsa(monkeypatch, network_path, output_dir, start, end)
-
-
-@when(
-    parsers.parse(
-        'I run solve on "{network_path}" from "{start}" to "{end}" in "{window}" windows '
-        'with a {look_ahead_days:d} day look-ahead into "{output_dir}"'
-    )
-)
-def run_solve_pypsa_in_windows(
-    monkeypatch: pytest.MonkeyPatch,
-    network_path: str,
-    start: str,
-    end: str,
-    window: str,
-    look_ahead_days: int,
-    output_dir: str,
-) -> None:
-    invoke_solve_pypsa(
-        monkeypatch,
-        network_path,
-        output_dir,
-        start,
-        end,
-        window=window,
-        look_ahead_days=str(look_ahead_days),
-    )
-
-
-@when(parsers.parse('I run solve on "{network_path}" from "{start}" onward into "{output_dir}"'))
-def run_solve_pypsa_onward(
-    monkeypatch: pytest.MonkeyPatch, network_path: str, start: str, output_dir: str
-) -> None:
-    invoke_solve_pypsa(monkeypatch, network_path, output_dir, start, end="")
-
-
-@when(
-    parsers.parse(
-        'I run solve on "{network_path}" from "{start}" to "{end}" '
-        'with unit commitment "{unit_commitment}" into "{output_dir}"'
-    )
-)
-def run_solve_pypsa_with_unit_commitment(
-    monkeypatch: pytest.MonkeyPatch,
-    network_path: str,
-    start: str,
-    end: str,
-    unit_commitment: str,
-    output_dir: str,
-) -> None:
-    invoke_solve_pypsa(
-        monkeypatch, network_path, output_dir, start, end, unit_commitment=unit_commitment
-    )
-
-
-@then(parsers.parse('the solved network "{path}" has dispatch for {count:d} snapshots'))
-def assert_solved_network_has_dispatch(path: str, count: int) -> None:
-    import pypsa
-
-    network = pypsa.Network(path)
-    dispatched = int((network.generators_t["p"] != 0).any(axis=1).sum())
-    assert dispatched == count, f"expected dispatch for {count} snapshots, got {dispatched}"
-
-
-@then(parsers.parse('the solved network "{path}" has generator "{name}" dispatch {values}'))
-def assert_solved_network_generator_dispatch(path: str, name: str, values: str) -> None:
-    import pypsa
-
-    network = pypsa.Network(path)
-    expected = [float(v) for v in values.split()]
-    actual = [float(v) for v in network.generators_t["p"][name]]
-    assert len(actual) == len(expected), (
-        f"expected {len(expected)} dispatch values for {name!r}, got {len(actual)}: {actual}"
-    )
-    paired = enumerate(zip(actual, expected, strict=True))
-    mismatches = [(i, a, e) for i, (a, e) in paired if abs(a - e) > 1e-6]
-    assert not mismatches, (
-        f"generator {name!r} dispatch mismatch at {mismatches}; expected {expected}, got {actual}"
-    )
-
-
-@then(parsers.parse('the solved network "{path}" has no dispatch on "{day}"'))
-def assert_no_dispatch_on(path: str, day: str) -> None:
-    import pandas as pd
-    import pypsa
-
-    network = pypsa.Network(path)
-    dispatch = network.generators_t.p
-    on_day = dispatch[dispatch.index.normalize() == pd.Timestamp(day)]
-    assert (on_day == 0).all(axis=None), f"expected no dispatch on {day} in {path}; found {on_day}"
-
-
-@then(parsers.parse('the solved network "{path}" has no bus price on "{day}"'))
-def assert_no_bus_price_on(path: str, day: str) -> None:
-    import pandas as pd
-    import pypsa
-
-    network = pypsa.Network(path)
-    price = network.buses_t.marginal_price
-    on_day = price[price.index.normalize() == pd.Timestamp(day)]
-    assert (on_day == 0).all(axis=None), f"expected no bus price on {day} in {path}; found {on_day}"
-
-
-@then(parsers.parse('the solved network "{path}" marks "{day}" as reported'))
-def assert_day_marked_reported(path: str, day: str) -> None:
-    import pandas as pd
-    import pypsa
-
-    network = pypsa.Network(path)
-    reported = pd.DatetimeIndex(network.meta.get("reported_snapshots", []))
-    on_day = reported[reported.normalize() == pd.Timestamp(day)]
-    assert not on_day.empty, f"expected {day} marked reported in {path}; reported={list(reported)}"
-
-
-@then(parsers.parse('the solved network "{path}" marks "{day}" as not reported'))
-def assert_day_not_marked_reported(path: str, day: str) -> None:
-    import pandas as pd
-    import pypsa
-
-    network = pypsa.Network(path)
-    reported = pd.DatetimeIndex(network.meta.get("reported_snapshots", []))
-    on_day = reported[reported.normalize() == pd.Timestamp(day)]
-    assert on_day.empty, f"expected {day} not marked reported in {path}; found {list(on_day)}"
-
-
-@then("the solve reported success")
-def assert_solve_reported_success(printed_messages: list[str]) -> None:
-    combined = "\n".join(printed_messages)
-    assert "[OK]" in combined, f"expected a successful solve summary, got: {combined!r}"
 
 
 PLEXOS_MAPPINGS_PATH = "user_mappings.yaml"

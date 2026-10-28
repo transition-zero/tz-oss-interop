@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Generic, TypeVar
 
 from dishka import Container, Provider, Scope, provide
 from dishka import make_container as _make_container
@@ -26,7 +28,7 @@ from interop.core.reporting import MultiReport
 from interop.core.use_cases.compare import CompareUsingPort
 from interop.core.use_cases.init_project import InitializeProjectDirectory
 from interop.core.use_cases.pipeline_catalog import PipelineCatalog
-from interop.core.use_cases.solve import SolveUsingPort
+from interop.core.use_cases.solve import SolvePorts, SolveUsingPort
 from interop.core.use_cases.translate import (
     LegFactories,
     RunFilesystems,
@@ -54,14 +56,52 @@ from interop.ports.inbound.solve import SolveUseCase
 from interop.ports.inbound.translate import TranslateUseCase
 from interop.ports.inbound.validate import ValidateUseCase
 from interop.ports.outbound.comparison_report import ComparisonReportPort
+from interop.ports.outbound.expansion import ExpansionPort
 from interop.ports.outbound.filesystem import FilesystemPort
 from interop.ports.outbound.network_solver import NetworkSolverPort
 from interop.ports.outbound.reporting import ReportingPort
 from interop.ports.outbound.solver import SolverPort
 from interop.ports.outbound.validation_report import ValidationReportPort
 
-# The default `filesystem` binding when adapters.yaml names none.
-_LOCAL_FILESYSTEM = "local_filesystem"
+PortT = TypeVar("PortT")
+
+
+@dataclass(frozen=True)
+class _PortBinding(Generic[PortT]):
+    """A port that adapters.yaml binds, its key there, and the adapter it binds by default."""
+
+    port: type[PortT]
+    key: str
+    default: str
+
+
+# mypy flags a Protocol passed as a type as abstract; the registry looks adapters up by it.
+_FILESYSTEM_BINDING = _PortBinding(
+    FilesystemPort,  # type: ignore[type-abstract]
+    key="filesystem",
+    default="local_filesystem",
+)
+_SOLVER_BINDING = _PortBinding(
+    SolverPort,  # type: ignore[type-abstract]
+    key="solver",
+    default="julia_solver",
+)
+_EXPANSION_BINDING = _PortBinding(
+    ExpansionPort,  # type: ignore[type-abstract]
+    key="expansion",
+    default="julia_expansion",
+)
+
+
+def _build_bound_adapter(
+    registry: Registry, adapters_config: AdaptersConfig, binding: _PortBinding[PortT]
+) -> PortT:
+    """The adapter adapters.yaml binds to the port, or the default where it binds none."""
+    name = adapters_config.bindings.get(binding.key, binding.default)
+    bucket = registry.adapter_bucket(binding.port)
+    if name not in bucket:
+        raise UnknownAdapterBindingError(binding.port, binding.key, name, list(bucket))
+    return make_adapter_factory(registry, binding.port, adapters_config.adapter_configs)(name)
 
 
 class PluginProvider(Provider):
@@ -82,16 +122,7 @@ class PluginProvider(Provider):
 
     @provide
     def filesystem(self, registry: Registry, adapters_config: AdaptersConfig) -> FilesystemPort:
-        binding_key = "filesystem"
-        name = adapters_config.bindings.get(binding_key, _LOCAL_FILESYSTEM)
-        bucket = registry.adapter_bucket(FilesystemPort)
-        if name not in bucket:
-            raise UnknownAdapterBindingError(FilesystemPort, binding_key, name, list(bucket))
-        return make_adapter_factory(
-            registry,
-            FilesystemPort,  # type: ignore[type-abstract]
-            adapters_config.adapter_configs,
-        )(name)
+        return _build_bound_adapter(registry, adapters_config, _FILESYSTEM_BINDING)
 
     @provide
     def source_factory_builder(self, registry: Registry) -> SourceFactoryBuilder:
@@ -253,16 +284,7 @@ class PluginProvider(Provider):
 
     @provide
     def solver(self, registry: Registry, adapters_config: AdaptersConfig) -> SolverPort:
-        binding_key = "solver"
-        name = adapters_config.bindings.get(binding_key, "julia_solver")
-        bucket = registry.adapter_bucket(SolverPort)
-        if name not in bucket:
-            raise UnknownAdapterBindingError(SolverPort, binding_key, name, list(bucket))
-        return make_adapter_factory(
-            registry,
-            SolverPort,  # type: ignore[type-abstract]
-            adapters_config.adapter_configs,
-        )(name)
+        return _build_bound_adapter(registry, adapters_config, _SOLVER_BINDING)
 
     @provide
     def network_solver(self) -> NetworkSolverPort:
@@ -271,8 +293,17 @@ class PluginProvider(Provider):
         return HighsNetworkSolver()
 
     @provide
-    def solve_use_case(self, solver: SolverPort, network_solver: NetworkSolverPort) -> SolveUseCase:
-        return SolveUsingPort(solver, network_solver)
+    def expansion(self, registry: Registry, adapters_config: AdaptersConfig) -> ExpansionPort:
+        return _build_bound_adapter(registry, adapters_config, _EXPANSION_BINDING)
+
+    @provide
+    def solve_use_case(
+        self,
+        solver: SolverPort,
+        network_solver: NetworkSolverPort,
+        expansion: ExpansionPort,
+    ) -> SolveUseCase:
+        return SolveUsingPort(SolvePorts(solver, network_solver, expansion))
 
     @provide
     def comparison_report(self, fs: FilesystemPort) -> ComparisonReportPort:

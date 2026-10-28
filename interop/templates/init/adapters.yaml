@@ -10,6 +10,7 @@
 #                 csv_report
 #                 noop_report
 #   solver     -> julia_solver      (default)
+#   expansion  -> julia_expansion   (default)
 # Custom adapters under plugins/adapters/ register their `name` here too.
 #
 # Example (uncomment to use these settings):
@@ -32,6 +33,8 @@
 #   julia_solver.powersystems_jl_path              (Path or None; default None = registry release)
 #   julia_solver.powersimulations_jl_path          (Path or None; default None = registry release)
 #   julia_solver.hydropowersimulations_jl_path     (Path or None; default None = registry release)
+#   julia_expansion.powersystemsinvestments_jl_path            (Path or None; default None = pinned revision)
+#   julia_expansion.powersystemsinvestmentsportfolios_jl_path  (Path or None; default None = pinned revision)
 #
 # Example (uncomment to use these settings):
 # adapters:

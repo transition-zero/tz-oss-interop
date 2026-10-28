@@ -22,6 +22,8 @@ from interop.core.extensions import (
 )
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     PORTFOLIO_ID_NOTE,
     InvestmentsSource,
 )
@@ -99,6 +101,8 @@ def constraint_source(framework: Framework, pipeline: str) -> InvestmentsSource:
         component=ExtensionKind.CONSTRAINT,
         display=ExtensionKind.CONSTRAINT,
         plural=CONSTRAINT_PLURAL,
+        retirement_derivation=NO_RETIREMENT_DERIVATION,
+        retirement_cost_note=NO_RETIREMENT_COST_NOTE,
     )
 
 

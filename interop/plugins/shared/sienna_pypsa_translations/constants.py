@@ -30,12 +30,6 @@ DEFAULT_STORAGE_EFFICIENCY: float = 1.0
 """HydroDispatch carries no round-trip efficiency, so the PyPSA StorageUnit
 efficiency_store / efficiency_dispatch fall back to unity. Recorded as lossy."""
 
-TIME_AT_STATUS_SENTINEL: float = 10000.0
-"""``time_at_status`` the forward direction writes when ``up_time_before`` is unset (0).
-The reverse reads this sentinel back as ``up_time_before = 0``. A genuine status duration
-of exactly this many hours is indistinguishable from the sentinel; this is accepted, as
-417 days of prior on-time is not a value a real PyPSA network carries."""
-
 
 # Inverse of the forward carrier table. Several PyPSA carriers share a (prime_mover, fuel)
 # pair (e.g. coal and lignite are both ST/COAL); the reverse derives the canonical carrier

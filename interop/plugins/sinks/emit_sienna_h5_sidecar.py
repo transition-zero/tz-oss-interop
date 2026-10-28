@@ -65,9 +65,17 @@ class EmitSiennaH5Sidecar(Sink):
         stages every replication in one frame and names the one it is writing, because an
         association row declares the length of one replication's series, not of all of them.
         """
+        associations = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
+        EmitSiennaH5Sidecar.write_associated_h5(state, associations, f, sample)
+
+    @staticmethod
+    def write_associated_h5(
+        state: State, associations: pl.DataFrame | None, f: IO[bytes], sample: str | None = None
+    ) -> None:
+        """Write each series that a row of `associations` names, from the staged series."""
         with h5py.File(f, "w") as hf:
             ts_root = _create_time_series_root(hf)
-            for source_key, rows in _rows_by_source_key(state).items():
+            for source_key, rows in _rows_by_source_key(associations).items():
                 _write_source_key(ts_root, rows, _staged_series(state, source_key), sample)
 
 
@@ -103,7 +111,9 @@ def _create_time_series_root(hf: h5py.File) -> h5py.Group:
     return ts_root
 
 
-def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def _rows_by_source_key(
+    associations: pl.DataFrame | None,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """The association rows a run writes, gathered under the staged series each one reads.
 
     One series is collected and held at a time, so a system with many source keys never has
@@ -111,16 +121,15 @@ def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, An
     """
     col = SiennaTimeSeriesAssociationCol
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for row in _association_rows(state):
+    for row in _association_rows(associations):
         grouped.setdefault((row[col.SOURCE_TABLE], row[col.SOURCE_ATTRIBUTE]), []).append(row)
     return grouped
 
 
-def _association_rows(state: State) -> list[dict[str, Any]]:
-    assoc_df = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
-    if assoc_df is None or len(assoc_df) == 0:
+def _association_rows(associations: pl.DataFrame | None) -> list[dict[str, Any]]:
+    if associations is None or len(associations) == 0:
         return []
-    return list(assoc_df.iter_rows(named=True))
+    return list(associations.iter_rows(named=True))
 
 
 def _write_series_groups(

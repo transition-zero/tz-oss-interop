@@ -157,3 +157,16 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
       | {"bus": [{"name": "bus_GHOST", "value_of_lost_load": 9000.0}]} |
     When I run translate against "inputs/unread_record.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "decisions.md" contains "| `pypsa.bus.bus_GHOST` |  |  | no mapping in this translation reads this extension record, so it is dropped rather than carried into the next sidecar | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+
+  Scenario: the records no mapping reads are named in one warning
+    Each record that no mapping reads is dropped, so the console says so as well as the
+    report. The warning names three records and counts the rest. The fifth record is the
+    network record that the source stages, which this leg does not read either.
+    Given a PyPSA network
+    And the network contains bus "bus_AL" carrier "AC" v_nom 380.0
+    And the network is saved as "inputs/unread_records.nc"
+    And a file "inputs/extensions.json" containing the lines:
+      | line |
+      | {"bus": [{"name": "bus_G1"}, {"name": "bus_G2"}, {"name": "bus_G3"}, {"name": "bus_G4"}]} |
+    When I run translate against "inputs/unread_records.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the log contains "5 extension record(s) reach no mapping, so each is dropped: bus bus_G1, bus bus_G2, bus bus_G3 and 2 more"

@@ -5,14 +5,18 @@ from __future__ import annotations
 from enum import StrEnum
 
 from interop.core.results_format import RESULTS_FRAMEWORK
+from interop.plugins.shared.osemosys_canonical.constants import OSEMOSYS_FRAMEWORK
 
 
 class Framework(StrEnum):
     PYPSA = "pypsa"
     SIENNA = "sienna"
     PLEXOS = "plexos"
+    OSEMOSYS = OSEMOSYS_FRAMEWORK
     POWER_SIMULATIONS = "power-simulations"
+    POWER_SYSTEMS_INVESTMENTS = "power-systems-investments"
     CAISO_PLEXOS = "caiso-plexos"
+    AETOS = "aetos"
     RESULTS = RESULTS_FRAMEWORK
 
 
@@ -38,6 +42,17 @@ A real sample label is always a digit string, so this never collides with one.
 """
 
 
+HOURS_PER_YEAR = 8760.0
+"""The hours of a year that is not a leap year."""
+MINUTES_PER_HOUR = 60.0
+SECONDS_PER_HOUR = 3600.0
+
+UNSCALED = 1.0
+"""The multiplier of a value that a reader takes as it is stated."""
+
+# How an event names a field that a record of extensions.json holds: `extensions.<field>`.
+EXTENSIONS_PREFIX = "extensions."
+
 UNIT_KV = "kV"
 UNIT_MW = "MW"
 UNIT_MWH = "MWh"
@@ -49,6 +64,7 @@ UNIT_KM = "km"
 UNIT_MW_PER_MINUTE = "MW/min"
 UNIT_PER_UNIT_PER_HOUR = "pu/h"
 UNIT_HOURS = "h"
+UNIT_MINUTES = "min"
 UNIT_PERCENT = "%"
 UNIT_SNAPSHOTS = "snapshots"
 UNIT_DOLLARS = "$"
@@ -58,9 +74,14 @@ UNIT_DOLLARS_PER_MW_YEAR = "$/MW/yr"
 UNIT_YEARS = "yr"
 UNIT_DOLLARS_PER_GJ = "$/GJ"
 UNIT_DOLLARS_PER_TONNE = "$/tonne"
+UNIT_TONNES_PER_MWH = "t/MWh"
+UNIT_TONNES = "t"
+UNIT_MEGATONNES = "Mt"
 UNIT_GJ = "GJ"
 UNIT_GJ_PER_MWH = "GJ/MWh"
 UNIT_GJ_PER_HOUR = "GJ/h"
 UNIT_MWH = "MWh"
 UNIT_PERCENT = "%"
 UNIT_KG_PER_GJ = "kg/GJ"
+UNIT_MWH_PER_MW = "MWh/MW"
+UNIT_PER_UNIT = "pu"

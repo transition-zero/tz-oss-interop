@@ -96,9 +96,21 @@ def serialise_system_document(
 
 
 def serialise_portfolio_document(payload: dict[str, Any], indent: int) -> bytes:
-    """The portfolio document as the SDK writes it: validated, stamped, with its keys sorted."""
-    document = PortfolioDocument(**payload)
-    return _read_written(lambda target: write_portfolio_document(document, target, indent=indent))
+    """The portfolio document as the SDK writes it: validated, stamped, with its keys sorted.
+
+    The association rows do not follow the SDK model yet, as in the system document. They
+    join the document after the validation of the rest, and the warning that the SDK
+    serialiser raises for them is dropped.
+    """
+    associations = SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS
+    document = PortfolioDocument(**{**payload, associations: []}).model_copy(
+        update={associations: payload[associations]}
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        return _read_written(
+            lambda target: write_portfolio_document(document, target, indent=indent)
+        )
 
 
 def _read_written(write: Callable[[Path], None]) -> bytes:
@@ -111,3 +123,18 @@ def _read_written(write: Callable[[Path], None]) -> bytes:
         target = Path(directory) / _SCRATCH_FILENAME
         write(target)
         return target.read_bytes()
+
+
+def drop_absent_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """The fields a row actually holds, at every depth of a nested struct.
+
+    A field no table wrote is absent rather than null, so the schema's own default applies
+    to it rather than a null a consumer would have to read as one. A cost struct carries
+    every variant's fields, so this is also what leaves a renewable technology's cost
+    without the two a thermal one alone states.
+    """
+    return {
+        key: drop_absent_fields(value) if isinstance(value, dict) else value
+        for key, value in row.items()
+        if value is not None
+    }

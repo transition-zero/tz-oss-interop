@@ -34,10 +34,13 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     FOM_CHARGE_COL,
     FUEL_COL,
     LOAD_TYPE_COL,
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     PLEXOS_TO_SIENNA_INVESTMENTS,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
     REGION_COL,
+    SIDECAR_RETIREMENT_DERIVATION,
     TECHNICAL_LIFE_COL,
     UNIT_SIZE_COL,
     InvestmentsSource,
@@ -59,6 +62,12 @@ _EXPANSION_NAMES: dict[str, str] = {
 }
 
 
+_SIDECAR_RETIREMENT_COST_NOTE = (
+    "RetirementPotential requires a retirement cost and the extensions sidecar states none, so "
+    "retiring a device costs nothing"
+)
+
+
 def sidecar_source(kind: ExtensionKind, plural: str) -> InvestmentsSource:
     """One kind of sidecar record, as the report names it."""
     return InvestmentsSource(
@@ -67,6 +76,8 @@ def sidecar_source(kind: ExtensionKind, plural: str) -> InvestmentsSource:
         component=kind,
         display=kind,
         plural=plural,
+        retirement_derivation=SIDECAR_RETIREMENT_DERIVATION,
+        retirement_cost_note=_SIDECAR_RETIREMENT_COST_NOTE,
         attribute_names=_EXPANSION_NAMES,
     )
 
@@ -79,6 +90,8 @@ def component_source(component: SiennaComponent, plural: str) -> InvestmentsSour
         component=component,
         display=component,
         plural=plural,
+        retirement_derivation=NO_RETIREMENT_DERIVATION,
+        retirement_cost_note=NO_RETIREMENT_COST_NOTE,
     )
 
 

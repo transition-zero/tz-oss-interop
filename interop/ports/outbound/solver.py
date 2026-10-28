@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import ClassVar, Protocol, runtime_checkable
+from typing import ClassVar, NamedTuple, Protocol, runtime_checkable
 
 from interop.ports.outbound.unit_commitment import UnitCommitmentTreatment
 
@@ -25,6 +26,53 @@ class HiGHSCrossover(StrEnum):
     CHOOSE = "choose"  # HiGHS decides automatically based on problem characteristics
 
 
+@dataclass(frozen=True)
+class HiGHSOptions:
+    """How HiGHS runs, which a dispatch and an expansion state alike.
+
+    ``time_limit_seconds`` is None where the solve runs with no limit.
+    """
+
+    solver: HiGHSSolver = HiGHSSolver.SIMPLEX
+    presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE
+    run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE
+    time_limit_seconds: float | None = None
+
+
+class UnservedEnergy(StrEnum):
+    """What a dispatch does with an hour in which a location cannot meet its load."""
+
+    REFUSED = "refused"  # every load is met, so one short hour makes the solve infeasible
+    PENALISED = "penalised"  # a network balance slack covers the shortfall at a penalty cost
+
+
+class EnergyHours(StrEnum):
+    """Which hours an energy total counts."""
+
+    WEIGHTED = "weighted"  # each snapshot for the hours that its weighting states
+    MODELLED = "modelled"  # each modelled hour once, with no weight for what it stands for
+
+
+ENERGY_HOURS_QUALIFIERS: dict[EnergyHours, str] = {
+    EnergyHours.WEIGHTED: "",
+    EnergyHours.MODELLED: " in the modelled hours only",
+}
+"""What a message adds after an energy total to say which hours the total counts."""
+
+
+class DispatchOutcome(NamedTuple):
+    """What one dispatch solve reports.
+
+    ``unserved_energy_mwh`` counts each modelled hour once, with no weight for the hours that
+    a representative period stands for. It is None where the solve allows no unserved energy,
+    or where the adapter cannot read it.
+    """
+
+    status: str
+    objective: float
+    unserved_energy_mwh: float | None = None
+
+
 @runtime_checkable
 class SolverPort(Protocol):
     name: ClassVar[str]
@@ -43,14 +91,12 @@ class SolverPort(Protocol):
         network_model: str,
         output_dir: Path | None = None,
         *,
+        highs: HiGHSOptions,
         unit_commitment: UnitCommitmentTreatment = UnitCommitmentTreatment.EXACT,
-        solver: HiGHSSolver = HiGHSSolver.SIMPLEX,
-        presolve: HiGHSPresolve = HiGHSPresolve.CHOOSE,
-        run_crossover: HiGHSCrossover = HiGHSCrossover.CHOOSE,
-        time_limit_seconds: float | None = None,
-    ) -> tuple[str, float]:
+        unserved_energy: UnservedEnergy = UnservedEnergy.REFUSED,
+    ) -> DispatchOutcome:
         """Run the solver on the Sienna JSON at sienna_json_path.
 
-        Returns (run_status_string, objective_value).  The caller interprets
-        a status containing "SUCCESSFULLY" as success.
+        ``unserved_energy`` chooses whether a load can go unserved at a penalty, or must be met.
+        The caller interprets a status containing "SUCCESSFULLY" as success.
         """

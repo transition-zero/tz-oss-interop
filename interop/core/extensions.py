@@ -19,17 +19,37 @@ only conversions are at the file edge, where the document is written and read ba
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+import logging
+from collections import Counter
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Generic, Literal, NamedTuple, TypeAlias, TypeVar, overload
+from typing import Any, Generic, Literal, NamedTuple, Self, TypeAlias, TypeVar, get_args, overload
 
 import polars as pl
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
+from interop.core.extension_records import ByBus as ByBus
+from interop.core.extension_records import ByFuel as ByFuel
+from interop.core.extension_records import ByPollutant as ByPollutant
+from interop.core.extension_records import ByYear as ByYear
+from interop.core.extension_records import ExpansionExtension as ExpansionExtension
+from interop.core.extension_records import ExtensionRecord as ExtensionRecord
+from interop.core.extension_records import FlagByYear as FlagByYear
+from interop.core.osemosys_extensions import ActivityExtension as ActivityExtension
+from interop.core.osemosys_extensions import ConversionExtension as ConversionExtension
+from interop.core.osemosys_extensions import OperatingMode as OperatingMode
+from interop.core.osemosys_extensions import (
+    RepresentativePeriodExtension as RepresentativePeriodExtension,
+)
+from interop.core.osemosys_extensions import TechnologyExtension as TechnologyExtension
+from interop.core.osemosys_extensions import TechnologyLimits as TechnologyLimits
 from interop.core.reporting import EventRecorder
 from interop.ports.errors import UserInputError
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
+from interop.ports.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
 
 
 class ExtensionKind(StrEnum):
@@ -53,6 +73,14 @@ class ExtensionKind(StrEnum):
     # survive a hop through it. Sienna has no equivalent either.
     CONSTRAINT = "constraint"
     NETWORK = "network"  # PyPSA network-level attributes. No Sienna or PLEXOS equivalent.
+    # OSeMOSYS only: a span of hours that occurs a number of times in a year.
+    REPRESENTATIVE_PERIOD = "representative_period"
+    # OSeMOSYS only: the values of a portfolio technology that change from year to year.
+    TECHNOLOGY = "technology"
+    # A PyPSA Link that turns energy at one bus into energy at another bus, or out of the
+    # model; OSeMOSYS states it as a conversion or an export technology; Sienna has no
+    # component for it, so the whole record lives here.
+    CONVERSION = "conversion"
 
 
 class ReserveDirection(StrEnum):
@@ -104,18 +132,6 @@ class ConstraintPeriod(StrEnum):
     YEAR = "year"  # PLEXOS RHS Year
 
 
-class ExtensionRecord(BaseModel):
-    """One component's record. ``name`` is the identifier in every framework."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-
-    def has_any_value(self) -> bool:
-        """Whether the record states anything, rather than only the name it is keyed by."""
-        return bool(self.model_dump(exclude={"name"}, exclude_none=True))
-
-
 class BusExtension(ExtensionRecord):
     # PyPSA Bus.carrier (AC or DC). Sienna ACBus and PLEXOS Node have no carrier field.
     carrier: str | None = None
@@ -123,38 +139,12 @@ class BusExtension(ExtensionRecord):
     # rather than the bus. PyPSA has no field for it at all, so a chain through PyPSA needs
     # this to keep the price a shortfall is charged at.
     value_of_lost_load: float | None = None
+    # PyPSA Bus.location; the OSeMOSYS location of a fuel that is not electricity, whose bus
+    # Sienna does not hold.
+    location: str | None = None
 
 
-class ExpansionExtension(ExtensionRecord):
-    """What a candidate states that PyPSA's own expansion columns have no home for."""
-
-    # MW. What one unit of a candidate is. PyPSA sizes a candidate by p_nom_max alone, so
-    # the size of a single unit has no field there.
-    unit_size_mw: float | None = None
-    # yr. How long the plant runs. PyPSA has one lifetime and the capital recovery period
-    # claims it, so this has no field there.
-    technical_life_years: float | None = None
-    # $/MW/yr. PyPSA's fom_cost is a charge for the whole modelled horizon, not a yearly
-    # one, so a yearly charge has no field there.
-    fom_charge_per_mw_year: float | None = None
-    # The year the object leaves service, which PLEXOS states as a dated Units of zero.
-    # PyPSA carries build_year on the component and nothing for the other end of its life.
-    retirement_year: int | None = None
-    # MW. PyPSA's p_nom_max and p_nom_min. Sienna states one rating and no build range, so a
-    # candidate loses both without these.
-    p_nom_max: float | None = None
-    p_nom_min: float | None = None
-    # $/MW. PyPSA Generator.overnight_cost. Sienna prices no build on an operations model.
-    overnight_cost_per_mw: float | None = None
-    # PyPSA Generator.discount_rate, which annuitises the build cost. No Sienna field.
-    discount_rate: float | None = None
-    # yr. PyPSA Generator.lifetime, the period the build cost annuitises over.
-    lifetime_years: float | None = None
-    # The year the object enters service. PyPSA carries build_year; Sienna carries nothing.
-    build_year: int | None = None
-
-
-class GeneratorExtension(ExpansionExtension):
+class GeneratorExtension(ActivityExtension):
     # PyPSA Generator.carrier. Sienna states fuel and prime mover instead, and several PyPSA
     # carriers share one (prime_mover, fuel) pair, so the reverse cannot recover this.
     carrier: str | None = None
@@ -170,6 +160,32 @@ class GeneratorExtension(ExpansionExtension):
     # Ours: the companion parquet holding what the generator costs per MWh at each snapshot.
     # A Sienna cost curve states one price, so a fuel priced by date has no field here.
     marginal_cost_series: str | None = None
+    # t for each MWh that the generator puts out, by pollutant, with the emissions of the fuel
+    # that a plant burns; OSeMOSYS only, as PyPSA states Carrier.co2_emissions instead.
+    emission_rates_t_per_mwh: ByPollutant | None = None
+    # PyPSA Generator.bus, for a generator of a fuel that is not electricity, which Sienna does
+    # not hold; OSeMOSYS fuel_supply.
+    bus: str | None = None
+    # MW of the fuel; PyPSA Generator.p_nom, for a generator that Sienna does not hold.
+    p_nom: float | None = None
+    # $/MWh of the fuel; PyPSA Generator.marginal_cost, for a generator that Sienna does not hold.
+    marginal_cost: float | None = None
+    # PyPSA Generator.p_max_pu, for a generator that Sienna does not hold; OSeMOSYS
+    # AvailabilityFactor.
+    p_max_pu: float | None = None
+    # MWh of each fuel for each MWh of electricity, by the bus of the fuel; no PyPSA field, as
+    # PyPSA states it as Link.bus0 and Link.efficiency; OSeMOSYS InputActivityRatio.
+    fuel_buses: ByBus | None = None
+    # $/MWh of electricity without the price of the fuels that fuel_buses names; no PyPSA
+    # field, as PyPSA states it as Link.marginal_cost for each MWh of fuel.
+    own_marginal_cost: float | None = None
+    # t/MWh of electricity, by pollutant, without the emissions of the fuels that fuel_buses
+    # names; no PyPSA field; OSeMOSYS EmissionActivityRatio of the plant only.
+    own_emission_rates_t_per_mwh: ByPollutant | None = None
+    # OSeMOSYS only: the technology and the operating mode that the generator stands for, when
+    # it is a mode of a technology that is not a generator, such as an import mode of a line.
+    source_technology: str | None = None
+    source_mode: str | None = None
 
 
 class LoadExtension(ExtensionRecord):
@@ -178,6 +194,12 @@ class LoadExtension(ExtensionRecord):
     # PyPSA Load.sign, -1 by convention. Sienna PowerLoad is positive-consumption by
     # definition, so it has nothing to state here.
     sign: float | None = None
+    # PyPSA Load.bus, for a demand for a fuel that is not electricity, which Sienna does not hold.
+    bus: str | None = None
+    # MW of the fuel in each snapshot; PyPSA Load.p_set, for a load that Sienna does not hold.
+    p_set: float | None = None
+    # Ours: the companion parquet holding p_set at each snapshot, where the demand changes.
+    p_set_series: str | None = None
 
 
 class LineExtension(ExtensionRecord):
@@ -190,7 +212,7 @@ class LineExtension(ExtensionRecord):
     s_nom_extendable: bool | None = None  # PyPSA only
 
 
-class ControllableLineExtension(ExtensionRecord):
+class ControllableLineExtension(ActivityExtension):
     carrier: str | None = None  # PyPSA Link.carrier
     # $/MWh. PyPSA Link.marginal_cost, which PLEXOS states as a Wheeling Charge. Sienna
     # prices no flow over a branch, so the charge has no field there.
@@ -207,9 +229,17 @@ class ControllableLineExtension(ExtensionRecord):
     has_time_varying_efficiency: bool | None = None
     has_time_varying_p_max_pu: bool | None = None
     has_time_varying_p_min_pu: bool | None = None
+    # Ours: the companion parquet holding the OSeMOSYS CapacityFactor of each snapshot, which
+    # multiplies the static p_max_pu, as Sienna states one rating for a line and no series.
+    p_max_pu_series: str | None = None
+    # No PyPSA field: the line converts one electricity fuel into another at one location, so
+    # the results count it neither as production nor as trade.
+    is_conversion: bool | None = None
 
 
-class StorageExtension(ExpansionExtension):
+class StorageExtension(ActivityExtension):
+    # PyPSA StorageUnit.carrier, or the OSeMOSYS category of the discharging technology.
+    carrier: str | None = None
     p_nom_extendable: bool | None = None  # PyPSA only
     # h. PyPSA StorageUnit.max_hours. Sienna's HydroDispatch states the reservoir nowhere,
     # so a hydro unit loses it without this.
@@ -225,6 +255,21 @@ class StorageExtension(ExpansionExtension):
     # Ours: the companion parquet holding the share of its rating the unit reaches at each
     # snapshot. Sienna states one rating and names no series against it.
     rating_series: str | None = None
+    # $/MWh of energy capacity; PyPSA states it as Store.overnight_cost; OSeMOSYS
+    # CapitalCostStorage.
+    energy_overnight_cost: float | None = None
+    # h at full power in one timeslice; no PyPSA field, because StorageUnit.max_hours is the
+    # energy over the power; OSeMOSYS StorageMaxHours.
+    duration_max_hours: float | None = None
+    # PyPSA StorageUnit.cyclic_state_of_charge_per_period; OSeMOSYS StorageBalanceYear.
+    cyclic_state_of_charge_per_period: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceSeason.
+    cyclic_state_of_charge_per_season: bool | None = None
+    # No PyPSA field; OSeMOSYS StorageBalanceDay.
+    cyclic_state_of_charge_per_day: bool | None = None
+    # $/MW/yr of the technology that charges the storage, where it does not also discharge it;
+    # no PyPSA field, as PyPSA states it as fom_cost of the charging Link.
+    charge_fom_cost: float | None = None
 
 
 class ReserveExtension(ExtensionRecord):
@@ -285,11 +330,19 @@ class ConstraintLimit(BaseModel):
     period: ConstraintPeriod
     value: float
     unit: str | None = None  # the unit the source stated the limit in
+    # PyPSA GlobalConstraint.investment_period: the year of a yearly limit; OSeMOSYS YEAR.
+    investment_period: int | None = None
 
 
 class ConstraintExtension(ExtensionRecord):
     """A weighted sum over named objects, held to one or more right-hand sides."""
 
+    # PyPSA GlobalConstraint.type, primary_energy for an emission limit; renewable_share and
+    # reserve_margin are ours and no PyPSA type, so PyPSA builds no constraint from them.
+    type: str | None = None
+    # PyPSA GlobalConstraint.carrier_attribute: the quantity of each member that the sum
+    # counts, which is the pollutant of an OSeMOSYS emission limit.
+    carrier_attribute: str | None = None
     sense: ConstraintSense | None = None
     limits: list[ConstraintLimit] = []
     members: list[ConstraintMember] = []
@@ -320,19 +373,33 @@ class Extensions(BaseModel):
     reserve: list[ReserveExtension] = []
     constraint: list[ConstraintExtension] = []
     network: list[NetworkExtension] = []
+    representative_period: list[RepresentativePeriodExtension] = []
+    technology: list[TechnologyExtension] = []
+    conversion: list[ConversionExtension] = []
+
+    @model_validator(mode="after")
+    def _validate_unique_names(self) -> Self:
+        """Reject a kind that names one record twice, so every read of a name agrees."""
+        for kind in type(self).model_fields:
+            counts = Counter(record.name for record in getattr(self, kind))
+            repeated = sorted(name for name, count in counts.items() if count > 1)
+            if repeated:
+                raise ValueError(f"the {kind} records name {name_a_few(repeated)} more than once")
+        return self
 
 
-EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = {
-    ExtensionKind.BUS: BusExtension,
-    ExtensionKind.GENERATOR: GeneratorExtension,
-    ExtensionKind.LOAD: LoadExtension,
-    ExtensionKind.LINE: LineExtension,
-    ExtensionKind.CONTROLLABLE_LINE: ControllableLineExtension,
-    ExtensionKind.STORAGE: StorageExtension,
-    ExtensionKind.RESERVE: ReserveExtension,
-    ExtensionKind.CONSTRAINT: ConstraintExtension,
-    ExtensionKind.NETWORK: NetworkExtension,
-}
+def _build_extension_models() -> dict[ExtensionKind, type[ExtensionRecord]]:
+    """The record model of each kind, read off the fields of the document."""
+    fields = Extensions.model_fields
+    if set(fields) != set(ExtensionKind):
+        raise TypeError(
+            f"the Extensions fields {sorted(fields)} must name each ExtensionKind once, "
+            f"and only those: {sorted(str(kind) for kind in ExtensionKind)}"
+        )
+    return {ExtensionKind(kind): get_args(info.annotation)[0] for kind, info in fields.items()}
+
+
+EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = _build_extension_models()
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
 # it describes.
@@ -430,6 +497,12 @@ class GeneratorCompanionCol(StrEnum):
     MARGINAL_COST = "marginal_cost"
 
 
+class LoadCompanionCol(StrEnum):
+    """Value columns of the load companion parquet, named for the field each holds."""
+
+    P_SET = "p_set"
+
+
 class StorageCompanionCol(StrEnum):
     """Value columns of the storage companion parquet, each named for the field it holds."""
 
@@ -437,25 +510,54 @@ class StorageCompanionCol(StrEnum):
     RATING_PU = "rating_pu"
 
 
+class ControllableLineCompanionCol(StrEnum):
+    """Value columns of the controllable line companion parquet."""
+
+    P_MAX_PU = "p_max_pu"
+
+
+class ReserveCompanionCol(StrEnum):
+    """Value columns of the reserve companion parquet, named for the field each holds."""
+
+    REQUIREMENT_MW = "requirement_mw"
+
+
 class Companion(NamedTuple):
-    """The parquet a kind's series live in, and the record fields that name that file."""
+    """The parquet a kind's series live in, and the value column of each field that names it.
+
+    ``columns`` maps a record field that names the file to the column that holds its values.
+    """
 
     filename: str
-    series_fields: tuple[str, ...]
+    columns: dict[str, str]
 
 
 # Companions sit beside the sidecar and are named for what they hold. A kind with no entry
 # states every value on the record itself. One parquet holds every series of its kind, one
 # column per field, so a kind naming two fields writes two value columns.
 _COMPANIONS: dict[ExtensionKind, Companion] = {
-    ExtensionKind.GENERATOR: Companion("generators.parquet", ("marginal_cost_series",)),
-    ExtensionKind.RESERVE: Companion("reserves.parquet", ("requirement_series",)),
-    ExtensionKind.STORAGE: Companion("storage.parquet", ("inflow_series", "rating_series")),
+    ExtensionKind.GENERATOR: Companion(
+        "generators.parquet", {"marginal_cost_series": GeneratorCompanionCol.MARGINAL_COST}
+    ),
+    ExtensionKind.LOAD: Companion("loads.parquet", {"p_set_series": LoadCompanionCol.P_SET}),
+    ExtensionKind.RESERVE: Companion(
+        "reserves.parquet", {"requirement_series": ReserveCompanionCol.REQUIREMENT_MW}
+    ),
+    ExtensionKind.STORAGE: Companion(
+        "storage.parquet",
+        {
+            "inflow_series": StorageCompanionCol.INFLOW_MW,
+            "rating_series": StorageCompanionCol.RATING_PU,
+        },
+    ),
+    ExtensionKind.CONTROLLABLE_LINE: Companion(
+        "controllable_lines.parquet", {"p_max_pu_series": ControllableLineCompanionCol.P_MAX_PU}
+    ),
 }
 
 
-def companion_filename(kind: ExtensionKind) -> str:
-    """The parquet beside the sidecar that holds one kind's series.
+def get_companion(kind: ExtensionKind) -> Companion:
+    """The parquet beside the sidecar that holds one kind's series, and its value columns.
 
     Total, not a lookup that can miss: a kind only reaches here by staging a series, and a
     kind that stages one without naming a file for it is a wiring mistake, not model data.
@@ -463,7 +565,12 @@ def companion_filename(kind: ExtensionKind) -> str:
     companion = _COMPANIONS.get(kind)
     if companion is None:
         raise KeyError(f"extension kind {kind!r} stages a series but names no companion file")
-    return companion.filename
+    return companion
+
+
+def companion_filename(kind: ExtensionKind) -> str:
+    """The parquet beside the sidecar that holds one kind's series."""
+    return get_companion(kind).filename
 
 
 def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecord]) -> bool:
@@ -477,7 +584,7 @@ def names_companion_series(kind: ExtensionKind, records: Sequence[ExtensionRecor
     return companion is not None and any(
         getattr(record, series_field, None) is not None
         for record in records
-        for series_field in companion.series_fields
+        for series_field in companion.columns
     )
 
 
@@ -485,10 +592,19 @@ _UNCONSUMED_NOTE = (
     "no mapping in this translation reads this extension record, so it is dropped rather "
     "than carried into the next sidecar"
 )
+_UNHANDLED_FIELD_NOTE = (
+    "a mapping in this translation reads this extension record, but no mapping maps this "
+    "field and none relays it, so it is dropped rather than carried into the next sidecar"
+)
+_UNCONSUMED_WARNING = "%d extension record(s) reach no mapping, so each is dropped: %s"
+_UNHANDLED_FIELD_WARNING = (
+    "%d field(s) of extension records reach no mapping and no relay, so each is dropped: %s"
+)
 
 
 def report_dropped(staged: StagedExtensions, framework: str, recorder: EventRecorder) -> None:
-    """Report every record staged here as dropped."""
+    """Report every record staged here as dropped, with one event each and one warning."""
+    labels = [f"{kind} {record.name}" for kind, records in staged.items() for record in records]
     for kind, records in staged.items():
         for record in records:
             recorder.append(
@@ -498,6 +614,20 @@ def report_dropped(staged: StagedExtensions, framework: str, recorder: EventReco
                     note=_UNCONSUMED_NOTE,
                 )
             )
+    if labels:
+        log.warning(_UNCONSUMED_WARNING, len(labels), name_a_few(labels))
+
+
+def build_stated_fields(record: ExtensionRecord) -> dict[str, Any]:
+    """The fields a record states a value for, other than its name, by field name."""
+    return {
+        field_name: getattr(record, field_name)
+        for field_name in record.model_dump(exclude={"name"}, exclude_none=True, exclude_unset=True)
+    }
+
+
+def _is_scalar(value: Any) -> bool:
+    return isinstance(value, str | int | float | bool)
 
 
 @overload
@@ -536,6 +666,18 @@ def record_for(
 def record_for(
     staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
 ) -> NetworkExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD], name: str
+) -> RepresentativePeriodExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.TECHNOLOGY], name: str
+) -> TechnologyExtension | None: ...
+@overload
+def record_for(
+    staged: StagedExtensions, kind: Literal[ExtensionKind.CONVERSION], name: str
+) -> ConversionExtension | None: ...
 
 
 def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
@@ -547,6 +689,24 @@ def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
     return next((record for record in staged.get(kind, []) if record.name == name), None)
 
 
+@dataclass
+class KindConsumption:
+    """The records of one kind that readers took whole, and the fields handled in the rest."""
+
+    whole: set[str] = field(default_factory=set)
+    fields: dict[str, set[str]] = field(default_factory=dict)
+
+    def list_unhandled_fields(self, record: ExtensionRecord) -> list[str]:
+        """The stated fields of a record taken field by field that nothing handles."""
+        if record.name in self.whole or record.name not in self.fields:
+            return []
+        handled = self.fields[record.name]
+        return [name for name in build_stated_fields(record) if name not in handled]
+
+    def is_unread(self, record: ExtensionRecord) -> bool:
+        return record.name not in self.whole and record.name not in self.fields
+
+
 class ExtensionLookup(Generic[RecordT]):
     """One kind's staged records, by name.
 
@@ -555,24 +715,64 @@ class ExtensionLookup(Generic[RecordT]):
     record whose every field is unset, which is what "the source said nothing" means.
     """
 
-    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: set[str]):
+    def __init__(self, model: type[RecordT], records: Sequence[RecordT], consumed: KindConsumption):
         self._model = model
         self._records = {record.name: record for record in records}
         self._consumed = consumed
 
     def get(self, name: str) -> RecordT:
-        self._consumed.add(name)
-        return self._records.get(name) or self._model(name=name)
+        self._consumed.whole.add(name)
+        return self._find_or_build(name)
+
+    def get_fields(self, name: str, mapped: Collection[str]) -> RecordT:
+        """One record, of which the caller maps only the ``mapped`` fields."""
+        self._consumed.fields.setdefault(name, set()).update(mapped)
+        return self._find_or_build(name)
+
+    def build_relayed(self, name: str) -> RecordT:
+        """A record of the stated fields of ``name`` that no mapping maps, marked as relayed.
+
+        This records no event, so the caller hands the record to the call that relays it.
+        """
+        handled = self._consumed.fields.setdefault(name, set())
+        left = {
+            field_name: value
+            for field_name, value in build_stated_fields(self._find_or_build(name)).items()
+            if field_name not in handled
+        }
+        handled.update(left)
+        return self._model.model_validate({"name": name, **left})
+
+    def list_records(self) -> list[RecordT]:
+        """Every staged record of this kind, none of them marked as read."""
+        return list(self._records.values())
 
     def read_all(self) -> list[RecordT]:
         """Every staged record of this kind, each one marked as read."""
-        self._consumed.update(self._records)
+        self._consumed.whole.update(self._records)
         return list(self._records.values())
+
+    def _find_or_build(self, name: str) -> RecordT:
+        return self._records.get(name) or self._model(name=name)
+
+
+class DroppedField(NamedTuple):
+    """One stated field of a record that no mapping maps and no relay passes on."""
+
+    kind: ExtensionKind
+    record: ExtensionRecord
+    field_name: str
+
+    @property
+    def label(self) -> str:
+        """The kind, the record and the field, as a warning names them."""
+        return f"{self.kind} {self.record.name}.{self.field_name}"
 
 
 @dataclass
 class ExtensionConsumption:
-    """The names every reader of one hop has read, and the step to report a drop against.
+    """The records and fields every reader of one hop has read, and the step to report a drop
+    against.
 
     A hop may split its mappings across more than one step, so the readers those steps build
     share one of these and the run reports what none of them asked for once the last step
@@ -581,16 +781,55 @@ class ExtensionConsumption:
     """
 
     recorder: EventRecorder
-    by_kind: dict[ExtensionKind, set[str]] = field(default_factory=dict)
+    by_kind: dict[ExtensionKind, KindConsumption] = field(
+        default_factory=lambda: {kind: KindConsumption() for kind in ExtensionKind}
+    )
 
-    def names_for(self, kind: ExtensionKind) -> set[str]:
-        return self.by_kind.setdefault(kind, set())
+    def get_kind(self, kind: ExtensionKind) -> KindConsumption:
+        return self.by_kind[kind]
 
     def report_unconsumed(self, staged: StagedExtensions, framework: str) -> None:
-        for kind, records in staged.items():
-            consumed = self.by_kind.get(kind, set())
-            unread = [record for record in records if record.name not in consumed]
-            report_dropped({kind: unread}, framework, self.recorder)
+        """Report each record no reader read, and each field nothing maps or relays."""
+        report_dropped(self._list_unread(staged), framework, self.recorder)
+        dropped = self._list_dropped_fields(staged)
+        for one in dropped:
+            self._record_dropped_field(one, framework)
+        if dropped:
+            labels = [one.label for one in dropped]
+            log.warning(_UNHANDLED_FIELD_WARNING, len(labels), name_a_few(labels))
+
+    def _list_unread(self, staged: StagedExtensions) -> StagedExtensions:
+        unread = {
+            kind: [record for record in records if self.by_kind[kind].is_unread(record)]
+            for kind, records in staged.items()
+        }
+        return {kind: records for kind, records in unread.items() if records}
+
+    def _list_dropped_fields(self, staged: StagedExtensions) -> list[DroppedField]:
+        return [
+            DroppedField(kind, record, field_name)
+            for kind, records in staged.items()
+            for record in records
+            for field_name in self.by_kind[kind].list_unhandled_fields(record)
+        ]
+
+    def _record_dropped_field(self, dropped: DroppedField, framework: str) -> None:
+        value = getattr(dropped.record, dropped.field_name)
+        self.recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[
+                    SourceField(
+                        framework=framework,
+                        component=dropped.kind,
+                        name=dropped.record.name,
+                        attribute=dropped.field_name,
+                        value=value if _is_scalar(value) else None,
+                    )
+                ],
+                note=_UNHANDLED_FIELD_NOTE,
+            )
+        )
 
 
 class ExtensionReader:
@@ -629,14 +868,26 @@ class ExtensionReader:
     ) -> ExtensionLookup[ConstraintExtension]: ...
     @overload
     def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD]
+    ) -> ExtensionLookup[RepresentativePeriodExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.TECHNOLOGY]
+    ) -> ExtensionLookup[TechnologyExtension]: ...
+    @overload
+    def read(
+        self, kind: Literal[ExtensionKind.CONVERSION]
+    ) -> ExtensionLookup[ConversionExtension]: ...
 
     def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
         """One kind's records, by name. The kind fixes the record type."""
         model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.names_for(kind))
+        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.get_kind(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""
         records = list(self._staged.get(kind, []))
-        self._consumption.names_for(kind).update(record.name for record in records)
+        self._consumption.get_kind(kind).whole.update(record.name for record in records)
         return records

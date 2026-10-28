@@ -10,6 +10,7 @@ efficiency/p_min_pu/p_max_pu use the static value and record a flag in the exten
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import polars as pl
@@ -175,19 +176,22 @@ def _link_extension(
     # original p_nom / p_max_pu split and a positive lower bound losslessly.
     p_max_pu = src[PyPSALinkCol.P_MAX_PU]
     p_min_pu = src[PyPSALinkCol.P_MIN_PU]
+    is_time_varying = partial(_is_time_varying, time_varying_owners, name)
     return ControllableLineExtension(
         name=name,
         carrier=src[PyPSALinkCol.CARRIER],
         p_nom_extendable=src[PyPSALinkCol.P_NOM_EXTENDABLE],
         p_max_pu=p_max_pu if p_max_pu != 1.0 else None,
         p_min_pu=p_min_pu if p_min_pu > 0.0 else None,
-        **_time_varying_flags(name, time_varying_owners),
+        has_time_varying_efficiency=is_time_varying(PyPSALinkCol.EFFICIENCY) or None,
+        has_time_varying_p_max_pu=is_time_varying(PyPSALinkCol.P_MAX_PU) or None,
+        has_time_varying_p_min_pu=is_time_varying(PyPSALinkCol.P_MIN_PU) or None,
     )
 
 
-def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> dict[str, bool]:
-    """The flag fields this link carries a dropped series for."""
-    return {field: True for field, owners in time_varying_owners.items() if name in owners}
+def _is_time_varying(time_varying_owners: dict[str, set[str]], name: str, attribute: str) -> bool:
+    """Whether the link carries a dropped series for the attribute."""
+    return name in time_varying_owners.get(f"{_HAS_TIME_VARYING_PREFIX}{attribute}", set())
 
 
 # --- Limit / loss expressions ---
