@@ -85,6 +85,7 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     apply_translations,
+    drop_skipped,
     filter_component,
     finalise,
 )
@@ -244,9 +245,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         if src is None:
             return None
         table = fill_capacity_defaults(src.collect())
-        for rule in self._scope_rules(state, group, own_rows):
-            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
-        return table
+        return drop_skipped(table, self._scope_rules(state, group, own_rows), self._recorder)
 
     def _scope_rules(
         self, state: State, group: _CarrierGroup, own_rows: tuple[SkipRule, ...]
@@ -305,8 +304,8 @@ class PypsaToSiennaMapComponents(TranslationStep):
         table = mapping.fill_defaults(source)
         table = table.filter(pl.col(mapping.carrier_col).is_in(list(carriers)))
         series = self._source_time_series(state, mapping)
-        for rule in mapping.skips(series) if mapping.skips is not None else ():
-            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
+        rules = mapping.skips(series) if mapping.skips is not None else ()
+        table = drop_skipped(table, rules, self._recorder)
         ts_info = collect_ts_info(series)
         return _PreparedSource(
             table=mapping.enrich(table, series, ts_info, self._carrier_mappings),
@@ -507,8 +506,8 @@ class PypsaToSiennaMapComponents(TranslationStep):
             self._recorder,
         )
         naming = PYPSA_COMPONENT_NAMING[PyPSATable.LINKS]
-        for rule in (unbuilt_candidate_skip(naming), rejected_build_skip(naming)):
-            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
+        rules = (unbuilt_candidate_skip(naming), rejected_build_skip(naming))
+        table = drop_skipped(table, rules, self._recorder)
 
         dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE

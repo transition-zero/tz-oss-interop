@@ -27,8 +27,8 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     PORTFOLIO_ID_NOTE,
     InvestmentsSource,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_constants import SIENNA_TYPE_ATTRIBUTE
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     SiennaCarbonCapsCol,
     SiennaInvestmentsComponent,
@@ -64,7 +64,7 @@ CARBON_CAPS_SOURCE_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 # The spans a cap is read from, most specific first: no other span bounds the whole run.
 _CAP_PERIODS: tuple[ConstraintPeriod, ...] = (ConstraintPeriod.YEAR, ConstraintPeriod.HORIZON)
 
-_dest = partial(sienna_dest_field, SiennaInvestmentsComponent.CARBON_CAPS)
+_dest = partial(build_sienna_field, SiennaInvestmentsComponent.CARBON_CAPS)
 
 C = SiennaCarbonCapsCol
 

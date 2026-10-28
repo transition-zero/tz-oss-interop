@@ -25,6 +25,9 @@ from interop_testing.builders.sienna_documents import (
 from interop_testing.builders.sienna_systems import SiennaSystemBuilder
 from interop_testing.files import navigate_json, read_json
 
+# Separates the count of a run of values from its value, as in `6 × 0.5`.
+RUN_SEPARATOR = "×"
+
 
 @given("a Sienna system", target_fixture="sienna_system_builder")
 def given_sienna_system() -> SiennaSystemBuilder:
@@ -624,6 +627,23 @@ def assert_h5_ts_values(
         assert math.isclose(actual_value, expected_value, rel_tol=1e-9, abs_tol=1e-9), (
             f"expected values {expected}, got {actual}"
         )
+
+
+@then(
+    parsers.parse(
+        'the h5 file "{path}" has a time series for component "{sienna_type}" named "{name}"'
+        ' attribute "{attribute}" with runs of values {runs}'
+    )
+)
+def assert_h5_ts_runs(path: str, sienna_type: str, name: str, attribute: str, runs: str) -> None:
+    """`runs` is a comma-separated list of `<count> × <value>`, in the order of the series."""
+    expected = [float(value) for run in runs.split(",") for value in _expand_run(run)]
+    assert_h5_ts_values(path, sienna_type, name, attribute, " ".join(map(repr, expected)))
+
+
+def _expand_run(run: str) -> list[str]:
+    count, _, value = run.partition(RUN_SEPARATOR)
+    return [value.strip()] * int(count)
 
 
 @then(parsers.parse('the Sienna systems "{first}" and "{second}" state the same components'))

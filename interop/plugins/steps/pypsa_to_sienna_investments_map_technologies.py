@@ -100,7 +100,7 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     apply_translations,
-    filter_component,
+    drop_skipped,
     finalise,
 )
 
@@ -363,9 +363,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             ),
             *kind.skips(kind.source),
         ]
-        for rule in rules:
-            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
-        return table
+        return drop_skipped(table, rules, self._recorder)
 
     def _translated_carriers(self, kind: _CandidateKind) -> set[str]:
         """The carriers the mappings file sends to a type this kind of candidate becomes."""
@@ -463,8 +461,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
             return
         table = build_carbon_caps_source_table(records, _model_components(state, candidates))
         source = constraint_source(Framework.PYPSA, PYPSA_TO_SIENNA_INVESTMENTS)
-        for rule in build_carbon_cap_skips(source):
-            table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
+        table = drop_skipped(table, build_carbon_cap_skips(source), self._recorder)
         if table.is_empty():
             return
         self._write_table(

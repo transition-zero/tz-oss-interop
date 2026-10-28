@@ -37,7 +37,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_skip_report,
     pypsa_source_field,
     rated_from,
-    sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -61,6 +60,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
@@ -79,7 +79,7 @@ _PRIME_MOVER_COL = "_prime_mover_raw"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
-_dest = partial(sienna_dest_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
+_dest = partial(build_sienna_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
 
 
 def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:

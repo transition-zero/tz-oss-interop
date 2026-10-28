@@ -33,7 +33,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_skip_report,
     pypsa_source_field,
     rated_from,
-    sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -56,6 +55,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     Translation,
@@ -239,7 +239,7 @@ def build_generator_extensions(
 T = SiennaThermalGeneratorCol
 
 _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
-_dest = partial(sienna_dest_field, SiennaComponent.THERMAL_STANDARD)
+_dest = partial(build_sienna_field, SiennaComponent.THERMAL_STANDARD)
 
 _direct = partial(direct_translation, _source, _dest, name_col=PyPSAGeneratorCol.NAME)
 _rated = partial(
