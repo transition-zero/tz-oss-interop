@@ -204,6 +204,8 @@ TECHNOLOGY_COUNTED_NOUN = "technology(ies)"
 TECHNOLOGIES_LABEL = "Technologies"
 # The share of its capacity that a technology can use where the model states no factor.
 WHOLE_CAPACITY = 1.0
+# A cost of zero, which the model states or which a translation gives where it states none.
+NO_COST = 0.0
 
 
 # --- The investments portfolio ---------------------------------------------------------

@@ -109,6 +109,18 @@ def find_parameter_default(state: State, name: str) -> float | None:
     return None if found.height == 0 else found.item(0, 0)
 
 
+def read_parameter_all_years(state: State, name: str, keys: pl.DataFrame) -> pl.DataFrame:
+    """The rows that the model states for a parameter in every year, for the members of `keys`.
+
+    `keys` holds key columns of the parameter. The join runs before the collect, so the read
+    stays small on a table with millions of rows.
+    """
+    table = state.source_time_series.get((TableKind.PARAMETER, name))
+    if table is None:
+        return _build_empty_parameter(name).collect()
+    return table.join(keys.lazy(), on=keys.columns, how="semi").collect()
+
+
 def read_yearly_values(
     state: State, name: str, keys: pl.DataFrame, years: Sequence[int]
 ) -> pl.DataFrame:
