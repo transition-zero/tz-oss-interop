@@ -11,7 +11,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
   Scenario: a HydroDispatch becomes a PyPSA StorageUnit with carrier hydro and an inflow series
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a HydroDispatch "hydro_1" on bus "node_a" with base_power 100.0 rating 1.0 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the system contains a HydroDispatch "hydro_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
     And the HydroDispatch "hydro_1" has a hydro_budget series 0.2 0.4 0.3
     And the system is saved as "inputs/hydro.json"
     When I run translate against "inputs/hydro.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
@@ -61,7 +61,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
   Scenario: a HydroDispatch records translator defaults for the storage fields it cannot recover
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a HydroDispatch "hydro_1" on bus "node_a" with base_power 100.0 rating 1.0 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the system contains a HydroDispatch "hydro_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
     And the system is saved as "inputs/hydro_defaults.json"
     When I run translate against "inputs/hydro_defaults.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.max_hours` = 1.0 |  | HydroDispatch carries no storage capacity; max_hours uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
@@ -79,3 +79,17 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     When I run translate against "inputs/phs_default_extendable.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_1" is not extendable
     And the file "decisions.md" contains "| `pypsa.StorageUnit.phs_1.p_nom_extendable` = False |  | no ext.p_nom_extendable; p_nom_extendable defaults to False | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
+  Scenario: a HydroDispatch left out for its power basis leaves its inflow series out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroDispatch "hydro_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroDispatch "hydro_1" states power_units COMPONENT_BASE
+    And the HydroDispatch "hydro_1" has a hydro_budget series 0.2 0.4 0.3
+    And the system contains a HydroDispatch "hydro_2" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroDispatch "hydro_2" has a hydro_budget series 0.1 0.5 0.2
+    And the system is saved as "inputs/hydro_component_base_series.json"
+    When I run translate against "inputs/hydro_component_base_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 storage unit
+    And the PyPSA network "outputs/network.nc" storage unit "hydro_2" has an inflow time series 10.0 50.0 20.0
+    And the log contains "1 hydro generators state a power basis this reader does not convert, so each is left out"

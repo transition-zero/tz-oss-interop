@@ -17,6 +17,10 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" without field "fuel_type"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "prime_mover_type" set to "CC"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "base_power" set to 500.0
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "rating" set to 500.0
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "power_units" set to "NATURAL_UNITS"
+    And every "ThermalStandard" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "active_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "active_power_limits.min" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ccgt_1" having "active_power_limits.max" set to 500.0
@@ -30,7 +34,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.bus` = bus_1 | `sienna.ThermalStandard.ccgt_1.bus_name` = bus_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.base_power` = 500.0 MW | p_nom_opt where an extendable component has one, p_nom_min where it states a capacity a build cannot take away, else p_nom |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power` = 100.0 MW | effective_p_nom * p_min_pu (initial dispatch = min operating point) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_max_pu` = 1.0 | `sienna.ThermalStandard.ccgt_1.rating` = 1.0 | p_max_pu (per-unit nameplate rating; typically 1.0) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.rating` = 500.0 MW | effective_p_nom * p_max_pu (nameplate rating, MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.p_nom` = 500.0 MW | `sienna.ThermalStandard.ccgt_1.active_power_limits` = {'min': 100.0, 'max': 500.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu (static) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.ccgt_1.marginal_cost` = 30.0 | `sienna.ThermalStandard.ccgt_1.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 30.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     # USER_CONFIG_DEFAULT_APPLIED decisions (carrier classification according to user defined mapping)
@@ -40,6 +44,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     # TRANSLATOR_DEFAULT_APPLIED decisions
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.id` = 2 |  | assigned by row position in thermal generators DataFrame, after the ids of earlier components | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.available` = True |  | PyPSA Generator has no active field; defaulted to True | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.power_units` = NATURAL_UNITS |  | PyPSA states generator power in MW, so power_units is NATURAL_UNITS | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.status` = ONLINE |  | PyPSA has no separate initial on/off state; defaulted to ONLINE | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.reactive_power` = 0.0 |  | PyPSA networks rarely model reactive power for generators | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "|  | `sienna.ThermalStandard.ccgt_1.ramp_limits` |  | ramp_limit_up/down absent in PyPSA network; ramp_limits set to null | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -97,7 +102,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     When I run translate against "inputs/derating.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "coal_1" having "active_power_limits.max" set to 400.0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "coal_1" having "active_power_limits.min" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "coal_1" having "rating" set to 0.8
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "coal_1" having "rating" set to 400.0
     And the file "decisions.md" contains "min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu (static)"
 
   Scenario Outline: <carrier> maps to correct fuel_type and prime_mover_type

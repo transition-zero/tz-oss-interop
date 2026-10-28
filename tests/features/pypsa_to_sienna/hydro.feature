@@ -28,9 +28,11 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     Then the file "outputs/system.json" parses as JSON with 1 components of type "HydroDispatch"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "prime_mover_type" set to "HY"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "base_power" set to 100.0
+    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "power_units" set to "NATURAL_UNITS"
+    And every "HydroDispatch" component in the written Sienna system is valid SiennaSchemas 0.2
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "reactive_power" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 1.0
+    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.min" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.max" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "operation_cost.cost_type" set to "HYDRO_GEN"
@@ -57,7 +59,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     And the network contains storage unit "hydro_1" on "bus_1" carrier "hydro" p_nom 50.0 p_min_pu 0.0 p_max_pu 0.8 efficiency_dispatch 1.0 inflow 5.0 5.0 5.0
     And the network is saved as "inputs/hydro_derate.nc"
     When I run translate against "inputs/hydro_derate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 0.8
+    Then the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 40.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.max" set to 40.0
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 0.8 0.8 0.8
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 0.1 0.1 0.1

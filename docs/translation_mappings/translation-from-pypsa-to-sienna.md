@@ -255,7 +255,8 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived | Must resolve string bus name to instantiated `ACBus` object |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Initial dispatch point; use min operating point. If `committable=False` and `p_min_pu=0`, use `0.0` |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted | PyPSA networks rarely model Q for generators |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` | `p_max_pu` | derived | Nameplate in pu of `base_power`; typically `1.0` |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA, because `power_units` is `NATURAL_UNITS` |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit: MW, MVAR, MVA and MW/min |
 | `active_power_limits` | `MinMax` (MW) | `n.generators`: `p_nom`, `p_min_pu`, `p_max_pu` | `(min=effective_p_nom×p_min_pu, max=effective_p_nom×p_max_pu)` | derived | Use static values. If `p_max_pu` / `p_min_pu` are time-varying, use the representative max (e.g. mean or peak) for the static field, and attach a time series — see time series section |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted | PyPSA does not carry Q limits for most generators |
 | `ramp_limits` | `Union{Nothing,UpDown}` (MW/min) | `n.generators.ramp_limit_up`, `ramp_limit_down` | `effective_p_nom × ramp_limit_up ÷ (dt_h × 60)` | derived | PyPSA ramp is pu/snapshot → MW/min: divide by snapshot duration (hours) and by 60. If `NaN` → `nothing`. See snapshot note in cross-cutting section |
@@ -279,7 +280,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
   "bus": 1,
   "active_power": 100.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 200.0,
   "active_power_limits": { "min": 50.0, "max": 200.0 },
   "base_power": 200.0,
   "operation_cost": {
@@ -307,7 +308,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 
 | PyPSA time-varying attribute | Target | Sienna mechanism |
 | --- | --- | --- |
-| `n.generators_t.p_max_pu` | `max_active_power` | `TimeSeriesAssociation` on `max_active_power`: store the per-unit `p_max_pu` shape (no pre-multiplication), `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` |
+| `n.generators_t.p_max_pu` | `max_active_power` | `TimeSeriesAssociation` on `max_active_power`: store the `p_max_pu` series divided by its peak, so the shape peaks at 1.0. `active_power_limits.max` is `effective_p_nom × peak`. `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` |
 | `n.generators_t.marginal_cost` | `operation_cost` | Cannot attach a series to `ThermalGenerationCost.variable` directly; requires `MarketBidCost`. Flag as unsupported in simple translation; document as known gap |
 
 ##### Unit commitment (`committable`)
@@ -330,7 +331,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 **Applies to carriers:** `solar`, `solar-utility`, `onwind`, `on-wind`, `offwind-ac`, `offwind-dc`, `off-wind`
 
-`RenewableDispatch` represents curtailable renewable generators — those whose output can be reduced below their available profile. It has no `active_power_limits` field; the maximum is defined entirely by the `max_active_power` time series (or `rating × base_power` if no time series exists). It has no `must_run` or `ramp_limits`.
+`RenewableDispatch` represents curtailable renewable generators — those whose output can be reduced below their available profile. It has no `active_power_limits` field; the maximum is defined entirely by the `max_active_power` time series (or `rating`, in MVA, if no time series exists). It has no `must_run` or `ramp_limits`.
 
 | Sienna field | Type / unit | PyPSA source | Transform | Mapping type | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -340,7 +341,8 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Typically `0.0` for renewables (p_min_pu default = 0) |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` (static) | `p_max_pu` | derived | Typically `1.0`; derating possible |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | In MVA; derating possible. PyPSA ignores the static `p_max_pu` where a series exists |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `PVe` / `WT` / `WS` | derived | From carrier mapping table |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` (MVAR) | — | `nothing` | defaulted |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted | No scalar power factor in PyPSA generator schema |
@@ -358,7 +360,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
   "base_power": 100.0,
@@ -386,13 +388,13 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 | PyPSA attribute | Where | Target | Transform | Notes |
 | --- | --- | --- | --- | --- |
-| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | `TimeSeriesAssociation` on `max_active_power`, `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` | values = `p_max_pu_series` (pu of `base_power`, stored unchanged) | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
+| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | `TimeSeriesAssociation` on `max_active_power`, `scaling_factor_multiplier: "PowerSystems.get_max_active_power"` | values = `p_max_pu_series ÷ peak` (a shape that peaks at 1.0) | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
 | `p_min_pu` | `n.generators_t.p_min_pu` | Not directly supported | — | `RenewableDispatch` has no time-varying lower limit. Use `0.0` for `active_power` |
 | `marginal_cost` | `n.generators_t.marginal_cost` | Not directly supported | — | Switch to `MarketBidCost` if time-varying marginal cost is needed |
 
-**Storage convention.** `PowerSimulations.jl/src/devices_models/devices/renewable_generation.jl`'s `get_default_time_series_names` registers `ActivePowerTimeSeriesParameter => "max_active_power"` for `RenewableGen` under `FixedOutput` and any `AbstractRenewableFormulation`. The formulation multiplies the stored series by `get_max_active_power(d)` (i.e. `rating × base_power`) at solve time. Storing the series in pu of `base_power`, with values in `[0, 1]`, matches this convention and mirrors the `PowerLoad` pattern used for demand. The translator must not pre-multiply by `p_nom`, since the multiplier is applied by the formulation.
+**Storage convention.** `PowerSimulations.jl/src/devices_models/devices/renewable_generation.jl`'s `get_default_time_series_names` registers `ActivePowerTimeSeriesParameter => "max_active_power"` for `RenewableGen` under `FixedOutput` and any `AbstractRenewableFormulation`. The formulation multiplies the stored series by `get_max_active_power(d)` (from the `rating`, in MVA) at solve time. The translator stores the series divided by its peak, so the values are in `[0, 1]` and the largest is 1.0. The `rating` is `effective_p_nom × peak`, so the shape times the `rating` gives `p_max_pu(t) × p_nom` in MW. This is the same rule as for `ThermalStandard`, and it mirrors the `PowerLoad` pattern used for demand. The translator must not pre-multiply by `p_nom`, since the multiplier is applied by the formulation.
 
-**v1 implementation behaviour.** The translator skips the time series when the generator does not appear as a column in `n.generators_t.p_max_pu`, or when its per-unit profile is flat (`np.ptp(values) < 1e-9`). A flat profile carries the same information as the static `rating × base_power` ceiling already encoded on the component, so emitting it would only inflate the H5 sidecar. A column whose index does not match `n.snapshots` is treated as a hard error rather than silently coerced.
+**v1 implementation behaviour.** The translator skips the time series when the generator does not appear as a column in `n.generators_t.p_max_pu`, or when its per-unit profile is flat (`np.ptp(values) < 1e-9`). A flat profile carries the same information as the `rating`, which is `effective_p_nom` times the flat value, so emitting it would only inflate the H5 sidecar. A column whose index does not match `n.snapshots` is treated as a hard error rather than silently coerced.
 
 ---
 
@@ -400,7 +402,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 **Applies to carriers:** `solar-rooftop`
 
-`RenewableNonDispatch` is the must-take type — the system always accepts whatever is available. It has **no `operation_cost` field**, **no `active_power_limits`**, and **no `reactive_power_limits`**. The maximum power is defined by `rating × base_power` and/or an attached `max_active_power` time series.
+`RenewableNonDispatch` is the must-take type — the system always accepts whatever is available. It has **no `operation_cost` field**, **no `active_power_limits`**, and **no `reactive_power_limits`**. The maximum power is defined by `rating` (MVA) and/or an attached `max_active_power` time series.
 
 | Sienna field | Type / unit | PyPSA source | Transform | Mapping type | Notes |
 | --- | --- | --- | --- | --- | --- |
@@ -408,9 +410,10 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `name` | `String` | `n.generators.index` | — | direct |  |
 | `available` | `Bool` | `n.generators.active` | — | direct |  |
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
-| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Initial active power — use peak available for initialisation |
+| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Initial dispatch at the minimum operating point, as for `RenewableDispatch`. The reverse reads `p_min_pu` from it, so a must-take unit with a `p_max_pu` series keeps a minimum that the series can meet |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.generators.p_max_pu` | `p_max_pu` | derived | Typically `1.0` |
+| `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | In MVA. PyPSA ignores the static `p_max_pu` where a series exists |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `PVe` | derived |  |
 | `power_factor` | `Float64` ([0,1]) | — | `1.0` | defaulted |  |
 | `base_power` | `Float64` (MVA) | `n.generators.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
@@ -426,7 +429,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
   "bus": 1,
   "active_power": 0.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 50.0,
   "prime_mover_type": "PVe",
   "power_factor": 1.0,
   "base_power": 50.0
@@ -435,7 +438,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 ##### Time series for `RenewableNonDispatch`
 
-Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_active_power` (`scaling_factor_multiplier: "PowerSystems.get_max_active_power"`) whose values are `p_max_pu_series` in pu of `base_power` (no pre-multiplication by `p_nom`). The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
+Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_active_power` (`scaling_factor_multiplier: "PowerSystems.get_max_active_power"`) whose values are `p_max_pu_series ÷ peak` (no pre-multiplication by `p_nom`), with `rating = effective_p_nom × peak`. The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
 
 ##### Note on `operation_cost`
 
@@ -459,7 +462,8 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
 | `bus` | `ACBus` | `n.storage_units.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `n.storage_units.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived |  |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `n.storage_units.p_max_pu` | `p_max_pu` | derived |  |
+| `rating` | `Float64` (MVA) | `n.storage_units.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Nameplate in MVA |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the unit is in its physical unit |
 | `prime_mover_type` | `PrimeMovers` | (carrier classification) | `HY` | derived |  |
 | `active_power_limits` | `MinMax` (MW) | `p_nom`, `p_min_pu`, `p_max_pu` | `(effective_p_nom×p_min_pu, effective_p_nom×p_max_pu)` | derived |  |
 | `base_power` | `Float64` (MVA) | `n.storage_units.p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
@@ -475,7 +479,7 @@ Same mechanism as `RenewableDispatch`: emit a `TimeSeriesAssociation` on `max_ac
   "bus": 1,
   "active_power": 50.0,
   "reactive_power": 0.0,
-  "rating": 1.0,
+  "rating": 100.0,
   "prime_mover_type": "HY",
   "active_power_limits": { "min": 10.0, "max": 100.0 },
   "base_power": 100.0,

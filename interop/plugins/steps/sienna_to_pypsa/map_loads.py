@@ -24,9 +24,15 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
     SiennaSeriesName,
     SiennaTable,
+    SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_pypsa_translations.mapping import bus_id_to_name
+from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
+    bus_id_to_name,
+    express_power_units_kept,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LoadReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 # Load series carried back to p_set. A load's per-unit max_active_power profile becomes
 # absolute p_set: the sink scales it by max_active_power (per-unit shape -> MW), unlike
@@ -57,7 +63,15 @@ class SiennaToPypsaMapLoads(TranslationStep):
         rows: list[dict[str, Any]] = []
         max_active_power_by_name: dict[str, float] = {}
 
-        for row in source.collect().iter_rows(named=True):
+        supported, _ = filter_component(
+            source.collect(),
+            express_power_units_kept(SiennaUnitSystem.NATURAL_UNITS),
+            build_power_units_skip_report(
+                "Load", "loads", SiennaLoadCol.NAME, SiennaUnitSystem.NATURAL_UNITS
+            ),
+            self._recorder,
+        )
+        for row in supported.iter_rows(named=True):
             name = row[SiennaLoadCol.NAME]
             ext = records.get(name)
             bus_id = row[SiennaLoadCol.BUS]
@@ -99,7 +113,11 @@ class SiennaToPypsaMapLoads(TranslationStep):
             if frame is None:
                 continue
             timing = series_timing(frame)
-            for component in series_components(frame):
+            # A load left out above has no p_set, so its series stays out with it.
+            written = [
+                name for name in series_components(frame) if name in max_active_power_by_name
+            ]
+            for component in written:
                 metadata_rows.append(
                     metadata_row(
                         component_table=PyPSADestinationTable.LOADS,
