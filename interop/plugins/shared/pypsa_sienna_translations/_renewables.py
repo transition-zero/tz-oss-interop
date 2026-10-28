@@ -235,6 +235,11 @@ def _sienna_type(
 
 def _rating(dest: DestinationFieldFactory) -> Translation:
     """The rating in MVA, at the peak of the p_max_pu series where one exists."""
+    ceiling = (
+        pl.when(pl.col(_TS_PEAK).is_not_null())
+        .then(pl.col(_TS_PEAK))
+        .otherwise(pl.col(PyPSAGeneratorCol.P_MAX_PU))
+    )
 
     def make_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
         name = old[PyPSAGeneratorCol.NAME]
@@ -253,17 +258,8 @@ def _rating(dest: DestinationFieldFactory) -> Translation:
         ]
 
     return Translation(
-        exprs=[(pl.col(EFFECTIVE_P_NOM) * _express_ceiling_pu()).alias(R.RATING)],
+        exprs=[(pl.col(EFFECTIVE_P_NOM) * ceiling).alias(R.RATING)],
         make_events=make_events,
-    )
-
-
-def _express_ceiling_pu() -> pl.Expr:
-    """The peak of the p_max_pu series where one exists, because PyPSA then ignores the static."""
-    return (
-        pl.when(pl.col(_TS_PEAK).is_not_null())
-        .then(pl.col(_TS_PEAK))
-        .otherwise(pl.col(PyPSAGeneratorCol.P_MAX_PU))
     )
 
 
@@ -273,15 +269,14 @@ def _renewable_translations(
     sienna_component: str,
     id_note: str,
     sienna_type_derivation: str,
-    active_power_expr: pl.Expr,
-    active_power_derivation: str,
     tail: list[Translation],
 ) -> list[Translation]:
     """Shared RenewableDispatch / RenewableNonDispatch translation list.
 
     The two Sienna renewable types share the same destination schema and differ only in the
-    destination component (``dest`` / ``sienna_component``), the initial-dispatch operating point
-    (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
+    destination component (``dest`` / ``sienna_component``) and the trailing cost /
+    reactive-power handling (``tail``). Both start at the minimum operating point, so the
+    reader recovers p_min_pu from active_power for either type.
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
     rated = partial(
@@ -316,9 +311,9 @@ def _renewable_translations(
         ),
         rated(
             dest_col=R.ACTIVE_POWER,
-            expr=active_power_expr,
+            expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
             unit=UNIT_MW,
-            derivation=active_power_derivation,
+            derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
         ),
         default(
             dest_col=R.REACTIVE_POWER,
@@ -425,8 +420,6 @@ RENEWABLE_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
         "after the ids of earlier components"
     ),
     sienna_type_derivation="renewable carrier -> RenewableDispatch",
-    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
-    active_power_derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
     tail=[_renewable_reactive_power_limits(_dest), _renewable_cost(_dest)],
 )
 
@@ -438,11 +431,6 @@ RENEWABLE_NON_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations
         "after the ids of earlier components"
     ),
     sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
-    active_power_expr=pl.col(EFFECTIVE_P_NOM) * _express_ceiling_pu(),
-    active_power_derivation=(
-        "effective_p_nom * p_max_pu, or * the peak of the p_max_pu series "
-        "(must-take initial dispatch = peak available)"
-    ),
     tail=[_renewable_cost_loss(_dest_nd)],
 )
 
