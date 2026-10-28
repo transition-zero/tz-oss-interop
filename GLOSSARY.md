@@ -29,7 +29,7 @@ A model in the SiennaSchemas format, for an operational problem.
 _Avoid_: dispatch system, base system, operations system
 
 **Sienna Investments Portfolio**:
-A SiennaSchemas document for a capacity expansion problem. interop writes a Sienna Investments Portfolio but does not read one.
+A SiennaSchemas document for a capacity expansion problem. tz-oss-interop writes a Sienna Investments Portfolio. The leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it.
 _Avoid_: portfolio (alone), investments portfolio, expansion plan, long-term plan
 
 **PLEXOS model**:
@@ -70,6 +70,18 @@ The number of hours that one snapshot stands for.
 **Time series**:
 The values of one attribute of one component, one value for each snapshot.
 _Avoid_: profile, series, trace, shape
+
+**Timeslice**:
+An OSeMOSYS share of a model year, for example the evenings of winter weekdays. A timeslice is not an hour. Its `year_split` gives its share of the year.
+_Avoid_: time slice, period
+
+**Representative period**:
+A run of consecutive snapshots that stands for a number of periods of the year, for example one day of 24 hours that stands for 90 days. Its weight is that number. A translation from OSeMOSYS builds one representative day for each season and day type, and writes a `representative_period` record for each in `extensions.json`.
+_Avoid_: representative day (except for a period of one day), typical day, slice
+
+**Operations year**:
+The model year whose fleet a Sienna system from a multi-year model holds. The fleet is the residual capacity of that year.
+_Avoid_: base year (the field `base_year` of a Sienna Investments Portfolio is the year that its costs are quoted in), snapshot year
 
 ## Uncertainty
 
