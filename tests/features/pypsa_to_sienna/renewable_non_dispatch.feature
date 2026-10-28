@@ -3,7 +3,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
   PyPSA Generators with the solar-rooftop carrier become RenewableNonDispatch (must-take):
   the system always accepts whatever is available. RenewableNonDispatch has no operation_cost
   field, no active_power_limits, and no reactive_power_limits; its ceiling is the rating
-  (static p_max_pu) or a max_active_power time series. A non-zero PyPSA marginal_cost has no
+  (p_nom times the static p_max_pu, or times the peak of the p_max_pu series) and a
+  max_active_power time series stored as a peak-1.0 shape. A non-zero PyPSA marginal_cost has no
   Sienna home and is recorded as NOT_MAPPED (information lost).
 
   Scenario: solar-rooftop generator translates to RenewableNonDispatch with no cost field
@@ -54,15 +55,16 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     Then the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "active_power" set to 40.0
     And the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 40.0
 
-  Scenario: time-varying p_max_pu produces a max_active_power time series stored unchanged
+  Scenario: time-varying p_max_pu rates at the series peak and stores a peak-1.0 shape
     Given a PyPSA network
     And the network has 3 snapshots at 60 minute intervals
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
-    And the network contains generator "rooftop_1" on "bus_1" carrier "solar-rooftop" p_nom 50.0 p_max_pu_series 0.7 0.4 0.6
+    And the network contains generator "rooftop_1" on "bus_1" carrier "solar-rooftop" p_nom 50.0 p_max_pu_series 0.8 0.4 0.6
     And the network is saved as "inputs/rooftop_ts.nc"
     When I run translate against "inputs/rooftop_ts.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system_time_series_storage.h5" exists
+    Then the file "outputs/system.json" parses as JSON with component "RenewableNonDispatch" named "rooftop_1" having "rating" set to 40.0
+    And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableNonDispatch" named "rooftop_1" attribute "max_active_power" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableNonDispatch" named "rooftop_1" attribute "max_active_power" with values 0.7 0.4 0.6
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableNonDispatch" named "rooftop_1" attribute "max_active_power" with values 1.0 0.5 0.75
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableNonDispatch" owner id 2 has resolution "PT1H"

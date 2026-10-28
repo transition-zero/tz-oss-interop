@@ -68,7 +68,8 @@ from interop.plugins.shared.translation_runner import filter_component
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit
 # multiplier that reconstructs p_max_pu is the component's get_max_active_power divided by
-# base_power: active_power_limits.max / base_power for thermal, rating for renewables.
+# base_power: active_power_limits.max / base_power for thermal, rating / base_power for
+# renewables.
 _GENERATOR_SERIES_KEYS = (
     (SiennaComponent.RENEWABLE_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
     (SiennaComponent.RENEWABLE_NON_DISPATCH, SiennaSeriesName.MAX_ACTIVE_POWER),
