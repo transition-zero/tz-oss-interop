@@ -402,8 +402,8 @@ Sienna folds the PyPSA capacity and the maximum dispatch share into one number. 
   `p_max_pu` of 1.0 holds.
 - The sidecar states a `p_max_pu`. Then `p_nom` is the forward bound divided by that share. A
   link stored as 500 MW with a `p_max_pu` of 0.5 comes back as a 1000 MW link.
-- The stored maximum is zero. Then `p_nom` is `0.0` and `p_min_pu` is `0.0`. The report gives
-  a row for that default.
+- The stored maximum is zero. Then `p_nom` is `0.0`. `p_min_pu` is the sidecar `p_min_pu`
+  where the sidecar states one, else `0.0`, and the report gives a row for that default.
 
 Sienna states `to_from_max` as `0.0` for a link whose PyPSA `p_min_pu` was not negative. A
 positive lower bound therefore survives only in the sidecar.
