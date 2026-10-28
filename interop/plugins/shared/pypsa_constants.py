@@ -425,6 +425,36 @@ UNSET_BUS_CARRIER: str = ""
 # A component whose source has no availability input is translated as in service.
 DEFAULT_COMPONENT_ACTIVE: bool = True
 
+PyPSADefault = float | str | bool
+# PyPSA's own defaults of a static attribute; a network file states an attribute only where a
+# component differs from its default, so an absent column holds the default.
+PYPSA_GENERATOR_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSAGeneratorCol.P_NOM: 0.0,
+    PyPSAGeneratorCol.P_NOM_EXTENDABLE: False,
+    PyPSAGeneratorCol.P_MIN_PU: 0.0,
+    PyPSAGeneratorCol.P_MAX_PU: 1.0,
+    PyPSAGeneratorCol.EFFICIENCY: 1.0,
+    PyPSAGeneratorCol.MARGINAL_COST: 0.0,
+    PyPSAGeneratorCol.CARRIER: "",
+}
+PYPSA_STORAGE_UNIT_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSAStorageUnitCol.P_NOM: 0.0,
+    PyPSAStorageUnitCol.P_NOM_EXTENDABLE: False,
+    PyPSAStorageUnitCol.P_MIN_PU: -1.0,
+    PyPSAStorageUnitCol.P_MAX_PU: 1.0,
+    PyPSAStorageUnitCol.MARGINAL_COST: 0.0,
+    PyPSAStorageUnitCol.CARRIER: "",
+}
+PYPSA_LINK_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSALinkCol.P_NOM: 0.0,
+    PyPSALinkCol.P_NOM_EXTENDABLE: False,
+    PyPSALinkCol.P_MIN_PU: 0.0,
+    PyPSALinkCol.P_MAX_PU: 1.0,
+    PyPSALinkCol.EFFICIENCY: 1.0,
+    PyPSALinkCol.MARGINAL_COST: 0.0,
+    PyPSALinkCol.CARRIER: "",
+}
+
 # Six places holds a per-unit factor down to a millionth of a component's own rating, which
 # is finer than any dispatch decision a solver makes.
 PYPSA_OUTPUT_DECIMAL_PLACES: int = 6
