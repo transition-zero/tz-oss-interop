@@ -131,9 +131,11 @@ The **From** column gives the OSeMOSYS default name and then the canonical name 
   candidate takes the name of its storage.
 - **A candidate whose category has no carriers row is left out.** The run completes, and
   `decisions.md` names each one.
-- **Capacity is in MW of electricity.** A supply candidate multiplies the capacity of the model
-  by its electricity output ratio at the operations mode, as the base system rates a generator.
-  A transport candidate multiplies it by its electricity input ratio, which is the electricity
+- **Capacity is in MW of electricity.** A capacity of the model in MW is the capacity ×
+  `CapacityToActivityUnit` (`capacity_to_activity_unit`) / 8760 h, as the base system rates a
+  generator. Each capacity bound, the unit size and the growth values of a candidate convert in
+  this way. A supply candidate multiplies the capacity by its electricity output ratio at the
+  operations mode. A transport candidate multiplies it by its electricity input ratio, which is the electricity
   that it sends.
 - **Each cost is for one MW or one MWh of electricity.** A cost per capacity of the model is
   divided by the same ratio.
