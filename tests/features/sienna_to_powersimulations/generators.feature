@@ -18,13 +18,13 @@ Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl comp
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.__metadata__.type" equal to "ThermalGenerationCost"
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.variable.__metadata__.type" equal to "CostCurve"
 
-  Scenario: ThermalStandard scalar and dict power fields are stored per-unit relative to base_power
+  Scenario: ThermalStandard power fields in MW are stored per-unit relative to base_power, and its rating stays per-unit
     Given a Sienna system
     And the system contains a bus "bus_1"
-    And the system contains a ThermalStandard "gen_1" on bus "bus_1" with base_power 200.0 rating 200.0 active_power_min 100.0 active_power_max 200.0 marginal_cost 30.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "gen_1" on bus "bus_1" with base_power 200.0 rating 0.9 active_power_min 100.0 active_power_max 200.0 marginal_cost 30.0 prime_mover "ST" fuel "COAL"
     And the system is saved as "inputs/thermal_pu.json"
     When I run translate against Sienna system "inputs/thermal_pu.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
-    Then the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "rating" equal to 1.0
+    Then the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "rating" equal to 0.9
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "active_power" equal to 0.5
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "active_power_limits" equal to {"min": 0.5, "max": 1.0}
 
@@ -38,14 +38,25 @@ Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl comp
     And the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has a non-empty uuid
     And the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has bus as a uuid reference
 
-  Scenario: RenewableDispatch scalar power fields are stored per-unit relative to base_power
+  Scenario: RenewableDispatch power fields in MW are stored per-unit relative to base_power, and its rating stays per-unit
     Given a Sienna system
     And the system contains a bus "bus_1"
-    And the system contains a RenewableDispatch "solar_1" on bus "bus_1" with base_power 50.0 rating 50.0 active_power 25.0 marginal_cost 0.0 prime_mover "PVe"
+    And the system contains a RenewableDispatch "solar_1" on bus "bus_1" with base_power 50.0 rating 0.8 active_power 25.0 marginal_cost 0.0 prime_mover "PVe"
     And the system is saved as "inputs/renewable_pu.json"
     When I run translate against Sienna system "inputs/renewable_pu.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
-    Then the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has field "rating" equal to 1.0
+    Then the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has field "rating" equal to 0.8
     And the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has field "active_power" equal to 0.5
+
+  Scenario: A RenewableDispatch availability series gives its rating in MW times the series value in each hour
+    SiennaSchemas states rating per unit of base_power. PowerSimulations multiplies the
+    series by rating times base_power, so a plant of 50 MW at a value of 0.5 can give 25 MW.
+    Given a Sienna system
+    And the system contains a bus "bus_1"
+    And the system contains a RenewableDispatch "solar_1" on bus "bus_1" with base_power 50.0 rating 1.0 active_power 0.0 marginal_cost 0.0 prime_mover "PVe"
+    And the RenewableDispatch "solar_1" has a max_active_power series 0.5 1.0
+    And the system is saved as "inputs/renewable_ts.json"
+    When I run translate against Sienna system "inputs/renewable_ts.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" and its H5 sidecar "outputs/system_ts.h5" give "RenewableDispatch" component "solar_1" a "max_active_power" of 25.0 50.0 MW
 
   Scenario: a ThermalStandard with no availability series takes a flat one
     PowerSimulations reads an availability forecast for a whole component type or for none of
