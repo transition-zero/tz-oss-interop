@@ -410,7 +410,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `name` | `String` | `n.generators.index` | — | direct |  |
 | `available` | `Bool` | `n.generators.active` | — | direct |  |
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
-| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | Initial active power — use peak available for initialisation |
+| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived | Initial dispatch at the minimum operating point, as for `RenewableDispatch`. The reverse reads `p_min_pu` from it, so a must-take unit with a `p_max_pu` series keeps a minimum that the series can meet |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
 | `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | In MVA. PyPSA ignores the static `p_max_pu` where a series exists |
 | `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |
