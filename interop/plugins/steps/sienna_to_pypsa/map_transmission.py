@@ -8,6 +8,7 @@ import polars as pl
 from pydantic import BaseModel
 
 from interop.core.extensions import (
+    ControllableLineCompanionCol,
     ControllableLineExtension,
     ExtensionKind,
     ExtensionReader,
@@ -19,6 +20,8 @@ from interop.plugins.shared.pypsa_constants import (
     DEFAULT_SYSTEM_BASE_MVA,
     LINES_DESTINATION_SCHEMA,
     LINKS_DESTINATION_SCHEMA,
+    PYPSA_LINE_DEFAULTS,
+    PYPSA_LINK_DEFAULTS,
     PyPSADestinationTable,
     PyPSALineCol,
     PyPSALinkCol,
@@ -30,16 +33,46 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStructField,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
+    CompanionColumn,
+    stage_companion_columns,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    LINE_CARRIED,
+    LINE_MAPPED_FIELDS,
+    LINK_CARRIED,
+    LINK_MAPPED_FIELDS,
+    LINK_P_MAX_PU,
+    LINK_P_MIN_PU,
+    record_carried_fields,
+    record_carried_value,
+)
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     bus_id_to_name,
     bus_id_to_v_nom,
     extendable_floor,
 )
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+from interop.plugins.steps.sienna_to_pypsa.split_links import LinkSplitter, add_reverse_series
 
-# PyPSA's own defaults, applied where the sidecar states nothing for a line.
-_DEFAULT_LENGTH = 0.0
-_DEFAULT_NUM_PARALLEL = 1.0
+# The OSeMOSYS CapacityFactor of a line multiplies its static p_max_pu, which PyPSA's own
+# series replaces, so the sink scales the series by the static value.
+_COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
+    CompanionColumn(
+        ControllableLineCompanionCol.P_MAX_PU,
+        PyPSADestinationTable.LINKS,
+        PyPSALinkCol.P_MAX_PU,
+    ),
+)
+
+# The Sienna type of every link that this step maps.
+_LINK_TYPE = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+
+# PyPSA's own defaults, applied where the sidecar states nothing for a line or a link.
+_DEFAULT_LENGTH = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.LENGTH])
+_DEFAULT_NUM_PARALLEL = float(PYPSA_LINE_DEFAULTS[PyPSALineCol.NUM_PARALLEL])
+_DEFAULT_P_MAX_PU = float(PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_MAX_PU])
 
 
 def _from_to_total(from_to: dict[str, float]) -> float:
@@ -136,14 +169,7 @@ def _read_line_ext(
     reporter: LineReporter, sienna_type: SiennaComponent, name: str, ext: LineExtension
 ) -> _LineExtFields:
     """Read the PyPSA round-trip fields a line carries in the sidecar, one event per field."""
-    if ext.length is not None:
-        reporter.record_length(sienna_type, name, ext.length)
-    if ext.num_parallel is not None:
-        reporter.record_num_parallel(sienna_type, name, ext.num_parallel)
-    if ext.carrier is not None:
-        reporter.record_carrier_from_ext(sienna_type, name, ext.carrier)
-    if ext.s_nom_extendable is not None:
-        reporter.record_s_nom_extendable_from_ext(sienna_type, name, ext.s_nom_extendable)
+    record_carried_fields(reporter, sienna_type, ext, LINE_CARRIED)
     return _LineExtFields(
         length=ext.length if ext.length is not None else _DEFAULT_LENGTH,
         num_parallel=(ext.num_parallel if ext.num_parallel is not None else _DEFAULT_NUM_PARALLEL),
@@ -181,12 +207,12 @@ def _reconstruct_link_power_limits(
         p_nom = limit_max
         reporter.record_p_nom(name, limit_max, p_nom)
     else:
-        reporter.record_p_max_pu_from_ext(name, p_max_pu)
+        record_carried_value(reporter, _LINK_TYPE, name, LINK_P_MAX_PU, p_max_pu)
         p_nom = limit_max / p_max_pu if p_max_pu != 0.0 else 0.0
         reporter.record_p_nom_from_p_max_pu(name, limit_max, p_max_pu, p_nom)
     if ext.p_min_pu is not None:
         p_min_pu = ext.p_min_pu
-        reporter.record_p_min_pu_from_ext(name, p_min_pu)
+        record_carried_value(reporter, _LINK_TYPE, name, LINK_P_MIN_PU, p_min_pu)
     elif p_nom == 0.0:
         p_min_pu = 0.0
         reporter.record_p_min_pu_zero_capacity(name)
@@ -227,7 +253,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             bus1 = bus_names[row[SiennaLineCol.BUS1]]
             available = bool(row[SiennaLineCol.AVAILABLE])
             z_base = bus_v_nom[bus0_id] ** 2 / DEFAULT_SYSTEM_BASE_MVA
-            ext = extensions.get(name)
+            ext = extensions.get_fields(name, LINE_MAPPED_FIELDS)
             reporter.record_endpoints(sienna_type, name, row[SiennaLineCol.ARC], bus0, bus1)
             reporter.record_available(sienna_type, name, available, available)
             impedance = _convert_line_impedance(reporter, sienna_type, name, row, z_base)
@@ -262,6 +288,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             state.destination_tables[PyPSADestinationTable.LINES] = pl.DataFrame(
                 rows, schema=LINES_DESTINATION_SCHEMA
             )
+        relay_records(state, extensions, [row[PyPSALineCol.NAME] for row in rows], self._recorder)
 
     def _map_links(self, state: State, bus_names: dict[int, str]) -> None:
         source = state.source_topology.get(SiennaTable.LINKS)
@@ -271,52 +298,93 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         reporter = LinkReporter(self._recorder)
         rows: list[dict[str, Any]] = []
         for row in source.collect().iter_rows(named=True):
-            name = row[SiennaLinkCol.NAME]
-            bus0 = bus_names[row[SiennaLinkCol.BUS0]]
-            bus1 = bus_names[row[SiennaLinkCol.BUS1]]
-            available = bool(row[SiennaLinkCol.AVAILABLE])
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
-            ext = extensions.get(name)
-            loss_term = float(
-                row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
-                    SiennaStructField.PROPORTIONAL_TERM
-                ]
-            )
-            efficiency = 1.0 - loss_term
-            reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
-            reporter.record_available(name, available, available)
-            limits = _reconstruct_link_power_limits(
-                reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
-            )
-            reporter.record_efficiency(name, loss_term, efficiency)
-            carrier = ext.carrier
-            if carrier is not None:
-                reporter.record_carrier_from_ext(name, carrier)
-            if ext.marginal_cost is not None:
-                reporter.record_marginal_cost_from_ext(name, ext.marginal_cost)
-            p_nom_extendable = ext.p_nom_extendable
-            if p_nom_extendable is not None:
-                reporter.record_p_nom_extendable_from_ext(name, p_nom_extendable)
-            p_nom_min = extendable_floor(limits.p_nom, p_nom_extendable)
-            if p_nom_min is not None:
-                reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
-            rows.append(
-                {
-                    PyPSALinkCol.NAME: name,
-                    PyPSALinkCol.BUS0: bus0,
-                    PyPSALinkCol.BUS1: bus1,
-                    PyPSALinkCol.P_NOM: limits.p_nom,
-                    PyPSALinkCol.P_MIN_PU: limits.p_min_pu,
-                    PyPSALinkCol.P_MAX_PU: limits.p_max_pu,
-                    PyPSALinkCol.EFFICIENCY: efficiency,
-                    PyPSALinkCol.ACTIVE: available,
-                    PyPSALinkCol.CARRIER: carrier,
-                    PyPSALinkCol.P_NOM_EXTENDABLE: p_nom_extendable,
-                    PyPSALinkCol.P_NOM_MIN: p_nom_min,
-                    PyPSALinkCol.MARGINAL_COST: ext.marginal_cost,
-                }
-            )
+            ext = extensions.get_fields(row[SiennaLinkCol.NAME], LINK_MAPPED_FIELDS)
+            rows.append(_build_link_row(reporter, row, bus_names, ext))
+        names = [row[PyPSALinkCol.NAME] for row in rows]
         if rows:
-            state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
-                rows, schema=LINKS_DESTINATION_SCHEMA
-            )
+            self._write_links(state, rows, reporter)
+        relay_records(state, extensions, names, self._recorder)
+
+    def _write_links(
+        self, state: State, rows: list[dict[str, Any]], reporter: LinkReporter
+    ) -> None:
+        """Write the links, with the flow back of each lossy two-way link as a link of its own."""
+        split = LinkSplitter(reporter).map_two_way_links(rows)
+        state.destination_tables[PyPSADestinationTable.LINKS] = pl.DataFrame(
+            split.rows, schema=LINKS_DESTINATION_SCHEMA
+        )
+        stage_companion_columns(
+            state,
+            ExtensionKind.CONTROLLABLE_LINE,
+            _COMPANION_COLUMNS,
+            _build_series_scaling(split.rows),
+        )
+        add_reverse_series(state, split.splits)
+
+
+def _build_series_scaling(rows: list[dict[str, Any]]) -> dict[str, float]:
+    """The static p_max_pu of each link, which multiplies its series, or PyPSA's default."""
+    return {
+        row[PyPSALinkCol.NAME]: row[PyPSALinkCol.P_MAX_PU]
+        if row[PyPSALinkCol.P_MAX_PU] is not None
+        else _DEFAULT_P_MAX_PU
+        for row in rows
+    }
+
+
+def _build_link_row(
+    reporter: LinkReporter,
+    row: dict[str, Any],
+    bus_names: dict[int, str],
+    ext: ControllableLineExtension,
+) -> dict[str, Any]:
+    """The Link of one TwoTerminalGenericHVDCLine, with an event for each value."""
+    name = row[SiennaLinkCol.NAME]
+    ends = _map_ends(reporter, row, bus_names)
+    efficiency = _derive_efficiency(reporter, row)
+    limits = _reconstruct_link_power_limits(
+        reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
+    )
+    record_carried_fields(reporter, _LINK_TYPE, ext, LINK_CARRIED)
+    p_nom_min = extendable_floor(limits.p_nom, ext.p_nom_extendable)
+    if p_nom_min is not None:
+        reporter.record_p_nom_min(name, limits.limit_max, p_nom_min)
+    return {
+        **ends,
+        PyPSALinkCol.P_NOM: limits.p_nom,
+        PyPSALinkCol.P_MIN_PU: limits.p_min_pu,
+        PyPSALinkCol.P_MAX_PU: limits.p_max_pu,
+        PyPSALinkCol.EFFICIENCY: efficiency,
+        PyPSALinkCol.CARRIER: ext.carrier,
+        PyPSALinkCol.P_NOM_EXTENDABLE: ext.p_nom_extendable,
+        PyPSALinkCol.P_NOM_MIN: p_nom_min,
+        PyPSALinkCol.MARGINAL_COST: ext.marginal_cost,
+    }
+
+
+def _map_ends(
+    reporter: LinkReporter, row: dict[str, Any], bus_names: dict[int, str]
+) -> dict[str, Any]:
+    """The name, the two buses and the availability of the Link."""
+    name = row[SiennaLinkCol.NAME]
+    bus0 = bus_names[row[SiennaLinkCol.BUS0]]
+    bus1 = bus_names[row[SiennaLinkCol.BUS1]]
+    available = bool(row[SiennaLinkCol.AVAILABLE])
+    reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
+    reporter.record_available(name, available, available)
+    return {
+        PyPSALinkCol.NAME: name,
+        PyPSALinkCol.BUS0: bus0,
+        PyPSALinkCol.BUS1: bus1,
+        PyPSALinkCol.ACTIVE: available,
+    }
+
+
+def _derive_efficiency(reporter: LinkReporter, row: dict[str, Any]) -> float:
+    """1 - the proportional term of the loss curve of the line."""
+    function_data = row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA]
+    loss_term = float(function_data[SiennaStructField.PROPORTIONAL_TERM])
+    efficiency = 1.0 - loss_term
+    reporter.record_efficiency(row[SiennaLinkCol.NAME], loss_term, efficiency)
+    return efficiency

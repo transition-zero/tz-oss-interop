@@ -12,15 +12,10 @@ from interop.core.extensions import (
     ExtensionReader,
     GeneratorCompanionCol,
     GeneratorExtension,
-    append_extensions,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import (
-    UNIT_DOLLARS_PER_MW,
-    UNIT_MW,
-    UNIT_YEARS,
-)
+from interop.plugins.shared.constants import UNSCALED
 from interop.plugins.shared.pypsa_constants import (
     DEFAULT_SNAPSHOT_MINUTES,
     GENERATORS_DESTINATION_SCHEMA,
@@ -51,13 +46,39 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     stage_companion_columns,
 )
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_carrier
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    ANNUAL_BOUND_FIELDS,
+    GENERATOR_CARRIER,
+    GENERATOR_COMMITTABLE,
+    GENERATOR_EXTENDABLE,
+    RENEWABLE_CARRIED,
+    RENEWABLE_MAPPED_FIELDS,
+    THERMAL_CARRIED,
+    THERMAL_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
+    record_carried_value,
+)
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    CapacityFloor,
     bus_id_to_name,
-    extendable_floor,
+    choose_p_nom_min,
     per_unit_of,
+    record_p_nom_min,
     variable_proportional_term,
 )
-from interop.plugins.shared.sienna_pypsa_translations.reporters import GeneratorReporter
+from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
+    GENERATOR_OVERNIGHT_COST,
+    UnpricedCost,
+    find_overnight_cost,
+    find_unpriced_cost,
+    report_unpriced_costs,
+)
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
+from interop.plugins.shared.sienna_pypsa_translations.reporters import (
+    GeneratorReporter,
+    ThermalLimit,
+)
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit
 # multiplier that reconstructs p_max_pu is the component's get_max_active_power divided by
@@ -103,6 +124,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
         )
         reporter = GeneratorReporter(self._recorder)
         rows: list[dict[str, Any]] = []
+        unpriced: list[UnpricedCost] = []
         p_max_pu_scale_by_name: dict[str, float] = {}
 
         for row in source.collect().iter_rows(named=True):
@@ -111,6 +133,9 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     thermal = _derive_thermal(row, bus_names, extensions, dt_minutes)
                     _record_thermal(reporter, thermal)
                     rows.append(_thermal_row(thermal))
+                    if thermal.unpriced_cost is not None:
+                        unpriced.append(thermal.unpriced_cost)
+                    # Sienna applies a series to active_power_limits.max, and not to rating.
                     p_max_pu_scale_by_name[thermal.name] = per_unit_of(
                         thermal.active_power_max, thermal.base_power
                     )
@@ -124,6 +149,8 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, dispatch)
                     rows.append(_renewable_row(dispatch))
+                    if dispatch.unpriced_cost is not None:
+                        unpriced.append(dispatch.unpriced_cost)
                     p_max_pu_scale_by_name[dispatch.name] = dispatch.rating
                 case SiennaComponent.RENEWABLE_NON_DISPATCH:
                     non_dispatch = _derive_renewable(
@@ -135,12 +162,15 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                     _record_renewable(reporter, non_dispatch)
                     rows.append(_renewable_row(non_dispatch))
+                    if non_dispatch.unpriced_cost is not None:
+                        unpriced.append(non_dispatch.unpriced_cost)
                     p_max_pu_scale_by_name[non_dispatch.name] = non_dispatch.rating
                 case SiennaComponent.HYDRO_DISPATCH:
                     continue
                 case SiennaComponent.ENERGY_RESERVOIR_STORAGE:
                     continue
 
+        report_unpriced_costs(reporter, unpriced)
         if rows:
             state.destination_tables[PyPSADestinationTable.GENERATORS] = pl.DataFrame(
                 rows, schema=GENERATORS_DESTINATION_SCHEMA
@@ -150,23 +180,15 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                 state,
                 ExtensionKind.GENERATOR,
                 _COMPANION_COLUMNS,
-                {row[PyPSAGeneratorCol.NAME] for row in rows},
+                dict.fromkeys((row[PyPSAGeneratorCol.NAME] for row in rows), UNSCALED),
             )
             self._carry_on(state, [row[PyPSAGeneratorCol.NAME] for row in rows])
         return state
 
     def _carry_on(self, state: State, names: list[str]) -> None:
-        """Pass on what a generator states that PyPSA has no column for either.
-
-        The size of one unit, the Technical Life and the yearly charge have no PyPSA column,
-        so they travel to the next hop in the sidecar rather than stopping here.
-        """
-        staged = self._extensions.read(ExtensionKind.GENERATOR)
-        append_extensions(
-            state.destination_extensions,
-            ExtensionKind.GENERATOR,
-            [_carried_generator(staged.get(name)) for name in names],
-        )
+        """Pass on each field of a generator's record that no PyPSA column holds."""
+        lookup = self._extensions.read(ExtensionKind.GENERATOR)
+        relay_records(state, lookup, names, self._recorder, partly_mapped=ANNUAL_BOUND_FIELDS)
 
     def _record_generator_time_series(
         self, state: State, p_max_pu_scale_by_name: dict[str, float]
@@ -190,18 +212,6 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     )
                 )
         append_metadata(state, metadata_rows)
-
-
-def _carried_generator(record: GeneratorExtension) -> GeneratorExtension:
-    """One generator's record, holding only what PyPSA states nowhere."""
-    return GeneratorExtension(
-        name=record.name,
-        category=record.category,
-        unit_size_mw=record.unit_size_mw,
-        technical_life_years=record.technical_life_years,
-        fom_charge_per_mw_year=record.fom_charge_per_mw_year,
-        retirement_year=record.retirement_year,
-    )
 
 
 def _ramp_limit(
@@ -233,24 +243,23 @@ class _ThermalMapping:
     committable_from_ext: bool
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
-    p_nom_min: float | None
+    floor: CapacityFloor
     base_power: float
     rating: float
     active_power_min: float
     active_power_max: float
     p_min_pu: float
+    p_max_pu: float
     marginal_cost: float
     start_up_cost: float
     shut_down_cost: float
     # Sienna prices the fuel into the cost curve and states no efficiency, so a PyPSA
     # generator recovers one only from the sidecar. The build range and what it costs come
     # from there for the same reason: Sienna states one rating and no build at all.
-    efficiency: float | None
-    p_nom_max: float | None
+    ext: GeneratorExtension
     overnight_cost: float | None
-    discount_rate: float | None
-    lifetime: float | None
-    build_year: int | None
+    # The network leaves out a cost that the record states with no discount rate.
+    unpriced_cost: UnpricedCost | None
     ramp_up_mw_per_min: float | None
     ramp_down_mw_per_min: float | None
     ramp_limit_up: float | None
@@ -278,8 +287,9 @@ def _derive_thermal(
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     fuel = ThermalFuel(row[SiennaGeneratorCol.FUEL_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]
-    ext = extensions.get(row[SiennaGeneratorCol.NAME])
+    ext = extensions.get_fields(row[SiennaGeneratorCol.NAME], THERMAL_MAPPED_FIELDS)
     operation_cost = row[SiennaGeneratorCol.OPERATION_COST]
+    rating = float(row[SiennaGeneratorCol.RATING])
 
     ramp_limits = row.get(SiennaGeneratorCol.RAMP_LIMITS)
     ramp_up = ramp_limits.get(SiennaStructField.UP) if ramp_limits is not None else None
@@ -309,18 +319,16 @@ def _derive_thermal(
         committable_from_ext=ext.committable is not None,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
-        efficiency=ext.efficiency,
-        p_nom_max=ext.p_nom_max,
-        overnight_cost=ext.overnight_cost_per_mw,
-        discount_rate=ext.discount_rate,
-        lifetime=ext.lifetime_years,
-        build_year=ext.build_year,
+        floor=choose_p_nom_min(ext.p_nom_min, base_power, ext.p_nom_extendable),
+        ext=ext,
+        overnight_cost=find_overnight_cost(extensions, ext),
+        unpriced_cost=find_unpriced_cost(SiennaComponent.THERMAL_STANDARD, ext),
         base_power=base_power,
-        rating=float(row[SiennaGeneratorCol.RATING]),
+        rating=rating,
         active_power_min=active_power_min,
         active_power_max=active_power_max,
         p_min_pu=per_unit_of(active_power_min, base_power),
+        p_max_pu=_derive_thermal_p_max_pu(rating, active_power_max, base_power),
         marginal_cost=variable_proportional_term(operation_cost, SiennaStructField.VARIABLE),
         start_up_cost=float(operation_cost.get(SiennaStructField.START_UP, 0.0)),
         shut_down_cost=float(operation_cost.get(SiennaStructField.SHUT_DOWN, 0.0)),
@@ -340,15 +348,11 @@ def _derive_thermal(
     )
 
 
-# Every value Sienna states nowhere, and the PyPSA column it comes back into.
-_CARRIED_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
-    ("p_nom_max", PyPSAGeneratorCol.P_NOM_MAX, UNIT_MW),
-    ("overnight_cost_per_mw", PyPSAGeneratorCol.OVERNIGHT_COST, UNIT_DOLLARS_PER_MW),
-    ("discount_rate", PyPSAGeneratorCol.DISCOUNT_RATE, None),
-    ("lifetime_years", PyPSAGeneratorCol.LIFETIME, UNIT_YEARS),
-    ("build_year", PyPSAGeneratorCol.BUILD_YEAR, None),
-    ("efficiency", PyPSAGeneratorCol.EFFICIENCY, None),
-)
+def _derive_thermal_p_max_pu(rating: float, active_power_max: float, base_power: float) -> float:
+    """The output limit per unit of base_power, capped by the rating; a plant of 0 MW keeps it."""
+    if not base_power:
+        return rating
+    return min(rating, per_unit_of(active_power_max, base_power))
 
 
 def _carrier_or_none(
@@ -367,40 +371,28 @@ def _carrier_or_none(
     return pypsa_carrier(sienna_type, prime_mover, fuel)
 
 
-def _record_carried(
-    reporter: GeneratorReporter, sienna_type: SiennaComponent, mapping: Any
+def _record_overnight_cost(
+    reporter: GeneratorReporter, sienna_type: SiennaComponent, name: str, cost: float | None
 ) -> None:
-    """Report each value the sidecar carried, against the PyPSA column it fills."""
-    for field_name, column, unit in _CARRIED_COLUMNS:
-        value = getattr(mapping, _MAPPING_FIELD[field_name], None)
-        if value is not None:
-            reporter.record_carried(sienna_type, mapping.name, field_name, column, value, unit)
-
-
-# The mapping names each carried value in PyPSA words, so the sidecar field maps onto it.
-_MAPPING_FIELD: dict[str, str] = {
-    "p_nom_max": "p_nom_max",
-    "overnight_cost_per_mw": "overnight_cost",
-    "discount_rate": "discount_rate",
-    "lifetime_years": "lifetime",
-    "build_year": "build_year",
-    "efficiency": "efficiency",
-}
+    if cost is not None:
+        record_carried_value(reporter, sienna_type, name, GENERATOR_OVERNIGHT_COST, cost)
 
 
 def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
     sienna_type = SiennaComponent.THERMAL_STANDARD
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
-    reporter.record_p_max_pu(sienna_type, m.name, m.rating)
+    reporter.record_p_max_pu_from_limits(
+        m.name, ThermalLimit(m.active_power_max, m.rating, m.p_max_pu)
+    )
     reporter.record_p_min_pu_from_limits(sienna_type, m.name, m.active_power_min, m.p_min_pu)
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     if m.ext_carrier is not None:
-        reporter.record_carrier_from_ext(sienna_type, m.name, m.ext_carrier)
+        record_carried_value(reporter, sienna_type, m.name, GENERATOR_CARRIER, m.ext_carrier)
     elif m.carrier is not None:
         reporter.record_carrier_thermal(m.name, m.prime_mover, m.fuel, m.carrier)
     if m.committable_from_ext:
-        reporter.record_committable_from_ext(sienna_type, m.name, m.committable)
+        record_carried_value(reporter, sienna_type, m.name, GENERATOR_COMMITTABLE, m.committable)
     reporter.record_start_up_cost(sienna_type, m.name, m.start_up_cost)
     reporter.record_shut_down_cost(sienna_type, m.name, m.shut_down_cost)
     if m.has_ramp_limits:
@@ -426,13 +418,21 @@ def _record_thermal(reporter: GeneratorReporter, m: _ThermalMapping) -> None:
         reporter.record_up_time_before(
             sienna_type, m.name, m.time_at_status_hours, m.up_time_before
         )
-    _record_carried(reporter, sienna_type, m)
+    record_carried_fields(reporter, sienna_type, m.ext, THERMAL_CARRIED)
+    _record_overnight_cost(reporter, sienna_type, m.name, m.overnight_cost)
+    _record_p_nom_extendable(reporter, sienna_type, m)
+    record_p_nom_min(reporter, sienna_type, m.name, m.floor)
+
+
+def _record_p_nom_extendable(
+    reporter: GeneratorReporter, sienna_type: str, m: _ThermalMapping | _RenewableMapping
+) -> None:
     if m.p_nom_extendable_from_ext:
-        reporter.record_p_nom_extendable_from_ext(sienna_type, m.name, m.p_nom_extendable)
+        record_carried_value(
+            reporter, sienna_type, m.name, GENERATOR_EXTENDABLE, m.p_nom_extendable
+        )
     else:
         reporter.record_p_nom_extendable_default(m.name)
-    if m.p_nom_min is not None:
-        reporter.record_p_nom_min(sienna_type, m.name, m.p_nom_min)
 
 
 def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
@@ -442,7 +442,7 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.CARRIER: m.ext_carrier if m.ext_carrier is not None else m.carrier,
         PyPSAGeneratorCol.P_NOM: m.base_power,
         PyPSAGeneratorCol.P_MIN_PU: m.p_min_pu,
-        PyPSAGeneratorCol.P_MAX_PU: m.rating,
+        PyPSAGeneratorCol.P_MAX_PU: m.p_max_pu,
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: m.committable,
         PyPSAGeneratorCol.RAMP_LIMIT_UP: m.ramp_limit_up,
@@ -453,13 +453,9 @@ def _thermal_row(m: _ThermalMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.START_UP_COST: m.start_up_cost,
         PyPSAGeneratorCol.SHUT_DOWN_COST: m.shut_down_cost,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
-        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
-        PyPSAGeneratorCol.EFFICIENCY: m.efficiency,
-        PyPSAGeneratorCol.P_NOM_MAX: m.p_nom_max,
+        PyPSAGeneratorCol.P_NOM_MIN: m.floor.value,
         PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
-        PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
-        PyPSAGeneratorCol.LIFETIME: m.lifetime,
-        PyPSAGeneratorCol.BUILD_YEAR: m.build_year,
+        **build_carried_values(m.ext, THERMAL_CARRIED),
     }
 
 
@@ -476,14 +472,12 @@ class _RenewableMapping:
     ext_carrier: str | None
     p_nom_extendable: bool
     p_nom_extendable_from_ext: bool
-    p_nom_min: float | None
+    floor: CapacityFloor
     # Sienna states one rating and no build at all, so the build range and what it costs
     # reach a PyPSA generator only through the sidecar.
-    p_nom_max: float | None
+    ext: GeneratorExtension
     overnight_cost: float | None
-    discount_rate: float | None
-    lifetime: float | None
-    build_year: int | None
+    unpriced_cost: UnpricedCost | None
     base_power: float
     rating: float
     active_power: float
@@ -504,7 +498,7 @@ def _derive_renewable(
     active_power = float(row[SiennaGeneratorCol.ACTIVE_POWER])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]
-    ext = extensions.get(row[SiennaGeneratorCol.NAME])
+    ext = extensions.get_fields(row[SiennaGeneratorCol.NAME], RENEWABLE_MAPPED_FIELDS)
     marginal_cost = 0.0
     if has_cost:
         marginal_cost = variable_proportional_term(
@@ -520,12 +514,10 @@ def _derive_renewable(
         ext_carrier=ext.carrier,
         p_nom_extendable=ext.p_nom_extendable is True,
         p_nom_extendable_from_ext=ext.p_nom_extendable is not None,
-        p_nom_min=extendable_floor(base_power, ext.p_nom_extendable),
-        p_nom_max=ext.p_nom_max,
-        overnight_cost=ext.overnight_cost_per_mw,
-        discount_rate=ext.discount_rate,
-        lifetime=ext.lifetime_years,
-        build_year=ext.build_year,
+        floor=choose_p_nom_min(ext.p_nom_min, base_power, ext.p_nom_extendable),
+        ext=ext,
+        overnight_cost=find_overnight_cost(extensions, ext),
+        unpriced_cost=find_unpriced_cost(sienna_type, ext),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         active_power=active_power,
@@ -536,7 +528,8 @@ def _derive_renewable(
 
 
 def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None:
-    _record_carried(reporter, m.sienna_type, m)
+    record_carried_fields(reporter, m.sienna_type, m.ext, RENEWABLE_CARRIED)
+    _record_overnight_cost(reporter, m.sienna_type, m.name, m.overnight_cost)
     reporter.record_bus(m.sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(m.sienna_type, m.name, m.base_power)
     reporter.record_p_max_pu(m.sienna_type, m.name, m.rating)
@@ -546,15 +539,11 @@ def _record_renewable(reporter: GeneratorReporter, m: _RenewableMapping) -> None
     else:
         reporter.record_no_cost(m.sienna_type, m.name)
     if m.ext_carrier is not None:
-        reporter.record_carrier_from_ext(m.sienna_type, m.name, m.ext_carrier)
+        record_carried_value(reporter, m.sienna_type, m.name, GENERATOR_CARRIER, m.ext_carrier)
     elif m.carrier is not None:
         reporter.record_carrier_from_prime_mover(m.sienna_type, m.name, m.prime_mover, m.carrier)
-    if m.p_nom_extendable_from_ext:
-        reporter.record_p_nom_extendable_from_ext(m.sienna_type, m.name, m.p_nom_extendable)
-    else:
-        reporter.record_p_nom_extendable_default(m.name)
-    if m.p_nom_min is not None:
-        reporter.record_p_nom_min(m.sienna_type, m.name, m.p_nom_min)
+    _record_p_nom_extendable(reporter, m.sienna_type, m)
+    record_p_nom_min(reporter, m.sienna_type, m.name, m.floor)
 
 
 def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
@@ -570,11 +559,8 @@ def _renewable_row(m: _RenewableMapping) -> dict[str, Any]:
         PyPSAGeneratorCol.MARGINAL_COST: m.marginal_cost,
         PyPSAGeneratorCol.COMMITTABLE: False,
         PyPSAGeneratorCol.P_NOM_EXTENDABLE: m.p_nom_extendable,
-        PyPSAGeneratorCol.P_NOM_MIN: m.p_nom_min,
-        PyPSAGeneratorCol.P_NOM_MAX: m.p_nom_max,
+        PyPSAGeneratorCol.P_NOM_MIN: m.floor.value,
         PyPSAGeneratorCol.OVERNIGHT_COST: m.overnight_cost,
-        PyPSAGeneratorCol.DISCOUNT_RATE: m.discount_rate,
-        PyPSAGeneratorCol.LIFETIME: m.lifetime,
-        PyPSAGeneratorCol.BUILD_YEAR: m.build_year,
+        **build_carried_values(m.ext, RENEWABLE_CARRIED),
         **UNCOMMITTED_GENERATOR_FIELDS,
     }

@@ -25,7 +25,14 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    LOAD_CARRIED,
+    LOAD_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
+)
 from interop.plugins.shared.sienna_pypsa_translations.mapping import bus_id_to_name
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LoadReporter
 
 # Load series carried back to p_set. A load's per-unit max_active_power profile becomes
@@ -59,7 +66,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
 
         for row in source.collect().iter_rows(named=True):
             name = row[SiennaLoadCol.NAME]
-            ext = records.get(name)
+            ext = records.get_fields(name, LOAD_MAPPED_FIELDS)
             bus_id = row[SiennaLoadCol.BUS]
             bus_name = bus_names[bus_id]
             # max_active_power is the demand magnitude; it becomes the PyPSA static p_set.
@@ -67,10 +74,8 @@ class SiennaToPypsaMapLoads(TranslationStep):
             max_active_power_by_name[name] = p_set
             reporter.record_bus(name, bus_id, bus_name)
             reporter.record_p_set(name, p_set, p_set)
-            if ext.carrier is not None:
-                reporter.record_carrier_from_ext(name, ext.carrier)
-            if ext.type is not None:
-                reporter.record_type_from_ext(name, ext.type)
+            sienna_type = row.get(SiennaLoadCol.SIENNA_TYPE, SiennaComponent.POWER_LOAD)
+            record_carried_fields(reporter, sienna_type, ext, LOAD_CARRIED)
             rows.append(
                 {
                     PyPSALoadCol.NAME: name,
@@ -78,8 +83,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
                     PyPSALoadCol.P_SET: p_set,
                     # Null rather than "": the sink leaves PyPSA's own default in place for
                     # a row that carries no value, and the sidecar states none.
-                    PyPSALoadCol.CARRIER: ext.carrier,
-                    PyPSALoadCol.TYPE: ext.type,
+                    **build_carried_values(ext, LOAD_CARRIED),
                 }
             )
 
@@ -88,6 +92,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
                 rows, schema=LOADS_DESTINATION_SCHEMA
             )
             self._record_load_time_series(state, max_active_power_by_name)
+            relay_records(state, records, max_active_power_by_name, self._recorder)
         return state
 
     def _record_load_time_series(

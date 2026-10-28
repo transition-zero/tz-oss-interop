@@ -49,7 +49,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     When I run translate against "inputs/line_ext.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" line "line_1" attribute "length" is 120.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "num_parallel" is 2.0
-    And the file "decisions.md" contains "| `sienna.Line.line_1.extensions.length` = 120.0 | `pypsa.Line.line_1.length` = 120.0 km | extensions.length (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.Line.line_1.extensions.length` = 120.0 km | `pypsa.Line.line_1.length` = 120.0 km | extensions.length (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: an unavailable Line becomes an inactive PyPSA Line
     Given a Sienna system

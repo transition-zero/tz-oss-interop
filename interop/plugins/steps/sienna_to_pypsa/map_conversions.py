@@ -1,0 +1,146 @@
+"""Conversion records that join two buses of the network become PyPSA Links.
+
+Sienna has no component for a technology that turns energy at one bus into energy at another,
+so the whole record reaches this hop in the sidecar. Where both ends, and each further bus,
+name a bus of the network and bus0 and bus1 differ, PyPSA holds it as a Link. A bus of a fuel
+that is not electricity is a bus of the network where its bus record built one. Every other
+conversion record travels on unchanged, for example an export, which has no bus1, and a trade
+route whose `<region>/<fuel>` end the network does not hold.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, ClassVar
+
+from pydantic import BaseModel
+
+from interop.core.extensions import (
+    ConversionExtension,
+    ExtensionKind,
+    ExtensionLookup,
+    ExtensionReader,
+)
+from interop.core.pipeline import State, TranslationStep
+from interop.core.reporting import ScopedRecorder
+from interop.plugins.shared.pypsa_constants import (
+    LINKS_DESTINATION_SCHEMA,
+    PYPSA_LINK_DEFAULTS,
+    PyPSABusCol,
+    PyPSADestinationTable,
+    PyPSALinkCol,
+)
+from interop.plugins.shared.pypsa_destination import (
+    append_destination_rows,
+    list_destination_names,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    CONVERSION_CARRIED,
+    CONVERSION_MAPPED_FIELDS,
+    build_carried_values,
+    record_carried_fields,
+)
+from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    CapacityFloor,
+    choose_p_nom_min,
+    record_p_nom_min,
+)
+from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
+from interop.plugins.shared.sienna_pypsa_translations.reporters import ConversionReporter
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
+
+_TAKEN_NAME_WARNING = (
+    "%d conversion record(s) join two buses under the name of a link of the network, so each "
+    "travels on to extensions.json and becomes no link: %s"
+)
+
+# PyPSA's own Link defaults, for a record that states no capacity or no efficiency.
+_DEFAULT_P_NOM = PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_NOM]
+_DEFAULT_EFFICIENCY = PYPSA_LINK_DEFAULTS[PyPSALinkCol.EFFICIENCY]
+_P_MIN_PU = PYPSA_LINK_DEFAULTS[PyPSALinkCol.P_MIN_PU]
+_ACTIVE = PYPSA_LINK_DEFAULTS[PyPSALinkCol.ACTIVE]
+
+
+class SiennaToPypsaMapConversions(TranslationStep):
+    name: ClassVar[str] = "sienna_to_pypsa_map_conversions"
+    params_schema: ClassVar[type[BaseModel] | None] = None
+
+    def __init__(self, recorder: ScopedRecorder, extensions: ExtensionReader) -> None:
+        self._recorder = recorder
+        self._extensions = extensions
+
+    def run(self, state: State, params: BaseModel | None) -> State:
+        lookup = self._extensions.read(ExtensionKind.CONVERSION)
+        records = lookup.list_records()
+        if not records:
+            return state
+        buses = set(list_destination_names(state, PyPSADestinationTable.BUSES, PyPSABusCol.NAME))
+        links = set(list_destination_names(state, PyPSADestinationTable.LINKS, PyPSALinkCol.NAME))
+        joining = [record for record in records if _is_joining_buses(record, buses)]
+        self._report_taken_names([record.name for record in joining if record.name in links])
+        self._map_links(state, lookup, [record for record in joining if record.name not in links])
+        relay_records(state, lookup, [record.name for record in records], self._recorder)
+        return state
+
+    def _report_taken_names(self, names: list[str]) -> None:
+        """Report each conversion that joins two buses under the name of a link of the network."""
+        reporter = ConversionReporter(self._recorder)
+        for name in names:
+            reporter.record_name_taken(name)
+        if names:
+            log.warning(_TAKEN_NAME_WARNING, len(names), name_a_few(names))
+
+    def _map_links(
+        self,
+        state: State,
+        lookup: ExtensionLookup[ConversionExtension],
+        linked: list[ConversionExtension],
+    ) -> None:
+        if not linked:
+            return
+        reporter = ConversionReporter(self._recorder)
+        rows = []
+        for record in linked:
+            lookup.get_fields(record.name, CONVERSION_MAPPED_FIELDS)
+            _record_link(reporter, record)
+            rows.append(_build_link_row(record))
+        append_destination_rows(state, PyPSADestinationTable.LINKS, rows, LINKS_DESTINATION_SCHEMA)
+
+
+def _is_joining_buses(record: ConversionExtension, buses: set[str]) -> bool:
+    """Whether the record joins two different buses of the network, and names no other bus."""
+    ends = {record.bus0, record.bus1}
+    further = {bus for bus in (record.bus2, record.bus3) if bus is not None}
+    return len(ends) == 2 and ends | further <= buses
+
+
+def _record_link(reporter: ConversionReporter, record: ConversionExtension) -> None:
+    record_carried_fields(reporter, ExtensionKind.CONVERSION, record, CONVERSION_CARRIED)
+    record_p_nom_min(reporter, ExtensionKind.CONVERSION, record.name, _choose_floor(record))
+    if record.p_nom is None:
+        reporter.record_default(record.name, PyPSALinkCol.P_NOM, _DEFAULT_P_NOM)
+    if record.efficiency is None:
+        reporter.record_default(record.name, PyPSALinkCol.EFFICIENCY, _DEFAULT_EFFICIENCY)
+    reporter.record_default(record.name, PyPSALinkCol.P_MIN_PU, _P_MIN_PU)
+    reporter.record_default(record.name, PyPSALinkCol.ACTIVE, _ACTIVE)
+
+
+def _build_link_row(record: ConversionExtension) -> dict[str, Any]:
+    return {
+        **build_carried_values(record, CONVERSION_CARRIED),
+        PyPSALinkCol.NAME: record.name,
+        PyPSALinkCol.P_NOM: _DEFAULT_P_NOM if record.p_nom is None else record.p_nom,
+        PyPSALinkCol.P_MIN_PU: _P_MIN_PU,
+        PyPSALinkCol.EFFICIENCY: (
+            _DEFAULT_EFFICIENCY if record.efficiency is None else record.efficiency
+        ),
+        PyPSALinkCol.ACTIVE: _ACTIVE,
+        PyPSALinkCol.P_NOM_MIN: _choose_floor(record).value,
+    }
+
+
+def _choose_floor(record: ConversionExtension) -> CapacityFloor:
+    """PyPSA ignores the p_nom of an extendable link, so the capacity it has is a floor."""
+    return choose_p_nom_min(record.p_nom_min, record.p_nom, record.p_nom_extendable)

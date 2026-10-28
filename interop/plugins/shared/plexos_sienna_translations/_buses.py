@@ -30,7 +30,12 @@ from interop.plugins.shared.plexos_sienna_translations._shared import (
 )
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
+    BUS_VOLTAGE_LIMIT_MAX,
+    BUS_VOLTAGE_LIMIT_MIN,
     BUSTYPE_DTYPE,
+    DEFAULT_BUS_ANGLE,
+    DEFAULT_BUS_BASE_VOLTAGE,
+    DEFAULT_BUS_MAGNITUDE,
     VOLTAGE_LIMIT_DTYPE,
     ACBusType,
     SiennaACBusCol,
@@ -44,14 +49,6 @@ NODE_NAME = "node_name"
 NODE_VOLTAGE = "node_voltage"
 NODE_IS_SLACK = "node_is_slack"
 NODE_REGION = "node_region"
-
-# PLEXOS states no nodal voltage limit and no voltage magnitude, so both are the
-# translator's. The limits are the range a Sienna consumer assumes around 1.0 per unit.
-DEFAULT_BASE_VOLTAGE: float = 1.0
-DEFAULT_MAGNITUDE: float = 1.0
-DEFAULT_ANGLE: float = 0.0
-VOLTAGE_LIMIT_MIN: float = 0.9
-VOLTAGE_LIMIT_MAX: float = 1.1
 
 _ID_NOTE = "assigned by 1-based row position in the ACBus table"
 _NUMBER_NOTE = "assigned by 1-based row position in the ACBus table"
@@ -177,7 +174,7 @@ BUS_AVAILABLE = Translation(
 BUS_BASE_VOLTAGE = Translation(
     exprs=[
         pl.col(NODE_VOLTAGE)
-        .fill_null(DEFAULT_BASE_VOLTAGE)
+        .fill_null(DEFAULT_BUS_BASE_VOLTAGE)
         .cast(pl.Float64)
         .alias(SiennaACBusCol.BASE_VOLTAGE)
     ],
@@ -265,7 +262,7 @@ BUS_TYPE = Translation(
 )
 
 BUS_ANGLE = Translation(
-    exprs=[pl.lit(DEFAULT_ANGLE).alias(SiennaACBusCol.ANGLE)],
+    exprs=[pl.lit(DEFAULT_BUS_ANGLE).alias(SiennaACBusCol.ANGLE)],
     make_events=lambda old, new: build_defaulted(
         [
             build_sienna_field(
@@ -280,7 +277,7 @@ BUS_ANGLE = Translation(
 )
 
 BUS_MAGNITUDE = Translation(
-    exprs=[pl.lit(DEFAULT_MAGNITUDE).alias(SiennaACBusCol.MAGNITUDE)],
+    exprs=[pl.lit(DEFAULT_BUS_MAGNITUDE).alias(SiennaACBusCol.MAGNITUDE)],
     make_events=lambda old, new: build_defaulted(
         [
             build_sienna_field(
@@ -296,7 +293,9 @@ BUS_MAGNITUDE = Translation(
 
 BUS_VOLTAGE_LIMITS = Translation(
     exprs=[
-        pl.struct(pl.lit(VOLTAGE_LIMIT_MIN).alias("min"), pl.lit(VOLTAGE_LIMIT_MAX).alias("max"))
+        pl.struct(
+            pl.lit(BUS_VOLTAGE_LIMIT_MIN).alias("min"), pl.lit(BUS_VOLTAGE_LIMIT_MAX).alias("max")
+        )
         .cast(VOLTAGE_LIMIT_DTYPE)
         .alias(SiennaACBusCol.VOLTAGE_LIMITS)
     ],
