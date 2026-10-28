@@ -155,7 +155,7 @@ _NON_BINDING_RAMP_MINUTES = 1.0
 _RAMP_DERIVATION = "Max Ramp Up, capped at the rate that covers p_nom in one snapshot"
 _RAMP_DOWN_NOTE = (
     "the generator states no Max Ramp Down, so ramp_limits.down takes the rate that covers "
-    "p_nom in one minute, which never binds"
+    "p_nom in one minute, which binds at no snapshot of a minute or longer"
 )
 _TIME_LIMITS_DERIVATION = "Min Up Time and Min Down Time, in hours"
 _COST_DERIVATION = "the marginal cost, as the variable cost curve's proportional term"
@@ -769,7 +769,7 @@ def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
     """The rates the unit may change output at, in megawatts per minute.
 
     A missing down rate takes the rate that covers p_nom in one minute, so it binds at no
-    snapshot length. A generator that states only a down rate gets no ramp_limits.
+    snapshot of a minute or longer. A generator that states only a down rate gets no ramp_limits.
     """
     commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.ramp_limit_up is None:

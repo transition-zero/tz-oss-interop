@@ -236,7 +236,7 @@ mappings file gives that fuel the type `ThermalStandard`.
 | `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power_limits` | MW | `(Min Stable Level, the available capacity)` | `derived` |
 | `active_power` | MW | `Min Stable Level` | `derived` |
-| `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot. A generator that states no `Max Ramp Down` takes the rate that covers the whole capacity in one minute, which binds at no snapshot length (`ramp_limits.down` is a `default` event). A generator that states only `Max Ramp Down` gets no `ramp_limits`, because SiennaSchemas needs both directions | `derived` |
+| `ramp_limits` | MW/min | `Max Ramp Up` / `Max Ramp Down`, held to the rate that covers the whole capacity in one snapshot. A generator that states no `Max Ramp Down` takes the rate that covers the whole capacity in one minute, which binds at no snapshot of one minute or longer (`ramp_limits.down` is a `default` event). A generator that states only `Max Ramp Down` gets no `ramp_limits`, because SiennaSchemas needs both directions | `derived` |
 | `time_limits` | h | `Min Up Time` / `Min Down Time` | `direct` |
 | `time_at_status` | h | `10000.0`, because PLEXOS states no prior on-time | `default` |
 | `must_run` | | not written | `dropped` |
