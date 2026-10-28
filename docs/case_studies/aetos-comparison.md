@@ -164,7 +164,8 @@ of `MR`. In AETOS, the only producer of the gas of `MR` and `GW` is a backstop. 
 capacity in 2021, and the model may not build it at no cost. The translation leaves out each
 such mode of a fuel that is not electricity, so the gas bus of each country has no supply.
 These countries must also cover their conversion loss. We did not measure this cause in a test
-copy.
+copy. The translation now leaves out a plant whose fuel has producers that all cannot run in the
+year, such as `MRNGCCPH1`. We did not run the model again.
 
 **4. The storage rating.** Pumped storage has 42.9 GW, against 51.6 GW published, because a
 Sienna storage is rated on its electricity output.

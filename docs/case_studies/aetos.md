@@ -315,9 +315,10 @@ The system holds electricity only. The run of 2026-10-19 writes the other fuels 
 | `load` with a `bus` | 42 | The gas demand of each country that states one, 3,709 TWh in the year |
 
 A supply with no residual capacity and no capital cost, for example coal supply, is
-extendable, because the model builds its capacity at no cost. The capacity of a fuel
-technology is in PJ a year, because the model states no `CapacityToActivityUnit` for it, so
-the run converts it with that parameter. The record of each of the 572 gas, coal, oil and
+extendable, because the model builds its capacity at no cost. The model states no
+`CapacityToActivityUnit` for a fuel technology, so that parameter takes its default of 1. Thus
+one unit of its capacity is 1 PJ of activity in a year. The run rates each capacity as
+capacity × `CapacityToActivityUnit` / 8760 h, in MW. The record of each of the 572 gas, coal, oil and
 biomass plants with a fleet also names the bus of its fuel, its own cost and its own emission
 rate.
 
@@ -560,7 +561,8 @@ for the fuels and 539 for the plants. It also holds these values of `extensions.
   `TotalTechnologyAnnualActivityLowerLimit` of the model. A PyPSA link has no `e_sum_min`, so
   these plants stay generators, and they pay the Sienna price of their gas. The warning names
   three of them.
-- Each link has a `marginal_cost` of 10.00 USD for each MWh and an `efficiency` of 0.95.
+- Each link of a transport line has a `marginal_cost` of 10.00 USD for each MWh and an
+  `efficiency` of 0.95.
 - 92 of the 113 lines flow both ways. Each of them becomes two one-way links, for example
   `ATELCHPH1` and `ATELCHPH1 reverse`, so a flow loses energy in each direction.
 - The snapshot weightings give each hour the weight of its day. The `objective` and the
@@ -941,7 +943,8 @@ are the entries that explain the large differences above:
   [Storage](../translation_mappings/osemosys-to-sienna-gap-analysis.md#storage).
 - **Two countries have unserved energy.** The only producer of the gas of `MR` and `GW` is a
   backstop. Its cost prices the gas plants of the two countries above the penalty of unserved
-  energy, so the dispatch does not run them. Refer to
+  energy, so the dispatch does not run them. The translation now leaves these plants out, and
+  reports each one. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices).
 - **The expansion builds biomass, and the published solve builds wind and solar.** The scope of
   our run left out every fuel other than electricity and gas, so the plants that burn those
