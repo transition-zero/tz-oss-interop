@@ -70,3 +70,16 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against "inputs/enum_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the log contains "UnitSystem (type unknown to SiennaSchemas)"
     And the PyPSA network "outputs/network.nc" has 1 bus
+
+  Scenario: a Line that writes its arc id as text reaches the Arc that the id names
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the system contains a Line "line_2" from "node_a" to "node_b" with rating 5.0
+    And the Line "line_1" states its arc as text
+    And the system is saved as "inputs/text_arc.json"
+    When I run translate against "inputs/text_arc.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 lines
+    And the PyPSA network "outputs/network.nc" line "line_1" has bus0 "node_a"
+    And the PyPSA network "outputs/network.nc" line "line_1" has bus1 "node_b"

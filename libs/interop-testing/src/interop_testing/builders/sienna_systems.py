@@ -434,6 +434,12 @@ class SiennaSystemBuilder:
         self._check_not_saved("a schema_version")
         self._schema_version = schema_version
 
+    def set_line_arc_as_text(self, name: str) -> None:
+        """Write the Arc id of a Line as a JSON string, which SiennaSchemas does not allow."""
+        self._check_not_saved(f"arc for Line {name!r}")
+        line = self._line_by_name(name)
+        line["arc"] = str(line["arc"])
+
     def drop_link_operational_flow_limit(self, name: str) -> None:
         self._check_not_saved(f"operational_flow_limit for HVDC line {name!r}")
         del self._link_by_name(name)["operational_flow_limit"]

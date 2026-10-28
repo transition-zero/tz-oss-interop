@@ -477,6 +477,11 @@ def given_thermal_standard_lacks_field(
     sienna_system_builder.remove_generator_field(name, field)
 
 
+@given(parsers.parse('the Line "{name}" states its arc as text'))
+def given_line_states_arc_as_text(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
+    sienna_system_builder.set_line_arc_as_text(name)
+
+
 @given(parsers.parse('the system has a component "{name}" of the unknown type "{type_name}"'))
 def given_system_has_unknown_component(
     sienna_system_builder: SiennaSystemBuilder, name: str, type_name: str

@@ -146,7 +146,7 @@ def _keep_valid_rows(
     kept: list[dict[str, Any]] = []
     for row in rows:
         try:
-            model.model_validate(row)
+            validated = model.model_validate(row)
         except ValidationError as error:
             field = ".".join(str(part) for part in error.errors()[0]["loc"])
             identity = (
@@ -156,5 +156,6 @@ def _keep_valid_rows(
             )
             left_out.append(f"{type_name} {identity} (field {field or 'row'})")
         else:
-            kept.append(row)
+            # The validated values, because staging reads them: a raw "1" is no Arc id.
+            kept.append(validated.model_dump(mode="json", by_alias=True, exclude_unset=True))
     return kept
