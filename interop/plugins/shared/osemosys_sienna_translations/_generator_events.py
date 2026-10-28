@@ -327,7 +327,7 @@ def build_emission_events(
 ) -> list[TranslationEvent]:
     return [
         build_derived(
-            _build_emission_sources(old, term),
+            build_emission_sources(old, term),
             [
                 dest(
                     old[GENERATOR_NAME],
@@ -342,7 +342,7 @@ def build_emission_events(
     ]
 
 
-def _build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
+def build_emission_sources(old: dict[str, Any], term: dict[str, Any]) -> list[SourceField]:
     """The own rate, then the input ratio, rate and output ratio of each fuel and its producer."""
     own = _build_source(SupplyParameter.EMISSION_RATE, old, term[POLLUTANT], term[OWN_RATE])
     burned = [
