@@ -372,26 +372,34 @@ either. Check the length of each line if you plan to use it.
 | --- | --- | --- | --- |
 | `name` | | `name` | `direct` |
 | `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
-| `p_nom` | MW | `rating_from`, divided by `extensions.p_max_pu` where the sidecar states one | `derived` |
+| `p_nom` | MW | The forward bound (below), divided by `extensions.p_max_pu` where the sidecar states one | `derived` |
 | `p_max_pu` | per unit of `p_nom` | `extensions.p_max_pu` of the `controllable_line` record | `sidecar` |
-| `p_min_pu` | per unit of `p_nom` | `extensions.p_min_pu` of the `controllable_line` record. If absent, `-rating_to` ÷ `p_nom`. | `sidecar` or `derived` |
-| `efficiency` | | 1 − the proportional term of `loss.function_data` | `derived` |
+| `p_min_pu` | per unit of `p_nom` | `extensions.p_min_pu` of the `controllable_line` record. If absent, `-`the reverse bound (below) ÷ `p_nom`. | `sidecar` or `derived` |
+| `efficiency` | | 1 − the proportional term of `loss.value_curve.function_data` | `derived` |
 | `active` | | `available` | `direct` |
 | `carrier` | | `extensions.carrier` of the `controllable_line` record | `sidecar` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `controllable_line` record | `sidecar` |
 | `p_nom_min` | MW | The derived `p_nom`, for an extendable link only. | `derived` |
 
-Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
-`rating_from` as `p_nom` × `p_max_pu`. The translator undoes this in three cases:
+The translator reads two bounds from the line:
 
-- The sidecar states no `p_max_pu`. Then `p_nom` is `rating_from`, and PyPSA's default
+- **The ceiling** is the smallest of `rating`, `rating_from` and `rating_to`. A converter
+  rating that the line leaves out adds no limit.
+- **The forward bound** is `operational_flow_limit.from_to_max`, and **the reverse bound** is
+  `operational_flow_limit.to_from_max`. The ceiling caps each of them. A line that states no
+  `operational_flow_limit` takes the ceiling as both bounds.
+
+Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
+`from_to_max` as `p_nom` × `p_max_pu`. The translator undoes this in three cases:
+
+- The sidecar states no `p_max_pu`. Then `p_nom` is the forward bound, and PyPSA's default
   `p_max_pu` of 1.0 holds.
-- The sidecar states a `p_max_pu`. Then `p_nom` is `rating_from` divided by that share. A link
-  stored as 500 MW with a `p_max_pu` of 0.5 comes back as a 1000 MW link.
+- The sidecar states a `p_max_pu`. Then `p_nom` is the forward bound divided by that share. A
+  link stored as 500 MW with a `p_max_pu` of 0.5 comes back as a 1000 MW link.
 - The stored maximum is zero. Then `p_nom` is `0.0` and `p_min_pu` is `0.0`. The report gives
   a row for that default.
 
-Sienna states `rating_to` as `0.0` for a link whose PyPSA `p_min_pu` was not negative. A
+Sienna states `to_from_max` as `0.0` for a link whose PyPSA `p_min_pu` was not negative. A
 positive lower bound therefore survives only in the sidecar.
 
 ## Time series
@@ -404,7 +412,7 @@ its values in the time-series sidecar. The translator reads five series and leav
 | `PowerLoad` `max_active_power` | `loads.p_set` | The static `max_active_power` of the load, in MW |
 | `RenewableDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
 | `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
-| `ThermalStandard` `active_power_limits` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
+| `ThermalStandard` `max_active_power` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
 
 The snapshots of the network come from the first profile that reaches it: the start time,
@@ -529,7 +537,7 @@ name one.
 | `EnergyReservoirStorage` `operation_cost.charge_variable_cost` and `.energy_surplus_cost` | The charge cost is lost. Refer to [Round-trip asymmetries](#round-trip-asymmetries). |
 | `Line.rating_b` and `.rating_c` | Nothing applies the emergency ratings. The dispatch can use the normal rating only. |
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
-| `TwoTerminalGenericHVDCLine.rating`, and both reactive power limits | The translator reads `rating_from` and `rating_to`. PyPSA holds one capacity on a link, so the overall `rating` is not read. |
+| Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
 | A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
 | A reserve of any type | PyPSA has no reserve component. A reserve in the sidecar is reported as dropped. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |

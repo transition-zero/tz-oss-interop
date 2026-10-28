@@ -211,7 +211,7 @@ connects nothing, so the translator leaves it out and records it.
 | `rating_to` | MW | `-Min Flow` where `Min Flow` is negative, else `0.0` | `derived` |
 | `rating` | MW | The larger of `rating_from` and `rating_to` | `derived` |
 | `reactive_power_limits_from` / `_to` | MVAR | `(0.0, 0.0)` | `default` |
-| `loss` | | A `LossCurve` with a zero cost curve, so the line has no loss | `default` |
+| `loss` | | A `LossCurve` with a zero-loss curve, so the line has no loss | `default` |
 | `available` | | `True` | `default` |
 | `Wheeling Charge` | | The HVDC type prices no flow. | `dropped` |
 
@@ -334,7 +334,8 @@ The turbine, its head reservoir and its tail reservoir become **one**
 | `output_active_power_limits` | pu | `(0.0, the turbine capacity)` | `derived` |
 | `efficiency` | | `√(Pump Efficiency)` for the charge and for the discharge | `derived` |
 | `cycle_limits` | | `10000`, so the cycling limit never binds and the storage target does the work | `default` |
-| `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
+| `operation_cost.charge_variable_cost` | $/MWh | `0.0` | `default` |
+| `operation_cost.discharge_variable_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 
 The head reservoir and the tail reservoir do not become components of their own. The
 elevation, an efficiency that changes with the level, and a `Max Volume` stated in water are
@@ -354,7 +355,8 @@ elevation, an efficiency that changes with the level, and a `Max Volume` stated 
 | `initial_storage_capacity_level` | pu | `Initial SoC % × Capacity` ÷ the energy capacity, held between 0 and 1 | `derived` |
 | `input_active_power_limits` / `output_active_power_limits` | pu | `(0.0, 1.0)` for each | `default` |
 | `efficiency` | | `√(Charge Efficiency)` for the charge and for the discharge | `derived` |
-| `operation_cost.variable_operation_cost` | $/MWh | `0.0` | `default` |
+| `operation_cost.charge_variable_cost` | $/MWh | `0.0` | `default` |
+| `operation_cost.discharge_variable_cost` | $/MWh | `0.0` | `default` |
 
 `Min SoC`, `Max SoC` and `Discharge Efficiency` are `dropped`. The whole energy capacity is
 usable, and the round trip efficiency splits evenly across the two directions.

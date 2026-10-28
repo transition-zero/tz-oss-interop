@@ -39,9 +39,9 @@ A time series has two parts, and the InfraStore store holds both:
 - **Association (JSON, SiennaSchemas-defined).** One row of `time_series_associations` for each (component, series): `association_id`, `owner_id` (the integer `id` of the owning component) and `owner_type`, `name`, `resolution` (ISO 8601, e.g. `PT1H`), `initial_timestamp`, `length`, `time_series_type` (e.g. `SingleTimeSeries`), `uri`, `element_type`, `element_shape` and `features`. The store assigns `association_id` and `uri`, and the sink copies the finished rows into `system.json`.
 - **Value array (InfraStore sidecar).** The `infrastore` package writes the arrays into one `.h5` file beside the document. `time_series_storage_file` names that file, and the `uri` of a row is the locator of its array in the store. The readers read the values through `infrastore`.
 
-**The values are per-unit shapes.** The array is a per-unit profile (typically `[0, 1]`). The magnitude stays in the static field (`max_active_power`, `rating`, ...) and the shape in the series. PyPSA renewable `p_max_pu` is already per unit (stored as it is). For loads, the translator normalises `p_set` by its peak. A 0.2 row has no `scaling_factor_multiplier`, so the translator keeps the divisor in its own association table, and the PyPSA round trip does not change. A `NATURAL_UNITS` owner does not change the values, because the unit basis of a series is a declaration and nothing rescales it.
+**The stored values are in MW.** The translator stages each series as a per-unit shape (typically `[0, 1]`), and the sink multiplies that shape by the capacity of its owner before it writes the store. Each stored series states the unit system `natural_units`, the units `MW` and the quantity `ActivePower`. The capacity is `active_power_limits.max` for a `ThermalStandard`, `rating` for a renewable, `max_active_power` for a load and `base_power` for a `HydroDispatch` (`sienna_time_series.py`). A reader divides each stored value by the same capacity, so the PyPSA round trip does not change. Do not multiply a stored value by a capacity again.
 
-> **Open question: the meaning of the values for a PowerSystems.jl 6 solve.** PowerSystems.jl 6 removed `scaling_factor_multiplier` and stores the actual quantity of each device in a series. A solve in PowerSystems.jl 6 would read these per-unit arrays as MW. The alternative is to write natural-unit values, to state `unit_system`, `quantity_kind` and `component_field` on each row, and to divide on read. The owner has not decided.
+> **Settled: the meaning of the values for a PowerSystems.jl 6 solve.** PowerSystems.jl 6 removed `scaling_factor_multiplier` and stores the actual quantity of each device in a series. So the sink writes natural-unit values in MW, and it states the unit system, the units and the quantity on each series.
 
 Relative to a PowerSystems.jl `System`, the association layer is JSON rows from the store, and the value arrays live in the `infrastore` sidecar.
 
@@ -323,7 +323,7 @@ The following carrier appears in PyPSA networks alongside Generator carriers but
 
 | PyPSA time-varying attribute | Target | Sienna mechanism |
 | --- | --- | --- |
-| `n.generators_t.p_max_pu` | `max_active_power` | A `time_series_associations` row on `max_active_power`: store the `p_max_pu` series divided by its peak, so the shape peaks at 1.0. `active_power_limits.max` is `effective_p_nom × peak` |
+| `n.generators_t.p_max_pu` | `max_active_power` | A `time_series_associations` row on `max_active_power`: the translator stages the `p_max_pu` series divided by its peak, so the shape peaks at 1.0, and `active_power_limits.max` is `effective_p_nom × peak`. The store holds the shape times `active_power_limits.max`, which is `p_max_pu(t) × effective_p_nom` in MW |
 | `n.generators_t.marginal_cost` | `operation_cost` | Cannot attach a series to `ThermalGenerationCost.variable_operation_cost` directly; requires `MarketBidCost`. Flag as unsupported in simple translation; document as known gap |
 
 ##### Unit commitment (`committable`)
@@ -404,7 +404,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 | PyPSA attribute | Where | Target | Transform | Notes |
 | --- | --- | --- | --- | --- |
-| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | A `time_series_associations` row on `max_active_power` | values = `p_max_pu_series ÷ peak` (a shape that peaks at 1.0) | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
+| `p_max_pu` | `n.generators_t.p_max_pu` (or static scalar) | A `time_series_associations` row on `max_active_power` | stored values = `p_max_pu_series × effective_p_nom`, in MW: the staged shape `p_max_pu_series ÷ peak` times the `rating` | **Required** if p_max_pu is time-varying. If static scalar, encode in `rating` only |
 | `p_min_pu` | `n.generators_t.p_min_pu` | Not directly supported | — | `RenewableDispatch` has no time-varying lower limit. Use `0.0` for `active_power` |
 | `marginal_cost` | `n.generators_t.marginal_cost` | Not directly supported | — | Switch to `MarketBidCost` if time-varying marginal cost is needed |
 
@@ -455,7 +455,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 
 ##### Time series for `RenewableNonDispatch`
 
-Same mechanism as `RenewableDispatch`: emit a `time_series_associations` row on `max_active_power` whose values are `p_max_pu_series ÷ peak` (no pre-multiplication by `p_nom`), with `rating = effective_p_nom × peak`. The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
+Same mechanism as `RenewableDispatch`: emit a `time_series_associations` row on `max_active_power` whose staged shape is `p_max_pu_series ÷ peak`, with `rating = effective_p_nom × peak`. The store holds the shape times the `rating`, which is `p_max_pu_series × effective_p_nom` in MW. The same skip-when-absent and skip-when-flat rules apply. The difference is that the Sienna solver treats this as an inviolable maximum (must-take), not as a curtailable upper bound.
 
 ##### Note on `operation_cost`
 
@@ -555,7 +555,8 @@ The translator emits `HydroDispatch` from PyPSA `StorageUnit` rows with carrier 
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
 | `active_power` | `Float64` (MW) | `p_nom`, `p_min_pu` | `effective_p_nom × p_min_pu` | derived |  |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
-| `rating` | `Float64` (pu) | `p_max_pu` | `p_max_pu` | derived |  |
+| `rating` | `Float64` (MVA) | `p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | In MVA, because `power_units` is `NATURAL_UNITS` |
+| `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the unit is in its physical unit |
 | `active_power_limits` | `MinMax` (MW) | `p_nom`, `p_min_pu`, `p_max_pu` | `(effective_p_nom×p_min_pu, effective_p_nom×p_max_pu)` | derived |  |
 | `reactive_power_limits` | `Union{Nothing,MinMax}` | — | `nothing` | defaulted |  |
 | `base_power` | `Float64` (MVA) | `p_nom` | `effective_p_nom` (`p_nom_opt` where an extendable component has one, `p_nom_min` where it states a capacity a build cannot take away, else `p_nom`) | derived |  |
@@ -1912,7 +1913,7 @@ if load_name in n.loads_t["p_set"].columns:
     ts = n.loads_t["p_set"][load_name]  # pandas Series, MW
     active_power = float(ts.iloc[0])  # first timestep as initial condition
     max_active_power = float(ts.max())  # peak for capacity field
-    # emit a TimeSeriesAssociation on max_active_power; store ts / max_active_power (per-unit shape)
+    # emit a time_series_associations row on max_active_power; stage ts / max_active_power (the store holds ts in MW)
 else:
     # Static load
     static_p = float(n.loads.loc[load_name, "p_set"])  # MW
@@ -1927,7 +1928,7 @@ See Target format → Time series for the canonical form. The key points:
 
 - `name` is `"max_active_power"` (the field the series scales); `owner_type`/`owner_id` point at the load.
 - `resolution` is the ISO 8601 snapshot interval (e.g. `PT1H`).
-- The stored array is the **per-unit shape** (`p_set / peak`), and no `scaling_factor_multiplier`; the magnitude lives in `max_active_power`.
+- The translator stages the **per-unit shape** (`p_set / peak`), with no `scaling_factor_multiplier`; the magnitude lives in `max_active_power`. The store holds the shape times `max_active_power`, which is `p_set(t)` in MW.
 
 #### `q_set` — reactive power time series
 
@@ -2024,7 +2025,7 @@ The demand profile is a separate row of `time_series_associations` pointing at t
 }
 ```
 
-The stored array is the **per-unit shape** (`p_set(t) / peak`, in `[0, 1]`). The magnitude stays in `max_active_power`, and the translator keeps the peak as the divisor in its own association table.
+The translator stages the **per-unit shape** (`p_set(t) / peak`, in `[0, 1]`), and the magnitude stays in `max_active_power`. The store holds the shape times `max_active_power`, which is `p_set(t)` in MW.
 
 #### Static load with q_set (solved_network style)
 
@@ -2071,7 +2072,7 @@ References resolve by `id`, so the serialised lists are unordered; assign `id`s 
 
 #### Time series (cross-reference)
 
-A load's demand profile is a `time_series_associations` row on `max_active_power` — a per-unit shape with the array in the InfraStore sidecar. This is identical to the `max_active_power` association on a `RenewableDispatch` (see the Generator time-series section and Target format → Time series).
+A load's demand profile is a `time_series_associations` row on `max_active_power`, with the array in MW in the InfraStore sidecar. This is identical to the `max_active_power` association on a `RenewableDispatch` (see the Generator time-series section and Target format → Time series).
 
 ---
 
