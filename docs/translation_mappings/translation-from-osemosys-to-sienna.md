@@ -565,14 +565,15 @@ checks leave a technology out:
 | Its `residual_capacity` in the operations year is 0 or less, and the model does not build it at no cost | The fleet holds none of it. |
 | It does not take in electricity at one bus and put it out at another, at the operations mode | A line needs two ends. |
 
-The capacity of a line is its `residual_capacity` in MW. A technology with no residual capacity
+The capacity of a line is its `residual_capacity` × its `capacity_to_activity_unit` in MWh /
+8760 h, in MW. A technology with no residual capacity
 that the model builds at no cost (`CapitalCost` and `FixedCost` are 0, `TotalAnnualMaxCapacityInvestment`
 is not 0, and `TotalAnnualMaxCapacity` leaves room) takes the capacity that OSeMOSYS can build:
 min(`TotalAnnualMaxCapacity`, `TotalAnnualMaxCapacityInvestment`). A line of 0 MW would block
 each flow that OSeMOSYS lets through. Where neither limit binds, OSeMOSYS builds whatever the
 flow needs. Sienna has no line without a rating, so the line takes the electricity that the
-whole fleet of the year can put out: Σ over every technology of its `residual_capacity` in MW ×
-its largest electricity `output_activity_ratio` at any mode. That capacity is divided by the
+whole fleet of the year can put out: Σ over every technology of its `residual_capacity` ×
+its `capacity_to_activity_unit` in MWh / 8760 h × its largest electricity `output_activity_ratio` at any mode. That capacity is divided by the
 smallest ratio of the line, so that no limit of the line is below it. No flow of the operations
 system can exceed it, so it never binds in that system, and it stays finite. `decisions.md`
 records it as `TRANSLATOR_DEFAULT_APPLIED` on both limits of the line. The line writes no
@@ -601,10 +602,11 @@ production nor as trade.
 
 A `variable_operation_cost` above 0 goes to the `controllable_line` record of
 `extensions.json`, as `marginal_cost` in $/MWh sent: the cost / the electricity input ratio. A
-Sienna line prices no flow. The emission penalty of the operations mode is not in
-`marginal_cost`. `decisions.md` records each penalised pollutant of a line as `NOT_MAPPED`, with
-its rate, and one warning names the technologies. The `conversion` record of an export does the
-same. An `availability_factor` below 1 goes to `p_max_pu`, because the
+Sienna line prices no flow. `marginal_cost` also adds the emission penalty of each pollutant
+that the operations mode emits: its `emission_rate` × `emission_penalty` of the region / the
+electricity input ratio. `decisions.md` records each penalty term as an event of its own, and
+the cost event reads them. The `conversion` record of an export does the same. An
+`availability_factor` below 1 goes to `p_max_pu`, because the
 limits of the line hold it inside one number.
 
 The step does not apply the `capacity_factor` of a transport technology to the system. The
@@ -643,7 +645,7 @@ value as `TRANSLATOR_DEFAULT_APPLIED`.
 | `bus` | | The bus of the electricity fuel that the mode puts out | `derived` |
 | `prime_mover_type` | | `OT` | `default` |
 | `fuel_type` | | `OTHER` | `default` |
-| `base_power` | MVA | `residual_capacity` of the line in MW × the electricity `output_activity_ratio` of the mode | `derived` |
+| `base_power` | MVA | `residual_capacity` of the line × its `capacity_to_activity_unit` in MWh / 8760 h × the electricity `output_activity_ratio` of the mode | `derived` |
 | `active_power_limits` | MW | As for a `ThermalStandard`, with the `capacity_factor` and the `availability_factor` of the line. Refer to [The availability of each hour](#the-availability-of-each-hour). | `derived` |
 | `operation_cost.variable` | $/MWh | A linear curve: `variable_operation_cost` of the mode in $/MWh / the electricity output ratio of the mode + the emission penalty of each pollutant | `derived` |
 | `operation_cost.fixed` | $ | `0.0`. OSeMOSYS states the fixed cost for the technology, and the line record holds it. | `default` |
@@ -693,9 +695,9 @@ A technology of kind `export` that takes in electricity gets a `conversion` reco
 | `carrier` | | The category of the technology |
 | `bus0` | | The bus of the electricity fuel that it takes in at the operations mode |
 | `bus1` | | None, as an export puts out nothing |
-| `p_nom` | MW | `residual_capacity` in MW × the electricity input ratio |
+| `p_nom` | MW | `residual_capacity` × `capacity_to_activity_unit` in MWh / 8760 h × the electricity input ratio |
 | `efficiency` | | The electricity output ratio / the electricity input ratio |
-| `marginal_cost` | $/MWh | `variable_operation_cost` in $/MWh / the electricity input ratio |
+| `marginal_cost` | $/MWh | (`variable_operation_cost` in $/MWh + Σ `emission_rate` × `emission_penalty`) at the operations mode / the electricity input ratio |
 | `p_max_pu` | | `availability_factor`, when it is below 1 |
 | `input_fuel`, `output_fuel` | | The electricity fuel that it takes in and the one that it puts out. No PyPSA field. |
 | Each other field | | Refer to [The values that Sienna has no field for](#the-values-that-sienna-has-no-field-for). Each capacity rates on the electricity that goes in. |
@@ -1036,7 +1038,8 @@ negative rate.
 OSeMOSYS charges `EmissionsPenalty` (`emission_penalty`) on each unit of a pollutant that
 activity emits. So the penalty is a cost of dispatch. For each pollutant, the variable cost adds
 the emission rate of the plant in t/MWh × the penalty of its region in $/t. A negative rate
-gives a credit, as in OSeMOSYS.
+gives a credit, as in OSeMOSYS. A storage, a line, an import generator and the `conversion`
+record of an export add the penalty to their cost in the same way.
 
 A penalty of a region and pollutant that no component emits has no cost to add to. The report
 of the parameters that no step applies names it.
@@ -1060,8 +1063,8 @@ to [An import mode → `ThermalStandard`](#an-import-mode--thermalstandard). The
 `operating_modes` of the line record hold each other mode, and the ratios of the flow back. One
 warning names three lines that state values at a mode that is neither the flow back nor an
 import. A line applies the loss and the cost of the operations mode in both directions. When
-the loss of the flow back, `1 − output ratio / input ratio`, or its cost for each MWh sent
-differs, `decisions.md` records the value of the flow back as `NOT_MAPPED`, and one warning
+the loss of the flow back, `1 − output ratio / input ratio`, or its variable cost for each MWh
+sent differs from that of the operations mode, `decisions.md` records the value of the flow back as `NOT_MAPPED`, and one warning
 names three lines. The ratios of the flow back are in its `operating_modes` entry.
 
 ### Storage
@@ -1093,9 +1096,11 @@ osemosys-to-sienna: 39 technology(ies) whose total_technology_annual_activity_up
 ```
 
 A component notes each row of its technology that it applies or that its record keeps: the
-residual capacity, the availability, the costs, the emission rates and the flow rows of
-`input_activity_ratio` and `output_activity_ratio` among them. The report
-counts only those rows as applied. So a row of a technology that has no component and no record,
+residual capacity, the availability, the costs, the emission rates, the emission penalties and
+the flow rows of `input_activity_ratio` and `output_activity_ratio` among them. The report
+counts only those rows as applied. A generator notes each of its flow rows, so the report does
+not name the output of another fuel, for example the heat of a combined heat and power plant.
+The generator records that output as `NOT_MAPPED` itself. So a row of a technology that has no component and no record,
 for example the residual capacity of a supply technology with no carriers row, is reported. So
 are the capacity factor of a technology that charges a storage that another technology
 discharges, and the capital cost, the fixed cost and the life of a technology of a fuel that is
@@ -1130,7 +1135,7 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | The `constraint` records hold them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | The `constraint` records hold them. No step applies them. |
 | `StorageBalanceDay`, `StorageBalanceSeason`, `StorageBalanceYear`, `StorageMaxHours` | The `storage` records hold them. No step applies them to the system. |
-| `CapacityToActivityUnit` | The records hold it. A generator, a storage and the records of the fuels that are not electricity convert their capacity with it. A line and an import generator do not read it. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
+| `CapacityToActivityUnit` | The records hold it. Each component, the `conversion` record of an export and the records of the fuels that are not electricity convert their capacity with it. The capacity limits and the growth values of a record, and a trade route, convert with `units: capacity`. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
 | The values of another operating mode | The `operating_modes` of the records hold them. Refer to [Technology](#technology). |
 | The `capacity_factor` of a storage or a transport technology | The companion parquet holds it. The system does not apply it. |
 | `DepreciationMethod` | Not translated. No record holds a region. |
@@ -1146,7 +1151,7 @@ convention, the translator gives wrong values.
 
 | Value | Assumed as |
 | --- | --- |
-| `units:` | The units of your values. `CapacityToActivityUnit` must agree with them: for example 31.536 PJ for each GW-year. A line rates its capacity with `units: capacity`, and a generator and a storage rate theirs with `CapacityToActivityUnit`. |
+| `units:` | The units of your values. `CapacityToActivityUnit` must agree with them: for example 31.536 PJ for each GW-year. Each component rates its capacity with `CapacityToActivityUnit`. The capacity limits and the growth values of a record, a trade route and a cost for each unit of capacity convert with `units: capacity`. |
 | The electricity fuels | Each fuel whose annotation states `carrier: electricity`. A fuel that you do not mark is not electricity. |
 | Mode `1` | The mode that the system runs, when the model holds it |
 | `AvailabilityFactor` | A derate in each hour, not a limit on the energy of the year |

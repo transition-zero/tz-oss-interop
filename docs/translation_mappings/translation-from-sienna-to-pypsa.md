@@ -645,7 +645,9 @@ by kind, and each record names the component it belongs to.
 table of this document names becomes that PyPSA attribute. Each other field that a record
 states goes, unchanged, to the `extensions.json` that the pipeline writes beside the
 network. The report gives one row for each field that travels on, with the rule
-`relayed unchanged to extensions.json, as PyPSA has no attribute for it`.
+`relayed unchanged to extensions.json, as PyPSA has no attribute for it`. The row of
+`fuel_buses` and of `own_marginal_cost` says that the plant becomes a PyPSA `Link` that also
+maps the field, where the network holds the bus of each fuel of the plant.
 
 These rules apply to a record that a step reads. A step of the fuels reads a `generator` or a
 `load` record only when the network holds its bus, and no other component holds its name. A
