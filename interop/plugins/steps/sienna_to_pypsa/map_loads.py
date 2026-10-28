@@ -113,7 +113,11 @@ class SiennaToPypsaMapLoads(TranslationStep):
             if frame is None:
                 continue
             timing = series_timing(frame)
-            for component in series_components(frame):
+            # A load left out above has no p_set, so its series stays out with it.
+            written = [
+                name for name in series_components(frame) if name in max_active_power_by_name
+            ]
+            for component in written:
                 metadata_rows.append(
                     metadata_row(
                         component_table=PyPSADestinationTable.LOADS,
