@@ -63,18 +63,24 @@ class TechnologyExtras:
     rated_flow: FlowParameter
 
     def enrich(
-        self, state: State, operations: OperationsYear, members: pl.DataFrame
+        self,
+        state: State,
+        operations: OperationsYear,
+        members: pl.DataFrame,
+        held: pl.DataFrame | None = None,
     ) -> pl.DataFrame:
         """`members` with the values, the bounds and the mode values of each member.
 
-        `members` holds `region`, `technology`, the `operating_mode` that the component runs and
-        that rates it, and `rating_ratio`.
+        `members` holds `region`, `technology`, the `operating_mode` that rates the component,
+        and `rating_ratio`. `held` lists each mode that a member runs, with the same keys, where
+        a member runs more modes than the one that rates it.
         """
-        held = members.select(_HELD_KEYS)
+        rated = members.select(_HELD_KEYS)
         table = enrich_technology_values(state, operations, members, self.values)
-        bounds = enrich_activity_limits(state, operations, held, self.rated_flow)
+        bounds = enrich_activity_limits(state, operations, rated, self.rated_flow)
         table = table.join(bounds.drop(OPERATING_MODE), on=_KEYS, how="left")
-        modes = build_operating_modes(state, operations, held, self.run_parameters)
+        runs = rated if held is None else held
+        modes = build_operating_modes(state, operations, runs, self.run_parameters)
         return modes.enrich(table)
 
     def set_persisted(self, state: State, members: pl.DataFrame) -> None:
