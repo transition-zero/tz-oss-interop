@@ -67,3 +67,15 @@ Feature: PyPSA out and back through Sienna
     And a user mappings file with all standard carriers
     When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "solar_1" has a p_max_pu time series 0.4 0.8 0.6
+
+  Scenario: a must-take renewable with a p_max_pu profile comes back with the p_min_pu it stated
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "rooftop_1" on "bus_1" carrier "solar-rooftop" p_nom 50.0 p_min_pu 0.1 p_max_pu_series 0.8 0.4 0.6
+    And the network is saved as "inputs/round_trip.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "rooftop_1" attribute "p_min_pu" is 0.1
+    And the PyPSA network "outputs/network.nc" generator "rooftop_1" has a p_max_pu time series 0.8 0.4 0.6
