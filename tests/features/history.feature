@@ -93,7 +93,7 @@ Feature: REPL history records and re-runs past invocations
     And the history file records a "solve" invocation with detail "investment_treatment" set to "integer"
     And the history file records a "solve" invocation with detail "discount_rate" set to "0.07"
     When I replay the last expansion invocation
-    Then the prompt "Path to the PowerSystemsInvestments portfolio JSON?" offered default "outputs/portfolio.json"
+    Then the prompt "Path to the PowerSystemsInvestments portfolio JSON?" offered the path "outputs/portfolio.json" as its default
     And the select prompt "Balance model? (single-region = one zone; multi-region = zone by zone; nodal = bus by bus)" offered default "nodal"
     And the select prompt "Investment treatment? (continuous = build any amount of capacity; integer = build whole units only, which is slower)" offered default "integer"
     And the prompt "Discount rate?" offered default "0.07"
