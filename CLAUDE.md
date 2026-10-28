@@ -27,6 +27,10 @@ Unless overridden in a specific prompt:
 - **Electricity-only networks.** All buses are AC or DC. Non-electricity carriers (hydrogen, heat, gas) are out of scope and handled in Deferred sections of documentation.
 - The authoritative translation mapping lives at `./docs/translation_mappings/translation-from-pypsa-to-sienna.md`. Consult it before making decisions about field mappings, defaults, or scope questions. When adding new mappings, extend the document rather than deriving mappings from scratch. The doc is the single source of truth for translation design decisions. Open questions flagged in the doc take precedence over inferences from code or schemas.
 
+### OSeMOSYS to Sienna
+
+- **The Sienna system and the portfolio hold electricity.** Each electricity fuel with a location is an `ACBus` named `<region>/<fuel>`, in the `Area` of its location, and a conversion between two electricity fuels is a line. Every fuel that is not electricity, and each technology that supplies, moves or converts it, travels in `extensions.json` as `bus`, `generator`, `conversion` and `load` records in PyPSA terms. The bus of such a fuel is `<region>/<fuel>` too. The Sienna → PyPSA leg builds them as PyPSA buses, generators, links and loads, and a `ThermalStandard` whose `generator` record states `fuel_buses` becomes a `Link` from those buses, unless a reason that the mapping lists keeps it a `Generator`. The mapping lives at `./docs/translation_mappings/translation-from-osemosys-to-sienna.md`.
+
 ### Sienna to PyPSA
 
 - **Input contract is a SiennaSchemas system, and only that.** The Sienna source (`stage_sienna_system_json`) consumes the SiennaSchemas target shape defined in `./docs/translation_mappings/translation-from-pypsa-to-sienna.md`: a top-level JSON object mapping each Sienna type name to a list of that type's objects (`{ "ACBus": [...], "ThermalStandard": [...] }`), each a flat object with an integer `id`, integer references (`bus`/`area`/`owner_id`), and no `__metadata__`/`internal`/`ext` envelope. Time series are a sibling `TimeSeriesAssociation` list (keyed by integer `owner_id`) whose value arrays live in an HDF5 companion keyed by `time_series_uuid`. PyPSA round-trip fields with no SiennaSchemas home travel in a companion `extensions.json` sidecar, a document keyed by kind whose records are identified by `name`. The sidecar is an optional input, since only this translator writes one.
@@ -314,6 +318,8 @@ class SkipReport:
     note: str | Callable[[dict], str]  # what decisions.md carries against the component
 ```
 Two optional fields cover the rows that need them: `listed` makes the warning list a column other than `name_col`, under a word of its own, and `attribute_col` names the one source attribute a drop turns on. `SkipRule` pairs a keep expression with a `SkipReport` where a step applies several in a row.
+
+**`drop_skipped(table, rules, recorder)`** applies a sequence of `SkipRule` in order, each through `filter_component`, and returns the rows that pass every rule. **`report_not_mapped(table, condition, report, recorder)`** is the `NOT_MAPPED` twin of `filter_component`, for a row whose component survives but whose value does not: it splits into `(kept, not_mapped)`, records `SkipReport.build_not_mapped_event` for each row that the condition does not keep, and logs one warning naming a few of them. That warning reads `<pipeline>: N <counted_noun> <reason>. <label>: <names>`, with no ", so each is left out". In both helpers, a null in the condition counts as not kept.
 
 **`finalise(table, schema, recorder, component, name_col)`** — null-initialises unmapped schema columns with `NOT_MAPPED` events, then selects to the pure destination schema. `EventKind.NOT_MAPPED` is filterable in user-facing views; a schema column with no event at all is a detectable gap.
 
