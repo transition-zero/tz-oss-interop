@@ -21,6 +21,9 @@ _SECTION_PREFIX = "## "
 _VARIABLE_COLUMN = "variable"
 _VALUE_COLUMN = "value"
 _RESULTS_KEY_COLUMNS = ("variable", "component", "category", "timestamp")
+# The columns of a companion parquet that name the component and the snapshot of each row.
+_NAME_COLUMN = "name"
+_SNAPSHOT_COLUMN = "snapshot"
 # Two values this close, as a share of the larger, are the same value.
 _RELATIVE_TOLERANCE = 1e-9
 # Two values this close are the same value, which lets an expected zero match a rounding residue.
@@ -173,3 +176,21 @@ def _read_section(report: str, heading: str) -> str:
     assert start >= 0, f"expected a section {heading!r} in the report"
     end = report.find(f"\n{_SECTION_PREFIX}", start + 1)
     return report[start:] if end < 0 else report[start:end]
+
+
+@then(
+    parsers.parse(
+        'the parquet file "{path}" gives "{name}" a "{column}" of {first:g} in its first '
+        "snapshot and {peak:g} at its peak"
+    )
+)
+def assert_parquet_series(path: str, name: str, column: str, first: float, peak: float) -> None:
+    """Read the series of one component of a companion parquet, in the order of its snapshots."""
+    frame = pl.read_parquet(Path(path)).filter(pl.col(_NAME_COLUMN) == name)
+    values = frame.sort(_SNAPSHOT_COLUMN)[column].to_list()
+    assert values, f"expected rows for {name} in {path}, got none"
+    actual = (values[0], max(values))
+    assert all(
+        math.isclose(got, want, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE)
+        for got, want in zip(actual, (first, peak), strict=True)
+    ), f"expected {column} of {name} to start at {first} and peak at {peak}, got {actual}"

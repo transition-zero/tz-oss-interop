@@ -7,9 +7,13 @@ from interop.plugins.shared.constants import EXTENSIONS_PREFIX
 from interop.plugins.shared.sienna_pypsa_translations.reporters._base import SiennaToPypsaReporter
 
 _RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
-_RELAYED_BY_YEAR_DERIVATION = (
+RELAYED_BY_YEAR_DERIVATION = (
     "relayed unchanged to extensions.json with every year that it states, as a PyPSA Generator "
     "holds the bound of one year at most"
+)
+RELAYED_TO_LINK_DERIVATION = (
+    "relayed unchanged to extensions.json; where the network holds the bus of each fuel of the "
+    "plant, the plant becomes a PyPSA Link that also maps it"
 )
 
 
@@ -20,14 +24,10 @@ class ExtensionRelayReporter(SiennaToPypsaReporter):
         super().__init__(recorder)
         self.destination_component = kind
 
-    def record_relayed(self, name: str, field_name: str, value: object) -> None:
-        self._record_relay(name, field_name, value, _RELAYED_DERIVATION)
-
-    def record_relayed_by_year(self, name: str, field_name: str, value: object) -> None:
-        """A bound by year that travels on whole, of which the Generator holds one year."""
-        self._record_relay(name, field_name, value, _RELAYED_BY_YEAR_DERIVATION)
-
-    def _record_relay(self, name: str, field_name: str, value: object, derivation: str) -> None:
+    def record_relayed(
+        self, name: str, field_name: str, value: object, derivation: str = _RELAYED_DERIVATION
+    ) -> None:
+        """A field that travels on unchanged; a field that also maps in part names how."""
         attribute = f"{EXTENSIONS_PREFIX}{field_name}"
         self._derived(
             sources=[self._source_field(self.destination_component, name, attribute, value)],

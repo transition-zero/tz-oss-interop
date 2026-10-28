@@ -38,8 +38,17 @@ from interop.plugins.shared.osemosys_sienna_translations._conversions import (
 from interop.plugins.shared.osemosys_sienna_translations._defaults import (
     report_unread_defaults,
 )
+from interop.plugins.shared.osemosys_sienna_translations._fuel_loads import (
+    FuelLoads,
+    build_fuel_loads,
+)
 from interop.plugins.shared.osemosys_sienna_translations._fuel_modes import (
     build_fuel_modes_source,
+)
+from interop.plugins.shared.osemosys_sienna_translations._fuel_records import (
+    FuelRecords,
+    build_fuel_records,
+    set_fuel_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_columns import (
     GENERATOR_NAME,
@@ -120,6 +129,9 @@ from interop.plugins.shared.osemosys_sienna_translations._unapplied_parameters i
     report_unapplied_parameters,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
+from interop.plugins.shared.osemosys_sienna_translations._unsupplied_fuels import (
+    report_unsupplied_fuel_buses,
+)
 
 __all__ = [
     "BUS_MAPPING",
@@ -135,6 +147,8 @@ __all__ = [
     "BuiltRecords",
     "Calendar",
     "ComponentMapping",
+    "FuelLoads",
+    "FuelRecords",
     "GeneratorSources",
     "LoadSources",
     "ModelUnits",
@@ -150,8 +164,10 @@ __all__ = [
     "build_calendar",
     "build_conversion_records",
     "build_conversions_source",
+    "build_fuel_loads",
     "build_fuel_loads_source",
     "build_fuel_modes_source",
+    "build_fuel_records",
     "build_generator_extensions",
     "build_generators_source",
     "build_import_extensions",
@@ -177,9 +193,11 @@ __all__ = [
     "report_policy_changes",
     "report_unapplied_parameters",
     "report_unread_defaults",
+    "report_unsupplied_fuel_buses",
     "require_model_year",
     "set_conversion_values_persisted",
     "set_days_persisted",
+    "set_fuel_values_persisted",
     "set_generator_values_persisted",
     "set_import_values_persisted",
     "set_line_values_persisted",

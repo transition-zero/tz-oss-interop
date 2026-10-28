@@ -321,3 +321,10 @@ class GeneratorReporter(SiennaToPypsaReporter):
             destinations=[self._destination(name, column, value, UNIT_MWH)],
             derivation=derivation,
         )
+
+
+class FuelGeneratorReporter(GeneratorReporter):
+    """Records a generator record of a fuel that is not electricity, which states its p_nom."""
+
+    def record_p_nom_min(self, sienna_type: str, name: str, base_power: float) -> None:
+        self._record_stated_floor(sienna_type, name, base_power)

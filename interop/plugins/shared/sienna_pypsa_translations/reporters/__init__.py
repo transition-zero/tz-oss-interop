@@ -8,6 +8,7 @@ sidecar states and a PyPSA column takes as it is goes through ``record_carried``
 
 from interop.plugins.shared.sienna_pypsa_translations.reporters.buses import BusReporter
 from interop.plugins.shared.sienna_pypsa_translations.reporters.generators import (
+    FuelGeneratorReporter,
     GeneratorReporter,
     ThermalLimit,
 )
@@ -20,6 +21,8 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters.links import (
 from interop.plugins.shared.sienna_pypsa_translations.reporters.loads import LoadReporter
 from interop.plugins.shared.sienna_pypsa_translations.reporters.profiles import ProfileReporter
 from interop.plugins.shared.sienna_pypsa_translations.reporters.sidecar import (
+    RELAYED_BY_YEAR_DERIVATION,
+    RELAYED_TO_LINK_DERIVATION,
     ExtensionRelayReporter,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters.storage_units import (
@@ -27,9 +30,12 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters.storage_units im
 )
 
 __all__ = [
+    "RELAYED_BY_YEAR_DERIVATION",
+    "RELAYED_TO_LINK_DERIVATION",
     "BusReporter",
     "ConversionReporter",
     "ExtensionRelayReporter",
+    "FuelGeneratorReporter",
     "GeneratorReporter",
     "LineReporter",
     "LinkReporter",

@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_DOLLARS_PER_MW, Framework
+from typing import ClassVar
+
+from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
+    UNIT_DOLLARS_PER_MW,
+    UNIT_MW,
+    Framework,
+)
 from interop.plugins.shared.framework_reporting import DestinationReporter
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaStructField
@@ -24,6 +31,8 @@ _UNPRICED_OVERNIGHT_COST_NOTE = (
     "the record states no {missing_field}, and PyPSA annualises an overnight_cost only over a "
     "discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it"
 )
+_UNSTATED_DEFAULT_NOTE = "the {record} record states no {column}, so PyPSA's own default applies"
+_EXT_P_NOM_ATTR = f"{EXTENSIONS_PREFIX}p_nom"
 
 
 class SiennaToPypsaReporter(DestinationReporter):
@@ -31,6 +40,8 @@ class SiennaToPypsaReporter(DestinationReporter):
 
     source_framework = Framework.SIENNA
     destination_framework = Framework.PYPSA
+    # The record that the note of a PyPSA default names.
+    unstated_record: ClassVar[str] = "sidecar"
 
     def record_carried(
         self,
@@ -47,6 +58,21 @@ class SiennaToPypsaReporter(DestinationReporter):
             sources=[self._source_field(sienna_type, name, attribute, value, unit)],
             destinations=[self._destination(name, column, value, unit)],
             derivation=f"{attribute} (PyPSA round-trip)",
+        )
+
+    def record_unstated_default(self, name: str, column: str, value: object) -> None:
+        """A PyPSA column that takes PyPSA's own value, as the sidecar record states none."""
+        self._default_applied(
+            destinations=[self._destination(name, column, value)],
+            note=_UNSTATED_DEFAULT_NOTE.format(record=self.unstated_record, column=column),
+        )
+
+    def _record_stated_floor(self, sienna_type: str, name: str, p_nom: float) -> None:
+        """The p_nom that a sidecar record states, as the floor of an extendable build."""
+        self._derived(
+            sources=[self._source_field(sienna_type, name, _EXT_P_NOM_ATTR, p_nom, UNIT_MW)],
+            destinations=[self._destination(name, PyPSAGeneratorCol.P_NOM_MIN, p_nom, UNIT_MW)],
+            derivation=P_NOM_FLOOR_DERIVATION,
         )
 
     def record_bound_unapplied(
