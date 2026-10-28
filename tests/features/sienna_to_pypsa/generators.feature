@@ -276,3 +276,18 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
     And the PyPSA network "outputs/network.nc" has no generator "coal_1"
     And the PyPSA network "outputs/network.nc" generator "coal_2" has bus "node_a"
     And the log contains "1 generators state a power basis this reader does not convert, so each is left out"
+
+  Scenario: a ThermalStandard left out for its power basis leaves its series out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "coal_1" states power_units COMPONENT_BASE
+    And the ThermalStandard "coal_1" has a max_active_power series 0.5 1.0
+    And the system contains a ThermalStandard "coal_2" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "coal_2" has a max_active_power series 0.4 0.8
+    And the system is saved as "inputs/thermal_component_base_series.json"
+    When I run translate against "inputs/thermal_component_base_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" has no generator "coal_1"
+    And the PyPSA network "outputs/network.nc" generator "coal_2" has a p_max_pu time series 0.4 0.8
+    And the log contains "1 generators state a power basis this reader does not convert, so each is left out"

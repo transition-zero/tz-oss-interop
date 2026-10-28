@@ -57,3 +57,26 @@ Feature: PyPSA out and back through Sienna
     When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "coal_1" has a p_max_pu time series 0.9 0.8 0.95
     And the PyPSA network "outputs/network.nc" generator "solar_1" has a p_max_pu time series 0.9 0.85 0.92
+
+  Scenario: a link whose reverse bound is larger than its capacity comes back with the same p_min_pu
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains bus "bus_2" carrier "AC" v_nom 380.0
+    And the network contains link "link_1" from "bus_1" to "bus_2" with capacity 1000.0 MW efficiency 1.0 min dispatch fraction -1.5
+    And the network is saved as "inputs/round_trip.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom" is 1000.0
+    And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is -1.5
+
+  Scenario: a renewable p_max_pu profile comes back unchanged when the static p_max_pu is below 1.0
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "solar_1" on "bus_1" carrier "solar" p_nom 100.0 p_max_pu 0.5 p_max_pu_series 0.4 0.8 0.6
+    And the network is saved as "inputs/round_trip.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "solar_1" has a p_max_pu time series 0.4 0.8 0.6

@@ -285,6 +285,16 @@ class SiennaSystemBuilder:
             }
         )
 
+    def set_load_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for PowerLoad {name!r}")
+        self._load_by_name(name)["power_units"] = power_units
+
+    def _load_by_name(self, name: str) -> dict[str, Any]:
+        for load in self._loads:
+            if load["name"] == name:
+                return load
+        raise KeyError(f"no PowerLoad {name!r} added yet")
+
     def add_line(
         self,
         name: str,
@@ -354,8 +364,12 @@ class SiennaSystemBuilder:
                 "active_power_flow": 0.0,
                 "arc": arc_id,
                 "rating": p_nom,
-                "rating_from": p_nom,
-                "rating_to": 0.0,
+                "operational_flow_limit": {
+                    "from_to_min": 0.0,
+                    "from_to_max": p_nom,
+                    "to_from_min": 0.0,
+                    "to_from_max": 0.0,
+                },
                 "base_power": 100.0,
                 "power_units": "NATURAL_UNITS",
                 "reactive_power_limits_from": {"min": 0.0, "max": 0.0},
@@ -419,6 +433,16 @@ class SiennaSystemBuilder:
     def set_schema_version(self, schema_version: str) -> None:
         self._check_not_saved("a schema_version")
         self._schema_version = schema_version
+
+    def drop_link_operational_flow_limit(self, name: str) -> None:
+        self._check_not_saved(f"operational_flow_limit for HVDC line {name!r}")
+        del self._link_by_name(name)["operational_flow_limit"]
+
+    def set_link_converter_ratings(self, name: str, rating_from: float, rating_to: float) -> None:
+        self._check_not_saved(f"converter ratings for HVDC line {name!r}")
+        link = self._link_by_name(name)
+        link["rating_from"] = rating_from
+        link["rating_to"] = rating_to
 
     def add_time_series(
         self, owner_type: str, owner_name: str, name: str, values: list[float]
