@@ -25,8 +25,12 @@ from pydantic import BaseModel, ValidationError
 
 from interop.plugins.shared.sienna_constants import (
     SiennaACBusCol,
+    SiennaArcCol,
     SiennaComponent,
+    SiennaGeneratorCol,
+    SiennaLineCol,
     SiennaSchemasSystem,
+    TimeSeriesAssociationCol,
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import UserInputError
@@ -42,6 +46,15 @@ _SDK_MODULES: tuple[ModuleType, ...] = (
 )
 
 _READABLE_OUTCOMES = ("current", "upgradable")
+# Each field that staging and the map steps look an id up by, and the type that holds the id.
+_REFERENCE_TARGETS: dict[str, str] = {
+    SiennaGeneratorCol.BUS: SiennaComponent.AC_BUS,
+    SiennaLineCol.ARC: SiennaComponent.ARC,
+    SiennaArcCol.FROM: SiennaComponent.AC_BUS,
+    SiennaArcCol.TO: SiennaComponent.AC_BUS,
+}
+_OWNER_TYPE = TimeSeriesAssociationCol.OWNER_TYPE
+_OWNER_ID = TimeSeriesAssociationCol.OWNER_ID
 
 
 def _read_component_types() -> frozenset[str]:
@@ -99,13 +112,17 @@ def read_system_document(stream: IO[bytes]) -> dict[str, Any]:
             left_out.append(f"{type_name} (type unknown to SiennaSchemas)")
             continue
         kept_components[type_name] = _keep_valid_rows(type_name, model, rows, left_out)
-    document = dict(raw)
-    document[SiennaSchemasSystem.COMPONENTS] = kept_components
-    document[SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS] = _keep_valid_rows(
+    _drop_rows_that_refer_to_no_kept_row(kept_components, left_out)
+    associations = _keep_valid_rows(
         SiennaComponent.TIME_SERIES_ASSOCIATION,
         TimeSeriesAssociation,
         raw[SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS],
         left_out,
+    )
+    document = dict(raw)
+    document[SiennaSchemasSystem.COMPONENTS] = kept_components
+    document[SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS] = _drop_associations_of_no_kept_owner(
+        associations, kept_components, left_out
     )
     if left_out:
         log.warning(
@@ -149,13 +166,90 @@ def _keep_valid_rows(
             validated = model.model_validate(row)
         except ValidationError as error:
             field = ".".join(str(part) for part in error.errors()[0]["loc"])
-            identity = (
-                row.get(SiennaACBusCol.NAME, row.get(SiennaACBusCol.ID))
-                if isinstance(row, dict)
-                else row
-            )
+            identity = _name_row(row) if isinstance(row, dict) else row
             left_out.append(f"{type_name} {identity} (field {field or 'row'})")
         else:
             # The validated values, because staging reads them: a raw "1" is no Arc id.
             kept.append(validated.model_dump(mode="json", by_alias=True, exclude_unset=True))
     return kept
+
+
+def _drop_rows_that_refer_to_no_kept_row(
+    components: dict[str, list[dict[str, Any]]], left_out: list[str]
+) -> None:
+    """Leave out each row whose bus, arc or Arc end names no row that is kept.
+
+    Leaving out a bus can leave an Arc with no end, and then a Line with no Arc, so the pass
+    repeats until it leaves out nothing.
+    """
+    while True:
+        kept_ids = {
+            target: {row[SiennaACBusCol.ID] for row in components.get(target, [])}
+            for target in set(_REFERENCE_TARGETS.values())
+        }
+        dropped = [
+            _drop_rows_of_type(type_name, components, kept_ids, left_out)
+            for type_name in components
+        ]
+        if not any(dropped):
+            return
+
+
+def _drop_rows_of_type(
+    type_name: str,
+    components: dict[str, list[dict[str, Any]]],
+    kept_ids: dict[str, set[Any]],
+    left_out: list[str],
+) -> bool:
+    """Leave out the rows of one type that refer to no kept row, and say if any went."""
+    kept: list[dict[str, Any]] = []
+    for row in components[type_name]:
+        field = _find_reference_to_no_kept_row(row, kept_ids)
+        if field is None:
+            kept.append(row)
+        else:
+            left_out.append(
+                f"{type_name} {_name_row(row)} (refers to no row that is kept: {field})"
+            )
+    has_dropped = len(kept) < len(components[type_name])
+    components[type_name] = kept
+    return has_dropped
+
+
+def _find_reference_to_no_kept_row(
+    row: dict[str, Any], kept_ids: dict[str, set[Any]]
+) -> str | None:
+    """The first reference field of ``row`` whose id no kept row of its type states, or None."""
+    for field, target in _REFERENCE_TARGETS.items():
+        value = row.get(field)
+        if isinstance(value, int) and value not in kept_ids[target]:
+            return field
+    return None
+
+
+def _drop_associations_of_no_kept_owner(
+    associations: list[dict[str, Any]],
+    components: dict[str, list[dict[str, Any]]],
+    left_out: list[str],
+) -> list[dict[str, Any]]:
+    """Leave out each association whose owner is no row that is kept."""
+    owners = {
+        (type_name, row[SiennaACBusCol.ID])
+        for type_name, rows in components.items()
+        for row in rows
+    }
+    kept: list[dict[str, Any]] = []
+    for association in associations:
+        owner = (association[_OWNER_TYPE], association[_OWNER_ID])
+        if owner in owners:
+            kept.append(association)
+        else:
+            left_out.append(
+                f"{SiennaComponent.TIME_SERIES_ASSOCIATION} {_name_row(association)} "
+                f"(refers to no row that is kept: {_OWNER_ID})"
+            )
+    return kept
+
+
+def _name_row(row: dict[str, Any]) -> Any:
+    return row.get(SiennaACBusCol.NAME, row.get(SiennaACBusCol.ID))

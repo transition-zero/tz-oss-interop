@@ -440,6 +440,23 @@ class SiennaSystemBuilder:
         line = self._line_by_name(name)
         line["arc"] = str(line["arc"])
 
+    def drop_line_arc_field(self, name: str, field: str) -> None:
+        """Take one field out of the Arc that a Line points at."""
+        self._check_not_saved(f"removal of {field!r} from the Arc of Line {name!r}")
+        arc_id = self._line_by_name(name)["arc"]
+        arc = next(arc for arc in self._arcs if arc["id"] == arc_id)
+        del arc[field]
+
+    def set_bus_type(self, name: str, bustype: str) -> None:
+        self._check_not_saved(f"bustype for bus {name!r}")
+        self._bus_by_name(name)["bustype"] = bustype
+
+    def _bus_by_name(self, name: str) -> dict[str, Any]:
+        for bus in self._buses:
+            if bus["name"] == name:
+                return bus
+        raise KeyError(f"no bus {name!r} added yet")
+
     def drop_link_operational_flow_limit(self, name: str) -> None:
         self._check_not_saved(f"operational_flow_limit for HVDC line {name!r}")
         del self._link_by_name(name)["operational_flow_limit"]

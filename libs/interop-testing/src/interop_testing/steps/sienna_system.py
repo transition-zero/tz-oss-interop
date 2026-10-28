@@ -482,6 +482,20 @@ def given_line_states_arc_as_text(sienna_system_builder: SiennaSystemBuilder, na
     sienna_system_builder.set_line_arc_as_text(name)
 
 
+@given(parsers.parse('the Arc of the Line "{name}" has no {field}'))
+def given_line_arc_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.drop_line_arc_field(name, field)
+
+
+@given(parsers.parse('the bus "{name}" has bustype "{bustype}"'))
+def given_bus_has_bustype(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bustype: str
+) -> None:
+    sienna_system_builder.set_bus_type(name, bustype)
+
+
 @given(parsers.parse('the system has a component "{name}" of the unknown type "{type_name}"'))
 def given_system_has_unknown_component(
     sienna_system_builder: SiennaSystemBuilder, name: str, type_name: str

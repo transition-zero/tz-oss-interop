@@ -83,3 +83,43 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     Then the PyPSA network "outputs/network.nc" has 2 lines
     And the PyPSA network "outputs/network.nc" line "line_1" has bus0 "node_a"
     And the PyPSA network "outputs/network.nc" line "line_1" has bus1 "node_b"
+
+  Scenario: a Line whose Arc is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the Arc of the Line "line_1" has no from_id
+    And the system is saved as "inputs/bad_arc.json"
+    When I run translate against "inputs/bad_arc.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "Line line_1 (refers to no row that is kept: arc)"
+    And the PyPSA network "outputs/network.nc" has 2 buses
+    And the PyPSA network "outputs/network.nc" has no lines
+
+  Scenario: a generator whose bus is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the bus "node_b" has bustype "NOT_A_BUSTYPE"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "orphan_1" on bus "node_b" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system is saved as "inputs/bad_bus.json"
+    When I run translate against "inputs/bad_bus.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "ThermalStandard orphan_1 (refers to no row that is kept: bus)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has bus "node_a"
+
+  Scenario: a series whose owner is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "good_1" has a max_active_power series 0.4 0.8
+    And the system contains a ThermalStandard "bad_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "bad_1" has a max_active_power series 0.5 1.0
+    And the ThermalStandard "bad_1" has no base_power
+    And the system is saved as "inputs/orphan_series.json"
+    When I run translate against "inputs/orphan_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "TimeSeriesAssociation max_active_power (refers to no row that is kept: owner_id)"
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
