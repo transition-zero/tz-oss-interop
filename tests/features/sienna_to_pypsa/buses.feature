@@ -61,3 +61,12 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against "inputs/unknown_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the log contains "FluxCapacitor (type unknown to SiennaSchemas)"
     And the PyPSA network "outputs/network.nc" has 1 bus
+
+  Scenario: a component type that names an SDK enum is left out and named
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system has a component "x_1" of the unknown type "UnitSystem"
+    And the system is saved as "inputs/enum_type.json"
+    When I run translate against "inputs/enum_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "UnitSystem (type unknown to SiennaSchemas)"
+    And the PyPSA network "outputs/network.nc" has 1 bus

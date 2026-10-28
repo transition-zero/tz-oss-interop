@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+from importlib.resources import files
 from types import ModuleType
 from typing import IO, Any
 
+import power_openapi_models
 from power_openapi_models import check_schema_version
 from power_openapi_models.core import models as core_models
 from power_openapi_models.document import SystemDocument
@@ -42,11 +44,33 @@ _SDK_MODULES: tuple[ModuleType, ...] = (
 _READABLE_OUTCOMES = ("current", "upgradable")
 
 
+def _read_component_types() -> frozenset[str]:
+    """Every key that the SystemDocument schema of the SDK allows under ``components``."""
+    version = power_openapi_models.__schema_version__.removeprefix("v")
+    bundle = files(power_openapi_models).joinpath("bundles", version, "SystemDocument.json")
+    schema = json.loads(bundle.read_text(encoding="utf-8"))
+    return frozenset(schema["properties"][SiennaSchemasSystem.COMPONENTS]["properties"])
+
+
+_COMPONENT_TYPES = _read_component_types()
+
+
+def find_component_model(type_name: str) -> type[BaseModel] | None:
+    """The SDK model of the component type ``type_name``, or None when it is no component type.
+
+    An SDK module also holds enums and nested structs, such as ``UnitSystem``, so a name that
+    the SDK knows can still be no component type.
+    """
+    if type_name not in _COMPONENT_TYPES:
+        return None
+    return find_sdk_model(type_name)
+
+
 def find_sdk_model(type_name: str) -> type[BaseModel] | None:
-    """The SDK class named ``type_name``, or None when SiennaSchemas has no such type."""
+    """The SDK model named ``type_name``, or None when the SDK has no model of that name."""
     for module in _SDK_MODULES:
-        model: type[BaseModel] | None = getattr(module, type_name, None)
-        if model is not None:
+        model = getattr(module, type_name, None)
+        if isinstance(model, type) and issubclass(model, BaseModel):
             return model
     return None
 
@@ -70,7 +94,7 @@ def read_system_document(stream: IO[bytes]) -> dict[str, Any]:
     components = raw[SiennaSchemasSystem.COMPONENTS]
     kept_components: dict[str, list[dict[str, Any]]] = {}
     for type_name, rows in components.items():
-        model = find_sdk_model(type_name)
+        model = find_component_model(type_name)
         if model is None:
             left_out.append(f"{type_name} (type unknown to SiennaSchemas)")
             continue
