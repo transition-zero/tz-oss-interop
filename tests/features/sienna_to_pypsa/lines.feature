@@ -1,7 +1,7 @@
 @slow @fork_unsafe
 Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
   The step reads Line rows from the staged Sienna system, resolves the Arc to its bus0/bus1
-  endpoints, and emits one PyPSA Line per component. rating (per-unit of the system base)
+  endpoints, and emits one PyPSA Line per component. rating (per-unit of the base_power of the line)
   becomes s_nom in MVA.
 
   Scenario: a Line becomes a PyPSA Line with bus0/bus1 from the Arc and s_nom from rating
@@ -15,7 +15,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     And the PyPSA network "outputs/network.nc" line "line_1" has bus0 "node_a"
     And the PyPSA network "outputs/network.nc" line "line_1" has bus1 "node_b"
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "s_nom" is 500.0
-    And the file "decisions.md" contains "| `sienna.Line.line_1.rating` = 5.0 | `pypsa.Line.line_1.s_nom` = 500.0 MVA | rating * system base |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.Line.line_1.rating` = 5.0 | `pypsa.Line.line_1.s_nom` = 500.0 MVA | rating * base_power |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: a Line's per-unit r and x become PyPSA Ohms via the bus voltage
     Given a Sienna system
@@ -26,7 +26,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     When I run translate against "inputs/line_z.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" line "line_1" attribute "r" is 14.44
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "x" is 144.4
-    And the file "decisions.md" contains "| `sienna.Line.line_1.r` = 0.01 | `pypsa.Line.line_1.r` = 14.44 Ohm | r * v_nom^2 / system base |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.Line.line_1.r` = 0.01 | `pypsa.Line.line_1.r` = 14.44 Ohm | r * v_nom^2 / base_power |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: a Line's per-unit shunt b and g become PyPSA Siemens via the bus voltage
     Given a Sienna system
@@ -37,7 +37,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna Line to PyPSA Line
     When I run translate against "inputs/line_bg.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" line "line_1" attribute "b" is 0.001
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "g" is 0.002
-    And the file "decisions.md" contains "| `sienna.Line.line_1.b` = 1.444 | `pypsa.Line.line_1.b` = 0.001 Siemens | (b.from + b.to) * system base / v_nom^2 |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.Line.line_1.b` = 1.444 | `pypsa.Line.line_1.b` = 0.001 Siemens | (b.from + b.to) * base_power / v_nom^2 |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: a Line's ext length and num_parallel round-trip to PyPSA
     Given a Sienna system

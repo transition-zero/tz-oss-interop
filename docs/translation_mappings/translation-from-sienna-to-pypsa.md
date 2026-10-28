@@ -93,8 +93,11 @@ it.
   `PowerLoad` and a generator carry `power_units`. The translator reads a `Line` and an
   `EnergyReservoirStorage` in `COMPONENT_BASE`, and a `PowerLoad` and a generator in
   `NATURAL_UNITS`. It converts a `Line` with the `base_power` of that `Line`, and a generator
-  `rating` (MVA) with the `base_power` of that generator. A component in another basis stops
-  the run, and the message names the component.
+  `rating` (MVA) with the `base_power` of that generator. The translator leaves out a
+  component in another basis, together with its time series. The report records each one,
+  and a warning names it. The output network then has no such component. A `Line` whose
+  `parameter_units` is not `COMPONENT_BASE` is different: it stops the run. See
+  [`Line` and `MonitoredLine` → `Line`](#line-and-monitoredline--line).
 - **The snapshot duration comes from the first series the system holds.** The translator
   needs it to convert a ramp rate and a run-time limit. Every series in one system covers
   the same snapshots, so any of them fixes the duration. With no series at all, it uses 60
