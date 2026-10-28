@@ -370,6 +370,19 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
 
+    Scenario: An emission penalty of a pollutant that no plant emits is reported
+      No plant emits NOX, so no component applies its penalty.
+      Given the otoole set "EMISSION" holds "CO2 NOX"
+      And the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 50    |
+        | R1     | NOX      | 2030 | 5     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 37.0
+      And the log contains "1 pollutant(s) whose emission_penalty states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Pollutants: R1/NOX"
+      And the file "decisions.md" contains "`osemosys.emission_penalty.R1/NOX.year 2030` = 5.0"
+
     Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
       The model states currency in million USD and emissions in kt. The gas plant emits 600
       kt of CO2 for each GWh, which is 600 t for each MWh. A penalty of 0.05 million USD for

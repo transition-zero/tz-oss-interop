@@ -216,6 +216,7 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 7.5
       And the file "decisions.md" contains "`osemosys.emission_rate.R1/ATPHS.CO2 at the discharge mode 2` = 400.0<br>`osemosys.emission_penalty.R1/CO2` = 10.0<br>`osemosys.output_activity_ratio.R1/ATPHS.electricity at the discharge mode 2` = 0.8 | `sienna.EnergyReservoirStorage.ATPHSS.operation_cost discharge emission penalty of CO2` = 5.0 \$/MWh"
       And the file "decisions.md" contains "`sienna.EnergyReservoirStorage.ATPHSS.operation_cost charge emission penalty of CO2` = 1.0 \$/MWh"
+      And the log does not contain "emission_penalty states"
 
     Scenario: A storage is rated on the activity that the capacity to activity unit of its technology states
       One GW of ATPHS runs 4380 GWh of activity in a year, which is 50 MW of activity. It puts
@@ -351,6 +352,57 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       Then the pipeline exit code is 0
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "discount_rate" set to 0.06
       And the file "decisions.md" contains "| `osemosys.storage_discount_rate.R1/ATPHSS` = 0.06 | `sienna.EnergyReservoirStorage.ATPHSS.extensions.discount_rate` = 0.06 pu | the value of the operations year, which no Sienna field holds |"
+
+    Scenario: A storage that a technology of its own charges keeps the fixed cost of that technology, and the report names its capacity factor
+      ATPUMP charges ATPHSS at mode 1, and ATPHS discharges it at mode 2. The emission of
+      ATPHS at the mode that discharges the storage has no field of a storage, so the modes of
+      the record hold it, with the cost of mode 1 of ATPHS, which the storage does not run.
+      Given the otoole set "TECHNOLOGY" holds "ATPHS ATPUMP ATBATT ATFLY ATIDLE ATSUN HTHEAT ATNOOUT ATNOIN"
+      And the otoole set "EMISSION" holds "CO2"
+      And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPHS      | 2030 | 0.1   |
+        | R1     | ATPUMP     | 2030 | 0.1   |
+      And the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPUMP     | ATELEC | 1                 | 2030 | 1.25  |
+      And the otoole parameter "OutputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | FUEL    | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPUMP     | ATWATER | 1                 | 2030 | 1     |
+        | R1     | ATPHS      | ATELEC  | 2                 | 2030 | 0.8   |
+      And the otoole parameter "TechnologyToStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPUMP     | ATPHSS  | 1                 | 0.9   |
+      And the otoole parameter "TechnologyFromStorage" keyed by "REGION TECHNOLOGY STORAGE MODE_OF_OPERATION" with default 0 has the rows:
+        | REGION | TECHNOLOGY | STORAGE | MODE_OF_OPERATION | VALUE |
+        | R1     | ATPHS      | ATPHSS  | 2                 | 1     |
+      And the otoole parameter "FixedCost" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | YEAR | VALUE |
+        | R1     | ATPUMP     | 2030 | 50000 |
+      And the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
+        | REGION | TECHNOLOGY | TIMESLICE | YEAR | VALUE |
+        | R1     | ATPUMP     | S1B1      | 2030 | 0.5   |
+      And the otoole parameter "EmissionActivityRatio" keyed by "REGION TECHNOLOGY EMISSION MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY | EMISSION | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATPHS      | CO2      | 2                 | 2030 | 10    |
+      And a file "user_mappings.yaml" containing the lines:
+        | line                                                                                                       |
+        | osemosys: {                                                                                                |
+        | units: {capacity: GW, energy: GWh, currency: USD, emissions: t},                                           |
+        | objects: {                                                                                                 |
+        | fuels: [{match: "^(?P<country>[A-Z]{2})ELEC$", carrier: electricity, location: "{country}"},               |
+        | {match: "^ATWATER$", carrier: water, location: AT}, {match: "^HTHEATF$", carrier: heat, location: HT}],   |
+        | technologies: [{match: "PHS$", category: pumped-storage}, {match: "PUMP$", category: pumped-storage}]}}   |
+        | carriers: [                                                                                                |
+        | {osemosys_category: pumped-storage, sienna_component_type: EnergyReservoirStorage, sienna_prime_mover_type: PS}] |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with 1 component of type "EnergyReservoirStorage"
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "charge_fom_cost" set to 40.0
+      And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "operating_modes" set to [{"mode": "1", "variable_cost": 0.5}, {"mode": "2", "emission_rates": {"CO2": 0.01}}]
+      And the log contains "osemosys-to-sienna: 1 technology(ies) whose capacity_factor states 1 row(s) for 2030 that no step of the pipeline applies or keeps. Technologies: R1/ATPUMP"
+      And the log does not contain "emission_rate states"
+      And the log does not contain "fixed_cost states"
 
     Scenario: Each storage that the operations system cannot hold is left out, and the report names its reason
       When I translate the otoole model to Sienna for the year "2030"

@@ -75,6 +75,11 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import (
     require_model_year,
     set_operations_year,
 )
+from interop.plugins.shared.osemosys_sienna_translations._policies import (
+    build_policies,
+    report_policy_changes,
+    set_policies_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._series import (
     StagedSeries,
     add_per_unit_series,
@@ -104,9 +109,15 @@ from interop.plugins.shared.osemosys_sienna_translations._transport import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_imports import (
     build_import_extensions,
+    set_import_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._transport_translations import (
     TRANSPORT_MAPPING,
+)
+from interop.plugins.shared.osemosys_sienna_translations._unapplied_parameters import (
+    INVESTMENTS_PARAMETERS,
+    OPERATIONS_PARAMETERS,
+    report_unapplied_parameters,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits, parse_units
 
@@ -115,7 +126,9 @@ __all__ = [
     "CANDIDATE_VALUES",
     "GENERATOR_NAME",
     "GENERATOR_TYPE_MAPPINGS",
+    "INVESTMENTS_PARAMETERS",
     "LOAD_MAPPING",
+    "OPERATIONS_PARAMETERS",
     "SIENNA_TYPE",
     "STORAGE_MAPPING",
     "TRANSPORT_MAPPING",
@@ -147,6 +160,7 @@ __all__ = [
     "build_load_series",
     "build_loads_source",
     "build_period_records",
+    "build_policies",
     "build_routes_source",
     "build_storage_extensions",
     "build_storages_source",
@@ -160,13 +174,17 @@ __all__ = [
     "read_transport_ends",
     "report_calendar",
     "report_left_out_technologies",
+    "report_policy_changes",
+    "report_unapplied_parameters",
     "report_unread_defaults",
     "require_model_year",
     "set_conversion_values_persisted",
     "set_days_persisted",
     "set_generator_values_persisted",
-    "warn_lost_costs",
+    "set_import_values_persisted",
     "set_line_values_persisted",
     "set_operations_year",
+    "set_policies_persisted",
     "set_storage_values_persisted",
+    "warn_lost_costs",
 ]
