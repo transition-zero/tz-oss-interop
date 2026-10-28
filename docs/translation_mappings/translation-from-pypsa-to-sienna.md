@@ -410,7 +410,7 @@ The reverse direction is documented in [Translation from Sienna to PyPSA](./tran
 | `name` | `String` | `n.generators.index` | — | direct |  |
 | `available` | `Bool` | `n.generators.active` | — | direct |  |
 | `bus` | `ACBus` | `n.generators.bus` | name → ACBus lookup | derived |  |
-| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu` | derived | Initial active power — use peak available for initialisation |
+| `active_power` | `Float64` (MW) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | Initial active power — use peak available for initialisation |
 | `reactive_power` | `Float64` (MVAR) | — | `0.0` | defaulted |  |
 | `rating` | `Float64` (MVA) | `n.generators.p_nom`, `p_max_pu` | `effective_p_nom × p_max_pu`, or `effective_p_nom × peak` of the `p_max_pu` series where one exists | derived | In MVA. PyPSA ignores the static `p_max_pu` where a series exists |
 | `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | defaulted | Every power field of the generator is in its physical unit |

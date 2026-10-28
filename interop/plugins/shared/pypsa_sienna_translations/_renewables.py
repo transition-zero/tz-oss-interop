@@ -235,11 +235,6 @@ def _sienna_type(
 
 def _rating(dest: DestinationFieldFactory) -> Translation:
     """The rating in MVA, at the peak of the p_max_pu series where one exists."""
-    ceiling = (
-        pl.when(pl.col(_TS_PEAK).is_not_null())
-        .then(pl.col(_TS_PEAK))
-        .otherwise(pl.col(PyPSAGeneratorCol.P_MAX_PU))
-    )
 
     def make_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
         name = old[PyPSAGeneratorCol.NAME]
@@ -258,8 +253,17 @@ def _rating(dest: DestinationFieldFactory) -> Translation:
         ]
 
     return Translation(
-        exprs=[(pl.col(EFFECTIVE_P_NOM) * ceiling).alias(R.RATING)],
+        exprs=[(pl.col(EFFECTIVE_P_NOM) * _express_ceiling_pu()).alias(R.RATING)],
         make_events=make_events,
+    )
+
+
+def _express_ceiling_pu() -> pl.Expr:
+    """The peak of the p_max_pu series where one exists, because PyPSA then ignores the static."""
+    return (
+        pl.when(pl.col(_TS_PEAK).is_not_null())
+        .then(pl.col(_TS_PEAK))
+        .otherwise(pl.col(PyPSAGeneratorCol.P_MAX_PU))
     )
 
 
@@ -434,9 +438,10 @@ RENEWABLE_NON_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations
         "after the ids of earlier components"
     ),
     sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
-    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
+    active_power_expr=pl.col(EFFECTIVE_P_NOM) * _express_ceiling_pu(),
     active_power_derivation=(
-        "effective_p_nom * p_max_pu (must-take initial dispatch = peak available)"
+        "effective_p_nom * p_max_pu, or * the peak of the p_max_pu series "
+        "(must-take initial dispatch = peak available)"
     ),
     tail=[_renewable_cost_loss(_dest_nd)],
 )
