@@ -53,6 +53,39 @@ def given_system_contains_bus_in_area(
 
 @given(
     parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" in area "{area}"'
+    )
+)
+def given_sienna_system_file_with_bus_in_area(
+    system_path: str, name: str, base_voltage: float, bustype: str, area: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_area(area)
+    builder.add_bus(name, area=area)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
+
+
+@given(
+    parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" and no area'
+    )
+)
+def given_sienna_system_file_with_bus_and_no_area(
+    system_path: str, name: str, base_voltage: float, bustype: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_bus(name)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
+
+
+@given(
+    parsers.parse(
         'the system contains a ThermalStandard "{name}" on bus "{bus}" '
         "with base_power {base_power:g} rating {rating:g} "
         "active_power_min {active_power_min:g} active_power_max {active_power_max:g} "

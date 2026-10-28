@@ -447,6 +447,10 @@ class SiennaSystemBuilder:
         arc = next(arc for arc in self._arcs if arc["id"] == arc_id)
         del arc[field]
 
+    def set_bus_base_voltage(self, name: str, base_voltage: float) -> None:
+        self._check_not_saved(f"base_voltage for bus {name!r}")
+        self._bus_by_name(name)["base_voltage"] = base_voltage
+
     def set_bus_type(self, name: str, bustype: str) -> None:
         self._check_not_saved(f"bustype for bus {name!r}")
         self._bus_by_name(name)["bustype"] = bustype
