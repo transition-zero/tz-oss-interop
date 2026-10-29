@@ -78,8 +78,9 @@ that integer. The translator replaces each integer with the name of the componen
 every name in the PyPSA network is the name your Sienna system gives.
 
 Only this translator writes an `extensions.json` sidecar. A SiennaSchemas system from a
-partner is the system JSON and its time-series sidecar and nothing more. Leave the sidecar prompt
-blank for such a system. The run then behaves as a system where no component had a record.
+partner is the system JSON and its time-series sidecar and nothing more. Leave the
+`extensions.json` prompt blank for such a system. The run then behaves as a system where no
+component had a record. The time-series sidecar is still required.
 
 An `extensions.json` that a version before the kind-keyed format wrote is a list of records.
 The translator refuses such a file and tells you to write it again. It does not read part of

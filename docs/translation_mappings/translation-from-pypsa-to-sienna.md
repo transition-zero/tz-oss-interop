@@ -120,7 +120,7 @@ The `time_series_associations` rows sit in the document. The InfraStore sidecar 
 
 **A value that varies over the horizon travels in a companion parquet** beside the sidecar, named for what it holds (`reserves.parquet`) and restated in the terms of the field that references it, so a consumer never has to know what the source framework called it.
 
-**The sidecar is an optional input to every source.** Only this translator writes one, so a SiennaSchemas system from a partner is `system.json` plus its time-series sidecar and nothing more, and it stages with no sidecar at all. A staged record that no mapping in the hop consumes is dropped and reported, not relayed into the next sidecar: a concept survives a chain exactly as far as the frameworks along it understand it.
+**The `extensions.json` sidecar is an optional input to every source.** Only this translator writes one, so a SiennaSchemas system from a partner is `system.json` plus its time-series sidecar and nothing more, and it stages with no `extensions.json`. The time-series sidecar is always a required input. A staged record that no mapping in the hop consumes is dropped and reported, not relayed into the next sidecar: a concept survives a chain exactly as far as the frameworks along it understand it.
 
 > **Open question: companion file references.** The document names the time-series sidecar in `time_series_storage_file`, as a basename beside the document. It does not name `extensions.json`, because SiennaSchemas 0.2 has no key for it. The reader takes each companion as an explicit path: `system_json_path`, `time_series_h5_path` and the optional `extensions_json_path`. Whether a naming convention, or something NLR specifies, replaces the explicit paths is still to be confirmed with NLR.
 
@@ -1871,6 +1871,7 @@ No sign flip, no unit conversion needed for P and Q. Both frameworks treat posit
   "active_power": 8200.0,
   "reactive_power": 0.0,
   "base_power": 13450.0,
+  "power_units": "NATURAL_UNITS",
   "max_active_power": 13450.0,
   "max_reactive_power": 0.0
 }
