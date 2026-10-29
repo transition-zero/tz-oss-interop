@@ -1929,6 +1929,7 @@ See Target format → Time series for the canonical form. The key points:
 - `name` is `"max_active_power"` (the field the series scales); `owner_type`/`owner_id` point at the load.
 - `resolution` is the ISO 8601 snapshot interval (e.g. `PT1H`).
 - The translator stages the **per-unit shape** (`p_set / peak`), with no `scaling_factor_multiplier`; the magnitude lives in `max_active_power`. The store holds the shape times `max_active_power`, which is `p_set(t)` in MW.
+- A `p_set` series that peaks at 0 MW and falls below it gets no `TimeSeriesAssociation`. A `max_active_power` of 0 scales every value to zero, so the translation leaves the series out, records a `NOT_MAPPED` event and writes a warning.
 
 #### `q_set` — reactive power time series
 

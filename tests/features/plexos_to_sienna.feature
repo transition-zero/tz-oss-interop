@@ -194,6 +194,21 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "ThermalStandard" owner id 2 has unit_system "NATURAL_UNITS"
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "ThermalStandard" named "GasPlant" attribute "max_active_power" with values 500 400 500
 
+  Scenario: a load profile that peaks at zero and falls below it is left out, and the warning names it
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "LoadProfile" at "profiles/load.csv" with hourly values "-100, -50, 0"
+    And the model contains region load "North" with peak 0 from data file "LoadProfile"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_load" having "max_active_power" set to 0.0
+    And the file "decisions.md" contains "the profile peaks at 0 MW and falls below it, so its max_active_power of 0 scales nothing and the profile is left out"
+    And the log contains "1 load profile(s) peak at 0 MW and fall below it, so no max_active_power scales them and each is left out: North_load"
+
   Scenario: the units basis of each Sienna type is stated
     Given a Plexos model
     And the model contains region "North"

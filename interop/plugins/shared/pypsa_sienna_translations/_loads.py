@@ -12,6 +12,7 @@ from functools import partial
 import polars as pl
 
 from interop.core.extensions import LoadExtension
+from interop.core.reporting import EventRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
     UNIT_MVA,
@@ -49,6 +50,11 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     load_cost,
 )
+from interop.plugins.shared.sienna_time_series import (
+    UNSCALABLE_LOAD_SERIES_NOTE,
+    is_unscalable_load_series,
+    warn_unscalable_load_series,
+)
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
@@ -85,6 +91,7 @@ _DEFAULT_LOAD_CONFORMITY: LoadConformity = LoadConformity.UNDEFINED
 
 # Enrichment column names added by enrich_load_ts_stats; never written to destination table.
 _TS_PEAK = "ts_peak"
+_TS_LOWEST = "ts_lowest"
 _TS_FIRST = "ts_first"
 
 # Enrichment column added by enrich_load_voll: the $/MWh a shortfall at this load's bus
@@ -134,18 +141,19 @@ def enrich_load_ts_stats(
 ) -> pl.DataFrame:
     """Join per-load time-series stats onto the source table as regular columns.
 
-    Adds ``ts_peak`` (max p_set) and ``ts_first`` (first p_set value) as Float64
-    columns — null for any load without a time series. Both are component-scale
-    aggregations and safe to collect.
+    Adds ``ts_peak`` (max p_set), ``ts_lowest`` (min p_set) and ``ts_first`` (first p_set
+    value) as Float64 columns — null for any load without a time series. All three are
+    component-scale aggregations and safe to collect.
     """
     if ts_p is None:
         return table.with_columns(
             [
                 pl.lit(None, dtype=pl.Float64).alias(_TS_PEAK),
+                pl.lit(None, dtype=pl.Float64).alias(_TS_LOWEST),
                 pl.lit(None, dtype=pl.Float64).alias(_TS_FIRST),
             ]
         )
-    stats = _peak_by_component(ts_p).join(
+    stats = _extremes_by_component(ts_p).join(
         _first_by_component(ts_p), on=PyPSATimeSeriesCol.COMPONENT, how="left"
     )
     return table.join(
@@ -156,15 +164,16 @@ def enrich_load_ts_stats(
     )
 
 
-def _peak_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
-    """The highest value each load reaches, over every replication the frame holds.
+def _extremes_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
+    """The highest and lowest value each load reaches, over every replication the frame holds.
 
     One peak for the whole ensemble is what makes every replication's stored shape read
     against the same base, so the numbers of two replications compare directly.
     """
+    value = pl.col(PyPSATimeSeriesCol.VALUE)
     return (
         ts_p.group_by(PyPSATimeSeriesCol.COMPONENT)
-        .agg(pl.col(PyPSATimeSeriesCol.VALUE).max().alias(_TS_PEAK))
+        .agg(value.max().alias(_TS_PEAK), value.min().alias(_TS_LOWEST))
         .collect(engine="streaming")
     )
 
@@ -183,6 +192,30 @@ def _first_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
     ).rename({PyPSATimeSeriesCol.VALUE: _TS_FIRST})
 
 
+def list_unscalable_load_series(enriched_src: pl.DataFrame) -> list[str]:
+    """The loads whose p_set series peaks at zero yet falls below it, so no peak scales it."""
+    with_ts = enriched_src.filter(pl.col(_TS_PEAK).is_not_null())
+    return [
+        row[PyPSALoadCol.NAME]
+        for row in with_ts.select(PyPSALoadCol.NAME, _TS_PEAK, _TS_LOWEST).iter_rows(named=True)
+        if is_unscalable_load_series(row[_TS_PEAK], row[_TS_LOWEST])
+    ]
+
+
+def report_unscalable_load_series(enriched_src: pl.DataFrame, recorder: EventRecorder) -> None:
+    """Record and warn about each load whose p_set series no association row carries."""
+    names = list_unscalable_load_series(enriched_src)
+    for name in names:
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[_source(name, f"{PyPSATable.LOADS}_t.{PyPSALoadCol.P_SET}")],
+                note=UNSCALABLE_LOAD_SERIES_NOTE,
+            )
+        )
+    warn_unscalable_load_series(names)
+
+
 def build_load_ts_association(
     enriched_src: pl.DataFrame,
     dst: pl.DataFrame,
@@ -198,7 +231,10 @@ def build_load_ts_association(
     ``component`` is the Sienna type the rows belong to, because a series is looked up by
     its owner's type as well as its name.
     """
-    with_ts = enriched_src.filter(pl.col(_TS_PEAK).is_not_null())
+    with_ts = enriched_src.filter(
+        pl.col(_TS_PEAK).is_not_null()
+        & ~pl.col(PyPSALoadCol.NAME).is_in(list_unscalable_load_series(enriched_src))
+    )
     names_with_ts = with_ts[PyPSALoadCol.NAME].to_list()
     if not names_with_ts:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
