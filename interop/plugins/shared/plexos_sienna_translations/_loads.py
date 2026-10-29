@@ -733,7 +733,7 @@ LOAD_PROFILE = Translation(
             [_load_dest(new[LOAD_NAME], f"{SiennaLoadCol.MAX_ACTIVE_POWER} time series")],
             _PROFILE_DERIVATION,
         )
-        if old[LOAD_PEAK] is not None
+        if old[LOAD_PEAK] is not None and not _is_unscalable(old)
         else []
     ),
 )

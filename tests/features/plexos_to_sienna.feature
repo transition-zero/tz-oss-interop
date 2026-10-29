@@ -207,6 +207,7 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_load" having "max_active_power" set to 0.0
     And the file "decisions.md" contains "the profile peaks at 0 MW and falls below it, so its max_active_power of 0 scales nothing and the profile is left out"
+    And the file "decisions.md" does not contain "file-backed Load profile -> a max_active_power time series"
     And the log contains "1 load profile(s) peak at 0 MW and fall below it, so no max_active_power scales them and each is left out: North_load"
 
   Scenario: the units basis of each Sienna type is stated
