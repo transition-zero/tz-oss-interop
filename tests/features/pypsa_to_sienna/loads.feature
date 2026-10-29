@@ -26,6 +26,22 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Load rows to Sienna Pow
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "load_AL" attribute "max_active_power" with values 100.0 200.0
     And every time series association in the written Sienna system is valid SiennaSchemas 0.2
 
+  Scenario: a load profile that peaks at zero and falls below it is left out, and the warning names it
+    A profile becomes a shape scaled by max_active_power, its peak. A peak of zero scales every
+    value to zero, so the profile is left out rather than written as zeros.
+    Given a PyPSA network
+    And the network has 2 snapshots at 60 minute intervals
+    And the network contains bus "bus_AL" carrier "AC" v_nom 380.0
+    And the network contains load "supply_AL" on "bus_AL" with p_set -1.0 0.0
+    And the network contains load "load_AL" on "bus_AL" with p_set 50.0 100.0
+    And the network is saved as "inputs/load_ts.nc"
+    When I run translate against "inputs/load_ts.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 3 is named "max_active_power"
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "supply_AL" having "max_active_power" set to 0.0
+    And the file "decisions.md" contains "| `pypsa.Load.supply_AL.loads_t.p_set` |  |  | the profile peaks at 0 MW and falls below it, so its max_active_power of 0 scales nothing and the profile is left out |"
+    And the log contains "1 load profile(s) peak at 0 MW and fall below it, so no max_active_power scales them and each is left out: supply_AL"
+
   Scenario: load with static p_set and no time series uses p_set for both active and max active power
     Given a PyPSA network
     And the network contains bus "bus_AL" carrier "AC" v_nom 380.0

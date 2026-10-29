@@ -166,7 +166,9 @@ region.
 | `available` | | `True` | `default` |
 
 A demand that reads a data file becomes a `TimeSeriesAssociation` on `max_active_power`,
-whose stored shape peaks at 1.0 and scales back to MW through the peak.
+whose stored shape peaks at 1.0 and scales back to MW through the peak. A profile that
+peaks at 0 MW and falls below it has no peak to scale it back. The translation leaves that
+profile out, records the gap and writes a warning.
 
 A region `Load` stated as a participation share, not as megawatts, stops the translation
 rather than reading a share as a quantity of power.
