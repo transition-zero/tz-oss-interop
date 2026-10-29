@@ -393,6 +393,14 @@ def given_system_contains_hvdc_line(
     sienna_system_builder.add_link(name, from_bus, to_bus, p_nom, efficiency)
 
 
+@given(parsers.parse('the Arc of the Line "{line}" has a per-unit {series_name} series {series}'))
+def given_arc_per_unit_series(
+    sienna_system_builder: SiennaSystemBuilder, line: str, series_name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_arc_time_series(line, series_name, values)
+
+
 @given(parsers.parse('the PowerLoad "{name}" has a max_active_power series {series}'))
 def given_power_load_max_active_power_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str

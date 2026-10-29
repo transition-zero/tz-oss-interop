@@ -245,7 +245,7 @@ def _stage_time_series(
         return {}
 
     name_by_owner = _name_by_owner(system)
-    associations = _drop_unconvertible(associations)
+    associations = _drop_unnamed_owners(_drop_unconvertible(associations), name_by_owner)
     capacity_by_owner = _capacity_by_owner(system, associations)
     key_dirs: dict[tuple[str, str], Path] = {}
     with _open_store(h5_file, associations, staging_dir) as store:
@@ -297,6 +297,33 @@ def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, An
         log.warning(
             "%d series in natural units have an owner type with no capacity to convert by, "
             "so each is left out: %s",
+            len(left_out),
+            name_a_few(left_out),
+        )
+    return kept
+
+
+def _drop_unnamed_owners(
+    associations: list[dict[str, Any]], name_by_owner: dict[tuple[str, int], str]
+) -> list[dict[str, Any]]:
+    """Keep the rows whose owner has a name, and warn once about the rows whose owner has none.
+
+    A staged series names its component, so a series on an Arc, which has no name, is left out.
+    """
+    kept: list[dict[str, Any]] = []
+    left_out: list[str] = []
+    for association in associations:
+        owner = (
+            association[TimeSeriesAssociationCol.OWNER_TYPE],
+            association[TimeSeriesAssociationCol.OWNER_ID],
+        )
+        if owner in name_by_owner:
+            kept.append(association)
+        else:
+            left_out.append(f"{owner[0]} {owner[1]} {association[TimeSeriesAssociationCol.NAME]}")
+    if left_out:
+        log.warning(
+            "%d series belong to a component with no name, so each is left out: %s",
             len(left_out),
             name_a_few(left_out),
         )
@@ -387,8 +414,7 @@ def _stream_series_to_parquet(
 def _name_by_owner(system: dict[str, Any]) -> dict[tuple[str, int], str]:
     """Map each named component's ``(type, id)`` to its name, for resolving association owners.
 
-    Nameless topology components (Arcs) are never time-series or extension owners, so they
-    are skipped rather than indexed.
+    A nameless component, such as an Arc, is not indexed.
     """
     return {
         (sienna_type, component[SiennaACBusCol.ID]): component[SiennaACBusCol.NAME]

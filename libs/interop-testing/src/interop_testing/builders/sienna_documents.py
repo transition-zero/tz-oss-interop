@@ -206,22 +206,40 @@ def _build_associations(
         with store.transaction():
             for series in series_list:
                 store.add_time_series(
-                    id_by_owner[(series["owner_type"], series["owner_name"])],
+                    _owner_id(series, id_by_owner),
                     series["owner_type"],
                     OwnerCategory.Component,
-                    SingleTimeSeries(
-                        datetime.fromisoformat(series["initial_time"]),
-                        f"PT{int(series['resolution_seconds'])}S",
-                        np.asarray(series["values"], dtype="float64")
-                        * _series_capacity(series, components),
-                        series["name"],
-                        units="MW",
-                        quantity_kind="ActivePower",
-                        unit_system="natural_units",
-                    ),
+                    _build_single_time_series(series, components),
                 )
         rows: list[dict[str, Any]] = json.loads(store.export_time_series_associations_openapi())
     return sorted(rows, key=lambda row: int(row["association_id"]))
+
+
+def _owner_id(series: dict[str, Any], id_by_owner: dict[tuple[str, str], int]) -> int:
+    """The id a series names, or the id of the component it names, for an owner with a name."""
+    if "owner_id" in series:
+        return int(series["owner_id"])
+    return id_by_owner[(series["owner_type"], series["owner_name"])]
+
+
+def _build_single_time_series(
+    series: dict[str, Any], components: dict[str, Any]
+) -> SingleTimeSeries:
+    """A per-unit series is stored as stated, and any other is stored in megawatts."""
+    initial_time = datetime.fromisoformat(series["initial_time"])
+    resolution = f"PT{int(series['resolution_seconds'])}S"
+    values = np.asarray(series["values"], dtype="float64")
+    if series.get("is_per_unit"):
+        return SingleTimeSeries(initial_time, resolution, values, series["name"])
+    return SingleTimeSeries(
+        initial_time,
+        resolution,
+        values * _series_capacity(series, components),
+        series["name"],
+        units="MW",
+        quantity_kind="ActivePower",
+        unit_system="natural_units",
+    )
 
 
 def _series_capacity(series: dict[str, Any], components: dict[str, Any]) -> float:
@@ -319,6 +337,21 @@ def single_time_series(
         "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
         "initial_time": TIME_SERIES_INITIAL_TIME,
         "values": values,
+    }
+
+
+def per_unit_time_series(
+    owner_type: str, owner_id: int, name: str, values: list[float]
+) -> dict[str, Any]:
+    """A series stored as stated, with no unit label, on an owner given by its id."""
+    return {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "name": name,
+        "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
+        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "values": values,
+        "is_per_unit": True,
     }
 
 

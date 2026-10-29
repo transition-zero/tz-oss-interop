@@ -123,3 +123,19 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     Then the log contains "TimeSeriesAssociation max_active_power (refers to no row that is kept: owner_id)"
     And the PyPSA network "outputs/network.nc" has 1 generator
     And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
+
+  Scenario: a series that an Arc owns is left out, because an Arc has no name
+    SiennaSchemas lets any component own a series. A staged series names its component, so a
+    series on a component with no name has nowhere to go.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the Arc of the Line "line_1" has a per-unit max_active_power series 0.5 1.0
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "good_1" has a max_active_power series 0.4 0.8
+    And the system is saved as "inputs/arc_series.json"
+    When I run translate against "inputs/arc_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "1 series belong to a component with no name, so each is left out: Arc"
+    And the PyPSA network "outputs/network.nc" has 1 line
+    And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8

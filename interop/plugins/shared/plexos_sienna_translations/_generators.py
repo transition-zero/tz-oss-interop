@@ -150,12 +150,12 @@ _NATURAL_UNITS_NOTE = "PLEXOS states generator power in MW, so power_units is NA
 _ACTIVE_POWER_DERIVATION = "the minimum this generator can be held to"
 _ACTIVE_POWER_NOTE = "the generator states no minimum; active_power defaults to 0.0"
 _LIMITS_DERIVATION = "the minimum and the rated capacity, in MW"
-# The rate that covers p_nom in one minute binds at no snapshot of a minute or longer.
-_NON_BINDING_RAMP_MINUTES = 1.0
+# A ramp of the whole capacity in one snapshot never binds, whatever the snapshot length.
+_WHOLE_CAPACITY_PER_SNAPSHOT = 1.0
 _RAMP_DERIVATION = "Max Ramp Up, capped at the rate that covers p_nom in one snapshot"
 _RAMP_DOWN_NOTE = (
     "the generator states no Max Ramp Down, so ramp_limits.down takes the rate that covers "
-    "p_nom in one minute, which binds at no snapshot of a minute or longer"
+    "p_nom in one snapshot, which never binds"
 )
 _TIME_LIMITS_DERIVATION = "Min Up Time and Min Down Time, in hours"
 _COST_DERIVATION = "the marginal cost, as the variable cost curve's proportional term"
@@ -768,8 +768,8 @@ def _minimum_decision(translated: _Translated) -> Decision:
 def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
     """The rates the unit may change output at, in megawatts per minute.
 
-    A missing down rate takes the rate that covers p_nom in one minute, so it binds at no
-    snapshot of a minute or longer. A generator that states only a down rate gets no ramp_limits.
+    A missing down rate takes the rate that covers p_nom in one snapshot, so it never binds.
+    A generator that states only a down rate gets no ramp_limits.
     """
     commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.ramp_limit_up is None:
@@ -778,7 +778,7 @@ def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
     return {
         "up": _rate_per_minute(commitment.ramp_limit_up, translated),
         "down": (
-            translated.mapping.p_nom / _NON_BINDING_RAMP_MINUTES
+            _rate_per_minute(_WHOLE_CAPACITY_PER_SNAPSHOT, translated)
             if down is None
             else _rate_per_minute(down, translated)
         ),

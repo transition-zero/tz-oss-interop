@@ -13,6 +13,7 @@ from typing import Any
 from interop_testing.builders.sienna_documents import (
     ac_bus,
     hydro_generation_cost,
+    per_unit_time_series,
     renewable_generation_cost,
     single_time_series,
     storage_cost,
@@ -476,6 +477,12 @@ class SiennaSystemBuilder:
     ) -> None:
         self._check_not_saved(f"time series {name!r} for {owner_name!r}")
         self._time_series.append(single_time_series(owner_type, owner_name, name, values))
+
+    def add_arc_time_series(self, line: str, name: str, values: list[float]) -> None:
+        """Add a per-unit series that the Arc of a Line owns, which has no name."""
+        self._check_not_saved(f"time series {name!r} for the Arc of {line!r}")
+        arc_id = self._line_by_name(line)["arc"]
+        self._time_series.append(per_unit_time_series("Arc", arc_id, name, values))
 
     def add_ext(self, owner_type: str, owner_name: str, ext: dict[str, Any]) -> None:
         """Add (and merge) extensions.json fields for one component, keyed by owner."""
