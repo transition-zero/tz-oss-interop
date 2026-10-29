@@ -6,6 +6,7 @@ it, so nothing here reads a source framework.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,6 +25,9 @@ from interop.plugins.shared.sienna_constants import (
     SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
 )
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
 
 # ISO 8601 duration strings for common snapshot intervals (seconds -> string).
 _RESOLUTION_MAP: dict[int, str] = {
@@ -131,6 +135,28 @@ def build_capacity_by_owner(
         for component in components_by_type.get(owner_type, [])
         if (owner_type, component[SiennaACBusCol.ID]) in wanted
     }
+
+
+UNSCALABLE_LOAD_SERIES_NOTE = (
+    "the profile peaks at 0 MW and falls below it, so its max_active_power of 0 scales "
+    "nothing and the profile is left out"
+)
+
+
+def is_unscalable_load_series(peak: float, lowest: float) -> bool:
+    """Whether a load profile peaks at zero yet falls below it, so its peak scales nothing back."""
+    return peak == 0 and lowest < 0
+
+
+def warn_unscalable_load_series(names: list[str]) -> None:
+    """Name the loads whose profile is left out because its peak of zero scales nothing."""
+    if names:
+        log.warning(
+            "%d load profile(s) peak at 0 MW and fall below it, so no max_active_power "
+            "scales them and each is left out: %s",
+            len(names),
+            name_a_few(names),
+        )
 
 
 def ts_association_row(
