@@ -4,7 +4,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
   becomes a RenewableDispatch row. RenewableDispatch is curtailable: it has no active_power_limits,
   ramp_limits, must_run, or fuel_type. Its rating is p_nom times the static p_max_pu, or times
   the peak of the p_max_pu series where one exists. A time-varying series becomes a
-  max_active_power time series, stored as a shape whose peak is 1.0. operation_cost is a
+  max_active_power time series, stored in MW: the series times p_nom. operation_cost is a
   RenewableGenerationCost.
 
   Scenario: solar generator translates to RenewableDispatch with renewable cost and rating
@@ -85,7 +85,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
       | offwind-dc    | WS          |
       | off-wind      | WS          |
 
-  Scenario: time-varying p_max_pu rates at the series peak and stores a peak-1.0 shape
+  Scenario: time-varying p_max_pu rates at the series peak and stores the series in MW
     Given a PyPSA network
     And the network has 3 snapshots at 60 minute intervals
     And the network contains bus "bus_1" carrier "AC" v_nom 380.0
@@ -96,9 +96,18 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.p_nom` = 100.0 MW | `sienna.RenewableDispatch.solar_1.rating` = 90.0 MW | effective_p_nom * peak of the p_max_pu series (rating, MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "solar_1" attribute "max_active_power" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "solar_1" attribute "max_active_power" with values 0.5 1.0 0.8
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "solar_1" attribute "max_active_power" with values 45.0 90.0 72.0
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 1
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 2 has resolution "PT1H"
+
+  Scenario: a time-varying p_max_pu series is labelled as natural units
+    Given a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "solar_1" on "bus_1" carrier "solar" p_nom 100.0 p_max_pu_series 0.9 0.85 0.92
+    And the network is saved as "inputs/solar_ts.nc"
+    When I run translate against "inputs/solar_ts.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 2 has unit_system "NATURAL_UNITS"
 
   Scenario: flat time-varying p_max_pu emits no time series and rates at the flat value
     Given a PyPSA network

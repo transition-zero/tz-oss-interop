@@ -67,6 +67,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     load_in_scope,
     load_is_interruptible,
     rejected_build_skip,
+    report_unscalable_load_series,
     unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -397,6 +398,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         )
         ts_p = state.source_time_series.get((PyPSATable.LOADS, PyPSALoadCol.P_SET))
         table = enrich_load_ts_stats(table, ts_p)
+        report_unscalable_load_series(table, self._recorder)
         table = enrich_load_voll(table, voll_by_bus)
         ts_info = collect_ts_info(ts_p)
         self._map_load_type(state, table.filter(~load_is_interruptible()), ts_info, _PLAIN_LOAD)
