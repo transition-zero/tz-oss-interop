@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from typing import Any
 import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
 
+from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
 from interop.plugins.sinks._sienna_files import serialise_system_document
 from interop_testing.files import read_json
 
@@ -39,9 +41,12 @@ _LINES = "lines"
 _LINKS = "links"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
+_UNKNOWN = "unknown"
 
 
-def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -> None:
+def write_sienna_system(
+    path: Path, sections: dict[str, list[dict[str, Any]]], *, schema_version: str | None = None
+) -> None:
     """Serialise builder sections as a SiennaSchemas system document.
 
     Components are grouped under a ``components`` sub-object mapping each Sienna type name
@@ -53,8 +58,13 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
     storage_file = sienna_h5_filename(path)
-    rows = _build_associations(
-        sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
+    write_system_document(
+        path,
+        components,
+        _build_associations(
+            sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
+        ),
+        schema_version=schema_version,
     )
 
     extensions_file = sienna_extensions_filename(path)
@@ -62,7 +72,29 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
         json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
     )
 
-    path.write_bytes(serialise_system_document(components, rows, storage_file, 2))
+
+def write_system_document(
+    path: Path,
+    components: dict[str, Any],
+    time_series_associations: Sequence[dict[str, Any]] = (),
+    *,
+    schema_version: str | None = None,
+) -> None:
+    """Write ``components`` and association rows as a SiennaSchemas system document.
+
+    The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
+    replaces the SDK's own version in the written file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        serialise_system_document(
+            components, list(time_series_associations), sienna_h5_filename(path), 2
+        )
+    )
+    if schema_version is not None:
+        written = read_json(path)
+        written[SiennaSchemasSystem.SCHEMA_VERSION] = schema_version
+        path.write_text(json.dumps(written, indent=2), encoding="utf-8")
 
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
@@ -119,13 +151,13 @@ def _build_container(
     id_by_owner: dict[tuple[str, str], int] = {}
 
     for area in sections.get(_AREAS, []):
-        components.setdefault("Area", []).append({"id": area["id"], "name": area["name"]})
+        components.setdefault("Area", []).append(area)
 
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS):
+    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]
@@ -174,22 +206,40 @@ def _build_associations(
         with store.transaction():
             for series in series_list:
                 store.add_time_series(
-                    id_by_owner[(series["owner_type"], series["owner_name"])],
+                    _owner_id(series, id_by_owner),
                     series["owner_type"],
                     OwnerCategory.Component,
-                    SingleTimeSeries(
-                        datetime.fromisoformat(series["initial_time"]),
-                        f"PT{int(series['resolution_seconds'])}S",
-                        np.asarray(series["values"], dtype="float64")
-                        * _series_capacity(series, components),
-                        series["name"],
-                        units="MW",
-                        quantity_kind="ActivePower",
-                        unit_system="natural_units",
-                    ),
+                    _build_single_time_series(series, components),
                 )
         rows: list[dict[str, Any]] = json.loads(store.export_time_series_associations_openapi())
     return sorted(rows, key=lambda row: int(row["association_id"]))
+
+
+def _owner_id(series: dict[str, Any], id_by_owner: dict[tuple[str, str], int]) -> int:
+    """The id a series names, or the id of the component it names, for an owner with a name."""
+    if "owner_id" in series:
+        return int(series["owner_id"])
+    return id_by_owner[(series["owner_type"], series["owner_name"])]
+
+
+def _build_single_time_series(
+    series: dict[str, Any], components: dict[str, Any]
+) -> SingleTimeSeries:
+    """A per-unit series is stored as stated, and any other is stored in megawatts."""
+    initial_time = datetime.fromisoformat(series["initial_time"])
+    resolution = f"PT{int(series['resolution_seconds'])}S"
+    values = np.asarray(series["values"], dtype="float64")
+    if series.get("is_per_unit"):
+        return SingleTimeSeries(initial_time, resolution, values, series["name"])
+    return SingleTimeSeries(
+        initial_time,
+        resolution,
+        values * _series_capacity(series, components),
+        series["name"],
+        units="MW",
+        quantity_kind="ActivePower",
+        unit_system="natural_units",
+    )
 
 
 def _series_capacity(series: dict[str, Any], components: dict[str, Any]) -> float:
@@ -287,6 +337,21 @@ def single_time_series(
         "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
         "initial_time": TIME_SERIES_INITIAL_TIME,
         "values": values,
+    }
+
+
+def per_unit_time_series(
+    owner_type: str, owner_id: int, name: str, values: list[float]
+) -> dict[str, Any]:
+    """A series stored as stated, with no unit label, on an owner given by its id."""
+    return {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "name": name,
+        "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
+        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "values": values,
+        "is_per_unit": True,
     }
 
 

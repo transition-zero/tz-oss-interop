@@ -13,6 +13,7 @@ from typing import Any
 from interop_testing.builders.sienna_documents import (
     ac_bus,
     hydro_generation_cost,
+    per_unit_time_series,
     renewable_generation_cost,
     single_time_series,
     storage_cost,
@@ -46,6 +47,8 @@ class SiennaSystemBuilder:
         self._next_area_id: int = 1
         self._next_bus_id: int = 1
         self._next_component_id: int = 1
+        self._unknown: list[dict[str, Any]] = []
+        self._schema_version: str | None = None
         self._saved: bool = False
 
     def _check_not_saved(self, component_desc: str) -> None:
@@ -62,7 +65,9 @@ class SiennaSystemBuilder:
         area_id = self._next_area_id
         self._next_area_id += 1
         self._area_ids[name] = area_id
-        self._areas.append({"id": area_id, "name": name})
+        self._areas.append(
+            {"id": area_id, "name": name, "base_power": 100.0, "power_units": "NATURAL_UNITS"}
+        )
 
     def add_bus(self, name: str, area: str | None = None) -> None:
         self._check_not_saved(f"bus {name!r}")
@@ -366,6 +371,8 @@ class SiennaSystemBuilder:
                     "to_from_min": 0.0,
                     "to_from_max": 0.0,
                 },
+                "base_power": 100.0,
+                "power_units": "NATURAL_UNITS",
                 "reactive_power_limits_from": {"min": 0.0, "max": 0.0},
                 "reactive_power_limits_to": {"min": 0.0, "max": 0.0},
                 "loss": {
@@ -415,6 +422,46 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"availability for HVDC line {name!r}")
         self._link_by_name(name)["available"] = available
 
+    def remove_generator_field(self, name: str, field: str) -> None:
+        self._check_not_saved(f"removal of {field!r} from {name!r}")
+        del self._generator_by_name(name)[field]
+
+    def add_unknown_component(self, type_name: str, name: str) -> None:
+        """Add a row under a type name that SiennaSchemas does not define."""
+        self._check_not_saved(f"{type_name} {name!r}")
+        self._unknown.append({"sienna_type": type_name, "id": self._next_id(), "name": name})
+
+    def set_schema_version(self, schema_version: str) -> None:
+        self._check_not_saved("a schema_version")
+        self._schema_version = schema_version
+
+    def set_line_arc_as_text(self, name: str) -> None:
+        """Write the Arc id of a Line as a JSON string, which SiennaSchemas does not allow."""
+        self._check_not_saved(f"arc for Line {name!r}")
+        line = self._line_by_name(name)
+        line["arc"] = str(line["arc"])
+
+    def drop_line_arc_field(self, name: str, field: str) -> None:
+        """Take one field out of the Arc that a Line points at."""
+        self._check_not_saved(f"removal of {field!r} from the Arc of Line {name!r}")
+        arc_id = self._line_by_name(name)["arc"]
+        arc = next(arc for arc in self._arcs if arc["id"] == arc_id)
+        del arc[field]
+
+    def set_bus_base_voltage(self, name: str, base_voltage: float) -> None:
+        self._check_not_saved(f"base_voltage for bus {name!r}")
+        self._bus_by_name(name)["base_voltage"] = base_voltage
+
+    def set_bus_type(self, name: str, bustype: str) -> None:
+        self._check_not_saved(f"bustype for bus {name!r}")
+        self._bus_by_name(name)["bustype"] = bustype
+
+    def _bus_by_name(self, name: str) -> dict[str, Any]:
+        for bus in self._buses:
+            if bus["name"] == name:
+                return bus
+        raise KeyError(f"no bus {name!r} added yet")
+
     def drop_link_operational_flow_limit(self, name: str) -> None:
         self._check_not_saved(f"operational_flow_limit for HVDC line {name!r}")
         del self._link_by_name(name)["operational_flow_limit"]
@@ -430,6 +477,12 @@ class SiennaSystemBuilder:
     ) -> None:
         self._check_not_saved(f"time series {name!r} for {owner_name!r}")
         self._time_series.append(single_time_series(owner_type, owner_name, name, values))
+
+    def add_arc_time_series(self, line: str, name: str, values: list[float]) -> None:
+        """Add a per-unit series that the Arc of a Line owns, which has no name."""
+        self._check_not_saved(f"time series {name!r} for the Arc of {line!r}")
+        arc_id = self._line_by_name(line)["arc"]
+        self._time_series.append(per_unit_time_series("Arc", arc_id, name, values))
 
     def add_ext(self, owner_type: str, owner_name: str, ext: dict[str, Any]) -> None:
         """Add (and merge) extensions.json fields for one component, keyed by owner."""
@@ -455,6 +508,8 @@ class SiennaSystemBuilder:
             sections["lines"] = self._lines
         if self._links:
             sections["links"] = self._links
+        if self._unknown:
+            sections["unknown"] = self._unknown
         if self._time_series:
             sections["time_series"] = self._time_series
         if self._ext:
@@ -462,5 +517,5 @@ class SiennaSystemBuilder:
                 {"owner_type": owner_type, "owner_name": owner_name, "ext": ext}
                 for (owner_type, owner_name), ext in self._ext.items()
             ]
-        write_sienna_system(path, sections)
+        write_sienna_system(path, sections, schema_version=self._schema_version)
         self._saved = True

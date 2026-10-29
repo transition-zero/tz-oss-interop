@@ -53,6 +53,39 @@ def given_system_contains_bus_in_area(
 
 @given(
     parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" in area "{area}"'
+    )
+)
+def given_sienna_system_file_with_bus_in_area(
+    system_path: str, name: str, base_voltage: float, bustype: str, area: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_area(area)
+    builder.add_bus(name, area=area)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
+
+
+@given(
+    parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" and no area'
+    )
+)
+def given_sienna_system_file_with_bus_and_no_area(
+    system_path: str, name: str, base_voltage: float, bustype: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_bus(name)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
+
+
+@given(
+    parsers.parse(
         'the system contains a ThermalStandard "{name}" on bus "{bus}" '
         "with base_power {base_power:g} rating {rating:g} "
         "active_power_min {active_power_min:g} active_power_max {active_power_max:g} "
@@ -360,6 +393,14 @@ def given_system_contains_hvdc_line(
     sienna_system_builder.add_link(name, from_bus, to_bus, p_nom, efficiency)
 
 
+@given(parsers.parse('the Arc of the Line "{line}" has a per-unit {series_name} series {series}'))
+def given_arc_per_unit_series(
+    sienna_system_builder: SiennaSystemBuilder, line: str, series_name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_arc_time_series(line, series_name, values)
+
+
 @given(parsers.parse('the PowerLoad "{name}" has a max_active_power series {series}'))
 def given_power_load_max_active_power_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
@@ -468,6 +509,46 @@ def given_thermal_start_stop_costs(
     sienna_system_builder: SiennaSystemBuilder, name: str, start_up: float, shut_down: float
 ) -> None:
     sienna_system_builder.set_thermal_start_stop_costs(name, start_up, shut_down)
+
+
+@given(parsers.parse('the ThermalStandard "{name}" has no {field}'))
+def given_thermal_standard_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.remove_generator_field(name, field)
+
+
+@given(parsers.parse('the Line "{name}" states its arc as text'))
+def given_line_states_arc_as_text(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
+    sienna_system_builder.set_line_arc_as_text(name)
+
+
+@given(parsers.parse('the Arc of the Line "{name}" has no {field}'))
+def given_line_arc_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.drop_line_arc_field(name, field)
+
+
+@given(parsers.parse('the bus "{name}" has bustype "{bustype}"'))
+def given_bus_has_bustype(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bustype: str
+) -> None:
+    sienna_system_builder.set_bus_type(name, bustype)
+
+
+@given(parsers.parse('the system has a component "{name}" of the unknown type "{type_name}"'))
+def given_system_has_unknown_component(
+    sienna_system_builder: SiennaSystemBuilder, name: str, type_name: str
+) -> None:
+    sienna_system_builder.add_unknown_component(type_name, name)
+
+
+@given(parsers.parse('the system states schema_version "{schema_version}"'))
+def given_system_states_schema_version(
+    sienna_system_builder: SiennaSystemBuilder, schema_version: str
+) -> None:
+    sienna_system_builder.set_schema_version(schema_version)
 
 
 @given(parsers.parse('the system is saved as "{json_path}"'))

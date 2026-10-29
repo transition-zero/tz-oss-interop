@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 from pathlib import Path
 from typing import ClassVar
 
@@ -12,6 +11,7 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.results_constants import ResultsUnit
+from interop.plugins.shared.sienna_document import read_system_document
 from interop.plugins.shared.sienna_results_constants import (
     OBJECTIVE_VALUE_COLUMN,
     OBJECTIVE_VALUE_FIELD,
@@ -61,7 +61,7 @@ class StageSiennaResults(StagesExtensionsSidecar, StagedSource):
         if not self._fs.can_read(params.system_json_path):
             raise MissingInputError(self.name, "system JSON", f"{params.system_json_path}")
         with self._fs.open_read(params.system_json_path) as system_file:
-            system = json.load(system_file)
+            system = read_system_document(system_file)
         topology = stage_topology(system, staging_dir)
         extensions = self._stage_extensions_sidecar(params.extensions_json_path)
 

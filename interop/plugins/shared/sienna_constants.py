@@ -30,6 +30,7 @@ class SiennaSchemasSystem:
     The SDK writes the rest of the envelope.
     """
 
+    SCHEMA_VERSION = "schema_version"
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
 
