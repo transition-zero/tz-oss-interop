@@ -1849,7 +1849,7 @@ No sign flip, no unit conversion needed for P and Q. Both frameworks treat posit
 | `reactive_power` | `Float64` (MVAR) | `n.loads.q_set` | direct | **direct** | Static `q_set` → `reactive_power`. Zero in most planning networks; may be non-zero in solved power flow cases |
 | `base_power` | `Float64` (MVA) | — | see below | **derived** | No direct PyPSA source. See `base_power` section |
 | `max_active_power` | `Float64` (MW) | `n.loads.p_set` or `n.loads_t.p_set` | see below | **derived** | Peak demand ceiling. See time-series section |
-| `max_reactive_power` | `Float64` (MVAR) | `n.loads.q_set` or `n.loads_t.q_set` | direct or peak of ts | **derived** | Same logic as `max_active_power`. If `q_set` is always static and zero, set to `0.0` |
+| `max_reactive_power` | `Float64` (MVAR) | `n.loads.q_set` | direct | **direct** | Static `q_set`. A time-varying `q_set` is deferred, so it gives no peak and no time series |
 | `conformity` | `LoadConformity` | — | `LoadConformity.UNDEFINED` | **defaulted** | PyPSA `Load` has no conformity concept |
 | `power_units` | `UnitSystem` | — | `NATURAL_UNITS` | **defaulted** | The power fields of a load are in MW and MVAR |
 | `dynamic_injector` | `Union{Nothing, DynamicInjection}` | — | `nothing` | **defaulted** | Dynamics not relevant for PyPSA Load translation |
@@ -1933,10 +1933,8 @@ See Target format → Time series for the canonical form. The key points:
 
 #### `q_set` — reactive power time series
 
-Same logic as `p_set`. Check `n.loads_t["q_set"]`. In all tested sample files, no load has a time-varying `q_set` (`n.loads_t["q_set"]` is an empty DataFrame or has 0 columns). If present:
-
 - Static `q_set` → `reactive_power` (initial condition) and `max_reactive_power`.
-- Time-varying `q_set` → `max_reactive_power` (peak), plus a `TimeSeriesAssociation` on `max_reactive_power`.
+- A time-varying `q_set` is deferred. The translator writes no `TimeSeriesAssociation` on `max_reactive_power`, and the static `q_set` gives both fields.
 
 ---
 
