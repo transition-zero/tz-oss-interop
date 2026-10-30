@@ -30,7 +30,7 @@ dependencies = [
     "pydantic>=2.14.1",
     "pyyaml>=6",
     "humanize>=4.16.0",
-    "polars>=2.0.0",
+    "polars>=2.1.0",
     "xarray>=2026.9.0",
     "netcdf4>=1.7.5",
     "h5py>=3.16.0",
@@ -38,7 +38,7 @@ dependencies = [
     "requests>=2.34.2",
     "scipy>=1.11",
     "juliacall>=0.9.37",
-    "pandas>=3.0.6",
+    "pandas>=3.1.0",
     "pypsa>=1.4.0",
     "power-openapi-models==0.2.0",
 ]
