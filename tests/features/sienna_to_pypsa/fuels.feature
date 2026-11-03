@@ -12,7 +12,7 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     Given a Sienna system
     And the system contains a bus "AT"
     And the system contains a bus "DE"
-    And the system contains a ThermalStandard "gas" on bus "AT" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "AT" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the system contains a PowerLoad "load" on bus "DE" with max_active_power 100
     And the PowerLoad "load" has a max_active_power series 0.5 1 1 0.5
     And the system has a bus extension record "R1/ATGAS" with "carrier" set to "gas"
