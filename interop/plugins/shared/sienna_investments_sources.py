@@ -186,7 +186,7 @@ def _read_component(row: dict[str, Any], sienna_type: SiennaComponent) -> BaseCo
         sienna_type=str(sienna_type),
         bus=row.get(SiennaThermalGeneratorCol.BUS_NAME),
         prime_mover=row.get(SiennaThermalGeneratorCol.PRIME_MOVER_TYPE),
-        fuel=row.get(SiennaThermalGeneratorCol.FUEL_TYPE),
+        fuel=row.get(SiennaThermalGeneratorCol.FUEL),
         efficiency_in=_struct_field(efficiency, SiennaStructField.IN),
         efficiency_out=_struct_field(efficiency, SiennaStructField.OUT),
     )
