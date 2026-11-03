@@ -1,9 +1,10 @@
 """Translation objects and helpers for PyPSA Link -> Sienna TwoTerminalGenericHVDCLine.
 
-Power limits come from p_nom * p_min_pu/p_max_pu (extendable links use p_nom_opt when solved);
-p_min_pu < 0 makes the link bidirectional, so the from-end min becomes negative. The to-end
-limits are the from-end limits scaled by efficiency. efficiency maps to a linear
-InputOutputCurve loss with proportional_term = 1 - efficiency. Multi-port links (bus2/bus3
+The rating is the link capacity, p_nom (extendable links use p_nom_opt when solved), or the
+larger flow bound when one exceeds it. The operational flow limit bounds the forward flow at
+capacity * p_max_pu and, when p_min_pu < 0, the reverse flow at -capacity * p_min_pu. A PyPSA
+link states no converter ratings, so rating_from and rating_to are left out. efficiency maps
+to a linear LossCurve with proportional_term = 1 - efficiency. Multi-port links (bus2/bus3
 set) and links touching non-electricity buses are out of scope and skipped. Time-varying
 efficiency/p_min_pu/p_max_pu use the static value and record a flag in the extensions sidecar.
 """
@@ -31,15 +32,16 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
 )
 from interop.plugins.shared.pypsa_sienna_translations._units import LINK_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
-    IO_CURVE_DTYPE,
+    LOSS_CURVE_DTYPE,
     MIN_MAX_DTYPE,
+    OPERATIONAL_FLOW_LIMIT_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
     MinMaxField,
+    OperationalFlowLimitField,
     SiennaComponent,
-    SiennaCurveType,
-    SiennaFunctionType,
     SiennaLinkCol,
 )
+from interop.plugins.shared.sienna_cost_curves import loss_curve
 from interop.plugins.shared.translation_runner import (
     Translation,
     express_document_id,
@@ -175,9 +177,9 @@ def _link_extension(
     name: str, src: dict[str, Any], time_varying_owners: dict[str, set[str]]
 ) -> ControllableLineExtension:
     """One link's record. A field the link does not need is left unstated, not defaulted."""
-    # active_power_limits_from folds p_nom * p_max_pu into a single max, and drops any
-    # positive p_min_pu (its from-end min is 0). Carry both so the reverse recovers the
-    # original p_nom / p_max_pu split and a positive lower bound losslessly.
+    # from_to_max folds p_nom * p_max_pu into one number, and the flow minimums drop any
+    # positive p_min_pu. Carry both so the reverse recovers the original p_nom / p_max_pu
+    # split and a positive lower bound losslessly.
     p_max_pu = src[PyPSALinkCol.P_MAX_PU]
     p_min_pu = src[PyPSALinkCol.P_MIN_PU]
     return ControllableLineExtension(
@@ -199,16 +201,20 @@ def _time_varying_flags(name: str, time_varying_owners: dict[str, set[str]]) -> 
 
 _effective_p_nom = pl.col(EFFECTIVE_P_NOM)
 _is_bidirectional = pl.col(PyPSALinkCol.P_MIN_PU) < 0
-_from_min = (
-    pl.when(_is_bidirectional).then(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU)).otherwise(0.0)
-)
-_from_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU)
-_to_min = (
+_forward_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU)
+_reverse_max = (
     pl.when(_is_bidirectional)
-    .then(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU) * pl.col(PyPSALinkCol.EFFICIENCY))
+    .then(-(_effective_p_nom * pl.col(PyPSALinkCol.P_MIN_PU)))
     .otherwise(0.0)
 )
-_to_max = _effective_p_nom * pl.col(PyPSALinkCol.P_MAX_PU) * pl.col(PyPSALinkCol.EFFICIENCY)
+_operational_flow_limit = pl.struct(
+    pl.lit(0.0).alias(OperationalFlowLimitField.FROM_TO_MIN),
+    _forward_max.alias(OperationalFlowLimitField.FROM_TO_MAX),
+    pl.lit(0.0).alias(OperationalFlowLimitField.TO_FROM_MIN),
+    _reverse_max.alias(OperationalFlowLimitField.TO_FROM_MAX),
+).cast(OPERATIONAL_FLOW_LIMIT_DTYPE)
+# A reader caps each flow bound at the rating, so the rating must cover a p_min_pu below -1.
+_rating = pl.max_horizontal(_effective_p_nom, _forward_max, _reverse_max)
 
 
 def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
@@ -292,76 +298,40 @@ LINK_SIENNA_TYPE = Translation(
 )
 
 
-def _apl_from_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
-    capacity_attr, capacity_value = _capacity_source(old)
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(old[PyPSALinkCol.NAME], capacity_attr, capacity_value, unit=UNIT_MW),
-                _source(old[PyPSALinkCol.NAME], PyPSALinkCol.P_MIN_PU, old[PyPSALinkCol.P_MIN_PU]),
-                _source(old[PyPSALinkCol.NAME], PyPSALinkCol.P_MAX_PU, old[PyPSALinkCol.P_MAX_PU]),
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSALinkCol.NAME],
-                    SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
-                    new[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM],
-                    unit=UNIT_MW,
-                )
-            ],
-            derivation=(
-                "min = capacity * p_min_pu (if p_min_pu < 0, else 0); max = capacity * p_max_pu"
-            ),
-        )
-    ]
+def _rating_translation(
+    expr: pl.Expr, attribute: str, per_unit_columns: tuple[str, ...], derivation: str
+) -> Translation:
+    """One column built from the capacity, and its event naming the per-unit columns it uses."""
+
+    def make_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
+        name = old[PyPSALinkCol.NAME]
+        capacity_attribute, capacity_value = _capacity_source(old)
+        sources = [_source(name, capacity_attribute, capacity_value, unit=UNIT_MW)]
+        sources.extend(_source(name, column, old[column]) for column in per_unit_columns)
+        return [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=sources,
+                destinations=[_dest(name, attribute, new[attribute], UNIT_MW)],
+                derivation=derivation,
+            )
+        ]
+
+    return Translation(exprs=[expr.alias(attribute)], make_events=make_events)
 
 
-LINK_ACTIVE_POWER_LIMITS_FROM = Translation(
-    exprs=[
-        pl.struct(
-            _from_min.alias(MinMaxField.MIN),
-            _from_max.alias(MinMaxField.MAX),
-        )
-        .cast(MIN_MAX_DTYPE)
-        .alias(SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM)
-    ],
-    make_events=_apl_from_events,
+LINK_RATING = _rating_translation(
+    _rating,
+    SiennaLinkCol.RATING,
+    (PyPSALinkCol.P_MIN_PU, PyPSALinkCol.P_MAX_PU),
+    "rating = max(capacity, capacity * p_max_pu, -capacity * p_min_pu)",
 )
-
-
-def _apl_to_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
-    return [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                _source(
-                    old[PyPSALinkCol.NAME], PyPSALinkCol.EFFICIENCY, old[PyPSALinkCol.EFFICIENCY]
-                )
-            ],
-            destinations=[
-                _dest(
-                    old[PyPSALinkCol.NAME],
-                    SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
-                    new[SiennaLinkCol.ACTIVE_POWER_LIMITS_TO],
-                    unit=UNIT_MW,
-                )
-            ],
-            derivation="active_power_limits_to = active_power_limits_from * efficiency",
-        )
-    ]
-
-
-LINK_ACTIVE_POWER_LIMITS_TO = Translation(
-    exprs=[
-        pl.struct(
-            _to_min.alias(MinMaxField.MIN),
-            _to_max.alias(MinMaxField.MAX),
-        )
-        .cast(MIN_MAX_DTYPE)
-        .alias(SiennaLinkCol.ACTIVE_POWER_LIMITS_TO)
-    ],
-    make_events=_apl_to_events,
+LINK_OPERATIONAL_FLOW_LIMIT = _rating_translation(
+    _operational_flow_limit,
+    SiennaLinkCol.OPERATIONAL_FLOW_LIMIT,
+    (PyPSALinkCol.P_MIN_PU, PyPSALinkCol.P_MAX_PU),
+    "from_to_max = capacity * p_max_pu; to_from_max = -capacity * p_min_pu (if p_min_pu < 0, "
+    "else 0); both minimums are 0",
 )
 
 
@@ -396,16 +366,8 @@ LINK_REACTIVE_POWER_LIMITS_TO = _zero_reactive_limits(SiennaLinkCol.REACTIVE_POW
 
 LINK_LOSS = Translation(
     exprs=[
-        pl.struct(
-            curve_type=pl.lit(SiennaCurveType.INPUT_OUTPUT),
-            function_data=pl.struct(
-                function_type=pl.lit(SiennaFunctionType.LINEAR),
-                proportional_term=(1.0 - pl.col(PyPSALinkCol.EFFICIENCY)),
-                constant_term=pl.lit(0.0),
-            ),
-            input_at_zero=pl.lit(None, dtype=pl.Float64),
-        )
-        .cast(IO_CURVE_DTYPE)
+        loss_curve(1.0 - pl.col(PyPSALinkCol.EFFICIENCY))
+        .cast(LOSS_CURVE_DTYPE)
         .alias(SiennaLinkCol.LOSS)
     ],
     make_events=lambda old, new: [
@@ -419,7 +381,9 @@ LINK_LOSS = Translation(
             destinations=[
                 _dest(old[PyPSALinkCol.NAME], SiennaLinkCol.LOSS, new[SiennaLinkCol.LOSS])
             ],
-            derivation="loss = InputOutputCurve(proportional_term = 1 - efficiency)",
+            derivation=(
+                "loss = LossCurve of an InputOutputCurve (proportional_term = 1 - efficiency)"
+            ),
         )
     ],
 )
@@ -431,8 +395,8 @@ LINK_TRANSLATIONS: list[Translation] = [
     LINK_AVAILABLE,
     LINK_ACTIVE_POWER_FLOW,
     LINK_SIENNA_TYPE,
-    LINK_ACTIVE_POWER_LIMITS_FROM,
-    LINK_ACTIVE_POWER_LIMITS_TO,
+    LINK_RATING,
+    LINK_OPERATIONAL_FLOW_LIMIT,
     LINK_REACTIVE_POWER_LIMITS_FROM,
     LINK_REACTIVE_POWER_LIMITS_TO,
     LINK_LOSS,
