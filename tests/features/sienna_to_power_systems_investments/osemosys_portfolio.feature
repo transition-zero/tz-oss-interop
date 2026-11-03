@@ -200,12 +200,12 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
     Scenario: A transport technology joins two Zones as a lossless AggregateTransportTechnology
       Then the pipeline exit code is 0
       And the portfolio "psi/portfolio.json" contains 1 component of type "AggregateTransportTechnology"
-      And the portfolio "psi/portfolio.json" component "Zone" named "AT" has field "id" equal to 1
-      And the portfolio "psi/portfolio.json" component "Zone" named "DE" has field "id" equal to 2
+      And the portfolio "psi/portfolio.json" component "Zone" named "AT" has field "id" equal to 7
+      And the portfolio "psi/portfolio.json" component "Zone" named "DE" has field "id" equal to 8
       And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has "__metadata__.parameters" equal to "['ACBranch']"
       And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "power_systems_type" equal to "ACBranch"
-      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "start_region" equal to 1
-      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "end_region" equal to 2
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "start_region" equal to 7
+      And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "end_region" equal to 8
       And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "line_loss" equal to 0.0
       And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "unit_size" equal to 1.0
       And the portfolio "psi/portfolio.json" component "AggregateTransportTechnology" named "ATDELINK" has field "capacity_limits" equal to {"min": 0.0, "max": 100000000.0}
@@ -248,7 +248,7 @@ Feature: an investments portfolio that states its values by year reaches PowerSy
       And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "capacity_limits" equal to {"min": 0.0, "max": 200.0}
       And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "capital_costs.function_data.proportional_term" equal to "0.0"
       And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has "operation_costs.__metadata__.type" equal to "ThermalGenerationCost"
-      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "region" equal to [1]
+      And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "ATGASOLD" has field "region" equal to [7]
       And the file "decisions.md" contains "a technology of its own that holds its rating"
 
     Scenario: An existing renewable plant takes its base system profile in every year

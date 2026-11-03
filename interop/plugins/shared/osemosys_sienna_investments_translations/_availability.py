@@ -35,6 +35,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
 )
 from interop.plugins.shared.osemosys_sienna_translations._technologies import AVAILABILITY_FACTOR
+from interop.plugins.shared.sienna_constants import SiennaUnitSystem
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 
 _OWNER = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY
@@ -65,6 +66,7 @@ def build_availability_series(
             str(_OWNER),
             year,
             found.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(varying)).lazy(),
+            SiennaUnitSystem.COMPONENT_BASE,
         )
         for year, found in availability.items()
     ]

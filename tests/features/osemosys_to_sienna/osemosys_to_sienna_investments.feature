@@ -202,8 +202,8 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       | {osemosys_category: solar, sienna_component_type: RenewableDispatch, sienna_prime_mover_type: PVe}]                          |
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 1 has "buses" set to ["R1/ATELEC", "R1/ATELECLV"]
-    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [1]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 7 has "buses" set to ["R1/ATELEC", "R1/ATELECLV"]
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [7]
 
   Scenario: A candidate becomes a SupplyTechnology with its capacity limits of each year and the capital cost of the earliest year
     When I translate the otoole model to a Sienna investments portfolio
@@ -212,8 +212,8 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "power_systems_type" set to "ThermalStandard"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "prime_mover_type" set to "CC"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "fuel" set to ["NATURAL_GAS"]
-    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [1]
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 1 has "buses" set to ["R1/ATELEC"]
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "region" set to [6]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 6 has "buses" set to ["R1/ATELEC"]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capacity_limits" set to {"2030.0": {"min": 0.0, "max": 1000.0}, "2035.0": {"min": 200.0}}
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "capital_costs.capital_cost.function_data.proportional_term" set to 1000000.0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "ATGASNEW" having "operation_costs.fixed" set to 20000.0
@@ -393,7 +393,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "line_loss" set to 0.25
-    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "end_region" set to 2
+    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "end_region" set to 6
 
   Scenario: A technology with a capital cost but no room to build in any year is not a candidate, and the report says nothing of it
     When I translate the otoole model to a Sienna investments portfolio
@@ -499,8 +499,8 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
   Scenario: A transport candidate becomes an AggregateTransportTechnology between two areas
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
-    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "start_region" set to 1
-    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "end_region" set to 2
+    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "start_region" set to 6
+    And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "end_region" set to 7
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "line_loss" set to 0.25
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capacity_limits" set to {"min": 0.0}
     And the file "outputs/portfolio.json" parses as JSON with component "AggregateTransportTechnology" named "ATDELINK" having "capital_costs.capital_cost.function_data.proportional_term" set to 200000.0
@@ -564,7 +564,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
     When I translate the otoole model to a Sienna investments portfolio
     Then the pipeline exit code is 0
     And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" with 48 values from 133.333333333333 to 400
-    And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" that starts at "2035-01-01T00:00:00"
+    And the portfolio "outputs/portfolio.json" has a series of "DemandRequirement" "ATELEC" for the year "2035" that starts at "2035-01-01T00:00:00Z"
 
   Scenario: A later year that loses the demand of a load, or adds the demand of a new one, is reported
     In 2035 the model states no demand for ATELEC, which the base system holds, and 100 GWh for
@@ -659,7 +659,7 @@ Feature: osemosys-csv-to-sienna-investments writes a Sienna investments portfoli
       Then the pipeline exit code is 0
       And the file "outputs/portfolio.json" parses as JSON with 1 component of type "StorageTechnology"
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "power_systems_type" set to "EnergyReservoirStorage"
-      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "region" set to [1]
+      And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "region" set to [5]
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "capital_costs.discharge_capital_cost.function_data.proportional_term" set to 1250000.0
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "capital_costs.energy_capital_cost.function_data.proportional_term" set to 50000.0
       And the file "outputs/portfolio.json" parses as JSON with component "StorageTechnology" named "ATPHSS" having "capital_costs.charge_capital_cost.function_data.proportional_term" set to 0.0

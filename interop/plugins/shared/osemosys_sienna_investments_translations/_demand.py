@@ -48,7 +48,7 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
 )
-from interop.plugins.shared.sienna_constants import SiennaComponent
+from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaUnitSystem
 from interop.plugins.shared.sienna_investments_constants import SiennaInvestmentsComponent
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
@@ -160,7 +160,7 @@ def _build_kept_series(
     )
     _drop_new_loads(year, year_loads.table, loads, recorder)
     kept = year_loads.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(list(loads)))
-    return PortfolioSeries(str(_OWNER), year, kept)
+    return PortfolioSeries(str(_OWNER), year, kept, SiennaUnitSystem.NATURAL_UNITS)
 
 
 def _drop_new_loads(

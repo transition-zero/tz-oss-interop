@@ -3,8 +3,8 @@
 A series covers the representative days of the base year, from 1 January of its own year, as
 the expansion weights every year by the representative periods of the base year. Its feature
 `year` names the year, as PowerSystemsInvestments.jl reads a series of an investment period. The
-values are in natural units: MW of demand, or the per-unit availability of a technology. The
-portfolio sink writes them to an HDF5 companion of its own.
+values are MW of demand, or the per-unit availability of a technology. The portfolio sink
+writes them to an InfraStore companion of its own.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from interop.plugins.shared.osemosys_sienna_translations._events import build_si
 from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaTimeSeriesAssociationCol,
-    time_series_uuid,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     PORTFOLIO_TIME_SERIES_ASSOCIATION_SCHEMA,
@@ -49,6 +49,8 @@ class PortfolioSeries:
     owner_type: str
     year: int
     table: pl.LazyFrame
+    # The basis of the values: MW of demand, or the per-unit availability of a technology.
+    unit_system: SiennaUnitSystem
 
     @property
     def attribute(self) -> str:
@@ -119,9 +121,8 @@ def _build_associations(series: PortfolioSeries, owner_ids: Mapping[str, int]) -
                 source_attribute=source_attribute,
                 scaling_factor=UNSCALED,
             ),
-            col.TIME_SERIES_UUID: time_series_uuid(series.owner_type, name, series.attribute),
             col.FEATURES: features,
-            col.SCALING_FACTOR_MULTIPLIER: None,
+            col.UNIT_SYSTEM: series.unit_system,
         }
         for name in names
         if name in owner_ids
