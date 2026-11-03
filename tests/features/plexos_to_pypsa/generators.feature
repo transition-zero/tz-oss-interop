@@ -129,15 +129,24 @@ Feature: Translate PLEXOS generators into a PyPSA network
     Then the PyPSA generator "LowerSolar" in "outputs/network.nc" has carrier "solar"
     And the PyPSA generator "UpperWind" in "outputs/network.nc" has carrier "OFFSHORE WIND"
 
+  Scenario: generators whose minimum sits above their ceiling share one warning
+    Each generator states its own numbers, so the report carries them and the warning names
+    the generators.
+    Given a Plexos model
+    And the model contains generator "PlantA" with "node=Grid_Node, fuel=Coal, Max Capacity=100, Heat Rate=9, Min Stable Factor=50, Outage Factor=40"
+    And the model contains generator "PlantB" with "node=Grid_Node, fuel=Coal, Max Capacity=100, Heat Rate=9, Min Stable Factor=60, Outage Factor=30"
+    And the model is saved as "inputs/infeasible.xml"
+    When I run translate against "inputs/infeasible.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the log contains "2 Generator(s) state a minimum output above the most they can reach, so no dispatch meets it and each is left out. Each one: PlantA, PlantB"
+    And the file "decisions.md" contains "p_min_pu 0.6 sits above p_max_pu 0.3"
+
   Scenario: a minimum stable level above the available capacity leaves the generator out
     Given a Plexos model
     And the model contains generator "InfeasiblePlant" with "node=Grid_Node, fuel=Coal, Max Capacity=100, Heat Rate=9, Min Stable Factor=50, Outage Factor=40"
     And the model is saved as "inputs/infeasible.xml"
     When I run translate against "inputs/infeasible.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "InfeasiblePlant"
-    And the log contains "dropping 1 Generator(s)"
-    And the log contains "Each one: InfeasiblePlant"
-    And the log contains "p_min_pu 0.5 sits above p_max_pu 0.4"
+    And the log contains "1 Generator(s) state a minimum output above the most they can reach, so no dispatch meets it and each is left out. Each one: InfeasiblePlant"
     And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which no dispatch can meet, so the generator is dropped |"
 
   Scenario: a non-fuel dispatchable generator gets a flat cost from its category

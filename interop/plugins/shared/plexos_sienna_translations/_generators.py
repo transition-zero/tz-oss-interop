@@ -76,6 +76,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     declares,
@@ -183,6 +184,12 @@ _INFEASIBLE_NOTE = (
     "generator is dropped"
 )
 _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispatch"
+# Each note states the unit's own numbers, so one warning per reason names the units instead.
+_INFEASIBLE_GROUP = SkipGroup(
+    "Generator(s)",
+    "state a minimum output above the most they can reach",
+    "so no dispatch meets it and each is left out",
+)
 
 # The Sienna types a generator may become. Every other target names a storage unit, which a
 # different sub-step writes.
@@ -549,6 +556,7 @@ def _infeasible(mapping: GeneratorMapping) -> SkippedComponent:
             minimum=mapping.minimum.p_min_pu,
             ceiling=mapping.availability.static_p_max_pu,
         ),
+        warn_with=_INFEASIBLE_GROUP,
     )
 
 
