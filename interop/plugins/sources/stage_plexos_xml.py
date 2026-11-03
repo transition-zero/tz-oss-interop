@@ -58,6 +58,7 @@ from interop.plugins.shared.plexos_units import (
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.sources.plexos_csv_layouts import (
+    LayoutContext,
     SampleScope,
     drop_undated_rows,
     is_supported_layout,
@@ -76,6 +77,11 @@ from interop.plugins.sources.plexos_dated_properties import (
     stepped_series_parts,
 )
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
+from interop.plugins.sources.plexos_patterns import (
+    PatternCalendar,
+    build_calendar,
+    is_timeslice_include,
+)
 from interop.plugins.sources.plexos_tables import class_id_of, objects_of_class
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
@@ -148,6 +154,7 @@ _PERCENT = 100.0
 _TIME_SERIES_SUBDIR = "time_series"
 _CSV_SUBDIR = "csv"
 _DATED_CSV_SUBDIR = "dated_csv"
+_TIMESLICE_CSV_SUBDIR = "timeslice_csv"
 
 
 _Rows = list[dict[str, Any]]
@@ -223,7 +230,7 @@ class StagePlexosXml(StagedSource):
             staging_dir=staging_dir,
             source_topology=self._stage_topology(resolved, staging_dir),
             source_time_series=self._stage_all_series(
-                resolved, plexos_params.path, staging_dir, chronology
+                resolved, _Package(plexos_params.path, tables), staging_dir, chronology
             ),
             validation_errors=dropped.errors,
         )
@@ -231,17 +238,36 @@ class StagePlexosXml(StagedSource):
     def _stage_all_series(
         self,
         resolved: _ResolvedDataset,
-        xml_path: Location,
+        package: _Package,
         staging_dir: Path,
         chronology: Chronology,
     ) -> dict[tuple[str, str], pl.LazyFrame]:
         """Both kinds of series a model states: read from a Data File, and dated in the XML."""
+        context = LayoutContext(
+            chronology.profile_year,
+            self.sample_scope,
+            self._build_pattern_calendar(resolved.properties, package, staging_dir, chronology),
+        )
         series = self._stage_time_series(
-            resolved.properties, xml_path, staging_dir, chronology.profile_year, chronology.index
+            resolved.properties, package.xml_path, staging_dir, context, chronology.index
         )
         for key, frames in stepped_series_parts(resolved.stepped_properties, series).items():
             series[key] = self._sink_series(key, frames, staging_dir, chronology.index)
         return series
+
+    def _build_pattern_calendar(
+        self, properties: _Rows, package: _Package, staging_dir: Path, chronology: Chronology
+    ) -> PatternCalendar | None:
+        """What a value by pattern expands onto, or None where the Horizon sets no snapshots."""
+        if chronology.index is None:
+            return None
+        spooled_count = itertools.count()
+
+        def scan_file(relative: str) -> pl.LazyFrame | None:
+            target = staging_dir / _TIMESLICE_CSV_SUBDIR / f"{next(spooled_count)}.csv"
+            return self._spool_csv_to(package.xml_path, relative, target)
+
+        return build_calendar(chronology.index, package.tables, properties, scan_file)
 
     def _build_dated_files(self, xml_path: Location, staging_dir: Path) -> DatedFiles:
         """The reader of the data files that date one value per object, beside this XML."""
@@ -308,7 +334,7 @@ class StagePlexosXml(StagedSource):
         properties: _Rows,
         xml_path: Location,
         staging_dir: Path,
-        horizon_year: int | None,
+        context: LayoutContext,
         index: pl.DataFrame | None,
     ) -> dict[tuple[str, str], pl.LazyFrame]:
         """Read the CSV behind each file-backed property once, reshaping it for every object.
@@ -327,7 +353,7 @@ class StagePlexosXml(StagedSource):
         rows_by_file: dict[str, _Rows] = {}
         for row in properties:
             relative = row[PlexosPropertyCol.DATA_FILE]
-            if relative is not None:
+            if relative is not None and not is_timeslice_include(row):
                 rows_by_file.setdefault(relative, []).append(row)
 
         parts: dict[tuple[str, str], list[pl.LazyFrame]] = {}
@@ -338,11 +364,11 @@ class StagePlexosXml(StagedSource):
                 missing.append(relative)
                 continue
             scan = spooled
-            if not is_supported_layout(scan, horizon_year):
-                warn_unstageable_layout(scan, relative, horizon_year)
+            if not is_supported_layout(scan, context):
+                warn_unstageable_layout(scan, relative, context)
                 continue
             for key, owners in _group_by_series_key(rows).items():
-                frame = reshape_for_file(scan, owners, horizon_year, self.sample_scope)
+                frame = reshape_for_file(scan, relative, owners, context)
                 if frame is None:
                     warn_no_series(relative, owners)
                     continue
@@ -423,6 +449,13 @@ class _ResolvedDataset:
     properties: _Rows
     stepped_properties: _Rows
     dated_properties: _Rows
+
+
+class _Package(NamedTuple):
+    """The XML a model is read from, and its parsed tables."""
+
+    xml_path: Location
+    tables: _RowsByTable
 
 
 class _Selection(NamedTuple):

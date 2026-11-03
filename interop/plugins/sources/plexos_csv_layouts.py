@@ -21,6 +21,7 @@ import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.plexos_constants import PlexosPropertyCol
+from interop.plugins.sources.plexos_patterns import PATTERN_COLUMN, PatternCalendar
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ _CANONICAL_BY_FOLDED = {
         _CSV_VALUE,
         _CSV_DATETIME,
         _CSV_NAME,
+        PATTERN_COLUMN,
         *_MONTH_COLUMNS,
     )
 }
@@ -121,14 +123,39 @@ def normalise_column_name(name: str) -> str:
 
 
 @dataclass(frozen=True)
+class LayoutContext:
+    """What a run settles that a layout can need: the year, the samples, and the snapshots.
+
+    ``calendar`` is None where the Horizon sets no snapshots, so a value by pattern has
+    nothing to expand onto.
+    """
+
+    horizon_year: int | None
+    sample_scope: SampleScope
+    calendar: PatternCalendar | None
+
+
+@dataclass(frozen=True)
 class _CsvToReshape:
     """One Data File CSV, and everything a reshaper needs to read it."""
 
     scan: pl.LazyFrame
+    relative: str
     columns: list[str]
     owner_names: set[str]
-    sample_scope: SampleScope
-    horizon_year: int | None
+    context: LayoutContext
+
+    @property
+    def sample_scope(self) -> SampleScope:
+        return self.context.sample_scope
+
+    @property
+    def horizon_year(self) -> int | None:
+        return self.context.horizon_year
+
+    @property
+    def calendar(self) -> PatternCalendar | None:
+        return self.context.calendar
 
 
 @dataclass(frozen=True)
@@ -142,17 +169,24 @@ class _CsvShape:
     matches: Callable[[set[str]], bool]
     reshape: Callable[[_CsvToReshape], pl.LazyFrame | None]
     needs_a_year: bool = False
+    needs_snapshots: bool = False
+
+    def can_read(self, context: LayoutContext) -> bool:
+        """Whether this run settles what the layout needs to date its rows."""
+        has_year = context.horizon_year is not None or not self.needs_a_year
+        has_snapshots = context.calendar is not None or not self.needs_snapshots
+        return has_year and has_snapshots
 
 
-def is_supported_layout(scan: pl.LazyFrame, horizon_year: int | None) -> bool:
+def is_supported_layout(scan: pl.LazyFrame, context: LayoutContext) -> bool:
     """Whether the reshaper can turn this CSV's header into a time series."""
-    return _choose_shape(set(scan.collect_schema().names()), horizon_year) is not None
+    return _choose_shape(set(scan.collect_schema().names()), context) is not None
 
 
-def _choose_shape(header: set[str], horizon_year: int | None) -> _CsvShape | None:
+def _choose_shape(header: set[str], context: LayoutContext) -> _CsvShape | None:
     """The first layout this header matches and this run can read, or None where there is none."""
     for shape in _CSV_SHAPES:
-        if shape.matches(header) and (horizon_year is not None or not shape.needs_a_year):
+        if shape.matches(header) and shape.can_read(context):
             return shape
     return None
 
@@ -162,8 +196,21 @@ def _wants_a_year(header: set[str]) -> bool:
     return any(shape.needs_a_year and shape.matches(header) for shape in _CSV_SHAPES)
 
 
-def warn_unstageable_layout(scan: pl.LazyFrame, relative: str, horizon_year: int | None) -> None:
-    if horizon_year is None and _wants_a_year(set(scan.collect_schema().names())):
+def _wants_snapshots(header: set[str]) -> bool:
+    """Whether this layout gives its values by pattern, which only snapshots can date."""
+    return any(shape.needs_snapshots and shape.matches(header) for shape in _CSV_SHAPES)
+
+
+def warn_unstageable_layout(scan: pl.LazyFrame, relative: str, context: LayoutContext) -> None:
+    header = set(scan.collect_schema().names())
+    if context.calendar is None and _wants_snapshots(header):
+        log.warning(
+            "plexos: deferring Data File %s: it gives its values by pattern, and the model's "
+            "Horizon sets no snapshots to expand them onto",
+            relative,
+        )
+        return
+    if context.horizon_year is None and _wants_a_year(header):
         log.warning(
             "plexos: deferring Data File %s: its rows carry no year, and neither the "
             "selected Model's Horizon nor the source's 'horizon_year' parameter names one "
@@ -188,7 +235,7 @@ def _has_one_value_per_day(header: set[str]) -> bool:
 
 
 def reshape_for_file(
-    scan: pl.LazyFrame, owners: Rows, horizon_year: int | None, sample_scope: SampleScope
+    scan: pl.LazyFrame, relative: str, owners: Rows, context: LayoutContext
 ) -> pl.LazyFrame | None:
     """Reshape one Data File CSV once, whatever its PLEXOS layout, then scale and restrict it
     to the objects in ``owners`` that read it.
@@ -198,11 +245,11 @@ def reshape_for_file(
     columns, e.g. neither a lone Value column nor sample-numbered ones.
     """
     columns = scan.collect_schema().names()
-    shape = _choose_shape(set(columns), horizon_year)
+    shape = _choose_shape(set(columns), context)
     if shape is None:
         return None
     owner_names = {row[PlexosPropertyCol.CHILD_OBJECT] for row in owners}
-    frame = shape.reshape(_CsvToReshape(scan, columns, owner_names, sample_scope, horizon_year))
+    frame = shape.reshape(_CsvToReshape(scan, relative, columns, owner_names, context))
     return None if frame is None else _attach_owners(frame, _owner_table(owners))
 
 
@@ -337,6 +384,32 @@ def _reshape_monthly_in_year(csv: _CsvToReshape) -> pl.LazyFrame | None:
     return _reshape_monthly_by_name(csv.scan, csv.horizon_year)
 
 
+def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
+    """A value for each object and pattern, spread over the snapshots each pattern covers.
+
+    A Year column keeps a row to the snapshots of its own year. A snapshot two patterns
+    cover takes the first. The patterns are a column subset, so they are safe to collect.
+    """
+    if csv.calendar is None:
+        return None
+    value_columns = [c for c in csv.columns if c not in {_CSV_NAME, PATTERN_COLUMN, _CSV_YEAR}]
+    chosen = _generic_value_columns(value_columns, csv.sample_scope)
+    if chosen is None:
+        return None
+    text = csv.scan.with_columns(pl.col(_CSV_NAME, PATTERN_COLUMN).cast(pl.String))
+    patterns = text.select(PATTERN_COLUMN).unique().collect()[PATTERN_COLUMN].to_list()
+    assignment = csv.calendar.build_assignment(patterns, csv.relative)
+    stamped = text.join(assignment.lazy(), on=PATTERN_COLUMN)
+    if _CSV_YEAR in csv.columns:
+        stamped = stamped.filter(
+            pl.col(_CSV_YEAR) == pl.col(StagedTimeSeriesCol.SNAPSHOT).dt.year()
+        )
+    melted = _unpivot_samples(stamped, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, _CSV_NAME])
+    keys = [StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SAMPLE, StagedTimeSeriesCol.SNAPSHOT]
+    named = melted.rename({_CSV_NAME: StagedTimeSeriesCol.COMPONENT})
+    return named.unique(subset=keys, keep="first", maintain_order=True)
+
+
 # In order: the first layout a header matches is the one that reads it. No two overlap
 # today, so the order records intent rather than resolving a clash.
 _CSV_SHAPES: tuple[_CsvShape, ...] = (
@@ -367,6 +440,11 @@ _CSV_SHAPES: tuple[_CsvShape, ...] = (
         lambda header: _CSV_NAME in header and set(_MONTH_COLUMNS) <= header,
         _reshape_monthly_in_year,
         needs_a_year=True,
+    ),
+    _CsvShape(
+        lambda header: {_CSV_NAME, PATTERN_COLUMN} <= header,
+        _reshape_by_pattern,
+        needs_snapshots=True,
     ),
 )
 

@@ -35,6 +35,7 @@ class PlexosClass(StrEnum):
     CONSTRAINT = "Constraint"
     DECISION_VARIABLE = "Decision Variable"
     DATA_FILE = "Data File"
+    TIMESLICE = "Timeslice"
     MODEL = "Model"
     SCENARIO = "Scenario"
 
@@ -225,6 +226,7 @@ class PlexosProperty(StrEnum):
     RHS_WEEK = "RHS Week"
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
+    INCLUDE = "Include"
     INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 

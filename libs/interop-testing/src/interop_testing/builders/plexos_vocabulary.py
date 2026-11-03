@@ -111,6 +111,8 @@ VARIABLES_COLLECTION = "Variables"
 VARIABLE_CLASS = "Variable"
 # The class of a t_text value, which says what the text is rather than who owns it.
 TIMESLICE_CLASS = "Timeslice"
+TIMESLICES_COLLECTION = "Timeslices"
+INCLUDE_PROPERTY = "Include"
 VOLL_PROPERTY = "VoLL"
 # A Scenario's read-order priority is a PLEXOS object attribute, not a property.
 READ_ORDER_ATTRIBUTE = "Read Order"

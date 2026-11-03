@@ -44,6 +44,7 @@ from interop_testing.builders.plexos_vocabulary import (
     FUELS_COLLECTION,
     HORIZON_CLASS,
     HORIZONS_COLLECTION,
+    INCLUDE_PROPERTY,
     IS_SLACK_BUS_PROPERTY,
     LOAD_PROPERTY,
     MARKET_CLASS,
@@ -64,6 +65,7 @@ from interop_testing.builders.plexos_vocabulary import (
     SCENARIO_CLASS,
     SCENARIOS_COLLECTION,
     TIMESLICE_CLASS,
+    TIMESLICES_COLLECTION,
     VARIABLE_CLASS,
     VARIABLES_COLLECTION,
     VOLL_PROPERTY,
@@ -337,6 +339,30 @@ class PlexosModelBuilder(ResourceBuilder):
         self._check_not_saved(f"variable {name!r}")
         self._add_system_object(VARIABLE_CLASS, name, VARIABLES_COLLECTION)
         self._add_variable_profile(name, pattern, TIMESLICE_CLASS)
+
+    def add_timeslice_from_data_file(self, name: str, data_file: str) -> None:
+        """A Timeslice whose Include reads a data file of days."""
+        self._check_not_saved(f"timeslice {name!r}")
+        self._add_system_object(TIMESLICE_CLASS, name, TIMESLICES_COLLECTION)
+        self._add_system_property(
+            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, 0, data_file=data_file
+        )
+
+    def add_timeslice_with_pattern(self, name: str, pattern: str) -> None:
+        """A Timeslice whose Include states a pattern, such as M4,D1-7, as its own text."""
+        self._check_not_saved(f"timeslice {name!r}")
+        self._add_system_object(TIMESLICE_CLASS, name, TIMESLICES_COLLECTION)
+        self._add_system_property(
+            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, PLEXOS_TRUE
+        )
+        include_data_id = self._data_rows[-1]["data_id"]
+        self._text_rows.append(
+            {
+                "data_id": include_data_id,
+                "class_id": self._class_id(TIMESLICE_CLASS),
+                "value": pattern,
+            }
+        )
 
     def add_model(self, name: str, scenarios: list[str] | None = None) -> None:
         self._check_not_saved(f"model {name!r}")

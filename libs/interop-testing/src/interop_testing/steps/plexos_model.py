@@ -210,6 +210,20 @@ def given_model_contains_data_file_with_rows(
     plexos_model_builder.add_data_file_with_rows(name, path, datatable)
 
 
+@given(parsers.parse('the model contains timeslice "{name}" read from data file "{data_file}"'))
+def given_model_contains_timeslice_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, data_file: str
+) -> None:
+    plexos_model_builder.add_timeslice_from_data_file(name, data_file)
+
+
+@given(parsers.parse('the model contains timeslice "{name}" with pattern "{pattern}"'))
+def given_model_contains_timeslice_with_pattern(
+    plexos_model_builder: PlexosModelBuilder, name: str, pattern: str
+) -> None:
+    plexos_model_builder.add_timeslice_with_pattern(name, pattern)
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g} from data file "{name}"'))
 def given_model_contains_load_from_data_file(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str
