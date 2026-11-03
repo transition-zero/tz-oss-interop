@@ -87,6 +87,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_costs impor
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaSeriesName,
+    SiennaStructField,
     SiennaThermalGeneratorCol,
 )
 from interop.plugins.shared.translation_runner import (
@@ -101,7 +102,9 @@ log = logging.getLogger(__name__)
 _Col = SiennaThermalGeneratorCol
 
 PROPORTIONAL_TERM_ATTRIBUTE = (
-    f"{_Col.OPERATION_COST}.variable.value_curve.function_data.proportional_term"
+    f"{_Col.OPERATION_COST}.{SiennaStructField.VARIABLE_OPERATION_COST}."
+    f"{SiennaStructField.VALUE_CURVE}.{SiennaStructField.FUNCTION_DATA}."
+    f"{SiennaStructField.PROPORTIONAL_TERM}"
 )
 _FUEL_TERM_ATTRIBUTE = f"{_Col.OPERATION_COST} fuel term of "
 PENALTY_ATTRIBUTE = f"{_Col.OPERATION_COST} emission penalty of "

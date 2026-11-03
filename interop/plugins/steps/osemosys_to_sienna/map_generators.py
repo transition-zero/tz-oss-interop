@@ -28,6 +28,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
+from interop.plugins.shared.translation_runner import enrich_first_id
 
 
 class OsemosysToSiennaMapGenerators(OperationsMapping):
@@ -57,7 +58,7 @@ class OsemosysToSiennaMapGenerators(OperationsMapping):
         table = source.table.filter(pl.col(SIENNA_TYPE) == mapping.sienna_type)
         if table.height == 0:
             return
-        generators = map_component_table(table, mapping, self._recorder)
+        generators = map_component_table(enrich_first_id(table, state), mapping, self._recorder)
         state.destination_tables[mapping.sienna_type] = generators
         names = table[GENERATOR_NAME].implode()
         series = source.series.filter(pl.col(StagedTimeSeriesCol.COMPONENT).is_in(names))

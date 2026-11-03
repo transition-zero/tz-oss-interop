@@ -9,6 +9,7 @@ from __future__ import annotations
 from functools import partial
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 from interop.plugins.shared.constants import (
     UNIT_MVA,
@@ -89,25 +90,26 @@ from interop.plugins.shared.sienna_constants import (
     THERMAL_GENERATORS_DESTINATION_SCHEMA,
     TIME_AT_STATUS_SENTINEL,
     TIME_LIMITS_DTYPE,
+    UNIT_SYSTEM_DTYPE,
     SiennaComponent,
     SiennaCostType,
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import variable_cost_curve
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
+    build_document_id_translation,
     default_translation,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 # Every Sienna generator type names its shared fields alike, so these name them for all four.
 _Col = SiennaThermalGeneratorCol
 
-_FULL_RATING = 1.0
 _NO_POWER = 0.0
 _NO_MINIMUM = 0.0
 _UNITY_POWER_FACTOR = 1.0
@@ -115,15 +117,18 @@ _UNITY_POWER_FACTOR = 1.0
 FIXED_COST_ATTRIBUTE = f"{_Col.OPERATION_COST}.fixed"
 _BUDGET_ATTRIBUTE = f"{SiennaSeriesName.HYDRO_BUDGET} time series"
 
-GENERATOR_ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
+GENERATOR_ID_NOTE = (
+    "assigned by row position in the table of the Sienna type, after the ids of earlier components"
+)
 GENERATOR_AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every generator is available"
 _TYPE_NOTE = "the carriers: row of the category of the technology names the Sienna type"
 _PRIME_MOVER_NOTE = "the carriers: row of the category of the technology names the prime mover"
 _FUEL_TYPE_NOTE = "the carriers: row of the category of the technology names the fuel"
-_RATING_NOTE = (
-    "the generator rates at its whole residual capacity, and its availability limits it in "
-    "each hour"
+_RATING_DERIVATION = (
+    "base_power -> rating: the generator rates at its whole residual capacity, and its "
+    "availability limits it in each hour"
 )
+_POWER_UNITS_NOTE = "OSeMOSYS states generator power in MW, so power_units is NATURAL_UNITS"
 _ACTIVE_POWER_NOTE = "OSeMOSYS states no initial dispatch; active_power defaults to 0.0"
 _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive power; reactive_power defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power limits; they are left unset"
@@ -176,7 +181,7 @@ def _build_identity(dest: DestinationFieldFactory) -> list[Translation]:
                 _NAME_DERIVATION,
             ),
         ),
-        row_position_id_translation(
+        build_document_id_translation(
             dest, dest_name_col=_Col.NAME, id_col=_Col.ID, note=GENERATOR_ID_NOTE
         ),
         default(dest_col=_Col.AVAILABLE, value=True, note=GENERATOR_AVAILABLE_NOTE),
@@ -257,15 +262,40 @@ def _build_capacity(dest: DestinationFieldFactory) -> list[Translation]:
 
 
 def build_power_defaults(dest: DestinationFieldFactory) -> list[Translation]:
-    """The rating, and the initial active and reactive power, that OSeMOSYS does not state."""
+    """The rating, the units, and the initial active and reactive power of a generator."""
     default = partial(default_translation, dest, name_col=GENERATOR_NAME)
     return [
-        default(dest_col=_Col.RATING, value=_FULL_RATING, note=_RATING_NOTE),
+        _build_rating(dest),
+        default(
+            dest_col=_Col.POWER_UNITS,
+            value=SiennaUnitSystem.NATURAL_UNITS,
+            note=_POWER_UNITS_NOTE,
+            dtype=UNIT_SYSTEM_DTYPE,
+        ),
         default(dest_col=_Col.ACTIVE_POWER, value=_NO_POWER, note=_ACTIVE_POWER_NOTE, unit=UNIT_MW),
         default(
             dest_col=_Col.REACTIVE_POWER, value=_NO_POWER, note=_REACTIVE_POWER_NOTE, unit=UNIT_MW
         ),
     ]
+
+
+def _build_rating(dest: DestinationFieldFactory) -> Translation:
+    return Translation(
+        exprs=[pl.col(OUTPUT_CAPACITY_MW).alias(_Col.RATING)],
+        make_events=lambda old, new: build_derived(
+            [
+                build_sienna_source(
+                    old[SIENNA_TYPE],
+                    old[GENERATOR_NAME],
+                    _Col.BASE_POWER,
+                    old[OUTPUT_CAPACITY_MW],
+                    UNIT_MVA,
+                )
+            ],
+            [dest(old[GENERATOR_NAME], _Col.RATING, new[_Col.RATING], UNIT_MVA)],
+            _RATING_DERIVATION,
+        ),
+    )
 
 
 # --- the events of the values that reach no Sienna column of their own -----------------------
@@ -362,8 +392,7 @@ def _build_power_limits(dest: DestinationFieldFactory, maximum: pl.Expr) -> Tran
 def build_commitment(dest: DestinationFieldFactory) -> list[Translation]:
     """The unit commitment fields, at the values that every Sienna translation writes."""
     return [
-        _build_not_stated(dest, _Col.STATUS, pl.lit(True)),
-        _build_not_stated(dest, _Col.MUST_RUN, pl.lit(False)),
+        _build_not_stated(dest, _Col.STATUS, pl.lit(OperationalStates.ONLINE.value)),
         _build_not_stated(dest, _Col.TIME_AT_STATUS, pl.lit(TIME_AT_STATUS_SENTINEL)),
         _build_not_stated(dest, _Col.RAMP_LIMITS, pl.lit(None, dtype=RAMP_LIMITS_DTYPE)),
         _build_not_stated(dest, _Col.TIME_LIMITS, pl.lit(None, dtype=TIME_LIMITS_DTYPE)),
@@ -424,7 +453,7 @@ def express_thermal_cost() -> pl.Expr:
         fixed=pl.lit(NO_COST),
         shut_down=pl.lit(NO_COST),
         start_up=pl.lit(NO_COST),
-        variable=_express_variable_curve(),
+        variable_operation_cost=_express_variable_curve(),
     )
 
 
@@ -434,10 +463,10 @@ def _build_thermal() -> list[Translation]:
         *_build_shared(dest),
         _build_user_choice(
             dest,
-            _Col.FUEL_TYPE,
+            _Col.FUEL,
             FUEL_TYPE,
             _FUEL_TYPE_NOTE,
-            [pl.col(FUEL_TYPE).cast(THERMAL_FUELS_DTYPE).alias(_Col.FUEL_TYPE)],
+            [pl.col(FUEL_TYPE).cast(THERMAL_FUELS_DTYPE).alias(_Col.FUEL)],
         ),
         build_thermal_power_limits(dest),
         build_reactive_limits(dest),
@@ -451,7 +480,7 @@ def _build_renewable_dispatch() -> list[Translation]:
     dest = partial(build_sienna_field, SiennaComponent.RENEWABLE_DISPATCH)
     cost = pl.struct(
         cost_type=pl.lit(SiennaCostType.RENEWABLE),
-        variable=_express_variable_curve(),
+        variable_operation_cost=_express_variable_curve(),
         fixed=pl.lit(NO_COST),
     )
     return [
@@ -477,7 +506,7 @@ def _build_hydro_dispatch() -> list[Translation]:
     dest = partial(build_sienna_field, SiennaComponent.HYDRO_DISPATCH)
     cost = pl.struct(
         cost_type=pl.lit(SiennaCostType.HYDRO_GEN),
-        variable=_express_variable_curve(),
+        variable_operation_cost=_express_variable_curve(),
         fixed=pl.lit(NO_COST),
     )
     return [

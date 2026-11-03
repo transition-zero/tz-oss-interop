@@ -166,12 +166,12 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with 3 components of type "ThermalStandard"
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "base_power" set to 500.0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "rating" set to 1.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "rating" set to 500.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "bus" set to 1
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "prime_mover_type" set to "CC"
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "fuel_type" set to "NATURAL_GAS"
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "fuel" set to "NATURAL_GAS"
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "active_power_limits.max" set to 450.0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 7.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 7.0
       And the file "decisions.md" contains "the cheapest of 2 fuel_supply technologies that put out ATGAS"
 
     Scenario: A plant rates its residual capacity with its own capacity_to_activity_unit
@@ -190,7 +190,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "ATSOLAR" having "base_power" set to 200.0
       And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "ATSOLAR" having "prime_mover_type" set to "PVe"
-      And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 1 is named "max_active_power"
+      And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "RenewableDispatch" owner id 8 is named "max_active_power"
       And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "ATSOLAR" attribute "max_active_power" with length 48
       And the file "decisions.md" contains "applies it as a derate in each hour"
 
@@ -198,7 +198,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Given the otoole parameter "Conversionls" keyed by "TIMESLICE SEASON" with default 0 has no file
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "ATSOLAR" attribute "max_active_power" with values 0 0.4 0.2 0.8
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "RenewableDispatch" named "ATSOLAR" attribute "max_active_power" with values 0 80 40 160
 
     Scenario: A thermal plant whose availability changes from hour to hour follows a series
       Given the otoole parameter "CapacityFactor" keyed by "REGION TECHNOLOGY TIMESLICE YEAR" with default 1 has the rows:
@@ -239,7 +239,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
     Scenario: A plant whose fuel no technology produces pays no fuel cost, and the report says so
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 4.0
       And the file "decisions.md" contains "no fuel_supply technology puts out the fuel R1/ATOIL"
       And the log contains "1 generator(s) burn a fuel that no fuel_supply technology puts out, so each pays no fuel cost for it. Technologies: R1/ATOILCT"
 
@@ -267,7 +267,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "base_power" set to 25.0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" close to 14.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" close to 14.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATOILCT" having "emission_rates_t_per_mwh" set to {"CO2": 0.3}
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATOILCT.electricity at the operations mode` = 0.5"
 
@@ -330,8 +330,8 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | ATHYDRO    | S1B1      | 2030 | 0.5   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON where component "HydroDispatch" owner id 1 has a TimeSeriesAssociation named "hydro_budget"
-      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "ATHYDRO" attribute "hydro_budget" with values 0.5 1 1 1
+      And the file "outputs/system.json" parses as JSON where component "HydroDispatch" owner id 10 has a TimeSeriesAssociation named "hydro_budget"
+      And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "ATHYDRO" attribute "hydro_budget" with values 200 400 400 400
       And the file "decisions.md" contains "OSeMOSYS states no energy budget, so the budget is the availability"
 
     Scenario: A technology whose carriers row names a type that is not a generator is left out and reported
@@ -364,11 +364,11 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | CO2      | 2030 | 50    |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 37.0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 4.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 37.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 4.0
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.extensions.emission_rates_t_per_mwh.CO2` = 0.6 t/MWh<br>`osemosys.emission_penalty.R1/CO2` = 50.0 | `sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh"
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
 
     Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
       The model states currency in million USD and emissions in kt. The gas plant emits 600
@@ -401,7 +401,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       Then the pipeline exit code is 0
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30000.0 \$/MWh"
       And the file "decisions.md" contains "the penalty is 50 \$/tonne"
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 7030000.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 7030000.0
 
     Scenario: A generator that states no discount rate takes the default that the model declares for technology_discount_rate
       The default comes before the rate of the region, as the default that a model declares
@@ -504,7 +504,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | ATGASWELL  | 2030 | 0     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 11.0
       And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
 
     Scenario: A producer that has no available capacity in the year cannot be the cheapest
@@ -515,7 +515,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | ATGASWELL  | 2030 | 0     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 11.0
       And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
 
     Scenario: A producer that the model may not build in the year cannot be the cheapest
@@ -524,7 +524,7 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
         | R1     | ATGASWELL  | 2030 | 0     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 11.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 11.0
       And the file "decisions.md" contains "the cheapest of 1 fuel_supply technologies that put out ATGAS"
 
     Scenario: A plant whose fuel has producers that cannot run in the year is left out and reported
