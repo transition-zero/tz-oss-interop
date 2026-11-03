@@ -105,6 +105,21 @@ Keep a pull request to one subject. To bring new work from `main` into a pull
 request under review, merge `main` into it. Do not rebase it: a rebase replaces
 the commits that a reviewer already read. The squash merge keeps `main` linear.
 
+### A stack of pull requests from a fork
+
+A pull request from a fork can take only a branch of this repository as its
+base. So a maintainer copies each lower branch of the stack to
+`stack/<fork owner>/<branch>`, and makes that copy the base of the pull request
+above it. Each pull request then shows only its own commits. The workflow
+`stack-mirrors.yml` moves the copy each time you push to the lower branch.
+
+> **Warning:** Do not merge a pull request whose base is a `stack/` branch. The
+> merge goes into the copy, and `main` does not get the change.
+
+1. Merge the lowest pull request into `main`.
+2. Merge `main` into the branch of the next pull request.
+3. A maintainer sets the base of that pull request to `main`, and deletes the copy.
+
 ### Sign your commits off
 
 Every commit must carry a `Signed-off-by` trailer. It certifies that you wrote
