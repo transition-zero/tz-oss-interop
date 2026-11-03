@@ -21,7 +21,7 @@ from interop_testing.builders.sienna_documents import (
     read_stored_series,
     sienna_components_of_type,
 )
-from interop_testing.builders.sienna_systems import SiennaSystemBuilder
+from interop_testing.builders.sienna_systems import HydroLimits, SiennaSystemBuilder
 from interop_testing.files import navigate_json, read_json
 from interop_testing.steps.sienna_schema import (
     SYSTEM_PATH,
@@ -453,6 +453,28 @@ def given_power_load_power_units(
     sienna_system_builder.set_load_power_units(name, power_units)
 
 
+@given(
+    parsers.parse(
+        'the system contains a HydroTurbine "{name}" on bus "{bus}" '
+        "with base_power {base_power:g} rating {rating:g} "
+        "active_power_min {active_power_min:g} active_power_max {active_power_max:g} "
+        "marginal_cost {marginal_cost:g}"
+    )
+)
+def given_system_contains_hydro_turbine(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    bus: str,
+    base_power: float,
+    rating: float,
+    active_power_min: float,
+    active_power_max: float,
+    marginal_cost: float,
+) -> None:
+    limits = HydroLimits(base_power, rating, active_power_min, active_power_max, marginal_cost)
+    sienna_system_builder.add_hydro_turbine(name, bus, limits)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
@@ -618,6 +640,29 @@ def assert_sienna_component_field(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == expected, (
         f"expected [{sienna_type}:{name}].{field_path!r} = {expected!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.re(
+        r'the file "(?P<path>[^"]+)" parses as JSON with component "(?P<sienna_type>[^"]+)"'
+        r' named "(?P<name>[^"]+)" listing (?P<listed_type>\w+) "(?P<listed>[^"]+)"'
+        r' in "(?P<field>[^"]+)"'
+    )
+)
+def assert_sienna_component_lists(
+    path: str, sienna_type: str, name: str, listed_type: str, listed: str, field: str
+) -> None:
+    """A field that holds the ids of other components, named here by their names."""
+    data = read_json(path)
+    component = find_sienna_component(data, sienna_type, name)
+    expected = [
+        find_sienna_component(data, listed_type, one.strip())["id"] for one in listed.split(",")
+    ]
+    actual = component.get(field)
+    assert actual == expected, (
+        f"expected [{sienna_type}:{name}].{field} = {expected!r} ({listed}) in {path}, "
+        f"got {actual!r}"
     )
 
 

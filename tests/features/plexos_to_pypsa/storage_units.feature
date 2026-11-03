@@ -229,9 +229,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "efficiency_store" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "state_of_charge_initial" is 400.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" is not cyclic
-    And the decisions report contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | Max Capacity * Units |  | $source_leg$ | $source_storage_step$ |"
-    And the decisions report contains "| `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
-    And the decisions report contains "|  | `sienna.HydroDispatch.hydro_1.active_power_limits.min` = 0.0 MW |  | conventional hydro generates but does not pump | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `sienna.HydroTurbine.hydro_1.base_power` = 200.0 MVA | Max Capacity * Units |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.HydroTurbine.hydro_1.base_power` = 200.0 MVA | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the decisions report contains "|  | `sienna.HydroTurbine.hydro_1.active_power_limits.min` = 0.0 MW |  | conventional hydro generates but does not pump | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Storage with no turbine is skipped, not mapped
     Given a Plexos model

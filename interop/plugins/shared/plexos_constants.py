@@ -139,6 +139,8 @@ class PlexosCollection(StrEnum):
     NODE_TO = "Node To"
     HEAD_STORAGE = "Head Storage"
     TAIL_STORAGE = "Tail Storage"
+    STORAGE_FROM = "Storage From"
+    STORAGE_TO = "Storage To"
     LINES = "Lines"
     BATTERIES = "Batteries"
     STORAGES = "Storages"
@@ -204,6 +206,7 @@ class PlexosProperty(StrEnum):
     DURATION = "Duration"
     # Storage (hydro reservoir)
     MAX_VOLUME = "Max Volume"
+    MIN_VOLUME = "Min Volume"
     INITIAL_VOLUME = "Initial Volume"
     NATURAL_INFLOW = "Natural Inflow"
     END_EFFECTS_METHOD = "End Effects Method"

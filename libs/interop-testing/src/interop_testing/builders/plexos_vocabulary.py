@@ -50,6 +50,10 @@ ZONES_COLLECTION = "Zones"
 # A Node names the Zone it sits in through the singular collection.
 ZONE_COLLECTION = "Zone"
 DATA_FILE_CLASS = "Data File"
+WATERWAY_CLASS = "Waterway"
+WATERWAYS_COLLECTION = "Waterways"
+STORAGE_FROM_COLLECTION = "Storage From"
+STORAGE_TO_COLLECTION = "Storage To"
 DATA_FILES_COLLECTION = "Data Files"
 
 # The collection a Constraint reaches each class of member through, since a Constraint can

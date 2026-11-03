@@ -20,6 +20,7 @@ class SiennaTable:
     STORAGE = "storage"
     LINES = "lines"
     LINKS = "links"
+    RESERVOIRS = "reservoirs"
 
 
 class SiennaSchemasSystem:
@@ -72,6 +73,8 @@ class InfraStoreSeriesLabel:
     UNIT_SYSTEM_NATURAL = "natural_units"
     UNITS_POWER = UNIT_MW
     QUANTITY_ACTIVE_POWER = "ActivePower"
+    UNITS_FLOW = "m3/s"
+    QUANTITY_INFLOW = "Inflow"
 
 
 class SiennaComponent(StrEnum):
@@ -86,6 +89,8 @@ class SiennaComponent(StrEnum):
     RENEWABLE_DISPATCH = "RenewableDispatch"
     RENEWABLE_NON_DISPATCH = "RenewableNonDispatch"
     HYDRO_DISPATCH = "HydroDispatch"
+    HYDRO_TURBINE = "HydroTurbine"
+    HYDRO_RESERVOIR = "HydroReservoir"
     ENERGY_RESERVOIR_STORAGE = "EnergyReservoirStorage"
     LINE = "Line"
     MONITORED_LINE = "MonitoredLine"
@@ -437,6 +442,7 @@ class SiennaSeriesName(StrEnum):
 
     MAX_ACTIVE_POWER = "max_active_power"
     HYDRO_BUDGET = "hydro_budget"
+    INFLOW = "inflow"
 
 
 class LoadConformity(StrEnum):
@@ -612,6 +618,34 @@ class SiennaHydroGeneratorCol:
     OPERATION_COST = "operation_cost"
 
 
+class SiennaHydroReservoirCol:
+    """Sienna HydroReservoir destination table column names."""
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    STORAGE_LEVEL_LIMITS = "storage_level_limits"
+    INITIAL_LEVEL = "initial_level"
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
+    INTAKE_ELEVATION = "intake_elevation"
+    HEAD_TO_VOLUME_FACTOR = "head_to_volume_factor"
+    UPSTREAM_TURBINES = "upstream_turbines"
+    DOWNSTREAM_TURBINES = "downstream_turbines"
+    UPSTREAM_RESERVOIRS = "upstream_reservoirs"
+    OPERATION_COST = "operation_cost"
+    LEVEL_DATA_TYPE = "level_data_type"
+
+
+class SiennaLevelDataType(StrEnum):
+    """Sienna ``LevelDataType``: what a HydroReservoir level measures, and so its units."""
+
+    USABLE_VOLUME = "USABLE_VOLUME"
+    TOTAL_VOLUME = "TOTAL_VOLUME"
+    HEAD = "HEAD"
+    ENERGY = "ENERGY"
+
+
 class SiennaPrimeMovers(StrEnum):
     """Sienna ``PrimeMovers`` enum (source: ``SiennaSchemas/Core/common.json``)."""
 
@@ -685,6 +719,7 @@ class SiennaCostType(StrEnum):
     THERMAL = "THERMAL"
     RENEWABLE = "RENEWABLE"
     HYDRO_GEN = "HYDRO_GEN"
+    HYDRO_RES = "HYDRO_RES"
     STORAGE = "STORAGE"
     LOAD = "LOAD"
 
@@ -1040,6 +1075,43 @@ HYDRO_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaHydroGeneratorCol.BASE_POWER: pl.Float64,
     SiennaHydroGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaHydroGeneratorCol.OPERATION_COST: HYDRO_GENERATION_COST_DTYPE,
+}
+
+# A HydroTurbine states every field a HydroDispatch states, and its own fields are optional.
+HYDRO_TURBINE_DESTINATION_SCHEMA = HYDRO_DISPATCH_DESTINATION_SCHEMA
+
+HYDRO_RESERVOIR_COST_DTYPE: pl.DataType = pl.Struct(
+    {
+        "cost_type": COST_TYPE_DTYPE,
+        "level_shortage_cost": pl.Float64,
+        "level_surplus_cost": pl.Float64,
+        "spillage_cost": pl.Float64,
+    }
+)
+
+LINEAR_FUNCTION_DTYPE: pl.DataType = pl.Struct(
+    {
+        "function_type": pl.Utf8,
+        "proportional_term": pl.Float64,
+        "constant_term": pl.Float64,
+    }
+)
+
+HYDRO_RESERVOIR_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaHydroReservoirCol.ID: pl.Int64,
+    SiennaHydroReservoirCol.NAME: pl.Utf8,
+    SiennaHydroReservoirCol.AVAILABLE: pl.Boolean,
+    SiennaHydroReservoirCol.STORAGE_LEVEL_LIMITS: MIN_MAX_DTYPE,
+    SiennaHydroReservoirCol.INITIAL_LEVEL: pl.Float64,
+    SiennaHydroReservoirCol.INFLOW: pl.Float64,
+    SiennaHydroReservoirCol.OUTFLOW: pl.Float64,
+    SiennaHydroReservoirCol.INTAKE_ELEVATION: pl.Float64,
+    SiennaHydroReservoirCol.HEAD_TO_VOLUME_FACTOR: LINEAR_FUNCTION_DTYPE,
+    SiennaHydroReservoirCol.UPSTREAM_TURBINES: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.DOWNSTREAM_TURBINES: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.UPSTREAM_RESERVOIRS: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.OPERATION_COST: HYDRO_RESERVOIR_COST_DTYPE,
+    SiennaHydroReservoirCol.LEVEL_DATA_TYPE: pl.Utf8,
 }
 
 # EnergyReservoirStorage (PHS) dtypes and schema.

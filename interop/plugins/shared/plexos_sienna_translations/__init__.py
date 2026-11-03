@@ -38,6 +38,7 @@ from interop.plugins.shared.plexos_sienna_translations._reserves import (
     TranslatedServices,
     map_reserve_services,
 )
+from interop.plugins.shared.plexos_sienna_translations._reservoirs import TranslatedReservoirs
 from interop.plugins.shared.plexos_sienna_translations._storage import (
     map_storage,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "map_forced_outages",
     "drop_profiles_off_the_window",
     "map_storage",
+    "TranslatedReservoirs",
     "map_transmission",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
