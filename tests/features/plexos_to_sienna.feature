@@ -59,6 +59,51 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "contributing_generators" set to ["GasPlant"]
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "direction" set to "up"
 
+  Scenario: a line value in a data file that did not stage is left out, not guessed
+    The XML file holds a placeholder beside a value that reads a data file. Here the package
+    omits the file, so the placeholder is all the run has. The line keeps the translator
+    default for each such field, and the report says why, rather than a reactance of zero
+    and a rating of 1e30 that the model never stated.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North" with voltage 220
+    And the model contains node "South_Node" in region "North" with voltage 220
+    And the model contains line "NS" from "North_Node" to "South_Node" with no flow limits
+    And the model states line "NS" property "Resistance" as 4.84
+    And the model names data file "LineValues" at "profiles/line_values.csv" but the package omits it
+    And line "NS" has property "Reactance" of 0 from data file "LineValues"
+    And line "NS" has property "Max Rating" of 1e30 from data file "LineValues"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "Line"
+    And the file "outputs/system.json" parses as JSON with component "Line" named "NS" having "rating" set to 0.0
+    And the file "outputs/system.json" parses as JSON with component "Line" named "NS" having "r" set to 0.01
+    And the file "decisions.md" contains "Reactance is in a data file that did not stage"
+    And the file "decisions.md" contains "Max Rating is in a data file that did not stage"
+    And the log contains "1 Line(s) read Reactance from a data file that did not stage"
+
+  Scenario: a node voltage in a data file that did not stage is left out, not guessed
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model names data file "Voltages" at "profiles/voltages.csv" but the package omits it
+    And node "North_Node" has property "Voltage" of 0 from data file "Voltages"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ACBus" named "North_Node" having "base_voltage" set to 1.0
+    And the file "decisions.md" contains "Voltage is in a data file that did not stage"
+    And the log contains "1 Node(s) read Voltage from a data file that did not stage"
+
   Scenario: a reserve whose requirement varies writes its companion beside the sidecar
     A requirement that changes each snapshot is too big for the record, so it travels in a
     parquet beside the sidecar. The record points at that file by name, so the run has to

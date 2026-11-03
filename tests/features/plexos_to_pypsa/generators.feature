@@ -135,7 +135,8 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the model is saved as "inputs/infeasible.xml"
     When I run translate against "inputs/infeasible.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "InfeasiblePlant"
-    And the log contains "dropping Generator 'InfeasiblePlant'"
+    And the log contains "dropping 1 Generator(s)"
+    And the log contains "Each one: InfeasiblePlant"
     And the log contains "p_min_pu 0.5 sits above p_max_pu 0.4"
     And the file "decisions.md" contains "| `plexos.Generator.InfeasiblePlant.Min Stable Factor` = 50.0 |  |  | p_min_pu 0.5 sits above p_max_pu 0.4, which no dispatch can meet, so the generator is dropped |"
 
@@ -284,6 +285,22 @@ Feature: Translate PLEXOS generators into a PyPSA network
     When I run translate against "inputs/gas.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has no generator "Gas1"
     And the file "decisions.md" contains "Max Capacity comes from a data file"
+
+  Scenario: one warning names a few of the generators a reading leaves out
+    A real model leaves hundreds of units out for one reason. The warning names three and
+    counts the rest, and the report still holds one row for each generator.
+    Given a Plexos model
+    And the model contains data file "Capacity" at "profiles/capacity.csv" with hourly values "100, 100, 100"
+    And the model contains generator "Gas1" with "node=Grid_Node, fuel=Natural Gas, Heat Rate=9, Max Capacity=file:Capacity"
+    And the model contains generator "Gas2" with "node=Grid_Node, fuel=Natural Gas, Heat Rate=9, Max Capacity=file:Capacity"
+    And the model contains generator "Gas3" with "node=Grid_Node, fuel=Natural Gas, Heat Rate=9, Max Capacity=file:Capacity"
+    And the model contains generator "Gas4" with "node=Grid_Node, fuel=Natural Gas, Heat Rate=9, Max Capacity=file:Capacity"
+    And the model is saved as "inputs/gas.xml"
+    When I run translate against "inputs/gas.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the log contains "dropping 4 Generator(s): Max Capacity comes from a data file"
+    And the log contains "Each one: Gas1, Gas2, Gas3 and 1 more"
+    And the log does not contain "dropping Generator 'Gas4'"
+    And the file "decisions.md" contains "`plexos.Generator.Gas4.Max Capacity`"
 
   Scenario: a generator with no capacity is skipped
     Given a Plexos model

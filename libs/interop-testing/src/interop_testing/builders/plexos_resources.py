@@ -381,6 +381,15 @@ class ResourceBuilder(PlexosTables):
         self._check_not_saved(f"property {property_name!r} on line {name!r}")
         self._add_line_property(name, property_name, value)
 
+    def add_line_property_from_data_file(
+        self, name: str, property_name: str, placeholder: float, data_file: str
+    ) -> None:
+        """A Line property whose value reads a data file, beside the placeholder the XML holds."""
+        self._check_not_saved(f"property {property_name!r} on line {name!r}")
+        self._add_system_property(
+            LINE_CLASS, name, LINES_COLLECTION, property_name, placeholder, data_file=data_file
+        )
+
     def add_storage_property_from_data_file(
         self, name: str, property_name: str, data_file: str
     ) -> None:

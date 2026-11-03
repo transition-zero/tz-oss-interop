@@ -11,6 +11,7 @@ from interop.plugins.shared.plexos_sienna_translations._buses import (
     BUS_TRANSLATIONS,
     build_bus_extensions,
     build_buses_source_table,
+    report_unstaged_node_values,
 )
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
@@ -56,6 +57,7 @@ __all__ = [
     "LOAD_SERIES_KEYS",
     "build_bus_extensions",
     "build_buses_source_table",
+    "report_unstaged_node_values",
     "build_load_extensions",
     "build_load_ts_associations",
     "build_loads_source_table",
