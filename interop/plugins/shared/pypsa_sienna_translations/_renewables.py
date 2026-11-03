@@ -3,15 +3,17 @@
 Only generators whose carrier is mapped to RenewableDispatch / RenewableNonDispatch in the
 user carrier mapping are translated here. The carrier's prime_mover comes from that mapping.
 RenewableDispatch is curtailable: it has no active_power_limits, ramp_limits, must_run,
-status, or fuel_type. Its ceiling is the static rating (p_max_pu) unless p_max_pu is
-time-varying, in which case a max_active_power time series carries the per-unit shape
-unchanged (the formulation multiplies it by rating * base_power at solve time, so the
-translator must not pre-multiply by p_nom). A flat per-unit profile is skipped.
+status, or fuel_type. Its rating is effective_p_nom * p_max_pu, unless p_max_pu has a series.
+PyPSA then reads the series and ignores the static p_max_pu, so the rating is effective_p_nom
+times the peak of the series. A max_active_power time series carries the series as a shape
+whose peak is 1.0, and the rating multiplies it back to MW. A flat series writes no time
+series, because its peak in the rating already states it.
 """
 
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 import polars as pl
 
@@ -37,6 +39,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import (
+    GENERATOR_UNITS_NOTE,
+    build_power_units_translation,
+)
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     FLAT_TIME_SERIES_EPSILON,
@@ -52,6 +58,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaPrimeMovers,
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
@@ -60,10 +67,10 @@ from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
     fill_defaults,
-    row_position_id_translation,
     row_source_translation,
 )
 from interop.ports.outbound.reporting import (
@@ -74,6 +81,9 @@ from interop.ports.outbound.reporting import (
 # Enrichment column names added before translations; never written to destination table.
 _PRIME_MOVER_COL = "_prime_mover_raw"
 _TS_PTP = "_ts_ptp_pmax"
+_TS_PEAK = "_ts_peak_pmax"
+_STATIC_RATING_DERIVATION = "effective_p_nom * p_max_pu (nameplate rating, MVA)"
+_SERIES_RATING_DERIVATION = "effective_p_nom * peak of the p_max_pu series (rating, MVA)"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.GENERATOR)
@@ -126,19 +136,16 @@ def enrich_renewable_ts_stats(
     table: pl.DataFrame,
     ts_p_max_pu: pl.LazyFrame | None,
 ) -> pl.DataFrame:
-    """Left-join the peak-to-trough range of each generator's p_max_pu series.
+    """Left-join the peak and the peak-to-trough range of each generator's p_max_pu series.
 
-    Adds ``_ts_ptp_pmax`` (max - min) as Float64 — null for any generator without a
-    series. Component-scale aggregation; safe to collect.
+    Adds ``_ts_peak_pmax`` (max) and ``_ts_ptp_pmax`` (max - min) as Float64, both null for
+    any generator without a series. Component-scale aggregation; safe to collect.
     """
     if ts_p_max_pu is not None:
+        value = pl.col(PyPSATimeSeriesCol.VALUE)
         stats = (
             ts_p_max_pu.group_by(PyPSATimeSeriesCol.COMPONENT)
-            .agg(
-                (
-                    pl.col(PyPSATimeSeriesCol.VALUE).max() - pl.col(PyPSATimeSeriesCol.VALUE).min()
-                ).alias(_TS_PTP)
-            )
+            .agg(value.max().alias(_TS_PEAK), (value.max() - value.min()).alias(_TS_PTP))
             .collect(engine="streaming")
         )
         return table.join(
@@ -147,7 +154,10 @@ def enrich_renewable_ts_stats(
             right_on=PyPSATimeSeriesCol.COMPONENT,
             how="left",
         )
-    return table.with_columns(pl.lit(None, dtype=pl.Float64).alias(_TS_PTP))
+    return table.with_columns(
+        pl.lit(None, dtype=pl.Float64).alias(_TS_PEAK),
+        pl.lit(None, dtype=pl.Float64).alias(_TS_PTP),
+    )
 
 
 def build_renewable_ts_association(
@@ -159,15 +169,16 @@ def build_renewable_ts_association(
     """Build max_active_power time_series_association rows for non-flat p_max_pu series.
 
     ``owner_type`` is the Sienna component (RenewableDispatch or RenewableNonDispatch) the
-    series attaches to. The series is stored unchanged in per-unit of base_power
-    (scaling_factor 1.0); the declared ``get_max_active_power`` multiplier
-    (rating * base_power) reconstructs the absolute MW availability at solve time. Flat or
-    absent profiles emit no row.
+    series attaches to. The series is stored as a peak-1.0 shape: ``scaling_factor`` carries
+    the series peak as the divisor the h5 sink applies. The rating is effective_p_nom times
+    that peak, so the shape times the rating gives the MW availability p_max_pu * p_nom.
+    Flat or absent profiles emit no row.
     """
     varying = enriched_src.filter(pl.col(_TS_PTP) > FLAT_TIME_SERIES_EPSILON)
     names_with_ts = varying[PyPSAGeneratorCol.NAME].to_list()
     if not names_with_ts:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
+    peak_by_name = dict(zip(names_with_ts, varying[_TS_PEAK].to_list(), strict=True))
     name_to_id = dict(
         zip(
             dst[SiennaRenewableGeneratorCol.NAME].to_list(),
@@ -184,8 +195,8 @@ def build_renewable_ts_association(
             ts_info=ts_info,
             source_table=PyPSATable.GENERATORS,
             source_attribute=PyPSAGeneratorCol.P_MAX_PU,
-            # Stored unchanged in per-unit of base_power: divide by 1.0.
-            scaling_factor=1.0,
+            # An all-zero series has peak 0.0; divide by 1.0 to keep the stored zeros.
+            scaling_factor=peak_by_name[name] or 1.0,
         )
         for name in names_with_ts
     ]
@@ -222,21 +233,50 @@ def _sienna_type(
     )
 
 
+def _rating(dest: DestinationFieldFactory) -> Translation:
+    """The rating in MVA, at the peak of the p_max_pu series where one exists."""
+    ceiling = (
+        pl.when(pl.col(_TS_PEAK).is_not_null())
+        .then(pl.col(_TS_PEAK))
+        .otherwise(pl.col(PyPSAGeneratorCol.P_MAX_PU))
+    )
+
+    def make_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
+        name = old[PyPSAGeneratorCol.NAME]
+        attribute = rated_from(old)
+        return [
+            TranslationEvent(
+                kind=EventKind.VALUE_DERIVED,
+                sources=[_source(name, attribute, old[attribute], UNIT_MW)],
+                destinations=[dest(name, R.RATING, new[R.RATING], UNIT_MW)],
+                derivation=(
+                    _SERIES_RATING_DERIVATION
+                    if old[_TS_PEAK] is not None
+                    else _STATIC_RATING_DERIVATION
+                ),
+            )
+        ]
+
+    return Translation(
+        exprs=[(pl.col(EFFECTIVE_P_NOM) * ceiling).alias(R.RATING)],
+        make_events=make_events,
+    )
+
+
 def _renewable_translations(
     dest: DestinationFieldFactory,
     *,
     sienna_component: str,
     id_note: str,
     sienna_type_derivation: str,
-    active_power_expr: pl.Expr,
-    active_power_derivation: str,
     tail: list[Translation],
 ) -> list[Translation]:
     """Shared RenewableDispatch / RenewableNonDispatch translation list.
 
     The two Sienna renewable types share the same destination schema and differ only in the
-    destination component (``dest`` / ``sienna_component``), the initial-dispatch operating point
-    (``active_power_expr``), and the trailing cost / reactive-power handling (``tail``).
+    destination component (``dest`` / ``sienna_component``) and the trailing cost /
+    reactive-power handling (``tail``). Both start at the minimum operating point, so the
+    reader recovers p_min_pu from active_power for either type.
     """
     direct = partial(direct_translation, _source, dest, name_col=PyPSAGeneratorCol.NAME)
     rated = partial(
@@ -248,7 +288,7 @@ def _renewable_translations(
     )
     default = partial(default_translation, dest, name_col=PyPSAGeneratorCol.NAME)
     return [
-        row_position_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
+        build_document_id_translation(dest, dest_name_col=R.NAME, id_col=R.ID, note=id_note),
         direct(source_col=PyPSAGeneratorCol.NAME, dest_col=R.NAME),
         default(
             dest_col=R.AVAILABLE,
@@ -271,19 +311,22 @@ def _renewable_translations(
         ),
         rated(
             dest_col=R.ACTIVE_POWER,
-            expr=active_power_expr,
+            expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
             unit=UNIT_MW,
-            derivation=active_power_derivation,
+            derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
         ),
         default(
             dest_col=R.REACTIVE_POWER,
             value=0.0,
             note="PyPSA networks rarely model reactive power for generators",
         ),
-        direct(
-            source_col=PyPSAGeneratorCol.P_MAX_PU,
-            dest_col=R.RATING,
-            derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
+        _rating(dest),
+        build_power_units_translation(
+            dest,
+            name_col=PyPSAGeneratorCol.NAME,
+            dest_col=R.POWER_UNITS,
+            units=SiennaUnitSystem.NATURAL_UNITS,
+            note=GENERATOR_UNITS_NOTE,
         ),
         default(
             dest_col=R.POWER_FACTOR,
@@ -310,7 +353,9 @@ def _renewable_cost(dest: DestinationFieldFactory) -> Translation:
         exprs=[
             pl.struct(
                 cost_type=pl.lit(SiennaCostType.RENEWABLE),
-                variable=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
+                variable_operation_cost=variable_cost_curve(
+                    pl.col(PyPSAGeneratorCol.MARGINAL_COST)
+                ),
                 fixed=pl.lit(0.0),
             )
             .cast(RENEWABLE_GENERATION_COST_DTYPE)
@@ -329,7 +374,8 @@ def _renewable_cost(dest: DestinationFieldFactory) -> Translation:
                 destinations=[
                     dest(
                         old[PyPSAGeneratorCol.NAME],
-                        f"{R.OPERATION_COST}.variable.value_curve.function_data.proportional_term",
+                        f"{R.OPERATION_COST}.variable_operation_cost.value_curve"
+                        ".function_data.proportional_term",
                         old[PyPSAGeneratorCol.MARGINAL_COST],
                     )
                 ],
@@ -369,22 +415,22 @@ def _renewable_cost_loss(dest: DestinationFieldFactory) -> Translation:
 RENEWABLE_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
     _dest,
     sienna_component=SiennaComponent.RENEWABLE_DISPATCH,
-    id_note="assigned by 1-based row position in renewable generators DataFrame",
+    id_note=(
+        "assigned by row position in renewable generators DataFrame, "
+        "after the ids of earlier components"
+    ),
     sienna_type_derivation="renewable carrier -> RenewableDispatch",
-    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MIN_PU),
-    active_power_derivation="effective_p_nom * p_min_pu (initial dispatch = min operating point)",
     tail=[_renewable_reactive_power_limits(_dest), _renewable_cost(_dest)],
 )
 
 RENEWABLE_NON_DISPATCH_TRANSLATIONS: list[Translation] = _renewable_translations(
     _dest_nd,
     sienna_component=SiennaComponent.RENEWABLE_NON_DISPATCH,
-    id_note="assigned by 1-based row position in renewable non-dispatch generators DataFrame",
-    sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
-    active_power_expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
-    active_power_derivation=(
-        "effective_p_nom * p_max_pu (must-take initial dispatch = peak available)"
+    id_note=(
+        "assigned by row position in renewable non-dispatch generators DataFrame, "
+        "after the ids of earlier components"
     ),
+    sienna_type_derivation="renewable carrier -> RenewableNonDispatch",
     tail=[_renewable_cost_loss(_dest_nd)],
 )
 

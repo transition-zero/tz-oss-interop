@@ -16,7 +16,6 @@ from interop.core.extensions import (
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
-    DEFAULT_SYSTEM_BASE_MVA,
     LINES_DESTINATION_SCHEMA,
     LINKS_DESTINATION_SCHEMA,
     PyPSADestinationTable,
@@ -29,13 +28,19 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLinkCol,
     SiennaStructField,
     SiennaTable,
+    SiennaUnitSystem,
 )
+from interop.plugins.shared.sienna_hvdc_flow import HvdcFlowBounds, build_hvdc_flow_bounds
 from interop.plugins.shared.sienna_pypsa_translations.mapping import (
+    build_power_units_skip_report,
     bus_id_to_name,
     bus_id_to_v_nom,
+    express_power_units_kept,
     extendable_floor,
+    reject_unsupported_parameter_units,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import LineReporter, LinkReporter
+from interop.plugins.shared.translation_runner import filter_component
 
 # PyPSA's own defaults, applied where the sidecar states nothing for a line.
 _DEFAULT_LENGTH = 0.0
@@ -67,8 +72,8 @@ def _convert_line_impedance(
 ) -> _LineImpedance:
     """Undo the per-unit normalisation: rating -> s_nom (MVA), r/x -> Ohms, b/g -> Siemens."""
     rating = float(row[SiennaLineCol.RATING])
-    # rating is per-unit of the system base; PyPSA s_nom is the apparent power in MVA.
-    s_nom = rating * DEFAULT_SYSTEM_BASE_MVA
+    # rating is per-unit of the line's own base_power; PyPSA s_nom is the apparent power in MVA.
+    s_nom = rating * float(row[SiennaLineCol.BASE_POWER])
     # Sienna r/x are per-unit; PyPSA stores Ohms. Z_base = v_nom^2 / S_base.
     r_pu = float(row[SiennaLineCol.R])
     x_pu = float(row[SiennaLineCol.X])
@@ -165,17 +170,18 @@ class _LinkPowerLimits:
 def _reconstruct_link_power_limits(
     reporter: LinkReporter,
     name: str,
-    limits_from: dict[str, float],
+    bounds: HvdcFlowBounds,
     ext: ControllableLineExtension,
 ) -> _LinkPowerLimits:
-    """Invert the forward ``active_power_limits_from`` split back into p_nom/p_min_pu/p_max_pu.
+    """Invert the forward flow bounds back into p_nom/p_min_pu/p_max_pu.
 
-    Forward writes ``max = capacity * p_max_pu`` and ``min = capacity * p_min_pu`` (only when
-    p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu therefore cannot be
-    read off the limits alone; both travel in the ext sidecar so the round-trip stays lossless.
+    Forward writes ``from_to_max = capacity * p_max_pu`` and ``to_from_max = -capacity *
+    p_min_pu`` (only when p_min_pu < 0, else 0). A non-default p_max_pu and a positive p_min_pu
+    therefore cannot be read off the bounds alone; both travel in the ext sidecar so the
+    round-trip stays lossless.
     """
-    limit_max = float(limits_from[SiennaStructField.MAX])
-    limit_min = float(limits_from[SiennaStructField.MIN])
+    limit_max = bounds.maximum
+    limit_min = bounds.minimum
     p_max_pu = ext.p_max_pu
     if p_max_pu is None:
         p_nom = limit_max
@@ -219,14 +225,23 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         extensions = self._extensions.read(ExtensionKind.LINE)
         reporter = LineReporter(self._recorder)
         rows: list[dict[str, Any]] = []
-        for row in source.collect().iter_rows(named=True):
+        supported, _ = filter_component(
+            source.collect(),
+            express_power_units_kept(SiennaUnitSystem.COMPONENT_BASE),
+            build_power_units_skip_report(
+                "Line", "lines", SiennaLineCol.NAME, SiennaUnitSystem.COMPONENT_BASE
+            ),
+            self._recorder,
+        )
+        for row in supported.iter_rows(named=True):
             sienna_type = SiennaComponent(row[SiennaLineCol.SIENNA_TYPE])
+            reject_unsupported_parameter_units(row)
             name = row[SiennaLineCol.NAME]
             bus0_id = row[SiennaLineCol.BUS0]
             bus0 = bus_names[bus0_id]
             bus1 = bus_names[row[SiennaLineCol.BUS1]]
             available = bool(row[SiennaLineCol.AVAILABLE])
-            z_base = bus_v_nom[bus0_id] ** 2 / DEFAULT_SYSTEM_BASE_MVA
+            z_base = bus_v_nom[bus0_id] ** 2 / float(row[SiennaLineCol.BASE_POWER])
             ext = extensions.get(name)
             reporter.record_endpoints(sienna_type, name, row[SiennaLineCol.ARC], bus0, bus1)
             reporter.record_available(sienna_type, name, available, available)
@@ -278,15 +293,15 @@ class SiennaToPypsaMapTransmission(TranslationStep):
             # PyPSA round-trip fields with no Sienna home come from the ext sidecar.
             ext = extensions.get(name)
             loss_term = float(
-                row[SiennaLinkCol.LOSS][SiennaStructField.FUNCTION_DATA][
-                    SiennaStructField.PROPORTIONAL_TERM
-                ]
+                row[SiennaLinkCol.LOSS][SiennaStructField.VALUE_CURVE][
+                    SiennaStructField.FUNCTION_DATA
+                ][SiennaStructField.PROPORTIONAL_TERM]
             )
             efficiency = 1.0 - loss_term
             reporter.record_endpoints(name, row[SiennaLinkCol.ARC], bus0, bus1)
             reporter.record_available(name, available, available)
             limits = _reconstruct_link_power_limits(
-                reporter, name, row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM], ext
+                reporter, name, build_hvdc_flow_bounds(row), ext
             )
             reporter.record_efficiency(name, loss_term, efficiency)
             carrier = ext.carrier

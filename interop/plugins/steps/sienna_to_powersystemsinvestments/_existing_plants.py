@@ -25,7 +25,6 @@ from interop.plugins.shared.sienna_constants import (
     MinMaxField,
     SiennaComponent,
     SiennaGeneratorCol,
-    SiennaLinkCol,
     SiennaSeriesName,
 )
 from interop.plugins.shared.sienna_investments_constants import (
@@ -57,7 +56,10 @@ _SUPPLY_TYPES = frozenset(
 _SUPPLY = SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY.value
 _HYDRO_BUDGET_KEY = (SiennaComponent.HYDRO_DISPATCH.value, SiennaSeriesName.HYDRO_BUDGET.value)
 # A link states no rating, so these limits state its capacity.
-_LINK_LIMIT_FIELDS = (SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.ACTIVE_POWER_LIMITS_TO)
+_LINK_LIMIT_FIELDS = (
+    PowerSimulationsCol.ACTIVE_POWER_LIMITS_FROM,
+    PowerSimulationsCol.ACTIVE_POWER_LIMITS_TO,
+)
 _EXISTING_SUFFIX = "/existing"
 _LINK_KIND = "link"
 _PLANT_KIND = "plant"

@@ -11,13 +11,14 @@ from __future__ import annotations
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.pypsa_sienna_translations._units import AREA_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
     SIENNA_TYPE_ATTRIBUTE,
     SiennaACBusCol,
     SiennaAreaCol,
     SiennaComponent,
 )
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -46,7 +47,7 @@ def build_areas_source_table(sienna_buses: pl.DataFrame) -> pl.DataFrame:
 
 
 AREA_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaAreaCol.ID)],
+    exprs=[express_document_id().alias(SiennaAreaCol.ID)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
@@ -59,7 +60,7 @@ AREA_ID = Translation(
                     value=new[SiennaAreaCol.ID],
                 )
             ],
-            note="assigned by 1-based row position in areas DataFrame",
+            note="assigned by row position in areas DataFrame, after the ids of earlier components",
         )
     ],
 )
@@ -116,4 +117,9 @@ AREA_SIENNA_TYPE = Translation(
     ],
 )
 
-AREA_TRANSLATIONS: list[Translation] = [AREA_ID, AREA_NAME, AREA_SIENNA_TYPE]
+AREA_TRANSLATIONS: list[Translation] = [
+    *AREA_UNIT_TRANSLATIONS,
+    AREA_ID,
+    AREA_NAME,
+    AREA_SIENNA_TYPE,
+]

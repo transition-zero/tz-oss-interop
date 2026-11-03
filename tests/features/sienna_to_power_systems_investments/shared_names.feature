@@ -49,7 +49,7 @@ Feature: a technology and a demand that share a name each keep their own profile
     When I translate "inputs/candidate.nc" into a Sienna portfolio
     And I run the investments solver translation writing "psi/portfolio.json"
     Then the series document "psi/portfolio_series.json" gives "SupplyTechnology" "North" the existing devices "North"
-    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "North" has field "values" equal to [0.2, 0.4, 0.6, 0.8, 0.6, 0.4, 0.2, 0.4, 0.6, 0.8, 0.6, 0.4, 0.2, 0.4, 0.6, 0.8, 0.6, 0.4, 0.2, 0.4, 0.6, 0.8, 0.6, 0.4]
+    And the series document "psi/portfolio_series.json" record for "SupplyTechnology" named "North" has field "values" equal to [0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5, 0.25, 0.5, 0.75, 1.0, 0.75, 0.5]
     And the series document "psi/portfolio_series.json" holds no record for "SupplyTechnology" named "North/existing"
 
   Scenario: an existing hydro plant that must take a new name keeps its profile

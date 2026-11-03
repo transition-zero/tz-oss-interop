@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -17,7 +16,6 @@ from interop.plugins.shared.sienna_constants import (
     SIENNA_REGION_NAME_COLUMN,
     SiennaCompanionFilename,
     SiennaComponent,
-    SiennaTimeSeriesAssociationCol,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     CAPACITY_LIMITS_BY_KEY_DTYPE,
@@ -76,16 +74,6 @@ _AREA_REFERENCES: dict[str, str] = {
     ),
 }
 
-# The association columns that locate a staged series for the HDF5 sink, which no reader needs.
-_INTERNAL_SERIES_COLUMNS = frozenset(
-    [
-        SiennaTimeSeriesAssociationCol.COMPONENT_NAME,
-        SiennaTimeSeriesAssociationCol.SOURCE_TABLE,
-        SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE,
-        SiennaTimeSeriesAssociationCol.SCALING_FACTOR,
-    ]
-)
-
 
 class EmitSiennaPortfolioParams(BaseModel):
     output_path: Location = Field(
@@ -99,14 +87,14 @@ class EmitSiennaPortfolioParams(BaseModel):
     time_series_storage_file: str = Field(
         default=SiennaCompanionFilename.TIME_SERIES_H5,
         description=(
-            "basename of the HDF5 companion holding the base system's time series, which the "
+            "basename of the InfraStore companion holding the base system's time series, which the "
             "portfolio names when it holds no time series of its own"
         ),
     )
     output_time_series_path: Location | None = Field(
         default=None,
         description=(
-            "the HDF5 companion holding the time series of the portfolio, when it has any; "
+            "the InfraStore companion holding the time series of the portfolio, when it has any; "
             "empty writes it beside the portfolio"
         ),
     )
@@ -114,14 +102,14 @@ class EmitSiennaPortfolioParams(BaseModel):
 
     @property
     def time_series_path(self) -> Location:
-        """The HDF5 companion of the portfolio, which is beside it unless a path is given."""
+        """The InfraStore companion of the portfolio, which is beside it unless a path is given."""
         if self.output_time_series_path is not None:
             return self.output_time_series_path
         return build_sibling_location(self.output_path, PORTFOLIO_TIME_SERIES_FILENAME)
 
     @property
     def time_series_file(self) -> str:
-        """The basename of the HDF5 companion of the portfolio, which the document names."""
+        """The basename of the InfraStore companion of the portfolio, which the document names."""
         return location_name(self.time_series_path)
 
 
@@ -138,17 +126,28 @@ class EmitSiennaPortfolio(Sink):
                 f"{type(self).__name__} requires {EmitSiennaPortfolioParams.__name__}, "
                 f"got {type(params).__name__}"
             )
-        associations = _find_series_associations(state)
-        payload = self.build_payload(state, associations, params)
-        if associations is not None:
-            with self._fs.open_write(params.time_series_path) as stream:
-                EmitSiennaH5Sidecar.write_associated_h5(state, associations, stream)
+        stored = self._write_series(state, _find_series_associations(state), params)
+        payload = self.build_payload(state, stored, params)
         serialised = serialise_portfolio_document(payload, params.indent)
         self._fs.write_bytes(params.output_path, serialised)
 
+    def _write_series(
+        self,
+        state: State,
+        associations: pl.DataFrame | None,
+        params: EmitSiennaPortfolioParams,
+    ) -> list[dict[str, Any]] | None:
+        """Write the portfolio's own series beside it, and return the rows the store states."""
+        if associations is None:
+            return None
+        with self._fs.open_write(params.time_series_path) as stream:
+            return EmitSiennaH5Sidecar.write_associated_h5(state, associations, stream)
+
     @staticmethod
     def build_payload(
-        state: State, associations: pl.DataFrame | None, params: EmitSiennaPortfolioParams
+        state: State,
+        stored: list[dict[str, Any]] | None,
+        params: EmitSiennaPortfolioParams,
     ) -> dict[str, Any]:
         area_ids = _name_to_id(state.destination_tables.get(SiennaComponent.AREA))
         components: dict[str, Any] = {}
@@ -172,11 +171,9 @@ class EmitSiennaPortfolio(Sink):
                 attribute_ids,
             ),
             PortfolioDocument.REQUIREMENTS_ASSOCIATIONS: [],
-            PortfolioDocument.TIME_SERIES_ASSOCIATIONS: _build_time_series_associations(
-                associations
-            ),
+            PortfolioDocument.TIME_SERIES_ASSOCIATIONS: stored or [],
             PortfolioDocument.BASE_SYSTEM_FILE: params.base_system_file,
-            PortfolioDocument.TIME_SERIES_STORAGE_FILE: _choose_storage_file(associations, params),
+            PortfolioDocument.TIME_SERIES_STORAGE_FILE: _choose_storage_file(stored, params),
         }
         financial_data = state.destination_tables.get(PORTFOLIO_FINANCIAL_DATA_TABLE)
         if financial_data is not None and not financial_data.is_empty():
@@ -195,10 +192,10 @@ def _find_series_associations(state: State) -> pl.DataFrame | None:
 
 
 def _choose_storage_file(
-    associations: pl.DataFrame | None, params: EmitSiennaPortfolioParams
+    stored: list[dict[str, Any]] | None, params: EmitSiennaPortfolioParams
 ) -> str:
     """The companion of the portfolio's own series, else the companion of the base system."""
-    if associations is None:
+    if stored is None:
         return params.time_series_storage_file
     return params.time_series_file
 
@@ -255,21 +252,6 @@ def _build_by_key(entries: list[dict[str, Any]] | None) -> dict[str, Any] | None
         )
         for entry in entries
     }
-
-
-def _build_time_series_associations(table: pl.DataFrame | None) -> list[dict[str, Any]]:
-    """One row for each series of the portfolio, with its features as an object."""
-    if table is None:
-        return []
-    columns = [name for name in table.columns if name not in _INTERNAL_SERIES_COLUMNS]
-    rows = table.select(columns).with_row_index(
-        name=SiennaTimeSeriesAssociationCol.ASSOCIATION_ID, offset=1
-    )
-    features = SiennaTimeSeriesAssociationCol.FEATURES
-    return [
-        drop_absent_fields({**row, features: json.loads(row[features])})
-        for row in rows.iter_rows(named=True)
-    ]
 
 
 def _build_attributes(state: State) -> tuple[list[dict[str, Any]], set[int]]:

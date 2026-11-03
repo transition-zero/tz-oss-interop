@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import uuid
+from datetime import datetime
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pytest
+from infrastore import OwnerCategory, SingleTimeSeries, Store
 from pytest_bdd import parsers, when
 
 from tests.step_defs.conftest import (
@@ -22,7 +22,7 @@ _CARRIERS = ("solar", "onwind", "hydro", "PHS")
 _THERMAL_CARRIER = "CCGT"
 _BASE_SYSTEM_H5_NAME = "portfolio_base_system_time_series.h5"
 _PORTFOLIO_H5_NAME = "portfolio_time_series_storage.h5"
-_HOURLY = "P0DT3600.000S"
+_HOURLY = "PT1H"
 
 
 @pytest.fixture(autouse=True)
@@ -92,30 +92,34 @@ def invoke_investments_solver_translation(
 def add_portfolio_series(
     component: str, name: str, path: str, series: str, year: str, count: int, value: float
 ) -> None:
-    """Add one series to a written portfolio, with the year feature written as it is given."""
+    """Add one series to a written portfolio, with the year feature written as it is given.
+
+    The step writes a new InfraStore companion that holds this series only.
+    """
     portfolio_path = Path(path)
     portfolio = json.loads(portfolio_path.read_text(encoding="utf-8"))
+    assert not portfolio.get("time_series_associations"), "the portfolio already has series"
     owner = next(c for c in portfolio["components"][component] if c["name"] == name)
-    series_uuid = str(uuid.uuid4())
-    h5_path = portfolio_path.parent / _PORTFOLIO_H5_NAME
-    with h5py.File(h5_path, "a") as h5:
-        root = h5.require_group("time_series")
-        root.create_group(series_uuid).create_dataset("data", data=np.full(count, value))
-    associations = portfolio.setdefault("time_series_associations", [])
-    associations.append(
-        {
-            "association_id": len(associations) + 1,
-            "owner_type": component,
-            "owner_id": owner["id"],
-            "name": series,
-            "time_series_uuid": series_uuid,
-            "time_series_type": "SingleTimeSeries",
-            "initial_timestamp": f"{int(float(year))}-01-01T00:00:00",
-            "resolution": _HOURLY,
-            "length": count,
-            "features": {"year": json.loads(year)},
-        }
+    stored = SingleTimeSeries(
+        datetime(int(float(year)), 1, 1),
+        _HOURLY,
+        np.full(count, value),
+        series,
+        unit_system="component_base",
     )
+    store_path = portfolio_path.parent / _PORTFOLIO_H5_NAME
+    with Store.create(str(store_path), catalog="memory", overwrite=True) as store:
+        with store.transaction():
+            store.add_time_series(
+                owner["id"],
+                component,
+                OwnerCategory.Component,
+                stored,
+                features={"year": json.loads(year)},
+            )
+        portfolio["time_series_associations"] = json.loads(
+            store.export_time_series_associations_openapi()
+        )
     portfolio["time_series_storage_file"] = _PORTFOLIO_H5_NAME
     portfolio_path.write_text(json.dumps(portfolio, indent=2), encoding="utf-8")
 

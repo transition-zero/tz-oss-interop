@@ -84,8 +84,7 @@ class EmitSiennaFilesEnsemble(WritesSiennaFiles, Sink):
         if not samples:
             log.warning(_NO_REPLICATIONS)
             return
-        # Every field of the system JSON is the same in each replication, the time-series
-        # UUIDs among them, so the whole document is built once and written many times.
+        # Only the series rows differ between replications, so the payload is built once.
         payload = EmitSiennaSystemJson.build_payload(state)
         manifest = EnsembleManifest()
         for sample in samples:

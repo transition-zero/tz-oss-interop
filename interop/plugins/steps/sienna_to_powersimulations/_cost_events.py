@@ -32,6 +32,8 @@ from interop.ports.outbound.reporting import (
     TranslationEvent,
 )
 
+_VARIABLE_COST_PATH = f"operation_cost.{SiennaStructField.VARIABLE_OPERATION_COST}"
+
 
 class PSCostType(StrEnum):
     """Discriminator for PowerSystems.jl generation cost types.
@@ -258,7 +260,7 @@ def _record_thermal_cost_events(
                 derivation="direct mapping",
             )
         )
-    variable = cost.get(SiennaStructField.VARIABLE)
+    variable = cost.get(SiennaStructField.VARIABLE_OPERATION_COST)
     if isinstance(variable, dict):
         recorder.append(
             TranslationEvent(
@@ -267,7 +269,7 @@ def _record_thermal_cost_events(
                     _cost_source(
                         sienna_type,
                         comp_name,
-                        "operation_cost.variable.variable_cost_type",
+                        f"{_VARIABLE_COST_PATH}.variable_cost_type",
                         variable.get(SiennaStructField.VARIABLE_COST_TYPE),
                     )
                 ],
@@ -287,7 +289,7 @@ def _record_thermal_cost_events(
             recorder,
             sienna_type,
             comp_name,
-            src_prefix="operation_cost.variable",
+            src_prefix=_VARIABLE_COST_PATH,
             dest_meta_path=PowerSimulationsOpCostPath.VALUE_CURVE_METADATA_TYPE,
             dest_proportional_path=PowerSimulationsOpCostPath.PROPORTIONAL_TERM,
             dest_constant_path=PowerSimulationsOpCostPath.CONSTANT_TERM,
@@ -341,7 +343,7 @@ def _record_single_variable_cost_events(
             derivation="direct mapping",
         )
     )
-    variable = cost.get(SiennaStructField.VARIABLE)
+    variable = cost.get(SiennaStructField.VARIABLE_OPERATION_COST)
     if isinstance(variable, dict):
         recorder.append(
             TranslationEvent(
@@ -350,7 +352,7 @@ def _record_single_variable_cost_events(
                     _cost_source(
                         sienna_type,
                         comp_name,
-                        "operation_cost.variable.variable_cost_type",
+                        f"{_VARIABLE_COST_PATH}.variable_cost_type",
                         variable.get(SiennaStructField.VARIABLE_COST_TYPE),
                     )
                 ],
@@ -370,7 +372,7 @@ def _record_single_variable_cost_events(
             recorder,
             sienna_type,
             comp_name,
-            src_prefix="operation_cost.variable",
+            src_prefix=_VARIABLE_COST_PATH,
             dest_meta_path=PowerSimulationsOpCostPath.VALUE_CURVE_METADATA_TYPE,
             dest_proportional_path=PowerSimulationsOpCostPath.PROPORTIONAL_TERM,
             dest_constant_path=PowerSimulationsOpCostPath.CONSTANT_TERM,

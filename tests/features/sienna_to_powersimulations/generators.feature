@@ -1,8 +1,8 @@
 @slow @fork_unsafe
 Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl components
-  ThermalStandard gets fuel_type renamed to fuel, bus replaced with a uuid reference,
+  ThermalStandard keeps fuel, bus replaced with a uuid reference,
   and operation_cost wrapped in PS.jl __metadata__. The step records translation events
-  for the uuid assignment, bus FK resolution, and fuel_type rename.
+  for the uuid assignment and bus FK resolution.
 
   Scenario: ThermalStandard gets fuel field and PS.jl operation_cost envelope
     Given a Sienna system
@@ -15,8 +15,19 @@ Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl comp
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has a non-empty uuid
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has bus as a uuid reference
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "__metadata__.type" equal to "ThermalStandard"
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "fuel" equal to "COAL"
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "status" equal to true
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "must_run" equal to false
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.__metadata__.type" equal to "ThermalGenerationCost"
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.variable.__metadata__.type" equal to "CostCurve"
+
+  Scenario: ThermalStandard keeps the source marginal cost as the proportional cost term
+    Given a Sienna system
+    And the system contains a bus "bus_1"
+    And the system contains a ThermalStandard "gen_1" on bus "bus_1" with base_power 100.0 rating 1.0 active_power_min 0.1 active_power_max 1.0 marginal_cost 30.0 prime_mover "ST" fuel "COAL"
+    And the system is saved as "inputs/thermal_cost.json"
+    When I run translate against Sienna system "inputs/thermal_cost.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.variable.value_curve.function_data.proportional_term" equal to "30.0"
 
   Scenario: ThermalStandard scalar and dict power fields are stored per-unit relative to base_power
     Given a Sienna system

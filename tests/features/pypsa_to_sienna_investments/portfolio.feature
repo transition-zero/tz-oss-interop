@@ -40,7 +40,7 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "available" set to true
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "power_systems_type" set to "RenewableDispatch"
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "prime_mover_type" set to "PVe"
-    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "region" set to [1]
+    And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "region" set to [2]
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.min" set to 0.0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capacity_limits.max" set to 500.0
     And the file "outputs/portfolio.json" parses as JSON with component "SupplyTechnology" named "REZ_Solar" having "capital_costs.capital_cost.function_data.proportional_term" set to 1200000.0
@@ -84,8 +84,8 @@ Feature: a PyPSA network that states its own expansion becomes a Sienna portfoli
     And the file "outputs/portfolio.json" parses as JSON with "financial_data.discount_rate" set to 0.0
     And the file "outputs/portfolio.json" parses as JSON with 1 component of type "DemandRequirement"
     And the file "outputs/portfolio.json" parses as JSON with component "DemandRequirement" named "North_load" having "power_systems_type" set to "PowerLoad"
-    And the file "outputs/portfolio.json" parses as JSON with component "DemandRequirement" named "North_load" having "region" set to [1]
-    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 1 has "buses" set to ["North_bus"]
+    And the file "outputs/portfolio.json" parses as JSON with component "DemandRequirement" named "North_load" having "region" set to [3]
+    And the file "outputs/portfolio.json" parses as a portfolio where the "TopologyMapping" of base system "Area" 3 has "buses" set to ["North_bus"]
     And the file "decisions.md" contains "the buses of the base system that sit in this area"
 
   Scenario: an existing plant of the same carrier is the technology's fleet

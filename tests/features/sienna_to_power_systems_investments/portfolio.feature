@@ -35,8 +35,8 @@ Feature: a Sienna portfolio becomes the document PowerSystemsInvestments reads
 
   Scenario: an area becomes the Zone a technology names by id
     Then the portfolio "psi/portfolio.json" contains 1 component of type "Zone"
-    And the portfolio "psi/portfolio.json" component "Zone" named "North" has field "id" equal to 1
-    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "REZ_Solar" has field "region" equal to [1]
+    And the portfolio "psi/portfolio.json" component "Zone" named "North" has field "id" equal to 4
+    And the portfolio "psi/portfolio.json" component "SupplyTechnology" named "REZ_Solar" has field "region" equal to [4]
 
   Scenario: a capital cost becomes the value curve the package's field holds
     Then the portfolio "psi/portfolio.json" component "SupplyTechnology" named "REZ_Solar" has "capital_costs.__metadata__.type" equal to "InputOutputCurve"

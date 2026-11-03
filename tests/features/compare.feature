@@ -17,7 +17,7 @@ Feature: compare runs each framework's results pipeline and reports the differen
     And the network is saved as "inputs/solved.nc"
     And a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
     And the ThermalStandard "gen_a" has ext carrier "coal"
     And the system contains a PowerLoad "load_a" on bus "node_a" with max_active_power 150
     And the system is saved as "inputs/system.json"
@@ -49,7 +49,7 @@ Feature: compare runs each framework's results pipeline and reports the differen
     And the network is saved as "inputs/solved.nc"
     And a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
     And the ThermalStandard "gen_a" has ext carrier "coal"
     And the system contains a PowerLoad "load_a" on bus "node_a" with max_active_power 150
     And the system is saved as "inputs/system.json"
@@ -74,7 +74,7 @@ Feature: compare runs each framework's results pipeline and reports the differen
     And the network is saved as "inputs/solved.nc"
     And a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "gen_a" on bus "node_a" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "ST" fuel "COAL"
     And the ThermalStandard "gen_a" has ext carrier "coal"
     And the system contains a PowerLoad "load_a" on bus "node_a" with max_active_power 150
     And the system is saved as "inputs/system.json"

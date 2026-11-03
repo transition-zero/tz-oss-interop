@@ -514,7 +514,8 @@ your solved network and the peak days have in common.
 > table from `plexos-to-sienna-monte-carlo` and its reliability variant. A row that names a
 > removed pipeline cannot be reproduced. `plexos-to-pypsa` reads the same replication 1, but
 > it now translates through Sienna, and we have not measured whether it gives the same
-> objectives.
+> objectives. The paragraph "The Sienna path today" is the exception: it comes from
+> `plexos-to-sienna`.
 
 **What you can check by yourself.** All five summer months solve. Four months solve with
 exact unit commitment. May needs the linearised relaxation.
@@ -541,8 +542,13 @@ fails. The model states a reservoir volume in GWh and a Natural Inflow in MW, so
 storage holds 184,500 MWh, which is about 453 hours of storage, and it refills across the
 month. But the other four months hold the same reservoirs and each one solves.
 
-**The Sienna path, on three replications of September.** The reliability system solves, and
-it reports where the month is short.
+**The Sienna path today.** `plexos-to-sienna` reads replication 1 of September. Its system
+solves with the network model `copperplate` and the unit commitment `linearised`.
+PowerSimulations reports the run status `SUCCESSFULLY_FINALIZED` with the objective
+$3.86620 × 10⁸. We measured this value on 2026-11-02, at tz-oss-interop version 0.1.0.
+
+**The Sienna path, on three replications of September, with the removed pipelines.** The
+reliability system solves, and it reports where the month is short.
 
 | Replication | Chain | Unit commitment | Network model | Status | Objective |
 | --- | --- | --- | --- | --- | --- |
@@ -617,9 +623,9 @@ writes approximately 1.8 GiB of networks.
 The solve takes the most time. One replication of one month is quick, but all 500
 replications take much longer. Start with one replication of one month.
 
-The Sienna path costs less on disk and more in the solve. A run of September writes 4.64 MB:
-1.43 MB of `system.json`, 2.96 MB of HDF5 companion, 195 KB of `extensions.json`, and 15 KB,
-15 KB and 18 KB of `reserves.parquet`, `generators.parquet` and `storage.parquet`. The
+The Sienna path costs less on disk and more in the solve. A run of September writes 2.34 MB:
+1.55 MB of `system.json`, 554 KB of HDF5 companion, 195 KB of `extensions.json`, and 15 KB,
+10 KB and 23 KB of `reserves.parquet`, `generators.parquet` and `storage.parquet`. The
 validation run is quick.
 
 The solve is the expensive step. HiGHS dominates the run on the reliability replication, and

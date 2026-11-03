@@ -23,7 +23,6 @@ from interop.plugins.shared.power_simulations_schema import _PSInternal, _PSUuid
 from interop.plugins.shared.power_systems_investments_schema import (
     BASE_SYSTEM_SUFFIX,
     COMPONENT_ORDER,
-    PORTFOLIO_AGGREGATION,
     PORTFOLIO_DATA_FORMAT_VERSION,
     PORTFOLIO_EXISTING_DEVICES_TABLE,
     PORTFOLIO_FINANCIAL_DATA_TYPE,
@@ -38,7 +37,7 @@ from interop.plugins.shared.power_systems_investments_schema import (
     PortfolioEnvelope,
     build_component_metadata,
 )
-from interop.plugins.shared.sienna_constants import SYSTEM_BASE_MVA
+from interop.plugins.shared.sienna_constants import SYSTEM_BASE_MVA, SiennaComponent
 from interop.plugins.shared.sienna_investments_constants import PORTFOLIO_FINANCIAL_DATA_TABLE
 from interop.plugins.sinks._sienna_files import drop_absent_fields
 from interop.plugins.sinks.emit_power_simulations_h5_sidecar import EmitPowerSimulationsH5Sidecar
@@ -49,6 +48,8 @@ from interop.plugins.sinks.emit_power_simulations_system_json import (
 from interop.ports.outbound.expansion import SERIES_JSON_SUFFIX, PortfolioSeries, SeriesDocument
 from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
 
+# The base system type the portfolio's regions stand for.
+_PORTFOLIO_AGGREGATION = SiennaComponent.AREA
 _DEFAULT_OUTPUT_DIR = Path("outputs")
 _JSON_SUFFIX = ".json"
 
@@ -135,7 +136,7 @@ def build_portfolio(state: State, portfolio_name: str) -> dict[str, Any]:
     component that no longer exists.
     """
     portfolio: dict[str, Any] = {
-        PortfolioEnvelope.AGGREGATION: str(PORTFOLIO_AGGREGATION),
+        PortfolioEnvelope.AGGREGATION: str(_PORTFOLIO_AGGREGATION),
         PortfolioEnvelope.DATA_FORMAT_VERSION: PORTFOLIO_DATA_FORMAT_VERSION,
         PortfolioEnvelope.INTERNAL: _build_internal(),
         PortfolioEnvelope.METADATA: _build_metadata(portfolio_name),

@@ -137,16 +137,17 @@ Give the year `2025` here, unlike the PyPSA run above, which leaves the year emp
 chronology of the Model is 2024-07-01 to 2025-06-30, so the year 2025 narrows it to
 2025-01-01 to 2025-06-30, which is 8,688 half-hourly snapshots. The Sienna solve takes no
 date range, so it covers every snapshot in the system, and the year prompt is the only way to
-give it a shorter window. Six months already makes a large program; refer to
-[What it costs](#what-it-costs).
+give it a shorter window.
 
-That run writes three files: `outputs/system.json`, its HDF5 companion
-`outputs/system_time_series_storage.h5`, and `outputs/extensions.json`. Those three files
-are the product. The system holds 12 `ACBus`, 5 `Area`, 12 `PowerLoad`, 252
-`ThermalStandard`, 240 `RenewableDispatch`, 158 `EnergyReservoirStorage` and 16
-`TwoTerminalGenericHVDCLine` components.
+That run writes four files, and all four are the product: `outputs/system.json`, its HDF5
+companion `outputs/system_time_series_storage.h5`, `outputs/extensions.json`, and
+`outputs/generators.parquet`. The parquet file holds each generator value that changes from
+snapshot to snapshot, and a record in the sidecar names it. The system holds 12 `ACBus`,
+13 `Arc`, 5 `Area`, 12 `PowerLoad`, 252 `ThermalStandard`, 240 `RenewableDispatch`, 31
+`HydroDispatch`, 158 `EnergyReservoirStorage` and 16 `TwoTerminalGenericHVDCLine`
+components.
 
-To prove that the system dispatches, run `translate` a second time over those three files:
+To make the PowerSystems.jl system, run `translate` a second time over those files:
 
 | Prompt | Answer |
 | --- | --- |
@@ -158,6 +159,11 @@ To prove that the system dispatches, run `translate` a second time over those th
 | the extensions sidecar | `outputs/extensions.json` |
 | the PowerSystems.jl system.json | `outputs/power_simulations_system.json` |
 | the HDF5 time-series sidecar | `outputs/power_simulations_system_time_series.h5` |
+
+> [!WARNING]
+> The solve of this system does not start. PowerSimulations.jl stops when it builds the
+> model, with the error `Model doesn't contain a slack bus`. The network model
+> `copperplate` gives the same error. Refer to [The headline number](#the-headline-number).
 
 Then select `solve`. Give the model type `sienna` and the system
 `outputs/power_simulations_system.json`. Give the network model `dcp`, the unit commitment
@@ -231,16 +237,12 @@ the status `optimal` for January 2025. The translator writes a `decisions.md` fi
 to each network. That file gives each source field, the destination field for it, and each
 component that the translator did not translate.
 
-The Sienna path solves the Step Change scenario over the first half of 2025 as a linear
-program. HiGHS reports the model status `Optimal` with the objective 2.64408 × 10⁹, with the
-network model `dcp` and the unit commitment `linearised`. Three runs gave that objective.
+The Sienna path does not solve. For the Step Change scenario, PowerSimulations.jl stops when
+it builds the model, with the error `Model doesn't contain a slack bus`. The network models
+`dcp` and `copperplate` both give this error, so this page gives no Sienna objective. We saw
+this on 2026-11-02, at tz-oss-interop version 0.1.0.
 
-The run reports the run status `SUCCESSFULLY_FINALIZED` and writes the result tables to
-`outputs/solved/results` and `outputs/solved/results_wide`. Each variable, auxiliary
-variable, dual, parameter and expression gets one CSV file.
-
-The PyPSA numbers below cover January 2025 and the Sienna number covers January to June
-2025, so the two do not compare.
+The PyPSA numbers below cover January 2025.
 
 | Scenario | Status | Objective | Demand in the month | Generation |
 | --- | --- | --- | --- | --- |
@@ -282,10 +284,9 @@ what the rating allows over the month. We do not know yet why no inflow reaches 
 
 The demand result above does not depend on hydro, so it stands.
 
-**The Sienna path has no hydro reservoir at all.** Every `Natural Inflow` in this model is in
-cumec, which is water, and the energy budget a Sienna `HydroDispatch` is dispatched against
-is its inflow. A unit with no budget would run at full output every snapshot, so the
-translation leaves all 31 reservoir units out and names each one in `decisions.md`.
+**The Sienna path gives its hydro reservoirs no water.** Every `Natural Inflow` in this model
+is in cumec, which is water. The translation writes each of the 31 reservoir units as a
+`HydroDispatch` with an inflow of 0 MW, and `decisions.md` states the cause for each one.
 [The gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) names each thing
 this model states that SiennaSchemas holds no type and no field for.
 
@@ -310,9 +311,5 @@ size.
 Each scenario is approximately 1.8 GB on disk after you unpack it and copy the traces into
 it. Thus the three scenarios together are approximately 5.4 GB on disk.
 
-The Sienna path takes more compute than the PyPSA path, because the Sienna solve takes no
-date range and therefore covers the whole six months in one program. The solve uses the
-network model `dcp`. Use `copperplate` for a faster answer that ignores the line flows.
-
-The result tables are 440 MB on disk. The solve also writes `problem_results.bin`, which is
-330 MB.
+The Sienna solve stops when it builds the model, so it writes no result tables. Refer to
+[The headline number](#the-headline-number).

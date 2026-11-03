@@ -44,6 +44,7 @@ from ._loads import (
     fill_load_defaults,
     load_in_scope,
     load_is_interruptible,
+    report_unscalable_load_series,
 )
 from ._renewables import (
     RENEWABLE_DISPATCH_MAPPING,
@@ -134,6 +135,7 @@ __all__ = [
     "LOAD_TRANSLATIONS_PHASE_2",
     "fill_load_defaults",
     "enrich_load_ts_stats",
+    "report_unscalable_load_series",
     "build_load_extensions",
     "build_load_ts_association",
     "load_in_scope",

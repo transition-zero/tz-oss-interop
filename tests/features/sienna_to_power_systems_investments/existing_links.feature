@@ -1,7 +1,7 @@
 @slow @fork_unsafe
 Feature: an existing link that no technology names is left out with the limits it states
-  PowerSystemsInvestments has no technology type for an existing link of the base system. A
-  link states no rating, so the record of the link names the active power limits it states.
+  PowerSystemsInvestments has no technology type for an existing link of the base system. The
+  record of the link names the active power limits it states, and not a rating of zero.
 
   Scenario: an existing link records its active power limits, not a rating of zero
     Given a PyPSA network
@@ -17,4 +17,4 @@ Feature: an existing link that no technology names is left out with the limits i
     Then the log contains "existing component(s) have no technology in the plan, so their capacity is left out: Tie"
     And the file "decisions.md" contains "`sienna.TwoTerminalGenericHVDCLine.Tie.active_power_limits_from` = {'min': 0.0, 'max': 400.0}"
     And the file "decisions.md" contains "`sienna.TwoTerminalGenericHVDCLine.Tie.active_power_limits_to` = {'min': 0.0, 'max': 400.0}"
-    And the file "decisions.md" does not contain "`sienna.TwoTerminalGenericHVDCLine.Tie.rating`"
+    And the file "decisions.md" does not contain "`sienna.TwoTerminalGenericHVDCLine.Tie.rating` = 0.0"

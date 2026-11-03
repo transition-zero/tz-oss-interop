@@ -22,6 +22,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import MINUTES_PER_HOUR
 from interop.plugins.shared.power_simulations_schema import PSInputOutputCurve
 from interop.plugins.shared.power_systems_investments_schema import (
+    PORTFOLIO_VARIABLE_COST_FIELD,
     PSIP_MODULE,
     TECHNOLOGY_FINANCIAL_DATA_TYPE,
     PortfolioColumn,
@@ -536,7 +537,7 @@ def _build_operation_costs(
     prepared = dict(cost)
     variable = prepared.pop(SiennaOperationCostField.VARIABLE_OPERATION_COST, None)
     if variable is not None:
-        prepared[SiennaStructField.VARIABLE] = variable
+        prepared[PORTFOLIO_VARIABLE_COST_FIELD] = variable
         record_translation(
             recorder,
             component=str(sienna_type),
@@ -547,7 +548,7 @@ def _build_operation_costs(
             ),
             source_value=variable,
             destination_field=(
-                f"{SiennaSupplyTechnologyCol.OPERATION_COSTS}.{SiennaStructField.VARIABLE}"
+                f"{SiennaSupplyTechnologyCol.OPERATION_COSTS}.{PORTFOLIO_VARIABLE_COST_FIELD}"
             ),
             destination_value=variable,
             derivation="variable_operation_cost -> variable (field rename)",

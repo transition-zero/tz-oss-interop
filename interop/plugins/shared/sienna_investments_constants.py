@@ -67,7 +67,7 @@ PORTFOLIO_JSON_FILENAME = "portfolio.json"
 """Default basename of the portfolio document written beside the base system."""
 
 PORTFOLIO_TIME_SERIES_FILENAME = "portfolio_time_series_storage.h5"
-"""Default basename of the HDF5 companion that holds the time series of the portfolio itself."""
+"""Default basename of the InfraStore companion that holds the series of the portfolio itself."""
 
 PORTFOLIO_AGGREGATION = "Area"
 """The base system type a portfolio's regions are grouped by.
@@ -503,6 +503,8 @@ PORTFOLIO_TIME_SERIES_ASSOCIATIONS_TABLE = "portfolio_time_series_associations"
 PORTFOLIO_TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     **TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaTimeSeriesAssociationCol.OWNER_TYPE: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.FEATURES: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.UNIT_SYSTEM: pl.Utf8,
 }
 
 # A cost of capital PyPSA states as one discount rate, written as all-equity financing.

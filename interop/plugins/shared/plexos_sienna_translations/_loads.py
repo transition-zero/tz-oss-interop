@@ -14,8 +14,7 @@ megawatts would give a network with one megawatt of demand.
 from __future__ import annotations
 
 import logging
-import uuid as _uuid
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -49,16 +48,23 @@ from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
+    LOAD_UNITS_NOTE,
     TIME_SERIES_ASSOCIATION_SCHEMA,
+    UNIT_SYSTEM_DTYPE,
     LoadConformity,
     SiennaComponent,
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
-    time_series_uuid,
+    SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_time_series import TimeSeriesInfo
+from interop.plugins.shared.sienna_time_series import (
+    UNSCALABLE_LOAD_SERIES_NOTE,
+    TimeSeriesInfo,
+    is_unscalable_load_series,
+    warn_unscalable_load_series,
+)
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +75,7 @@ LOAD_OWNER_CLASS = "load_owner_class"
 LOAD_BUS = "load_bus"
 LOAD_DEMAND = "load_demand"
 LOAD_PEAK = "load_peak"
+LOAD_LOWEST = "load_lowest"
 LOAD_FIRST = "load_first"
 
 _SOURCE_SCHEMA: dict[str, Any] = {
@@ -78,6 +85,7 @@ _SOURCE_SCHEMA: dict[str, Any] = {
     LOAD_BUS: pl.Utf8,
     LOAD_DEMAND: pl.Float64,
     LOAD_PEAK: pl.Float64,
+    LOAD_LOWEST: pl.Float64,
     LOAD_FIRST: pl.Float64,
 }
 
@@ -97,7 +105,7 @@ _PARTICIPATION_FRACTION_SUM = 1.0
 _PARTICIPATION_FRACTION_TOLERANCE = 1e-6
 _PARTICIPATION_REGIONS_MINIMUM = 2
 
-_ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
+_ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no Load availability; every load is available"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; reactive_power defaults to 0.0"
@@ -143,6 +151,7 @@ def build_loads_source_table(state: State, recorder: ScopedRecorder) -> pl.DataF
     """One row per load the model states, in PLEXOS words, sorted so ids are stable."""
     _record_dropped_region_prices(state, recorder)
     rows = _region_load_rows(state, recorder) + _node_load_rows(state, recorder)
+    _report_unscalable_profiles(rows, recorder)
     return pl.DataFrame(rows, schema=_SOURCE_SCHEMA)
 
 
@@ -155,6 +164,32 @@ def build_load_extensions(loads: pl.DataFrame) -> list[LoadExtension]:
 
 
 # --- reading the staged PLEXOS tables ---------------------------------------
+
+
+class _ProfileStats(NamedTuple):
+    peak: float
+    lowest: float
+    first: float
+
+
+def _report_unscalable_profiles(rows: list[dict[str, Any]], recorder: ScopedRecorder) -> None:
+    """Record and warn about each load whose profile no association row carries."""
+    unscalable = [row for row in rows if _is_unscalable(row)]
+    for row in unscalable:
+        record(
+            recorder,
+            dropped(
+                [plexos_field(row[LOAD_OWNER_CLASS], row[LOAD_OWNER], PlexosProperty.LOAD)],
+                UNSCALABLE_LOAD_SERIES_NOTE,
+            ),
+        )
+    warn_unscalable_load_series([row[LOAD_NAME] for row in unscalable])
+
+
+def _is_unscalable(row: dict[str, Any]) -> bool:
+    return row[LOAD_PEAK] is not None and is_unscalable_load_series(
+        row[LOAD_PEAK], row[LOAD_LOWEST]
+    )
 
 
 def _record_dropped_region_prices(state: State, recorder: ScopedRecorder) -> None:
@@ -247,7 +282,7 @@ def _load_row(
     owner_class: str,
     bus: str,
     demand: float | None,
-    stats: tuple[float, float] | None,
+    stats: _ProfileStats | None,
 ) -> dict[str, Any]:
     return {
         LOAD_NAME: name,
@@ -255,8 +290,9 @@ def _load_row(
         LOAD_OWNER_CLASS: owner_class,
         LOAD_BUS: bus,
         LOAD_DEMAND: demand,
-        LOAD_PEAK: None if stats is None else stats[0],
-        LOAD_FIRST: None if stats is None else stats[1],
+        LOAD_PEAK: None if stats is None else stats.peak,
+        LOAD_LOWEST: None if stats is None else stats.lowest,
+        LOAD_FIRST: None if stats is None else stats.first,
     }
 
 
@@ -273,18 +309,18 @@ def _bus_names(state: State) -> set[str]:
     return set() if table is None else set(table[SiennaLoadCol.NAME].to_list())
 
 
-def _series_stats(state: State, key: tuple[str, str]) -> dict[str, tuple[float, float]]:
-    """Each owner's profile peak and its value at the earliest snapshot.
+def _series_stats(state: State, key: tuple[str, str]) -> dict[str, _ProfileStats]:
+    """Each owner's profile peak, its lowest value and its value at the earliest snapshot.
 
-    Both are one number per component, so the aggregation is safe to collect however many
+    Each is one number per component, so the aggregation is safe to collect however many
     rows the staged frame holds.
     """
     frame = state.source_time_series.get(key)
     if frame is None:
         return {}
-    peaks = (
+    extremes = (
         frame.group_by("component")
-        .agg(pl.col("value").max().alias("peak"))
+        .agg(pl.col("value").max().alias("peak"), pl.col("value").min().alias("lowest"))
         .collect(engine="streaming")
     )
     firsts = build_earliest_values(
@@ -295,9 +331,11 @@ def _series_stats(state: State, key: tuple[str, str]) -> dict[str, tuple[float, 
     )
     first_by_name = dict(zip(firsts["component"], firsts["value"], strict=True))
     return {
-        name: (float(peak), float(first_by_name[name]))
-        for name, peak in zip(peaks["component"], peaks["peak"], strict=True)
-        if name in first_by_name
+        row["component"]: _ProfileStats(
+            float(row["peak"]), float(row["lowest"]), float(first_by_name[row["component"]])
+        )
+        for row in extremes.iter_rows(named=True)
+        if row["component"] in first_by_name
     }
 
 
@@ -453,8 +491,12 @@ def build_load_ts_associations(
     profile is stored as a per-unit shape: ``scaling_factor`` carries the peak the sink
     divides by, and ``get_max_active_power`` reverses it on read.
     """
-    with_series = source.filter(pl.col(LOAD_PEAK).is_not_null())
-    if with_series.height == 0:
+    with_series = [
+        row
+        for row in source.iter_rows(named=True)
+        if row[LOAD_PEAK] is not None and not _is_unscalable(row)
+    ]
+    if not with_series:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
     id_by_name = dict(
         zip(
@@ -466,10 +508,6 @@ def build_load_ts_associations(
     col = SiennaTimeSeriesAssociationCol
     rows = [
         {
-            col.TIME_SERIES_UUID: time_series_uuid(
-                SiennaComponent.POWER_LOAD, row[LOAD_NAME], SiennaLoadCol.MAX_ACTIVE_POWER
-            ),
-            col.TIME_SERIES_TYPE: "SingleTimeSeries",
             col.INITIAL_TIMESTAMP: (
                 ts_info.initial_timestamp.isoformat()
                 if ts_info.initial_timestamp is not None
@@ -480,17 +518,13 @@ def build_load_ts_associations(
             col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
             col.OWNER_ID: id_by_name[row[LOAD_NAME]],
             col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
-            col.OWNER_CATEGORY: "Component",
-            col.FEATURES: "[]",
-            col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-            col.METADATA_UUID: str(_uuid.uuid4()),
             col.COMPONENT_NAME: row[LOAD_OWNER],
             col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
             col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,
             # An all-zero profile has peak 0.0; divide by 1.0 to keep the stored zeros.
             col.SCALING_FACTOR: row[LOAD_PEAK] or 1.0,
         }
-        for row in with_series.iter_rows(named=True)
+        for row in with_series
     ]
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
 
@@ -503,7 +537,7 @@ def _load_dest(name: str, attribute: str, value: Any = None, unit: str | None = 
 
 
 LOAD_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaLoadCol.ID)],
+    exprs=[express_document_id().alias(SiennaLoadCol.ID)],
     make_events=lambda old, new: defaulted(
         [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], _ID_NOTE
     ),
@@ -699,7 +733,7 @@ LOAD_PROFILE = Translation(
             [_load_dest(new[LOAD_NAME], f"{SiennaLoadCol.MAX_ACTIVE_POWER} time series")],
             _PROFILE_DERIVATION,
         )
-        if old[LOAD_PEAK] is not None
+        if old[LOAD_PEAK] is not None and not _is_unscalable(old)
         else []
     ),
 )
@@ -734,10 +768,23 @@ LOAD_BASE_POWER = Translation(
     ),
 )
 
+LOAD_POWER_UNITS = Translation(
+    exprs=[
+        pl.lit(SiennaUnitSystem.NATURAL_UNITS, dtype=UNIT_SYSTEM_DTYPE).alias(
+            SiennaLoadCol.POWER_UNITS
+        )
+    ],
+    make_events=lambda old, new: defaulted(
+        [_load_dest(new[LOAD_NAME], SiennaLoadCol.POWER_UNITS, new[SiennaLoadCol.POWER_UNITS])],
+        LOAD_UNITS_NOTE,
+    ),
+)
+
 LOAD_TRANSLATIONS: list[Translation] = [
     LOAD_ID,
     LOAD_NAME_TRANSLATION,
     LOAD_AVAILABLE,
+    LOAD_POWER_UNITS,
     LOAD_BUS_NAME,
     LOAD_ACTIVE_POWER,
     LOAD_REACTIVE_POWER,

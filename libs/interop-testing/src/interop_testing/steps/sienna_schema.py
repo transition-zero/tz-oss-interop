@@ -15,31 +15,19 @@ import json
 from collections import defaultdict
 from functools import cache
 from importlib.resources import files
-from types import ModuleType
 from typing import Any
 
-from power_openapi_models.core import models as core_models
 from power_openapi_models.document import PortfolioDocument, SystemDocument
-from power_openapi_models.infrastructure_core import models as infrastructure_core_models
-from power_openapi_models.investments import models as investments_models
-from power_openapi_models.operations import models as operations_models
-from power_openapi_models.timeseries import models as timeseries_models
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pytest_bdd import parsers, then
 
+from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
+from interop.plugins.shared.sienna_document import find_sdk_model as find_sdk_class
 from interop_testing.files import read_json
 
 SYSTEM_PATH = "outputs/system.json"
 PORTFOLIO_PATH = "outputs/portfolio.json"
 SCHEMA_VERSION = "0.2.0"
-
-_SDK_MODULES: tuple[ModuleType, ...] = (
-    core_models,
-    operations_models,
-    investments_models,
-    timeseries_models,
-    infrastructure_core_models,
-)
 
 
 @cache
@@ -50,15 +38,6 @@ def list_component_keys(document_class: type[SystemDocument | PortfolioDocument]
     )
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     return list(schema["properties"]["components"]["properties"])
-
-
-def find_sdk_class(type_name: str) -> type[BaseModel] | None:
-    """The SDK class named ``type_name``, or None when SiennaSchemas 0.2 has no such type."""
-    for module in _SDK_MODULES:
-        model: type[BaseModel] | None = getattr(module, type_name, None)
-        if model is not None:
-            return model
-    return None
 
 
 def list_allowed_keys(model: type[BaseModel]) -> set[str]:
@@ -116,11 +95,9 @@ def list_envelope_problems(
 ) -> list[str]:
     """What is wrong with the document apart from its component rows."""
     problems: list[str] = []
-    if document.get("schema_version") != SCHEMA_VERSION:
-        problems.append(
-            f"envelope: schema_version is {document.get('schema_version')!r}, "
-            f"expected {SCHEMA_VERSION!r}"
-        )
+    version = document.get(SiennaSchemasSystem.SCHEMA_VERSION)
+    if version != SCHEMA_VERSION:
+        problems.append(f"envelope: schema_version is {version!r}, expected {SCHEMA_VERSION!r}")
     components = document.get("components", {})
     if isinstance(components, dict) and list(components) != sorted(components):
         problems.append("envelope: components keys are not sorted")

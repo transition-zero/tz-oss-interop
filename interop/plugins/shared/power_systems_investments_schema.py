@@ -16,7 +16,6 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any, NamedTuple
 
-from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop.ports.outbound.expansion import SERIES_JSON_SUFFIX as SERIES_JSON_SUFFIX
 from interop.ports.outbound.expansion import SeriesDocument as SeriesDocument
 
@@ -154,11 +153,11 @@ PORTFOLIO_FINANCIAL_DATA_TYPE = "PortfolioFinancialData"
 PORTFOLIO_METADATA_TYPE = "PortfolioMetadata"
 TECHNOLOGY_FINANCIAL_DATA_TYPE = "TechnologyFinancialData"
 
-PORTFOLIO_AGGREGATION = SiennaComponent.AREA
-"""The base system type the portfolio's regions stand for."""
-
 TIME_SERIES_STORAGE_TYPE = "InfrastructureSystems.Hdf5TimeSeriesStorage"
 """What the document states it would store series in, even where it stores none."""
+
+PORTFOLIO_VARIABLE_COST_FIELD = "variable"
+"""The field of an operation cost that holds the variable cost, as the package reads it."""
 
 
 class PortfolioColumn:

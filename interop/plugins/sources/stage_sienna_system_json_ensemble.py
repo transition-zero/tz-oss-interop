@@ -30,6 +30,7 @@ from interop.plugins.shared.ensemble_manifest import (
 )
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import SiennaCompanionFilename
+from interop.plugins.shared.sienna_document import read_system_document
 from interop.plugins.sources.stage_sienna_system_json import stage_system
 from interop.ports.errors import MissingInputError
 from interop.ports.outbound.filesystem import FilesystemPort, InputDirectory, Location
@@ -92,7 +93,7 @@ class StageSiennaSystemJsonEnsemble(StagesExtensionsSidecar, StagedSource):
         if not self._fs.can_read(h5_path):
             raise MissingInputError(self.name, "ensemble HDF5 companion", f"{h5_path}")
         with self._fs.open_read(system_path) as system_file:
-            system = json.load(system_file)
+            system = read_system_document(system_file)
         with self._fs.open_read(h5_path) as h5_file:
             staged = stage_system(system, h5_file, staging_dir / "samples" / replication.sample)
         return StagedReplication(replication.sample, staged.topology, staged.time_series)
@@ -133,8 +134,8 @@ def _combine_time_series(
 ) -> dict[tuple[str, str], pl.LazyFrame]:
     """One frame per series, holding every replication behind a sample column.
 
-    Every replication states the same associations, because the sink builds one document and
-    writes it many times, so no narrowing is needed here. The frames are concatenated and
+    Every replication states the same associations apart from ``uri``, which is the hash of
+    that replication's values, so no narrowing is needed here. The frames are concatenated and
     streamed straight back to parquet, so an ensemble whose values do not fit in memory is
     never held there.
     """

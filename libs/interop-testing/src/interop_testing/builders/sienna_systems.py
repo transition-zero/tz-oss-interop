@@ -20,6 +20,7 @@ from interop_testing.builders.sienna_documents import (
     TIME_SERIES_RESOLUTION_SECONDS,
     ac_bus,
     hydro_generation_cost,
+    per_unit_time_series,
     renewable_generation_cost,
     single_time_series,
     storage_cost,
@@ -55,6 +56,8 @@ class SiennaSystemBuilder:
         self._next_area_id: int = 1
         self._next_bus_id: int = 1
         self._next_component_id: int = 1
+        self._unknown: list[dict[str, Any]] = []
+        self._schema_version: str | None = None
         self._saved: bool = False
 
     def _check_not_saved(self, component_desc: str) -> None:
@@ -71,7 +74,9 @@ class SiennaSystemBuilder:
         area_id = self._next_area_id
         self._next_area_id += 1
         self._area_ids[name] = area_id
-        self._areas.append({"id": area_id, "name": name})
+        self._areas.append(
+            {"id": area_id, "name": name, "base_power": 100.0, "power_units": "NATURAL_UNITS"}
+        )
 
     def add_bus(self, name: str, area: str | None = None) -> None:
         self._check_not_saved(f"bus {name!r}")
@@ -102,7 +107,7 @@ class SiennaSystemBuilder:
                 "id": self._next_id(),
                 "name": name,
                 "available": True,
-                "status": True,
+                "status": "ONLINE",
                 "bus": self._bus_ids[bus],
                 "active_power": active_power_min,
                 "reactive_power": 0.0,
@@ -110,8 +115,9 @@ class SiennaSystemBuilder:
                 "active_power_limits": {"min": active_power_min, "max": active_power_max},
                 "operation_cost": thermal_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
                 "prime_mover_type": prime_mover,
-                "fuel_type": fuel,
+                "fuel": fuel,
             }
         )
 
@@ -140,6 +146,7 @@ class SiennaSystemBuilder:
                 "power_factor": 1.0,
                 "operation_cost": renewable_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -166,6 +173,7 @@ class SiennaSystemBuilder:
                 "prime_mover_type": prime_mover,
                 "power_factor": 1.0,
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -194,6 +202,7 @@ class SiennaSystemBuilder:
                 "active_power_limits": {"min": active_power_min, "max": active_power_max},
                 "operation_cost": hydro_generation_cost(marginal_cost),
                 "base_power": base_power,
+                "power_units": "NATURAL_UNITS",
             }
         )
 
@@ -235,6 +244,7 @@ class SiennaSystemBuilder:
                 "conversion_factor": 1.0,
                 "storage_target": initial_level * storage_capacity,
                 "cycle_limits": 10000,
+                "power_units": "COMPONENT_BASE",
             }
         )
 
@@ -247,6 +257,10 @@ class SiennaSystemBuilder:
     def set_thermal_ramp_limits(self, name: str, up: float, down: float) -> None:
         self._check_not_saved(f"ramp_limits for ThermalStandard {name!r}")
         self._generator_by_name(name)["ramp_limits"] = {"up": up, "down": down}
+
+    def set_generator_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for generator {name!r}")
+        self._generator_by_name(name)["power_units"] = power_units
 
     def set_thermal_time_limits(self, name: str, up: float, down: float) -> None:
         self._check_not_saved(f"time_limits for ThermalStandard {name!r}")
@@ -277,8 +291,19 @@ class SiennaSystemBuilder:
                 "max_active_power": max_active_power,
                 "max_reactive_power": 0.0,
                 "conformity": "UNDEFINED",
+                "power_units": "NATURAL_UNITS",
             }
         )
+
+    def set_load_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for PowerLoad {name!r}")
+        self._load_by_name(name)["power_units"] = power_units
+
+    def _load_by_name(self, name: str) -> dict[str, Any]:
+        for load in self._loads:
+            if load["name"] == name:
+                return load
+        raise KeyError(f"no PowerLoad {name!r} added yet")
 
     def add_line(
         self,
@@ -301,8 +326,8 @@ class SiennaSystemBuilder:
                 {
                     "sienna_type": "Arc",
                     "id": arc_id,
-                    "from": from_id,
-                    "to": to_id,
+                    "from_id": from_id,
+                    "to_id": to_id,
                 }
             )
             self._arc_by_endpoints[endpoint_key] = arc_id
@@ -321,6 +346,8 @@ class SiennaSystemBuilder:
                 "b": {"from": b / 2, "to": b / 2},
                 "g": {"from": g / 2, "to": g / 2},
                 "rating": rating,
+                "base_power": 100.0,
+                "power_units": "COMPONENT_BASE",
                 "angle_limits": {"min": -1.5707963267948966, "max": 1.5707963267948966},
             }
         )
@@ -334,8 +361,8 @@ class SiennaSystemBuilder:
             {
                 "sienna_type": "Arc",
                 "id": arc_id,
-                "from": self._bus_ids[from_bus],
-                "to": self._bus_ids[to_bus],
+                "from_id": self._bus_ids[from_bus],
+                "to_id": self._bus_ids[to_bus],
             }
         )
         self._links.append(
@@ -346,18 +373,28 @@ class SiennaSystemBuilder:
                 "available": True,
                 "active_power_flow": 0.0,
                 "arc": arc_id,
-                "active_power_limits_from": {"min": 0.0, "max": p_nom},
-                "active_power_limits_to": {"min": 0.0, "max": p_nom * efficiency},
+                "rating": p_nom,
+                "operational_flow_limit": {
+                    "from_to_min": 0.0,
+                    "from_to_max": p_nom,
+                    "to_from_min": 0.0,
+                    "to_from_max": 0.0,
+                },
+                "base_power": 100.0,
+                "power_units": "NATURAL_UNITS",
                 "reactive_power_limits_from": {"min": 0.0, "max": 0.0},
                 "reactive_power_limits_to": {"min": 0.0, "max": 0.0},
                 "loss": {
-                    "curve_type": "INPUT_OUTPUT",
-                    "function_data": {
-                        "function_type": "LINEAR",
-                        "proportional_term": 1.0 - efficiency,
-                        "constant_term": 0.0,
+                    "power_units": "NATURAL_UNITS",
+                    "value_curve": {
+                        "curve_type": "INPUT_OUTPUT",
+                        "function_data": {
+                            "function_type": "LINEAR",
+                            "proportional_term": 1.0 - efficiency,
+                            "constant_term": 0.0,
+                        },
+                        "input_at_zero": None,
                     },
-                    "input_at_zero": None,
                 },
             }
         )
@@ -382,15 +419,79 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"angle_limits for Line {name!r}")
         self._line_by_name(name)["angle_limits"] = {"min": min_rad, "max": max_rad}
 
+    def set_line_base_power(self, name: str, base_power: float) -> None:
+        self._check_not_saved(f"base_power for Line {name!r}")
+        self._line_by_name(name)["base_power"] = base_power
+
+    def set_line_power_units(self, name: str, power_units: str) -> None:
+        self._check_not_saved(f"power_units for Line {name!r}")
+        self._line_by_name(name)["power_units"] = power_units
+
     def set_link_available(self, name: str, available: bool) -> None:
         self._check_not_saved(f"availability for HVDC line {name!r}")
         self._link_by_name(name)["available"] = available
+
+    def remove_generator_field(self, name: str, field: str) -> None:
+        self._check_not_saved(f"removal of {field!r} from {name!r}")
+        del self._generator_by_name(name)[field]
+
+    def add_unknown_component(self, type_name: str, name: str) -> None:
+        """Add a row under a type name that SiennaSchemas does not define."""
+        self._check_not_saved(f"{type_name} {name!r}")
+        self._unknown.append({"sienna_type": type_name, "id": self._next_id(), "name": name})
+
+    def set_schema_version(self, schema_version: str) -> None:
+        self._check_not_saved("a schema_version")
+        self._schema_version = schema_version
+
+    def set_line_arc_as_text(self, name: str) -> None:
+        """Write the Arc id of a Line as a JSON string, which SiennaSchemas does not allow."""
+        self._check_not_saved(f"arc for Line {name!r}")
+        line = self._line_by_name(name)
+        line["arc"] = str(line["arc"])
+
+    def drop_line_arc_field(self, name: str, field: str) -> None:
+        """Take one field out of the Arc that a Line points at."""
+        self._check_not_saved(f"removal of {field!r} from the Arc of Line {name!r}")
+        arc_id = self._line_by_name(name)["arc"]
+        arc = next(arc for arc in self._arcs if arc["id"] == arc_id)
+        del arc[field]
+
+    def set_bus_base_voltage(self, name: str, base_voltage: float) -> None:
+        self._check_not_saved(f"base_voltage for bus {name!r}")
+        self._bus_by_name(name)["base_voltage"] = base_voltage
+
+    def set_bus_type(self, name: str, bustype: str) -> None:
+        self._check_not_saved(f"bustype for bus {name!r}")
+        self._bus_by_name(name)["bustype"] = bustype
+
+    def _bus_by_name(self, name: str) -> dict[str, Any]:
+        for bus in self._buses:
+            if bus["name"] == name:
+                return bus
+        raise KeyError(f"no bus {name!r} added yet")
+
+    def drop_link_operational_flow_limit(self, name: str) -> None:
+        self._check_not_saved(f"operational_flow_limit for HVDC line {name!r}")
+        del self._link_by_name(name)["operational_flow_limit"]
+
+    def set_link_converter_ratings(self, name: str, rating_from: float, rating_to: float) -> None:
+        self._check_not_saved(f"converter ratings for HVDC line {name!r}")
+        link = self._link_by_name(name)
+        link["rating_from"] = rating_from
+        link["rating_to"] = rating_to
 
     def add_time_series(
         self, owner_type: str, owner_name: str, name: str, values: list[float]
     ) -> None:
         self._check_not_saved(f"time series {name!r} for {owner_name!r}")
         self._time_series.append(single_time_series(owner_type, owner_name, name, values))
+
+    def add_arc_time_series(self, line: str, name: str, values: list[float]) -> None:
+        """Add a per-unit series that the Arc of a Line owns, which has no name."""
+        self._check_not_saved(f"time series {name!r} for the Arc of {line!r}")
+        arc_id = self._line_by_name(line)["arc"]
+        self._time_series.append(per_unit_time_series("Arc", arc_id, name, values))
 
     def add_ext(self, owner_type: str, owner_name: str, ext: dict[str, Any]) -> None:
         """Add (and merge) extensions.json fields for one component, keyed by owner."""
@@ -458,6 +559,8 @@ class SiennaSystemBuilder:
             sections["lines"] = self._lines
         if self._links:
             sections["links"] = self._links
+        if self._unknown:
+            sections["unknown"] = self._unknown
         if self._time_series:
             sections["time_series"] = self._time_series
         if self._ext or self._kind_records:
@@ -468,7 +571,7 @@ class SiennaSystemBuilder:
                 {"kind": kind, "owner_name": name, "ext": ext}
                 for (kind, name), ext in self._kind_records.items()
             ]
-        write_sienna_system(path, sections)
+        write_sienna_system(path, sections, schema_version=self._schema_version)
         for filename, rows in self._companions.items():
             pl.DataFrame(rows).write_parquet(path.parent / filename)
         self._saved = True

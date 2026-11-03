@@ -4,7 +4,7 @@ This document tells you what each part of your Sienna system becomes in the PyPS
 It gives the source of each field.
 
 > **Scope:** the translator accepts a SiennaSchemas system, and only that. It accepts
-> electricity-only systems. It reads the system JSON, its HDF5 time series companion and an
+> electricity-only systems. It reads the system JSON, its time-series sidecar and an
 > optional `extensions.json` sidecar. Refer to
 > [What the translator reads](#what-the-translator-reads). Many Sienna systems come from the
 > opposite translation, so this document also tells you which values change when a PyPSA
@@ -55,8 +55,8 @@ The translator reads three inputs.
 
 | Input | Required | Holds |
 | --- | --- | --- |
-| The system JSON | Yes | Each component, in a top-level `components` object that maps a type name to a list. |
-| The HDF5 companion | Yes | The values of each time series, at `time_series/<uuid>/data`. |
+| The system JSON | Yes | Each component, in the `components` object that maps a type name to a list, and the `time_series_associations` rows. The document states its `schema_version`. |
+| The time-series sidecar | Yes | The values of each time series. The `time_series_storage_file` key of the system JSON names the file, and each row of `time_series_associations` locates its array by `uri`. The translator reads the values through `infrastore`. |
 | `extensions.json` | No | The PyPSA fields that SiennaSchemas has no home for. |
 | A companion parquet beside `extensions.json` | No | A PyPSA field that changes from snapshot to snapshot. A record in the sidecar names the file that holds it. |
 
@@ -70,7 +70,7 @@ and the ensemble source reads that rather than guessing a directory name. An ens
 directory without one does not read back.
 
 Every replication of a Sienna ensemble states the same components and the same time-series
-association rows, and differs only in the values its HDF5 companion holds. So the components
+association rows, and differs only in the values its time-series sidecar holds. So the components
 come from the first replication the manifest names, and its sidecar comes with them.
 
 The system JSON gives each component an integer `id`, and it points at another component by
@@ -78,20 +78,37 @@ that integer. The translator replaces each integer with the name of the componen
 every name in the PyPSA network is the name your Sienna system gives.
 
 Only this translator writes an `extensions.json` sidecar. A SiennaSchemas system from a
-partner is the system JSON and its HDF5 companion and nothing more. Leave the sidecar prompt
-blank for such a system. The run then behaves as a system where no component had a record.
+partner is the system JSON and its time-series sidecar and nothing more. Leave the
+`extensions.json` prompt blank for such a system. The run then behaves as a system where no
+component had a record. The time-series sidecar is still required.
 
 An `extensions.json` that a version before the kind-keyed format wrote is a list of records.
 The translator refuses such a file and tells you to write it again. It does not read part of
 it.
 
+The translator checks the system JSON with the `power_openapi_models` SDK. The SDK function
+`check_schema_version` gives one outcome for the `schema_version`. The translator reads the
+document when the outcome is `current` or `upgradable`, which is an older version on the same
+compatibility line. It stops for every other outcome: the key is absent, the value is not a
+version, the version is on another compatibility line, or the version is newer than the SDK.
+It also stops when the envelope breaks the schema.
+It checks each component row and each `time_series_associations` row against its SDK class. It
+leaves out a row that fails, and a whole type that SiennaSchemas does not define, and it names
+a few of them in one warning.
+
 ## Across all components
 
 - **The name is the identifier.** The translator matches a sidecar record to a component by
   name. It does not use the integer `id` for this.
-- **The system base is 100 MVA.** The translator uses this fixed value to convert each
-  per-unit rating and impedance. It does not read a base from your system. If your system
-  uses a different base, the ratings and the impedances will be wrong.
+- **Each component states its unit basis.** A `Line`, an `EnergyReservoirStorage`, a
+  `PowerLoad` and a generator carry `power_units`. The translator reads a `Line` and an
+  `EnergyReservoirStorage` in `COMPONENT_BASE`, and a `PowerLoad` and a generator in
+  `NATURAL_UNITS`. It converts a `Line` with the `base_power` of that `Line`, and a generator
+  `rating` (MVA) with the `base_power` of that generator. The translator leaves out a
+  component in another basis, together with its time series. The report records each one,
+  and a warning names it. The output network then has no such component. A `Line` whose
+  `parameter_units` is not `COMPONENT_BASE` is different: it stops the run. See
+  [`Line` and `MonitoredLine` → `Line`](#line-and-monitoredline--line).
 - **The snapshot duration comes from the first series the system holds.** The translator
   needs it to convert a ramp rate and a run-time limit. Every series in one system covers
   the same snapshots, so any of them fixes the duration. With no series at all, it uses 60
@@ -158,11 +175,11 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | --- | --- | --- | --- |
 | `name` | | `ThermalStandard.name` | `direct` |
 | `bus` | | The bus that `bus` points at | `derived` |
-| `carrier` | | `extensions.carrier` of the `generator` record. If absent, the `prime_mover_type` and `fuel_type` pair. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
+| `carrier` | | `extensions.carrier` of the `generator` record. If absent, the `prime_mover_type` and `fuel` pair. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
-| `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
+| `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable_operation_cost` | `derived` |
 | `start_up_cost` | cost | `operation_cost.start_up` | `direct` |
 | `shut_down_cost` | cost | `operation_cost.shut_down` | `direct` |
 | `ramp_limit_up` | per unit of `p_nom` for each snapshot | `ramp_limits.up` × the snapshot duration in minutes ÷ `base_power` | `derived` |
@@ -199,9 +216,9 @@ placeholder, so the translator does not divide by it.
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `extensions.carrier` of the `generator` record. If absent, `prime_mover_type`. Refer to [Carriers](#carriers). | `sidecar` or `derived` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power` ÷ `base_power` | `derived` |
-| `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
+| `marginal_cost` | cost for each MWh | For a `RenewableDispatch`, the proportional term of the value curve of `operation_cost.variable_operation_cost`. For a `RenewableNonDispatch`, `0.0`. | `derived` or `default` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `generator` record. If absent, `False`. | `sidecar` or `default` |
 | `p_nom_min` | MW | `base_power`, for an extendable generator only. | `derived` |
 | `committable` | | `False` | `default` |
@@ -230,9 +247,9 @@ mapping where several PyPSA fields have no Sienna source.
 | `bus` | | The bus that `bus` points at | `derived` |
 | `carrier` | | `hydro`, for every `HydroDispatch` | `default` |
 | `p_nom` | MW | `base_power` | `direct` |
-| `p_max_pu` | per unit of `p_nom` | `rating` | `direct` |
+| `p_max_pu` | per unit of `p_nom` | `rating` ÷ `base_power` | `derived` |
 | `p_min_pu` | per unit of `p_nom` | `active_power_limits.min` ÷ `base_power` | `derived` |
-| `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable` | `derived` |
+| `marginal_cost` | cost for each MWh | The proportional term of the value curve of `operation_cost.variable_operation_cost` | `derived` |
 | `inflow` | MW | `hydro_budget` × `base_power` | `derived` |
 | `max_hours` | h | `1.0` | `default` |
 | `efficiency_store` | | `1.0` | `default` |
@@ -289,7 +306,7 @@ for a thermal generator. A `carrier` in the sidecar always wins over these table
 
 `ThermalStandard`:
 
-| `prime_mover_type` | `fuel_type` | PyPSA `carrier` |
+| `prime_mover_type` | `fuel` | PyPSA `carrier` |
 | --- | --- | --- |
 | `ST` | `COAL` | `coal` |
 | `ST` | `NUCLEAR` | `nuclear` |
@@ -324,18 +341,20 @@ carrier would put the generator in the wrong cost and emission group.
 ## `Line` and `MonitoredLine` → `Line`
 
 Both Sienna types become a PyPSA line. Sienna states the rating and the impedance as
-per-unit values on the system base, and PyPSA states them in physical units. Each formula
-below uses a base of 100 MVA and the `v_nom` of the `bus0` end.
+per-unit values on the `base_power` of the line, and PyPSA states them in physical units.
+Each formula below uses the `base_power` of the line and the `v_nom` of the `bus0` end. A
+line states `parameter_units` as `COMPONENT_BASE` or leaves it out. Any other value stops the
+run.
 
 | PyPSA field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `name` | | `name` | `direct` |
 | `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
-| `s_nom` | MVA | `rating` × 100 | `derived` |
-| `r` | Ω | `r` × `v_nom²` ÷ 100 | `derived` |
-| `x` | Ω | `x` × `v_nom²` ÷ 100 | `derived` |
-| `b` | S | (`b.from` + `b.to`) × 100 ÷ `v_nom²` | `derived` |
-| `g` | S | (`g.from` + `g.to`) × 100 ÷ `v_nom²` | `derived` |
+| `s_nom` | MVA | `rating` × `base_power` | `derived` |
+| `r` | Ω | `r` × `v_nom²` ÷ `base_power` | `derived` |
+| `x` | Ω | `x` × `v_nom²` ÷ `base_power` | `derived` |
+| `b` | S | (`b.from` + `b.to`) × `base_power` ÷ `v_nom²` | `derived` |
+| `g` | S | (`g.from` + `g.to`) × `base_power` ÷ `v_nom²` | `derived` |
 | `v_ang_min` | degrees | `angle_limits.min`, in radians, converted to degrees | `derived` |
 | `v_ang_max` | degrees | `angle_limits.max`, in radians, converted to degrees | `derived` |
 | `active` | | `available` | `direct` |
@@ -343,7 +362,7 @@ below uses a base of 100 MVA and the `v_nom` of the `bus0` end.
 | `length` | km | `extensions.length` of the `line` record. If absent, `0.0`. | `sidecar` or `default` |
 | `num_parallel` | | `extensions.num_parallel` of the `line` record. If absent, `1.0`. | `sidecar` or `default` |
 | `s_nom_extendable` | | `extensions.s_nom_extendable` of the `line` record | `sidecar` |
-| `s_nom_min` | MVA | `rating × the system base`, for an extendable line only. | `derived` |
+| `s_nom_min` | MVA | `rating` × `base_power`, for an extendable line only. | `derived` |
 
 Sienna splits the shunt susceptance and the shunt conductance between the two ends of the
 line. PyPSA holds one total for each. The translator adds the two ends together.
@@ -364,40 +383,47 @@ either. Check the length of each line if you plan to use it.
 | --- | --- | --- | --- |
 | `name` | | `name` | `direct` |
 | `bus0` / `bus1` | | The two buses that the `Arc` points at | `derived` |
-| `p_nom` | MW | `active_power_limits_from.max`, divided by `extensions.p_max_pu` where the sidecar states one | `derived` |
+| `p_nom` | MW | The forward bound (below), divided by `extensions.p_max_pu` where the sidecar states one | `derived` |
 | `p_max_pu` | per unit of `p_nom` | `extensions.p_max_pu` of the `controllable_line` record | `sidecar` |
-| `p_min_pu` | per unit of `p_nom` | `extensions.p_min_pu` of the `controllable_line` record. If absent, `active_power_limits_from.min` ÷ `p_nom`. | `sidecar` or `derived` |
-| `efficiency` | | 1 − the proportional term of `loss.function_data` | `derived` |
+| `p_min_pu` | per unit of `p_nom` | `extensions.p_min_pu` of the `controllable_line` record. If absent, `-`the reverse bound (below) ÷ `p_nom`. | `sidecar` or `derived` |
+| `efficiency` | | 1 − the proportional term of `loss.value_curve.function_data` | `derived` |
 | `active` | | `available` | `direct` |
 | `carrier` | | `extensions.carrier` of the `controllable_line` record | `sidecar` |
 | `p_nom_extendable` | | `extensions.p_nom_extendable` of the `controllable_line` record | `sidecar` |
 | `p_nom_min` | MW | The derived `p_nom`, for an extendable link only. | `derived` |
 
+The translator reads two bounds from the line:
+
+- **The ceiling** is the smallest of `rating`, `rating_from` and `rating_to`. A converter
+  rating that the line leaves out adds no limit.
+- **The forward bound** is `operational_flow_limit.from_to_max`, and **the reverse bound** is
+  `operational_flow_limit.to_from_max`. The ceiling caps each of them. A line that states no
+  `operational_flow_limit` takes the ceiling as both bounds.
+
 Sienna folds the PyPSA capacity and the maximum dispatch share into one number. It writes
-`active_power_limits_from.max` as `p_nom` × `p_max_pu`. The translator undoes this in three
-cases:
+`from_to_max` as `p_nom` × `p_max_pu`. The translator undoes this in three cases:
 
-- The sidecar states no `p_max_pu`. Then `p_nom` is `active_power_limits_from.max`, and
-  PyPSA's default `p_max_pu` of 1.0 holds.
-- The sidecar states a `p_max_pu`. Then `p_nom` is `active_power_limits_from.max` divided by
-  that share. A link stored as 500 MW with a `p_max_pu` of 0.5 comes back as a 1000 MW link.
-- The stored maximum is zero. Then `p_nom` is `0.0` and `p_min_pu` is `0.0`. The report gives
-  a row for that default.
+- The sidecar states no `p_max_pu`. Then `p_nom` is the forward bound, and PyPSA's default
+  `p_max_pu` of 1.0 holds.
+- The sidecar states a `p_max_pu`. Then `p_nom` is the forward bound divided by that share. A
+  link stored as 500 MW with a `p_max_pu` of 0.5 comes back as a 1000 MW link.
+- The stored maximum is zero. Then `p_nom` is `0.0`. `p_min_pu` is the sidecar `p_min_pu`
+  where the sidecar states one, else `0.0`, and the report gives a row for that default.
 
-Sienna forces the minimum at the from-end to zero for a link whose PyPSA `p_min_pu` was
-positive. A positive lower bound therefore survives only in the sidecar.
+Sienna states `to_from_max` as `0.0` for a link whose PyPSA `p_min_pu` was not negative. A
+positive lower bound therefore survives only in the sidecar.
 
 ## Time series
 
-Sienna holds a time series as a `TimeSeriesAssociation` record in the system JSON and its
-values in the HDF5 companion. The translator reads five series and leaves every other one.
+Sienna holds a time series as a row of `time_series_associations` in the system JSON and
+its values in the time-series sidecar. The translator reads five series and leaves every other one.
 
 | Sienna owner and series | PyPSA target | Each value is multiplied by |
 | --- | --- | --- |
 | `PowerLoad` `max_active_power` | `loads.p_set` | The static `max_active_power` of the load, in MW |
-| `RenewableDispatch` `max_active_power` | `generators.p_max_pu` | `rating` |
-| `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` |
-| `ThermalStandard` `active_power_limits` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
+| `RenewableDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
+| `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
+| `ThermalStandard` `max_active_power` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
 
 The snapshots of the network come from the first profile that reaches it: the start time,
@@ -493,7 +519,7 @@ of 0.9 comes back with 90% of its inflow.
 
 **The `max_active_power` series of a `HydroDispatch`.** The opposite direction always writes
 one. This translator reads `hydro_budget` instead, and it does not read this series. The
-values stay in the HDF5 companion, and the report says nothing about them.
+values stay in the time-series sidecar, and the report says nothing about them.
 
 **The charge cost of a storage unit.** PyPSA has one `marginal_cost`, and Sienna has a
 charge cost and a discharge cost. The translator reads the discharge cost, and the charge
@@ -522,7 +548,7 @@ name one.
 | `EnergyReservoirStorage` `operation_cost.charge_variable_cost` and `.energy_surplus_cost` | The charge cost is lost. Refer to [Round-trip asymmetries](#round-trip-asymmetries). |
 | `Line.rating_b` and `.rating_c` | Nothing applies the emergency ratings. The dispatch can use the normal rating only. |
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
-| `TwoTerminalGenericHVDCLine.active_power_limits_to`, and both reactive power limits | PyPSA holds one capacity on a link. The to-end limit is lost. |
+| Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
 | A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
 | A reserve of any type | PyPSA has no reserve component. A reserve in the sidecar is reported as dropped. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |

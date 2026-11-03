@@ -28,27 +28,29 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     Then the file "outputs/system.json" parses as JSON with 1 components of type "HydroDispatch"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "prime_mover_type" set to "HY"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "base_power" set to 100.0
+    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "power_units" set to "NATURAL_UNITS"
+    And every "HydroDispatch" component in the written Sienna system is valid SiennaSchemas 0.2
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "reactive_power" set to 0.0
-    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 1.0
+    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.min" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.max" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "operation_cost.cost_type" set to "HYDRO_GEN"
-    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 5.0
+    And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 5.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" without field "ramp_limits"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" without field "time_limits"
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" without field "status"
     # Two time series: per-step cap (flat p_max_pu) and horizon energy budget
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 1.0 1.0 1.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 100.0 100.0 100.0
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 0.09 0.18 0.27
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 9.0 18.0 27.0
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 2
     # Decisions
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.carrier` = hydro | `sienna.HydroDispatch.hydro_1.type` = HydroDispatch | hydro carrier -> HydroDispatch |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.p_nom` = 100.0 MW | `sienna.HydroDispatch.hydro_1.active_power_limits` = {'min': 0.0, 'max': 100.0} MW | min=effective_p_nom*p_min_pu, max=effective_p_nom*p_max_pu |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
-    And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.marginal_cost` = 5.0 | `sienna.HydroDispatch.hydro_1.operation_cost.variable.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.marginal_cost` = 5.0 | `sienna.HydroDispatch.hydro_1.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
   Scenario: static p_max_pu below 1.0 derates rating, active_power_limits, and the flat cap series
     Given a PyPSA network
@@ -57,10 +59,10 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     And the network contains storage unit "hydro_1" on "bus_1" carrier "hydro" p_nom 50.0 p_min_pu 0.0 p_max_pu 0.8 efficiency_dispatch 1.0 inflow 5.0 5.0 5.0
     And the network is saved as "inputs/hydro_derate.nc"
     When I run translate against "inputs/hydro_derate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 0.8
+    Then the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 40.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.max" set to 40.0
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 0.8 0.8 0.8
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 0.1 0.1 0.1
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 40.0 40.0 40.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 5.0 5.0 5.0
 
   Scenario: a storage unit whose carrier the mappings file omits is left out, and the run completes
     Given a PyPSA network

@@ -170,7 +170,7 @@ retirement. The step records that once and warns.
 ### A portfolio that states its own series by year
 
 A portfolio can state one series for each technology and each year, in its own
-`time_series_associations` and its own HDF5 companion. Each association has the feature
+`time_series_associations` and its own InfraStore companion. Each association has the feature
 `year` and the name `max_active_power`: MW for a `DemandRequirement`, per unit for a
 `SupplyTechnology`. `osemosys-csv-to-sienna-investments` writes such a portfolio. The source
 reads the companion from `portfolio_time_series_h5_path`, or from the file that the portfolio

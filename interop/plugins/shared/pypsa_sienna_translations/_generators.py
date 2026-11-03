@@ -10,6 +10,7 @@ from functools import partial
 from typing import Any
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 from interop.core.extensions import ExtensionKind, GeneratorExtension
 from interop.plugins.shared.constants import UNIT_MW, Framework
@@ -36,9 +37,14 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import (
+    GENERATOR_UNITS_NOTE,
+    build_power_units_translation,
+)
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.sienna_constants import (
     ACTIVE_POWER_LIMITS_DTYPE,
+    OPERATIONAL_STATE_DTYPE,
     PRIME_MOVERS_DTYPE,
     RAMP_LIMITS_DTYPE,
     REACTIVE_POWER_LIMITS_DTYPE,
@@ -52,6 +58,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
@@ -59,10 +66,10 @@ from interop.plugins.shared.sienna_cost_curves import (
 from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
     fill_defaults,
-    row_position_id_translation,
     row_source_translation,
 )
 from interop.ports.outbound.reporting import (
@@ -251,11 +258,14 @@ _rated = partial(
 )
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
-GENERATOR_ID = row_position_id_translation(
+GENERATOR_ID = build_document_id_translation(
     _dest,
     dest_name_col=T.NAME,
     id_col=T.ID,
-    note="assigned by 1-based row position in thermal generators DataFrame",
+    note=(
+        "assigned by row position in thermal generators DataFrame, "
+        "after the ids of earlier components"
+    ),
 )
 
 GENERATOR_NAME = _direct(source_col=PyPSAGeneratorCol.NAME, dest_col=T.NAME)
@@ -268,8 +278,9 @@ GENERATOR_AVAILABLE = _default(
 
 GENERATOR_STATUS = _default(
     dest_col=T.STATUS,
-    value=True,
-    note="PyPSA has no separate initial on/off state; defaulted to True",
+    value=OperationalStates.ONLINE.value,
+    note="PyPSA has no separate initial on/off state; defaulted to ONLINE",
+    dtype=OPERATIONAL_STATE_DTYPE,
 )
 
 GENERATOR_BUS_NAME = _direct(source_col=PyPSAGeneratorCol.BUS, dest_col=T.BUS_NAME)
@@ -299,9 +310,7 @@ GENERATOR_SIENNA_TYPE = Translation(
 )
 
 GENERATOR_FUEL_TYPE = Translation(
-    exprs=[
-        pl.col(_FUEL_TYPE_COL).cast(THERMAL_FUELS_DTYPE).alias(SiennaThermalGeneratorCol.FUEL_TYPE)
-    ],
+    exprs=[pl.col(_FUEL_TYPE_COL).cast(THERMAL_FUELS_DTYPE).alias(SiennaThermalGeneratorCol.FUEL)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.USER_CONFIG_DEFAULT_APPLIED,
@@ -319,8 +328,8 @@ GENERATOR_FUEL_TYPE = Translation(
                     framework=Framework.SIENNA,
                     component=SiennaComponent.THERMAL_STANDARD,
                     name=old[PyPSAGeneratorCol.NAME],
-                    attribute=SiennaThermalGeneratorCol.FUEL_TYPE,
-                    value=new[SiennaThermalGeneratorCol.FUEL_TYPE],
+                    attribute=SiennaThermalGeneratorCol.FUEL,
+                    value=new[SiennaThermalGeneratorCol.FUEL],
                 )
             ],
             note="according to user defined mapping",
@@ -380,10 +389,19 @@ GENERATOR_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for generators",
 )
 
-GENERATOR_RATING = _direct(
-    source_col=PyPSAGeneratorCol.P_MAX_PU,
+GENERATOR_RATING = _rated(
     dest_col=T.RATING,
-    derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
+    expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAGeneratorCol.P_MAX_PU),
+    unit=UNIT_MW,
+    derivation="effective_p_nom * p_max_pu (nameplate rating, MVA)",
+)
+
+GENERATOR_POWER_UNITS = build_power_units_translation(
+    _dest,
+    name_col=PyPSAGeneratorCol.NAME,
+    dest_col=T.POWER_UNITS,
+    units=SiennaUnitSystem.NATURAL_UNITS,
+    note=GENERATOR_UNITS_NOTE,
 )
 
 GENERATOR_APL = Translation(
@@ -536,7 +554,7 @@ def _generator_cost_events(old: dict[str, Any], _: dict[str, Any]) -> list[Trans
     return [
         cost_event(
             PyPSAGeneratorCol.MARGINAL_COST,
-            "variable.value_curve.function_data.proportional_term",
+            "variable_operation_cost.value_curve.function_data.proportional_term",
             old[PyPSAGeneratorCol.MARGINAL_COST],
             "flat marginal_cost ($/MWh) -> single-segment linear CostCurve",
         ),
@@ -562,7 +580,7 @@ GENERATOR_COST = Translation(
             fixed=pl.lit(0.0),
             shut_down=pl.col(PyPSAGeneratorCol.SHUT_DOWN_COST),
             start_up=pl.col(PyPSAGeneratorCol.START_UP_COST),
-            variable=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
+            variable_operation_cost=variable_cost_curve(pl.col(PyPSAGeneratorCol.MARGINAL_COST)),
         )
         .cast(THERMAL_GENERATION_COST_DTYPE)
         .alias(SiennaThermalGeneratorCol.OPERATION_COST)
@@ -683,13 +701,6 @@ GENERATOR_TIME_AT_STATUS = Translation(
     ],
 )
 
-GENERATOR_MUST_RUN = _default(
-    dest_col=T.MUST_RUN,
-    value=False,
-    note="PyPSA Generator has no must_run concept; defaulted to False",
-    dtype=pl.Boolean,
-)
-
 GENERATOR_TRANSLATIONS: list[Translation] = [
     GENERATOR_ID,
     GENERATOR_NAME,
@@ -704,10 +715,10 @@ GENERATOR_TRANSLATIONS: list[Translation] = [
     GENERATOR_REACTIVE_POWER,
     GENERATOR_REACTIVE_POWER_LIMITS,
     GENERATOR_RATING,
+    GENERATOR_POWER_UNITS,
     GENERATOR_APL,
     GENERATOR_RAMP_LIMITS,
     GENERATOR_TIME_LIMITS,
-    GENERATOR_MUST_RUN,
     GENERATOR_TIME_AT_STATUS,
     GENERATOR_COST,
 ]

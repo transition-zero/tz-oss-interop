@@ -14,6 +14,7 @@ from typing import IO, Any, ClassVar, NamedTuple
 
 import pandas as pd
 import polars as pl
+from infrastore import Store
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import StagedSource, State
@@ -25,9 +26,8 @@ from interop.plugins.shared.power_systems_investments_schema import (
     PortfolioColumn,
 )
 from interop.plugins.shared.sienna_constants import (
-    Hdf5TimeSeriesStore,
     MinMaxField,
-    SiennaTimeSeriesAssociationCol,
+    TimeSeriesAssociationCol,
 )
 from interop.plugins.shared.sienna_investments_constants import (
     BY_KEY_SUFFIX,
@@ -46,7 +46,7 @@ from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplementalAttributeAssociationCol as Association,
 )
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.sources.stage_sienna_system_json import stage_system
+from interop.plugins.sources.stage_sienna_system_json import load_series_store, stage_system
 from interop.ports.errors import MissingInputError
 from interop.ports.outbound.filesystem import FilesystemPort, InputFile
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
@@ -55,6 +55,9 @@ log = logging.getLogger(__name__)
 
 # The values the source holds in memory before it writes them to one parquet file.
 _SERIES_BATCH_ROWS = 1_000_000
+
+# Where the portfolio's store sits in staging, apart from the store of the base system.
+_PORTFOLIO_STORE_DIRECTORY = "portfolio_time_series_store"
 
 _UNOWNED_NOTE = "the portfolio holds no component of this type and id, so its series is left out"
 _UNOWNED_WARNING = (
@@ -71,14 +74,14 @@ class StageSiennaPortfolioJsonParams(BaseModel):
         description="the SiennaSchemas system.json the portfolio expands"
     )
     time_series_h5_path: InputFile = Field(
-        description="the HDF5 companion holding that system's time series"
+        description="the InfraStore companion holding that system's time series"
     )
     # What the hop before this one set aside. Only this translator writes a sidecar, so a
-    # portfolio from a partner is the two documents and the HDF5 companion and nothing more.
+    # portfolio from a partner is the two documents and the InfraStore companion and nothing more.
     extensions_json_path: InputFile | None = None
     # Absent, the source reads the file that the portfolio names, beside the portfolio.
     portfolio_time_series_h5_path: InputFile | None = Field(
-        default=None, description="the HDF5 companion holding the portfolio's own time series"
+        default=None, description="the InfraStore companion holding the portfolio's own time series"
     )
 
 
@@ -100,7 +103,9 @@ class StageSiennaPortfolioJson(StagesExtensionsSidecar, StagedSource):
         system = self._read_json(params.system_json_path, "system JSON")
         portfolio = self._read_json(params.portfolio_json_path, "portfolio JSON")
         if not self._fs.can_read(params.time_series_h5_path):
-            raise MissingInputError(self.name, "HDF5 companion", f"{params.time_series_h5_path}")
+            raise MissingInputError(
+                self.name, "InfraStore companion", f"{params.time_series_h5_path}"
+            )
 
         with self._fs.open_read(params.time_series_h5_path) as h5_file:
             staged = stage_system(system, h5_file, staging_dir)
@@ -121,7 +126,7 @@ class StageSiennaPortfolioJson(StagesExtensionsSidecar, StagedSource):
         params: StageSiennaPortfolioJsonParams,
         staging_dir: Path,
     ) -> dict[tuple[str, str], pl.LazyFrame]:
-        """The portfolio's own series, read from the HDF5 companion that it names."""
+        """The portfolio's own series, read from the InfraStore companion that it names."""
         if not portfolio.get(PortfolioDocument.TIME_SERIES_ASSOCIATIONS):
             return {}
         h5_path = params.portfolio_time_series_h5_path or self._fs.resolve(
@@ -129,7 +134,7 @@ class StageSiennaPortfolioJson(StagesExtensionsSidecar, StagedSource):
             portfolio.get(PortfolioDocument.TIME_SERIES_STORAGE_FILE, ""),
         )
         if not self._fs.can_read(h5_path):
-            raise MissingInputError(self.name, "portfolio HDF5 companion", f"{h5_path}")
+            raise MissingInputError(self.name, "portfolio InfraStore companion", f"{h5_path}")
         with self._fs.open_read(h5_path) as h5_file:
             staged = stage_portfolio_series(portfolio, h5_file, staging_dir)
         self._report_unowned(staged.unowned)
@@ -146,7 +151,7 @@ class StageSiennaPortfolioJson(StagesExtensionsSidecar, StagedSource):
                             Framework.SIENNA,
                             owner_type,
                             str(owner_id),
-                            SiennaTimeSeriesAssociationCol.OWNER_ID,
+                            TimeSeriesAssociationCol.OWNER_ID,
                             owner_id,
                         )
                     ],
@@ -279,23 +284,22 @@ def stage_portfolio_series(
     The year comes from the ``year`` feature of the association, which is how the package looks
     a series up.
     """
-    import h5py
-
     writer = _SeriesWriter(staging_dir / "portfolio_time_series")
     name_by_owner = _build_name_by_owner(portfolio)
     unowned: list[tuple[str, int]] = []
-    with h5py.File(h5_file, "r") as h5:
-        values = h5[Hdf5TimeSeriesStore.ROOT_GROUP]
-        for association in portfolio[PortfolioDocument.TIME_SERIES_ASSOCIATIONS]:
+    associations = portfolio[PortfolioDocument.TIME_SERIES_ASSOCIATIONS]
+    store_dir = staging_dir / _PORTFOLIO_STORE_DIRECTORY
+    with load_series_store(h5_file, associations, store_dir) as store:
+        for association in associations:
             owner = (
-                association[SiennaTimeSeriesAssociationCol.OWNER_TYPE],
-                association[SiennaTimeSeriesAssociationCol.OWNER_ID],
+                association[TimeSeriesAssociationCol.OWNER_TYPE],
+                association[TimeSeriesAssociationCol.OWNER_ID],
             )
             if owner not in name_by_owner:
                 unowned.append(owner)
                 continue
-            key = (owner[0], association[SiennaTimeSeriesAssociationCol.NAME])
-            writer.write_frame(key, _read_association(association, values, name_by_owner[owner]))
+            key = (owner[0], association[TimeSeriesAssociationCol.NAME])
+            writer.write_frame(key, _read_association(association, store, name_by_owner[owner]))
     writer.write_all()
     return StagedPortfolioSeries(writer.build_frames(), unowned)
 
@@ -339,15 +343,16 @@ class _SeriesWriter:
         return self._directory / key[0] / key[1]
 
 
-def _read_association(association: dict[str, Any], values: Any, component: str) -> pl.DataFrame:
+def _read_association(association: dict[str, Any], store: Store, component: str) -> pl.DataFrame:
     """The values of one association, each with its hour, its component and its year."""
-    uuid = association[SiennaTimeSeriesAssociationCol.TIME_SERIES_UUID]
-    data = values[uuid][Hdf5TimeSeriesStore.DATA_DATASET][:]
-    features = association.get(SiennaTimeSeriesAssociationCol.FEATURES) or {}
+    data = store.read_by_id(association[TimeSeriesAssociationCol.ASSOCIATION_ID]).data
+    features = association.get(TimeSeriesAssociationCol.FEATURES) or {}
     snapshots = pd.date_range(
-        start=pd.Timestamp(association[SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP]),
+        start=pd.Timestamp(association[TimeSeriesAssociationCol.INITIAL_TIMESTAMP]).tz_localize(
+            None
+        ),
         periods=len(data),
-        freq=pd.Timedelta(association[SiennaTimeSeriesAssociationCol.RESOLUTION]),
+        freq=pd.Timedelta(association[TimeSeriesAssociationCol.RESOLUTION]),
     )
     return pl.DataFrame(
         {

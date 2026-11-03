@@ -67,6 +67,7 @@ from interop.plugins.shared.pypsa_sienna_translations import (
     load_in_scope,
     load_is_interruptible,
     rejected_build_skip,
+    report_unscalable_load_series,
     unbuilt_candidate_skip,
 )
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
@@ -85,6 +86,7 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     apply_translations,
+    enrich_first_id,
     filter_component,
     finalise,
 )
@@ -289,7 +291,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
     def _map_one(self, state: State, mapping: ComponentMapping, source: pl.DataFrame) -> State:
         """Translate one carrier-filtered ComponentMapping into its Sienna destination table."""
         prepared = self._prepare_source(state, mapping, source)
-        table = prepared.table
+        table = enrich_first_id(prepared.table, state)
         self._add_derived_series(state, mapping, prepared)
         dst = apply_translations(table, mapping.translations, self._recorder)
         out = finalise(dst, mapping.schema, self._recorder, mapping.sienna_component)
@@ -396,6 +398,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         )
         ts_p = state.source_time_series.get((PyPSATable.LOADS, PyPSALoadCol.P_SET))
         table = enrich_load_ts_stats(table, ts_p)
+        report_unscalable_load_series(table, self._recorder)
         table = enrich_load_voll(table, voll_by_bus)
         ts_info = collect_ts_info(ts_p)
         self._map_load_type(state, table.filter(~load_is_interruptible()), ts_info, _PLAIN_LOAD)
@@ -410,7 +413,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         """Translate one of the two load types, leaving no destination table where none apply."""
         if table.is_empty():
             return
-        dst = apply_translations(table, kind.phase_1, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), kind.phase_1, self._recorder)
         dst = apply_translations(dst, kind.phase_2, self._recorder)
         out = finalise(dst, kind.schema, self._recorder, kind.sienna_component)
         state.destination_tables[kind.sienna_component] = out
@@ -477,7 +480,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         )
         table = enrich_line_voltage(table, buses)
 
-        dst = apply_translations(table, LINE_TRANSLATIONS, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), LINE_TRANSLATIONS, self._recorder)
         state.destination_tables[SiennaComponent.LINE] = finalise(
             dst,
             LINES_DESTINATION_SCHEMA,
@@ -510,7 +513,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         for rule in (unbuilt_candidate_skip(naming), rejected_build_skip(naming)):
             table, _ = filter_component(table, rule.keep, rule.report, self._recorder)
 
-        dst = apply_translations(table, LINK_TRANSLATIONS, self._recorder)
+        dst = apply_translations(enrich_first_id(table, state), LINK_TRANSLATIONS, self._recorder)
         hvdc = SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
         state.destination_tables[hvdc] = finalise(
             dst,

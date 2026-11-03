@@ -7,12 +7,12 @@ and compute time-series metadata after translations complete.
 
 from __future__ import annotations
 
-import uuid as _uuid
 from functools import partial
 
 import polars as pl
 
 from interop.core.extensions import LoadExtension
+from interop.core.reporting import EventRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
     UNIT_MVA,
@@ -36,6 +36,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import build_load_power_units
 from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
@@ -45,18 +46,22 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaLoadCol,
     SiennaTimeSeriesAssociationCol,
-    time_series_uuid,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     load_cost,
+)
+from interop.plugins.shared.sienna_time_series import (
+    UNSCALABLE_LOAD_SERIES_NOTE,
+    is_unscalable_load_series,
+    warn_unscalable_load_series,
 )
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import (
     EventKind,
@@ -86,6 +91,7 @@ _DEFAULT_LOAD_CONFORMITY: LoadConformity = LoadConformity.UNDEFINED
 
 # Enrichment column names added by enrich_load_ts_stats; never written to destination table.
 _TS_PEAK = "ts_peak"
+_TS_LOWEST = "ts_lowest"
 _TS_FIRST = "ts_first"
 
 # Enrichment column added by enrich_load_voll: the $/MWh a shortfall at this load's bus
@@ -135,18 +141,19 @@ def enrich_load_ts_stats(
 ) -> pl.DataFrame:
     """Join per-load time-series stats onto the source table as regular columns.
 
-    Adds ``ts_peak`` (max p_set) and ``ts_first`` (first p_set value) as Float64
-    columns — null for any load without a time series. Both are component-scale
-    aggregations and safe to collect.
+    Adds ``ts_peak`` (max p_set), ``ts_lowest`` (min p_set) and ``ts_first`` (first p_set
+    value) as Float64 columns — null for any load without a time series. All three are
+    component-scale aggregations and safe to collect.
     """
     if ts_p is None:
         return table.with_columns(
             [
                 pl.lit(None, dtype=pl.Float64).alias(_TS_PEAK),
+                pl.lit(None, dtype=pl.Float64).alias(_TS_LOWEST),
                 pl.lit(None, dtype=pl.Float64).alias(_TS_FIRST),
             ]
         )
-    stats = _peak_by_component(ts_p).join(
+    stats = _extremes_by_component(ts_p).join(
         _first_by_component(ts_p), on=PyPSATimeSeriesCol.COMPONENT, how="left"
     )
     return table.join(
@@ -157,15 +164,16 @@ def enrich_load_ts_stats(
     )
 
 
-def _peak_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
-    """The highest value each load reaches, over every replication the frame holds.
+def _extremes_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
+    """The highest and lowest value each load reaches, over every replication the frame holds.
 
     One peak for the whole ensemble is what makes every replication's stored shape read
     against the same base, so the numbers of two replications compare directly.
     """
+    value = pl.col(PyPSATimeSeriesCol.VALUE)
     return (
         ts_p.group_by(PyPSATimeSeriesCol.COMPONENT)
-        .agg(pl.col(PyPSATimeSeriesCol.VALUE).max().alias(_TS_PEAK))
+        .agg(value.max().alias(_TS_PEAK), value.min().alias(_TS_LOWEST))
         .collect(engine="streaming")
     )
 
@@ -184,6 +192,30 @@ def _first_by_component(ts_p: pl.LazyFrame) -> pl.DataFrame:
     ).rename({PyPSATimeSeriesCol.VALUE: _TS_FIRST})
 
 
+def list_unscalable_load_series(enriched_src: pl.DataFrame) -> list[str]:
+    """The loads whose p_set series peaks at zero yet falls below it, so no peak scales it."""
+    with_ts = enriched_src.filter(pl.col(_TS_PEAK).is_not_null())
+    return [
+        row[PyPSALoadCol.NAME]
+        for row in with_ts.select(PyPSALoadCol.NAME, _TS_PEAK, _TS_LOWEST).iter_rows(named=True)
+        if is_unscalable_load_series(row[_TS_PEAK], row[_TS_LOWEST])
+    ]
+
+
+def report_unscalable_load_series(enriched_src: pl.DataFrame, recorder: EventRecorder) -> None:
+    """Record and warn about each load whose p_set series no association row carries."""
+    names = list_unscalable_load_series(enriched_src)
+    for name in names:
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[_source(name, f"{PyPSATable.LOADS}_t.{PyPSALoadCol.P_SET}")],
+                note=UNSCALABLE_LOAD_SERIES_NOTE,
+            )
+        )
+    warn_unscalable_load_series(names)
+
+
 def build_load_ts_association(
     enriched_src: pl.DataFrame,
     dst: pl.DataFrame,
@@ -199,7 +231,10 @@ def build_load_ts_association(
     ``component`` is the Sienna type the rows belong to, because a series is looked up by
     its owner's type as well as its name.
     """
-    with_ts = enriched_src.filter(pl.col(_TS_PEAK).is_not_null())
+    with_ts = enriched_src.filter(
+        pl.col(_TS_PEAK).is_not_null()
+        & ~pl.col(PyPSALoadCol.NAME).is_in(list_unscalable_load_series(enriched_src))
+    )
     names_with_ts = with_ts[PyPSALoadCol.NAME].to_list()
     if not names_with_ts:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
@@ -214,8 +249,6 @@ def build_load_ts_association(
     col = SiennaTimeSeriesAssociationCol
     rows = [
         {
-            col.TIME_SERIES_UUID: time_series_uuid(component, name, SiennaLoadCol.MAX_ACTIVE_POWER),
-            col.TIME_SERIES_TYPE: "SingleTimeSeries",
             col.INITIAL_TIMESTAMP: (
                 ts_info.initial_timestamp.isoformat()
                 if ts_info.initial_timestamp is not None
@@ -226,10 +259,6 @@ def build_load_ts_association(
             col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
             col.OWNER_ID: name_to_id[name],
             col.OWNER_TYPE: component,
-            col.OWNER_CATEGORY: "Component",
-            col.FEATURES: "[]",
-            col.SCALING_FACTOR_MULTIPLIER: "PowerSystems.get_max_active_power",
-            col.METADATA_UUID: str(_uuid.uuid4()),
             col.COMPONENT_NAME: name,
             col.SOURCE_TABLE: PyPSATable.LOADS,
             col.SOURCE_ATTRIBUTE: PyPSALoadCol.P_SET,
@@ -268,7 +297,7 @@ def build_load_extensions(
 # parameter because an interruptible load fills the same fields as a plain one, and each
 # report must name the type the pipeline actually wrote.
 
-_ID_NOTE = "assigned by 1-based row position in loads DataFrame"
+_ID_NOTE = "assigned by row position in loads DataFrame, after the ids of earlier components"
 _AVAILABLE_NOTE = "PyPSA Load has no active input field; always True"
 _BUS_NAME_NOTE = "bus string name; FK resolution to ACBus deferred"
 _Q_SET_NOTE = "time-varying q_set deferred"
@@ -289,11 +318,12 @@ def _load_translations(component: SiennaComponent) -> list[Translation]:
     direct = partial(direct_translation, _source, dest, name_col=PyPSALoadCol.NAME)
     default = partial(default_translation, dest, name_col=PyPSALoadCol.NAME)
     return [
-        row_position_id_translation(
+        build_document_id_translation(
             dest, dest_name_col=SiennaLoadCol.NAME, id_col=SiennaLoadCol.ID, note=_ID_NOTE
         ),
         direct(source_col=PyPSALoadCol.NAME, dest_col=SiennaLoadCol.NAME),
         default(dest_col=SiennaLoadCol.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
+        build_load_power_units(component),
         direct(source_col=PyPSALoadCol.BUS, dest_col=SiennaLoadCol.BUS_NAME, note=_BUS_NAME_NOTE),
         _load_sienna_type(dest, component),
         _load_active_power(dest),
@@ -470,7 +500,7 @@ def _load_operation_cost() -> Translation:
                     dest(
                         old[PyPSALoadCol.NAME],
                         f"{SiennaLoadCol.OPERATION_COST}"
-                        ".variable.value_curve.function_data.proportional_term",
+                        ".variable_operation_cost.value_curve.function_data.proportional_term",
                         old[_VOLL],
                         UNIT_DOLLARS_PER_MWH,
                     )
