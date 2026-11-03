@@ -104,3 +104,17 @@ Feature: PLEXOS reserves become Sienna services
     Then the file "outputs/system.json" parses as JSON with 0 components of type "OnlineReserve"
     And the file "outputs/extensions.json" parses as JSON reserve extension record for "Regulation" having "direction" set to "down"
     And the file "decisions.md" contains "the reserve states no requirement in MW, so it becomes no Sienna service"
+
+  Scenario: a reservoir hydro unit that supplies a reserve joins its service
+    A reservoir hydro unit becomes a HydroTurbine, which can supply a reserve as any other
+    unit can.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam" on node "North_Node" with max_capacity 200 head "Lake" max_volume 800 initial_volume 400
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "Dam"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system associates the OnlineReserve "SpinningReserve" with the HydroTurbine "Dam"

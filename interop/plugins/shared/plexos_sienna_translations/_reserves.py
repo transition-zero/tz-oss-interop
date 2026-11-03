@@ -87,6 +87,7 @@ _DEVICE_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.RENEWABLE_DISPATCH,
     SiennaComponent.RENEWABLE_NON_DISPATCH,
     SiennaComponent.HYDRO_DISPATCH,
+    SiennaComponent.HYDRO_TURBINE,
     SiennaComponent.ENERGY_RESERVOIR_STORAGE,
 )
 

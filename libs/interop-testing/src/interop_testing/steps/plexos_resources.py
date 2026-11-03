@@ -514,6 +514,17 @@ def given_generator_has_property_from_data_file(
     plexos_model_builder.add_generator_property_from_data_file(name, property_name, data_file)
 
 
+@given(
+    parsers.parse(
+        'generator "{generator}" names head storage "{storage}" with Max Volume {max_volume:g}'
+    )
+)
+def given_generator_names_head_storage(
+    plexos_model_builder: PlexosModelBuilder, generator: str, storage: str, max_volume: float
+) -> None:
+    plexos_model_builder.add_head_storage(generator, storage, max_volume)
+
+
 @given(parsers.parse('the model contains region "{name}" with VoLL {voll:g}'))
 def given_model_contains_region_with_voll(
     plexos_model_builder: PlexosModelBuilder, name: str, voll: float

@@ -50,6 +50,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
+    list_thermal_store_users,
 )
 from interop.plugins.shared.plexos_sienna_translations._reservoirs import (
     TranslatedReservoirs,
@@ -213,7 +214,7 @@ def map_storage(
     state: State, recorder: ScopedRecorder, targets: CarrierTargets
 ) -> TranslatedStorage:
     """Translate every PLEXOS Battery, pumped-storage plant and reservoir hydro."""
-    derived = derive_storage_units(state)
+    derived = derive_storage_units(state, list_thermal_store_users(state, targets))
     _record_skips(derived, recorder)
     series = build_storage_series(state, derived.mappings)
     translated = TranslatedStorage(series=series.frame)

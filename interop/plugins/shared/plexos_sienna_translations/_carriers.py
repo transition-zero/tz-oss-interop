@@ -14,6 +14,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from interop.core.pipeline import State
+from interop.plugins.shared.plexos_constants import (
+    PlexosClass,
+    PlexosCollection,
+    PlexosObjectCol,
+    PlexosResolvedTable,
+)
+from interop.plugins.shared.plexos_pypsa_translations._shared import relate_children
+from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
+    storage_turbine_names,
+)
 from interop.plugins.shared.plexos_sienna_user_mappings import (
     CARRIER_BY_STORAGE_KIND,
     DEFAULT_TARGET_BY_STORAGE_KIND,
@@ -82,3 +93,43 @@ def _carrier_for(concept: PlexosConcept, plexos_name: str) -> str:
     if concept is PlexosConcept.STORAGE_KIND:
         return CARRIER_BY_STORAGE_KIND[PlexosStorageKind(plexos_name)]
     return plexos_name
+
+
+def list_thermal_store_users(state: State, targets: CarrierTargets) -> frozenset[str]:
+    """The units that draw on a Storage, but whose own carrier the user's file names as thermal.
+
+    A model can state a fuel supply as a Storage. The user's file says the unit burns a fuel,
+    so its Storage holds that fuel, and the unit is a generator rather than a turbine.
+    """
+    turbines = storage_turbine_names(state)
+    table = state.source_topology.get(PlexosClass.GENERATOR)
+    if not turbines or table is None:
+        return frozenset()
+    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    fuels = relate_children(memberships, PlexosClass.GENERATOR, PlexosCollection.FUELS)
+    generators = table.collect()
+    category_by_name = dict(
+        zip(
+            generators[PlexosObjectCol.NAME].to_list(),
+            generators[PlexosObjectCol.CATEGORY].to_list(),
+            strict=True,
+        )
+    )
+    return frozenset(
+        name
+        for name in turbines
+        if _is_thermal(targets, _find_carrier(name, fuels, category_by_name))
+    )
+
+
+def _find_carrier(
+    name: str, fuels: dict[str, list[str]], category_by_name: dict[str, str | None]
+) -> str | None:
+    """A generator's carrier: its first Fuel where it burns one, else its category."""
+    burned = fuels.get(name)
+    return burned[0] if burned else category_by_name.get(name)
+
+
+def _is_thermal(targets: CarrierTargets, carrier: str | None) -> bool:
+    target = None if carrier is None else targets.find(carrier)
+    return target is not None and target.sienna_type == SiennaComponent.THERMAL_STANDARD

@@ -464,6 +464,14 @@ class ResourceBuilder(PlexosTables):
         self._membership_id(LINE_CLASS, name, NODE_CLASS, endpoints.node_from, NODE_FROM_COLLECTION)
         self._membership_id(LINE_CLASS, name, NODE_CLASS, endpoints.node_to, NODE_TO_COLLECTION)
 
+    def add_head_storage(self, generator: str, storage: str, max_volume: float) -> None:
+        """A Storage of this volume that an existing Generator names as its head."""
+        self._check_not_saved(f"head storage {storage!r} of generator {generator!r}")
+        self._add_storage(storage, max_volume=max_volume)
+        self._membership_id(
+            GENERATOR_CLASS, generator, STORAGE_CLASS, storage, HEAD_STORAGE_COLLECTION
+        )
+
     def _add_reservoir_generator(
         self,
         name: str,

@@ -376,6 +376,7 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 | Your mappings file names `HydroDispatch` for `reservoir_hydro` | `HydroDispatch`, with no `HydroReservoir` |
 | It has a `Tail Storage` and no `Head Storage` | Not translated |
 | It has no storage at all | An ordinary generator, from the `category` or `fuel` row its carrier names |
+| It has a `Head Storage`, and your mappings file names its carrier as `ThermalStandard` | A `ThermalStandard`. Its `Storage` holds fuel, and Sienna states no fuel store, so the `Storage` is left out and `decisions.md` says why. |
 
 ### The turbine
 

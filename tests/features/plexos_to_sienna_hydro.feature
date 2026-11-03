@@ -168,3 +168,24 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the PS.jl system "outputs/power_simulations_system.json" component "HydroDispatch" named "hydro_1" has "__metadata__.type" equal to "HydroDispatch"
     And the file "decisions.md" contains "the solve template has no formulation for a HydroTurbine, so it runs as a HydroDispatch"
     And the file "decisions.md" contains "`sienna.HydroReservoir.res_1`"
+
+  Scenario: a thermal unit that draws on a Storage keeps its thermal type, and the Storage is a fuel store
+    A model can state a fuel supply, such as a tank of liquefied gas, as a Storage that a
+    thermal unit names as its head. The mappings file names the unit's carrier as thermal, so
+    the unit is a ThermalStandard and its Storage holds fuel, not water. Sienna states no
+    fuel store, so the Storage is left out and the report says why.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains generator "GasUnit" with "node=North_Node, category=LNG Units, Max Capacity=300, Heat Rate=8"
+    And generator "GasUnit" names head storage "LNG_Tank" with Max Volume 5000
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | category       | LNG Units   | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "GasUnit" having "active_power_limits.max" set to 300.0
+    And the file "outputs/system.json" parses as JSON with 0 components of type "HydroTurbine"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "HydroReservoir"
+    And the file "decisions.md" contains "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
+    And the log contains "1 Storage(s): only thermal units draw on this Storage"

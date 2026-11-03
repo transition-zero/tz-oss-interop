@@ -20,7 +20,9 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
+    PlexosCollection,
     PlexosProperty,
+    PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._batteries import (
     map_battery,
@@ -37,6 +39,7 @@ from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
+    relate_children,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_hydro import (
     map_turbine,
@@ -49,6 +52,7 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     build_lookups,
     orphan_storage_skips,
     read_object_names,
+    skip_object,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
@@ -88,17 +92,43 @@ class _DerivedStorageUnits:
     dropped: list[_DroppedValue] = dataclass_field(default_factory=list)
 
 
-def derive_storage_units(state: State) -> _DerivedStorageUnits:
+# A Storage that only thermal units draw on holds their fuel, not water.
+FUEL_STORE_NOTE = (
+    "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
+)
+
+
+def derive_storage_units(
+    state: State, thermal_store_users: frozenset[str] = frozenset()
+) -> _DerivedStorageUnits:
+    """Every storage unit, leaving to the generator mapping each thermal unit that draws on a
+    Storage of fuel.
+    """
     lookups = build_lookups(state)
-    claimed = storage_turbine_names(state)
+    claimed = storage_turbine_names(state) - thermal_store_users
     turbines = [name for name in read_object_names(state, PlexosClass.GENERATOR) if name in claimed]
     storages = read_object_names(state, PlexosClass.STORAGE)
     return _merge(
         _map_each(read_object_names(state, PlexosClass.BATTERY), map_battery, lookups),
         _map_each(turbines, map_turbine, lookups),
         _DerivedStorageUnits([], orphan_storage_skips(storages, lookups)),
+        _DerivedStorageUnits([], _fuel_store_skips(state, claimed, thermal_store_users)),
         _DerivedStorageUnits([], [], _dropped_values(state, lookups)),
     )
+
+
+def _fuel_store_skips(
+    state: State, turbines: frozenset[str], thermal_store_users: frozenset[str]
+) -> list[SkippedComponent]:
+    """Each Storage that only thermal units draw on, so it holds fuel that Sienna cannot store."""
+    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    heads = relate_children(memberships, PlexosClass.GENERATOR, PlexosCollection.HEAD_STORAGE)
+    fuel_stores = {store for name in thermal_store_users for store in heads.get(name, [])}
+    water_stores = {store for name in turbines for store in heads.get(name, [])}
+    return [
+        skip_object(PlexosClass.STORAGE, store, PlexosCollection.HEAD_STORAGE, FUEL_STORE_NOTE)
+        for store in sorted(fuel_stores - water_stores)
+    ]
 
 
 def _merge(*parts: _DerivedStorageUnits) -> _DerivedStorageUnits:
