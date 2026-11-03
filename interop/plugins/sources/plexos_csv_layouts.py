@@ -396,27 +396,41 @@ def _reshape_monthly_in_year(csv: _CsvToReshape) -> pl.LazyFrame | None:
 def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
     """A value for each object and pattern, spread over the snapshots each pattern covers.
 
-    A Year column keeps a row to the snapshots of its own year. A snapshot two patterns
-    cover takes the first. The patterns are a column subset, so they are safe to collect.
+    The file names each object in a Name column, or gives each object a column of its own. A
+    Year column keeps a row to the snapshots of its own year. A snapshot two patterns cover
+    takes the first. The patterns are a column subset, so they are safe to collect.
     """
     if csv.calendar is None:
         return None
-    value_columns = [c for c in csv.columns if c not in {_CSV_NAME, PATTERN_COLUMN, _CSV_YEAR}]
-    chosen = _generic_value_columns(value_columns, csv.sample_scope)
-    if chosen is None:
-        return None
-    text = csv.scan.with_columns(pl.col(_CSV_NAME, PATTERN_COLUMN).cast(pl.String))
+    text = csv.scan.with_columns(pl.col(PATTERN_COLUMN).cast(pl.String))
     patterns = text.select(PATTERN_COLUMN).unique().collect()[PATTERN_COLUMN].to_list()
-    assignment = csv.calendar.build_assignment(patterns, csv.relative)
-    stamped = text.join(assignment.lazy(), on=PATTERN_COLUMN)
+    stamped = text.join(
+        csv.calendar.build_assignment(patterns, csv.relative).lazy(), on=PATTERN_COLUMN
+    )
     if _CSV_YEAR in csv.columns:
         stamped = stamped.filter(
             pl.col(_CSV_YEAR) == pl.col(StagedTimeSeriesCol.SNAPSHOT).dt.year()
         )
-    melted = _unpivot_samples(stamped, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, _CSV_NAME])
+    value_columns = [c for c in csv.columns if c not in {_CSV_NAME, PATTERN_COLUMN, _CSV_YEAR}]
+    if _CSV_NAME in csv.columns:
+        named = _select_pattern_rows_by_name(stamped, value_columns, csv.sample_scope)
+    else:
+        named = _select_series(stamped, value_columns, csv.sample_scope, csv.owner_names)
+    if named is None:
+        return None
     keys = [StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SAMPLE, StagedTimeSeriesCol.SNAPSHOT]
-    named = melted.rename({_CSV_NAME: StagedTimeSeriesCol.COMPONENT})
     return named.unique(subset=keys, keep="first", maintain_order=True)
+
+
+def _select_pattern_rows_by_name(
+    stamped: pl.LazyFrame, value_columns: list[str], sample_scope: SampleScope
+) -> pl.LazyFrame | None:
+    chosen = _generic_value_columns(value_columns, sample_scope)
+    if chosen is None:
+        return None
+    text = stamped.with_columns(pl.col(_CSV_NAME).cast(pl.String))
+    melted = _unpivot_samples(text, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, _CSV_NAME])
+    return melted.rename({_CSV_NAME: StagedTimeSeriesCol.COMPONENT})
 
 
 # In order: the first layout a header matches is the one that reads it. No two overlap
@@ -451,7 +465,7 @@ _CSV_SHAPES: tuple[_CsvShape, ...] = (
         needs_a_year=True,
     ),
     _CsvShape(
-        lambda header: {_CSV_NAME, PATTERN_COLUMN} <= header,
+        lambda header: PATTERN_COLUMN in header,
         _reshape_by_pattern,
         needs_snapshots=True,
     ),

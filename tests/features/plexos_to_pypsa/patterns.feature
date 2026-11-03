@@ -192,3 +192,22 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
       | !H1      | H1       | 1    | 3     |
       | H1;H3    | H2       | 3    | 7     |
       | K1,P2    | K2       | 2    | 7     |
+
+  Scenario: a file of patterns with one column for each object reads each object's column
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains node "Node_B" in region "Grid"
+    And the model contains data file "Demand" at "Load_ByColumn.csv" with rows:
+      | PATTERN | Node_A | Node_B |
+      | M1      | 40     | 60     |
+    And the model contains load "Node_A" with peak 40 from data file "Demand"
+    And the model contains load "Node_B" with peak 60 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 40
+    And the load time series "outputs/load_ts.json" for "Node_B" at hour 1 is 60
