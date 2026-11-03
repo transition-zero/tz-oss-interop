@@ -64,9 +64,9 @@ Feature: osemosys-csv-to-sienna turns electricity fuels into buses and demand in
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 2 components of type "ACBus"
     And the file "outputs/system.json" parses as JSON with 2 components of type "Area"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/DEELEC" having "area" set to 2
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/DEELEC" having "area" set to 6
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "bustype" set to "PQ"
-    And the file "outputs/system.json" parses as JSON with component "Area" named "DE" having "id" set to 2
+    And the file "outputs/system.json" parses as JSON with component "Area" named "DE" having "id" set to 6
 
   Scenario: An electricity fuel with no location gets no bus and is reported once
     Given the otoole set "FUEL" holds "ATELEC DEELEC GAS XXELEC"
@@ -92,8 +92,8 @@ Feature: osemosys-csv-to-sienna turns electricity fuels into buses and demand in
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with 3 components of type "ACBus"
     And the file "outputs/system.json" parses as JSON with 2 components of type "Area"
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "area" set to 1
-    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELECLV" having "area" set to 1
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELEC" having "area" set to 6
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "R1/ATELECLV" having "area" set to 6
     And the file "decisions.md" contains "| `osemosys.fuel.R1/ATELECLV.fuel` = ATELECLV | `sienna.ACBus.R1/ATELECLV.name` = R1/ATELECLV | the region and the electricity fuel, <region>/<fuel>, as each fuel balances in its region |"
 
   Scenario: A specified annual demand becomes a load with its MW in each hour of the days
@@ -102,9 +102,9 @@ Feature: osemosys-csv-to-sienna turns electricity fuels into buses and demand in
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "max_active_power" set to 200.0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "active_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "bus" set to 1
-    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 1 is named "max_active_power"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 3 is named "max_active_power"
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with length 48
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 0.5, 18 × 0.5, 6 × 1, 18 × 0.333333333333
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 100, 18 × 100, 6 × 200, 18 × 66.6666666667
     And the file "decisions.md" contains "`osemosys.fuel.R1/ATELEC.specified_annual_demand` = 876"
 
   Scenario: An accumulated annual demand becomes a flat load of its own

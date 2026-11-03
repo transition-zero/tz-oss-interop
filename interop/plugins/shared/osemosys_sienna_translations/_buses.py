@@ -56,6 +56,7 @@ from interop.plugins.shared.sienna_events import (
 from interop.plugins.shared.translation_runner import (
     SkippedNames,
     Translation,
+    build_document_id_translation,
     default_translation,
     filter_component,
     row_position_id_translation,
@@ -65,7 +66,7 @@ from interop.ports.outbound.reporting import SourceField
 # The bus of an electricity fuel, `<region>/<fuel>`, or null where the fuel has no location.
 ELECTRICITY_BUS = "electricity_bus"
 
-_ID_NOTE = "assigned by 1-based row position in the ACBus table"
+_ID_NOTE = "assigned by row position in the ACBus table, after the ids of earlier components"
 _NUMBER_NOTE = "assigned by 1-based row position in the ACBus table"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability of a location; every bus is available"
 _BUSTYPE_NOTE = "OSeMOSYS states no slack bus; bustype defaults to PQ"
@@ -141,7 +142,7 @@ BUS_TRANSLATIONS: list[Translation] = [
             _NAME_DERIVATION,
         ),
     ),
-    row_position_id_translation(
+    build_document_id_translation(
         _bus_field,
         dest_name_col=SiennaACBusCol.NAME,
         id_col=SiennaACBusCol.ID,

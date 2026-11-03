@@ -15,6 +15,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     build_buses_source_table,
     map_component_table,
 )
+from interop.plugins.shared.translation_runner import enrich_first_id
 
 
 class OsemosysToSiennaMapBuses(OperationsMapping):
@@ -29,7 +30,7 @@ class OsemosysToSiennaMapBuses(OperationsMapping):
         source = build_buses_source_table(state, self._recorder)
         if source.height == 0:
             return
-        buses = map_component_table(source, BUS_MAPPING, self._recorder)
+        buses = map_component_table(enrich_first_id(source, state), BUS_MAPPING, self._recorder)
         state.destination_tables[BUS_MAPPING.sienna_type] = buses
         append_extensions(
             state.destination_extensions, ExtensionKind.BUS, build_bus_extensions(buses)

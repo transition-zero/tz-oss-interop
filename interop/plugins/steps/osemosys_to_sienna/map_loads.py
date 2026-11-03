@@ -16,6 +16,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     map_component_table,
 )
 from interop.plugins.shared.sienna_constants import SiennaLoadCol
+from interop.plugins.shared.translation_runner import enrich_first_id
 
 
 class OsemosysToSiennaMapLoads(OperationsMapping):
@@ -30,7 +31,8 @@ class OsemosysToSiennaMapLoads(OperationsMapping):
         source = build_loads_source(state, operations, self._recorder)
         if source.table.height == 0:
             return
-        loads = map_component_table(source.table, LOAD_MAPPING, self._recorder)
+        table = enrich_first_id(source.table, state)
+        loads = map_component_table(table, LOAD_MAPPING, self._recorder)
         state.destination_tables[LOAD_MAPPING.sienna_type] = loads
         series = StagedSeries(
             LOAD_MAPPING.sienna_type, SiennaLoadCol.MAX_ACTIVE_POWER, source.series

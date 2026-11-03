@@ -74,10 +74,13 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
 )
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
+    LOAD_UNITS_NOTE,
     LOADS_DESTINATION_SCHEMA,
+    UNIT_SYSTEM_DTYPE,
     LoadConformity,
     SiennaComponent,
     SiennaLoadCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_events import (
     build_derived,
@@ -90,10 +93,10 @@ from interop.plugins.shared.translation_runner import (
     SkipReport,
     SkipRule,
     Translation,
+    build_document_id_translation,
     default_translation,
     drop_skipped,
     report_not_mapped,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import SourceField
 
@@ -113,7 +116,7 @@ _HOURLY_MW = "hourly_mw"
 _LOAD_TIMESLICE = "load_timeslice"
 _NO_REACTIVE_POWER = 0.0
 
-_ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
+_ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability of a demand; every load is available"
 _REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive demand; reactive_power defaults to 0.0"
 _MAX_REACTIVE_POWER_NOTE = "OSeMOSYS states no reactive demand; max_reactive_power defaults to 0.0"
@@ -484,7 +487,7 @@ LOAD_ACTIVE_POWER = Translation(
 
 LOAD_TRANSLATIONS: list[Translation] = [
     LOAD_NAME_TRANSLATION,
-    row_position_id_translation(
+    build_document_id_translation(
         _load_field, dest_name_col=SiennaLoadCol.NAME, id_col=SiennaLoadCol.ID, note=_ID_NOTE
     ),
     default_translation(
@@ -493,6 +496,14 @@ LOAD_TRANSLATIONS: list[Translation] = [
         dest_col=SiennaLoadCol.AVAILABLE,
         value=True,
         note=_AVAILABLE_NOTE,
+    ),
+    default_translation(
+        _load_field,
+        name_col=LOAD_NAME,
+        dest_col=SiennaLoadCol.POWER_UNITS,
+        value=SiennaUnitSystem.NATURAL_UNITS,
+        note=LOAD_UNITS_NOTE,
+        dtype=UNIT_SYSTEM_DTYPE,
     ),
     LOAD_BUS_NAME,
     LOAD_SERIES,

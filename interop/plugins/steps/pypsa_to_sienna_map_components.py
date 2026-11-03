@@ -86,8 +86,8 @@ from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
     apply_translations,
-    enrich_first_id,
     drop_skipped,
+    enrich_first_id,
     filter_component,
     finalise,
 )

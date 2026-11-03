@@ -78,7 +78,7 @@ Feature: osemosys-csv-to-sienna turns the timeslices of one model year into repr
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the log contains "so each timeslice becomes one hour"
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with values 0.5 0.5 1 0.333333333333
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with values 100 100 200 66.6666666667
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1B1" having "hours" set to 1
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1B1" having "weight" close to 1095
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S2B2" having "weight" close to 3285
@@ -112,7 +112,7 @@ Feature: osemosys-csv-to-sienna turns the timeslices of one model year into repr
     Then the pipeline exit code is 0
     And the file "outputs/extensions.json" parses as JSON representative_period extension record for "S1/1" having "weight" close to 243.3090024
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "ATELEC" having "max_active_power" set to 200.0
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 0.375, 18 × 0.375, 6 × 1, 18 × 0.333333333333
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "ATELEC" attribute "max_active_power" with runs of values 6 × 75, 18 × 75, 6 × 200, 18 × 66.6666666667
     And the file "decisions.md" contains "the weight of the timeslice / the weight of its day"
 
   Scenario: A membership that names a daily time bracket outside its set gives one hour for each timeslice

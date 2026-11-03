@@ -53,17 +53,17 @@ from interop.plugins.shared.sienna_constants import (
     SiennaTimeSeriesAssociationCol,
     SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_time_series import (
-    UNSCALABLE_LOAD_SERIES_NOTE,
-    TimeSeriesInfo,
-    is_unscalable_load_series,
-    warn_unscalable_load_series,
-)
 from interop.plugins.shared.sienna_events import (
     build_defaulted,
     build_derived,
     build_sienna_field,
     build_sienna_source,
+)
+from interop.plugins.shared.sienna_time_series import (
+    UNSCALABLE_LOAD_SERIES_NOTE,
+    TimeSeriesInfo,
+    is_unscalable_load_series,
+    warn_unscalable_load_series,
 )
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
 from interop.plugins.shared.translation_runner import Translation, express_document_id
