@@ -21,7 +21,7 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "power_factor" set to 1.0
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "reactive_power_limits" set to null
     And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "operation_cost.cost_type" set to "RENEWABLE"
-    And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 0.0
+    And the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "solar_1" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 0.0
     # VALUE_DERIVED decisions
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.name` = solar_1 | `sienna.RenewableDispatch.solar_1.name` = solar_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
     And the file "decisions.md" contains "| `pypsa.Generator.solar_1.bus` = bus_1 | `sienna.RenewableDispatch.solar_1.bus_name` = bus_1 | direct |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -59,8 +59,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA Generator rows to Sienn
     And the network contains generator "wind_1" on "bus_1" carrier "onwind" p_nom 100.0 marginal_cost 5.0
     And the network is saved as "inputs/wind_cost.nc"
     When I run translate against "inputs/wind_cost.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
-    Then the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "wind_1" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 5.0
-    And the file "decisions.md" contains "| `pypsa.Generator.wind_1.marginal_cost` = 5.0 | `sienna.RenewableDispatch.wind_1.operation_cost.variable.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
+    Then the file "outputs/system.json" parses as JSON with component "RenewableDispatch" named "wind_1" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 5.0
+    And the file "decisions.md" contains "| `pypsa.Generator.wind_1.marginal_cost` = 5.0 | `sienna.RenewableDispatch.wind_1.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 5.0 | flat marginal_cost (\$/MWh) -> single-segment linear CostCurve |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
 
   Scenario Outline: <carrier> maps to RenewableDispatch with prime_mover_type <prime_mover>
     Given a PyPSA network

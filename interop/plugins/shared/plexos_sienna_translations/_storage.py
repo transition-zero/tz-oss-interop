@@ -61,6 +61,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
     SiennaStorageTech,
+    SiennaStructField,
     SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
@@ -253,7 +254,9 @@ def _row_for(
         }
         row[SiennaHydroGeneratorCol.OPERATION_COST] = {
             "cost_type": str(SiennaCostType.HYDRO_GEN),
-            "variable": variable_cost_curve_value(float(mapping.marginal_cost.value)),
+            SiennaStructField.VARIABLE_OPERATION_COST: variable_cost_curve_value(
+                float(mapping.marginal_cost.value)
+            ),
             "fixed": 0.0,
         }
         return row

@@ -323,7 +323,9 @@ def _derive_thermal(
         active_power_min=active_power_min,
         active_power_max=active_power_max,
         p_min_pu=per_unit_of(active_power_min, base_power),
-        marginal_cost=variable_proportional_term(operation_cost, SiennaStructField.VARIABLE),
+        marginal_cost=variable_proportional_term(
+            operation_cost, SiennaStructField.VARIABLE_OPERATION_COST
+        ),
         start_up_cost=float(operation_cost.get(SiennaStructField.START_UP, 0.0)),
         shut_down_cost=float(operation_cost.get(SiennaStructField.SHUT_DOWN, 0.0)),
         ramp_up_mw_per_min=ramp_up,
@@ -510,7 +512,7 @@ def _derive_renewable(
     marginal_cost = 0.0
     if has_cost:
         marginal_cost = variable_proportional_term(
-            row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE
+            row[SiennaGeneratorCol.OPERATION_COST], SiennaStructField.VARIABLE_OPERATION_COST
         )
     return _RenewableMapping(
         name=row[SiennaGeneratorCol.NAME],
