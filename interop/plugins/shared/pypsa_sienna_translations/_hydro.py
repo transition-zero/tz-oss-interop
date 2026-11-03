@@ -43,6 +43,10 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import (
+    GENERATOR_UNITS_NOTE,
+    build_power_units_translation,
+)
 from interop.plugins.shared.pypsa_sienna_user_mappings import CarrierMappings
 from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
@@ -57,6 +61,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaHydroGeneratorCol,
     SiennaPrimeMovers,
     SiennaSeriesName,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
@@ -319,10 +324,19 @@ HYDRO_REACTIVE_POWER = _default(
     note="PyPSA networks rarely model reactive power for storage units",
 )
 
-HYDRO_RATING = _direct(
-    source_col=PyPSAStorageUnitCol.P_MAX_PU,
+HYDRO_RATING = _rated(
     dest_col=H.RATING,
-    derivation="p_max_pu (per-unit nameplate rating; typically 1.0)",
+    expr=pl.col(EFFECTIVE_P_NOM) * pl.col(PyPSAStorageUnitCol.P_MAX_PU),
+    unit=UNIT_MW,
+    derivation="effective_p_nom * p_max_pu (nameplate rating, MVA)",
+)
+
+HYDRO_POWER_UNITS = build_power_units_translation(
+    _dest,
+    name_col=PyPSAStorageUnitCol.NAME,
+    dest_col=H.POWER_UNITS,
+    units=SiennaUnitSystem.NATURAL_UNITS,
+    note=GENERATOR_UNITS_NOTE,
 )
 
 HYDRO_APL = _rated(
@@ -379,6 +393,7 @@ HYDRO_DISPATCH_TRANSLATIONS: list[Translation] = [
     HYDRO_ACTIVE_POWER,
     HYDRO_REACTIVE_POWER,
     HYDRO_RATING,
+    HYDRO_POWER_UNITS,
     HYDRO_APL,
     HYDRO_COST,
 ]

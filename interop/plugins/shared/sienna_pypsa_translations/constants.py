@@ -18,6 +18,8 @@ from interop.plugins.shared.sienna_constants import (
     ThermalFuel,
 )
 
+SIENNA_TO_PYPSA = "sienna-to-pypsa"
+
 ASSUMED_HYDRO_EFFICIENCY_DISPATCH: float = 1.0
 """HydroDispatch carries no turbine efficiency (it is folded into hydro_budget and
 lost), so the reverse inflow reconstruction assumes unity. Recorded as lossy."""

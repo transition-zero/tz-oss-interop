@@ -110,6 +110,7 @@ _HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UN
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
 _RATING_NOTE = "the unit states no availability cap, so it runs at its whole rating"
+_NATURAL_UNITS_NOTE = "PLEXOS states turbine power in MW, so power_units is NATURAL_UNITS"
 _ACTIVE_POWER_NOTE = "PLEXOS states no starting output; active_power defaults to 0.0"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
 _LEVEL_LIMITS_NOTE = "the whole reservoir is usable, so the level limits span 0.0 to 1.0"
@@ -173,6 +174,7 @@ class _HydroMapping:
     active_power: Decision = maps_to(SiennaHydroGeneratorCol.ACTIVE_POWER, unit=UNIT_MW)
     reactive_power: Decision = maps_to(SiennaHydroGeneratorCol.REACTIVE_POWER, unit=UNIT_MW)
     rating: Decision = maps_to(SiennaHydroGeneratorCol.RATING)
+    power_units: Decision = maps_to(SiennaHydroGeneratorCol.POWER_UNITS)
     prime_mover_type: Decision = maps_to(SiennaHydroGeneratorCol.PRIME_MOVER_TYPE)
     active_power_limits: Decision = declares(_HYDRO_MIN_COLUMN)
     base_power: Decision = maps_to(SiennaHydroGeneratorCol.BASE_POWER, unit=UNIT_MVA)
@@ -319,7 +321,8 @@ def _derive_hydro(mapping: StorageUnitMapping, target: CarrierTarget) -> _HydroM
         bus_name=Decision.default(mapping.bus.value, _AVAILABLE_NOTE),
         active_power=Decision.default(NO_ACTIVE_POWER, _ACTIVE_POWER_NOTE),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
-        rating=Decision.default(FULL_RATING, _RATING_NOTE),
+        rating=Decision.default(FULL_RATING * rated_power, _RATING_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _NATURAL_UNITS_NOTE),
         prime_mover_type=_prime_mover(mapping, target),
         active_power_limits=replace(
             mapping.p_min_pu, value=float(mapping.p_min_pu.value) * rated_power

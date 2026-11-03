@@ -24,3 +24,17 @@ Feature: Sienna to PyPSA Pipeline translates Sienna PowerLoad to PyPSA Load
     When I run translate against "inputs/load_ts.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 load
     And the PyPSA network "outputs/network.nc" load "load_1" has a p_set time series 100.0 200.0
+
+  Scenario: a PowerLoad left out for its power basis leaves its series out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a PowerLoad "load_1" on bus "node_a" with max_active_power 200.0
+    And the PowerLoad "load_1" states power_units COMPONENT_BASE
+    And the PowerLoad "load_1" has a max_active_power series 0.5 1.0
+    And the system contains a PowerLoad "load_2" on bus "node_a" with max_active_power 100.0
+    And the PowerLoad "load_2" has a max_active_power series 0.4 0.8
+    And the system is saved as "inputs/load_component_base_series.json"
+    When I run translate against "inputs/load_component_base_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 load
+    And the PyPSA network "outputs/network.nc" load "load_2" has a p_set time series 40.0 80.0
+    And the log contains "1 loads state a power basis this reader does not convert, so each is left out"

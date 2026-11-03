@@ -275,6 +275,20 @@ def given_line_angle_limits(
     sienna_system_builder.set_line_angle_limits(name, min_rad, max_rad)
 
 
+@given(parsers.parse('the Line "{name}" has base_power {base_power:g}'))
+def given_line_base_power(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_power: float
+) -> None:
+    sienna_system_builder.set_line_base_power(name, base_power)
+
+
+@given(parsers.parse('the Line "{name}" states power_units {power_units}'))
+def given_line_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_line_power_units(name, power_units)
+
+
 @given(parsers.parse('the Line "{name}" is extendable in ext'))
 def given_line_extendable_in_ext(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_ext("Line", name, {"s_nom_extendable": True})
@@ -350,12 +364,26 @@ def given_power_load_max_active_power_series(
     sienna_system_builder.add_time_series("PowerLoad", name, "max_active_power", values)
 
 
+@given(parsers.parse('the PowerLoad "{name}" states power_units {power_units}'))
+def given_power_load_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_load_power_units(name, power_units)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
 ) -> None:
     values = [float(v) for v in series.split()]
     sienna_system_builder.add_time_series("HydroDispatch", name, "hydro_budget", values)
+
+
+@given(parsers.parse('the HydroDispatch "{name}" states power_units {power_units}'))
+def given_hydro_dispatch_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_generator_power_units(name, power_units)
 
 
 @given(
@@ -396,6 +424,13 @@ def given_thermal_ramp_limits(
     sienna_system_builder: SiennaSystemBuilder, name: str, up: float, down: float
 ) -> None:
     sienna_system_builder.set_thermal_ramp_limits(name, up, down)
+
+
+@given(parsers.parse('the ThermalStandard "{name}" states power_units {power_units}'))
+def given_thermal_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_generator_power_units(name, power_units)
 
 
 @given(parsers.parse('the ThermalStandard "{name}" has time_limits up {up:g} down {down:g}'))

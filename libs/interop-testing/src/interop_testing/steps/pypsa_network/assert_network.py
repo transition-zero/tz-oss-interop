@@ -200,6 +200,11 @@ def assert_line_count(path: str, count: int) -> None:
     assert_component_count(path, LINE, count)
 
 
+@then(parsers.parse('the PyPSA network "{path}" has no line "{name}"'))
+def assert_network_has_no_line(path: str, name: str) -> None:
+    WrittenComponent(path, LINE, name).assert_absent()
+
+
 @then(parsers.parse('the PyPSA network "{path}" line "{name}" has bus0 "{bus}"'))
 def assert_line_bus0(path: str, name: str, bus: str) -> None:
     WrittenComponent(path, LINE, name).assert_label("bus0", bus)

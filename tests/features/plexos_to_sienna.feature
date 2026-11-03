@@ -28,6 +28,8 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "GasPlant" having "active_power_limits.max" set to 500.0
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "North_Node" having "base_voltage" set to 1.0
+    And every "ThermalStandard" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
     And the written Sienna system has a valid SiennaSchemas 0.2 envelope
     And the file "outputs/network.nc" does not exist
     And the file "outputs/system.json" parses as JSON with component "ACBus" named "North_Node" having "id" set to 1

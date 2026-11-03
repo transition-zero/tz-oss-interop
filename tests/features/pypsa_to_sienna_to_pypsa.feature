@@ -19,6 +19,7 @@ Feature: PyPSA out and back through Sienna
     And the network contains bus "bus_2" carrier "AC" v_nom 380.0
     And the network contains load "load_1" on "bus_1" with static p_set 100.0 carrier "electricity" type "residential"
     And the network contains generator "coal_1" on "bus_1" carrier "coal" p_nom 500.0 committable True
+    And generator "coal_1" has p_max_pu 0.9
     And the network contains generator "built_ccgt" on "bus_1" carrier "CCGT" p_nom 100.0 p_nom_extendable True
     And generator "built_ccgt" has p_nom_opt 400
     And the network contains line "line_1" from "bus_1" to "bus_2" with resistance 2.0 ohms reactance 8.0 ohms rating 500.0 MVA length 120.0 km 2.0 parallel circuits
@@ -31,10 +32,15 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" load "load_1" has type "residential"
     And the PyPSA network "outputs/network.nc" generator "coal_1" has carrier "coal"
     And the PyPSA network "outputs/network.nc" generator "coal_1" is committable
+    And the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_nom" is 500.0
+    And the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_max_pu" is 0.9
     And the PyPSA network "outputs/network.nc" generator "built_ccgt" is extendable
     And the PyPSA network "outputs/network.nc" generator "built_ccgt" attribute "p_nom_min" is 400.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "length" is 120.0
     And the PyPSA network "outputs/network.nc" line "line_1" attribute "num_parallel" is 2.0
+    And the PyPSA network "outputs/network.nc" line "line_1" attribute "s_nom" is 500.0
+    And the PyPSA network "outputs/network.nc" line "line_1" attribute "r" is 2.0
+    And the PyPSA network "outputs/network.nc" line "line_1" attribute "x" is 8.0
     And the PyPSA network "outputs/network.nc" link "link_1" has carrier "DC"
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_max_pu" is 0.5
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.2
@@ -50,3 +56,26 @@ Feature: PyPSA out and back through Sienna
     When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom" is 1000.0
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is -1.5
+
+  Scenario: a renewable p_max_pu profile comes back unchanged when the static p_max_pu is below 1.0
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "solar_1" on "bus_1" carrier "solar" p_nom 100.0 p_max_pu 0.5 p_max_pu_series 0.4 0.8 0.6
+    And the network is saved as "inputs/round_trip.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "solar_1" has a p_max_pu time series 0.4 0.8 0.6
+
+  Scenario: a must-take renewable with a p_max_pu profile comes back with the p_min_pu it stated
+    Given a project-local pipeline "pypsa-round-trip" chaining pypsa-to-sienna then back
+    And a PyPSA network
+    And the network has 3 snapshots at 60 minute intervals
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0
+    And the network contains generator "rooftop_1" on "bus_1" carrier "solar-rooftop" p_nom 50.0 p_min_pu 0.1 p_max_pu_series 0.8 0.4 0.6
+    And the network is saved as "inputs/round_trip.nc"
+    And a user mappings file with all standard carriers
+    When I run translate against "inputs/round_trip.nc" pipeline "pypsa-round-trip" writing the network back to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "rooftop_1" attribute "p_min_pu" is 0.1
+    And the PyPSA network "outputs/network.nc" generator "rooftop_1" has a p_max_pu time series 0.8 0.4 0.6
