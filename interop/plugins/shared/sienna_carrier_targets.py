@@ -31,6 +31,7 @@ _TAG_BY_COMPONENT: dict[str, str] = {
     str(SiennaComponent.RENEWABLE_DISPATCH): PRIME_MOVER_TAG,
     str(SiennaComponent.RENEWABLE_NON_DISPATCH): PRIME_MOVER_TAG,
     str(SiennaComponent.HYDRO_DISPATCH): PRIME_MOVER_TAG,
+    str(SiennaComponent.HYDRO_TURBINE): PRIME_MOVER_TAG,
     str(SiennaComponent.ENERGY_RESERVOIR_STORAGE): PRIME_MOVER_TAG,
 }
 
@@ -72,6 +73,7 @@ class PrimeMoverTarget(CarrierTarget):
         SiennaComponent.RENEWABLE_DISPATCH,
         SiennaComponent.RENEWABLE_NON_DISPATCH,
         SiennaComponent.HYDRO_DISPATCH,
+        SiennaComponent.HYDRO_TURBINE,
         SiennaComponent.ENERGY_RESERVOIR_STORAGE,
     ]
     sienna_prime_mover_type: SiennaPrimeMovers

@@ -10,15 +10,18 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.sienna_constants import (
+    InfraStoreSeriesLabel,
     SiennaACBusCol,
     SiennaComponent,
     SiennaHydroGeneratorCol,
+    SiennaHydroReservoirCol,
+    SiennaLevelDataType,
     SiennaLoadCol,
     SiennaRenewableGeneratorCol,
     SiennaStructField,
@@ -108,6 +111,11 @@ def _hydro_capacity(component: Mapping[str, Any]) -> float:
     return float(component[SiennaHydroGeneratorCol.BASE_POWER])
 
 
+def _build_unit_capacity(component: Mapping[str, Any]) -> float:
+    """A reservoir inflow is stored as the model states it, not as a share of a capacity."""
+    return 1.0
+
+
 _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.THERMAL_STANDARD: _thermal_capacity,
     SiennaComponent.RENEWABLE_DISPATCH: _renewable_capacity,
@@ -115,7 +123,50 @@ _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.POWER_LOAD: _load_capacity,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD: _load_capacity,
     SiennaComponent.HYDRO_DISPATCH: _hydro_capacity,
+    SiennaComponent.HYDRO_TURBINE: _hydro_capacity,
+    SiennaComponent.HYDRO_RESERVOIR: _build_unit_capacity,
 }
+
+
+class SeriesLabels(NamedTuple):
+    """What a stored series states about its values: their unit and what they measure."""
+
+    units: str
+    quantity_kind: str
+
+
+POWER_LABELS = SeriesLabels(
+    InfraStoreSeriesLabel.UNITS_POWER, InfraStoreSeriesLabel.QUANTITY_ACTIVE_POWER
+)
+
+
+def _read_reservoir_labels(component: Mapping[str, Any]) -> SeriesLabels:
+    """An ENERGY reservoir refills in MW. Every other level type refills in m3/s."""
+    if component.get(SiennaHydroReservoirCol.LEVEL_DATA_TYPE) == SiennaLevelDataType.ENERGY:
+        return SeriesLabels(
+            InfraStoreSeriesLabel.UNITS_POWER, InfraStoreSeriesLabel.QUANTITY_INFLOW
+        )
+    return SeriesLabels(InfraStoreSeriesLabel.UNITS_FLOW, InfraStoreSeriesLabel.QUANTITY_INFLOW)
+
+
+_LABELS_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], SeriesLabels]] = {
+    SiennaComponent.HYDRO_RESERVOIR: _read_reservoir_labels,
+}
+
+
+def build_labels_by_owner(
+    owners: Iterable[tuple[str, int]],
+    components_by_type: Mapping[str, Iterable[Mapping[str, Any]]],
+) -> dict[tuple[str, int], SeriesLabels]:
+    """The labels of each owner's series, by ``(type, id)``, for the owners that are not power."""
+    wanted = set(owners)
+    return {
+        (owner_type, component[SiennaACBusCol.ID]): _LABELS_BY_OWNER_TYPE[owner_type](component)
+        for owner_type in {owner_type for owner_type, _ in wanted}
+        if owner_type in _LABELS_BY_OWNER_TYPE
+        for component in components_by_type.get(owner_type, [])
+        if (owner_type, component[SiennaACBusCol.ID]) in wanted
+    }
 
 
 def has_series_capacity(owner_type: str) -> bool:

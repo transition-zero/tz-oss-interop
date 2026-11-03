@@ -42,6 +42,10 @@ MODELS_COLLECTION = "Models"
 SCENARIOS_COLLECTION = "Scenarios"
 REGION_COLLECTION = "Region"
 DATA_FILE_CLASS = "Data File"
+WATERWAY_CLASS = "Waterway"
+WATERWAYS_COLLECTION = "Waterways"
+STORAGE_FROM_COLLECTION = "Storage From"
+STORAGE_TO_COLLECTION = "Storage To"
 DATA_FILES_COLLECTION = "Data Files"
 
 # The collection a Constraint reaches each class of member through, since a Constraint can

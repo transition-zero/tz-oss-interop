@@ -1,9 +1,10 @@
 """PLEXOS Battery, pumped storage and reservoir hydro -> Sienna storage.
 
 A Battery and a pumped-storage plant both become an EnergyReservoirStorage, and a
-reservoir-hydro turbine becomes a HydroDispatch. Which one a unit takes comes from the
-carrier the translator writes for it, which a ``storage_kind`` row in the user's mappings
-file may override.
+reservoir-hydro turbine becomes a HydroTurbine, whose head Storage becomes a HydroReservoir.
+Which one a unit takes comes from the carrier the translator writes for it, which a
+``storage_kind`` row in the user's mappings file may override. A row that names HydroDispatch
+writes the turbine with no reservoir.
 
 Sienna states the reservoir in hours of rated power and the starting level as a fraction of
 it, where PLEXOS states both in megawatt hours.
@@ -31,7 +32,10 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     record_expansion_notes,
     warn_about_dropped_builds,
 )
-from interop.plugins.shared.plexos_pypsa_translations._storage_shared import StorageUnitMapping
+from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
+    StorageUnitMapping,
+    build_lookups,
+)
 from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
@@ -46,6 +50,10 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
+)
+from interop.plugins.shared.plexos_sienna_translations._reservoirs import (
+    TranslatedReservoirs,
+    map_reservoirs,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.plexos_sienna_translations._storage_series import (
@@ -106,6 +114,9 @@ _STORAGE_COST_COLUMN = MappedColumns(
 )
 _HYDRO_MIN_COLUMN = MappedColumns((f"{SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS}.min",), UNIT_MW)
 _HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH)
+
+# The Sienna types a reservoir-hydro turbine can take. Only a HydroTurbine names a reservoir.
+_HYDRO_TURBINE_TYPES = frozenset({SiennaComponent.HYDRO_DISPATCH, SiennaComponent.HYDRO_TURBINE})
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
@@ -179,7 +190,7 @@ class _HydroMapping:
     active_power_limits: Decision = declares(_HYDRO_MIN_COLUMN)
     base_power: Decision = maps_to(SiennaHydroGeneratorCol.BASE_POWER, unit=UNIT_MVA)
     operation_cost: Decision = declares(_HYDRO_COST_COLUMN)
-    # A HydroDispatch states no reservoir, so both reach PyPSA through the sidecar.
+    # Both reach PyPSA through the sidecar, whichever hydro type the turbine takes.
     storage_capacity: Decision = declares(_CARRIED_HOURS_COLUMN)
     initial_level: Decision = declares(_CARRIED_LEVEL_COLUMN)
 
@@ -195,6 +206,7 @@ class TranslatedStorage:
     rows_by_type: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     extensions: list[StorageExtension] = field(default_factory=list)
     series: pl.LazyFrame | None = None
+    reservoirs: TranslatedReservoirs = field(default_factory=TranslatedReservoirs)
 
 
 def map_storage(
@@ -206,6 +218,7 @@ def map_storage(
     series = build_storage_series(state, derived.mappings)
     translated = TranslatedStorage(series=series.frame)
     first_id = build_first_free_id(state)
+    turbines: dict[str, int] = {}
     for mapping in derived.mappings:
         target = targets.find(str(mapping.carrier.value))
         if target is None:
@@ -223,10 +236,16 @@ def map_storage(
             _ID_NOTE,
         )
         rows.append(row)
+        if sienna_type == SiennaComponent.HYDRO_TURBINE:
+            turbines[mapping.name] = row[SiennaEnergyReservoirStorageCol.ID]
         translated.extensions.append(_extension_for(mapping, reporter, series))
         record_expansion_notes(reporter, mapping.name, mapping.expansion)
         _record_expansion(reporter, mapping)
     warn_about_dropped_builds(mapping.expansion for mapping in derived.mappings)
+    written = sum(len(table_rows) for table_rows in translated.rows_by_type.values())
+    translated.reservoirs = map_reservoirs(
+        state, recorder, build_lookups(state), turbines, first_id + written
+    )
     return translated
 
 
@@ -246,7 +265,7 @@ def _row_for(
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
     rated_power = float(mapping.p_nom.value)
-    if sienna_type == SiennaComponent.HYDRO_DISPATCH:
+    if sienna_type in _HYDRO_TURBINE_TYPES:
         hydro = _derive_hydro(mapping, target)
         reporter.record_mapping(mapping.name, hydro)
         row = destination_row(hydro, SiennaHydroGeneratorCol.NAME, mapping.name)

@@ -99,6 +99,36 @@ def given_storage_has_property(
     plexos_model_builder.add_storage_property(name, property_name, value)
 
 
+@given(
+    parsers.re(
+        r'the model contains waterway "(?P<name>[^"]+)" from storage "(?P<storage_from>[^"]+)"'
+        r' to storage "(?P<storage_to>[^"]+)"'
+    )
+)
+def given_model_contains_waterway_between(
+    plexos_model_builder: PlexosModelBuilder, name: str, storage_from: str, storage_to: str
+) -> None:
+    plexos_model_builder.add_waterway(name, storage_from, storage_to)
+
+
+@given(
+    parsers.re(
+        r'the model contains waterway "(?P<name>[^"]+)" from storage "(?P<storage_from>[^"]+)"$'
+    )
+)
+def given_model_contains_waterway_out(
+    plexos_model_builder: PlexosModelBuilder, name: str, storage_from: str
+) -> None:
+    plexos_model_builder.add_waterway(name, storage_from)
+
+
+@given(parsers.parse('waterway "{name}" has property "{property_name}" {value:g}'))
+def given_waterway_has_property(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, value: float
+) -> None:
+    plexos_model_builder.add_waterway_property(name, property_name, value)
+
+
 @given(parsers.parse('the model contains battery "{name}" on node "{node}"'))
 def given_model_contains_bare_battery(
     plexos_model_builder: PlexosModelBuilder, name: str, node: str

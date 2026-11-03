@@ -106,7 +106,7 @@ def pypsa_carrier(
             return _RENEWABLE_DISPATCH_CARRIER[prime_mover]
         case SiennaComponent.RENEWABLE_NON_DISPATCH:
             return _RENEWABLE_NON_DISPATCH_CARRIER[prime_mover]
-        case SiennaComponent.HYDRO_DISPATCH:
+        case SiennaComponent.HYDRO_DISPATCH | SiennaComponent.HYDRO_TURBINE:
             return PyPSACarrier.HYDRO
         case SiennaComponent.ENERGY_RESERVOIR_STORAGE:
             return _STORAGE_CARRIER.get(prime_mover, PyPSACarrier.PHS)
@@ -120,5 +120,6 @@ def pypsa_carrier(
             | SiennaComponent.LINE
             | SiennaComponent.MONITORED_LINE
             | SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+            | SiennaComponent.HYDRO_RESERVOIR
         ):
             raise KeyError(f"{sienna_type} is not a generation component with a PyPSA carrier")

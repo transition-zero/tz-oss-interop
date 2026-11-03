@@ -48,11 +48,13 @@ _GENERATOR_TYPES = (
     SiennaComponent.RENEWABLE_DISPATCH,
     SiennaComponent.RENEWABLE_NON_DISPATCH,
     SiennaComponent.HYDRO_DISPATCH,
+    SiennaComponent.HYDRO_TURBINE,
 )
 _STORAGE_TYPES = (SiennaComponent.ENERGY_RESERVOIR_STORAGE,)
 _LOAD_TYPES = (SiennaComponent.POWER_LOAD, SiennaComponent.INTERRUPTIBLE_POWER_LOAD)
 _LINE_TYPES = (SiennaComponent.LINE, SiennaComponent.MONITORED_LINE)
 _LINK_TYPES = (SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,)
+_RESERVOIR_TYPES = (SiennaComponent.HYDRO_RESERVOIR,)
 
 
 class StageSiennaSystemJsonParams(BaseModel):
@@ -168,6 +170,13 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
         for c in components.get(sienna_type, [])
     ]
     _stage_table(link_rows, None, SiennaTable.LINKS, staging_dir, frames)
+
+    reservoir_rows = [
+        _component_row(c, sienna_type)
+        for sienna_type in _RESERVOIR_TYPES
+        for c in components.get(sienna_type, [])
+    ]
+    _stage_table(reservoir_rows, None, SiennaTable.RESERVOIRS, staging_dir, frames)
     return frames
 
 

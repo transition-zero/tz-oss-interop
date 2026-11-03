@@ -97,6 +97,16 @@ class EmitSiennaSystemJson(Sink):
             SiennaHydroGeneratorCol.BUS,
             "hydro -> buses",
         )
+        turbine_components = EmitSiennaSystemJson._build_bus_attached_components(
+            state.destination_tables.get(SiennaComponent.HYDRO_TURBINE),
+            bus_ids,
+            SiennaHydroGeneratorCol.BUS_NAME,
+            SiennaHydroGeneratorCol.BUS,
+            "hydro turbines -> buses",
+        )
+        reservoir_components = EmitSiennaSystemJson._build_plain_components(
+            state.destination_tables.get(SiennaComponent.HYDRO_RESERVOIR)
+        )
         storage_components = EmitSiennaSystemJson._build_bus_attached_components(
             state.destination_tables.get(SiennaComponent.ENERGY_RESERVOIR_STORAGE),
             bus_ids,
@@ -134,6 +144,10 @@ class EmitSiennaSystemJson(Sink):
             components[SiennaComponent.RENEWABLE_NON_DISPATCH] = renewable_nd_components
         if hydro_components:
             components[SiennaComponent.HYDRO_DISPATCH] = hydro_components
+        if turbine_components:
+            components[SiennaComponent.HYDRO_TURBINE] = turbine_components
+        if reservoir_components:
+            components[SiennaComponent.HYDRO_RESERVOIR] = reservoir_components
         if storage_components:
             components[SiennaComponent.ENERGY_RESERVOIR_STORAGE] = storage_components
         if line_components:
@@ -202,6 +216,11 @@ class EmitSiennaSystemJson(Sink):
             component[ref_col] = bus_ids[row[name_col]]
             components.append(component)
         return components
+
+    @staticmethod
+    def _build_plain_components(df: pl.DataFrame | None) -> list[dict[str, Any]]:
+        """A component that names no bus, written as its table holds it."""
+        return [] if df is None else [dict(row) for row in df.iter_rows(named=True)]
 
     @staticmethod
     def _build_arc_components(

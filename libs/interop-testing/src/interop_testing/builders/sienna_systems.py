@@ -8,7 +8,7 @@ document primitives it writes through in ``interop_testing.builders.sienna_docum
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop_testing.builders.sienna_documents import (
     ac_bus,
@@ -20,6 +20,16 @@ from interop_testing.builders.sienna_documents import (
     thermal_generation_cost,
     write_sienna_system,
 )
+
+
+class HydroLimits(NamedTuple):
+    """The ratings and the cost a hydro generator states."""
+
+    base_power: float
+    rating: float
+    active_power_min: float
+    active_power_max: float
+    marginal_cost: float
 
 
 class SiennaSystemBuilder:
@@ -178,10 +188,21 @@ class SiennaSystemBuilder:
         active_power_max: float,
         marginal_cost: float,
     ) -> None:
-        self._check_not_saved(f"HydroDispatch {name!r}")
+        limits = HydroLimits(base_power, rating, active_power_min, active_power_max, marginal_cost)
+        self._add_hydro_generator("HydroDispatch", name, bus, limits)
+
+    def add_hydro_turbine(self, name: str, bus: str, limits: HydroLimits) -> None:
+        """A HydroTurbine stating only the fields a HydroDispatch also states."""
+        self._add_hydro_generator("HydroTurbine", name, bus, limits)
+
+    def _add_hydro_generator(
+        self, sienna_type: str, name: str, bus: str, limits: HydroLimits
+    ) -> None:
+        self._check_not_saved(f"{sienna_type} {name!r}")
+        base_power, rating, active_power_min, active_power_max, marginal_cost = limits
         self._generators.append(
             {
-                "sienna_type": "HydroDispatch",
+                "sienna_type": sienna_type,
                 "id": self._next_id(),
                 "name": name,
                 "available": True,

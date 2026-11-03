@@ -57,9 +57,13 @@ from interop_testing.builders.plexos_vocabulary import (
     RESISTANCE_PROPERTY,
     START_FUELS_COLLECTION,
     STORAGE_CLASS,
+    STORAGE_FROM_COLLECTION,
+    STORAGE_TO_COLLECTION,
     STORAGES_COLLECTION,
     TAIL_STORAGE_COLLECTION,
     VALUE_OF_RESERVE_SHORTAGE_PROPERTY,
+    WATERWAY_CLASS,
+    WATERWAYS_COLLECTION,
 )
 
 
@@ -250,6 +254,22 @@ class ResourceBuilder(PlexosTables):
     def add_storage_property(self, name: str, property_name: str, value: float) -> None:
         self._check_not_saved(f"property {property_name!r} of storage {name!r}")
         self._add_system_property(STORAGE_CLASS, name, STORAGES_COLLECTION, property_name, value)
+
+    def add_waterway(self, name: str, storage_from: str, storage_to: str | None = None) -> None:
+        """A Waterway that carries water out of one Storage and, where named, into another."""
+        self._check_not_saved(f"waterway {name!r}")
+        self._add_system_object(WATERWAY_CLASS, name, WATERWAYS_COLLECTION)
+        self._membership_id(
+            WATERWAY_CLASS, name, STORAGE_CLASS, storage_from, STORAGE_FROM_COLLECTION
+        )
+        if storage_to is not None:
+            self._membership_id(
+                WATERWAY_CLASS, name, STORAGE_CLASS, storage_to, STORAGE_TO_COLLECTION
+            )
+
+    def add_waterway_property(self, name: str, property_name: str, value: float) -> None:
+        self._check_not_saved(f"property {property_name!r} of waterway {name!r}")
+        self._add_system_property(WATERWAY_CLASS, name, WATERWAYS_COLLECTION, property_name, value)
 
     def add_pumped_storage(
         self,

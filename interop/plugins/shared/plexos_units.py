@@ -13,6 +13,8 @@ import re
 from typing import Any, NamedTuple
 
 from interop.plugins.shared.constants import (
+    UNIT_CUBIC_METRES,
+    UNIT_CUBIC_METRES_PER_SECOND,
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_GJ,
     UNIT_DOLLARS_PER_MW,
@@ -51,6 +53,7 @@ _GJ_PER_MWH_THERMAL = 3.6
 _MINUTES_PER_HOUR = 60.0
 _HOURS_PER_DAY = 24.0
 _SECONDS_PER_HOUR = 3600.0
+_SECONDS_PER_DAY = _SECONDS_PER_HOUR * _HOURS_PER_DAY
 _THOUSAND = 1000.0
 _MILLION = 1_000_000.0
 _KM_PER_MILE = 1.609344
@@ -165,6 +168,9 @@ _FACTOR_TO_CANONICAL: dict[str, dict[str, float]] = {
         "day": _HOURS_PER_DAY,
     },
     UNIT_MWH: {UNIT_MWH: 1.0, "kWh": 1.0 / _THOUSAND, "GWh": _THOUSAND},
+    # A CMD is one cubic metre per second held for one day.
+    UNIT_CUBIC_METRES: {UNIT_CUBIC_METRES: 1.0, "CMD": _SECONDS_PER_DAY},
+    UNIT_CUBIC_METRES_PER_SECOND: {UNIT_CUBIC_METRES_PER_SECOND: 1.0, "cumec": 1.0},
     UNIT_KV: {UNIT_KV: 1.0, "V": 1.0 / _THOUSAND, "MV": _THOUSAND},
     UNIT_KM: {UNIT_KM: 1.0, "m": 1.0 / _THOUSAND, "mile": _KM_PER_MILE},
     UNIT_DOLLARS: {UNIT_DOLLARS: 1.0, "$000": _THOUSAND},

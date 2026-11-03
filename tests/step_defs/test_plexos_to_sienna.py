@@ -6,6 +6,7 @@ from pytest_bdd import parsers, scenarios, when
 from tests.step_defs.conftest import PLEXOS_MAPPINGS_PATH, invoke_translate
 
 scenarios("../features/plexos_to_sienna.feature")
+scenarios("../features/plexos_to_sienna_hydro.feature")
 
 
 @when(

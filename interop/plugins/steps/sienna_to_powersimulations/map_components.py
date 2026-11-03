@@ -46,6 +46,10 @@ from interop.plugins.shared.sienna_hvdc_flow import (
     build_hvdc_flow_bounds,
 )
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
+from interop.plugins.steps.sienna_to_powersimulations._hydro import (
+    map_turbine_to_dispatch,
+    report_unsolved_reservoirs,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -181,6 +185,7 @@ class SiennaToPowerSimulationsMapComponents(TranslationStep):
         _map_bus_backed_component(state, registry, self._recorder, SiennaTable.LOADS)
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINES)
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINKS)
+        report_unsolved_reservoirs(state, self._recorder)
 
         return state
 
@@ -707,6 +712,9 @@ def _map_bus_backed_component(
         }
         out[PowerSimulationsCol.UUID] = comp_uuid
         out[PowerSimulationsCol.BUS] = bus_uuid
+        if sienna_type == SiennaComponent.HYDRO_TURBINE:
+            map_turbine_to_dispatch(out, comp_name, recorder)
+            sienna_type = SiennaComponent.HYDRO_DISPATCH
 
         fuel: str | None = None
         if sienna_type == SiennaComponent.THERMAL_STANDARD:
