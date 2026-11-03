@@ -24,6 +24,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     set_line_values_persisted,
 )
 from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaSeriesName
+from interop.plugins.shared.translation_runner import build_first_free_id, enrich_first_id
 
 
 class OsemosysToSiennaMapTransport(OperationsMapping):
@@ -40,7 +41,8 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
         source = build_transport_source(state, operations, self._recorder)
         if source.table.height == 0:
             return
-        lines = map_component_table(source.table, TRANSPORT_MAPPING, self._recorder)
+        table = enrich_first_id(source.table, state)
+        lines = map_component_table(table, TRANSPORT_MAPPING, self._recorder)
         state.destination_tables[TRANSPORT_MAPPING.sienna_type] = lines
         append_extensions(
             state.destination_extensions,
@@ -56,9 +58,9 @@ class OsemosysToSiennaMapTransport(OperationsMapping):
             self._map_imports(state, source.imports)
 
     def _map_imports(self, state: State, imports: GeneratorSources) -> None:
-        """Add the import generators after the ThermalStandard rows of the supply technologies."""
+        """Add the import generators after the ThermalStandard rows, with ids after every id."""
         thermal = state.destination_tables.get(SiennaComponent.THERMAL_STANDARD)
-        start = 1 if thermal is None else thermal.height + 1
+        start = build_first_free_id(state)
         generators = map_component_table(imports.table, build_import_mapping(start), self._recorder)
         state.destination_tables[SiennaComponent.THERMAL_STANDARD] = (
             generators if thermal is None else pl.concat([thermal, generators])

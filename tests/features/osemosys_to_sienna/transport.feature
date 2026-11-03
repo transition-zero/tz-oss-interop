@@ -133,12 +133,12 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with 3 components of type "TwoTerminalGenericHVDCLine"
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": -1350.0, "max": 2250.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": -1800.0, "max": 1350.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.4
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "arc" set to 1
-      And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1
-      And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 3
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "operational_flow_limit" set to {"from_to_min": 0.0, "from_to_max": 2250.0, "to_from_min": 0.0, "to_from_max": 1350.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "rating" set to 2250.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.value_curve.function_data.proportional_term" set to 0.4
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "arc" set to 11
+      And the file "outputs/system.json" parses as JSON with "components.Arc.0.from_id" set to 1
+      And the file "outputs/system.json" parses as JSON with "components.Arc.0.to_id" set to 3
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "marginal_cost" set to 0.8
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "p_max_pu" set to 0.9
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATDELINK" having "operating_modes" set to [{"mode": "2", "variable_cost": 1.0, "input_ratios": {"DEELEC": 1.0}, "output_ratios": {"ATELEC": 0.75}}]
@@ -152,7 +152,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       1 / 1 = 1 $ in the flow back. The line applies the loss and the cost of mode 1 both ways.
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.function_data.proportional_term" set to 0.4
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "loss.value_curve.function_data.proportional_term" set to 0.4
       And the log contains "1 loss(es) of a flow back differ from the loss at the operations mode, which the line applies both ways. Technologies: R1/ATDELINK"
       And the file "decisions.md" contains "| `osemosys.output_activity_ratio.R1/ATDELINK.electricity at the flow back` = 0.75 |  |  | the flow back at the operating mode 2 takes in 1.0 and puts out 0.75 of electricity, so it loses 0.25 of what it sends; the line loses 0.4 both ways, and the operating_modes of its record keep the ratios |"
       And the log contains "1 cost(s) of a flow back differ from the cost of each MWh that the line sends at the operations mode, which is the one cost of the line. Technologies: R1/ATDELINK"
@@ -181,7 +181,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATDEODD    | S1B1      | 2030 | 0.5   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEODD" having "active_power_limits_from" set to {"min": 0.0, "max": 1000.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEODD" having "operational_flow_limit" set to {"from_to_min": 0.0, "from_to_max": 1000.0, "to_from_min": 0.0, "to_from_max": 0.0}
       And the log contains "1 operating mode(s) of a line technology are neither the flow back nor an import, and extensions.json holds their values. Technologies: R1/ATDEODD"
       And the file "decisions.md" contains "| `osemosys.technology.R1/ATDEODD.operating_mode` = 2 |  |  | the line does not run the operating mode 2, which is neither the flow back nor an import; the operating_modes of its record keep its values |"
       And the file "decisions.md" contains "`osemosys.output_activity_ratio.R1/ATDEODD.operating_mode 2, DEELEC` = 0.5 | `sienna.TwoTerminalGenericHVDCLine.ATDEODD.extensions.operating_modes.2.output_ratios.DEELEC` = 0.5"
@@ -217,8 +217,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATDELINK   | 4380  |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_from" set to {"min": -675.0, "max": 1125.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "active_power_limits_to" set to {"min": -900.0, "max": 675.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "operational_flow_limit" set to {"from_to_min": 0.0, "from_to_max": 1125.0, "to_from_min": 0.0, "to_from_max": 675.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDELINK" having "rating" set to 1125.0
       And the file "decisions.md" contains "`osemosys.capacity_to_activity_unit.R1/ATDELINK` = 4380.0"
 
     Scenario: A trade route of electricity becomes a conversion record between two region and fuel pairs
@@ -328,16 +328,16 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATSTEPDOWN | 2030 | 0.9   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from.max" close to 3535.3535354
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to.max" close to 3500.0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "operational_flow_limit.from_to_max" close to 3535.3535354
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "rating" close to 3535.3535354
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.value_curve.function_data.proportional_term" close to 0.01
       And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATSTEPDOWN"
       And the file "decisions.md" contains "the model builds the technology at no cost and no limit binds it, so the capacity is the electricity that the whole fleet of the year can put out"
       And the file "decisions.md" contains "`osemosys.residual_capacity.the whole fleet.Σ residual_capacity × capacity_to_activity_unit / 8760 h, in MW, × the largest electricity output_activity_ratio of each technology` = 3500.0 MW"
-      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to` ="
+      And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.operational_flow_limit` ="
       And the file "decisions.md" does not contain "`osemosys.residual_capacity.R1/ATSTEPDOWN` = 0.0"
-      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_from`"
-      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.active_power_limits_to`"
+      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.operational_flow_limit`"
+      And the file "decisions.md" does not contain "|  | `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.rating`"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "is_conversion" set to true
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "has_stand_in_limit" set to true
       And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.ATSTEPDOWN.extensions.has_stand_in_limit` = True | the model builds the technology at no cost and no limit binds it, so the limits of the line are what the whole fleet of the year can put out, and not a capacity"
@@ -351,8 +351,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATSTEPDOWN | 2030 | 0.5   |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from.max" close to 500.0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to.max" close to 495.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "operational_flow_limit.from_to_max" close to 500.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "rating" close to 500.0
       And the file "decisions.md" does not contain "the whole fleet of the year can put out"
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" without field "has_stand_in_limit"
 
@@ -377,7 +377,7 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATPLANT        | ATELEC   | 1                 | 2030 | 1     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to.max" close to 4500.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "operational_flow_limit.from_to_max" close to 4545.4545455
 
     Scenario: A conversion line reaches a PyPSA network as a link between the two buses of its location
       Given a pipeline "osemosys-to-pypsa" that translates the otoole model to Sienna and then to PyPSA in the year "2030"
@@ -412,9 +412,9 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
         | R1     | ATSTEPDOWN | 2030 | 2     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_from" set to {"min": 0.0, "max": 3000.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "active_power_limits_to" set to {"min": 0.0, "max": 2970.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.function_data.proportional_term" close to 0.01
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "operational_flow_limit" set to {"from_to_min": 0.0, "from_to_max": 3000.0, "to_from_min": 0.0, "to_from_max": 0.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "rating" set to 3000.0
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATSTEPDOWN" having "loss.value_curve.function_data.proportional_term" close to 0.01
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "marginal_cost" set to 0.5
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "lifetime_years" set to 40.0
       And the file "outputs/extensions.json" parses as JSON controllable_line extension record for "ATSTEPDOWN" having "e_sum_max" set to {"2030": 2000.0}
@@ -492,20 +492,20 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
       And the file "outputs/system.json" parses as JSON with 2 components of type "ThermalStandard"
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "id" set to 2
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "id" set to 8
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "bus" set to 1
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 1600.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "active_power_limits" set to {"min": 0.0, "max": 1440.0}
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "prime_mover_type" set to "OT"
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "fuel_type" set to "OTHER"
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "operation_cost.variable.value_curve.function_data.proportional_term" set to 110.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "fuel" set to "OTHER"
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 110.0
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "carrier" set to "import"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "source_technology" set to "R1/ATDEBUY"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "source_mode" set to "2"
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATDEBUY/import/2" having "emission_rates_t_per_mwh" set to {"CO2": 0.5}
       And the file "decisions.md" contains "an import mode brings electricity from outside the model and states no plant, so it becomes a ThermalStandard"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.prime_mover_type` = OT"
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.fuel_type` = OTHER"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.fuel` = OTHER"
       And the file "decisions.md" contains "`sienna.ThermalStandard.ATDEBUY/import/2.operation_cost emission penalty of CO2` = 10.0"
       And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATDEBUY.operating_mode 2` = 80000.0"
 
@@ -514,8 +514,8 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       most 2000 × 0.9 × 0.9 = 1620 MW at AT.
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_from" set to {"min": -1620.0, "max": 1800.0}
-      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "active_power_limits_to" set to {"min": -1800.0, "max": 1710.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "operational_flow_limit" set to {"from_to_min": 0.0, "from_to_max": 1800.0, "to_from_min": 0.0, "to_from_max": 1620.0}
+      And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "ATDEBUY" having "rating" set to 1800.0
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATDEBUY/import/2" having "base_power" set to 1600.0
 
     Scenario: An import rates on the capacity_to_activity_unit of its line

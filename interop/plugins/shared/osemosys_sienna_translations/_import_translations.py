@@ -258,7 +258,7 @@ def _build_fixed_choices() -> list[Translation]:
             dtype=PRIME_MOVERS_DTYPE,
         ),
         _default(
-            dest_col=_Col.FUEL_TYPE,
+            dest_col=_Col.FUEL,
             value=SiennaThermalFuels.OTHER.value,
             note=_FUEL_TYPE_NOTE,
             dtype=THERMAL_FUELS_DTYPE,

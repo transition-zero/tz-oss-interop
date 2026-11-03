@@ -10,6 +10,7 @@ import polars as pl
 from interop.core.extensions import ControllableLineExtension, ExtensionKind, companion_filename
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MWH,
+    UNIT_MVA,
     UNIT_MW,
     require_extension_attribute,
 )
@@ -62,12 +63,10 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     MARGINAL_COST_MWH,
     OUTPUT_RATIO,
     RATING,
-    RECEIVED_MW,
     REVERSE_INPUT_RATIO,
     REVERSE_MODE,
     REVERSE_OUTPUT_RATIO,
     REVERSE_RECEIVED_MW,
-    REVERSE_SENT_MW,
     SENT_MW,
     TO_BUS,
     TO_FUEL,
@@ -76,17 +75,23 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
 from interop.plugins.shared.pypsa_constants import PyPSALinkCol
 from interop.plugins.shared.sienna_constants import (
     HVDC_DESTINATION_SCHEMA,
-    IO_CURVE_DTYPE,
+    LINK_UNITS_NOTE,
+    LOSS_CURVE_DTYPE,
     MIN_MAX_DTYPE,
+    OPERATIONAL_FLOW_LIMIT_DTYPE,
+    SYSTEM_BASE_MVA,
+    UNIT_SYSTEM_DTYPE,
     MinMaxField,
+    OperationalFlowLimitField,
     SiennaComponent,
     SiennaLinkCol,
+    SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_cost_curves import linear_value_curve
+from interop.plugins.shared.sienna_cost_curves import loss_curve
 from interop.plugins.shared.translation_runner import (
     Translation,
+    build_document_id_translation,
     default_translation,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
@@ -100,7 +105,10 @@ _NO_LIMITS = {MinMaxField.MIN: _NO_POWER, MinMaxField.MAX: _NO_POWER}
 _OPERATIONS_MODE_ATTRIBUTE = "electricity at the operations mode"
 _MARGINAL_COST_ATTRIBUTE = _require_attribute(PyPSALinkCol.MARGINAL_COST)
 
-_ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
+_ID_NOTE = (
+    "assigned by row position in the table of the Sienna type, after the ids of earlier components"
+)
+_BASE_POWER_NOTE = "OSeMOSYS states no network power base; the system base of 100 MVA applies"
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every line is available"
 _FLOW_NOTE = "OSeMOSYS states no initial flow; active_power_flow defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "OSeMOSYS states no reactive power; both ends default to zero"
@@ -136,15 +144,13 @@ _ENDS_DERIVATION = (
     "<region>/<fuel> -> bus0; the bus of the electricity fuel that it puts out -> bus1"
 )
 # `{capacity}` says where the rating of the line comes from.
-_FROM_DERIVATION = (
-    "{capacity}; min = - the capacity × the electricity output_activity_ratio of the flow back, "
-    "or 0 when no mode flows back; max = the capacity × the electricity input_activity_ratio at "
-    "the operations mode"
+_FLOW_LIMIT_DERIVATION = (
+    "{capacity}; from_to_max = the capacity × the electricity input_activity_ratio at the "
+    "operations mode; to_from_max = the capacity × the electricity output_activity_ratio of the "
+    "flow back, or 0 when no mode flows back; both minimums are 0"
 )
-_TO_DERIVATION = (
-    "{capacity}; min = - the capacity × the electricity input_activity_ratio of the flow back, "
-    "or 0 when no mode flows back; max = the capacity × the electricity output_activity_ratio "
-    "at the operations mode"
+_RATING_DERIVATION = (
+    "{capacity}; rating = the larger of from_to_max and to_from_max of the operational flow limit"
 )
 _LOSS_DERIVATION = (
     "a linear curve with the proportional term 1 - the electricity output_activity_ratio / the "
@@ -223,12 +229,14 @@ def _build_limits(dest_col: str, expr: pl.Expr, derivation: str) -> Translation:
     )
 
 
-def _express_limits(back: str, forward: str) -> pl.Expr:
-    """A flow back is negative, so its limit is the minimum of the line."""
+def _express_flow_limit() -> pl.Expr:
+    """The flow at the from bus, each way; the loss of the line gives the flow at the to bus."""
     return pl.struct(
-        (pl.lit(_NO_POWER) - pl.col(back)).alias(MinMaxField.MIN),
-        pl.col(forward).alias(MinMaxField.MAX),
-    ).cast(MIN_MAX_DTYPE)
+        pl.lit(_NO_POWER).alias(OperationalFlowLimitField.FROM_TO_MIN),
+        pl.col(SENT_MW).alias(OperationalFlowLimitField.FROM_TO_MAX),
+        pl.lit(_NO_POWER).alias(OperationalFlowLimitField.TO_FROM_MIN),
+        pl.col(REVERSE_RECEIVED_MW).alias(OperationalFlowLimitField.TO_FROM_MAX),
+    ).cast(OPERATIONAL_FLOW_LIMIT_DTYPE)
 
 
 def _build_ends() -> Translation:
@@ -371,8 +379,20 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
         lambda old: [_build_source(TECHNOLOGY, old, TECHNOLOGY, old[TECHNOLOGY])],
         _NAME_DERIVATION,
     ),
-    row_position_id_translation(
+    build_document_id_translation(
         _dest, dest_name_col=SiennaLinkCol.NAME, id_col=SiennaLinkCol.ID, note=_ID_NOTE
+    ),
+    _default(
+        dest_col=SiennaLinkCol.POWER_UNITS,
+        value=SiennaUnitSystem.NATURAL_UNITS,
+        note=LINK_UNITS_NOTE,
+        dtype=UNIT_SYSTEM_DTYPE,
+    ),
+    _default(
+        dest_col=SiennaLinkCol.BASE_POWER,
+        value=SYSTEM_BASE_MVA,
+        note=_BASE_POWER_NOTE,
+        unit=UNIT_MVA,
     ),
     _default(dest_col=SiennaLinkCol.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
     _default(
@@ -380,14 +400,14 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
     ),
     _build_ends(),
     _build_limits(
-        SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
-        _express_limits(REVERSE_RECEIVED_MW, SENT_MW),
-        _FROM_DERIVATION,
+        SiennaLinkCol.RATING,
+        pl.max_horizontal(pl.col(SENT_MW), pl.col(REVERSE_RECEIVED_MW)),
+        _RATING_DERIVATION,
     ),
     _build_limits(
-        SiennaLinkCol.ACTIVE_POWER_LIMITS_TO,
-        _express_limits(REVERSE_SENT_MW, RECEIVED_MW),
-        _TO_DERIVATION,
+        SiennaLinkCol.OPERATIONAL_FLOW_LIMIT,
+        _express_flow_limit(),
+        _FLOW_LIMIT_DERIVATION,
     ),
     _default(
         dest_col=SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM,
@@ -403,9 +423,7 @@ TRANSPORT_TRANSLATIONS: list[Translation] = [
     ),
     _build_value(
         SiennaLinkCol.LOSS,
-        linear_value_curve(pl.col(LOSS), input_at_zero=pl.lit(None, dtype=pl.Float64)).cast(
-            IO_CURVE_DTYPE
-        ),
+        loss_curve(pl.col(LOSS)).cast(LOSS_CURVE_DTYPE),
         _build_ratio_sources,
         _LOSS_DERIVATION,
     ),
