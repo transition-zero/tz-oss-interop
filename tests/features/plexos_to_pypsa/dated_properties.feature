@@ -304,3 +304,28 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 75
     And the log contains "Gen_MaxCapacity.csv has no row for 1 object(s) that read it, so their values are left out: Park"
     And the log does not contain "unsupported layout: Gen_MaxCapacity.csv"
+
+  Scenario: an outage rating beside a schedule of units out derates only the units that are out
+    Units Out says when a unit is out. The capacity during the outage then belongs to the
+    units out, so it does not also derate the unit while it runs.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Plant" with "node=Grid_Node, fuel=Coal, Max Capacity=100, Units=1, Heat Rate=9, Min Stable Level=25"
+    And the model contains data file "OutageRatings" at "Gen_OutageRating.csv" with rows:
+      | NAME  | YEAR | MONTH | DAY | VALUE |
+      | Plant | 2026 | 1     | 1   | 100   |
+      | Plant | 2026 | 1     | 2   | 0     |
+      | Plant | 2026 | 1     | 3   | 100   |
+    And the model contains data file "UnitsOut" at "Gen_UnitsOut.csv" with rows:
+      | NAME  | YEAR | MONTH | DAY | VALUE |
+      | Plant | 2026 | 1     | 1   | 0     |
+      | Plant | 2026 | 1     | 2   | 1     |
+      | Plant | 2026 | 1     | 3   | 0     |
+    And generator "Plant" has property "Outage Rating" from data file "OutageRatings"
+    And generator "Plant" has property "Units Out" from data file "UnitsOut"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 3 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Plant" has a p_max_pu time series 1.0 0.0 1.0

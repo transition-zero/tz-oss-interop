@@ -468,7 +468,13 @@ def profile_scale(profile: str, p_nom: float) -> float:
 
 
 def _outage_derate(source: SourceGenerator) -> float:
-    """PLEXOS states Outage Factor as a percentage of the capacity, as it does Rating Factor."""
+    """PLEXOS states Outage Factor as a percentage of the capacity, as it does Rating Factor.
+
+    A stated Units Out says when units are out, so the outage capacity belongs to those units
+    and does not also derate the units that run.
+    """
+    if _optional(source.props, PlexosProperty.UNITS_OUT) is not None:
+        return FULL_AVAILABILITY
     factor = _optional(source.props, PlexosProperty.OUTAGE_FACTOR)
     if factor is not None:
         return factor / PERCENT

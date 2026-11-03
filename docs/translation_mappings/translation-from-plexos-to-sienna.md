@@ -500,6 +500,10 @@ value that changes during that year becomes a time series over the snapshots.
 | Neither property, but the model has outage data | None. This is a full outage. |
 | The model has no outage data | The full capacity |
 
+A generator that states `Units Out` takes no derate from these properties. `Units Out`
+says when its units are out, so the capacity during an outage belongs to those units and
+not to the units that run.
+
 A `Rating` profile and an outage derate **multiply**. A static `Rating` above `Max Capacity ×
 Units` is the capacity of the generator, so `base_power` takes the `Rating`.
 
