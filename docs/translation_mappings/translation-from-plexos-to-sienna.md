@@ -398,9 +398,12 @@ A `HydroTurbine` and a `HydroDispatch` take the same fields from your model.
 
 ### The reservoir
 
-The head `Storage` of each `HydroTurbine` becomes one `HydroReservoir`, named for the
-`Storage`. The unit that the `Storage` states its volumes in sets `level_data_type`, and so
-the unit of every level and of the inflow.
+Each `Storage` of a cascade becomes one `HydroReservoir`, named for the `Storage`. A
+cascade holds the head and the tail `Storage` of each `HydroTurbine`, and each `Storage`
+that a `Waterway` joins to one of them. A reservoir names the turbines whose head it is in
+`downstream_turbines`, and the turbines whose tail it is in `upstream_turbines`. The unit
+that the `Storage` states its volumes in sets `level_data_type`, and so the unit of every
+level and of the inflow.
 
 | Your volumes are stated in | `level_data_type` | Levels | Inflow |
 | --- | --- | --- | --- |

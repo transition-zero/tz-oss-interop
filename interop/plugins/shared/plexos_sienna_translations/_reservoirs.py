@@ -94,6 +94,7 @@ _HEAD_NOTE = (
 _COST_NOTE = "the Storage states no level or spillage cost that Sienna reads"
 _DOWNSTREAM_DERIVATION = "the HydroTurbines that name this Storage as their Head Storage"
 _NO_UPSTREAM_TURBINE_NOTE = "no HydroTurbine names this Storage as its Tail Storage"
+_UPSTREAM_TURBINE_DERIVATION = "the HydroTurbines that name this Storage as their Tail Storage"
 _UPSTREAM_DERIVATION = "the Storage From of each Waterway whose Storage To is this Storage"
 _NO_UPSTREAM_NOTE = "no Waterway carries water into this Storage from a reservoir the system holds"
 _NO_INFLOW_NOTE = "the Storage states no Natural Inflow, so the reservoir does not refill"
@@ -196,6 +197,26 @@ class _Cascade:
 
     turbines_by_storage: dict[str, list[tuple[str, int]]]
     waterways: dict[str, tuple[str | None, str | None]]
+    # The turbines that release their water into each Storage, as its tail.
+    tail_turbines_by_storage: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
+
+    def list_storages(self) -> list[str]:
+        """Every Storage of the cascade: each turbine's head and tail, and each Storage a
+        Waterway joins to one of them, step by step.
+        """
+        found = set(self.turbines_by_storage) | set(self.tail_turbines_by_storage)
+        is_growing = True
+        while is_growing:
+            joined = {
+                end
+                for leaves, reaches in self.waterways.values()
+                if leaves in found or reaches in found
+                for end in (leaves, reaches)
+                if end is not None
+            }
+            is_growing = not joined <= found
+            found |= joined
+        return sorted(found)
 
 
 def map_reservoirs(
@@ -208,7 +229,7 @@ def map_reservoirs(
     """One HydroReservoir for each Storage that a written HydroTurbine draws on."""
     reporter = SiennaComponentReporter(recorder, SiennaComponent.HYDRO_RESERVOIR)
     cascade = _read_cascade(state, lookups, turbines)
-    readings = _read_storages(state, sorted(cascade.turbines_by_storage))
+    readings = _read_storages(state, cascade.list_storages())
     reservoirs = _choose_reservoirs(readings, reporter, first_id)
     rows = [_build_row(one, reservoirs, cascade, reporter) for one in reservoirs.values()]
     _record_waterways(state, cascade, reservoirs, reporter)
@@ -219,12 +240,23 @@ def map_reservoirs(
 
 
 def _read_cascade(state: State, lookups: StorageLookups, turbines: dict[str, int]) -> _Cascade:
+    return _Cascade(
+        _group_turbines(turbines, lookups.head_by_generator),
+        _read_waterways(state),
+        _group_turbines(turbines, lookups.tail_by_generator),
+    )
+
+
+def _group_turbines(
+    turbines: dict[str, int], storage_by_turbine: dict[str, str]
+) -> dict[str, list[tuple[str, int]]]:
+    """The turbines that name each Storage in one collection, with their ids."""
     by_storage: dict[str, list[tuple[str, int]]] = {}
     for turbine, turbine_id in sorted(turbines.items()):
-        head = lookups.head_by_generator.get(turbine)
-        if head is not None:
-            by_storage.setdefault(head, []).append((turbine, turbine_id))
-    return _Cascade(by_storage, _read_waterways(state))
+        storage = storage_by_turbine.get(turbine)
+        if storage is not None:
+            by_storage.setdefault(storage, []).append((turbine, turbine_id))
+    return by_storage
 
 
 def _read_waterways(state: State) -> dict[str, tuple[str | None, str | None]]:
@@ -490,9 +522,23 @@ def _derive_links(
             R.DOWNSTREAM_TURBINES,
             Decision.derived(downstream, head_sources, _DOWNSTREAM_DERIVATION),
         ),
-        _Field(R.UPSTREAM_TURBINES, Decision.default([], _NO_UPSTREAM_TURBINE_NOTE)),
+        _Field(R.UPSTREAM_TURBINES, _derive_upstream_turbines(name, cascade)),
         _Field(R.UPSTREAM_RESERVOIRS, _derive_upstream(name, reservoirs, cascade)),
     ]
+
+
+def _derive_upstream_turbines(name: str, cascade: _Cascade) -> Decision:
+    """The turbines whose tail is this Storage, which release their water into it."""
+    turbines = cascade.tail_turbines_by_storage.get(name, [])
+    if not turbines:
+        return Decision.default([], _NO_UPSTREAM_TURBINE_NOTE)
+    sources = [
+        SourceValue(PlexosClass.GENERATOR, turbine, PlexosCollection.TAIL_STORAGE, name)
+        for turbine, _ in turbines
+    ]
+    return Decision.derived(
+        [turbine_id for _, turbine_id in turbines], sources, _UPSTREAM_TURBINE_DERIVATION
+    )
 
 
 def _derive_upstream(name: str, reservoirs: dict[str, _Reservoir], cascade: _Cascade) -> Decision:
