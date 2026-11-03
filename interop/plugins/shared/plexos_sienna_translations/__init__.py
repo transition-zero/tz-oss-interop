@@ -31,6 +31,10 @@ from interop.plugins.shared.plexos_sienna_translations._loads import (
     build_load_ts_associations,
     build_loads_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._reserves import (
+    TranslatedServices,
+    map_reserve_services,
+)
 from interop.plugins.shared.plexos_sienna_translations._storage import (
     map_storage,
 )
@@ -42,6 +46,8 @@ from interop.plugins.shared.plexos_sienna_translations._window import (
 )
 
 __all__ = [
+    "TranslatedServices",
+    "map_reserve_services",
     "BUS_TRANSLATIONS",
     "CarrierTarget",
     "CarrierTargets",

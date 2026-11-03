@@ -120,5 +120,7 @@ def pypsa_carrier(
             | SiennaComponent.LINE
             | SiennaComponent.MONITORED_LINE
             | SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+            | SiennaComponent.ONLINE_RESERVE
+            | SiennaComponent.OFFLINE_RESERVE
         ):
             raise KeyError(f"{sienna_type} is not a generation component with a PyPSA carrier")

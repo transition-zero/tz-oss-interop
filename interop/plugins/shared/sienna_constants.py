@@ -33,6 +33,7 @@ class SiennaSchemasSystem:
     SCHEMA_VERSION = "schema_version"
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
+    SERVICE_ASSOCIATIONS = "service_associations"
 
 
 class SiennaCompanionFilename(StrEnum):
@@ -86,6 +87,8 @@ class SiennaComponent(StrEnum):
     LINE = "Line"
     MONITORED_LINE = "MonitoredLine"
     TWO_TERMINAL_GENERIC_HVDC_LINE = "TwoTerminalGenericHVDCLine"
+    ONLINE_RESERVE = "OnlineReserve"
+    OFFLINE_RESERVE = "OfflineReserve"
 
 
 SIENNA_TYPE_ATTRIBUTE = "type"
@@ -134,6 +137,36 @@ class SiennaAreaCol:
 
     ID = "id"
     NAME = "name"
+
+
+class SiennaReserveCol:
+    """Sienna OnlineReserve and OfflineReserve column names. An OfflineReserve has no direction."""
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    TIME_FRAME = "time_frame"
+    REQUIREMENT = "requirement"
+    SUSTAINED_TIME = "sustained_time"
+    MAX_OUTPUT_FRACTION = "max_output_fraction"
+    MAX_PARTICIPATION_FACTOR = "max_participation_factor"
+    DEPLOYED_FRACTION = "deployed_fraction"
+    RESERVE_DIRECTION = "reserve_direction"
+
+
+class SiennaReserveDirection(StrEnum):
+    """Sienna ``ReserveDirection`` (source: ``power_openapi_models.operations.models``)."""
+
+    UP = "UP"
+    DOWN = "DOWN"
+    SYMMETRIC = "SYMMETRIC"
+
+
+class SiennaServiceAssociationCol:
+    """One row of the ``service_associations`` list: a unit that contributes to a service."""
+
+    SERVICE_ID = "service_id"
+    ENTITY_ID = "entity_id"
 
 
 class SiennaLoadCol:
@@ -755,6 +788,28 @@ AREAS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.NAME: pl.Utf8,
     SiennaAreaCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaAreaCol.BASE_POWER: pl.Float64,
+}
+
+OFFLINE_RESERVE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaReserveCol.ID: pl.Int64,
+    SiennaReserveCol.NAME: pl.Utf8,
+    SiennaReserveCol.AVAILABLE: pl.Boolean,
+    SiennaReserveCol.TIME_FRAME: pl.Float64,
+    SiennaReserveCol.REQUIREMENT: pl.Float64,
+    SiennaReserveCol.SUSTAINED_TIME: pl.Float64,
+    SiennaReserveCol.MAX_OUTPUT_FRACTION: pl.Float64,
+    SiennaReserveCol.MAX_PARTICIPATION_FACTOR: pl.Float64,
+    SiennaReserveCol.DEPLOYED_FRACTION: pl.Float64,
+}
+
+ONLINE_RESERVE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **OFFLINE_RESERVE_DESTINATION_SCHEMA,
+    SiennaReserveCol.RESERVE_DIRECTION: pl.Utf8,
+}
+
+SERVICE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaServiceAssociationCol.SERVICE_ID: pl.Int64,
+    SiennaServiceAssociationCol.ENTITY_ID: pl.Int64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

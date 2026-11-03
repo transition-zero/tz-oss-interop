@@ -21,6 +21,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaHydroGeneratorCol,
     SiennaLoadCol,
     SiennaRenewableGeneratorCol,
+    SiennaReserveCol,
     SiennaStructField,
     SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
@@ -108,6 +109,10 @@ def _hydro_capacity(component: Mapping[str, Any]) -> float:
     return float(component[SiennaHydroGeneratorCol.BASE_POWER])
 
 
+def _reserve_capacity(component: Mapping[str, Any]) -> float:
+    return float(component[SiennaReserveCol.REQUIREMENT])
+
+
 _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.THERMAL_STANDARD: _thermal_capacity,
     SiennaComponent.RENEWABLE_DISPATCH: _renewable_capacity,
@@ -115,6 +120,8 @@ _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.POWER_LOAD: _load_capacity,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD: _load_capacity,
     SiennaComponent.HYDRO_DISPATCH: _hydro_capacity,
+    SiennaComponent.ONLINE_RESERVE: _reserve_capacity,
+    SiennaComponent.OFFLINE_RESERVE: _reserve_capacity,
 }
 
 

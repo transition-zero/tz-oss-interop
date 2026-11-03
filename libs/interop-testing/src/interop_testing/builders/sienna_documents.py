@@ -23,7 +23,7 @@ import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
 
 from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
-from interop.plugins.sinks._sienna_files import serialise_system_document
+from interop.plugins.sinks._sienna_files import SystemContents, serialise_system_document
 from interop_testing.files import read_json
 
 TIME_SERIES_RESOLUTION_SECONDS = 3600
@@ -88,7 +88,9 @@ def write_system_document(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
         serialise_system_document(
-            components, list(time_series_associations), sienna_h5_filename(path), 2
+            SystemContents(components, [], list(time_series_associations)),
+            sienna_h5_filename(path),
+            2,
         )
     )
     if schema_version is not None:

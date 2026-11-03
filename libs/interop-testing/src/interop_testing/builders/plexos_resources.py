@@ -133,6 +133,16 @@ class ResourceBuilder(PlexosTables):
                 data_file=data_file,
             )
 
+    def add_reserve_battery(self, name: str, battery: str) -> None:
+        """A battery that can supply the reserve, through the reserve's Batteries collection."""
+        self._check_not_saved(f"battery {battery!r} of reserve {name!r}")
+        self._membership_id(RESERVE_CLASS, name, BATTERY_CLASS, battery, BATTERIES_COLLECTION)
+
+    def add_reserve_property(self, name: str, property_name: str, value: float) -> None:
+        """Any other Reserve property, named as PLEXOS spells it."""
+        self._check_not_saved(f"property {property_name!r} of reserve {name!r}")
+        self._add_system_property(RESERVE_CLASS, name, RESERVES_COLLECTION, property_name, value)
+
     def price_reserve_shortage(self, name: str, price: float) -> None:
         """What a megawatt of unmet requirement costs, PLEXOS's VoRS."""
         self._check_not_saved(f"shortage price of reserve {name!r}")

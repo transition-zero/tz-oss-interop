@@ -7,8 +7,8 @@ It gives the source of each field.
 > pipeline translates them for dispatch. It writes no capacity expansion: what your plan may
 > build becomes a Sienna investments portfolio instead, which
 > [the `plexos-to-sienna-investments` pipeline](translation-from-plexos-to-sienna-investments.md)
-> writes. This pipeline does not translate custom constraints or hydro cascades, and it does
-> not carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
+> writes. This pipeline does not translate custom constraints or hydro cascades. Refer to
+> [Not translated](#not-translated) and to
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
 > states that SiennaSchemas holds no type and no field for.
 
@@ -35,7 +35,7 @@ what you get.
 | [`Fuel`](#fuel) | No component. It names the carrier your mappings file turns into `fuel` and `prime_mover_type`, and it sets part of `operation_cost`. |
 | [`Emission`](#emission) | No component. It adds a carbon term to `operation_cost`. |
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
-| `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
+| [`Reserve`](#reserve--onlinereserve-or-offlinereserve) | `OnlineReserve`, or `OfflineReserve` for a replacement reserve, and one service association for each unit that supplies it. The record also reaches `extensions.json`. |
 | Region `VoLL` | Nothing. `decisions.md` names it as dropped, because Sienna has no home for a region `VoLL`. |
 | `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
@@ -388,6 +388,43 @@ carbon term to `operation_cost.variable_operation_cost`, which is `price × prod
 
 An emission cap is `dropped`. Only the price reaches the cost.
 
+## `Reserve` → `OnlineReserve` or `OfflineReserve`
+
+The PLEXOS `Type` of a reserve chooses the Sienna service:
+
+| PLEXOS `Type` | Sienna service | `reserve_direction` |
+| --- | --- | --- |
+| 1 Raise, 3 Regulation Raise | `OnlineReserve` | `UP` |
+| 2 Lower, 4 Regulation Lower | `OnlineReserve` | `DOWN` |
+| 7 Regulation | `OnlineReserve` | `SYMMETRIC` |
+| 5 Replacement | `OfflineReserve` | An `OfflineReserve` states no direction. |
+| 6 Operational, or a code the translator does not know | No service | |
+| 8 Inertia | No service, because an inertia reserve is not a quantity of MW | |
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The `Reserve` name | `direct` |
+| `available` | | `Is Enabled`, else `True` | `derived` or `default` |
+| `requirement` | MW | `Min Provision` in MW, or the peak of a requirement that varies | `derived` |
+| `time_frame` | min | `60.0`, one hourly snapshot | `default` |
+| `sustained_time` | min | `Duration` in seconds / 60, else `60.0` | `derived` or `default` |
+| `max_output_fraction` | | `1.0` | `default` |
+| `max_participation_factor` | | `1.0` | `default` |
+| `deployed_fraction` | | `0.0` | `default` |
+| `reserve_direction` | | The `Type`, as the table above gives | `derived` |
+
+A requirement that varies becomes a `TimeSeriesAssociation` on `requirement`. The store holds
+the requirement in MW at each snapshot, and `requirement` states its peak.
+
+Each generator in the `Generators` collection of the reserve, and each battery in its
+`Batteries` collection, becomes one row of the document's `service_associations` list. A
+unit that the Sienna system does not hold joins no service. `decisions.md` names each one.
+
+A reserve with no requirement in MW becomes no service. `Mutually Exclusive` is `dropped`,
+because a Sienna service has no field for it. `VoRS` is `dropped`, because the translator
+writes no demand curve to the `variable` field of the service. The record in
+`extensions.json` keeps both.
+
 ## `Market` → `ThermalStandard`
 
 A `Market` becomes one import generator on the node where it trades, priced at the purchase
@@ -491,7 +528,7 @@ energy than your model gives it.
 
 | PLEXOS | Effect |
 | --- | --- |
-| `Reserve` requirements | The record reaches `extensions.json`, and a varying requirement reaches `reserves.parquet` beside it, but nothing applies them. Every generator can run at full output. |
+| A `Reserve` with no direction, an inertia `Reserve`, or a `Reserve` with no requirement in MW | No Sienna service. The record still reaches `extensions.json`. Refer to [`Reserve` → `OnlineReserve` or `OfflineReserve`](#reserve--onlinereserve-or-offlinereserve). |
 | A reservoir `Natural Inflow` | The value reaches `extensions.json`, and one that changes reaches `storage.parquet` beside it, but Sienna's `EnergyReservoirStorage` states no inflow, so nothing refills the reservoir. |
 | A storage unit's `Units Out` | The derate reaches `storage.parquet`, but Sienna states one rating and no series against it, so the unit discharges at full power all year. |
 | A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
