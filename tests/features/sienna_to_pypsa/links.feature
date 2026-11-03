@@ -1,8 +1,9 @@
 @slow @fork_unsafe
 Feature: Sienna to PyPSA Pipeline translates Sienna TwoTerminalGenericHVDCLine to PyPSA Link
   The step reads HVDC line rows from the staged Sienna system, resolves the Arc to its
-  bus0/bus1 endpoints, and emits one PyPSA Link per component. active_power_limits_from.max
-  becomes p_nom and the loss curve's proportional term inverts to efficiency.
+  bus0/bus1 endpoints, and emits one PyPSA Link per component. The forward flow bound
+  becomes p_nom, the reverse flow bound becomes p_min_pu, and the loss curve's proportional
+  term inverts to efficiency.
 
   Scenario: a TwoTerminalGenericHVDCLine becomes a PyPSA Link with p_nom and efficiency
     Given a Sienna system
@@ -17,8 +18,8 @@ Feature: Sienna to PyPSA Pipeline translates Sienna TwoTerminalGenericHVDCLine t
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom" is 2500.0
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.0
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "efficiency" is 0.97
-    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.active_power_limits_from.max` = 2500.0 MW | `pypsa.Link.link_1.p_nom` = 2500.0 MW | active_power_limits_from.max |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
-    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.active_power_limits_from.min` = 0.0 MW | `pypsa.Link.link_1.p_min_pu` = 0.0 | active_power_limits_from.min / p_nom |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.operational_flow_limit.from_to_max` = 2500.0 MW | `pypsa.Link.link_1.p_nom` = 2500.0 MW | from_to_max |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.operational_flow_limit.to_from_max` = 0.0 MW | `pypsa.Link.link_1.p_min_pu` = 0.0 | -to_from_max / p_nom |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: an unavailable HVDC line becomes an inactive PyPSA Link
     Given a Sienna system
@@ -55,7 +56,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna TwoTerminalGenericHVDCLine t
     When I run translate against "inputs/link_zero.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom" is 0.0
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.0
-    And the file "decisions.md" contains "| `pypsa.Link.link_1.p_min_pu` = 0.0 |  | zero-capacity link (active_power_limits_from.max = 0); p_min_pu defaults to 0.0 | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "| `pypsa.Link.link_1.p_min_pu` = 0.0 |  | zero-capacity link (from_to_max = 0); p_min_pu defaults to 0.0 | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
 
   Scenario: an HVDC line's ext p_max_pu and p_min_pu round-trip losslessly to PyPSA
     Given a Sienna system
@@ -70,5 +71,17 @@ Feature: Sienna to PyPSA Pipeline translates Sienna TwoTerminalGenericHVDCLine t
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_max_pu" is 0.5
     And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is 0.2
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.extensions.p_max_pu` = 0.5 | `pypsa.Link.link_1.p_max_pu` = 0.5 | extensions.p_max_pu (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
-    And the file "decisions.md" contains "`pypsa.Link.link_1.p_nom` = 1000.0 MW | active_power_limits_from.max / p_max_pu |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+    And the file "decisions.md" contains "`pypsa.Link.link_1.p_nom` = 1000.0 MW | from_to_max / p_max_pu |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
     And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.link_1.extensions.p_min_pu` = 0.2 | `pypsa.Link.link_1.p_min_pu` = 0.2 | extensions.p_min_pu (PyPSA round-trip) |  | sienna-to-pypsa | sienna_to_pypsa_map_transmission |"
+
+  Scenario: an HVDC line with no operational flow limit moves power both ways up to its smallest rating
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains an HVDC line "link_1" from "node_a" to "node_b" with p_nom 1000.0 efficiency 1.0
+    And the HVDC line "link_1" states no operational flow limit
+    And the HVDC line "link_1" has converter ratings 800.0 at the from bus and 600.0 at the to bus
+    And the system is saved as "inputs/link_rated.json"
+    When I run translate against "inputs/link_rated.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" link "link_1" attribute "p_nom" is 600.0
+    And the PyPSA network "outputs/network.nc" link "link_1" attribute "p_min_pu" is -1.0
