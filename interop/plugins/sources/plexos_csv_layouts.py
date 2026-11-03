@@ -231,9 +231,14 @@ def _has_period_columns(header: set[str]) -> bool:
     return bool(remaining) and all(name.isdigit() for name in remaining)
 
 
-def _has_one_value_per_day(header: set[str]) -> bool:
-    """A dated row carrying a single value column, which the file names itself."""
-    return set(_DAY_KEY) <= header and len(header - set(_DAY_KEY)) == 1
+def _has_values_by_day(header: set[str]) -> bool:
+    """A row a day, with one value column or one column for each object that reads it.
+
+    A Name or a Pattern column belongs to a layout of its own.
+    """
+    if not set(_DAY_KEY) <= header or header & {_CSV_NAME, PATTERN_COLUMN}:
+        return False
+    return bool(header - set(_DAY_KEY))
 
 
 def reshape_for_file(
@@ -337,7 +342,9 @@ def _reshape_daily(
     snapshot = pl.datetime(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY))
     stamped = dated.with_columns(snapshot.alias(StagedTimeSeriesCol.SNAPSHOT))
     sole_column = value_columns[0]
-    names_a_quantity = sole_column not in owner_names and sole_column != _CSV_VALUE
+    names_a_quantity = (
+        len(value_columns) == 1 and sole_column not in owner_names and sole_column != _CSV_VALUE
+    )
     if names_a_quantity:
         # The column labels what the number is (PLEXOS writes "Inflows"), not which object
         # it belongs to, so it is the shared series rather than one object's column.
@@ -435,7 +442,7 @@ _CSV_SHAPES: tuple[_CsvShape, ...] = (
         lambda csv: _reshape_period_columns(csv.scan, csv.columns),
     ),
     _CsvShape(
-        _has_one_value_per_day,
+        _has_values_by_day,
         lambda csv: _reshape_daily(csv.scan, csv.columns, csv.sample_scope, csv.owner_names),
     ),
     _CsvShape(

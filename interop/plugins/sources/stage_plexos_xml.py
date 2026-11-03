@@ -76,6 +76,7 @@ from interop.plugins.sources.plexos_dated_properties import (
     read_dated_rows,
     stepped_series_parts,
 )
+from interop.plugins.sources.plexos_escalators import apply_escalators
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
 from interop.plugins.sources.plexos_patterns import (
     PatternCalendar,
@@ -157,6 +158,7 @@ _TIME_SERIES_SUBDIR = "time_series"
 _CSV_SUBDIR = "csv"
 _DATED_CSV_SUBDIR = "dated_csv"
 _TIMESLICE_CSV_SUBDIR = "timeslice_csv"
+_ESCALATED_SUBDIR = "escalated"
 
 
 _Rows = list[dict[str, Any]]
@@ -254,7 +256,9 @@ class StagePlexosXml(StagedSource):
         )
         for key, frames in stepped_series_parts(resolved.stepped_properties, series).items():
             series[key] = self._sink_series(key, frames, staging_dir, chronology.index)
-        return series
+        return apply_escalators(
+            series, resolved.properties, staging_dir / _ESCALATED_SUBDIR, chronology.index
+        )
 
     def _build_pattern_calendar(
         self, properties: _Rows, package: _Package, staging_dir: Path, chronology: Chronology
@@ -746,6 +750,7 @@ def _dated_value_columns(
         PlexosPropertyCol.UNIT: stated.unit,
         PlexosPropertyCol.DATA_FILE: None,
         PlexosPropertyCol.SCALING: _NO_SCALING,
+        PlexosPropertyCol.ESCALATOR: None,
     }
 
 
@@ -761,6 +766,7 @@ def _value_columns(
         PlexosPropertyCol.UNIT: stated.unit,
         PlexosPropertyCol.DATA_FILE: profile.path if profile is not None else None,
         PlexosPropertyCol.SCALING: _profile_scaling(profile, value, is_percent(stated.unit)),
+        PlexosPropertyCol.ESCALATOR: profile.escalator if profile is not None else None,
     }
 
 
@@ -787,6 +793,7 @@ class _ProfileRef(NamedTuple):
     path: str
     is_share: bool
     variable: str | None
+    escalator: str | None = None
 
 
 def _profile_scaling(
@@ -815,10 +822,14 @@ def _profile_ref_by_data(
     """
     data_files = _object_csv_paths(tables, property_names, overlay, dropped, _DATA_FILE_SOURCE)
     variables = _variable_csv_paths(tables, property_names, overlay, data_files)
-    return {
-        **_variable_refs_by_data(tables, variables),
-        **_data_file_refs_by_data(tables, data_files),
+    by_variable = _variable_refs_by_data(tables, variables)
+    by_data_file = _data_file_refs_by_data(tables, data_files)
+    escalated = {
+        data_id: ref._replace(escalator=by_variable[data_id].variable)
+        for data_id, ref in by_data_file.items()
+        if data_id in by_variable
     }
+    return {**by_variable, **by_data_file, **escalated}
 
 
 def _variable_refs_by_data(tables: _RowsByTable, paths: dict[str, str]) -> dict[str, _ProfileRef]:

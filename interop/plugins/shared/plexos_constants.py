@@ -98,6 +98,8 @@ class PlexosPropertyCol:
     SCALING = "scaling"
     # The name a data file gives this value's rows: the Variable it reads through, else the object.
     ROW_NAME = "row_name"
+    # The Variable whose profile escalates a value that a data file states, else null.
+    ESCALATOR = "escalator"
 
 
 class PlexosDatedPropertyCol(PlexosPropertyCol):

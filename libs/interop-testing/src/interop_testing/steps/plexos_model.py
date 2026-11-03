@@ -260,6 +260,18 @@ def given_model_contains_timeslice_with_pattern(
 
 
 @given(
+    parsers.parse(
+        'the model contains load "{node}" with peak {peak:g} from data file "{name}" '
+        'escalated by variable "{variable}"'
+    )
+)
+def given_model_contains_escalated_load(
+    plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str, variable: str
+) -> None:
+    plexos_model_builder.add_escalated_load(node, peak, name, variable)
+
+
+@given(
     parsers.parse('the model contains load "{node}" with share {share:g} of variable "{variable}"')
 )
 def given_model_contains_load_share(

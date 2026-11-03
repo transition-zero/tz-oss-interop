@@ -136,3 +136,30 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     And a project-local pipeline "resolve-ts" that stages plexos and dumps a time series
     When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
     Then the log contains "deferring Data File Load_Load.csv: it gives its values by pattern, and the model's Horizon sets no snapshots to expand them onto"
+
+  Scenario: a Variable that escalates a value from a data file multiplies its series
+    A property row can read a data file and also name a Variable. The Variable's profile then
+    escalates the file's values. One day file can profile several Variables, one column each.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains node "Node_B" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME   | PATTERN | VALUE |
+      | Node_A | M1      | 100   |
+      | Node_B | M1      | 100   |
+    And the model contains data file "Growth" at "Load_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | Growth_A | Growth_B |
+      | 2026 | 1     | 1   | 1.5      | 2.0      |
+    And the model contains variable "Growth_A" profiling data file "Growth"
+    And the model contains variable "Growth_B" profiling data file "Growth"
+    And the model contains load "Node_A" with peak 100 from data file "Demand" escalated by variable "Growth_A"
+    And the model contains load "Node_B" with peak 100 from data file "Demand" escalated by variable "Growth_B"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
+    And the load time series "outputs/load_ts.json" for "Node_B" at hour 3 is 200
