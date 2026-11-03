@@ -252,6 +252,15 @@ def given_model_contains_timeslice_with_pattern(
     plexos_model_builder.add_timeslice_with_pattern(name, pattern)
 
 
+@given(
+    parsers.parse('the model contains load "{node}" with share {share:g} of variable "{variable}"')
+)
+def given_model_contains_load_share(
+    plexos_model_builder: PlexosModelBuilder, node: str, share: float, variable: str
+) -> None:
+    plexos_model_builder.add_load_share(node, share, variable)
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g} from data file "{name}"'))
 def given_model_contains_load_from_data_file(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str

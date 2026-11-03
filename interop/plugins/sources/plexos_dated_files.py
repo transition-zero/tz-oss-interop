@@ -44,7 +44,10 @@ ScanFile = Callable[[str], pl.LazyFrame | None]
 
 
 class DatedFiles:
-    """The dated values each data file states, read once per file and only when asked for."""
+    """The dated values each data file states, read once per file and only when asked for.
+
+    PLEXOS reads an object name without letter case, so the values are keyed by the folded name.
+    """
 
     def __init__(self, read_header: ReadHeader, scan_file: ScanFile) -> None:
         self._read_header = read_header
@@ -56,7 +59,11 @@ class DatedFiles:
         if relative not in self._values_by_file:
             self._values_by_file[relative] = self._read_values(relative)
         values_by_name = self._values_by_file[relative]
-        return None if values_by_name is None else values_by_name.get(name)
+        return None if values_by_name is None else values_by_name.get(name.lower())
+
+    def has_read(self, relative: str) -> bool:
+        """Whether the source read this file as dated values by object."""
+        return self._values_by_file.get(relative) is not None
 
     def _read_values(self, relative: str) -> dict[str, list[DatedValue]] | None:
         header = self._read_header(relative)
@@ -85,7 +92,7 @@ def _read_values_by_name(scan: pl.LazyFrame, relative: str) -> dict[str, list[Da
         if moment is None or number is None:
             unreadable_count += 1
             continue
-        dated.setdefault(str(name), []).append((moment, number))
+        dated.setdefault(str(name).lower(), []).append((moment, number))
     _warn_unreadable(relative, unreadable_count)
     return {name: _build_bands(sorted(pairs)) for name, pairs in dated.items()}
 

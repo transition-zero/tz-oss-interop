@@ -96,6 +96,8 @@ class PlexosPropertyCol:
     UNIT = "unit"
     DATA_FILE = "data_file"
     SCALING = "scaling"
+    # The name a data file gives this value's rows: the Variable it reads through, else the object.
+    ROW_NAME = "row_name"
 
 
 class PlexosDatedPropertyCol(PlexosPropertyCol):

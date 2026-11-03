@@ -133,6 +133,13 @@ class PlexosModelBuilder(ResourceBuilder):
             NODE_CLASS, node, NODES_COLLECTION, LOAD_PROPERTY, peak, scenarios, data_file
         )
 
+    def add_load_share(self, node: str, share: float, variable: str) -> None:
+        """A Load property on a Node that reads its share of the profile a Variable names."""
+        self._check_not_saved(f"load share on node {node!r}")
+        self._add_system_property(
+            NODE_CLASS, node, NODES_COLLECTION, LOAD_PROPERTY, share, variable=variable
+        )
+
     def add_region_load(
         self,
         region: str,

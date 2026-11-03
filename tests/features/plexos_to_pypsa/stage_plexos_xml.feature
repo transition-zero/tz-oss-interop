@@ -283,6 +283,42 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
     And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 20
 
+  Scenario: a value read through a Variable matches the rows of the file that name the Variable
+    A data file that a Variable profiles names each row after the Variable, and not after the
+    object that reads a share of it.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Shared" at "Var_Profiles.csv" with rows:
+      | NAME      | YEAR | MONTH | DAY | PERIOD | VALUE |
+      | Profile_A | 2026 | 1     | 1   | 1      | 10    |
+      | Profile_A | 2026 | 1     | 1   | 2      | 20    |
+      | Profile_B | 2026 | 1     | 1   | 1      | 99    |
+    And the model contains variable "Profile_A" profiling data file "Shared"
+    And the model contains load "Grid_Node" with share 2 of variable "Profile_A"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 20
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 40
+
+  Scenario: a sampled file whose rows name nothing that reads it does not stop the run
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Shared" at "Var_Profiles.csv" with rows:
+      | NAME   | YEAR | MONTH | DAY | PERIOD | 1  | 2  |
+      | Nobody | 2026 | 1     | 1   | 1      | 10 | 11 |
+    And the model contains load "Grid_Node" with peak 10 from data file "Shared"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 100
+    And the log contains "Var_Profiles.csv yields no series for: Grid_Node"
+
   Scenario: the plexos-to-pypsa pipeline emits an empty network for a model with no mapped components
     Given a Plexos model
     And the model contains region "Grid"

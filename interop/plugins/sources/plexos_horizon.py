@@ -325,6 +325,11 @@ def reindex_onto(
     labelled.sink_parquet(PartitionBy(staged, key=StagedTimeSeriesCol.SAMPLE, include_key=True))
     reindexed = out / series
     reindexed.mkdir(parents=True, exist_ok=True)
+    if not staged.exists():
+        # A series with no rows writes no partition, and reindexes to no rows.
+        path = reindexed / "empty.parquet"
+        _reconcile_to_horizon(combined.clear(), index).sink_parquet(path)
+        return pl.scan_parquet(path)
     for partition in sorted(staged.iterdir()):
         one = pl.scan_parquet(partition / "*.parquet", hive_partitioning=False)
         _reconcile_to_horizon(one, index).sink_parquet(reindexed / f"{partition.name}.parquet")

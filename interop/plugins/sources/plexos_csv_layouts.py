@@ -37,6 +37,8 @@ _CSV_MONTH_VAR = "month_column"
 _SAMPLE_COLUMN_VAR = "sample_column"
 # The scaling each owner applies to the shared trace it reads.
 _OWNER_SCALING_COL = "owner_scaling"
+# The name a self-naming file gives an owner's rows, without letter case, as PLEXOS reads it.
+_ROW_KEY_COL = "row_key"
 _PERIOD_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY, _CSV_PERIOD)
 _PERIOD_KEY_NO_YEAR = (_CSV_MONTH, _CSV_DAY, _CSV_PERIOD)
 _DAY_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY)
@@ -528,8 +530,14 @@ def _owner_table(owners: Rows) -> pl.LazyFrame:
         {
             StagedTimeSeriesCol.COMPONENT: [row[PlexosPropertyCol.CHILD_OBJECT] for row in owners],
             _OWNER_SCALING_COL: [row[PlexosPropertyCol.SCALING] for row in owners],
+            _ROW_KEY_COL: [_name_row_key(row) for row in owners],
         }
     )
+
+
+def _name_row_key(row: dict[str, Any]) -> str:
+    """The owner's row name in a self-naming file, folded to lower case."""
+    return str(row.get(PlexosPropertyCol.ROW_NAME) or row[PlexosPropertyCol.CHILD_OBJECT]).lower()
 
 
 def _attach_owners(frame: pl.LazyFrame, owners: pl.LazyFrame) -> pl.LazyFrame:
@@ -543,7 +551,11 @@ def _attach_owners(frame: pl.LazyFrame, owners: pl.LazyFrame) -> pl.LazyFrame:
     """
     is_self_named = StagedTimeSeriesCol.COMPONENT in frame.collect_schema().names()
     joined = (
-        frame.join(owners, on=StagedTimeSeriesCol.COMPONENT, how="inner")
+        frame.with_columns(
+            pl.col(StagedTimeSeriesCol.COMPONENT).str.to_lowercase().alias(_ROW_KEY_COL)
+        )
+        .drop(StagedTimeSeriesCol.COMPONENT)
+        .join(owners, on=_ROW_KEY_COL, how="inner")
         if is_self_named
         else frame.join(owners, how="cross")
     )
