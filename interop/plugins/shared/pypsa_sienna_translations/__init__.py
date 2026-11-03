@@ -31,6 +31,7 @@ from ._links import (
     link_in_scope,
     link_time_varying_owners,
 )
+from ._load_zones import LOAD_ZONE_TRANSLATIONS, build_load_zones_source_table
 from ._loads import (
     INTERRUPTIBLE_LOAD_TRANSLATIONS_PHASE_1,
     INTERRUPTIBLE_LOAD_TRANSLATIONS_PHASE_2,
@@ -90,6 +91,8 @@ __all__ = [
     "ARC_TRANSLATIONS",
     "build_arcs_source_table",
     "AREA_TRANSLATIONS",
+    "LOAD_ZONE_TRANSLATIONS",
+    "build_load_zones_source_table",
     "build_areas_source_table",
     "LINE_TRANSLATIONS",
     "build_line_extensions",

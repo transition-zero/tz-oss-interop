@@ -10,12 +10,15 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_sienna_translations import (
     ARC_TRANSLATIONS,
     AREA_TRANSLATIONS,
+    LOAD_ZONE_TRANSLATIONS,
     build_arcs_source_table,
     build_areas_source_table,
+    build_load_zones_source_table,
 )
 from interop.plugins.shared.sienna_constants import (
     ARCS_DESTINATION_SCHEMA,
     AREAS_DESTINATION_SCHEMA,
+    LOAD_ZONES_DESTINATION_SCHEMA,
     SiennaComponent,
     SiennaLineCol,
 )
@@ -33,7 +36,7 @@ _BRANCH_COMPONENTS: tuple[str, ...] = (
 
 
 class SiennaRelateComponents(TranslationStep):
-    """Derive the Area and the Arc tables from the Sienna tables an earlier step wrote.
+    """Derive the Area, LoadZone and Arc tables from the Sienna tables an earlier step wrote.
 
     Every source framework reaches this step, so its name states Sienna alone.
     """
@@ -57,8 +60,20 @@ class SiennaRelateComponents(TranslationStep):
             self._recorder,
             SiennaComponent.AREA,
         )
+        self._build_load_zones(state, buses)
         state = self._build_arcs(state, buses)
         return state
+
+    def _build_load_zones(self, state: State, buses: pl.DataFrame) -> None:
+        load_zones_src = build_load_zones_source_table(buses)
+        if load_zones_src.is_empty():
+            return
+        dst = apply_translations(
+            enrich_first_id(load_zones_src, state), LOAD_ZONE_TRANSLATIONS, self._recorder
+        )
+        state.destination_tables[SiennaComponent.LOAD_ZONE] = finalise(
+            dst, LOAD_ZONES_DESTINATION_SCHEMA, self._recorder, SiennaComponent.LOAD_ZONE
+        )
 
     def _build_arcs(self, state: State, buses: pl.DataFrame) -> State:
         endpoint_tables = [

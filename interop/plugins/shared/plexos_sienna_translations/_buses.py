@@ -2,9 +2,10 @@
 
 Buses map first: every other component names its bus, and the set of buses this writes is
 what the later mappings filter against. Every staged Node becomes one ACBus. A Node's
-``Voltage`` becomes ``base_voltage``, ``Is Slack Bus`` becomes ``bustype``, and the
-containing Region name becomes ``area``, which ``sienna_relate_components`` turns into the
-Area table.
+``Voltage`` becomes ``base_voltage``, ``Is Slack Bus`` becomes ``bustype``, the
+containing Region name becomes ``area``, and the containing Zone name becomes
+``load_zone``. ``sienna_relate_components`` turns those names into the Area and the
+LoadZone tables.
 """
 
 from __future__ import annotations
@@ -54,6 +55,7 @@ NODE_VOLTAGE = "node_voltage"
 NODE_VOLTAGE_IS_UNSTAGED = "node_voltage_is_unstaged"
 NODE_IS_SLACK = "node_is_slack"
 NODE_REGION = "node_region"
+NODE_ZONE = "node_zone"
 
 # PLEXOS states no nodal voltage limit and no voltage magnitude, so both are the
 # translator's. The limits are the range a Sienna consumer assumes around 1.0 per unit.
@@ -76,6 +78,8 @@ _VOLTAGE_LIMITS_NOTE = (
 )
 _AREA_DERIVATION = "containing Region name -> area"
 _AREA_NOTE = "Node has no containing Region; area is left empty"
+_LOAD_ZONE_DERIVATION = "containing Zone name -> load_zone"
+_LOAD_ZONE_NOTE = "Node sits in no Zone; load_zone is left empty"
 
 # PLEXOS marks no Node AC or DC, and every Node the translation reads is electrical.
 _CARRIER_NOTE = "PLEXOS does not mark a Node AC or DC; carrier defaults to AC"
@@ -87,11 +91,9 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
         state.source_topology[PlexosResolvedTable.PROPERTIES], PlexosClass.NODE
     )
     unstaged = read_unstaged_placeholders(state, PlexosClass.NODE)
-    region_by_node = relate_child(
-        state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
-        PlexosClass.NODE,
-        PlexosCollection.REGION,
-    )
+    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    region_by_node = relate_child(memberships, PlexosClass.NODE, PlexosCollection.REGION)
+    zone_by_node = relate_child(memberships, PlexosClass.NODE, PlexosCollection.ZONE)
     names = sorted(
         state.source_topology[PlexosClass.NODE]
         .select(PlexosObjectCol.NAME)
@@ -105,6 +107,7 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
                 NODE_VOLTAGE_IS_UNSTAGED: PlexosProperty.VOLTAGE in unstaged.get(name, []),
                 NODE_IS_SLACK: _readable(properties, unstaged, name, PlexosProperty.IS_SLACK_BUS),
                 NODE_REGION: region_by_node.get(name),
+                NODE_ZONE: zone_by_node.get(name),
             }
             for name in names
         ],
@@ -114,6 +117,7 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
             NODE_VOLTAGE_IS_UNSTAGED: pl.Boolean,
             NODE_IS_SLACK: pl.Float64,
             NODE_REGION: pl.Utf8,
+            NODE_ZONE: pl.Utf8,
         },
     )
 
@@ -389,6 +393,36 @@ BUS_AREA = Translation(
     ),
 )
 
+BUS_LOAD_ZONE = Translation(
+    exprs=[pl.col(NODE_ZONE).alias(SiennaACBusCol.LOAD_ZONE)],
+    make_events=lambda old, new: (
+        defaulted(
+            [
+                sienna_field(
+                    SiennaComponent.AC_BUS,
+                    new[NODE_NAME],
+                    SiennaACBusCol.LOAD_ZONE,
+                    new[SiennaACBusCol.LOAD_ZONE],
+                )
+            ],
+            _LOAD_ZONE_NOTE,
+        )
+        if old[NODE_ZONE] is None
+        else derived(
+            [plexos_field(PlexosClass.ZONE, old[NODE_ZONE], PlexosCollection.ZONE, old[NODE_ZONE])],
+            [
+                sienna_field(
+                    SiennaComponent.AC_BUS,
+                    new[NODE_NAME],
+                    SiennaACBusCol.LOAD_ZONE,
+                    new[SiennaACBusCol.LOAD_ZONE],
+                )
+            ],
+            _LOAD_ZONE_DERIVATION,
+        )
+    ),
+)
+
 BUS_CARRIER = Translation(
     exprs=[],
     make_events=lambda old, new: defaulted(
@@ -415,5 +449,6 @@ BUS_TRANSLATIONS: list[Translation] = [
     BUS_VOLTAGE_LIMITS,
     BUS_BASE_VOLTAGE,
     BUS_AREA,
+    BUS_LOAD_ZONE,
     BUS_CARRIER,
 ]

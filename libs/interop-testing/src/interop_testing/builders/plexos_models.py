@@ -73,6 +73,9 @@ from interop_testing.builders.plexos_vocabulary import (
     VARIABLES_COLLECTION,
     VOLL_PROPERTY,
     VOLTAGE_PROPERTY,
+    ZONE_CLASS,
+    ZONE_COLLECTION,
+    ZONES_COLLECTION,
 )
 
 PLEXOS_NAMESPACE = "http://tempuri.org/MasterDataSet.xsd"
@@ -96,6 +99,13 @@ class PlexosModelBuilder(ResourceBuilder):
             self._membership_id(NODE_CLASS, name, REGION_CLASS, region, REGION_COLLECTION)
         if voltage is not None:
             self._add_node_property(name, VOLTAGE_PROPERTY, voltage)
+
+    def add_zone(self, name: str, nodes: list[str]) -> None:
+        """A Zone, and the Nodes that name it as the Zone they sit in."""
+        self._check_not_saved(f"zone {name!r}")
+        self._add_system_object(ZONE_CLASS, name, ZONES_COLLECTION)
+        for node in nodes:
+            self._membership_id(NODE_CLASS, node, ZONE_CLASS, name, ZONE_COLLECTION)
 
     def add_slack_node(self, name: str, region: str | None = None, voltage: float = 0.0) -> None:
         self.add_node(name, region=region, voltage=voltage or None)

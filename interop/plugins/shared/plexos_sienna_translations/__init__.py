@@ -31,6 +31,9 @@ from interop.plugins.shared.plexos_sienna_translations._loads import (
     build_load_ts_associations,
     build_loads_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._outages import (
+    map_forced_outages,
+)
 from interop.plugins.shared.plexos_sienna_translations._reserves import (
     TranslatedServices,
     map_reserve_services,
@@ -55,6 +58,7 @@ __all__ = [
     "generator_schema",
     "generator_types",
     "map_generators",
+    "map_forced_outages",
     "drop_profiles_off_the_window",
     "map_storage",
     "map_transmission",

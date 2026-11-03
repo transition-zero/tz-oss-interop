@@ -25,6 +25,7 @@ what you get.
 | --- | --- |
 | [`Node`](#node--acbus) | `ACBus`, and an `Arc` for each pair of nodes a branch joins |
 | [`Region`](#region--area) | `Area`. It also gives a `PowerLoad`. |
+| [`Zone`](#zone--loadzone) | `LoadZone` |
 | [Region `Load` property](#region-load--powerload) | `PowerLoad` |
 | [`Load` object](#load-object--powerload) | `PowerLoad` |
 | [`Line`](#line--line-or-twoterminalgenerichvdcline) | `Line` if it has impedance, or `TwoTerminalGenericHVDCLine` if it has none |
@@ -37,8 +38,9 @@ what you get.
 | [`Emission`](#emission) | No component. It adds a carbon term to `operation_cost`. |
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
 | [`Reserve`](#reserve--onlinereserve-or-offlinereserve) | `OnlineReserve`, or `OfflineReserve` for a replacement reserve, and one service association for each unit that supplies it. The record also reaches `extensions.json`. |
+| [`Forced Outage Rate` and `Mean Time to Repair`](#forced-outage--geometricdistributionforcedoutage) on a `Generator` or a `Battery` | A `GeometricDistributionForcedOutage` supplemental attribute of the unit |
 | Region `VoLL` | Nothing. `decisions.md` names it as dropped, because Sienna has no home for a region `VoLL`. |
-| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
+| `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -133,7 +135,7 @@ type, or the run stops and names the word.
 | `available` | | `True` | `default` |
 | `angle` / `magnitude` | | `0.0` / `1.0` | `default` |
 | `voltage_limits` | | PLEXOS states no voltage limit. | `default` |
-| `load_zone` | | PLEXOS `Zone` is not translated. | `dropped` |
+| `load_zone` | | The `LoadZone` of the Zone that contains the node. A node in no Zone keeps a null `load_zone`. | `derived` |
 
 Each `Node` becomes one `ACBus`. PLEXOS marks no node AC or DC, so every bus is AC. A node
 that a branch touches also gives an `Arc`, which is the Sienna object holding the two ends of
@@ -153,6 +155,22 @@ PLEXOS states none of them on a Region.
 
 `Price of Dump Energy` is `dropped`. So is `VoLL`, because a `PowerLoad` prices no
 shortfall.
+
+## `Zone` → `LoadZone`
+
+A Node names the Zone it sits in through its `Zone` collection. Each Zone that a node names
+becomes one `LoadZone`, and the `load_zone` of each bus in it is the id of that `LoadZone`.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `Zone.name` | `direct` |
+| `id` | | The position of the zone, after the ids of earlier components | `default` |
+| `peak_active_power` | MW | `0.0`. PLEXOS states no peak on a Zone. | `default` |
+| `peak_reactive_power` | MVAR | `0.0` | `default` |
+| `base_power` | MVA | The system base of 100 MVA | `default` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
+
+A Zone that no node names gives no `LoadZone`.
 
 ## Region `Load` → `PowerLoad`
 
@@ -486,6 +504,44 @@ price of the market. It takes the `ThermalStandard` mapping. The export side of 
 
 ---
 
+## Forced outage → `GeometricDistributionForcedOutage`
+
+A `Generator` or a `Battery` that translates, and that states a `Forced Outage Rate` above
+0, gets one `GeometricDistributionForcedOutage` supplemental attribute. A
+`supplemental_attribute_associations` row joins the attribute to the Sienna component of
+the unit.
+
+PLEXOS states the share of the time that the unit is out, as a percentage, and the hours
+that one repair takes. Sienna states the minutes that one recovery takes, and the chance in
+each minute that a unit in service fails. In a model with two states, the share of the time
+out is `p / (p + 1 / T)` for a chance `p` and a recovery time `T`. So the chance is
+`r / (1 - r) / T` for a share `r`.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `mean_time_to_recovery` | min | `Mean Time to Repair` in hours × 60 | `derived` |
+| `outage_transition_probability` | | `Forced Outage Rate / 100 / (1 - Forced Outage Rate / 100) / mean_time_to_recovery` | `derived` |
+| `identifier` | | The PLEXOS name of the unit | `derived` |
+| `monitored_components` | | An empty list. PLEXOS names no component that an outage watches. | `default` |
+| `id` | | The position of the attribute, after the ids of all components | `default` |
+
+The unit keeps no forced outage, and `decisions.md` records a `NOT_MAPPED` row, in these
+cases:
+
+| The case | The reason |
+| --- | --- |
+| `Forced Outage Rate` is 100 % or more | The unit has no time in service to fail from. |
+| `Mean Time to Repair` is absent, or 0 or less | The recovery time and the chance cannot be stated. |
+| `Forced Outage Rate` comes from a data file | A forced outage states one rate. |
+
+The run also writes one warning that names three of the units and counts the rest. A
+`Mean Time to Repair` on a unit with no `Forced Outage Rate` above 0 has nothing to belong to,
+so `decisions.md` records it as `NOT_MAPPED`.
+
+The `sienna-to-power-simulations` pipeline writes no supplemental attribute and no
+`LoadZone`. Each bus there takes a null `load_zone`, and `decisions.md` records each one. The
+`sienna-to-pypsa` pipeline reads neither.
+
 ## The unit commitment answer
 
 The system holds the start cost and the minimum up and down times of every thermal
@@ -590,7 +646,6 @@ energy than your model gives it.
 | A storage unit's `Units Out` | The derate reaches `storage.parquet`, but Sienna states one rating and no series against it, so the unit discharges at full power all year. |
 | A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
 | Region `VoLL` | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
-| `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
 | `Transformer` | The translator does not carry it. |
 | `Constraint` | The record reaches `extensions.json`, but nothing applies the custom constraints, which include the RPS targets and the emission targets. |

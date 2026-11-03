@@ -22,6 +22,7 @@ from interop.plugins.steps.plexos_to_sienna.map_generators import (
     PlexosToSiennaMapGenerators,
 )
 from interop.plugins.steps.plexos_to_sienna.map_loads import PlexosToSiennaMapLoads
+from interop.plugins.steps.plexos_to_sienna.map_outages import PlexosToSiennaMapOutages
 from interop.plugins.steps.plexos_to_sienna.map_reserves import PlexosToSiennaMapReserves
 from interop.plugins.steps.plexos_to_sienna.map_storage import PlexosToSiennaMapStorage
 from interop.plugins.steps.plexos_to_sienna.map_transmission import (
@@ -68,6 +69,7 @@ class PlexosToSiennaMapComponents(TranslationStep):
             PlexosToSiennaMapTransmission(_scoped(recorder, PlexosToSiennaMapTransmission.name)),
             PlexosToSiennaMapStorage(_scoped(recorder, PlexosToSiennaMapStorage.name), targets),
             PlexosToSiennaMapReserves(_scoped(recorder, PlexosToSiennaMapReserves.name)),
+            PlexosToSiennaMapOutages(_scoped(recorder, PlexosToSiennaMapOutages.name)),
             PlexosToSiennaMapConstraints(_scoped(recorder, PlexosToSiennaMapConstraints.name)),
         )
 

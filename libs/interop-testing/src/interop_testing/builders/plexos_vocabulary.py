@@ -45,6 +45,10 @@ LOAD_CLASS = "Load"
 LOADS_COLLECTION = "Loads"
 # A Load object joins its Node through the singular collection name.
 NODE_COLLECTION = "Node"
+ZONE_CLASS = "Zone"
+ZONES_COLLECTION = "Zones"
+# A Node names the Zone it sits in through the singular collection.
+ZONE_COLLECTION = "Zone"
 DATA_FILE_CLASS = "Data File"
 DATA_FILES_COLLECTION = "Data Files"
 

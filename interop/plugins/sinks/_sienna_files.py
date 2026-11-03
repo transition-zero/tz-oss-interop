@@ -18,6 +18,7 @@ from power_openapi_models.document import (
     write_document,
     write_portfolio_document,
 )
+from power_openapi_models.infrastructure_core.models import SupplementalAttributeAssociation
 from power_openapi_models.operations.models import ServiceAssociation
 from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
@@ -60,23 +61,34 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         self._fs.write_bytes(
             paths.system_json,
             serialise_system_document(
-                SystemContents(
-                    payload[SiennaSchemasSystem.COMPONENTS],
-                    payload.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS, []),
-                    rows,
-                ),
-                location_name(paths.h5),
-                indent,
+                build_system_contents(payload, rows), location_name(paths.h5), indent
             ),
         )
 
 
 class SystemContents(NamedTuple):
-    """What one system document holds: its components and the two lists that join them."""
+    """What one system document holds: components, attributes, and the lists that join them."""
 
     components: dict[str, Any]
     service_associations: list[dict[str, Any]]
+    supplemental_attributes: list[dict[str, Any]]
+    supplemental_attribute_associations: list[dict[str, Any]]
     time_series_associations: list[dict[str, Any]]
+
+
+def build_system_contents(
+    payload: dict[str, Any], time_series_associations: list[dict[str, Any]]
+) -> SystemContents:
+    """The contents of a system payload, with the time series rows the sink stages beside it."""
+    return SystemContents(
+        components=payload[SiennaSchemasSystem.COMPONENTS],
+        service_associations=payload.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS, []),
+        supplemental_attributes=payload.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES, []),
+        supplemental_attribute_associations=payload.get(
+            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS, []
+        ),
+        time_series_associations=time_series_associations,
+    )
 
 
 def serialise_system_document(
@@ -88,8 +100,11 @@ def serialise_system_document(
         description=None,
         frequency=None,
         components=contents.components,
-        supplemental_attributes=[],
-        supplemental_attribute_associations=[],
+        supplemental_attributes=contents.supplemental_attributes,
+        supplemental_attribute_associations=[
+            SupplementalAttributeAssociation.model_validate(row)
+            for row in contents.supplemental_attribute_associations
+        ],
         plant_associations=[],
         combined_cycle_associations=[],
         service_associations=[

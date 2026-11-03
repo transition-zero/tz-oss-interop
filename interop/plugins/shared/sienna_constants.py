@@ -34,6 +34,8 @@ class SiennaSchemasSystem:
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
     SERVICE_ASSOCIATIONS = "service_associations"
+    SUPPLEMENTAL_ATTRIBUTES = "supplemental_attributes"
+    SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS = "supplemental_attribute_associations"
 
 
 class SiennaCompanionFilename(StrEnum):
@@ -75,6 +77,7 @@ class InfraStoreSeriesLabel:
 class SiennaComponent(StrEnum):
     AC_BUS = "ACBus"
     AREA = "Area"
+    LOAD_ZONE = "LoadZone"
     ARC = "Arc"
     POWER_LOAD = "PowerLoad"
     INTERRUPTIBLE_POWER_LOAD = "InterruptiblePowerLoad"
@@ -167,6 +170,48 @@ class SiennaServiceAssociationCol:
 
     SERVICE_ID = "service_id"
     ENTITY_ID = "entity_id"
+
+
+class SiennaLoadZoneCol:
+    """Sienna LoadZone destination table column names."""
+
+    ID = "id"
+    NAME = "name"
+    PEAK_ACTIVE_POWER = "peak_active_power"
+    PEAK_REACTIVE_POWER = "peak_reactive_power"
+    BASE_POWER = "base_power"
+    POWER_UNITS = "power_units"
+
+
+class SiennaSupplementalAttribute(StrEnum):
+    """The SiennaSchemas supplemental attribute types the translator writes."""
+
+    GEOMETRIC_DISTRIBUTION_FORCED_OUTAGE = "GeometricDistributionForcedOutage"
+
+
+class SiennaForcedOutageCol:
+    """Columns of a GeometricDistributionForcedOutage attribute table.
+
+    ``component_type`` and ``component_id`` name the component the attribute describes, which
+    the sink writes as an association row rather than on the attribute.
+    """
+
+    ID = "id"
+    MEAN_TIME_TO_RECOVERY = "mean_time_to_recovery"
+    OUTAGE_TRANSITION_PROBABILITY = "outage_transition_probability"
+    MONITORED_COMPONENTS = "monitored_components"
+    IDENTIFIER = "identifier"
+    COMPONENT_TYPE = "component_type"
+    COMPONENT_ID = "component_id"
+
+
+class SiennaAttributeAssociationCol:
+    """Columns of a SiennaSchemas ``SupplementalAttributeAssociation`` row."""
+
+    COMPONENT_ID = "component_id"
+    COMPONENT_TYPE = "component_type"
+    ATTRIBUTE_ID = "attribute_id"
+    ATTRIBUTE_TYPE = "attribute_type"
 
 
 class SiennaLoadCol:
@@ -810,6 +855,25 @@ ONLINE_RESERVE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
 SERVICE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaServiceAssociationCol.SERVICE_ID: pl.Int64,
     SiennaServiceAssociationCol.ENTITY_ID: pl.Int64,
+}
+
+LOAD_ZONES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaLoadZoneCol.ID: pl.Int64,
+    SiennaLoadZoneCol.NAME: pl.Utf8,
+    SiennaLoadZoneCol.PEAK_ACTIVE_POWER: pl.Float64,
+    SiennaLoadZoneCol.PEAK_REACTIVE_POWER: pl.Float64,
+    SiennaLoadZoneCol.BASE_POWER: pl.Float64,
+    SiennaLoadZoneCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+}
+
+FORCED_OUTAGES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaForcedOutageCol.ID: pl.Int64,
+    SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY: pl.Float64,
+    SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY: pl.Float64,
+    SiennaForcedOutageCol.MONITORED_COMPONENTS: pl.List(pl.Int64),
+    SiennaForcedOutageCol.IDENTIFIER: pl.Utf8,
+    SiennaForcedOutageCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaForcedOutageCol.COMPONENT_ID: pl.Int64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

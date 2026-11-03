@@ -40,6 +40,13 @@ def given_model_contains_node(
     plexos_model_builder.add_node(name, region=region)
 
 
+@given(parsers.parse('the model contains zone "{name}" holding nodes "{nodes}"'))
+def given_model_contains_zone(
+    plexos_model_builder: PlexosModelBuilder, name: str, nodes: str
+) -> None:
+    plexos_model_builder.add_zone(name, [node.strip() for node in nodes.split(",")])
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g}'))
 def given_model_contains_load(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float

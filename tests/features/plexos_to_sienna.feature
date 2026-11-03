@@ -377,3 +377,95 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Node" having "max_active_power" set to 50.0
     And the file "decisions.md" contains "another load already takes the name of this Load object, and Sienna names each PowerLoad once"
     And the log contains "1 Load object(s) share a name with another load, so each is left out: North_Node"
+
+  Scenario: a Zone becomes a LoadZone that each of its buses names
+    A Node names the Zone it sits in. The Zone becomes a Sienna LoadZone, and each bus of a
+    Node in it names that LoadZone. A Node in no Zone keeps a null load_zone.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains node "South_Node" in region "North"
+    And the model contains zone "Coast" holding nodes "North_Node"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "LoadZone"
+    And the written Sienna system puts bus "North_Node" in load zone "Coast"
+    And the file "outputs/system.json" parses as JSON with component "ACBus" named "South_Node" having "load_zone" set to null
+    And every "LoadZone" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+    And the component ids in the written Sienna system are unique
+    And the file "decisions.md" contains "containing Zone name -> load_zone"
+
+  Scenario: a forced outage rate and a repair time become a forced outage of the generator
+    PLEXOS states the share of the time a unit is out in Forced Outage Rate, and the hours a
+    repair takes in Mean Time to Repair. Sienna states the minutes a recovery takes, and the
+    chance in each minute that the unit fails. The two agree in the long run when the
+    chance is the rate over one minus the rate, over the minutes of a repair.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=5, Mean Time to Repair=10"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system states a "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant" with "mean_time_to_recovery" set to 600.0
+    And the written Sienna system states a "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant" with "outage_transition_probability" close to 8.771929824561403e-05
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+    And the component ids in the written Sienna system are unique
+    And the file "decisions.md" contains "Mean Time to Repair in hours x 60"
+    And the file "decisions.md" contains "Forced Outage Rate / 100 / (1 - Forced Outage Rate / 100) / mean_time_to_recovery"
+
+  Scenario: a battery's forced outage becomes a forced outage of its EnergyReservoirStorage
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains battery "HouseBattery" on node "North_Node" with max_power 100 capacity 200 charge_efficiency 81 initial_soc 50
+    And battery "HouseBattery" has property "Forced Outage Rate" 2
+    And battery "HouseBattery" has property "Mean Time to Repair" 24
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system states a "GeometricDistributionForcedOutage" attribute for "EnergyReservoirStorage" "HouseBattery" with "mean_time_to_recovery" set to 1440.0
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+
+  Scenario: a forced outage rate of 100 percent states no forced outage, and the report says why
+    A unit that is out all of the time has no time in service to fail from, so no chance of
+    failure states it. The generator still translates.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=100, Mean Time to Repair=10"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
+    And the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
+    And the file "decisions.md" contains "a Forced Outage Rate of 100 % or more leaves the unit no time in service to fail from"
+    And the log contains "1 unit(s) state a forced outage that Sienna cannot hold"
+
+  Scenario: a forced outage rate with no repair time states no forced outage
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=5"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
+    And the file "decisions.md" contains "states no Mean Time to Repair above 0"
