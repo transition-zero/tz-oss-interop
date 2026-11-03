@@ -231,3 +231,87 @@ Feature: PLEXOS to Sienna, in one hop
     And every "PowerLoad" component in the written Sienna system is valid SiennaSchemas 0.2
     And every "EnergyReservoirStorage" component in the written Sienna system is valid SiennaSchemas 0.2
     And every "Area" component in the written Sienna system is valid SiennaSchemas 0.2
+
+  Scenario: a Load object becomes a PowerLoad on the bus of the Node it joins
+    A model can state its demand on objects of the PLEXOS Load class, each joined to one
+    Node. Each such object becomes one PowerLoad of its own name, on the bus of that Node.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains a Load object "North_Homes" on node "North_Node" with peak 120
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "max_active_power" set to 120.0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "active_power" set to 120.0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "bus" set to 1
+    And every "PowerLoad" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the file "decisions.md" contains "the Node the Load object joins -> bus"
+
+  Scenario: a Load object whose Load reads a data file becomes a PowerLoad with a profile
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "HomesProfile" at "profiles/homes.csv" with hourly values "100, 200, 300"
+    And the model contains a Load object "North_Homes" on node "North_Node" with peak 300 from data file "HomesProfile"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "max_active_power" set to 300.0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "active_power" set to 100.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "North_Homes" attribute "max_active_power" with length 3
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
+    And the file "decisions.md" contains "file-backed Load profile -> a max_active_power time series"
+
+  Scenario: a Load object that joins no Node is left out, and the warning names a few
+    A Sienna load sits on a bus. A Load object that joins no Node gives its demand no bus, so
+    each one is left out and the report says why. The warning names three and counts the rest.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains a Load object "Stray_A" on no node with peak 10
+    And the model contains a Load object "Stray_B" on no node with peak 20
+    And the model contains a Load object "Stray_C" on no node with peak 30
+    And the model contains a Load object "Stray_D" on no node with peak 40
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 0 components of type "PowerLoad"
+    And the file "decisions.md" contains "the Load object joins no Node that became a bus, so its demand has no home"
+    And the log contains "4 Load object(s) join no Node that became a bus, so each is left out: Stray_A, Stray_B, Stray_C and 1 more"
+
+  Scenario: a Load object and a region load each become a PowerLoad
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains region load "North" with peak 300
+    And the model contains a Load object "North_Homes" on node "North_Node" with peak 120
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 2 components of type "PowerLoad"
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_load" having "max_active_power" set to 300.0
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Homes" having "max_active_power" set to 120.0
+    And the component ids in the written Sienna system are unique
+
+  Scenario: a Load object that shares its name with another load is left out
+    Sienna names each PowerLoad once. A Node that states its own Load already gives a load of
+    the Node's name, so a Load object of that same name is left out and the report says why.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains load "North_Node" with peak 50
+    And the model contains a Load object "North_Node" on node "North_Node" with peak 120
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
+    And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Node" having "max_active_power" set to 50.0
+    And the file "decisions.md" contains "another load already takes the name of this Load object, and Sienna names each PowerLoad once"
+    And the log contains "1 Load object(s) share a name with another load, so each is left out: North_Node"

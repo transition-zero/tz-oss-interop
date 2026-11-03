@@ -24,9 +24,8 @@ from interop.plugins.shared.plexos_sienna_translations._generators import (
 )
 from interop.plugins.shared.plexos_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
+    LOAD_SERIES_KEYS,
     LOAD_TRANSLATIONS,
-    NODE_LOAD_SERIES_KEY,
-    REGION_LOAD_SERIES_KEY,
     build_load_extensions,
     build_load_ts_associations,
     build_loads_source_table,
@@ -54,8 +53,7 @@ __all__ = [
     "map_transmission",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
-    "NODE_LOAD_SERIES_KEY",
-    "REGION_LOAD_SERIES_KEY",
+    "LOAD_SERIES_KEYS",
     "build_bus_extensions",
     "build_buses_source_table",
     "build_load_extensions",

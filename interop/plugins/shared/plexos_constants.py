@@ -21,6 +21,7 @@ class PlexosClass(StrEnum):
     NODE = "Node"
     REGION = "Region"
     ZONE = "Zone"
+    LOAD = "Load"
     LINE = "Line"
     TRANSFORMER = "Transformer"
     INTERFACE = "Interface"
@@ -122,6 +123,8 @@ class PlexosCollection(StrEnum):
     REGIONS = "Regions"
     # A Node's membership to its containing Region uses the singular collection name.
     REGION = "Region"
+    # A Load object's membership to its Node uses the singular collection name too.
+    NODE = "Node"
     ZONES = "Zones"
     GENERATORS = "Generators"
     FUELS = "Fuels"
