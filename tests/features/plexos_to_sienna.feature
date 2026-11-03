@@ -175,3 +175,25 @@ Feature: PLEXOS to Sienna, in one hop
     And the PS.jl system "outputs/power_simulations_system.json" contains 1 component of type "ThermalStandard"
     And the PS.jl system "outputs/power_simulations_system.json" component "ThermalStandard" named "GasPlant" has field "time_limits" equal to {"up": 6.0, "down": 0.0}
     And the H5 sidecar "outputs/power_simulations_system_time_series.h5" with system "outputs/power_simulations_system.json" has a time series association for "ThermalStandard" component "GasPlant"
+
+  Scenario: the units basis of each Sienna type is stated
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains region "South"
+    And the model contains node "North_Node" in region "North"
+    And the model contains node "South_Node" in region "South"
+    And the model contains region load "North" with peak 300
+    And the model contains line "North_South" from "North_Node" to "South_Node" with no flow limits
+    And the model contains battery "HouseBattery" on node "North_Node" with max_power 100 capacity 200 charge_efficiency 81 initial_soc 50
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_load" having "power_units" set to "NATURAL_UNITS"
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "North_South" having "power_units" set to "NATURAL_UNITS"
+    And the file "outputs/system.json" parses as JSON with component "TwoTerminalGenericHVDCLine" named "North_South" having "base_power" set to 100.0
+    And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "HouseBattery" having "power_units" set to "COMPONENT_BASE"
+    And every "PowerLoad" component in the written Sienna system is valid SiennaSchemas 0.2
+    And every "EnergyReservoirStorage" component in the written Sienna system is valid SiennaSchemas 0.2
+    And every "Area" component in the written Sienna system is valid SiennaSchemas 0.2

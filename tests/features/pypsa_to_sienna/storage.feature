@@ -27,6 +27,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit PHS to Sien
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "efficiency.out" set to 0.9
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "reactive_power" set to 0.0
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "base_power" set to 1000.0
+    And every "EnergyReservoirStorage" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "power_units" set to "COMPONENT_BASE"
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "operation_cost.cost_type" set to "STORAGE"
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "operation_cost.discharge_variable_cost.value_curve.function_data.proportional_term" set to 3.0
     And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "phs_1" having "operation_cost.charge_variable_cost.value_curve.function_data.proportional_term" set to 0.0
