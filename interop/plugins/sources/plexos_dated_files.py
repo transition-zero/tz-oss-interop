@@ -78,14 +78,15 @@ def _read_values_by_name(scan: pl.LazyFrame, relative: str) -> dict[str, list[Da
     """
     rows = scan.select(_CSV_NAME, _CSV_YEAR, _CSV_MONTH, _CSV_DAY, _CSV_VALUE).collect()
     dated: dict[str, list[tuple[datetime, float]]] = {}
-    undated_count = 0
+    unreadable_count = 0
     for name, year, month, day, value in rows.iter_rows():
         moment = _to_date(year, month, day)
-        if moment is None or value is None:
-            undated_count += 1
+        number = _to_number(value)
+        if moment is None or number is None:
+            unreadable_count += 1
             continue
-        dated.setdefault(str(name), []).append((moment, float(value)))
-    _warn_undated(relative, undated_count)
+        dated.setdefault(str(name), []).append((moment, number))
+    _warn_unreadable(relative, unreadable_count)
     return {name: _build_bands(sorted(pairs)) for name, pairs in dated.items()}
 
 
@@ -105,10 +106,20 @@ def _to_date(year: object, month: object, day: object) -> datetime | None:
         return None
 
 
-def _warn_undated(relative: str, undated_count: int) -> None:
-    if undated_count:
+def _to_number(value: object) -> float | None:
+    """A cell's number. A blank cell, or text such as ``-``, states none."""
+    if value is None:
+        return None
+    try:
+        return float(str(value))
+    except ValueError:
+        return None
+
+
+def _warn_unreadable(relative: str, unreadable_count: int) -> None:
+    if unreadable_count:
         log.warning(
-            "plexos: %s holds %d row(s) whose date is not a date, so each is left out",
+            "plexos: %s holds %d row(s) whose date or value cannot be read, so each is left out",
             relative,
-            undated_count,
+            unreadable_count,
         )

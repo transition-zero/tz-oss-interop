@@ -251,4 +251,21 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     And the model is saved as "inputs/model.xml"
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
-    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date is not a date"
+    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
+
+  Scenario: a row whose value is not a number is left out with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 60    |
+      | Farm | 2026 | 6     | 1   | -     |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
+    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
