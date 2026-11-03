@@ -19,7 +19,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaLineCol,
 )
-from interop.plugins.shared.sienna_time_series import TIME_SERIES_ASSOCIATION_ID
 from interop.plugins.shared.translation_runner import (
     apply_translations,
     enrich_first_id,
@@ -36,9 +35,7 @@ _BRANCH_COMPONENTS: tuple[str, ...] = (
 class SiennaRelateComponents(TranslationStep):
     """Derive the Area and the Arc tables from the Sienna tables an earlier step wrote.
 
-    It also numbers the time-series association rows, once every earlier step has added or
-    removed its own. Every source framework reaches this step, so its name states Sienna
-    alone.
+    Every source framework reaches this step, so its name states Sienna alone.
     """
 
     name: ClassVar[str] = "sienna_relate_components"
@@ -48,7 +45,6 @@ class SiennaRelateComponents(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        state = self._number_associations(state)
         if SiennaComponent.AC_BUS not in state.destination_tables:
             return state
 
@@ -62,15 +58,6 @@ class SiennaRelateComponents(TranslationStep):
             SiennaComponent.AREA,
         )
         state = self._build_arcs(state, buses)
-        return state
-
-    def _number_associations(self, state: State) -> State:
-        associations = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
-        if associations is None:
-            return state
-        state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = apply_translations(
-            associations, [TIME_SERIES_ASSOCIATION_ID], self._recorder
-        )
         return state
 
     def _build_arcs(self, state: State, buses: pl.DataFrame) -> State:

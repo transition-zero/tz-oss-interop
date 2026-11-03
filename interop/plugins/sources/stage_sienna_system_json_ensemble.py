@@ -133,8 +133,8 @@ def _combine_time_series(
 ) -> dict[tuple[str, str], pl.LazyFrame]:
     """One frame per series, holding every replication behind a sample column.
 
-    Every replication states the same associations, because the sink builds one document and
-    writes it many times, so no narrowing is needed here. The frames are concatenated and
+    Every replication states the same associations apart from ``uri``, which is the hash of
+    that replication's values, so no narrowing is needed here. The frames are concatenated and
     streamed straight back to parquet, so an ensemble whose values do not fit in memory is
     never held there.
     """

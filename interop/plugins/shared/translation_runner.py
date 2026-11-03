@@ -21,7 +21,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import ALL_COMPONENTS, Framework
-from interop.plugins.shared.sienna_constants import SiennaACBusCol, SiennaComponent
+from interop.plugins.shared.sienna_constants import SiennaACBusCol
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -176,16 +176,13 @@ def build_first_free_id(state: State) -> int:
     """The id after every id that the component tables in ``state`` already hold.
 
     Ids are unique across the whole document, so each table counts on from the tables written
-    before it. A component table is a table with an id column. The time-series associations
-    number themselves, so they do not count.
+    before it. A component table is a table with an id column.
     """
-    taken = 0
-    for key, table in state.destination_tables.items():
-        if key == SiennaComponent.TIME_SERIES_ASSOCIATION:
-            continue
-        if SiennaACBusCol.ID in table.columns:
-            taken += table.height
-    return taken + 1
+    return 1 + sum(
+        table.height
+        for table in state.destination_tables.values()
+        if SiennaACBusCol.ID in table.columns
+    )
 
 
 def enrich_first_id(table: pl.DataFrame, state: State) -> pl.DataFrame:

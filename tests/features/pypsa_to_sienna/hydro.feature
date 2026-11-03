@@ -43,9 +43,9 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     # Two time series: per-step cap (flat p_max_pu) and horizon energy budget
     And the file "outputs/system_time_series_storage.h5" exists
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 1.0 1.0 1.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 100.0 100.0 100.0
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with length 3
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 0.09 0.18 0.27
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 9.0 18.0 27.0
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 2
     # Decisions
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.carrier` = hydro | `sienna.HydroDispatch.hydro_1.type` = HydroDispatch | hydro carrier -> HydroDispatch |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -61,8 +61,8 @@ Feature: pypsa_to_sienna_map_components translates PyPSA StorageUnit rows to Sie
     When I run translate against "inputs/hydro_derate.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "rating" set to 40.0
     And the file "outputs/system.json" parses as JSON with component "HydroDispatch" named "hydro_1" having "active_power_limits.max" set to 40.0
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 0.8 0.8 0.8
-    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 0.1 0.1 0.1
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "max_active_power" with values 40.0 40.0 40.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroDispatch" named "hydro_1" attribute "hydro_budget" with values 5.0 5.0 5.0
 
   Scenario: a storage unit whose carrier the mappings file omits is left out, and the run completes
     Given a PyPSA network

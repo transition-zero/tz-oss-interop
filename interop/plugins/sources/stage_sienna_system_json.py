@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 from pathlib import Path
 from typing import IO, Any, ClassVar, NamedTuple
 
+import numpy as np
 import pandas as pd
 import polars as pl
+from infrastore import Store
+from numpy.typing import NDArray
 from pydantic import BaseModel
 
 from interop.core.pipeline import StagedSource, State
@@ -13,7 +18,7 @@ from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
     SIENNA_SOURCE_BUSES_SCHEMA,
-    Hdf5TimeSeriesStore,
+    InfraStoreSidecar,
     SiennaACBusCol,
     SiennaArcCol,
     SiennaComponent,
@@ -21,13 +26,18 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLineCol,
     SiennaSchemasSystem,
     SiennaTable,
+    SiennaUnitSystem,
     TimeSeriesAssociationCol,
 )
+from interop.plugins.shared.sienna_time_series import build_capacity_by_owner, has_series_capacity
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.errors import MissingInputError
 from interop.ports.outbound.filesystem import FilesystemPort, InputFile
 
-# Rows read from a time series and written to parquet per block. Bounds peak memory when
-# transcoding the HDF5 sidecar: one block is resident at a time, not the whole series.
+log = logging.getLogger(__name__)
+
+# Rows of one series read and written per block, which bounds peak memory. One block is one
+# parquet file, so a long series becomes a few files that are scanned back as one frame.
 _TIME_SERIES_CHUNK_ROWS = 1_000_000
 
 # SiennaSchemas types routed to each reverse intermediate table. Each is a key in the
@@ -220,28 +230,27 @@ def _stage_table(
 def _stage_time_series(
     system: dict[str, Any], h5_file: IO[bytes], staging_dir: Path
 ) -> dict[tuple[str, str], pl.LazyFrame]:
-    """Read the JSON TimeSeriesAssociation records plus the HDF5 value store and stage one
+    """Read the JSON TimeSeriesAssociation records plus the InfraStore sidecar and stage one
     parquet per (owner type, series name).
 
-    The associations are a sibling list in the system document; the value arrays live under
-    ``time_series/<uuid>/data`` in the HDF5 companion. Each association's integer
-    ``owner_id`` is resolved back to its component name so downstream steps see the same
-    ``(snapshot, component, value)`` contract regardless of where the values were stored.
+    The associations are a sibling list in the system document. The values live in the
+    InfraStore file beside it, and each association names its series by ``association_id``.
+    Each association's integer ``owner_id`` is resolved back to its component name so
+    downstream steps see the same ``(snapshot, component, value)`` contract regardless of
+    where the values were stored.
     """
-    import h5py
-
     associations = system.get(SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS, [])
     if not associations:
         return {}
 
     name_by_owner = _name_by_owner(system)
+    associations = _drop_unconvertible(associations)
+    capacity_by_owner = _capacity_by_owner(system, associations)
     key_dirs: dict[tuple[str, str], Path] = {}
-    with h5py.File(h5_file, "r") as h5:
-        value_groups = h5[Hdf5TimeSeriesStore.ROOT_GROUP]
+    with _open_store(h5_file, associations, staging_dir) as store:
         for association in associations:
-            uuid = association[TimeSeriesAssociationCol.TIME_SERIES_UUID]
-            dataset = value_groups[uuid][Hdf5TimeSeriesStore.DATA_DATASET]
-            if dataset.shape[0] == 0:
+            length = association[TimeSeriesAssociationCol.LENGTH]
+            if length == 0:
                 continue
             key = (
                 association[TimeSeriesAssociationCol.OWNER_TYPE],
@@ -254,47 +263,123 @@ def _stage_time_series(
             key_dir = staging_dir / "time_series" / key[0] / key[1]
             key_dir.mkdir(parents=True, exist_ok=True)
             _stream_series_to_parquet(
-                dataset,
+                store,
+                association,
+                capacity=capacity_by_owner.get(owner),
                 component=name_by_owner[owner],
-                initial_time=pd.Timestamp(association[TimeSeriesAssociationCol.INITIAL_TIMESTAMP]),
-                resolution_seconds=pd.Timedelta(
-                    association[TimeSeriesAssociationCol.RESOLUTION]
-                ).total_seconds(),
                 key_dir=key_dir,
-                series_uuid=uuid,
             )
             key_dirs[key] = key_dir
 
     return {key: pl.scan_parquet(key_dir / "*.parquet") for key, key_dir in key_dirs.items()}
 
 
-def _stream_series_to_parquet(
-    dataset: Any,
-    *,
-    component: str,
-    initial_time: pd.Timestamp,
-    resolution_seconds: float,
-    key_dir: Path,
-    series_uuid: str,
-) -> None:
-    """Transcode one HDF5 value dataset to parquet a block at a time, one file per block.
+def _is_natural_units(association: dict[str, Any]) -> bool:
+    return association.get(TimeSeriesAssociationCol.UNIT_SYSTEM) == SiennaUnitSystem.NATURAL_UNITS
 
-    Only ``_TIME_SERIES_CHUNK_ROWS`` values are resident at once, so peak memory is the
-    block size regardless of how long the series is. Each block becomes its own parquet
-    file in the per-key directory, which is scanned back as one lazy frame.
+
+def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the rows that can be staged, and warn once about the natural-units rows that cannot.
+
+    A natural-units row needs its owner's capacity to reach the per-unit shape. An owner type
+    with no capacity rule leaves its series out.
     """
-    step = pd.Timedelta(seconds=resolution_seconds)
-    length = dataset.shape[0]
+    kept: list[dict[str, Any]] = []
+    left_out: list[str] = []
+    for association in associations:
+        owner_type = association[TimeSeriesAssociationCol.OWNER_TYPE]
+        if _is_natural_units(association) and not has_series_capacity(owner_type):
+            left_out.append(f"{owner_type} {association[TimeSeriesAssociationCol.NAME]}")
+        else:
+            kept.append(association)
+    if left_out:
+        log.warning(
+            "%d series in natural units have an owner type with no capacity to convert by, "
+            "so each is left out: %s",
+            len(left_out),
+            name_a_few(left_out),
+        )
+    return kept
+
+
+def _convert_to_per_unit(values: NDArray[Any], capacity: float | None) -> NDArray[Any]:
+    """A natural-units array divided by its owner's capacity; any other array as stored.
+
+    A zero capacity gives no per-unit shape, so its series reads as zeros.
+    """
+    if capacity is None:
+        return values
+    return values / capacity if capacity else np.zeros_like(values)
+
+
+def _capacity_by_owner(
+    system: dict[str, Any], associations: list[dict[str, Any]]
+) -> dict[tuple[str, int], float]:
+    """The capacity that turns each owner's stored megawatts back into its per-unit shape."""
+    owners = {
+        (
+            association[TimeSeriesAssociationCol.OWNER_TYPE],
+            association[TimeSeriesAssociationCol.OWNER_ID],
+        )
+        for association in associations
+        if _is_natural_units(association)
+    }
+    return build_capacity_by_owner(owners, system.get(SiennaSchemasSystem.COMPONENTS, {}))
+
+
+def _open_store(h5_file: IO[bytes], associations: list[dict[str, Any]], staging_dir: Path) -> Store:
+    """Open the sidecar as a store that holds the rows of the document.
+
+    The file arrives as a stream and the store needs a path, so the bytes go to staging
+    scratch first. The sidecar holds arrays only, and its catalog is the document's rows.
+    """
+    store_dir = staging_dir / InfraStoreSidecar.STAGING_DIRECTORY
+    store_dir.mkdir(parents=True, exist_ok=True)
+    path = store_dir / InfraStoreSidecar.SCRATCH_FILENAME
+    with path.open("wb") as scratch:
+        shutil.copyfileobj(h5_file, scratch)
+    store = Store.open_without_catalog(str(path))
+    store.import_time_series_associations_openapi(json.dumps(associations))
+    return store
+
+
+def _stream_series_to_parquet(
+    store: Store,
+    association: dict[str, Any],
+    *,
+    capacity: float | None,
+    component: str,
+    key_dir: Path,
+) -> None:
+    """Write one series to parquet a block at a time, one file per block.
+
+    Only ``_TIME_SERIES_CHUNK_ROWS`` rows are read and converted at once. Each block becomes
+    its own parquet file in the per-key directory, which is scanned back as one lazy frame.
+    """
+    series_id = association[TimeSeriesAssociationCol.ASSOCIATION_ID]
+    length = association[TimeSeriesAssociationCol.LENGTH]
+    initial_time = pd.Timestamp(
+        association[TimeSeriesAssociationCol.INITIAL_TIMESTAMP]
+    ).tz_localize(None)
+    step = pd.Timedelta(association[TimeSeriesAssociationCol.RESOLUTION])
     for offset in range(0, length, _TIME_SERIES_CHUNK_ROWS):
-        block = dataset[offset : offset + _TIME_SERIES_CHUNK_ROWS]
-        snapshots = pd.date_range(start=initial_time + step * offset, periods=len(block), freq=step)
+        block_start = initial_time + step * offset
+        block = _convert_to_per_unit(
+            store.read_by_id(
+                series_id,
+                start_time=block_start.to_pydatetime(),
+                len=min(_TIME_SERIES_CHUNK_ROWS, length - offset),
+            ).data,
+            capacity,
+        )
+        snapshots = pd.date_range(start=block_start, periods=len(block), freq=step)
         pl.DataFrame(
             {
                 StagedTimeSeriesCol.SNAPSHOT: snapshots.to_numpy(),
                 StagedTimeSeriesCol.VALUE: block,
             }
         ).with_columns(pl.lit(component).alias(StagedTimeSeriesCol.COMPONENT)).write_parquet(
-            key_dir / f"{series_uuid}_{offset}.parquet"
+            key_dir / f"{series_id}_{offset}.parquet"
         )
 
 

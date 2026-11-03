@@ -161,8 +161,10 @@ region.
 | `conformity` | | `UNDEFINED` | `default` |
 | `available` | | `True` | `default` |
 
-A demand that reads a data file becomes a `TimeSeriesAssociation` on `max_active_power`,
-whose stored shape peaks at 1.0 and scales back to MW through the peak.
+A demand that reads a data file becomes a `TimeSeriesAssociation` on `max_active_power`.
+The translator divides the profile by its peak. The store holds that shape times the peak,
+which is the profile in MW. A profile that peaks at 0 MW and falls below it has no peak to
+scale it back. The translation leaves that profile out, records the gap and writes a warning.
 
 A region `Load` stated as a participation share, not as megawatts, stops the translation
 rather than reading a share as a quantity of power.
@@ -242,7 +244,8 @@ mappings file gives that fuel the type `ThermalStandard`.
 
 An availability that changes with time becomes a `TimeSeriesAssociation` on
 `max_active_power`. That is the name PowerSimulations reads an availability forecast under.
-The stored shape peaks at 1.0 and scales back to MW through `active_power_limits.max`.
+The translator divides the profile by its peak. The store holds that shape times
+`active_power_limits.max`, in MW.
 
 **The translator does not translate five cases.** It records each one as a skipped
 component:
