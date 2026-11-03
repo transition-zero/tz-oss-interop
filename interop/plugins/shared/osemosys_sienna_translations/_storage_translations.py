@@ -106,18 +106,21 @@ from interop.plugins.shared.sienna_constants import (
     PRIME_MOVERS_DTYPE,
     SIENNA_TYPE_ATTRIBUTE,
     STORAGE_COST_DTYPE,
+    STORAGE_UNITS_NOTE,
+    UNIT_SYSTEM_DTYPE,
     MinMaxField,
     SiennaComponent,
     SiennaCostType,
     SiennaEnergyReservoirStorageCol,
     SiennaStorageTech,
     SiennaStructField,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import variable_cost_curve
 from interop.plugins.shared.translation_runner import (
     Translation,
+    build_document_id_translation,
     default_translation,
-    row_position_id_translation,
 )
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
@@ -129,7 +132,9 @@ _default = partial(default_translation, _dest, name_col=STORAGE_NAME)
 _NO_POWER = 0.0
 _NO_TARGET = 0.0
 
-_ID_NOTE = "assigned by 1-based row position in the table of the Sienna type"
+_ID_NOTE = (
+    "assigned by row position in the table of the Sienna type, after the ids of earlier components"
+)
 _AVAILABLE_NOTE = "OSeMOSYS states no availability flag; every storage is available"
 _TYPE_NOTE = "the carriers: row of the category of the discharging technology names the type"
 _PRIME_MOVER_NOTE = (
@@ -273,7 +278,9 @@ def _build_identity() -> list[Translation]:
             lambda old: [_build_source(STORAGE, old[STORAGE_REPORT_NAME], STORAGE, old[STORAGE])],
             _NAME_DERIVATION,
         ),
-        row_position_id_translation(_dest, dest_name_col=_Col.NAME, id_col=_Col.ID, note=_ID_NOTE),
+        build_document_id_translation(
+            _dest, dest_name_col=_Col.NAME, id_col=_Col.ID, note=_ID_NOTE
+        ),
         _default(dest_col=_Col.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
         _build_value(
             _Col.BUS_NAME,
@@ -309,6 +316,12 @@ def _build_power() -> list[Translation]:
             UNIT_MVA,
         ),
         _default(dest_col=_Col.RATING, value=WHOLE_CAPACITY, note=_RATING_NOTE),
+        _default(
+            dest_col=_Col.POWER_UNITS,
+            value=SiennaUnitSystem.COMPONENT_BASE,
+            note=STORAGE_UNITS_NOTE,
+            dtype=UNIT_SYSTEM_DTYPE,
+        ),
         _default(
             dest_col=_Col.ACTIVE_POWER, value=_NO_POWER, note=_ACTIVE_POWER_NOTE, unit=UNIT_MW
         ),

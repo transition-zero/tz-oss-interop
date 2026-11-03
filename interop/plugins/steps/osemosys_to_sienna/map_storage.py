@@ -17,6 +17,7 @@ from interop.plugins.shared.osemosys_sienna_translations import (
     set_storage_values_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_user_mappings import OsemosysSiennaCarrierMappings
+from interop.plugins.shared.translation_runner import enrich_first_id
 
 
 class OsemosysToSiennaMapStorage(OperationsMapping):
@@ -32,7 +33,8 @@ class OsemosysToSiennaMapStorage(OperationsMapping):
         source = build_storages_source(state, operations, self._mappings, self._recorder)
         if source.table.height == 0:
             return
-        storages = map_component_table(source.table, STORAGE_MAPPING, self._recorder)
+        table = enrich_first_id(source.table, state)
+        storages = map_component_table(table, STORAGE_MAPPING, self._recorder)
         state.destination_tables[STORAGE_MAPPING.sienna_type] = storages
         append_extensions(
             state.destination_extensions,
