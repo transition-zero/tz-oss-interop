@@ -26,6 +26,7 @@ what you get.
 | [`Node`](#node--acbus) | `ACBus`, and an `Arc` for each pair of nodes a branch joins |
 | [`Region`](#region--area) | `Area`. It also gives a `PowerLoad`. |
 | [Region `Load` property](#region-load--powerload) | `PowerLoad` |
+| [`Load` object](#load-object--powerload) | `PowerLoad` |
 | [`Line`](#line--line-or-twoterminalgenerichvdcline) | `Line` if it has impedance, or `TwoTerminalGenericHVDCLine` if it has none |
 | [`Generator`](#generator--thermalstandard), thermal | `ThermalStandard` |
 | [`Generator`](#generator--renewabledispatch), renewable | `RenewableDispatch`, or `RenewableNonDispatch` where your mappings file says so |
@@ -175,6 +176,34 @@ rather than reading a share as a quantity of power.
 
 A region that contains more than one node is not translated, because a Sienna `PowerLoad`
 sits on one bus.
+
+## `Load` object → `PowerLoad`
+
+An object of the PLEXOS `Load` class states its own `Load`, and joins one `Node` through the
+`Load.Node` collection. The translator writes one `PowerLoad` for each `Load` object, on the
+bus of that node.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The name of the `Load` object | `derived` |
+| `bus` | | The node that the `Load` object joins | `derived` |
+| `max_active_power` | MW | `Load.Load`, or the peak of its profile | `derived` |
+| `active_power` | MW | `Load.Load` at the first snapshot | `derived` |
+| `base_power` | MVA | The peak demand | `derived` |
+| `reactive_power` | MVAR | `0.0` | `default` |
+| `max_reactive_power` | MVAR | `0.0` | `default` |
+| `conformity` | | `UNDEFINED` | `default` |
+| `available` | | `True` | `default` |
+
+A `Load` that reads a data file becomes a `TimeSeriesAssociation` on `max_active_power`, in
+the same way as a region `Load`.
+
+The translator leaves out a `Load` object in two cases. `decisions.md` names each one, and
+the run writes one warning for each case:
+
+- The `Load` object joins no node that became a bus.
+- Another load already has the name of the `Load` object. Sienna gives each `PowerLoad` one
+  name, and a region load or a node load comes first.
 
 ## `Line` → `Line` or `TwoTerminalGenericHVDCLine`
 

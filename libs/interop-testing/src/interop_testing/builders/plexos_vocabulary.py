@@ -41,6 +41,10 @@ CONSTRAINTS_COLLECTION = "Constraints"
 MODELS_COLLECTION = "Models"
 SCENARIOS_COLLECTION = "Scenarios"
 REGION_COLLECTION = "Region"
+LOAD_CLASS = "Load"
+LOADS_COLLECTION = "Loads"
+# A Load object joins its Node through the singular collection name.
+NODE_COLLECTION = "Node"
 DATA_FILE_CLASS = "Data File"
 DATA_FILES_COLLECTION = "Data Files"
 
