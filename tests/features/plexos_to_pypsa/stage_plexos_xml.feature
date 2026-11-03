@@ -312,6 +312,33 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     Then the log contains "ignoring unreadable horizon attribute 'weekly'"
     And the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 100
 
+  Scenario: a Horizon that steps in weeks spans seven days for each step
+    PLEXOS codes a chronology step of one day as 2 and of one week as 3. Two weekly steps at
+    24 periods per day are 336 hourly snapshots.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=50"
+    And generator "Farm" states "Max Capacity" of 100 from "2026-01-10"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And horizon "H1" states "Chrono Step Type" as "3"
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 336 snapshots
+
+  Scenario: a Horizon stepping in a unit the source does not read leaves the snapshots unset
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And horizon "H1" states "Chrono Step Type" as "4"
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the log contains "horizon step type 4 is not a day or a week; snapshots not set"
+
   Scenario: a Horizon starting on a date nobody can read leaves the snapshots unset
     Given a Plexos model
     And the model contains region "Grid"
