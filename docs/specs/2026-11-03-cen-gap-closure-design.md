@@ -77,8 +77,33 @@ Each warning names three components and counts the rest.
 | `Forced Outage Rate` and `Mean Time to Repair` | `GeometricDistributionForcedOutage`, and a supplemental attribute association to the unit |
 | The hydro cascade: `Storage`, `Waterway` and the generators that name a head or tail storage | `HydroReservoir` and `HydroTurbine`, joined by `upstream_reservoirs`, `upstream_turbines` and `downstream_turbines` |
 
+### 9. The rules the CEN run found
+
+The first translation with decisions 1 to 8 found these rules. Each one is a rule of PLEXOS,
+and not of the CEN model.
+
+- **An object name reads without letter case,** and a data file row of a value that reads
+  through a `Variable` carries the `Variable`'s name.
+- **A membership property's row is named after both of its objects,** in either order.
+- **A `Variable` that a property row names escalates the row's data file values.** The
+  source multiplies the series by the `Variable`'s series at each snapshot.
+- **A staged series with no rows is no series.** The source drops it, with a warning.
+- **A generator that states `Units Out` takes its outage from `Units Out` alone.** The
+  outage properties then belong to the units out.
+- **A unit whose carrier the mappings file names as `ThermalStandard` stays thermal,** even
+  where it names a head `Storage`. A `Storage` that only such units draw on is a fuel store,
+  which Sienna has no home for.
+- **A unit with a head and a tail `Storage`, no pump, and a `Waterway` out of the tail is a
+  cascade turbine.** A closed pair stays pumped storage.
+- **Every `Storage` of a cascade is a `HydroReservoir`:** each head and tail of a turbine,
+  and each `Storage` that a `Waterway` joins to one.
+- **`Efficiency Incr` gives a `HydroTurbine` its `conversion_factor`,** as
+  `Efficiency Incr / 3600 / base_power`.
+
 ## What this spec does not change
 
+- `VoRS` as a reserve demand curve, a `Flow Control` as a phase-shifting transformer, and a
+  region `VoLL` as a sheddable load. Each one changes what PowerSimulations solves.
 - A data file whose name differs only in letter case from the file on disk. The source
   cannot find it without a way to list a folder, and `FilesystemPort` has none. A new port
   method is a change to a published contract, so it needs a decision of its own.
