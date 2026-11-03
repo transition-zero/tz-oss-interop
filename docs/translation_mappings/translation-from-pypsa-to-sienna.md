@@ -955,7 +955,7 @@ g_sienna = g_pu_pypsa / S_base_MVA
 | `available` | `Bool` | `n.lines.active` | direct | **direct** | PyPSA `active` (bool, default `True`) → `available`. All lines active in sample files |
 | `active_power_flow` | `Float64` (MW) | — | `0.0` | **defaulted** | PyPSA does not store initial branch flow as an input; `p0`/`p1` in `n.lines_t` are outputs |
 | `reactive_power_flow` | `Float64` (MVAR) | — | `0.0` | **defaulted** | Same — Q flow outputs only |
-| `arc` | `Arc` | `n.lines.bus0`, `n.lines.bus1` | look up ACBus by name → `Arc(from_bus, to_bus)` | **derived** | `bus0` → `from`, `bus1` → `to`. In the JSON schema, `Arc.from` and `Arc.to` are integer bus IDs; in the Julia API, pass ACBus objects. Requires the bus registry built in the bus translation step. |
+| `arc` | `Arc` | `n.lines.bus0`, `n.lines.bus1` | look up ACBus by name → `Arc(from_bus, to_bus)` | **derived** | `bus0` → `from_id`, `bus1` → `to_id`. In the JSON schema, `Arc.from_id` and `Arc.to_id` are integer bus IDs; in the Julia API, pass ACBus objects. Requires the bus registry built in the bus translation step. |
 | `r` | `Float64` (pu, SYSTEM_BASE) | `n.lines.r` (Ohm) | `r_ohm × S_base / v_nom_kV²` | **derived** | PyPSA stores in Ohms. Use bus `v_nom` (kV). Sienna validates `r ∈ (0, 4)` — flag if outside range |
 | `x` | `Float64` (pu, SYSTEM_BASE) | `n.lines.x` (Ohm) | `x_ohm × S_base / v_nom_kV²` | **derived** | Same as `r`. Must be > 0 for linearised power flow; PyPSA requires this too |
 | `b` | `FromTo` (pu, SYSTEM_BASE) | `n.lines.b` (Siemens) | `b_total_sienna = b_S × v_nom_kV² / S_base`; split equally: `(from=b_total/2, to=b_total/2)` | **derived** | Optional in schema; PyPSA `b` is the total shunt susceptance (π-model). Sienna splits per end. Default `(from=0.0, to=0.0)` when `b=0` |
@@ -1052,7 +1052,7 @@ Confirm: `elec_s_70` has non-empty `type` values; `solved_network` has empty `ty
 5. **`v_nom` mismatch detection.** PyPSA Lines are AC branches connecting two buses at the same voltage level. If `bus0.v_nom ≠ bus1.v_nom`, it may indicate a transformer that was modelled as a Line (incorrect) or a data error. The translator should check this and warn or refuse to translate mismatched-voltage Lines.
 6. **`rating` validation.** Sienna validates `r ∈ (0, 4)` and `x ∈ (0, 4)` on system base. After conversion, if a line has very small or very large impedance relative to the system base (e.g. short, low-voltage line in a high-base system), it may fail validation. Add a pre-check and log any out-of-range values before calling the constructor.
 7. **`MonitoredLine` trigger.** There is currently no PyPSA field that maps to `flow_limits`. If the BTE workflow uses `MonitoredLine` for N-1 contingency constraints, these limits must be supplied as user overrides. Define an override mechanism (e.g. a CSV sidecar or a config dict) that the translator checks before choosing between `Line` and `MonitoredLine`.
-8. **`Arc` collection.** An `Arc` is its own typed object (`{id, from, to}`) in the `Arc` list, referenced by a branch's integer `arc`. Decide whether a single `Arc` is shared between branches on the same bus pair or emitted one-per-branch, and assign `Arc` `id`s before the branches that reference them.
+8. **`Arc` collection.** An `Arc` is its own typed object (`{id, from_id, to_id}`) in the `Arc` list, referenced by a branch's integer `arc`. Decide whether a single `Arc` is shared between branches on the same bus pair or emitted one-per-branch, and assign `Arc` `id`s before the branches that reference them.
 
 ---
 
@@ -1081,7 +1081,7 @@ Five sample `.nc` networks were checked:
 
 #### Bus lookup and Arc construction
 
-A line connects buses through an `Arc`, whose `from`/`to` are integer bus `id`s. Build a name→`id` map during bus translation, resolve `line.bus0`/`line.bus1` to those `id`s, emit one `Arc` per bus pair, and set the line's `arc` to that `Arc`'s `id`.
+A line connects buses through an `Arc`, whose `from_id`/`to_id` are integer bus `id`s. Build a name→`id` map during bus translation, resolve `line.bus0`/`line.bus1` to those `id`s, emit one `Arc` per bus pair, and set the line's `arc` to that `Arc`'s `id`.
 
 ```json
 { "id": 1, "from": 1, "to": 2 }
@@ -1284,7 +1284,7 @@ In all tested sample files, every Link passes the electricity filter. Cross-carr
 | `name` | `name` | Direct copy | No transformation needed |
 | `active` | `available` | Direct copy (bool) | PyPSA `active=True` → `available=true` |
 | — | `active_power_flow` | Set to `0.0` | PyPSA has `p0`/`p1` result fields, not an initial condition; initialise to 0 |
-| `bus0` | `arc` (from) | resolve name → bus `id` | `arc` is the integer `id` of an `Arc` whose `from`/`to` are the bus `id`s of `bus0`/`bus1` |
+| `bus0` | `arc` (from) | resolve name → bus `id` | `arc` is the integer `id` of an `Arc` whose `from_id`/`to_id` are the bus `id`s of `bus0`/`bus1` |
 | `bus1` | `arc` (to) | Name lookup → `ACBus` | Same Arc; both buses must already exist in the system |
 | `p_nom × p_min_pu` | `active_power_limits_from.min` | Multiply; see directionality | If `p_min_pu ≥ 0`: min = 0.0. If `p_min_pu < 0`: min = `p_nom × p_min_pu` (negative MW) |
 | `p_nom × p_max_pu` | `active_power_limits_from.max` | Multiply | `p_nom × p_max_pu` (MW); use `p_nom_opt` if available after solve |
