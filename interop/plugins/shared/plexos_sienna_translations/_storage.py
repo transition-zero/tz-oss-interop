@@ -69,6 +69,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
+    SiennaHydroReservoirCol,
     SiennaStorageTech,
     SiennaStructField,
     SiennaUnitSystem,
@@ -215,7 +216,6 @@ def map_storage(
 ) -> TranslatedStorage:
     """Translate every PLEXOS Battery, pumped-storage plant and reservoir hydro."""
     derived = derive_storage_units(state, list_thermal_store_users(state, targets))
-    _record_skips(derived, recorder)
     series = build_storage_series(state, derived.mappings)
     translated = TranslatedStorage(series=series.frame)
     first_id = build_first_free_id(state)
@@ -247,7 +247,19 @@ def map_storage(
     translated.reservoirs = map_reservoirs(
         state, recorder, build_lookups(state), turbines, first_id + written
     )
+    _record_skips(_drop_written_reservoirs(derived, translated.reservoirs), recorder)
     return translated
+
+
+def _drop_written_reservoirs(derived: Any, reservoirs: TranslatedReservoirs) -> Any:
+    """The derived units, without the skips of each Storage a cascade wrote as a reservoir."""
+    written = {row[SiennaHydroReservoirCol.NAME] for row in reservoirs.rows}
+    kept = [
+        one
+        for one in derived.skipped
+        if not (one.source.component == PlexosClass.STORAGE and one.source.name in written)
+    ]
+    return replace(derived, skipped=kept)
 
 
 def _record_skips(derived: Any, recorder: ScopedRecorder) -> None:

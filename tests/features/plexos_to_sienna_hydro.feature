@@ -228,3 +228,17 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Middle" listing HydroTurbine "Upper_U" in "upstream_turbines"
     And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Lower" listing HydroReservoir "Middle" in "upstream_reservoirs"
     And the written Sienna system is a valid SiennaSchemas 0.2 document
+
+  Scenario: a Storage that no turbine names but a cascade route reaches is a reservoir, not a drop
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains storage "Intake" with max_volume 50 initial_volume 20
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And the model contains waterway "Intake_Out" from storage "Intake" to storage "Dam"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Dam" listing HydroReservoir "Intake" in "upstream_reservoirs"
+    And the file "decisions.md" does not contain "no Generator names this Storage as a head or tail"
