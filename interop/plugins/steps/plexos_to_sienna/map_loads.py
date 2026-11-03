@@ -24,7 +24,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
 )
 from interop.plugins.shared.sienna_time_series import collect_ts_info
-from interop.plugins.shared.translation_runner import apply_translations, finalise
+from interop.plugins.shared.translation_runner import (
+    apply_translations,
+    enrich_first_id,
+    finalise,
+)
 
 
 class PlexosToSiennaMapLoads(TranslationStep):
@@ -37,7 +41,7 @@ class PlexosToSiennaMapLoads(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        source = build_loads_source_table(state, self._recorder)
+        source = enrich_first_id(build_loads_source_table(state, self._recorder), state)
         if source.height == 0:
             return state
         destination = apply_translations(source, LOAD_TRANSLATIONS, self._recorder)

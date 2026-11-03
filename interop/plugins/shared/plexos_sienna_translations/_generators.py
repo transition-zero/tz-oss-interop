@@ -110,6 +110,7 @@ from interop.plugins.shared.sienna_cost_curves import (
     thermal_cost_value,
 )
 from interop.plugins.shared.sienna_time_series import TimeSeriesInfo, ts_association_row
+from interop.plugins.shared.translation_runner import build_first_free_id
 
 log = logging.getLogger(__name__)
 
@@ -126,7 +127,7 @@ NO_COST: float = 0.0
 
 _MINUTES_PER_HOUR = 60.0
 
-_ID_NOTE = "assigned by 1-based row position in the component's table"
+_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no generator availability; every generator is available"
 _STATUS_NOTE = "PLEXOS states no starting commitment; status defaults to on"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
@@ -284,6 +285,7 @@ def map_generators(
 ) -> TranslatedGenerators:
     """Translate every staged PLEXOS Generator into the Sienna type its carrier names."""
     lookups = build_lookups(state)
+    first_id = build_first_free_id(state)
     # build_lookups reads the bus names off the PyPSA table, which this hop never writes.
     bus_names = _bus_names(state)
     with_a_series = _generators_with_a_series(state, lookups)
@@ -308,7 +310,7 @@ def map_generators(
         reporter = SiennaComponentReporter(recorder, target.sienna_type)
         rows = rows_by_type.setdefault(target.sienna_type, [])
         row = _row_for(target, reporter)
-        row[SiennaThermalGeneratorCol.ID] = _next_id(rows)
+        row[SiennaThermalGeneratorCol.ID] = _next_id(first_id, rows_by_type)
         reporter.record(
             target.mapping.name,
             MappedColumns((SiennaThermalGeneratorCol.ID,)),
@@ -391,9 +393,9 @@ def build_generator_ts_associations(
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
 
 
-def _next_id(rows: list[dict[str, Any]]) -> int:
-    """One more than the rows already written for this Sienna type, counting from one."""
-    return len(rows) + 1
+def _next_id(first_id: int, rows_by_type: dict[str, list[dict[str, Any]]]) -> int:
+    """The first free id, moved on by every generator row written so far, of any type."""
+    return first_id + sum(len(rows) for rows in rows_by_type.values())
 
 
 def generator_schema(sienna_type: str) -> dict[str, Any]:

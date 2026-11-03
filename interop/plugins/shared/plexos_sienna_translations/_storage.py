@@ -64,6 +64,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve_value,
 )
+from interop.plugins.shared.translation_runner import build_first_free_id
 
 # A Sienna storage rates itself per unit of its base power, and the whole reservoir is
 # usable, so the level limits span the full range.
@@ -103,7 +104,7 @@ _STORAGE_COST_COLUMN = MappedColumns(
 _HYDRO_MIN_COLUMN = MappedColumns((f"{SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS}.min",), UNIT_MW)
 _HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UNIT_DOLLARS_PER_MWH)
 
-_ID_NOTE = "assigned by 1-based row position in the component's table"
+_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
 _RATING_NOTE = "the unit states no availability cap, so it runs at its whole rating"
 _ACTIVE_POWER_NOTE = "PLEXOS states no starting output; active_power defaults to 0.0"
@@ -198,6 +199,7 @@ def map_storage(
     _record_skips(derived, recorder)
     series = build_storage_series(state, derived.mappings)
     translated = TranslatedStorage(series=series.frame)
+    first_id = build_first_free_id(state)
     for mapping in derived.mappings:
         target = targets.find(str(mapping.carrier.value))
         if target is None:
@@ -206,7 +208,8 @@ def map_storage(
         reporter = SiennaComponentReporter(recorder, sienna_type)
         rows = translated.rows_by_type.setdefault(sienna_type, [])
         row = _row_for(sienna_type, mapping, target, reporter)
-        row[SiennaEnergyReservoirStorageCol.ID] = len(rows) + 1
+        written = sum(len(table_rows) for table_rows in translated.rows_by_type.values())
+        row[SiennaEnergyReservoirStorageCol.ID] = first_id + written
         reporter.record_id(
             mapping.name,
             SiennaEnergyReservoirStorageCol.ID,

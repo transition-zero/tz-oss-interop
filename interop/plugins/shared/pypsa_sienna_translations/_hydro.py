@@ -65,10 +65,10 @@ from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
     fill_defaults,
-    row_position_id_translation,
     row_source_translation,
 )
 from interop.ports.outbound.reporting import (
@@ -248,11 +248,14 @@ _rated = partial(
 )
 _default = partial(default_translation, _dest, name_col=PyPSAStorageUnitCol.NAME)
 
-HYDRO_ID = row_position_id_translation(
+HYDRO_ID = build_document_id_translation(
     _dest,
     dest_name_col=H.NAME,
     id_col=H.ID,
-    note="assigned by 1-based row position in hydro generators DataFrame",
+    note=(
+        "assigned by row position in hydro generators DataFrame, "
+        "after the ids of earlier components"
+    ),
 )
 
 HYDRO_NAME = _direct(source_col=PyPSAStorageUnitCol.NAME, dest_col=H.NAME)

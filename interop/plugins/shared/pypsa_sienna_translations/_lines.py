@@ -43,7 +43,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaLineCol,
 )
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -204,12 +204,12 @@ _G_DERIVATION = "g_siemens * v_nom^2 / S_base, split equally (per-unit on 100 MV
 # --- Translation constants ---
 
 LINE_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaLineCol.ID)],
+    exprs=[express_document_id().alias(SiennaLineCol.ID)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[_dest(new[SiennaLineCol.NAME], SiennaLineCol.ID, new[SiennaLineCol.ID])],
-            note="assigned by 1-based row position in lines DataFrame",
+            note="assigned by row position in lines DataFrame, after the ids of earlier components",
         )
     ],
 )
