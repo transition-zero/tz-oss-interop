@@ -243,7 +243,7 @@ these answers:
 | Pipeline | `sienna-to-power-systems-investments` |
 | the SiennaSchemas portfolio document to read | `outputs/portfolio.json` |
 | the SiennaSchemas system.json | `outputs/system.json` |
-| the HDF5 companion | `outputs/system_time_series_storage.h5` |
+| the InfraStore companion holding that system's time series | `outputs/system_time_series_storage.h5` |
 | the portfolio document, in the envelope Portfolio(path) reads | `psi/portfolio.json` |
 | the HDF5 time-series companion the base system references by UUID | `psi/portfolio_base_system_time_series.h5` |
 
