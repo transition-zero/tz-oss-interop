@@ -265,6 +265,24 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 3 is 7
     And the load time series "outputs/load_ts.json" for "Grid_Node" has snapshot 2 at "2026-01-02 00:00:00"
 
+  Scenario: a data file header reads without letter case
+    PLEXOS reads the header of a data file without letter case, so a file headed in capitals
+    stages as one headed in the usual spelling.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "LoadProfile" at "Traces/load.csv" with rows:
+      | YEAR | MONTH | DAY | PERIOD | VALUE |
+      | 2026 | 1     | 1   | 1      | 10    |
+      | 2026 | 1     | 1   | 2      | 20    |
+    And the model contains load "Grid_Node" with peak 20 from data file "LoadProfile"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 20
+
   Scenario: the plexos-to-pypsa pipeline emits an empty network for a model with no mapped components
     Given a Plexos model
     And the model contains region "Grid"

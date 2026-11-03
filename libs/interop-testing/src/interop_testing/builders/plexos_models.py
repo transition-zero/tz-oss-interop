@@ -24,6 +24,7 @@ from interop_testing.builders.plexos_csv_files import (
     write_csv,
     write_csv_by_object,
     write_csv_by_period_column,
+    write_csv_rows,
     write_csv_with_text_column,
     write_daily_csv,
     write_monthly_csv,
@@ -142,6 +143,13 @@ class PlexosModelBuilder(ResourceBuilder):
         self._add_system_object(DATA_FILE_CLASS, name, DATA_FILES_COLLECTION)
         self._add_filename(name, path)
         self._register_csv(path, lambda target: write_csv(target, [hourly_values]))
+
+    def add_data_file_with_rows(self, name: str, path: str, rows: list[list[str]]) -> None:
+        """Register a Data File whose CSV holds these rows verbatim, the first row its header."""
+        self._check_not_saved(f"data file {name!r}")
+        self._add_system_object(DATA_FILE_CLASS, name, DATA_FILES_COLLECTION)
+        self._add_filename(name, path)
+        self._register_csv(path, lambda target: write_csv_rows(target, rows))
 
     def add_missing_data_file(self, name: str, path: str) -> None:
         """Register a Data File and its Filename without writing the CSV, as a package that

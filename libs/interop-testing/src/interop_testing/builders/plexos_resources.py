@@ -394,6 +394,15 @@ class ResourceBuilder(PlexosTables):
             data_file=data_file,
         )
 
+    def add_generator_property_from_data_file(
+        self, name: str, property_name: str, data_file: str
+    ) -> None:
+        """A Generator property whose value a Data File holds; the XML states the placeholder 0."""
+        self._check_not_saved(f"property {property_name!r} of generator {name!r}")
+        self._add_system_property(
+            GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, 0, data_file=data_file
+        )
+
     def date_generator_property(
         self, name: str, property_name: str, value: float, dates: DateBand
     ) -> None:

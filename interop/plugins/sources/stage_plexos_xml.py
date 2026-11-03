@@ -60,8 +60,8 @@ from interop.plugins.sources.plexos_csv_layouts import (
     SampleScope,
     drop_undated_rows,
     is_supported_layout,
+    normalise_header,
     reshape_for_file,
-    strip_bom,
     warn_no_series,
     warn_undated_rows,
     warn_unstageable_layout,
@@ -313,7 +313,7 @@ class StagePlexosXml(StagedSource):
             if spooled is None:
                 missing.append(relative)
                 continue
-            scan = strip_bom(spooled)
+            scan = normalise_header(spooled)
             if not is_supported_layout(scan, horizon_year):
                 warn_unstageable_layout(scan, relative, horizon_year)
                 continue

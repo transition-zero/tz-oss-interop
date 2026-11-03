@@ -203,6 +203,13 @@ def given_model_contains_data_file(
     )
 
 
+@given(parsers.parse('the model contains data file "{name}" at "{path}" with rows:'))
+def given_model_contains_data_file_with_rows(
+    plexos_model_builder: PlexosModelBuilder, name: str, path: str, datatable: list[list[str]]
+) -> None:
+    plexos_model_builder.add_data_file_with_rows(name, path, datatable)
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g} from data file "{name}"'))
 def given_model_contains_load_from_data_file(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str

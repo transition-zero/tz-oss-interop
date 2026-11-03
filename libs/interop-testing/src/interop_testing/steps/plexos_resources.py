@@ -439,6 +439,15 @@ def given_storage_has_property_from_data_file(
     plexos_model_builder.add_storage_property_from_data_file(name, property_name, data_file)
 
 
+@given(
+    parsers.parse('generator "{name}" has property "{property_name}" from data file "{data_file}"')
+)
+def given_generator_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, data_file: str
+) -> None:
+    plexos_model_builder.add_generator_property_from_data_file(name, property_name, data_file)
+
+
 @given(parsers.parse('the model contains region "{name}" with VoLL {voll:g}'))
 def given_model_contains_region_with_voll(
     plexos_model_builder: PlexosModelBuilder, name: str, voll: float

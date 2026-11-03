@@ -43,6 +43,19 @@ _PERIOD_COLUMN_VAR = "period_column"
 _MINUTES_PER_DAY = 24 * 60
 _MONTH_COLUMNS = tuple(f"M{month:02d}" for month in range(1, 13))
 _BOM = "\ufeff"
+_CANONICAL_BY_FOLDED = {
+    name.casefold(): name
+    for name in (
+        _CSV_YEAR,
+        _CSV_MONTH,
+        _CSV_DAY,
+        _CSV_PERIOD,
+        _CSV_VALUE,
+        _CSV_DATETIME,
+        _CSV_NAME,
+        *_MONTH_COLUMNS,
+    )
+}
 
 # A CSV's owners are the rows of the resolved property table that read it.
 Rows = list[dict[str, Any]]
@@ -90,11 +103,20 @@ def drop_undated_rows(frame: pl.LazyFrame) -> pl.LazyFrame:
     return frame.filter(pl.col(StagedTimeSeriesCol.SNAPSHOT).is_not_null())
 
 
-def strip_bom(scan: pl.LazyFrame) -> pl.LazyFrame:
-    """Drop the UTF-8 BOM some PLEXOS CSVs prepend to their first header name."""
-    renames = {name: name.lstrip(_BOM) for name in scan.collect_schema().names()}
+def normalise_header(scan: pl.LazyFrame) -> pl.LazyFrame:
+    """The CSV with each header the reshaper knows in its canonical spelling.
+
+    PLEXOS reads a header without letter case, and some CSVs prepend a UTF-8 BOM to the
+    first name. A header that names an object or a sample keeps its own spelling.
+    """
+    renames = {name: _canonical_name(name) for name in scan.collect_schema().names()}
     renames = {old: new for old, new in renames.items() if old != new}
     return scan.rename(renames) if renames else scan
+
+
+def _canonical_name(name: str) -> str:
+    stripped = name.lstrip(_BOM)
+    return _CANONICAL_BY_FOLDED.get(stripped.casefold(), stripped)
 
 
 @dataclass(frozen=True)
