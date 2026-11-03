@@ -431,6 +431,42 @@ def given_line_has_property(
 
 
 @given(
+    parsers.parse(
+        'line "{name}" has property "{property_name}" of {placeholder:g} '
+        'from data file "{data_file}"'
+    )
+)
+def given_line_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    placeholder: float,
+    data_file: str,
+) -> None:
+    plexos_model_builder.add_line_property_from_data_file(
+        name, property_name, placeholder, data_file
+    )
+
+
+@given(
+    parsers.parse(
+        'node "{name}" has property "{property_name}" of {placeholder:g} '
+        'from data file "{data_file}"'
+    )
+)
+def given_node_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    placeholder: float,
+    data_file: str,
+) -> None:
+    plexos_model_builder.add_node_property_from_data_file(
+        name, property_name, placeholder, data_file
+    )
+
+
+@given(
     parsers.parse('storage "{name}" has property "{property_name}" from data file "{data_file}"')
 )
 def given_storage_has_property_from_data_file(

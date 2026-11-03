@@ -102,6 +102,15 @@ class PlexosModelBuilder(ResourceBuilder):
         self.add_node(name, region=region, voltage=voltage or None)
         self._add_node_property(name, IS_SLACK_BUS_PROPERTY, PLEXOS_FALSE)
 
+    def add_node_property_from_data_file(
+        self, node: str, property_name: str, placeholder: float, data_file: str
+    ) -> None:
+        """A Node property whose value reads a data file, beside the placeholder the XML holds."""
+        self._check_not_saved(f"property {property_name!r} on node {node!r}")
+        self._add_system_property(
+            NODE_CLASS, node, NODES_COLLECTION, property_name, placeholder, data_file=data_file
+        )
+
     def _add_node_property(self, node: str, property_name: str, value: float) -> None:
         self._add_system_property(NODE_CLASS, node, NODES_COLLECTION, property_name, value)
 

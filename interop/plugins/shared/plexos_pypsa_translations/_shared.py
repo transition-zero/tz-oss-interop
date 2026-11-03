@@ -20,6 +20,7 @@ from interop.plugins.shared.plexos_constants import (
     PlexosMembershipCol,
     PlexosProperty,
     PlexosPropertyCol,
+    PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     FULL_AVAILABILITY,
@@ -314,6 +315,37 @@ def read_file_backed_properties(
     for name, property_name in frame.iter_rows():
         result.setdefault(name, []).append(property_name)
     return result
+
+
+def read_unstaged_placeholders(state: State, plexos_class: PlexosClass) -> dict[str, list[str]]:
+    """Each object's file-backed properties whose series did not stage for that object.
+
+    The XML holds a placeholder beside a value that reads a data file, so where the file did
+    not stage, the placeholder is the only number the run has, and the model never meant it.
+    """
+    file_backed = read_file_backed_properties(
+        state.source_topology[PlexosResolvedTable.PROPERTIES], plexos_class
+    )
+    staged = _staged_components(state, plexos_class, file_backed)
+    unstaged: dict[str, list[str]] = {}
+    for name, property_names in file_backed.items():
+        missing = sorted(p for p in property_names if name not in staged.get(p, set()))
+        if missing:
+            unstaged[name] = missing
+    return unstaged
+
+
+def _staged_components(
+    state: State, plexos_class: PlexosClass, file_backed: dict[str, list[str]]
+) -> dict[str, set[str]]:
+    """The objects each file-backed property of a class staged a series for."""
+    property_names = {name for names in file_backed.values() for name in names}
+    staged: dict[str, set[str]] = {}
+    for property_name in property_names:
+        frame = state.source_time_series.get((plexos_class, property_name))
+        if frame is not None:
+            staged[property_name] = set(series_components(frame))
+    return staged
 
 
 def relate_children(

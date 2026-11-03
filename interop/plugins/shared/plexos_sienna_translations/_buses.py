@@ -13,6 +13,7 @@ import polars as pl
 
 from interop.core.extensions import BusExtension
 from interop.core.pipeline import State
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_KV
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
@@ -23,9 +24,15 @@ from interop.plugins.shared.plexos_constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     collapse_properties_by_object,
+    read_unstaged_placeholders,
     relate_child,
 )
+from interop.plugins.shared.plexos_pypsa_translations.constants import UNSTAGED_PLACEHOLDER_NOTE
+from interop.plugins.shared.plexos_pypsa_translations.decisions import (
+    report_unstaged_placeholders,
+)
 from interop.plugins.shared.plexos_sienna_translations._shared import (
+    SiennaComponentReporter,
     defaulted,
     derived,
     plexos_field,
@@ -44,6 +51,7 @@ from interop.plugins.shared.translation_runner import Translation
 # What a Node states in PLEXOS words, one row per Node, before any Sienna column exists.
 NODE_NAME = "node_name"
 NODE_VOLTAGE = "node_voltage"
+NODE_VOLTAGE_IS_UNSTAGED = "node_voltage_is_unstaged"
 NODE_IS_SLACK = "node_is_slack"
 NODE_REGION = "node_region"
 
@@ -78,6 +86,7 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
     properties = collapse_properties_by_object(
         state.source_topology[PlexosResolvedTable.PROPERTIES], PlexosClass.NODE
     )
+    unstaged = read_unstaged_placeholders(state, PlexosClass.NODE)
     region_by_node = relate_child(
         state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
         PlexosClass.NODE,
@@ -92,8 +101,9 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
         [
             {
                 NODE_NAME: name,
-                NODE_VOLTAGE: properties.get(name, {}).get(PlexosProperty.VOLTAGE),
-                NODE_IS_SLACK: properties.get(name, {}).get(PlexosProperty.IS_SLACK_BUS),
+                NODE_VOLTAGE: _readable(properties, unstaged, name, PlexosProperty.VOLTAGE),
+                NODE_VOLTAGE_IS_UNSTAGED: PlexosProperty.VOLTAGE in unstaged.get(name, []),
+                NODE_IS_SLACK: _readable(properties, unstaged, name, PlexosProperty.IS_SLACK_BUS),
                 NODE_REGION: region_by_node.get(name),
             }
             for name in names
@@ -101,10 +111,30 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
         schema={
             NODE_NAME: pl.Utf8,
             NODE_VOLTAGE: pl.Float64,
+            NODE_VOLTAGE_IS_UNSTAGED: pl.Boolean,
             NODE_IS_SLACK: pl.Float64,
             NODE_REGION: pl.Utf8,
         },
     )
+
+
+def _readable(
+    properties: dict[str, dict[str, float]],
+    unstaged: dict[str, list[str]],
+    name: str,
+    plexos_property: str,
+) -> float | None:
+    """A node's value, or None where it is the placeholder for a data file that did not stage."""
+    if plexos_property in unstaged.get(name, []):
+        return None
+    return properties.get(name, {}).get(plexos_property)
+
+
+def report_unstaged_node_values(state: State, recorder: ScopedRecorder) -> None:
+    """Record and warn about each node value whose data file did not stage."""
+    reporter = SiennaComponentReporter(recorder, SiennaComponent.AC_BUS)
+    unstaged = read_unstaged_placeholders(state, PlexosClass.NODE)
+    report_unstaged_placeholders(reporter, PlexosClass.NODE, unstaged)
 
 
 def build_bus_extensions(buses: pl.DataFrame) -> list[BusExtension]:
@@ -176,6 +206,13 @@ BUS_AVAILABLE = Translation(
     ),
 )
 
+
+def _base_voltage_note(is_unstaged: bool) -> str:
+    if is_unstaged:
+        return UNSTAGED_PLACEHOLDER_NOTE.format(property=PlexosProperty.VOLTAGE)
+    return _BASE_VOLTAGE_NOTE
+
+
 BUS_BASE_VOLTAGE = Translation(
     exprs=[
         pl.col(NODE_VOLTAGE)
@@ -194,7 +231,7 @@ BUS_BASE_VOLTAGE = Translation(
                     UNIT_KV,
                 )
             ],
-            _BASE_VOLTAGE_NOTE,
+            _base_voltage_note(old[NODE_VOLTAGE_IS_UNSTAGED]),
         )
         if old[NODE_VOLTAGE] is None
         else derived(

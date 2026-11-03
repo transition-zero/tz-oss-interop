@@ -138,6 +138,11 @@ Each `Node` becomes one `ACBus`. PLEXOS marks no node AC or DC, so every bus is 
 that a branch touches also gives an `Arc`, which is the Sienna object holding the two ends of
 a `Line` or an HVDC line.
 
+A `Voltage` can read a data file. If that file does not stage, the XML holds only a
+placeholder, such as `0`. The translator does not use the placeholder. `base_voltage` takes
+the default of 1.0, and `decisions.md` records the `Voltage` as `NOT_MAPPED`. One warning
+names three such nodes and counts the rest.
+
 ## `Region` → `Area`
 
 Each Region becomes one `Area`, and each of its nodes points at that Area. Its `Load`
@@ -221,6 +226,25 @@ connects nothing, so the translator leaves it out and records it.
 
 A line that flows in two directions has a negative `Min Flow`, so its lower limit is
 negative. A line that flows one way has a lower limit of zero.
+
+### A line value in a data file that did not stage
+
+A `Resistance`, a `Reactance`, a `Max Rating` or a `Max Flow` can read a data file. If that
+file does not stage, the XML holds only a placeholder, such as `0` for a reactance or `1e30`
+for a rating. The translator does not use the placeholder:
+
+| Field | What the translator writes |
+| --- | --- |
+| `r` or `x` | `0.0`, as for a line that states no such value |
+| `rating` of a `Line` | `0.0`, as for a line that states no rating |
+| `operational_flow_limit` and `rating` of a `TwoTerminalGenericHVDCLine` | `0.0` |
+
+`decisions.md` records each such value as `NOT_MAPPED`, with the note `<property> is in a
+data file that did not stage`. One warning for each property names three lines and counts
+the rest.
+
+A line that states a `Resistance` or a `Reactance` in such a file still states impedance. So
+it stays a `Line`, and it does not become a `TwoTerminalGenericHVDCLine`.
 
 ## `Generator` → `ThermalStandard`
 

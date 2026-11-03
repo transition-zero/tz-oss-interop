@@ -110,3 +110,12 @@ DEFAULT_VOLL: float = 10000.0
 
 DIRECT_DERIVATION = "direct"
 """Derivation label for a destination value carried straight from one PLEXOS property."""
+
+# What a decision names as the source value of a property whose number lives in a data file.
+FILE_BACKED_VALUE: str = "data file"
+
+# The note a value carries where its data file did not stage, so the XML holds a placeholder.
+UNSTAGED_PLACEHOLDER_NOTE: str = (
+    "{property} is in a data file that did not stage, so the XML holds only a placeholder "
+    "and the translator default stands in for it"
+)

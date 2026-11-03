@@ -26,8 +26,10 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._transmission import (
     StagedLine,
+    build_unstaged_by_line,
     read_transmission,
 )
+from interop.plugins.shared.plexos_pypsa_translations.constants import UNSTAGED_PLACEHOLDER_NOTE
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     MappedColumns,
@@ -36,6 +38,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     declares,
     destination_row,
     maps_to,
+    report_unstaged_placeholders,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
@@ -167,7 +170,21 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
             _add_line(translated, line, voltages, line_reporter, first_id)
         else:
             _add_link(translated, line, link_reporter, first_id)
+    mapped = [line for line in source.lines if _endpoints_are_buses(line, voltages)]
+    _report_placeholders(mapped, line_reporter, link_reporter)
     return translated
+
+
+def _report_placeholders(
+    lines: list[StagedLine],
+    line_reporter: SiennaComponentReporter,
+    link_reporter: SiennaComponentReporter,
+) -> None:
+    """Record and warn about each line value whose data file did not stage."""
+    electrical = build_unstaged_by_line([line for line in lines if line.is_electrical])
+    transport = build_unstaged_by_line([line for line in lines if not line.is_electrical])
+    report_unstaged_placeholders(line_reporter, PlexosClass.LINE, electrical)
+    report_unstaged_placeholders(link_reporter, PlexosClass.LINE, transport)
 
 
 def _voltage_by_bus(state: State) -> dict[str, float]:
@@ -317,6 +334,8 @@ def _endpoints(line: StagedLine) -> Decision:
 
 
 def _impedance(line: StagedLine, plexos_property: str, voltage: float) -> Decision:
+    if plexos_property in line.unstaged:
+        return Decision.default(0.0, UNSTAGED_PLACEHOLDER_NOTE.format(property=plexos_property))
     ohms = line.properties.get(plexos_property, 0.0)
     per_unit = ohms * SYSTEM_BASE_MVA / voltage**2 if voltage else 0.0
     source = SourceValue(PlexosClass.LINE, line.name, plexos_property, ohms, UNIT_OHM)
@@ -332,7 +351,7 @@ def _rating(line: StagedLine) -> Decision:
         stated = line.properties.get(PlexosProperty.MAX_FLOW)
         plexos_property = PlexosProperty.MAX_FLOW
     if stated is None:
-        return Decision.default(0.0, _RATING_NOTE)
+        return Decision.default(0.0, _unrated_note(line, _RATING_NOTE))
     source = SourceValue(PlexosClass.LINE, line.name, plexos_property, stated, UNIT_MVA)
     return Decision.derived(stated / SYSTEM_BASE_MVA, [source], _RATING_DERIVATION)
 
@@ -354,13 +373,21 @@ def _ratings(line: StagedLine) -> Decision:
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        return Decision.default(_build_ratings(0.0, 0.0), note)
+        return Decision.default(_build_ratings(0.0, 0.0), _unrated_note(line, note))
     reverse_max = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
     return Decision.derived(_build_ratings(max_flow, reverse_max), sources, _LIMITS_DERIVATION)
+
+
+def _unrated_note(line: StagedLine, stated_nothing_note: str) -> str:
+    """Why a line has no rating: a rating in a data file that did not stage, or none at all."""
+    for plexos_property in (PlexosProperty.MAX_RATING, PlexosProperty.MAX_FLOW):
+        if plexos_property in line.unstaged:
+            return UNSTAGED_PLACEHOLDER_NOTE.format(property=plexos_property)
+    return stated_nothing_note
 
 
 def _build_ratings(forward_max: float, reverse_max: float) -> PerColumn:

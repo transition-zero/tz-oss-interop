@@ -54,7 +54,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/battery_stored.xml"
     When I run translate against "inputs/battery_stored.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the log contains "dropping Battery 'bat_stored'"
+    And the log contains "dropping 1 Battery(s)"
+    And the log contains "Each one: bat_stored"
     And the file "decisions.md" contains "rated power works out to 0.0 MW, so this unit cannot dispatch"
 
   Scenario: a pumped-storage plant becomes a cyclic PyPSA PHS StorageUnit
@@ -305,7 +306,8 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/powerless.xml"
     When I run translate against "inputs/powerless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the log contains "dropping Battery 'powerless'"
+    And the log contains "dropping 1 Battery(s)"
+    And the log contains "Each one: powerless"
     And the file "decisions.md" contains "the object states no rated power, which the storage mapping cannot default"
 
   Scenario: a turbine with a tail but no head is skipped, naming what it lacks
