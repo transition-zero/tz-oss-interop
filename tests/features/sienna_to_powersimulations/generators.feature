@@ -1,8 +1,8 @@
 @slow @fork_unsafe
 Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl components
-  ThermalStandard gets fuel_type renamed to fuel, bus replaced with a uuid reference,
+  ThermalStandard keeps fuel, bus replaced with a uuid reference,
   and operation_cost wrapped in PS.jl __metadata__. The step records translation events
-  for the uuid assignment, bus FK resolution, and fuel_type rename.
+  for the uuid assignment and bus FK resolution.
 
   Scenario: ThermalStandard gets fuel field and PS.jl operation_cost envelope
     Given a Sienna system
@@ -15,6 +15,9 @@ Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl comp
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has a non-empty uuid
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has bus as a uuid reference
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "__metadata__.type" equal to "ThermalStandard"
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "fuel" equal to "COAL"
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "status" equal to true
+    And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has field "must_run" equal to false
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.__metadata__.type" equal to "ThermalGenerationCost"
     And the PS.jl system "outputs/system.json" component "ThermalStandard" named "gen_1" has "operation_cost.variable.__metadata__.type" equal to "CostCurve"
 

@@ -6,6 +6,7 @@ import uuid as _uuid
 from enum import StrEnum
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 _TS_NS = _uuid.uuid5(_uuid.NAMESPACE_OID, "transitionzero.interop")
 
@@ -241,7 +242,8 @@ class SiennaGeneratorCol:
     ACTIVE_POWER_LIMITS = "active_power_limits"
     OPERATION_COST = "operation_cost"
     PRIME_MOVER_TYPE = "prime_mover_type"
-    FUEL_TYPE = "fuel_type"
+    FUEL = "fuel"
+    STATUS = "status"
     RAMP_LIMITS = "ramp_limits"
     TIME_LIMITS = "time_limits"
     TIME_AT_STATUS = "time_at_status"
@@ -454,9 +456,8 @@ class SiennaThermalGeneratorCol:
     OPERATION_COST = "operation_cost"
     BASE_POWER = "base_power"
     PRIME_MOVER_TYPE = "prime_mover_type"
-    FUEL_TYPE = "fuel_type"
+    FUEL = "fuel"
     TIME_LIMITS = "time_limits"
-    MUST_RUN = "must_run"
     TIME_AT_STATUS = "time_at_status"
 
 
@@ -788,6 +789,7 @@ FUNCTION_TYPE_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaFunctionType]
 CURVE_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCurveType])
 VARIABLECOST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaVariableCostType])
 COST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCostType])
+OPERATIONAL_STATE_DTYPE: pl.DataType = pl.Enum([state.value for state in OperationalStates])
 
 LINEAR_FUNC_DTYPE: pl.DataType = pl.Struct(
     {
@@ -825,7 +827,7 @@ THERMAL_GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaThermalGeneratorCol.ID: pl.Int64,
     SiennaThermalGeneratorCol.NAME: pl.Utf8,
     SiennaThermalGeneratorCol.AVAILABLE: pl.Boolean,
-    SiennaThermalGeneratorCol.STATUS: pl.Boolean,
+    SiennaThermalGeneratorCol.STATUS: OPERATIONAL_STATE_DTYPE,
     SiennaThermalGeneratorCol.BUS_NAME: pl.Utf8,
     SiennaThermalGeneratorCol.ACTIVE_POWER: pl.Float64,
     SiennaThermalGeneratorCol.REACTIVE_POWER: pl.Float64,
@@ -836,9 +838,8 @@ THERMAL_GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaThermalGeneratorCol.OPERATION_COST: THERMAL_GENERATION_COST_DTYPE,
     SiennaThermalGeneratorCol.BASE_POWER: pl.Float64,
     SiennaThermalGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
-    SiennaThermalGeneratorCol.FUEL_TYPE: THERMAL_FUELS_DTYPE,
+    SiennaThermalGeneratorCol.FUEL: THERMAL_FUELS_DTYPE,
     SiennaThermalGeneratorCol.TIME_LIMITS: TIME_LIMITS_DTYPE,
-    SiennaThermalGeneratorCol.MUST_RUN: pl.Boolean,
     SiennaThermalGeneratorCol.TIME_AT_STATUS: pl.Float64,
 }
 

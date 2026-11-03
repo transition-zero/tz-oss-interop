@@ -93,7 +93,7 @@ class SiennaSystemBuilder:
                 "id": self._next_id(),
                 "name": name,
                 "available": True,
-                "status": True,
+                "status": "ONLINE",
                 "bus": self._bus_ids[bus],
                 "active_power": active_power_min,
                 "reactive_power": 0.0,
@@ -102,7 +102,7 @@ class SiennaSystemBuilder:
                 "operation_cost": thermal_generation_cost(marginal_cost),
                 "base_power": base_power,
                 "prime_mover_type": prime_mover,
-                "fuel_type": fuel,
+                "fuel": fuel,
             }
         )
 

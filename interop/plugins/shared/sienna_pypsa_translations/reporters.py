@@ -277,9 +277,7 @@ class GeneratorReporter(_Reporter):
                     SiennaGeneratorCol.PRIME_MOVER_TYPE,
                     prime_mover,
                 ),
-                self._source(
-                    SiennaComponent.THERMAL_STANDARD, name, SiennaGeneratorCol.FUEL_TYPE, fuel
-                ),
+                self._source(SiennaComponent.THERMAL_STANDARD, name, SiennaGeneratorCol.FUEL, fuel),
             ],
             destinations=[self._destination(name, PyPSAGeneratorCol.CARRIER, carrier)],
             derivation="(prime_mover_type, fuel_type) -> carrier",
