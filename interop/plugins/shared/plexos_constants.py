@@ -241,6 +241,7 @@ class PlexosProperty(StrEnum):
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
     INCLUDE = "Include"
+    EFFICIENCY_INCR = "Efficiency Incr"
     INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 

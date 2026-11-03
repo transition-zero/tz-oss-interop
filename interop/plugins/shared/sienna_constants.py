@@ -618,6 +618,12 @@ class SiennaHydroGeneratorCol:
     OPERATION_COST = "operation_cost"
 
 
+class SiennaHydroTurbineCol(SiennaHydroGeneratorCol):
+    """Sienna HydroTurbine destination table column names: the HydroDispatch ones and its own."""
+
+    CONVERSION_FACTOR = "conversion_factor"
+
+
 class SiennaHydroReservoirCol:
     """Sienna HydroReservoir destination table column names."""
 
@@ -1077,8 +1083,11 @@ HYDRO_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaHydroGeneratorCol.OPERATION_COST: HYDRO_GENERATION_COST_DTYPE,
 }
 
-# A HydroTurbine states every field a HydroDispatch states, and its own fields are optional.
-HYDRO_TURBINE_DESTINATION_SCHEMA = HYDRO_DISPATCH_DESTINATION_SCHEMA
+# A HydroTurbine states every field a HydroDispatch states, and the energy its water gives.
+HYDRO_TURBINE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **HYDRO_DISPATCH_DESTINATION_SCHEMA,
+    SiennaHydroTurbineCol.CONVERSION_FACTOR: pl.Float64,
+}
 
 HYDRO_RESERVOIR_COST_DTYPE: pl.DataType = pl.Struct(
     {

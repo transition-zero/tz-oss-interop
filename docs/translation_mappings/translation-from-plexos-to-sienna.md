@@ -383,6 +383,11 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 
 A `HydroTurbine` and a `HydroDispatch` take the same fields from your model.
 
+A `HydroTurbine` also states `conversion_factor`, the energy that one cubic metre of water
+gives. Your `Efficiency Incr`, in MW for each m³/s, gives it as
+`Efficiency Incr / 3600 / base_power`. A turbine that states no `Efficiency Incr` keeps
+the Sienna default of 1.0.
+
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `name` | | The `Generator.name` of the turbine | `direct` |

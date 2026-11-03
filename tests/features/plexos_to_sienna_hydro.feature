@@ -242,3 +242,20 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Dam" listing HydroReservoir "Intake" in "upstream_reservoirs"
     And the file "decisions.md" does not contain "no Generator names this Storage as a head or tail"
+
+  Scenario: a turbine's Efficiency Incr sets the energy each cubic metre of water gives
+    Efficiency Incr is the MW that one cubic metre a second gives. One cubic metre then gives
+    Efficiency Incr / 3600 MWh, which Sienna states per unit of the turbine's base power.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And the model states "Max Volume" in "CMD"
+    And the model states "Initial Volume" in "CMD"
+    And generator "Dam_U" has property "Efficiency Incr" 1.8
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 5e-06
+    And the file "decisions.md" contains "Efficiency Incr / 3600 / base_power"
