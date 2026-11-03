@@ -329,3 +329,25 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     And the model is saved as "inputs/model.xml"
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Plant" has a p_max_pu time series 1.0 0.0 1.0
+
+  Scenario: a dated data file names a membership's row after both of its objects
+    A property of a membership between two objects, such as a Reserve and a Generator, takes
+    a row named after both of them, in either order.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains reserve "Spin" of type 1 requiring 60 from generators "GasPlant, Farm"
+    And the model contains data file "Responses" at "Gen_MaxResponse.csv" with rows:
+      | NAME         | YEAR | MONTH | DAY | VALUE |
+      | SpinGasPlant | 2026 | 1     | 1   | 40    |
+      | FarmSpin     | 2026 | 1     | 1   | 15    |
+    And reserve "Spin" states "Max Response" for generator "GasPlant" from data file "Responses"
+    And reserve "Spin" states "Max Response" for generator "Farm" from data file "Responses"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_table" that writes a source_topology table to JSON
+    And a project-local pipeline "plexos-resolve" that stages plexos and dumps a table
+    When I stage "inputs/model.xml" through "plexos-resolve" dumping table "properties" to "outputs/properties.json" with system output "outputs/system.json"
+    Then the property dump "outputs/properties.json" has "GasPlant" "Max Response" = 40
+    And the property dump "outputs/properties.json" has "Farm" "Max Response" = 15

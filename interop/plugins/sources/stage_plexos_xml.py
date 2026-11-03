@@ -148,6 +148,8 @@ _FILENAME_PROPERTY = "Filename"
 # either as its own text or through a Data File object the Profile is tagged to. Such a value
 # is the object's share of that shared profile, so the staged series is scaled by it.
 _VARIABLE_CLASS = "Variable"
+# The class of the one object every top-level membership hangs from.
+_SYSTEM_CLASS = "System"
 _PROFILE_PROPERTY = "Profile"
 _NO_SCALING = 1.0
 _PERCENT = 100.0
@@ -713,7 +715,24 @@ def _find_dated_values(
 ) -> list[DatedValue] | None:
     if profile is None:
         return None
-    return dated_files.find_values(profile.path, naming[PlexosPropertyCol.ROW_NAME])
+    for name in _list_row_names(naming):
+        found = dated_files.find_values(profile.path, name)
+        if found is not None:
+            return found
+    return None
+
+
+def _list_row_names(naming: dict[str, Any]) -> list[str]:
+    """The names a data file can give this value's row.
+
+    A property of a membership between two objects takes a row named after both of them, and
+    a model can write them in either order.
+    """
+    row_name = str(naming[PlexosPropertyCol.ROW_NAME])
+    parent = str(naming[PlexosMembershipCol.PARENT_OBJECT])
+    if naming[PlexosMembershipCol.PARENT_CLASS] == _SYSTEM_CLASS:
+        return [row_name]
+    return [row_name, parent + row_name, row_name + parent]
 
 
 def _dated_value_columns(

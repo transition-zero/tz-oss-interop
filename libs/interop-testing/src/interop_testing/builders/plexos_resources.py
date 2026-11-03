@@ -442,6 +442,22 @@ class ResourceBuilder(PlexosTables):
             GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, 0, data_file=data_file
         )
 
+    def add_reserve_generator_property_from_data_file(
+        self, reserve: str, generator: str, property_name: str, data_file: str
+    ) -> None:
+        """A property of a Reserve's membership with a Generator, which a Data File holds."""
+        self._check_not_saved(f"property {property_name!r} of {reserve!r} for {generator!r}")
+        self._add_property(
+            RESERVE_CLASS,
+            reserve,
+            GENERATOR_CLASS,
+            generator,
+            GENERATORS_COLLECTION,
+            property_name,
+            0,
+            data_file=data_file,
+        )
+
     def date_generator_property(
         self, name: str, property_name: str, value: float, dates: DateBand
     ) -> None:
