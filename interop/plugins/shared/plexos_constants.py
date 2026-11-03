@@ -123,6 +123,8 @@ class PlexosCollection(StrEnum):
     # A Node's membership to its containing Region uses the singular collection name.
     REGION = "Region"
     ZONES = "Zones"
+    # A Node names the Zone it sits in through the singular collection.
+    ZONE = "Zone"
     GENERATORS = "Generators"
     FUELS = "Fuels"
     START_FUELS = "Start Fuels"
@@ -165,6 +167,8 @@ class PlexosProperty(StrEnum):
     RATING_FACTOR = "Rating Factor"
     OUTAGE_FACTOR = "Outage Factor"
     OUTAGE_RATING = "Outage Rating"
+    FORCED_OUTAGE_RATE = "Forced Outage Rate"
+    MEAN_TIME_TO_REPAIR = "Mean Time to Repair"
     HEAT_RATE = "Heat Rate"
     HEAT_RATE_BASE = "Heat Rate Base"
     HEAT_RATE_INCR = "Heat Rate Incr"

@@ -18,6 +18,7 @@ from power_openapi_models.document import (
     write_document,
     write_portfolio_document,
 )
+from power_openapi_models.infrastructure_core.models import SupplementalAttributeAssociation
 from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
 from interop.core.pipeline import State
@@ -58,26 +59,31 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         self._write_extensions_sidecar(paths.extensions, state, indent)
         self._fs.write_bytes(
             paths.system_json,
-            serialise_system_document(
-                payload[SiennaSchemasSystem.COMPONENTS], rows, location_name(paths.h5), indent
-            ),
+            serialise_system_document(payload, rows, location_name(paths.h5), indent),
         )
 
 
 def serialise_system_document(
-    components: dict[str, Any],
+    payload: dict[str, Any],
     time_series_associations: list[dict[str, Any]],
     time_series_storage_file: str | None,
     indent: int,
 ) -> bytes:
-    """The system document as the SDK writes it: validated, stamped, with its keys sorted."""
+    """The system document as the SDK writes it: validated, stamped, with its keys sorted.
+
+    ``payload`` holds the components, and the supplemental attributes with the rows that join
+    each one to its component. A payload that states no attribute writes empty lists.
+    """
+    associations = payload.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS, [])
     document = SystemDocument(
         name=None,
         description=None,
         frequency=None,
-        components=components,
-        supplemental_attributes=[],
-        supplemental_attribute_associations=[],
+        components=payload[SiennaSchemasSystem.COMPONENTS],
+        supplemental_attributes=payload.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES, []),
+        supplemental_attribute_associations=[
+            SupplementalAttributeAssociation.model_validate(row) for row in associations
+        ],
         plant_associations=[],
         combined_cycle_associations=[],
         service_associations=[],

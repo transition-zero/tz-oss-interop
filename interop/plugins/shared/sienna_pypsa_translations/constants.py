@@ -113,6 +113,7 @@ def pypsa_carrier(
         case (
             SiennaComponent.AC_BUS
             | SiennaComponent.AREA
+            | SiennaComponent.LOAD_ZONE
             | SiennaComponent.ARC
             | SiennaComponent.POWER_LOAD
             | SiennaComponent.INTERRUPTIBLE_POWER_LOAD

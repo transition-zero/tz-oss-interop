@@ -32,6 +32,9 @@ TIME_SERIES_INITIAL_TIME = "2020-01-01T00:00:00"
 _SYSTEM_FILENAME = "system.json"
 
 _AREAS = "areas"
+_LOAD_ZONES = "load_zones"
+_FORCED_OUTAGES = "forced_outages"
+_FORCED_OUTAGE_TYPE = "GeometricDistributionForcedOutage"
 _BUSES = "buses"
 _GENERATORS = "generators"
 _STORAGE = "storage"
@@ -60,7 +63,7 @@ def write_sienna_system(
     storage_file = sienna_h5_filename(path)
     write_system_document(
         path,
-        components,
+        _build_payload(components, sections.get(_FORCED_OUTAGES, []), id_by_owner),
         _build_associations(
             sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
         ),
@@ -73,14 +76,35 @@ def write_sienna_system(
     )
 
 
+def _build_payload(
+    components: dict[str, Any],
+    forced_outages: list[dict[str, Any]],
+    id_by_owner: dict[tuple[str, str], int],
+) -> dict[str, Any]:
+    """The components, and each forced outage with the association that joins it to its owner."""
+    return {
+        SiennaSchemasSystem.COMPONENTS: components,
+        SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: [row["attribute"] for row in forced_outages],
+        SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: [
+            {
+                "component_id": id_by_owner[(row["owner_type"], row["owner_name"])],
+                "component_type": row["owner_type"],
+                "attribute_id": row["attribute"]["id"],
+                "attribute_type": _FORCED_OUTAGE_TYPE,
+            }
+            for row in forced_outages
+        ],
+    }
+
+
 def write_system_document(
     path: Path,
-    components: dict[str, Any],
+    payload: dict[str, Any],
     time_series_associations: Sequence[dict[str, Any]] = (),
     *,
     schema_version: str | None = None,
 ) -> None:
-    """Write ``components`` and association rows as a SiennaSchemas system document.
+    """Write ``payload`` and association rows as a SiennaSchemas system document.
 
     The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
     replaces the SDK's own version in the written file.
@@ -88,7 +112,7 @@ def write_system_document(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
         serialise_system_document(
-            components, list(time_series_associations), sienna_h5_filename(path), 2
+            payload, list(time_series_associations), sienna_h5_filename(path), 2
         )
     )
     if schema_version is not None:
@@ -153,6 +177,9 @@ def _build_container(
     for area in sections.get(_AREAS, []):
         components.setdefault("Area", []).append(area)
 
+    for load_zone in sections.get(_LOAD_ZONES, []):
+        components.setdefault("LoadZone", []).append(load_zone)
+
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
@@ -181,7 +208,7 @@ def _build_bus(bus: dict[str, Any]) -> dict[str, Any]:
         "voltage_limits": bus.get("voltage_limits"),
         "base_voltage": bus["base_voltage"],
         "area": bus.get("area"),
-        "load_zone": None,
+        "load_zone": bus.get("load_zone"),
     }
 
 
@@ -413,13 +440,22 @@ def read_stored_series(
 def portfolio_attributes_for(
     data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
 ) -> list[dict[str, Any]]:
+    """The supplemental attributes of one type describing one component of a portfolio.
+
+    An attribute may describe a component of the base system rather than of the portfolio,
+    which is why the id is the argument.
+    """
+    return list_attributes_for(data, attribute_type, component_type, component_id)
+
+
+def list_attributes_for(
+    data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
+) -> list[dict[str, Any]]:
     """The supplemental attributes of one type describing one component, by id.
 
     The document links the two through `supplemental_attribute_associations`, so this walks
     the same route a consumer does: the association carrying the component id and the
-    attribute type, then the attribute of that id in the flat array. An attribute may
-    describe a component of the base system rather than of the portfolio, which is why the
-    id is the argument.
+    attribute type, then the attribute of that id in the flat array.
     """
     attribute_ids = {
         row["attribute_id"]
