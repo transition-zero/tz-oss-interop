@@ -80,6 +80,23 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "requirement_series" set to "reserves.parquet"
     And the file "outputs/reserves.parquet" exists
 
+  Scenario: a generator whose capacity a data file dates by object reaches Sienna
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=0, Heat Rate=9"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME     | YEAR | MONTH | DAY | VALUE |
+      | GasPlant | 2026 | 1     | 1   | 450   |
+    And generator "GasPlant" has property "Max Capacity" from data file "Capacities"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "GasPlant" having "active_power_limits.max" set to 450.0
+
   Scenario: the report names the fuel behind a generator's Sienna type
     Given a Plexos model
     And the model contains region "North"

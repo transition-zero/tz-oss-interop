@@ -28,6 +28,7 @@ the unit vocabulary in ``plexos_units``.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import shutil
 import xml.etree.ElementTree as ET
@@ -66,6 +67,7 @@ from interop.plugins.sources.plexos_csv_layouts import (
     warn_undated_rows,
     warn_unstageable_layout,
 )
+from interop.plugins.sources.plexos_dated_files import DatedFiles, DatedValue
 from interop.plugins.sources.plexos_dated_properties import (
     DatedRow,
     apply_window,
@@ -145,6 +147,7 @@ _NO_SCALING = 1.0
 _PERCENT = 100.0
 _TIME_SERIES_SUBDIR = "time_series"
 _CSV_SUBDIR = "csv"
+_DATED_CSV_SUBDIR = "dated_csv"
 
 
 _Rows = list[dict[str, Any]]
@@ -212,7 +215,10 @@ class StagePlexosXml(StagedSource):
         dropped = _DroppedRecords()
         tables = self._parse_tables(plexos_params.path)
         chronology = Chronology.of(tables, plexos_params.model, plexos_params.horizon_year)
-        resolved = _resolve_dataset(tables, plexos_params.model, chronology.window, dropped)
+        dated_files = self._build_dated_files(plexos_params.path, staging_dir)
+        resolved = _resolve_dataset(
+            tables, _Selection(plexos_params.model, chronology.window), dropped, dated_files
+        )
         return State(
             staging_dir=staging_dir,
             source_topology=self._stage_topology(resolved, staging_dir),
@@ -236,6 +242,24 @@ class StagePlexosXml(StagedSource):
         for key, frames in stepped_series_parts(resolved.stepped_properties, series).items():
             series[key] = self._sink_series(key, frames, staging_dir, chronology.index)
         return series
+
+    def _build_dated_files(self, xml_path: Location, staging_dir: Path) -> DatedFiles:
+        """The reader of the data files that date one value per object, beside this XML."""
+        spooled_count = itertools.count()
+
+        def scan_file(relative: str) -> pl.LazyFrame | None:
+            target = staging_dir / _DATED_CSV_SUBDIR / f"{next(spooled_count)}.csv"
+            return self._spool_csv_to(xml_path, relative, target)
+
+        return DatedFiles(lambda relative: self._read_first_line(xml_path, relative), scan_file)
+
+    def _read_first_line(self, xml_path: Location, relative: str) -> str | None:
+        """A data file's header line, or None where the package omits the file."""
+        try:
+            with self._fs.open_read(self._fs.resolve(xml_path, relative)) as source:
+                return source.readline().decode("utf-8-sig", errors="replace")
+        except OSError:
+            return None
 
     def _require_params(self, params: BaseModel | None) -> StagePlexosXmlParams:
         if not isinstance(params, StagePlexosXmlParams):
@@ -313,7 +337,7 @@ class StagePlexosXml(StagedSource):
             if spooled is None:
                 missing.append(relative)
                 continue
-            scan = normalise_header(spooled)
+            scan = spooled
             if not is_supported_layout(scan, horizon_year):
                 warn_unstageable_layout(scan, relative, horizon_year)
                 continue
@@ -338,7 +362,9 @@ class StagePlexosXml(StagedSource):
         File the export names but the package omits leaves out that one profile rather
         than stopping the translation.
         """
-        temp = staging_dir / _CSV_SUBDIR / f"{index}.csv"
+        return self._spool_csv_to(xml_path, relative, staging_dir / _CSV_SUBDIR / f"{index}.csv")
+
+    def _spool_csv_to(self, xml_path: Location, relative: str, temp: Path) -> pl.LazyFrame | None:
         temp.parent.mkdir(parents=True, exist_ok=True)
         try:
             with (
@@ -350,7 +376,7 @@ class StagePlexosXml(StagedSource):
             return None
         # Infer from the whole file: a profile column often looks integer for its first
         # rows and turns fractional later, which a bounded inference window mistypes.
-        return pl.scan_csv(temp, infer_schema_length=None)
+        return normalise_header(pl.scan_csv(temp, infer_schema_length=None))
 
     def _sink_series(
         self,
@@ -399,12 +425,19 @@ class _ResolvedDataset:
     dated_properties: _Rows
 
 
+class _Selection(NamedTuple):
+    """What the user asked to translate: one Model, over one window of time."""
+
+    model: str | None
+    window: Window
+
+
 def _resolve_dataset(
-    tables: _RowsByTable, model: str | None, window: Window, dropped: _DroppedRecords
+    tables: _RowsByTable, selection: _Selection, dropped: _DroppedRecords, dated_files: DatedFiles
 ) -> _ResolvedDataset:
     memberships = _resolve_memberships(tables, dropped)
-    resolved = _resolve_properties(tables, memberships, model, dropped)
-    in_force, stepped = apply_window(resolved, window)
+    resolved = _resolve_properties(tables, memberships, selection.model, dropped, dated_files)
+    in_force, stepped = apply_window(resolved, selection.window)
     return _ResolvedDataset(
         objects_by_class=_resolve_object_classes(tables, dropped),
         memberships=memberships,
@@ -524,10 +557,15 @@ class _PropertyLookups:
     memberships: _Lookup
     property_names: _Lookup
     profiles: dict[str, _ProfileRef]
+    dated_files: DatedFiles
 
 
 def _resolve_properties(
-    tables: _RowsByTable, memberships: _Rows, model: str | None, dropped: _DroppedRecords
+    tables: _RowsByTable,
+    memberships: _Rows,
+    model: str | None,
+    dropped: _DroppedRecords,
+    dated_files: DatedFiles,
 ) -> list[DatedRow]:
     """Resolve each property to its winning ``t_data`` value under the model's Scenario overlays.
 
@@ -544,13 +582,14 @@ def _resolve_properties(
         ),
         property_names=property_names,
         profiles=_profile_ref_by_data(tables, property_names, overlay, dropped),
+        dated_files=dated_files,
     )
     units = UnitConversions(stated_units(tables))
-    rows = (
-        _property_row(winner, lookups, dropped, units)
+    resolved = [
+        row
         for winner in _winning_data_rows(tables, model)
-    )
-    resolved = [row for row in rows if row is not None]
+        for row in _property_rows(winner, lookups, dropped, units)
+    ]
     units.warn()
     return resolved
 
@@ -586,33 +625,62 @@ def _property_candidates(
             yield _Candidate(key, priority, data)
 
 
-def _property_row(
+def _property_rows(
     winner: _WinningRow,
     lookups: _PropertyLookups,
     dropped: _DroppedRecords,
     units: UnitConversions,
-) -> DatedRow | None:
-    """One resolved property row, or None if the ``t_data`` row's references dangle."""
+) -> list[DatedRow]:
+    """The resolved rows of one ``t_data`` row, none where its references dangle.
+
+    A value a data file dates by object gives one row for each date the file names.
+    """
     data = winner.data
     membership = dropped.resolve(lookups.memberships, _data_reference(data, _MEMBERSHIP_ID))
     property_name = dropped.resolve(lookups.property_names, _data_reference(data, _PROPERTY_ID))
     if membership is None or property_name is None:
-        return None
+        return []
     stated = StatedValue(
         value=_to_float(data[_VALUE]),
         unit=units.unit_of(data[_PROPERTY_ID]),
         collection=membership[PlexosMembershipCol.COLLECTION],
         property_name=property_name,
     )
-    return DatedRow(
-        winner.dates,
-        {
-            **{column: membership[column] for column in _MEMBERSHIP_NAME_COLUMNS},
-            **_value_columns(stated, lookups.profiles.get(data[_DATA_ID]), units),
-            PlexosPropertyCol.PROPERTY: property_name,
-            PlexosPropertyCol.BAND: winner.band,
-        },
-    )
+    naming = {
+        **{column: membership[column] for column in _MEMBERSHIP_NAME_COLUMNS},
+        PlexosPropertyCol.PROPERTY: property_name,
+        PlexosPropertyCol.BAND: winner.band,
+    }
+    profile = lookups.profiles.get(data[_DATA_ID])
+    dated = _find_dated_values(profile, membership, lookups.dated_files)
+    if dated is None:
+        return [DatedRow(winner.dates, {**naming, **_value_columns(stated, profile, units)})]
+    return [
+        DatedRow(one.dates, {**naming, **_dated_value_columns(stated, one, profile, units)})
+        for one in dated
+    ]
+
+
+def _find_dated_values(
+    profile: _ProfileRef | None, membership: dict[str, Any], dated_files: DatedFiles
+) -> list[DatedValue] | None:
+    if profile is None:
+        return None
+    return dated_files.find_values(profile.path, membership[PlexosMembershipCol.CHILD_OBJECT])
+
+
+def _dated_value_columns(
+    stated: StatedValue, dated: DatedValue, profile: _ProfileRef | None, units: UnitConversions
+) -> dict[str, Any]:
+    """The value a data file dates, scaled by the object's share and in the unit interop reads."""
+    share = _profile_scaling(profile, units.convert(stated), is_percent(stated.unit))
+    from_file = stated._replace(value=dated.value * share)
+    return {
+        PlexosPropertyCol.VALUE: units.convert(from_file),
+        PlexosPropertyCol.UNIT: stated.unit,
+        PlexosPropertyCol.DATA_FILE: None,
+        PlexosPropertyCol.SCALING: _NO_SCALING,
+    }
 
 
 def _value_columns(

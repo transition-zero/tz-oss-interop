@@ -181,3 +181,74 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/undated_units.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Steady" attribute "build_year" is 0
     And the file "outputs/extensions.json" does not contain "retirement_year"
+
+  Scenario: a data file that dates one value for each object gives the value in force
+    A data file headed Name, Year, Month, Day and Value states what a dated property row
+    states: one value for each object, from a date onward. The XML holds a placeholder.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains generator "Park" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 80    |
+      | Park | 2026 | 1     | 1   | 30    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And generator "Park" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 80
+    And the PyPSA network "outputs/network.nc" generator "Park" attribute "p_nom" is 30
+
+  Scenario: a value that a data file changes within the year becomes a series of steps
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 12    | 30  | 50    |
+      | Farm | 2027 | 1     | 2   | 100   |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-12-30" spanning 4 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2027 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 snapshots
+    And the PyPSA network "outputs/network.nc" generator "Farm" has a p_max_pu time series 0.5 1.0
+
+  Scenario: the earliest date in the data file also holds before that date
+    A staged series takes its earliest value before its first row, so a dated file does too.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 3     | 1   | 70    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 70
+
+  Scenario: a row whose date is not a date is left out with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 60    |
+      | Farm | 2026 | 2     | 30  | 90    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
+    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date is not a date"

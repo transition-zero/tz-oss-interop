@@ -109,12 +109,13 @@ def normalise_header(scan: pl.LazyFrame) -> pl.LazyFrame:
     PLEXOS reads a header without letter case, and some CSVs prepend a UTF-8 BOM to the
     first name. A header that names an object or a sample keeps its own spelling.
     """
-    renames = {name: _canonical_name(name) for name in scan.collect_schema().names()}
+    renames = {name: normalise_column_name(name) for name in scan.collect_schema().names()}
     renames = {old: new for old, new in renames.items() if old != new}
     return scan.rename(renames) if renames else scan
 
 
-def _canonical_name(name: str) -> str:
+def normalise_column_name(name: str) -> str:
+    """A header the reshaper knows in its canonical spelling, else the header as written."""
     stripped = name.lstrip(_BOM)
     return _CANONICAL_BY_FOLDED.get(stripped.casefold(), stripped)
 
