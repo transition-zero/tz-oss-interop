@@ -31,8 +31,8 @@ Feature: pypsa_to_sienna translates PyPSA Line rows to Sienna Line plus a shared
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "angle_limits.min" set to -1.5707963267948966
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "angle_limits.max" set to 1.5707963267948966
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "rating_b" set to null
-    And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "arc" set to 1
-    And the file "outputs/system.json" parses as JSON with "components.Arc.0.id" set to 1
+    And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "arc" set to 4
+    And the file "outputs/system.json" parses as JSON with "components.Arc.0.id" set to 4
     And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1
     And the file "outputs/system.json" parses as JSON with "components.Arc.0.to" set to 2
     And the file "decisions.md" contains "| `pypsa.Line.line_1_2.r` = 2.0 Ohm | `sienna.Line.line_1_2.r` = 0.02 | r_ohm * S_base / v_nom^2 (per-unit on 100 MVA) |  | pypsa-to-sienna | pypsa_to_sienna_map_components |"
@@ -50,8 +50,8 @@ Feature: pypsa_to_sienna translates PyPSA Line rows to Sienna Line plus a shared
     When I run translate against "inputs/two_lines.nc" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 2 components of type "Line"
     And the file "outputs/system.json" parses as JSON with 1 components of type "Arc"
-    And the file "outputs/system.json" parses as JSON with component "Line" named "line_a" having "arc" set to 1
-    And the file "outputs/system.json" parses as JSON with component "Line" named "line_b" having "arc" set to 1
+    And the file "outputs/system.json" parses as JSON with component "Line" named "line_a" having "arc" set to 5
+    And the file "outputs/system.json" parses as JSON with component "Line" named "line_b" having "arc" set to 5
 
   Scenario: extendable line with no optimised capacity falls back to s_nom and is flagged
     Given a PyPSA network

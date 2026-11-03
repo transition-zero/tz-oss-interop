@@ -59,10 +59,10 @@ from interop.plugins.shared.sienna_cost_curves import (
 from interop.plugins.shared.sienna_time_series import ts_association_row
 from interop.plugins.shared.translation_runner import (
     Translation,
+    build_document_id_translation,
     default_translation,
     direct_translation,
     fill_defaults,
-    row_position_id_translation,
     row_source_translation,
 )
 from interop.ports.outbound.reporting import (
@@ -251,11 +251,14 @@ _rated = partial(
 )
 _default = partial(default_translation, _dest, name_col=PyPSAGeneratorCol.NAME)
 
-GENERATOR_ID = row_position_id_translation(
+GENERATOR_ID = build_document_id_translation(
     _dest,
     dest_name_col=T.NAME,
     id_col=T.ID,
-    note="assigned by 1-based row position in thermal generators DataFrame",
+    note=(
+        "assigned by row position in thermal generators DataFrame, "
+        "after the ids of earlier components"
+    ),
 )
 
 GENERATOR_NAME = _direct(source_col=PyPSAGeneratorCol.NAME, dest_col=T.NAME)

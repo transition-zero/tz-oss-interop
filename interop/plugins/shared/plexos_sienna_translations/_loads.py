@@ -58,7 +58,7 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.sienna_time_series import TimeSeriesInfo
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ _PARTICIPATION_FRACTION_SUM = 1.0
 _PARTICIPATION_FRACTION_TOLERANCE = 1e-6
 _PARTICIPATION_REGIONS_MINIMUM = 2
 
-_ID_NOTE = "assigned by 1-based row position in the PowerLoad table"
+_ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no Load availability; every load is available"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; reactive_power defaults to 0.0"
@@ -503,7 +503,7 @@ def _load_dest(name: str, attribute: str, value: Any = None, unit: str | None = 
 
 
 LOAD_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaLoadCol.ID)],
+    exprs=[express_document_id().alias(SiennaLoadCol.ID)],
     make_events=lambda old, new: defaulted(
         [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], _ID_NOTE
     ),

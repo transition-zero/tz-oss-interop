@@ -17,7 +17,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaAreaCol,
     SiennaComponent,
 )
-from interop.plugins.shared.translation_runner import Translation
+from interop.plugins.shared.translation_runner import Translation, express_document_id
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -46,7 +46,7 @@ def build_areas_source_table(sienna_buses: pl.DataFrame) -> pl.DataFrame:
 
 
 AREA_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaAreaCol.ID)],
+    exprs=[express_document_id().alias(SiennaAreaCol.ID)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
@@ -59,7 +59,7 @@ AREA_ID = Translation(
                     value=new[SiennaAreaCol.ID],
                 )
             ],
-            note="assigned by 1-based row position in areas DataFrame",
+            note="assigned by row position in areas DataFrame, after the ids of earlier components",
         )
     ],
 )

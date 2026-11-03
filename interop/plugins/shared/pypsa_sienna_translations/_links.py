@@ -39,7 +39,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaFunctionType,
     SiennaLinkCol,
 )
-from interop.plugins.shared.translation_runner import Translation, fill_defaults
+from interop.plugins.shared.translation_runner import (
+    Translation,
+    express_document_id,
+    fill_defaults,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -215,12 +219,12 @@ def _capacity_source(old: dict[str, Any]) -> tuple[str, float]:
 # --- Translation constants ---
 
 LINK_ID = Translation(
-    exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaLinkCol.ID)],
+    exprs=[express_document_id().alias(SiennaLinkCol.ID)],
     make_events=lambda old, new: [
         TranslationEvent(
             kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
             destinations=[_dest(new[SiennaLinkCol.NAME], SiennaLinkCol.ID, new[SiennaLinkCol.ID])],
-            note="assigned by 1-based row position in links DataFrame",
+            note="assigned by row position in links DataFrame, after the ids of earlier components",
         )
     ],
 )
