@@ -1,11 +1,15 @@
 """A PLEXOS pattern, such as ``M1,H1`` or ``DO_01,H1``, and the snapshots it covers.
 
-A pattern is a list of terms joined by commas, and a list of such lists joined by
-semicolons. A snapshot is in the pattern when it is in every term of one list. ``M`` names
-a month, ``D`` a day of the month and ``H`` an hour of the day, each with one number or a
-range such as ``D1-7``. Any other term names a ``Timeslice``. A ``Timeslice`` either reads a
-data file that gives one row for each day and one column for each ``Timeslice``, or states
-a pattern of its own.
+A pattern is a list of conditions joined by ``,``, and a list of such lists joined by ``;``.
+A snapshot is in the pattern when it meets every condition of one list. ``!`` before a
+condition negates it. A condition is a letter and a number or a range, and a comma before a
+digit adds a range to the condition before it: ``H1-3,24`` is the hours 1, 2, 3 and 24.
+
+``H`` is the hour of the day, ``W`` the day of the week from Sunday, ``D`` the day of the
+month, ``M`` the month, ``Q`` the quarter, ``K`` the ISO week and ``P`` the trading period of
+the day. Any other condition names a ``Timeslice``. A ``Timeslice`` either reads a data file
+that gives one row for each day and one column for each ``Timeslice``, or states a pattern
+of its own. A defined ``Timeslice`` wins over a letter condition of the same name.
 """
 
 from __future__ import annotations
@@ -37,12 +41,18 @@ _CSV_MONTH = "Month"
 _CSV_DAY = "Day"
 _DAY_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY)
 _LIST_SEPARATOR = ";"
-_TERM_SEPARATOR = ","
-_TERM = re.compile(r"^([MDH])(\d+)(?:-(\d+))?$")
+_CONDITION_SEPARATOR = ","
+_NEGATION = "!"
+_CONDITION = re.compile(r"^([HWDMQKP])(\d+)(?:-(\d+))?$")
+_RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 # A Timeslice that names another one is followed this far, so a cycle cannot loop forever.
 _MAX_TIMESLICE_DEPTH = 8
 # A day column of a Timeslice data file states 0 for a day the Timeslice leaves out.
 _LEFT_OUT = 0
+_MINUTES_PER_HOUR = 60
+_MINUTES_PER_DAY = 24 * _MINUTES_PER_HOUR
+# Polars counts Monday as 1 and Sunday as 7. PLEXOS counts Sunday as 1.
+_DAYS_PER_WEEK = 7
 
 _TEXT_TABLE = "t_text"
 _DATA_TABLE = "t_data"
@@ -93,62 +103,133 @@ class PatternCalendar:
         return pl.concat(parts)
 
     def _list_covered(self, pattern: str) -> pl.DataFrame | None:
-        expression = express_pattern(pattern, self.timeslices)
+        expression = express_pattern(pattern, _Grammar(self.timeslices, self._minutes_per_period))
         if expression is None:
             return None
         covered = self.index.filter(expression).select(StagedTimeSeriesCol.SNAPSHOT)
         return covered.with_columns(pl.lit(pattern).alias(PATTERN_COLUMN))
 
+    @property
+    def _minutes_per_period(self) -> int:
+        """The length of one trading period: the spacing of the snapshots, else one hour."""
+        snapshots = self.index[StagedTimeSeriesCol.SNAPSHOT]
+        if snapshots.len() < 2:
+            return _MINUTES_PER_HOUR
+        spacing = int((snapshots[1] - snapshots[0]).total_seconds() // 60)
+        return spacing if 0 < spacing <= _MINUTES_PER_DAY else _MINUTES_PER_HOUR
 
-def express_pattern(
-    pattern: str, timeslices: dict[str, Timeslice], depth: int = 0
-) -> pl.Expr | None:
+
+class _Grammar(NamedTuple):
+    """What a pattern's names and periods mean in this model."""
+
+    timeslices: dict[str, Timeslice]
+    minutes_per_period: int
+
+
+class _Condition(NamedTuple):
+    """One condition of a pattern: a letter and its ranges, or a Timeslice's name."""
+
+    is_negated: bool
+    letter: str | None
+    ranges: list[tuple[int, int]]
+    name: str
+
+
+def express_pattern(pattern: str, grammar: _Grammar, depth: int = 0) -> pl.Expr | None:
     """The snapshots a pattern covers, as a filter on the snapshot column, or None where the
-    pattern holds a term the source cannot read.
+    pattern holds a condition the source cannot read.
     """
     if depth > _MAX_TIMESLICE_DEPTH:
         return None
-    lists = [_express_all_terms(part, timeslices, depth) for part in pattern.split(_LIST_SEPARATOR)]
+    lists = [_express_all(part, grammar, depth) for part in pattern.split(_LIST_SEPARATOR)]
     if not lists or any(expression is None for expression in lists):
         return None
     return pl.any_horizontal([expression for expression in lists if expression is not None])
 
 
-def _express_all_terms(terms: str, timeslices: dict[str, Timeslice], depth: int) -> pl.Expr | None:
-    expressions = [
-        _express_term(term.strip(), timeslices, depth) for term in terms.split(_TERM_SEPARATOR)
-    ]
+def _express_all(conditions: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
+    parsed = _parse_conditions(conditions, grammar.timeslices)
+    if parsed is None:
+        return None
+    expressions = [_express_condition(one, grammar, depth) for one in parsed]
     if not expressions or any(expression is None for expression in expressions):
         return None
     return pl.all_horizontal([expression for expression in expressions if expression is not None])
 
 
-def _express_term(term: str, timeslices: dict[str, Timeslice], depth: int) -> pl.Expr | None:
-    matched = _TERM.match(term)
-    if matched is not None:
-        return _express_calendar_term(matched)
-    timeslice = timeslices.get(term)
+def _parse_conditions(text: str, timeslices: dict[str, Timeslice]) -> list[_Condition] | None:
+    """The conditions of one list. A comma before a digit adds a range to the condition before."""
+    conditions: list[_Condition] = []
+    for raw in text.split(_CONDITION_SEPARATOR):
+        part = raw.strip()
+        extra = _RANGE.match(part)
+        if extra is not None and conditions and conditions[-1].letter is not None:
+            conditions[-1].ranges.append(_read_range(extra))
+            continue
+        if not part:
+            return None
+        conditions.append(_parse_condition(part, timeslices))
+    return conditions
+
+
+def _parse_condition(part: str, timeslices: dict[str, Timeslice]) -> _Condition:
+    is_negated = part.startswith(_NEGATION)
+    body = part[len(_NEGATION) :] if is_negated else part
+    matched = _CONDITION.match(body)
+    if matched is None or body in timeslices:
+        return _Condition(is_negated, None, [], body)
+    letter, first, last = matched.groups()
+    low = int(first)
+    return _Condition(is_negated, letter, [(low, int(last) if last else low)], body)
+
+
+def _read_range(matched: re.Match[str]) -> tuple[int, int]:
+    first, last = matched.groups()
+    return int(first), int(last) if last is not None else int(first)
+
+
+def _express_condition(condition: _Condition, grammar: _Grammar, depth: int) -> pl.Expr | None:
+    if condition.letter is not None:
+        expression: pl.Expr | None = _express_letter(
+            condition.letter, condition.ranges, grammar.minutes_per_period
+        )
+    else:
+        expression = _express_timeslice(condition.name, grammar, depth)
+    if expression is None or not condition.is_negated:
+        return expression
+    return ~expression
+
+
+def _express_timeslice(name: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
+    timeslice = grammar.timeslices.get(name)
     if timeslice is None:
         return None
     if timeslice.days is not None:
         return pl.col(StagedTimeSeriesCol.SNAPSHOT).dt.date().is_in(sorted(timeslice.days))
     if timeslice.pattern is None:
         return None
-    return express_pattern(timeslice.pattern, timeslices, depth + 1)
+    return express_pattern(timeslice.pattern, grammar, depth + 1)
 
 
-def _express_calendar_term(matched: re.Match[str]) -> pl.Expr:
-    """A month, a day of the month, or an hour of the day from 1 to 24, or a range of them."""
-    letter, first, last = matched.groups()
-    low = int(first)
-    high = int(last) if last is not None else low
+def _express_letter(letter: str, ranges: list[tuple[int, int]], minutes_per_period: int) -> pl.Expr:
+    """A calendar part of each snapshot, in any of the ranges."""
+    part = _express_calendar_part(letter, minutes_per_period)
+    return pl.any_horizontal([part.is_between(low, high) for low, high in ranges])
+
+
+def _express_calendar_part(letter: str, minutes_per_period: int) -> pl.Expr:
+    """The number PLEXOS gives each snapshot for one letter, counting from 1."""
     snapshot = pl.col(StagedTimeSeriesCol.SNAPSHOT)
-    part = {
-        "M": snapshot.dt.month(),
-        "D": snapshot.dt.day(),
+    minutes = snapshot.dt.hour().cast(pl.Int32) * _MINUTES_PER_HOUR + snapshot.dt.minute()
+    return {
         "H": snapshot.dt.hour() + 1,
+        "W": snapshot.dt.weekday() % _DAYS_PER_WEEK + 1,
+        "D": snapshot.dt.day(),
+        "M": snapshot.dt.month(),
+        "Q": snapshot.dt.quarter(),
+        "K": snapshot.dt.week(),
+        "P": minutes // minutes_per_period + 1,
     }[letter]
-    return part.is_between(low, high)
 
 
 def build_calendar(

@@ -112,7 +112,7 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     And the model contains data file "Demand" at "Load_Load.csv" with rows:
       | NAME      | PATTERN | VALUE |
       | Grid_Node | M1      | 10    |
-      | Grid_Node | Q9      | 20    |
+      | Grid_Node | Z9      | 20    |
     And the model contains load "Grid_Node" with peak 20 from data file "Demand"
     And the model contains model "Plan"
     And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
@@ -121,7 +121,7 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
     When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
     Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
-    And the log contains "Load_Load.csv holds 1 pattern(s) the source cannot read, so their rows are left out: Q9"
+    And the log contains "Load_Load.csv holds 1 pattern(s) the source cannot read, so their rows are left out: Z9"
 
   Scenario: a file of patterns with no snapshots to expand onto is left out with a warning
     Given a Plexos model
@@ -163,3 +163,32 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
     Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
     And the load time series "outputs/load_ts.json" for "Node_B" at hour 3 is 200
+
+  Scenario Outline: a pattern term follows the PLEXOS timeslice grammar
+    The horizon starts on Thursday 1 January 2026, and runs two days at one period an hour.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN   | VALUE |
+      | Grid_Node | <pattern> | 7     |
+      | Grid_Node | <other>   | 3     |
+    And the model contains load "Grid_Node" with peak 7 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour <hour> is <value>
+
+    Examples:
+      | pattern  | other    | hour | value |
+      | W5       | W6       | 1    | 7     |
+      | W5       | W6       | 25   | 3     |
+      | Q1,H2    | Q2       | 2    | 7     |
+      | H1-3,24  | H4-23    | 24   | 7     |
+      | H1-3,24  | H4-23    | 5    | 3     |
+      | !H1      | H1       | 1    | 3     |
+      | H1;H3    | H2       | 3    | 7     |
+      | K1,P2    | K2       | 2    | 7     |
