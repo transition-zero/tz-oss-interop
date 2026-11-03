@@ -11,6 +11,7 @@ so its row leaves the base system as the portfolio takes it.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, ClassVar, NamedTuple
@@ -94,13 +95,19 @@ from interop.plugins.shared.translation_runner import (
     filter_component,
     finalise,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
+
+log = logging.getLogger(__name__)
 
 _Schema = dict[str, pl.DataType | type[pl.DataType]]
 
 UNBUILT_CANDIDATE_NOTE = (
     "this is capacity the plan may build rather than capacity an operations model may "
     "dispatch, so the portfolio holds it and the base system does not"
+)
+UNBUILT_CANDIDATE_WARNING = (
+    "sienna-investments: %d plant(s) nobody has built are left out of the base system: %s"
 )
 
 
@@ -388,14 +395,16 @@ class SiennaInvestmentsMapTechnologies(TranslationStep):
         extendable generator from it. A portfolio states it as a technology instead, so the
         base system must not also hold it as a plant that may dispatch.
         """
+        names_by_type: dict[str, list[str]] = {}
         for _, table in found:
-            if table.is_empty():
-                continue
             for row in table.iter_rows(named=True):
                 if row[PyPSAGeneratorCol.P_NOM_MIN]:
                     continue
-                _drop_row(state, row[BASE_TYPE_COL], row[PyPSAGeneratorCol.NAME])
+                names_by_type.setdefault(row[BASE_TYPE_COL], []).append(row[PyPSAGeneratorCol.NAME])
                 self._recorder.append(_dropped_event(row))
+        for sienna_type, names in names_by_type.items():
+            _drop_rows(state, sienna_type, names)
+            log.warning(UNBUILT_CANDIDATE_WARNING, len(names), name_a_few(names))
 
 
 def _base_year(params: BaseModel | None) -> int:
@@ -404,11 +413,11 @@ def _base_year(params: BaseModel | None) -> int:
     return DEFAULT_BASE_YEAR
 
 
-def _drop_row(state: State, sienna_type: str, name: str) -> None:
+def _drop_rows(state: State, sienna_type: str, names: list[str]) -> None:
     table = state.destination_tables.get(sienna_type)
     if table is None:
         return
-    state.destination_tables[sienna_type] = table.filter(pl.col(SIENNA_NAME_COLUMN) != name)
+    state.destination_tables[sienna_type] = table.filter(~pl.col(SIENNA_NAME_COLUMN).is_in(names))
 
 
 def _dropped_event(row: dict[str, Any]) -> TranslationEvent:
