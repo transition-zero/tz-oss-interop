@@ -14,13 +14,13 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
     Given a Sienna system
     And the system contains a bus "node_a"
     And the system contains a bus "node_b"
-    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 0.5 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 100 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the ThermalStandard "gas" has ext carrier "gas"
     And the ThermalStandard "gas" has ext emission rate 0.5 t/MWh of "CO2"
     And the ThermalStandard "gas" has ext emission rate 0.01 t/MWh of "NOX"
-    And the system contains a RenewableDispatch "solar" on bus "node_b" with base_power 50 rating 1 active_power 0 marginal_cost 0 prime_mover "PVe"
+    And the system contains a RenewableDispatch "solar" on bus "node_b" with base_power 50 rating 50 active_power 0 marginal_cost 0 prime_mover "PVe"
     And the RenewableDispatch "solar" has ext carrier "solar"
-    And the system contains a RenewableNonDispatch "rooftop" on bus "node_b" with base_power 4 rating 1 active_power 0 prime_mover "PVe"
+    And the system contains a RenewableNonDispatch "rooftop" on bus "node_b" with base_power 4 rating 4 active_power 0 prime_mover "PVe"
     And the RenewableNonDispatch "rooftop" has ext carrier "solar-rooftop"
     And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 40 initial_level 0 rating 0.5 input_max 1 output_max 0.8 efficiency_in 1 efficiency_out 1 discharge_cost 0
     And the system contains an HVDC line "link" from "node_a" to "node_b" with p_nom 20 efficiency 1
@@ -227,7 +227,7 @@ Feature: sienna-to-results writes annual rows for a solve over representative pe
       | production | gas       | gas      | 2030-01-01T00:00:00 | 6000  |
 
   Scenario: A plant that has a rating and no output in the solve has no production, and is reported
-    Given the system contains a RenewableNonDispatch "roof_b" on bus "node_b" with base_power 3 rating 1 active_power 0 prime_mover "PVe"
+    Given the system contains a RenewableNonDispatch "roof_b" on bus "node_b" with base_power 3 rating 3 active_power 0 prime_mover "PVe"
     And the RenewableNonDispatch "roof_b" has ext carrier "solar-rooftop"
     And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
     And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50

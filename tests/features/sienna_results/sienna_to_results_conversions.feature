@@ -16,7 +16,7 @@ Feature: sienna-to-results counts a conversion line neither as production nor as
     And the system contains a bus "at_high" in area "AT"
     And the system contains a bus "at_low" in area "AT"
     And the system contains a bus "de" in area "DE"
-    And the system contains a ThermalStandard "gas" on bus "at_high" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "at_high" with base_power 100 rating 100 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the ThermalStandard "gas" has ext carrier "gas"
     And the system contains an HVDC line "step_down" from "at_high" to "at_low" with p_nom 300 efficiency 1
     And the system contains an HVDC line "export" from "at_high" to "de" with p_nom 20 efficiency 1

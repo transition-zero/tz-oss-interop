@@ -7,7 +7,7 @@ Feature: sienna-to-results writes the load of a solve as positive consumption
   Scenario: The load parameter of a PowerLoad reaches the results with its sign changed
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the ThermalStandard "gas" has ext carrier "gas"
     And the system contains a PowerLoad "demand" on bus "node_a" with max_active_power 150
     And the system is saved as "inputs/system.json"
