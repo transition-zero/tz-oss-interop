@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import uuid as _uuid
 from enum import StrEnum
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
-_TS_NS = _uuid.uuid5(_uuid.NAMESPACE_OID, "transitionzero.interop")
-
-
-def time_series_uuid(owner_type: str, owner_name: str, attribute: str) -> str:
-    """Deterministic UUID for a time series dataset keyed by owner type, name, and attribute."""
-    key = f"ts.{owner_type}.{owner_name}.{attribute}"
-    return str(_uuid.uuid5(_TS_NS, key))
+from interop.plugins.shared.constants import UNIT_MW
 
 
 class SiennaTable:
@@ -36,6 +30,7 @@ class SiennaSchemasSystem:
     The SDK writes the rest of the envelope.
     """
 
+    SCHEMA_VERSION = "schema_version"
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
 
@@ -51,20 +46,29 @@ class SiennaCompanionFilename(StrEnum):
 class TimeSeriesAssociationCol:
     """Fields of a SiennaSchemas ``TimeSeriesAssociation`` record (Core/TimeSeries)."""
 
+    ASSOCIATION_ID = "association_id"
     OWNER_TYPE = "owner_type"
     OWNER_ID = "owner_id"
     NAME = "name"
-    TIME_SERIES_UUID = "time_series_uuid"
     RESOLUTION = "resolution"
     INITIAL_TIMESTAMP = "initial_timestamp"
+    LENGTH = "length"
+    UNIT_SYSTEM = "unit_system"
 
 
-class Hdf5TimeSeriesStore:
-    """Layout of the HDF5 value store: ``time_series/<uuid>/data`` arrays keyed by
-    ``time_series_uuid`` (the external store SiennaSchemas points at)."""
+class InfraStoreSidecar:
+    """The InfraStore file that holds the time-series values a system document names."""
 
-    ROOT_GROUP = "time_series"
-    DATA_DATASET = "data"
+    SCRATCH_FILENAME = "time_series.h5"
+    STAGING_DIRECTORY = "time_series_store"
+
+
+class InfraStoreSeriesLabel:
+    """What a stored power series states about its values."""
+
+    UNIT_SYSTEM_NATURAL = "natural_units"
+    UNITS_POWER = UNIT_MW
+    QUANTITY_ACTIVE_POWER = "ActivePower"
 
 
 class SiennaComponent(StrEnum):
@@ -125,6 +129,9 @@ class ACBusType(StrEnum):
 class SiennaAreaCol:
     """Sienna Area destination table column names."""
 
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
+
     ID = "id"
     NAME = "name"
 
@@ -143,6 +150,7 @@ class SiennaLoadCol:
     MAX_ACTIVE_POWER = "max_active_power"
     MAX_REACTIVE_POWER = "max_reactive_power"
     CONFORMITY = "conformity"
+    POWER_UNITS = "power_units"
     # InterruptiblePowerLoad only: the price the solve pays for the load it does serve, which
     # is the only field a PowerLoad does not also carry.
     OPERATION_COST = "operation_cost"
@@ -152,8 +160,8 @@ class SiennaArcCol:
     """Sienna Arc column names (topology element joining two buses by integer id)."""
 
     ID = "id"
-    FROM = "from"
-    TO = "to"
+    FROM = "from_id"
+    TO = "to_id"
 
 
 class FromToField:
@@ -168,6 +176,15 @@ class MinMaxField:
 
     MIN = "min"
     MAX = "max"
+
+
+class OperationalFlowLimitField:
+    """Field names of the Sienna ``OperationalFlowLimit`` struct, each a flow of 0 or more."""
+
+    FROM_TO_MIN = "from_to_min"
+    FROM_TO_MAX = "from_to_max"
+    TO_FROM_MIN = "to_from_min"
+    TO_FROM_MAX = "to_from_max"
 
 
 class SiennaLineCol:
@@ -191,6 +208,9 @@ class SiennaLineCol:
     RATING = "rating"
     RATING_B = "rating_b"
     RATING_C = "rating_c"
+    PARAMETER_UNITS = "parameter_units"
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
     ANGLE_LIMITS = "angle_limits"
     BUS0 = "bus0"
     BUS1 = "bus1"
@@ -210,11 +230,15 @@ class SiennaLinkCol:
     AVAILABLE = "available"
     ACTIVE_POWER_FLOW = "active_power_flow"
     ARC = "arc"
-    ACTIVE_POWER_LIMITS_FROM = "active_power_limits_from"
-    ACTIVE_POWER_LIMITS_TO = "active_power_limits_to"
+    RATING = "rating"
+    RATING_FROM = "rating_from"
+    RATING_TO = "rating_to"
+    OPERATIONAL_FLOW_LIMIT = "operational_flow_limit"
     REACTIVE_POWER_LIMITS_FROM = "reactive_power_limits_from"
     REACTIVE_POWER_LIMITS_TO = "reactive_power_limits_to"
     LOSS = "loss"
+    POWER_UNITS = "power_units"
+    BASE_POWER = "base_power"
     BUS0 = "bus0"
     BUS1 = "bus1"
     SIENNA_TYPE = "sienna_type"
@@ -233,7 +257,8 @@ class SiennaGeneratorCol:
     ACTIVE_POWER_LIMITS = "active_power_limits"
     OPERATION_COST = "operation_cost"
     PRIME_MOVER_TYPE = "prime_mover_type"
-    FUEL_TYPE = "fuel_type"
+    FUEL = "fuel"
+    STATUS = "status"
     RAMP_LIMITS = "ramp_limits"
     TIME_LIMITS = "time_limits"
     TIME_AT_STATUS = "time_at_status"
@@ -271,7 +296,7 @@ class SiennaStructField:
     DOWN = "down"
     START_UP = "start_up"
     SHUT_DOWN = "shut_down"
-    VARIABLE = "variable"
+    VARIABLE_OPERATION_COST = "variable_operation_cost"
     DISCHARGE_VARIABLE_COST = "discharge_variable_cost"
     CHARGE_VARIABLE_COST = "charge_variable_cost"
     VALUE_CURVE = "value_curve"
@@ -305,31 +330,24 @@ class SiennaTimeSeriesField:
 class SiennaTimeSeriesAssociationCol:
     """Column names for the time_series_association destination table.
 
-    SiennaSchemas fields (emitted to JSON) plus internal-only fields used by the h5 sidecar.
+    Every column is internal. The sidecar sink turns a row into a stored series, and the store
+    states the association row that reaches the system document.
     """
 
-    # SiennaSchemas TimeSeriesAssociation fields
-    ASSOCIATION_ID = "association_id"
-    TIME_SERIES_UUID = "time_series_uuid"
-    TIME_SERIES_TYPE = "time_series_type"
     INITIAL_TIMESTAMP = "initial_timestamp"
     RESOLUTION = "resolution"
     LENGTH = "length"
     NAME = "name"
     OWNER_ID = "owner_id"
     OWNER_TYPE = "owner_type"
-    OWNER_CATEGORY = "owner_category"
-    FEATURES = "features"
-    SCALING_FACTOR_MULTIPLIER = "scaling_factor_multiplier"
-    METADATA_UUID = "metadata_uuid"
 
-    # Internal-only: used by emit_h5_sidecar to locate source data; never emitted to JSON
+    # Locate the staged values the sink reads.
     COMPONENT_NAME = "component_name"
     SOURCE_TABLE = "source_table"
     SOURCE_ATTRIBUTE = "source_attribute"
-    # Internal-only divisor the h5 sink applies: stored array = source values / scaling_factor,
-    # so the h5 holds the per-unit shape that the declared scaling_factor_multiplier
-    # reconstructs on read. 1.0 for sources that are already per-unit (e.g. p_max_pu).
+    # Divisor the sink applies to reach the per-unit shape before it multiplies by the
+    # component capacity: stored array = source values / scaling_factor * capacity.
+    # 1.0 for sources that are already per-unit (e.g. p_max_pu).
     SCALING_FACTOR = "scaling_factor"
 
 
@@ -348,7 +366,7 @@ class LoadConformity(StrEnum):
 
     UNDEFINED = "UNDEFINED"
     CONFORMING = "CONFORMING"
-    NONCONFORMING = "NONCONFORMING"
+    NON_CONFORMING = "NON_CONFORMING"
 
 
 class PrimeMover(StrEnum):
@@ -407,7 +425,7 @@ class ThermalFuel(StrEnum):
     PROPANE = "PROPANE"
     SYNTHESIS_GAS_PETROLEUM_COKE = "SYNTHESIS_GAS_PETROLEUM_COKE"
     WASTE_OIL = "WASTE_OIL"
-    BLASTE_FURNACE_GAS = "BLASTE_FURNACE_GAS"
+    BLAST_FURNACE_GAS = "BLAST_FURNACE_GAS"
     NATURAL_GAS = "NATURAL_GAS"
     OTHER_GAS = "OTHER_GAS"
     AG_BYPRODUCT = "AG_BYPRODUCT"
@@ -419,10 +437,10 @@ class ThermalFuel(StrEnum):
     BLACK_LIQUOR = "BLACK_LIQUOR"
     WOOD_WASTE_LIQUIDS = "WOOD_WASTE_LIQUIDS"
     LANDFILL_GAS = "LANDFILL_GAS"
-    OTHEHR_BIOMASS_GAS = "OTHEHR_BIOMASS_GAS"
+    OTHER_BIOMASS_GAS = "OTHER_BIOMASS_GAS"
     NUCLEAR = "NUCLEAR"
     WASTE_HEAT = "WASTE_HEAT"
-    TIREDERIVED_FUEL = "TIREDERIVED_FUEL"
+    TIRE_DERIVED_FUEL = "TIRE_DERIVED_FUEL"
     COAL = "COAL"
     GEOTHERMAL = "GEOTHERMAL"
     OTHER = "OTHER"
@@ -432,6 +450,7 @@ class SiennaThermalGeneratorCol:
     """Sienna ThermalStandard destination table column names."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     STATUS = "status"
@@ -446,9 +465,8 @@ class SiennaThermalGeneratorCol:
     OPERATION_COST = "operation_cost"
     BASE_POWER = "base_power"
     PRIME_MOVER_TYPE = "prime_mover_type"
-    FUEL_TYPE = "fuel_type"
+    FUEL = "fuel"
     TIME_LIMITS = "time_limits"
-    MUST_RUN = "must_run"
     TIME_AT_STATUS = "time_at_status"
 
 
@@ -456,6 +474,7 @@ class SiennaRenewableGeneratorCol:
     """Sienna RenewableDispatch destination table column names."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     BUS = "bus"
@@ -494,12 +513,14 @@ class SiennaEnergyReservoirStorageCol:
     CONVERSION_FACTOR = "conversion_factor"
     STORAGE_TARGET = "storage_target"
     CYCLE_LIMITS = "cycle_limits"
+    POWER_UNITS = "power_units"
 
 
 class SiennaHydroGeneratorCol:
     """Sienna HydroDispatch destination table column names (required fields only)."""
 
     ID = "id"
+    POWER_UNITS = "power_units"
     NAME = "name"
     AVAILABLE = "available"
     BUS = "bus"
@@ -559,7 +580,7 @@ class SiennaThermalFuels(StrEnum):
     PROPANE = "PROPANE"
     SYNTHESIS_GAS_PETROLEUM_COKE = "SYNTHESIS_GAS_PETROLEUM_COKE"
     WASTE_OIL = "WASTE_OIL"
-    BLASTE_FURNACE_GAS = "BLASTE_FURNACE_GAS"
+    BLAST_FURNACE_GAS = "BLAST_FURNACE_GAS"
     NATURAL_GAS = "NATURAL_GAS"
     OTHER_GAS = "OTHER_GAS"
     AG_BYPRODUCT = "AG_BYPRODUCT"
@@ -571,10 +592,10 @@ class SiennaThermalFuels(StrEnum):
     BLACK_LIQUOR = "BLACK_LIQUOR"
     WOOD_WASTE_LIQUIDS = "WOOD_WASTE_LIQUIDS"
     LANDFILL_GAS = "LANDFILL_GAS"
-    OTHEHR_BIOMASS_GAS = "OTHEHR_BIOMASS_GAS"
+    OTHER_BIOMASS_GAS = "OTHER_BIOMASS_GAS"
     NUCLEAR = "NUCLEAR"
     WASTE_HEAT = "WASTE_HEAT"
-    TIREDERIVED_FUEL = "TIREDERIVED_FUEL"
+    TIRE_DERIVED_FUEL = "TIRE_DERIVED_FUEL"
     COAL = "COAL"
     GEOTHERMAL = "GEOTHERMAL"
     OTHER = "OTHER"
@@ -614,11 +635,20 @@ class SiennaVariableCostType(StrEnum):
 
 
 class SiennaUnitSystem(StrEnum):
-    """Sienna ``UnitSystem`` for cost curves."""
+    """Sienna ``UnitSystem`` (source: SiennaSchemas): the basis of a component's power fields."""
 
+    COMPONENT_BASE = "COMPONENT_BASE"
     NATURAL_UNITS = "NATURAL_UNITS"
-    SYSTEM_BASE = "SYSTEM_BASE"
-    DEVICE_BASE = "DEVICE_BASE"
+
+
+LINE_UNITS_NOTE = (
+    "line rating and impedance are per unit on the base_power, so the units are COMPONENT_BASE"
+)
+LINK_UNITS_NOTE = "link power limits are in MW, so the units are NATURAL_UNITS"
+LOAD_UNITS_NOTE = "load power values are in MW, so the units are NATURAL_UNITS"
+STORAGE_UNITS_NOTE = (
+    "storage rating and limits are per unit on the base_power, so the units are COMPONENT_BASE"
+)
 
 
 class SiennaCurveType(StrEnum):
@@ -650,11 +680,20 @@ FLAT_TIME_SERIES_EPSILON: float = 1e-9
 # Polars Enum dtypes
 BUSTYPE_DTYPE: pl.DataType = pl.Enum([t.value for t in ACBusType])
 LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])
+UNIT_SYSTEM_DTYPE: pl.DataType = pl.Enum([u.value for u in SiennaUnitSystem])
 PRIME_MOVERS_DTYPE: pl.DataType = pl.Enum([p.value for p in SiennaPrimeMovers])
 THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels])
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
 FROM_TO_DTYPE: pl.DataType = pl.Struct({FromToField.FROM: pl.Float64, FromToField.TO: pl.Float64})
 MIN_MAX_DTYPE: pl.DataType = pl.Struct({MinMaxField.MIN: pl.Float64, MinMaxField.MAX: pl.Float64})
+OPERATIONAL_FLOW_LIMIT_DTYPE: pl.DataType = pl.Struct(
+    {
+        OperationalFlowLimitField.FROM_TO_MIN: pl.Float64,
+        OperationalFlowLimitField.FROM_TO_MAX: pl.Float64,
+        OperationalFlowLimitField.TO_FROM_MIN: pl.Float64,
+        OperationalFlowLimitField.TO_FROM_MAX: pl.Float64,
+    }
+)
 
 # Destination table schemas
 ARCS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -677,6 +716,8 @@ LINES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLineCol.B: FROM_TO_DTYPE,
     SiennaLineCol.G: FROM_TO_DTYPE,
     SiennaLineCol.RATING: pl.Float64,
+    SiennaLineCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaLineCol.BASE_POWER: pl.Float64,
     SiennaLineCol.RATING_B: pl.Float64,
     SiennaLineCol.RATING_C: pl.Float64,
     SiennaLineCol.ANGLE_LIMITS: MIN_MAX_DTYPE,
@@ -712,6 +753,8 @@ SIENNA_SOURCE_BUSES_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 AREAS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.ID: pl.Int64,
     SiennaAreaCol.NAME: pl.Utf8,
+    SiennaAreaCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaAreaCol.BASE_POWER: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -725,26 +768,18 @@ LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLoadCol.MAX_ACTIVE_POWER: pl.Float64,
     SiennaLoadCol.MAX_REACTIVE_POWER: pl.Float64,
     SiennaLoadCol.CONFORMITY: LOAD_CONFORMITY_DTYPE,
+    SiennaLoadCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 _SIENNA_COMPONENT_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaComponent])
 
 TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
-    # SiennaSchemas TimeSeriesAssociation fields (emitted to JSON).
-    # ASSOCIATION_ID is omitted here; sienna_relate_components assigns it.
-    SiennaTimeSeriesAssociationCol.TIME_SERIES_UUID: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.TIME_SERIES_TYPE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP: pl.Utf8,
     SiennaTimeSeriesAssociationCol.RESOLUTION: pl.Utf8,
     SiennaTimeSeriesAssociationCol.LENGTH: pl.Int64,
     SiennaTimeSeriesAssociationCol.NAME: pl.Utf8,
     SiennaTimeSeriesAssociationCol.OWNER_ID: pl.Int64,
     SiennaTimeSeriesAssociationCol.OWNER_TYPE: _SIENNA_COMPONENT_DTYPE,
-    SiennaTimeSeriesAssociationCol.OWNER_CATEGORY: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.FEATURES: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.SCALING_FACTOR_MULTIPLIER: pl.Utf8,
-    SiennaTimeSeriesAssociationCol.METADATA_UUID: pl.Utf8,
-    # Internal-only fields (not emitted to JSON)
     SiennaTimeSeriesAssociationCol.COMPONENT_NAME: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_TABLE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE: pl.Utf8,
@@ -763,8 +798,8 @@ TIME_LIMITS_DTYPE: pl.DataType = pl.Struct({"up": pl.Float64, "down": pl.Float64
 FUNCTION_TYPE_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaFunctionType])
 CURVE_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCurveType])
 VARIABLECOST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaVariableCostType])
-UNIT_SYSTEM_DTYPE: pl.DataType = pl.Enum([u.value for u in SiennaUnitSystem])
 COST_TYPE_DTYPE: pl.DataType = pl.Enum([c.value for c in SiennaCostType])
+OPERATIONAL_STATE_DTYPE: pl.DataType = pl.Enum([state.value for state in OperationalStates])
 
 LINEAR_FUNC_DTYPE: pl.DataType = pl.Struct(
     {
@@ -778,6 +813,12 @@ IO_CURVE_DTYPE: pl.DataType = pl.Struct(
         "curve_type": CURVE_TYPE_DTYPE,
         "function_data": LINEAR_FUNC_DTYPE,
         "input_at_zero": pl.Float64,
+    }
+)
+LOSS_CURVE_DTYPE: pl.DataType = pl.Struct(
+    {
+        SiennaStructField.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+        SiennaStructField.VALUE_CURVE: IO_CURVE_DTYPE,
     }
 )
 COST_CURVE_DTYPE: pl.DataType = pl.Struct(
@@ -794,7 +835,7 @@ THERMAL_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
         "fixed": pl.Float64,
         "shut_down": pl.Float64,
         "start_up": pl.Float64,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
     }
 )
 
@@ -802,7 +843,7 @@ THERMAL_GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaThermalGeneratorCol.ID: pl.Int64,
     SiennaThermalGeneratorCol.NAME: pl.Utf8,
     SiennaThermalGeneratorCol.AVAILABLE: pl.Boolean,
-    SiennaThermalGeneratorCol.STATUS: pl.Boolean,
+    SiennaThermalGeneratorCol.STATUS: OPERATIONAL_STATE_DTYPE,
     SiennaThermalGeneratorCol.BUS_NAME: pl.Utf8,
     SiennaThermalGeneratorCol.ACTIVE_POWER: pl.Float64,
     SiennaThermalGeneratorCol.REACTIVE_POWER: pl.Float64,
@@ -812,10 +853,10 @@ THERMAL_GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaThermalGeneratorCol.RAMP_LIMITS: RAMP_LIMITS_DTYPE,
     SiennaThermalGeneratorCol.OPERATION_COST: THERMAL_GENERATION_COST_DTYPE,
     SiennaThermalGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaThermalGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaThermalGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
-    SiennaThermalGeneratorCol.FUEL_TYPE: THERMAL_FUELS_DTYPE,
+    SiennaThermalGeneratorCol.FUEL: THERMAL_FUELS_DTYPE,
     SiennaThermalGeneratorCol.TIME_LIMITS: TIME_LIMITS_DTYPE,
-    SiennaThermalGeneratorCol.MUST_RUN: pl.Boolean,
     SiennaThermalGeneratorCol.TIME_AT_STATUS: pl.Float64,
 }
 
@@ -823,7 +864,7 @@ LOAD_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
         "fixed": pl.Float64,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
     }
 )
 
@@ -836,7 +877,7 @@ INTERRUPTIBLE_LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType
 RENEWABLE_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
         "fixed": pl.Float64,
     }
 )
@@ -854,12 +895,13 @@ RENEWABLE_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]
     SiennaRenewableGeneratorCol.POWER_FACTOR: pl.Float64,
     SiennaRenewableGeneratorCol.OPERATION_COST: RENEWABLE_GENERATION_COST_DTYPE,
     SiennaRenewableGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaRenewableGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 HYDRO_GENERATION_COST_DTYPE: pl.DataType = pl.Struct(
     {
         "cost_type": COST_TYPE_DTYPE,
-        "variable": COST_CURVE_DTYPE,
+        SiennaStructField.VARIABLE_OPERATION_COST: COST_CURVE_DTYPE,
         "fixed": pl.Float64,
     }
 )
@@ -877,6 +919,7 @@ HYDRO_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaHydroGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
     SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS: ACTIVE_POWER_LIMITS_DTYPE,
     SiennaHydroGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaHydroGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaHydroGeneratorCol.OPERATION_COST: HYDRO_GENERATION_COST_DTYPE,
 }
 
@@ -920,6 +963,7 @@ ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.Dat
     SiennaEnergyReservoirStorageCol.EFFICIENCY: EFFICIENCY_DTYPE,
     SiennaEnergyReservoirStorageCol.REACTIVE_POWER: pl.Float64,
     SiennaEnergyReservoirStorageCol.BASE_POWER: pl.Float64,
+    SiennaEnergyReservoirStorageCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaEnergyReservoirStorageCol.OPERATION_COST: STORAGE_COST_DTYPE,
     SiennaEnergyReservoirStorageCol.CONVERSION_FACTOR: pl.Float64,
     SiennaEnergyReservoirStorageCol.STORAGE_TARGET: pl.Float64,
@@ -938,6 +982,7 @@ RENEWABLE_NON_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataT
     SiennaRenewableGeneratorCol.PRIME_MOVER_TYPE: PRIME_MOVERS_DTYPE,
     SiennaRenewableGeneratorCol.POWER_FACTOR: pl.Float64,
     SiennaRenewableGeneratorCol.BASE_POWER: pl.Float64,
+    SiennaRenewableGeneratorCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
 }
 
 HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -948,9 +993,11 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     # Endpoint names; the sink resolves these to the shared Arc and drops them.
     SiennaLinkCol.BUS0: pl.Utf8,
     SiennaLinkCol.BUS1: pl.Utf8,
-    SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
-    SiennaLinkCol.ACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
+    SiennaLinkCol.RATING: pl.Float64,
+    SiennaLinkCol.OPERATIONAL_FLOW_LIMIT: OPERATIONAL_FLOW_LIMIT_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM: MIN_MAX_DTYPE,
     SiennaLinkCol.REACTIVE_POWER_LIMITS_TO: MIN_MAX_DTYPE,
-    SiennaLinkCol.LOSS: IO_CURVE_DTYPE,
+    SiennaLinkCol.LOSS: LOSS_CURVE_DTYPE,
+    SiennaLinkCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+    SiennaLinkCol.BASE_POWER: pl.Float64,
 }

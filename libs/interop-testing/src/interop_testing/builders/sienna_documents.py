@@ -4,26 +4,32 @@ The component objects follow the ../SiennaSchemas structure: flat objects with a
 ``id``, integer references, nested operation_cost / MinMax limits / InOut efficiency, and
 no serialisation envelope. ``write_sienna_system`` serialises them as the SiennaSchemas
 target — a JSON object mapping each Sienna type name to a list of its objects, with a
-sibling ``TimeSeriesAssociation`` list. Time-series value arrays go in an HDF5 sidecar
-keyed by ``time_series_uuid``; PyPSA round-trip fields go in an ``extensions.json``
-companion. This is the shape the Sienna-system reader Source parses.
+sibling ``TimeSeriesAssociation`` list. Time-series value arrays go in an InfraStore file,
+and each association row is the row that store states; PyPSA round-trip fields go in an
+``extensions.json`` companion. This is the shape the Sienna-system reader Source parses.
 """
 
 from __future__ import annotations
 
 import json
-import uuid
+import shutil
+import tempfile
+from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from infrastore import OwnerCategory, SingleTimeSeries, Store
+
+from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
+from interop.plugins.sinks._sienna_files import serialise_system_document
+from interop_testing.files import read_json
 
 TIME_SERIES_RESOLUTION_SECONDS = 3600
 TIME_SERIES_INITIAL_TIME = "2020-01-01T00:00:00"
 
-_TIME_SERIES_UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_OID, "transitionzero.interop")
-
-SCHEMA_VERSION = "0.2.0"
+_SYSTEM_FILENAME = "system.json"
 
 _AREAS = "areas"
 _BUSES = "buses"
@@ -35,9 +41,12 @@ _LINES = "lines"
 _LINKS = "links"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
+_UNKNOWN = "unknown"
 
 
-def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -> None:
+def write_sienna_system(
+    path: Path, sections: dict[str, list[dict[str, Any]]], *, schema_version: str | None = None
+) -> None:
     """Serialise builder sections as a SiennaSchemas system document.
 
     Components are grouped under a ``components`` sub-object mapping each Sienna type name
@@ -49,26 +58,43 @@ def write_sienna_system(path: Path, sections: dict[str, list[dict[str, Any]]]) -
     path.parent.mkdir(parents=True, exist_ok=True)
     components, id_by_owner = _build_container(sections)
     storage_file = sienna_h5_filename(path)
-    document: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "components": dict(sorted(components.items())),
-        "supplemental_attributes": [],
-        "supplemental_attribute_associations": [],
-        "plant_associations": [],
-        "combined_cycle_associations": [],
-        "service_associations": [],
-        "time_series_associations": _build_associations(
-            sections.get(_TIME_SERIES, []), id_by_owner, path.parent / storage_file
+    write_system_document(
+        path,
+        components,
+        _build_associations(
+            sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
         ),
-        "time_series_storage_file": storage_file,
-    }
+        schema_version=schema_version,
+    )
 
     extensions_file = sienna_extensions_filename(path)
     (path.parent / extensions_file).write_text(
         json.dumps(_build_extensions(sections.get(_EXT, [])), indent=2), encoding="utf-8"
     )
 
-    path.write_text(json.dumps(document, indent=2), encoding="utf-8")
+
+def write_system_document(
+    path: Path,
+    components: dict[str, Any],
+    time_series_associations: Sequence[dict[str, Any]] = (),
+    *,
+    schema_version: str | None = None,
+) -> None:
+    """Write ``components`` and association rows as a SiennaSchemas system document.
+
+    The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
+    replaces the SDK's own version in the written file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
+        serialise_system_document(
+            components, list(time_series_associations), sienna_h5_filename(path), 2
+        )
+    )
+    if schema_version is not None:
+        written = read_json(path)
+        written[SiennaSchemasSystem.SCHEMA_VERSION] = schema_version
+        path.write_text(json.dumps(written, indent=2), encoding="utf-8")
 
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
@@ -110,10 +136,8 @@ def write_empty_companions(system_path: Path) -> None:
 
     For step files that hand-author the system JSON instead of using ``write_sienna_system``.
     """
-    import h5py
-
-    with h5py.File(system_path.parent / sienna_h5_filename(system_path), "w") as h5:
-        h5.create_group("time_series")
+    path = system_path.parent / sienna_h5_filename(system_path)
+    Store.create(str(path), catalog="memory", overwrite=True).close()
     (system_path.parent / sienna_extensions_filename(system_path)).write_text(
         "{}", encoding="utf-8"
     )
@@ -127,13 +151,13 @@ def _build_container(
     id_by_owner: dict[tuple[str, str], int] = {}
 
     for area in sections.get(_AREAS, []):
-        components.setdefault("Area", []).append({"id": area["id"], "name": area["name"]})
+        components.setdefault("Area", []).append(area)
 
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS):
+    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]
@@ -169,38 +193,66 @@ def _build_injector(source: dict[str, Any]) -> dict[str, Any]:
 def _build_associations(
     series_list: list[dict[str, Any]],
     id_by_owner: dict[tuple[str, str], int],
+    components: dict[str, Any],
     h5_path: Path,
 ) -> list[dict[str, Any]]:
-    """Write value arrays to the HDF5 sidecar and return the TimeSeriesAssociation records.
+    """Write the series to an InfraStore file and return the association rows the store states.
 
-    The sidecar is written even when there are no series: the Sienna source requires the
-    companion file to exist beside the system JSON.
+    The file is written even when there are no series: the Sienna source requires the
+    companion file to exist beside the system JSON. A series is stated per unit and stored in
+    megawatts: its values times the capacity of the component that owns it.
     """
-    import h5py
+    with Store.create(str(h5_path), catalog="memory", overwrite=True) as store:
+        with store.transaction():
+            for series in series_list:
+                store.add_time_series(
+                    _owner_id(series, id_by_owner),
+                    series["owner_type"],
+                    OwnerCategory.Component,
+                    _build_single_time_series(series, components),
+                )
+        rows: list[dict[str, Any]] = json.loads(store.export_time_series_associations_openapi())
+    return sorted(rows, key=lambda row: int(row["association_id"]))
 
-    associations: list[dict[str, Any]] = []
-    with h5py.File(h5_path, "w") as h5:
-        root = h5.create_group("time_series")
-        for index, series in enumerate(series_list, start=1):
-            time_series_uuid = str(uuid.uuid4())
-            root.create_group(time_series_uuid).create_dataset(
-                "data", data=np.asarray(series["values"], dtype="float64")
-            )
-            associations.append(
-                {
-                    "association_id": index,
-                    "owner_type": series["owner_type"],
-                    "owner_id": id_by_owner[(series["owner_type"], series["owner_name"])],
-                    "name": series["name"],
-                    "time_series_uuid": time_series_uuid,
-                    "time_series_type": "SingleTimeSeries",
-                    "initial_timestamp": series["initial_time"],
-                    "resolution": f"P0DT{float(series['resolution_seconds']):.3f}S",
-                    "length": len(series["values"]),
-                    "scaling_factor_multiplier": series.get("scaling_factor_multiplier"),
-                }
-            )
-    return associations
+
+def _owner_id(series: dict[str, Any], id_by_owner: dict[tuple[str, str], int]) -> int:
+    """The id a series names, or the id of the component it names, for an owner with a name."""
+    if "owner_id" in series:
+        return int(series["owner_id"])
+    return id_by_owner[(series["owner_type"], series["owner_name"])]
+
+
+def _build_single_time_series(
+    series: dict[str, Any], components: dict[str, Any]
+) -> SingleTimeSeries:
+    """A per-unit series is stored as stated, and any other is stored in megawatts."""
+    initial_time = datetime.fromisoformat(series["initial_time"])
+    resolution = f"PT{int(series['resolution_seconds'])}S"
+    values = np.asarray(series["values"], dtype="float64")
+    if series.get("is_per_unit"):
+        return SingleTimeSeries(initial_time, resolution, values, series["name"])
+    return SingleTimeSeries(
+        initial_time,
+        resolution,
+        values * _series_capacity(series, components),
+        series["name"],
+        units="MW",
+        quantity_kind="ActivePower",
+        unit_system="natural_units",
+    )
+
+
+def _series_capacity(series: dict[str, Any], components: dict[str, Any]) -> float:
+    """The megawatts one per-unit value of the series stands for."""
+    owner_type = series["owner_type"]
+    owner = next(c for c in components[owner_type] if c["name"] == series["owner_name"])
+    if owner_type == "ThermalStandard":
+        return float(owner["active_power_limits"]["max"])
+    if owner_type in ("RenewableDispatch", "RenewableNonDispatch"):
+        return float(owner["rating"])
+    if owner_type in ("PowerLoad", "InterruptiblePowerLoad"):
+        return float(owner["max_active_power"])
+    return float(owner["base_power"])
 
 
 def ac_bus(bus_id: int, name: str) -> dict[str, Any]:
@@ -241,16 +293,24 @@ def thermal_generation_cost(marginal_cost: float) -> dict[str, Any]:
         "fixed": 0.0,
         "start_up": 0.0,
         "shut_down": 0.0,
-        "variable": _cost_curve(marginal_cost),
+        "variable_operation_cost": _cost_curve(marginal_cost),
     }
 
 
 def renewable_generation_cost(marginal_cost: float) -> dict[str, Any]:
-    return {"cost_type": "RENEWABLE", "fixed": 0.0, "variable": _cost_curve(marginal_cost)}
+    return {
+        "cost_type": "RENEWABLE",
+        "fixed": 0.0,
+        "variable_operation_cost": _cost_curve(marginal_cost),
+    }
 
 
 def hydro_generation_cost(marginal_cost: float) -> dict[str, Any]:
-    return {"cost_type": "HYDRO_GEN", "fixed": 0.0, "variable": _cost_curve(marginal_cost)}
+    return {
+        "cost_type": "HYDRO_GEN",
+        "fixed": 0.0,
+        "variable_operation_cost": _cost_curve(marginal_cost),
+    }
 
 
 def storage_cost(discharge_marginal_cost: float, *, cyclic: bool) -> dict[str, Any]:
@@ -280,6 +340,21 @@ def single_time_series(
     }
 
 
+def per_unit_time_series(
+    owner_type: str, owner_id: int, name: str, values: list[float]
+) -> dict[str, Any]:
+    """A series stored as stated, with no unit label, on an owner given by its id."""
+    return {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "name": name,
+        "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
+        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "values": values,
+        "is_per_unit": True,
+    }
+
+
 # ---------- Reading a written system back ----------
 
 
@@ -300,14 +375,39 @@ def find_sienna_component(data: dict[str, Any], sienna_type: str, name: str) -> 
     return matching[0]
 
 
-def sienna_time_series_uuid(sienna_type: str, name: str, attribute: str) -> str:
-    """Key a time series is stored under in the HDF5 companion.
+def read_stored_series(
+    h5_path: str | Path, sienna_type: str, name: str, attribute: str
+) -> list[float]:
+    """The values the InfraStore file at ``h5_path`` holds for one series.
 
-    Deliberately a mirror of `sienna_constants.time_series_uuid` rather than a call
-    to it: an assertion that derived the expected key from the code that wrote it
-    would pass however the scheme changed. Keep the two in sync by hand.
+    The system JSON beside the file names the series: its row gives the owner and the series
+    name, and the store finds the values by the row's ``association_id``. The file holds
+    arrays only, so the rows of the document replay into a copy of it.
     """
-    return str(uuid.uuid5(_TIME_SERIES_UUID_NAMESPACE, f"ts.{sienna_type}.{name}.{attribute}"))
+    store_path = Path(h5_path)
+    system_path = store_path.with_name(_SYSTEM_FILENAME)
+    document = read_json(system_path)
+    owner_id = find_sienna_component(document, sienna_type, name)["id"]
+    rows = document.get("time_series_associations", [])
+    matching = [
+        row
+        for row in rows
+        if row["owner_type"] == sienna_type
+        and row["owner_id"] == owner_id
+        and row["name"] == attribute
+    ]
+    assert len(matching) == 1, (
+        f"expected 1 time series {attribute!r} for {sienna_type!r} {name!r} in "
+        f"{system_path}, got {len(matching)}"
+    )
+    with tempfile.TemporaryDirectory() as scratch:
+        copy = Path(scratch) / store_path.name
+        shutil.copyfile(store_path, copy)
+        with Store.open_without_catalog(str(copy)) as store:
+            store.import_time_series_associations_openapi(json.dumps(rows))
+            series = store.read_by_id(matching[0]["association_id"])
+            values = [float(value) for value in series.data]
+    return values
 
 
 def portfolio_attributes_for(

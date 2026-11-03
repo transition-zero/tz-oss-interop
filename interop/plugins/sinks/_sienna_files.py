@@ -8,7 +8,6 @@ each sink. The SDK writes the document itself.
 from __future__ import annotations
 
 import tempfile
-import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -19,6 +18,7 @@ from power_openapi_models.document import (
     write_document,
     write_portfolio_document,
 )
+from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
 from interop.core.pipeline import State
 from interop.plugins.shared.extensions_sidecar import WritesExtensionsSidecar
@@ -54,45 +54,39 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         sample: str | None = None,
     ) -> None:
         with self._fs.open_write(paths.h5) as stream:
-            EmitSiennaH5Sidecar.write_h5(state, stream, sample)
+            rows = EmitSiennaH5Sidecar.write_h5(state, stream, sample)
         self._write_extensions_sidecar(paths.extensions, state, indent)
         self._fs.write_bytes(
             paths.system_json,
-            serialise_system_document(payload, location_name(paths.h5), indent),
-        )
-
-
-def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
-    missing = set(needed) - available
-    if missing:
-        raise ValueError(
-            f"{context}: {len(missing)} reference(s) in {ref_col!r} "
-            f"not found in parent table: {sorted(missing)}"
+            serialise_system_document(
+                payload[SiennaSchemasSystem.COMPONENTS], rows, location_name(paths.h5), indent
+            ),
         )
 
 
 def serialise_system_document(
-    payload: dict[str, Any], time_series_storage_file: str | None, indent: int
+    components: dict[str, Any],
+    time_series_associations: list[dict[str, Any]],
+    time_series_storage_file: str | None,
+    indent: int,
 ) -> bytes:
-    """The system document as the SDK writes it: stamped, with its keys sorted.
-
-    The association rows do not follow the SDK model yet. ``model_construct`` skips the
-    validation they would fail, and the warning that the SDK serialiser raises for them is
-    dropped.
-    """
-    document = SystemDocument.model_construct(
-        components=payload[SiennaSchemasSystem.COMPONENTS],
+    """The system document as the SDK writes it: validated, stamped, with its keys sorted."""
+    document = SystemDocument(
+        name=None,
+        description=None,
+        frequency=None,
+        components=components,
         supplemental_attributes=[],
         supplemental_attribute_associations=[],
         plant_associations=[],
         combined_cycle_associations=[],
         service_associations=[],
-        time_series_associations=payload[SiennaSchemasSystem.TIME_SERIES_ASSOCIATIONS],
+        time_series_associations=[
+            TimeSeriesAssociation.model_validate(row) for row in time_series_associations
+        ],
         time_series_storage_file=time_series_storage_file,
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        return _read_written(lambda target: write_document(document, target, indent=indent))
+    return _read_written(lambda target: write_document(document, target, indent=indent))
 
 
 def serialise_portfolio_document(payload: dict[str, Any], indent: int) -> bytes:
@@ -111,3 +105,12 @@ def _read_written(write: Callable[[Path], None]) -> bytes:
         target = Path(directory) / _SCRATCH_FILENAME
         write(target)
         return target.read_bytes()
+
+
+def validate_refs(ref_col: str, needed: list[str], available: set[str], context: str) -> None:
+    missing = set(needed) - available
+    if missing:
+        raise ValueError(
+            f"{context}: {len(missing)} reference(s) in {ref_col!r} "
+            f"not found in parent table: {sorted(missing)}"
+        )

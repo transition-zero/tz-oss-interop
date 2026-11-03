@@ -40,13 +40,17 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
+    LINE_UNITS_NOTE,
+    LINK_UNITS_NOTE,
     SYSTEM_BASE_MVA,
+    OperationalFlowLimitField,
     SiennaACBusCol,
     SiennaComponent,
     SiennaLineCol,
     SiennaLinkCol,
+    SiennaUnitSystem,
 )
-from interop.plugins.shared.sienna_cost_curves import linear_value_curve_value
+from interop.plugins.shared.sienna_cost_curves import loss_curve_value
 from interop.plugins.shared.translation_runner import build_first_free_id
 
 # PLEXOS states no voltage-angle limit, and a quarter turn each way is the widest a Sienna
@@ -60,6 +64,7 @@ NO_REACTIVE_LIMIT: float = 0.0
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
+_BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
 _SUSCEPTANCE_NOTE = "PLEXOS states no shunt susceptance or conductance; both default to 0.0"
 _ANGLE_NOTE = "PLEXOS states no voltage-angle limits; the limits default to a quarter turn"
@@ -70,11 +75,16 @@ _ENDPOINTS_DERIVATION = "Node From / Node To memberships -> the Arc endpoints"
 _IMPEDANCE_DERIVATION = "{property} x the system base / the from-Node voltage squared"
 _RATING_DERIVATION = "Max Rating, else Max Flow, over the system base"
 _RATING_NOTE = "Line carries neither Max Rating nor Max Flow; rating defaults to 0.0"
-_LIMITS_DERIVATION = "Min Flow and Max Flow, in MW"
+_LIMITS_DERIVATION = (
+    "Max Flow bounds the forward flow and a negative Min Flow bounds the reverse flow; "
+    "the rating is the larger of the two"
+)
 _LIMITS_NOTE = "Line carries no Max Flow, so it moves no power"
 
 _MARGINAL_COST_COLUMN = MappedColumns(("extensions.marginal_cost",), UNIT_DOLLARS_PER_MWH)
-_LIMITS_MIN_COLUMN = MappedColumns((f"{SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM}.min",), UNIT_MW)
+_RATINGS_COLUMN = MappedColumns(
+    (SiennaLinkCol.RATING, SiennaLinkCol.OPERATIONAL_FLOW_LIMIT), UNIT_MW
+)
 _WHEELING_DERIVATION = "the line Wheeling Charge"
 _WHEELING_NOTE = "a Sienna branch prices no flow, so the wheeling charge is dropped"
 _FREE_TO_MOVE_NOTE = "Line carries no Wheeling Charge, so its flow is free to move"
@@ -99,6 +109,8 @@ class _LineMapping:
     rating: Decision = maps_to(SiennaLineCol.RATING)
     rating_b: Decision = maps_to(SiennaLineCol.RATING_B, SiennaLineCol.RATING_C)
     angle_limits: Decision = maps_to(SiennaLineCol.ANGLE_LIMITS)
+    power_units: Decision = maps_to(SiennaLineCol.POWER_UNITS)
+    base_power: Decision = maps_to(SiennaLineCol.BASE_POWER, unit=UNIT_MVA)
 
 
 @dataclass(frozen=True)
@@ -109,12 +121,14 @@ class _LinkMapping:
     available: Decision = maps_to(SiennaLinkCol.AVAILABLE)
     endpoints: Decision = maps_to(SiennaLinkCol.BUS0, SiennaLinkCol.BUS1)
     active_power_flow: Decision = maps_to(SiennaLinkCol.ACTIVE_POWER_FLOW, unit=UNIT_MW)
-    active_power_limits: Decision = declares(_LIMITS_MIN_COLUMN)
+    ratings: Decision = declares(_RATINGS_COLUMN)
     marginal_cost: Decision = declares(_MARGINAL_COST_COLUMN)
     reactive_power_limits: Decision = maps_to(
         SiennaLinkCol.REACTIVE_POWER_LIMITS_FROM, SiennaLinkCol.REACTIVE_POWER_LIMITS_TO
     )
     loss: Decision = maps_to(SiennaLinkCol.LOSS)
+    power_units: Decision = maps_to(SiennaLinkCol.POWER_UNITS)
+    base_power: Decision = maps_to(SiennaLinkCol.BASE_POWER, unit=UNIT_MVA)
 
 
 @dataclass(frozen=True)
@@ -208,9 +222,6 @@ def _add_link(
     mapping = _derive_link(line)
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLinkCol.NAME, line.name)
-    limits = _limits_value(line)
-    row[SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM] = limits
-    row[SiennaLinkCol.ACTIVE_POWER_LIMITS_TO] = limits
     row[SiennaLinkCol.ID] = first_id + len(translated.lines) + len(translated.links)
     reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID], _ID_NOTE)
     translated.links.append(row)
@@ -263,6 +274,8 @@ def _derive_line(line: StagedLine, voltage: float) -> _LineMapping:
         b=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         g=Decision.default({"from": NO_SUSCEPTANCE, "to": NO_SUSCEPTANCE}, _SUSCEPTANCE_NOTE),
         rating=_rating(line),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, LINE_UNITS_NOTE),
+        base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         rating_b=Decision.default(
             PerColumn({SiennaLineCol.RATING_B: None, SiennaLineCol.RATING_C: None}), _RATING_B_NOTE
         ),
@@ -278,12 +291,14 @@ def _derive_link(line: StagedLine) -> _LinkMapping:
         available=Decision.default(True, _AVAILABLE_NOTE),
         endpoints=_endpoints(line),
         active_power_flow=Decision.default(NO_FLOW, _FLOW_NOTE),
-        active_power_limits=_active_power_limits(line),
+        ratings=_ratings(line),
         marginal_cost=_marginal_cost(line),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, LINK_UNITS_NOTE),
+        base_power=Decision.default(SYSTEM_BASE_MVA, _BASE_POWER_NOTE),
         reactive_power_limits=Decision.default(
             {"min": NO_REACTIVE_LIMIT, "max": NO_REACTIVE_LIMIT}, _REACTIVE_LIMITS_NOTE
         ),
-        loss=Decision.default(linear_value_curve_value(0.0, input_at_zero=None), _LOSS_NOTE),
+        loss=Decision.default(loss_curve_value(0.0), _LOSS_NOTE),
     )
 
 
@@ -333,25 +348,33 @@ def _marginal_cost(line: StagedLine) -> Decision:
     return Decision.derived(charge, [source], _WHEELING_DERIVATION)
 
 
-def _limits_value(line: StagedLine) -> dict[str, float]:
-    """What the line may move, in megawatts, in each direction."""
-    max_flow = line.properties.get(PlexosProperty.MAX_FLOW)
-    if max_flow is None:
-        return {"min": 0.0, "max": 0.0}
-    return {"min": line.properties.get(PlexosProperty.MIN_FLOW, 0.0), "max": max_flow}
-
-
-def _active_power_limits(line: StagedLine) -> Decision:
+def _ratings(line: StagedLine) -> Decision:
+    """The rating and the operational flow limit of a transport line, in megawatts."""
     max_flow = line.properties.get(PlexosProperty.MAX_FLOW) or 0.0
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        return Decision.default(0.0, note)
+        return Decision.default(_build_ratings(0.0, 0.0), note)
+    reverse_max = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
-    return Decision.derived(min_flow, sources, _LIMITS_DERIVATION)
+    return Decision.derived(_build_ratings(max_flow, reverse_max), sources, _LIMITS_DERIVATION)
+
+
+def _build_ratings(forward_max: float, reverse_max: float) -> PerColumn:
+    return PerColumn(
+        {
+            SiennaLinkCol.RATING: max(forward_max, reverse_max),
+            SiennaLinkCol.OPERATIONAL_FLOW_LIMIT: {
+                OperationalFlowLimitField.FROM_TO_MIN: 0.0,
+                OperationalFlowLimitField.FROM_TO_MAX: forward_max,
+                OperationalFlowLimitField.TO_FROM_MIN: 0.0,
+                OperationalFlowLimitField.TO_FROM_MAX: reverse_max,
+            },
+        }
+    )
 
 
 def _unrated_min_flow_note(min_flow: float) -> str:

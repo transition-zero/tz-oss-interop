@@ -383,10 +383,6 @@ DEFAULT_SNAPSHOT_MINUTES: float = 60.0
 # so its own spacing cannot be measured.
 DEFAULT_TS_RESOLUTION_SECONDS: int = 3600
 
-# Line rating and impedance arrive per-unit of the system base in several source
-# formats; PyPSA stores MVA and Ohms.
-DEFAULT_SYSTEM_BASE_MVA: float = 100.0
-
 # PyPSA's own Bus default, applied when the source carries no voltage level. A bus left
 # at this value is flagged for user review in the translation event note.
 DEFAULT_BUS_V_NOM: float = 1.0

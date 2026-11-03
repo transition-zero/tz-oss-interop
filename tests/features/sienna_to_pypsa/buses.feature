@@ -29,3 +29,113 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against Sienna system "inputs/no_area.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 bus
     And the PyPSA network "outputs/network.nc" bus "bus_1" has empty location
+
+  Scenario: a ThermalStandard missing a required field is left out and the rest translate
+    The reader checks every row against SiennaSchemas. A row that fails is left out and
+    named in the log, and the other components are still translated.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "bad_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "bad_1" has no base_power
+    And the system is saved as "inputs/bad_row.json"
+    When I run translate against "inputs/bad_row.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "ThermalStandard bad_1 (field base_power)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has bus "node_a"
+
+  Scenario: a system on another schema line stops and names its version
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system states schema_version "9.0.0"
+    And the system is saved as "inputs/other_line.json"
+    When I run translate against Sienna system "inputs/other_line.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the printed output contains "schema_version '9.0.0' is incompatible"
+
+  Scenario: a component type that SiennaSchemas does not define is left out and named
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system has a component "x_1" of the unknown type "FluxCapacitor"
+    And the system is saved as "inputs/unknown_type.json"
+    When I run translate against "inputs/unknown_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "FluxCapacitor (type unknown to SiennaSchemas)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+
+  Scenario: a component type that names an SDK enum is left out and named
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system has a component "x_1" of the unknown type "UnitSystem"
+    And the system is saved as "inputs/enum_type.json"
+    When I run translate against "inputs/enum_type.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "UnitSystem (type unknown to SiennaSchemas)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+
+  Scenario: a Line that writes its arc id as text reaches the Arc that the id names
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the system contains a Line "line_2" from "node_a" to "node_b" with rating 5.0
+    And the Line "line_1" states its arc as text
+    And the system is saved as "inputs/text_arc.json"
+    When I run translate against "inputs/text_arc.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 lines
+    And the PyPSA network "outputs/network.nc" line "line_1" has bus0 "node_a"
+    And the PyPSA network "outputs/network.nc" line "line_1" has bus1 "node_b"
+
+  Scenario: a Line whose Arc is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the Arc of the Line "line_1" has no from_id
+    And the system is saved as "inputs/bad_arc.json"
+    When I run translate against "inputs/bad_arc.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "Line line_1 (refers to no row that is kept: arc)"
+    And the PyPSA network "outputs/network.nc" has 2 buses
+    And the PyPSA network "outputs/network.nc" has no lines
+
+  Scenario: a generator whose bus is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the bus "node_b" has bustype "NOT_A_BUSTYPE"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "orphan_1" on bus "node_b" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system is saved as "inputs/bad_bus.json"
+    When I run translate against "inputs/bad_bus.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "ThermalStandard orphan_1 (refers to no row that is kept: bus)"
+    And the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has bus "node_a"
+
+  Scenario: a series whose owner is left out is left out too
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "good_1" has a max_active_power series 0.4 0.8
+    And the system contains a ThermalStandard "bad_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "bad_1" has a max_active_power series 0.5 1.0
+    And the ThermalStandard "bad_1" has no base_power
+    And the system is saved as "inputs/orphan_series.json"
+    When I run translate against "inputs/orphan_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "TimeSeriesAssociation max_active_power (refers to no row that is kept: owner_id)"
+    And the PyPSA network "outputs/network.nc" has 1 generator
+    And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
+
+  Scenario: a series that an Arc owns is left out, because an Arc has no name
+    SiennaSchemas lets any component own a series. A staged series names its component, so a
+    series on a component with no name has nowhere to go.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a bus "node_b"
+    And the system contains a Line "line_1" from "node_a" to "node_b" with rating 5.0
+    And the Arc of the Line "line_1" has a per-unit max_active_power series 0.5 1.0
+    And the system contains a ThermalStandard "good_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "good_1" has a max_active_power series 0.4 0.8
+    And the system is saved as "inputs/arc_series.json"
+    When I run translate against "inputs/arc_series.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the log contains "1 series belong to a component with no name, so each is left out: Arc"
+    And the PyPSA network "outputs/network.nc" has 1 line
+    And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8

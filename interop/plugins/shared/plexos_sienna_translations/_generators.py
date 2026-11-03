@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import polars as pl
+from power_openapi_models.operations.models import OperationalStates
 
 from interop.core.extensions import ExtensionKind, GeneratorExtension, companion_filename
 from interop.core.pipeline import State
@@ -104,6 +105,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaRenewableGeneratorCol,
     SiennaSeriesName,
     SiennaThermalGeneratorCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     renewable_cost_value,
@@ -118,8 +120,8 @@ log = logging.getLogger(__name__)
 # own way of saying the commitment history is unknown.
 TIME_AT_STATUS_SENTINEL: float = 10000.0
 
-# A Sienna generator rates itself per unit of its base power, and a generator with no
-# availability cap runs at its whole rating.
+# The share of its base power that a generator rates itself at. The rating is that share
+# times the base power, in MVA. A generator with no availability cap runs at its whole rating.
 FULL_RATING: float = 1.0
 NO_REACTIVE_POWER: float = 0.0
 UNITY_POWER_FACTOR: float = 1.0
@@ -132,7 +134,6 @@ _AVAILABLE_NOTE = "PLEXOS states no generator availability; every generator is a
 _STATUS_NOTE = "PLEXOS states no starting commitment; status defaults to on"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
 _REACTIVE_LIMITS_NOTE = "PLEXOS states no reactive limits; reactive_power_limits is left unset"
-_MUST_RUN_NOTE = "PLEXOS commits a unit rather than forcing it on; must_run defaults to False"
 _TIME_AT_STATUS_NOTE = (
     f"PLEXOS states no commitment history; time_at_status takes the {TIME_AT_STATUS_SENTINEL} "
     "sentinel"
@@ -145,10 +146,17 @@ _RATING_FROM_SERIES_NOTE = (
     "at its whole capacity"
 )
 _BASE_POWER_DERIVATION = "Max Capacity x Units"
+_NATURAL_UNITS_NOTE = "PLEXOS states generator power in MW, so power_units is NATURAL_UNITS"
 _ACTIVE_POWER_DERIVATION = "the minimum this generator can be held to"
 _ACTIVE_POWER_NOTE = "the generator states no minimum; active_power defaults to 0.0"
 _LIMITS_DERIVATION = "the minimum and the rated capacity, in MW"
+# A ramp of the whole capacity in one snapshot never binds, whatever the snapshot length.
+_WHOLE_CAPACITY_PER_SNAPSHOT = 1.0
 _RAMP_DERIVATION = "Max Ramp Up, capped at the rate that covers p_nom in one snapshot"
+_RAMP_DOWN_NOTE = (
+    "the generator states no Max Ramp Down, so ramp_limits.down takes the rate that covers "
+    "p_nom in one snapshot, which never binds"
+)
 _TIME_LIMITS_DERIVATION = "Min Up Time and Min Down Time, in hours"
 _COST_DERIVATION = "the marginal cost, as the variable cost curve's proportional term"
 _START_UP_DERIVATION = "what a start costs"
@@ -195,6 +203,8 @@ _TIME_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.TIME_LIMITS}.up"
 _START_UP_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST}.start_up"
 _LIMITS_MIN_COLUMN = MappedColumns((_LIMITS_MIN_ATTRIBUTE,), UNIT_MW)
 _RAMP_UP_COLUMN = MappedColumns((_RAMP_UP_ATTRIBUTE,), UNIT_MW_PER_MINUTE)
+_RAMP_DOWN_ATTRIBUTE = f"{SiennaThermalGeneratorCol.RAMP_LIMITS}.down"
+_RAMP_DOWN_COLUMN = MappedColumns((_RAMP_DOWN_ATTRIBUTE,), UNIT_MW_PER_MINUTE)
 _TIME_UP_COLUMN = MappedColumns((_TIME_UP_ATTRIBUTE,), UNIT_HOURS)
 _START_UP_COLUMN = MappedColumns((_START_UP_ATTRIBUTE,), UNIT_DOLLARS)
 _CARBON_TERM_ATTRIBUTE = f"{SiennaThermalGeneratorCol.OPERATION_COST} carbon term"
@@ -215,15 +225,16 @@ class _ThermalMapping:
     active_power: Decision = maps_to(SiennaThermalGeneratorCol.ACTIVE_POWER, unit=UNIT_MW)
     reactive_power: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER, unit=UNIT_MW)
     rating: Decision = maps_to(SiennaThermalGeneratorCol.RATING)
+    power_units: Decision = maps_to(SiennaThermalGeneratorCol.POWER_UNITS)
     active_power_limits: Decision = declares(_LIMITS_MIN_COLUMN)
     reactive_power_limits: Decision = maps_to(SiennaThermalGeneratorCol.REACTIVE_POWER_LIMITS)
     ramp_limits: Decision = declares(_RAMP_UP_COLUMN)
+    ramp_down: Decision = declares(_RAMP_DOWN_COLUMN)
     time_limits: Decision = declares(_TIME_UP_COLUMN)
     start_up: Decision = declares(_START_UP_COLUMN)
     operation_cost: Decision = declares(_THERMAL_COST_COLUMN)
     prime_mover_type: Decision = maps_to(SiennaThermalGeneratorCol.PRIME_MOVER_TYPE)
-    fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL_TYPE)
-    must_run: Decision = maps_to(SiennaThermalGeneratorCol.MUST_RUN)
+    fuel_type: Decision = maps_to(SiennaThermalGeneratorCol.FUEL)
     time_at_status: Decision = maps_to(SiennaThermalGeneratorCol.TIME_AT_STATUS)
 
 
@@ -238,6 +249,7 @@ class _RenewableMapping:
     active_power: Decision = maps_to(SiennaRenewableGeneratorCol.ACTIVE_POWER, unit=UNIT_MW)
     reactive_power: Decision = maps_to(SiennaRenewableGeneratorCol.REACTIVE_POWER, unit=UNIT_MW)
     rating: Decision = maps_to(SiennaRenewableGeneratorCol.RATING)
+    power_units: Decision = maps_to(SiennaRenewableGeneratorCol.POWER_UNITS)
     reactive_power_limits: Decision = maps_to(SiennaRenewableGeneratorCol.REACTIVE_POWER_LIMITS)
     power_factor: Decision = maps_to(SiennaRenewableGeneratorCol.POWER_FACTOR)
     operation_cost: Decision = declares(_RENEWABLE_COST_COLUMN)
@@ -678,20 +690,21 @@ def _derive_thermal(translated: _Translated) -> _ThermalMapping:
         name=mapping.name,
         base_power=decide_generator(mapping).p_nom,
         available=Decision.default(True, _AVAILABLE_NOTE),
-        status=Decision.default(True, _STATUS_NOTE),
+        status=Decision.default(OperationalStates.ONLINE.value, _STATUS_NOTE),
         bus_name=Decision.default(mapping.bus_name, _BUS_NAME_NOTE),
         active_power=_active_power(mapping),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
         rating=_rating(translated),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _NATURAL_UNITS_NOTE),
         active_power_limits=_minimum_decision(translated),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         ramp_limits=_ramp_decision(translated),
+        ramp_down=_ramp_down_decision(translated),
         time_limits=_time_decision(translated),
         start_up=_start_up_decision(translated),
         operation_cost=_cost_decision(translated),
         prime_mover_type=_prime_mover(mapping, target),
         fuel_type=_fuel_type(mapping, target),
-        must_run=Decision.default(False, _MUST_RUN_NOTE),
         time_at_status=Decision.default(TIME_AT_STATUS_SENTINEL, _TIME_AT_STATUS_NOTE),
     )
 
@@ -706,6 +719,7 @@ def _derive_renewable(translated: _Translated) -> _RenewableMapping:
         active_power=Decision.default(NO_COST, _ACTIVE_POWER_NOTE),
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
         rating=_rating(translated),
+        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _NATURAL_UNITS_NOTE),
         reactive_power_limits=Decision.default(None, _REACTIVE_LIMITS_NOTE),
         power_factor=Decision.default(UNITY_POWER_FACTOR, _POWER_FACTOR_NOTE),
         operation_cost=_cost_decision(translated),
@@ -725,14 +739,15 @@ def _active_power(mapping: GeneratorMapping) -> Decision:
 
 
 def _rating(translated: _Translated) -> Decision:
-    """What the generator may reach, per unit of its base power.
+    """What the generator may reach, in MVA.
 
     A generator following a series rates at its whole capacity, because the series already
     carries every derate. One with no series rates at the static ceiling it states.
     """
+    p_nom = translated.mapping.p_nom
     if translated.follows_a_series:
-        return Decision.default(FULL_RATING, _RATING_FROM_SERIES_NOTE)
-    return Decision.default(translated.mapping.availability.static_p_max_pu, _RATING_NOTE)
+        return Decision.default(FULL_RATING * p_nom, _RATING_FROM_SERIES_NOTE)
+    return Decision.default(translated.mapping.availability.static_p_max_pu * p_nom, _RATING_NOTE)
 
 
 def _limits(mapping: GeneratorMapping) -> dict[str, float]:
@@ -750,15 +765,35 @@ def _minimum_decision(translated: _Translated) -> Decision:
     return replace(decision, value=_megawatts(mapping.minimum.p_min_pu, mapping.p_nom))
 
 
-def _ramp_struct(translated: _Translated) -> dict[str, float | None] | None:
-    """The rates the unit may change output at, in megawatts per minute."""
+def _ramp_struct(translated: _Translated) -> dict[str, float] | None:
+    """The rates the unit may change output at, in megawatts per minute.
+
+    A missing down rate takes the rate that covers p_nom in one snapshot, so it never binds.
+    A generator that states only a down rate gets no ramp_limits.
+    """
     commitment = translated.mapping.unit_commitment
     if commitment is None or commitment.ramp_limit_up is None:
         return None
+    down = commitment.ramp_limit_down
     return {
         "up": _rate_per_minute(commitment.ramp_limit_up, translated),
-        "down": _rate_per_minute(commitment.ramp_limit_down, translated),
+        "down": (
+            _rate_per_minute(_WHOLE_CAPACITY_PER_SNAPSHOT, translated)
+            if down is None
+            else _rate_per_minute(down, translated)
+        ),
     }
+
+
+def _ramp_down_decision(translated: _Translated) -> Decision:
+    """The rate the unit may ramp down at, reported only where the generator states none."""
+    struct = _ramp_struct(translated)
+    commitment = translated.mapping.unit_commitment
+    if struct is None or commitment is None:
+        return Decision.unreported(None)
+    if commitment.ramp_limit_down is None:
+        return Decision.default(struct["down"], _RAMP_DOWN_NOTE)
+    return Decision.unreported(struct["down"])
 
 
 def _ramp_decision(translated: _Translated) -> Decision:
@@ -778,10 +813,8 @@ def _ramp_decision(translated: _Translated) -> Decision:
     return Decision.derived(struct["up"], [source], _RAMP_DERIVATION)
 
 
-def _rate_per_minute(per_snapshot: float | None, translated: _Translated) -> float | None:
+def _rate_per_minute(per_snapshot: float, translated: _Translated) -> float:
     """A per-unit-per-snapshot limit read back as the megawatts per minute Sienna states."""
-    if per_snapshot is None:
-        return None
     return per_snapshot * translated.mapping.p_nom / translated.minutes_per_snapshot
 
 

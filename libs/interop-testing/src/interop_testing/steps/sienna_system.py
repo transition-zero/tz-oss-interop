@@ -13,16 +13,20 @@ import math
 from pathlib import Path
 from typing import Any
 
-import h5py
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
     find_sienna_component,
+    read_stored_series,
     sienna_components_of_type,
-    sienna_time_series_uuid,
 )
 from interop_testing.builders.sienna_systems import SiennaSystemBuilder
 from interop_testing.files import navigate_json, read_json
+from interop_testing.steps.sienna_schema import (
+    SYSTEM_PATH,
+    assert_no_problems,
+    list_type_problems,
+)
 
 
 @given("a Sienna system", target_fixture="sienna_system_builder")
@@ -45,6 +49,39 @@ def given_system_contains_bus_in_area(
     sienna_system_builder: SiennaSystemBuilder, name: str, area: str
 ) -> None:
     sienna_system_builder.add_bus(name, area=area)
+
+
+@given(
+    parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" in area "{area}"'
+    )
+)
+def given_sienna_system_file_with_bus_in_area(
+    system_path: str, name: str, base_voltage: float, bustype: str, area: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_area(area)
+    builder.add_bus(name, area=area)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
+
+
+@given(
+    parsers.parse(
+        'a Sienna system file "{system_path}" with ACBus "{name}" '
+        'base_voltage {base_voltage:g} bustype "{bustype}" and no area'
+    )
+)
+def given_sienna_system_file_with_bus_and_no_area(
+    system_path: str, name: str, base_voltage: float, bustype: str
+) -> None:
+    builder = SiennaSystemBuilder()
+    builder.add_bus(name)
+    builder.set_bus_base_voltage(name, base_voltage)
+    builder.set_bus_type(name, bustype)
+    builder.save(Path(system_path))
 
 
 @given(
@@ -275,6 +312,20 @@ def given_line_angle_limits(
     sienna_system_builder.set_line_angle_limits(name, min_rad, max_rad)
 
 
+@given(parsers.parse('the Line "{name}" has base_power {base_power:g}'))
+def given_line_base_power(
+    sienna_system_builder: SiennaSystemBuilder, name: str, base_power: float
+) -> None:
+    sienna_system_builder.set_line_base_power(name, base_power)
+
+
+@given(parsers.parse('the Line "{name}" states power_units {power_units}'))
+def given_line_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_line_power_units(name, power_units)
+
+
 @given(parsers.parse('the Line "{name}" is extendable in ext'))
 def given_line_extendable_in_ext(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_ext("Line", name, {"s_nom_extendable": True})
@@ -283,6 +334,25 @@ def given_line_extendable_in_ext(sienna_system_builder: SiennaSystemBuilder, nam
 @given(parsers.parse('the HVDC line "{name}" is unavailable'))
 def given_hvdc_line_unavailable(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.set_link_available(name, available=False)
+
+
+@given(parsers.parse('the HVDC line "{name}" states no operational flow limit'))
+def given_hvdc_line_without_flow_limit(
+    sienna_system_builder: SiennaSystemBuilder, name: str
+) -> None:
+    sienna_system_builder.drop_link_operational_flow_limit(name)
+
+
+@given(
+    parsers.parse(
+        'the HVDC line "{name}" has converter ratings {rating_from:g} at the from bus '
+        "and {rating_to:g} at the to bus"
+    )
+)
+def given_hvdc_line_converter_ratings(
+    sienna_system_builder: SiennaSystemBuilder, name: str, rating_from: float, rating_to: float
+) -> None:
+    sienna_system_builder.set_link_converter_ratings(name, rating_from, rating_to)
 
 
 @given(parsers.parse('the HVDC line "{name}" is extendable in ext'))
@@ -323,6 +393,14 @@ def given_system_contains_hvdc_line(
     sienna_system_builder.add_link(name, from_bus, to_bus, p_nom, efficiency)
 
 
+@given(parsers.parse('the Arc of the Line "{line}" has a per-unit {series_name} series {series}'))
+def given_arc_per_unit_series(
+    sienna_system_builder: SiennaSystemBuilder, line: str, series_name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_arc_time_series(line, series_name, values)
+
+
 @given(parsers.parse('the PowerLoad "{name}" has a max_active_power series {series}'))
 def given_power_load_max_active_power_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
@@ -331,12 +409,34 @@ def given_power_load_max_active_power_series(
     sienna_system_builder.add_time_series("PowerLoad", name, "max_active_power", values)
 
 
+@given(parsers.parse('the EnergyReservoirStorage "{name}" has a {series_name} series {series}'))
+def given_energy_reservoir_storage_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series_name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_time_series("EnergyReservoirStorage", name, series_name, values)
+
+
+@given(parsers.parse('the PowerLoad "{name}" states power_units {power_units}'))
+def given_power_load_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_load_power_units(name, power_units)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
 ) -> None:
     values = [float(v) for v in series.split()]
     sienna_system_builder.add_time_series("HydroDispatch", name, "hydro_budget", values)
+
+
+@given(parsers.parse('the HydroDispatch "{name}" states power_units {power_units}'))
+def given_hydro_dispatch_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_generator_power_units(name, power_units)
 
 
 @given(
@@ -379,6 +479,13 @@ def given_thermal_ramp_limits(
     sienna_system_builder.set_thermal_ramp_limits(name, up, down)
 
 
+@given(parsers.parse('the ThermalStandard "{name}" states power_units {power_units}'))
+def given_thermal_power_units(
+    sienna_system_builder: SiennaSystemBuilder, name: str, power_units: str
+) -> None:
+    sienna_system_builder.set_generator_power_units(name, power_units)
+
+
 @given(parsers.parse('the ThermalStandard "{name}" has time_limits up {up:g} down {down:g}'))
 def given_thermal_time_limits(
     sienna_system_builder: SiennaSystemBuilder, name: str, up: float, down: float
@@ -402,6 +509,46 @@ def given_thermal_start_stop_costs(
     sienna_system_builder: SiennaSystemBuilder, name: str, start_up: float, shut_down: float
 ) -> None:
     sienna_system_builder.set_thermal_start_stop_costs(name, start_up, shut_down)
+
+
+@given(parsers.parse('the ThermalStandard "{name}" has no {field}'))
+def given_thermal_standard_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.remove_generator_field(name, field)
+
+
+@given(parsers.parse('the Line "{name}" states its arc as text'))
+def given_line_states_arc_as_text(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
+    sienna_system_builder.set_line_arc_as_text(name)
+
+
+@given(parsers.parse('the Arc of the Line "{name}" has no {field}'))
+def given_line_arc_lacks_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str
+) -> None:
+    sienna_system_builder.drop_line_arc_field(name, field)
+
+
+@given(parsers.parse('the bus "{name}" has bustype "{bustype}"'))
+def given_bus_has_bustype(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bustype: str
+) -> None:
+    sienna_system_builder.set_bus_type(name, bustype)
+
+
+@given(parsers.parse('the system has a component "{name}" of the unknown type "{type_name}"'))
+def given_system_has_unknown_component(
+    sienna_system_builder: SiennaSystemBuilder, name: str, type_name: str
+) -> None:
+    sienna_system_builder.add_unknown_component(type_name, name)
+
+
+@given(parsers.parse('the system states schema_version "{schema_version}"'))
+def given_system_states_schema_version(
+    sienna_system_builder: SiennaSystemBuilder, schema_version: str
+) -> None:
+    sienna_system_builder.set_schema_version(schema_version)
 
 
 @given(parsers.parse('the system is saved as "{json_path}"'))
@@ -473,15 +620,8 @@ def assert_sienna_component_field_absent(
 def assert_h5_ts_length(
     path: str, sienna_type: str, name: str, attribute: str, length: int
 ) -> None:
-    uid = sienna_time_series_uuid(sienna_type, name, attribute)
-    with h5py.File(path, "r") as hf:
-        dataset_path = f"time_series/{uid}/data"
-        assert dataset_path in hf, (
-            f"expected dataset {dataset_path!r} in {path}, "
-            f"got keys: {list(hf.get('time_series', {}).keys())}"
-        )
-        actual = len(hf[dataset_path])
-        assert actual == length, f"expected length {length}, got {actual}"
+    actual = len(read_stored_series(path, sienna_type, name, attribute))
+    assert actual == length, f"expected length {length}, got {actual}"
 
 
 @then(
@@ -494,14 +634,7 @@ def assert_h5_ts_values(
     path: str, sienna_type: str, name: str, attribute: str, values: str
 ) -> None:
     expected = [float(v) for v in values.split()]
-    uid = sienna_time_series_uuid(sienna_type, name, attribute)
-    with h5py.File(path, "r") as hf:
-        dataset_path = f"time_series/{uid}/data"
-        assert dataset_path in hf, (
-            f"expected dataset {dataset_path!r} in {path}, "
-            f"got keys: {list(hf.get('time_series', {}).keys())}"
-        )
-        actual = list(hf[dataset_path][:])
+    actual = read_stored_series(path, sienna_type, name, attribute)
     assert len(actual) == len(expected), f"expected {expected}, got {actual}"
     for actual_value, expected_value in zip(actual, expected, strict=True):
         assert math.isclose(actual_value, expected_value, rel_tol=1e-9, abs_tol=1e-9), (
@@ -525,13 +658,28 @@ def assert_same_components(first: str, second: str) -> None:
     )
 )
 def assert_same_time_series_associations(first: str, second: str) -> None:
-    """One association table serves every companion, so the rows must be identical."""
+    """One association table serves every companion, so the rows must be identical.
+
+    The two fields a store derives from the values are the exception: replications hold
+    different values, so their ``uri`` and ``data_hash`` differ.
+    """
     key = "time_series_associations"
-    expected = read_json(first)[key]
+    expected = _without_value_hashes(read_json(first)[key])
     assert expected, f"expected {first} to state {key}"
-    assert read_json(second)[key] == expected, (
+    assert _without_value_hashes(read_json(second)[key]) == expected, (
         f"expected {first} and {second} to state the same {key}"
     )
+
+
+def _without_value_hashes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in row.items() if k not in ("uri", "data_hash")} for row in rows]
+
+
+@then("every time series association in the written Sienna system is valid SiennaSchemas 0.2")
+def assert_system_series_rows() -> None:
+    rows = read_json(SYSTEM_PATH).get("time_series_associations", [])
+    assert rows, f"{SYSTEM_PATH} holds no time series association"
+    assert_no_problems(list_type_problems("SingleTimeSeries", rows), SYSTEM_PATH)
 
 
 def _find_extension_records(path: str, kind: str, name: str) -> list[Any]:
@@ -591,6 +739,21 @@ def assert_ts_association_resolution(
     actual = _find_ts_association(path, owner_type, owner_id).get("resolution")
     assert actual == expected_resolution, (
         f"expected resolution {expected_resolution!r}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where TimeSeriesAssociation for component'
+        ' "{owner_type}" owner id {owner_id:d} has unit_system "{expected_unit_system}"'
+    )
+)
+def assert_ts_association_unit_system(
+    path: str, owner_type: str, owner_id: int, expected_unit_system: str
+) -> None:
+    actual = _find_ts_association(path, owner_type, owner_id).get("unit_system")
+    assert actual == expected_unit_system, (
+        f"expected unit_system {expected_unit_system!r}, got {actual!r}"
     )
 
 

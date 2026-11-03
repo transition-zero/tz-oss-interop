@@ -65,7 +65,9 @@ A leg may need a user mappings file whose vocabulary the user never chose. A com
 manifest can name mapping pipelines, which run before the legs and derive the files the
 legs consume from the one file the user wrote. No pipeline on the translate menu names one.
 The archived `plexos-to-sienna-via-pypsa` in `pipelines/archive/` does, because its second
-leg wants carriers where a PLEXOS user thinks in objects, categories and fuels.
+leg wants carriers where a PLEXOS user thinks in objects, categories and fuels. The archived
+manifests describe the Sienna output as it was before the SiennaSchemas 0.2 work. The output
+of the writers no longer matches them. They stay as history, and nothing refreshes them.
 
 ```yaml
 mappings:

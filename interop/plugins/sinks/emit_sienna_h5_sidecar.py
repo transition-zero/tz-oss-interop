@@ -1,43 +1,38 @@
 from __future__ import annotations
 
+import json
+import shutil
+import tempfile
+from datetime import datetime
+from pathlib import Path
 from typing import IO, Any, ClassVar
 
-import h5py
-import numpy as np
 import polars as pl
+from infrastore import OwnerCategory, SingleTimeSeries, Store
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.series_batches import (
+    NO_VALUES,
+    FloatArray,
     list_component_batches,
     read_batch_by_component,
 )
 from interop.plugins.shared.sienna_constants import (
+    InfraStoreSeriesLabel,
+    InfraStoreSidecar,
     SiennaComponent,
     SiennaTimeSeriesAssociationCol,
+    TimeSeriesAssociationCol,
 )
+from interop.plugins.shared.sienna_time_series import build_capacity_by_owner
 from interop.plugins.shared.staged_samples import filter_to_sample, list_staged_samples
 from interop.ports.outbound.filesystem import FilesystemPort, Location
-
-# ── HDF5 storage format constants ───────────────────────────────────────────
-_H5_TIME_SERIES_ROOT = "time_series"
-_H5_TIME_SERIES_DATA = "data"
-
-# Root-group attributes (compression settings)
-_H5_DATA_FORMAT_VERSION = "2.0.0"
-_H5_COMPRESSION_ENABLED = np.uint8(0)
-_H5_COMPRESSION_TYPE = "DEFLATE"
-_H5_COMPRESSION_LEVEL = np.int64(3)
-_H5_COMPRESSION_SHUFFLE = np.uint8(1)
-# ────────────────────────────────────────────────────────────────────────────
-
-# What a component with no staged values is written as.
-_NO_VALUES = np.empty(0, dtype=np.float64)
 
 
 class EmitSiennaH5SidecarParams(BaseModel):
     output_path: Location = Field(
-        description="the HDF5 companion holding the time-series arrays the system.json references"
+        description="the InfraStore file holding the time-series arrays the system.json references"
     )
 
 
@@ -58,21 +53,42 @@ class EmitSiennaH5Sidecar(Sink):
             self.write_h5(state, f)
 
     @staticmethod
-    def write_h5(state: State, f: IO[bytes], sample: str | None = None) -> None:
-        """Write every associated series, reading one replication where ``sample`` names one.
+    def write_h5(state: State, f: IO[bytes], sample: str | None = None) -> list[dict[str, Any]]:
+        """Write every associated series as an InfraStore file, and return the rows that name them.
+
+        The store states each row: its ``association_id`` and its ``uri`` exist only after the
+        values are written. The rows come back in ``association_id`` order.
 
         A single-system translation stages no ``sample`` column and passes none. An ensemble
         stages every replication in one frame and names the one it is writing, because an
         association row declares the length of one replication's series, not of all of them.
         """
-        with h5py.File(f, "w") as hf:
-            ts_root = _create_time_series_root(hf)
-            for source_key, rows in _rows_by_source_key(state).items():
-                _write_source_key(ts_root, rows, _staged_series(state, source_key), sample)
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / InfraStoreSidecar.SCRATCH_FILENAME
+            association_rows = _association_rows(state)
+            capacity_by_owner = _capacity_by_owner(state, association_rows)
+            with Store.create(str(path), catalog="memory") as store:
+                with store.transaction():
+                    for source_key, rows in _rows_by_source_key(association_rows).items():
+                        _write_source_key(
+                            store,
+                            rows,
+                            _staged_series(state, source_key),
+                            sample,
+                            capacity_by_owner,
+                        )
+                exported = json.loads(store.export_time_series_associations_openapi())
+            with path.open("rb") as written:
+                shutil.copyfileobj(written, f)
+        return sorted(exported, key=lambda row: row[TimeSeriesAssociationCol.ASSOCIATION_ID])
 
 
 def _write_source_key(
-    ts_root: h5py.Group, rows: list[dict[str, Any]], frame: pl.LazyFrame, sample: str | None
+    store: Store,
+    rows: list[dict[str, Any]],
+    frame: pl.LazyFrame,
+    sample: str | None,
+    capacity_by_owner: dict[tuple[str, int], float],
 ) -> None:
     """Write one staged series a batch of components at a time, so no batch outlives its write."""
     _reject_unsampled_ensemble(frame, sample)
@@ -81,9 +97,9 @@ def _write_source_key(
     for batch in list_component_batches(sampled):
         by_component = read_batch_by_component(sampled, batch)
         batch_rows = [row for name in batch for row in pending.pop(name, [])]
-        _write_series_groups(ts_root, batch_rows, by_component)
+        _add_series(store, batch_rows, by_component, capacity_by_owner)
     unmatched = [row for remaining in pending.values() for row in remaining]
-    _write_series_groups(ts_root, unmatched, {})
+    _add_series(store, unmatched, {}, capacity_by_owner)
 
 
 def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -93,17 +109,9 @@ def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[s
     return by_name
 
 
-def _create_time_series_root(hf: h5py.File) -> h5py.Group:
-    ts_root = hf.create_group(_H5_TIME_SERIES_ROOT)
-    ts_root.attrs["data_format_version"] = _H5_DATA_FORMAT_VERSION
-    ts_root.attrs["compression_enabled"] = _H5_COMPRESSION_ENABLED
-    ts_root.attrs["compression_type"] = _H5_COMPRESSION_TYPE
-    ts_root.attrs["compression_level"] = _H5_COMPRESSION_LEVEL
-    ts_root.attrs["compression_shuffle"] = _H5_COMPRESSION_SHUFFLE
-    return ts_root
-
-
-def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def _rows_by_source_key(
+    association_rows: list[dict[str, Any]],
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
     """The association rows a run writes, gathered under the staged series each one reads.
 
     One series is collected and held at a time, so a system with many source keys never has
@@ -111,7 +119,7 @@ def _rows_by_source_key(state: State) -> dict[tuple[str, str], list[dict[str, An
     """
     col = SiennaTimeSeriesAssociationCol
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for row in _association_rows(state):
+    for row in association_rows:
         grouped.setdefault((row[col.SOURCE_TABLE], row[col.SOURCE_ATTRIBUTE]), []).append(row)
     return grouped
 
@@ -120,24 +128,52 @@ def _association_rows(state: State) -> list[dict[str, Any]]:
     assoc_df = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
     if assoc_df is None or len(assoc_df) == 0:
         return []
-    return list(assoc_df.iter_rows(named=True))
+    # A series with no snapshot has no start time, which the store needs.
+    stored = assoc_df.drop_nulls(SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP)
+    return list(stored.iter_rows(named=True))
 
 
-def _write_series_groups(
-    ts_root: h5py.Group, rows: list[dict[str, Any]], by_component: dict[str, np.ndarray]
+def _capacity_by_owner(
+    state: State, association_rows: list[dict[str, Any]]
+) -> dict[tuple[str, int], float]:
+    """The capacity that turns each owner's per-unit series into megawatts."""
+    col = SiennaTimeSeriesAssociationCol
+    owners = {(row[col.OWNER_TYPE], row[col.OWNER_ID]) for row in association_rows}
+    components_by_type = {
+        owner_type: state.destination_tables[SiennaComponent(owner_type)].iter_rows(named=True)
+        for owner_type in {owner_type for owner_type, _ in owners}
+    }
+    return build_capacity_by_owner(owners, components_by_type)
+
+
+def _add_series(
+    store: Store,
+    rows: list[dict[str, Any]],
+    by_component: dict[str, FloatArray],
+    capacity_by_owner: dict[tuple[str, int], float],
 ) -> None:
-    """Stored arrays hold the per-unit shape: the row supplies the divisor and the multiplier
-    that reverses it on read.
+    """Stored arrays hold megawatts: the per-unit shape times the owner's capacity.
+
+    The row supplies the divisor that reaches the per-unit shape.
 
     A row naming a component the staged series holds no value for writes an empty array, the
     same as a row whose component the series never mentioned.
     """
     col = SiennaTimeSeriesAssociationCol
     for row in rows:
-        values = by_component.get(row[col.COMPONENT_NAME], _NO_VALUES)
-        ts_root.create_group(row[col.TIME_SERIES_UUID]).create_dataset(
-            _H5_TIME_SERIES_DATA,
-            data=values / row[col.SCALING_FACTOR],
+        values = by_component.get(row[col.COMPONENT_NAME], NO_VALUES)
+        capacity = capacity_by_owner[(row[col.OWNER_TYPE], row[col.OWNER_ID])]
+        series = SingleTimeSeries(
+            datetime.fromisoformat(row[col.INITIAL_TIMESTAMP]),
+            row[col.RESOLUTION],
+            values * (capacity / row[col.SCALING_FACTOR]),
+            row[col.NAME],
+            units=InfraStoreSeriesLabel.UNITS_POWER,
+            quantity_kind=InfraStoreSeriesLabel.QUANTITY_ACTIVE_POWER,
+            unit_system=InfraStoreSeriesLabel.UNIT_SYSTEM_NATURAL,
+        )
+        store.add_time_series(
+            row[col.OWNER_ID], row[col.OWNER_TYPE], OwnerCategory.Component, series
         )
 
 

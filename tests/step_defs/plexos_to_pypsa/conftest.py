@@ -91,7 +91,7 @@ PLEXOS_CARRIER_ROWS: list[dict[str, str]] = [
         "plexos_concept": "fuel",
         "plexos_name": "Biogas",
         "sienna_component_type": "ThermalStandard",
-        "sienna_fuel_type": "OTHEHR_BIOMASS_GAS",
+        "sienna_fuel_type": "OTHER_BIOMASS_GAS",
         "sienna_prime_mover_type": "IC",
     },
     {

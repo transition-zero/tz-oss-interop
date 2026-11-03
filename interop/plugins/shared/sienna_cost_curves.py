@@ -15,6 +15,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaCurveType,
     SiennaFunctionType,
+    SiennaStructField,
     SiennaUnitSystem,
     SiennaVariableCostType,
 )
@@ -57,7 +58,7 @@ def load_cost(price: pl.Expr) -> pl.Expr:
     return pl.struct(
         cost_type=pl.lit(SiennaCostType.LOAD),
         fixed=pl.lit(0.0),
-        variable=variable_cost_curve(price),
+        variable_operation_cost=variable_cost_curve(price),
     )
 
 
@@ -84,6 +85,22 @@ def variable_cost_curve_value(proportional: float) -> dict[str, Any]:
     }
 
 
+def loss_curve(proportional: pl.Expr) -> pl.Expr:
+    """A natural-units LossCurve: one linear segment, no constant loss."""
+    return pl.struct(
+        power_units=pl.lit(SiennaUnitSystem.NATURAL_UNITS),
+        value_curve=linear_value_curve(proportional, input_at_zero=pl.lit(None, dtype=pl.Float64)),
+    )
+
+
+def loss_curve_value(proportional: float) -> dict[str, Any]:
+    """The same LossCurve as ``loss_curve``, as a value rather than an expression."""
+    return {
+        "power_units": str(SiennaUnitSystem.NATURAL_UNITS),
+        "value_curve": linear_value_curve_value(proportional, input_at_zero=None),
+    }
+
+
 def thermal_cost_value(proportional: float, start_up: float) -> dict[str, Any]:
     """A ThermalGenerationCost: one linear variable segment, a start price, nothing else."""
     return {
@@ -91,7 +108,7 @@ def thermal_cost_value(proportional: float, start_up: float) -> dict[str, Any]:
         "fixed": 0.0,
         "shut_down": 0.0,
         "start_up": start_up,
-        "variable": variable_cost_curve_value(proportional),
+        SiennaStructField.VARIABLE_OPERATION_COST: variable_cost_curve_value(proportional),
     }
 
 
@@ -99,6 +116,6 @@ def renewable_cost_value(proportional: float) -> dict[str, Any]:
     """A RenewableGenerationCost: one linear variable segment and no fixed charge."""
     return {
         "cost_type": str(SiennaCostType.RENEWABLE),
-        "variable": variable_cost_curve_value(proportional),
+        SiennaStructField.VARIABLE_OPERATION_COST: variable_cost_curve_value(proportional),
         "fixed": 0.0,
     }
