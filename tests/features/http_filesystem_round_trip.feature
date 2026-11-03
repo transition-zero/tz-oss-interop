@@ -10,3 +10,18 @@ Feature: http_filesystem outbound adapter round-trip
     And an http round-trip pipeline "http_roundtrip" copying "http://example.test/input.txt" to "http://example.test/output.txt"
     When I run translate with source "noop" destination "noop" pipeline "http_roundtrip"
     Then the http destination "http://example.test/output.txt" reads back as "hello http round-trip"
+
+  Scenario: a file that the server sends gzip-encoded reads back the same through a stream
+    Given adapters.yaml binds filesystem to "http_filesystem"
+    And an http source at "http://example.test/input.txt" containing "hello gzip round-trip"
+    And the server sends "http://example.test/input.txt" gzip-encoded
+    And an http streaming round-trip pipeline "http_stream_roundtrip" copying "http://example.test/input.txt" to "http://example.test/output.txt"
+    When I run translate with source "noop" destination "noop" pipeline "http_stream_roundtrip"
+    Then the http destination "http://example.test/output.txt" reads back as "hello gzip round-trip"
+
+  Scenario: a sibling named with a leading "//" reads from the origin of the file beside it
+    Given adapters.yaml binds filesystem to "http_filesystem"
+    And an http source at "http://example.test/in/other.test/sibling.txt" containing "hello sibling"
+    And an http sibling round-trip pipeline "http_sibling_roundtrip" reading "//other.test/sibling.txt" beside "http://example.test/in/input.txt" to "http://example.test/output.txt"
+    When I run translate with source "noop" destination "noop" pipeline "http_sibling_roundtrip"
+    Then the http destination "http://example.test/output.txt" reads back as "hello sibling"
