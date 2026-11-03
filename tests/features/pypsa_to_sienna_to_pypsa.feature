@@ -48,8 +48,9 @@ Feature: PyPSA out and back through Sienna
     And the PyPSA network "outputs/network.nc" storage unit "battery_1" has carrier "li-ion"
 
   Scenario: a thermal plant with an availability series comes back with that series, and a static limit no higher than its peak
-    The forward hop writes rating = the static p_max_pu, and active_power_limits.max = p_nom ×
-    the series peak. The hop back writes the static p_max_pu as the smaller of the two, and
+    The forward hop writes rating = p_nom × the static p_max_pu, and active_power_limits.max =
+    p_nom × the series peak. The hop back writes the static p_max_pu as the smaller of the two
+    per unit of base_power, and
     scales the series by the limit alone, as Sienna applies a max_active_power series to
     active_power_limits.max and not to rating. PyPSA reads the series in place of the static
     p_max_pu, so "gas_1" keeps its whole series, also above its static p_max_pu of 0.5.

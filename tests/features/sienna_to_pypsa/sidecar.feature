@@ -12,7 +12,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     Given a Sienna system
     And the system contains a bus "node_a"
     And the system contains a bus "node_b"
-    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 1 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 200 active_power_min 0 active_power_max 200 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the system contains a PowerLoad "load" on bus "node_b" with max_active_power 100
     And the PowerLoad "load" has a max_active_power series 0.5 1 1 0.5
 
@@ -72,7 +72,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     only the annual bounds.
     Given the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 4 initial_level 0 rating 1 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
     And the EnergyReservoirStorage "battery" has ext "e_sum_max" set to {"2020": 5.0}
-    And the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
+    And the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 100 active_power_min 0 active_power_max 100 marginal_cost 5
     And the HydroDispatch "hydro" has ext "e_sum_min" set to {"2020": 7.0}
     And the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 1.0
     And the TwoTerminalGenericHVDCLine "line" has ext "e_sum_max" set to {"2020": 9.0}
@@ -118,7 +118,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     Then the file "outputs/extensions.json" parses as JSON with no generator extension record for "gas"
 
   Scenario: The generator record of a hydro plant travels on, as the plant becomes a storage unit
-    Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
+    Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 100 active_power_min 0 active_power_max 100 marginal_cost 5
     And the HydroDispatch "hydro" has ext "category" set to "hydro-dam"
     And the system is saved as "inputs/hydro.json"
     When I run translate against "inputs/hydro.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
@@ -126,7 +126,7 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the file "decisions.md" contains "| `sienna.generator.hydro.extensions.category` = hydro-dam | `pypsa.generator.hydro.extensions.category` = hydro-dam |"
 
   Scenario: A hydro plant takes the reservoir that its storage record states
-    Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 1 active_power_min 0 active_power_max 100 marginal_cost 5
+    Given the system contains a HydroDispatch "hydro" on bus "node_a" with base_power 100 rating 100 active_power_min 0 active_power_max 100 marginal_cost 5
     And the system has a storage extension record "hydro" with "max_hours" set to 6.0
     And the system has a storage extension record "hydro" with "state_of_charge_initial" set to 300.0
     And the system is saved as "inputs/reservoir.json"
@@ -171,8 +171,8 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     And the PyPSA network "outputs/network.nc" link "line reverse" attribute "efficiency" is 0.95
     And the PyPSA network "outputs/network.nc" link "line reverse" attribute "marginal_cost" is 10.0
     And the PyPSA network "outputs/network.nc" link "line reverse" has a p_max_pu time series 0.8 0.4 0 0.8
-    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.active_power_limits_from.min` = -400.0 MW | `pypsa.Link.line.p_min_pu` = 0.0 | a link that flows both ways and loses energy or costs money becomes two one-way links"
-    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.active_power_limits_from.min` = -400.0 MW | `pypsa.Link.line reverse.p_max_pu` = 0.8 |"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.operational_flow_limit.to_from_max` = 400.0 MW | `pypsa.Link.line.p_min_pu` = 0.0 | a link that flows both ways and loses energy or costs money becomes two one-way links"
+    And the file "decisions.md" contains "| `sienna.TwoTerminalGenericHVDCLine.line.operational_flow_limit.to_from_max` = 400.0 MW | `pypsa.Link.line reverse.p_max_pu` = 0.8 |"
 
   Scenario: An extendable line that flows both ways and loses energy stays one link, and the log says so
     Given the system contains an HVDC line "line" from "node_a" to "node_b" with p_nom 500.0 efficiency 0.95

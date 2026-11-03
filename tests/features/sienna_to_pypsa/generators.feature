@@ -32,17 +32,17 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
   Scenario: a ThermalStandard whose output limit is below its base power can make only that limit
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 1.0 active_power_min 100.0 active_power_max 400.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 400.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
     And the system is saved as "inputs/thermal_derated.json"
     When I run translate against "inputs/thermal_derated.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_nom" is 500.0
     And the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_max_pu" is 0.8
-    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.active_power_limits.max` = 400.0 MW<br>`sienna.ThermalStandard.coal_1.rating` = 1.0 | `pypsa.Generator.coal_1.p_max_pu` = 0.8 | min(active_power_limits.max / base_power, rating) |"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.active_power_limits.max` = 400.0 MW<br>`sienna.ThermalStandard.coal_1.rating` = 500.0 MVA | `pypsa.Generator.coal_1.p_max_pu` = 0.8 | min(active_power_limits.max, rating) / base_power |"
 
   Scenario: a ThermalStandard whose rating is below its output limit can make only its rating
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 0.6 active_power_min 100.0 active_power_max 400.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 300.0 active_power_min 100.0 active_power_max 400.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
     And the system is saved as "inputs/thermal_rated.json"
     When I run translate against "inputs/thermal_rated.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "coal_1" attribute "p_max_pu" is 0.6
@@ -50,7 +50,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna generators to PyPSA Generato
   Scenario: an annual energy bound of a system with no series stays in extensions.json, and the log says so
     Given a Sienna system
     And the system contains a bus "node_a"
-    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 1.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500.0 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
     And the ThermalStandard "coal_1" has ext "e_sum_min" set to {"2030": 100.0}
     And the system is saved as "inputs/thermal_bound.json"
     When I run translate against "inputs/thermal_bound.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
