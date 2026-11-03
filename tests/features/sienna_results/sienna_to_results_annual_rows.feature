@@ -12,7 +12,7 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
     Given a Sienna system
     And the system contains a bus "node_a"
     And the system contains a bus "node_b"
-    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 0.5 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
+    And the system contains a ThermalStandard "gas" on bus "node_a" with base_power 200 rating 100 active_power_min 0 active_power_max 100 marginal_cost 25 prime_mover "CC" fuel "NATURAL_GAS"
     And the ThermalStandard "gas" has ext carrier "gas"
     And the ThermalStandard "gas" has ext emission rate 0.5 t/MWh of "CO2"
     And the system contains an HVDC line "link" from "node_a" to "node_b" with p_nom 20 efficiency 1

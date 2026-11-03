@@ -61,6 +61,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaStorageCol,
     SiennaTable,
 )
+from interop.plugins.shared.sienna_hvdc_flow import FLOW_BOUNDS_DERIVATION, build_hvdc_flow_bounds
 from interop.plugins.shared.sienna_results_constants import (
     AnnualCol,
 )
@@ -96,10 +97,13 @@ _PRODUCTION_DERIVATION = (
     "line as lossless, so the energy that it delivers equals the energy that it sends. A line "
     "that its extensions record marks as a conversion has no row."
 )
+# The column that holds the largest flow of an HVDC line from its from bus.
+_FLOW_CEILING = "flow_ceiling"
 _INSTALLED_CAPACITY_DERIVATION = (
-    "base_power × rating for a generator, base_power × output_active_power_limits.max for a "
-    "storage, active_power_limits_from.max for a TwoTerminalGenericHVDCLine that is not a "
-    "conversion and whose limit is not a stand-in → installed_capacity at 1 January of the year"
+    "rating for a generator, base_power × output_active_power_limits.max for a storage, the "
+    f"largest flow from the from bus for a TwoTerminalGenericHVDCLine ({FLOW_BOUNDS_DERIVATION}) "
+    "that is not a conversion and whose limit is not a stand-in → installed_capacity at "
+    "1 January of the year"
 )
 _PRODUCTION_SOURCES = [
     build_results_source(ResultsVariable.DISPATCH),
@@ -121,11 +125,15 @@ _INSTALLED_CAPACITY_SOURCES = [
         component=SiennaTable.STORAGE,
         name=SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS,
     ),
-    SourceField(
-        framework=Framework.SIENNA,
-        component=SiennaTable.LINKS,
-        name=SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM,
-    ),
+    *[
+        SourceField(framework=Framework.SIENNA, component=SiennaTable.LINKS, name=column)
+        for column in (
+            SiennaLinkCol.RATING,
+            SiennaLinkCol.RATING_FROM,
+            SiennaLinkCol.RATING_TO,
+            SiennaLinkCol.OPERATIONAL_FLOW_LIMIT,
+        )
+    ],
 ]
 _EMISSIONS_SOURCES = [
     build_results_source(ResultsVariable.PRODUCTION),
@@ -268,20 +276,32 @@ def _build_capacity(
 ) -> pl.DataFrame:
     """The MW rating of each generator, storage and HVDC line, for each year of the solve."""
     base_power = pl.col(SiennaGeneratorCol.BASE_POWER)
-    rated = base_power * pl.col(SiennaGeneratorCol.RATING)
     output = pl.col(SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS).struct.field(MinMaxField.MAX)
-    limit = pl.col(SiennaLinkCol.ACTIVE_POWER_LIMITS_FROM).struct.field(MinMaxField.MAX)
+    links = _enrich_flow_ceiling(state.source_topology.get(SiennaTable.LINKS))
     ratings = [
-        _build_rating(state.source_topology.get(SiennaTable.GENERATORS), rated, carrier_lookup),
+        _build_rating(
+            state.source_topology.get(SiennaTable.GENERATORS),
+            pl.col(SiennaGeneratorCol.RATING),
+            carrier_lookup,
+        ),
         _build_rating(
             state.source_topology.get(SiennaTable.STORAGE), base_power * output, carrier_lookup
         ),
-        _build_rating(state.source_topology.get(SiennaTable.LINKS), limit, None),
+        _build_rating(links, pl.col(_FLOW_CEILING), None),
     ]
     stated = [rating for rating in ratings if rating is not None]
     if not stated:
         return pl.DataFrame(schema=CAPACITY_SCHEMA)
     return pl.concat(stated).collect().join(years, how="cross")
+
+
+def _enrich_flow_ceiling(links: pl.LazyFrame | None) -> pl.LazyFrame | None:
+    """Add the largest flow that each HVDC line carries from its from bus, in MW."""
+    if links is None:
+        return None
+    table = links.collect()
+    ceilings = [build_hvdc_flow_bounds(row).maximum for row in table.iter_rows(named=True)]
+    return table.with_columns(pl.Series(_FLOW_CEILING, ceilings, dtype=pl.Float64)).lazy()
 
 
 def _build_rating(

@@ -60,7 +60,7 @@ _UNMARKED_REASON = (
     "as production and trade; mark each conversion in extensions.json"
 )
 _STAND_IN_NOTE = (
-    "the extensions record marks active_power_limits_from.max as a stand-in that never binds, "
+    "the extensions record marks the rating of the line as a stand-in that never binds, "
     "not the capacity of the line, so the line has no installed_capacity row"
 )
 _STAND_IN_REASON = (
