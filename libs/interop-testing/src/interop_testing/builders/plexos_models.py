@@ -44,12 +44,15 @@ from interop_testing.builders.plexos_vocabulary import (
     HORIZON_CLASS,
     HORIZONS_COLLECTION,
     IS_SLACK_BUS_PROPERTY,
+    LOAD_CLASS,
     LOAD_PROPERTY,
+    LOADS_COLLECTION,
     MARKET_CLASS,
     MARKETS_COLLECTION,
     MODEL_CLASS,
     MODELS_COLLECTION,
     NODE_CLASS,
+    NODE_COLLECTION,
     NODES_COLLECTION,
     OLE_EPOCH,
     PERIODS_PER_DAY_ATTRIBUTE,
@@ -129,6 +132,15 @@ class PlexosModelBuilder(ResourceBuilder):
         self._check_not_saved(f"load on region {region!r}")
         self._add_system_property(
             REGION_CLASS, region, REGIONS_COLLECTION, LOAD_PROPERTY, peak, scenarios, data_file
+        )
+
+    def add_load_object(self, name: str, node: str, peak: float, data_file: str) -> None:
+        """An object of the PLEXOS Load class, joined to a Node, whose Load reads a data file."""
+        self._check_not_saved(f"load object {name!r}")
+        self._add_system_object(LOAD_CLASS, name, LOADS_COLLECTION)
+        self._membership_id(LOAD_CLASS, name, NODE_CLASS, node, NODE_COLLECTION)
+        self._add_system_property(
+            LOAD_CLASS, name, LOADS_COLLECTION, LOAD_PROPERTY, peak, data_file=data_file
         )
 
     def add_region_property(self, region: str, property_name: str, value: float) -> None:

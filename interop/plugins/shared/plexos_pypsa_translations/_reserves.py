@@ -233,7 +233,8 @@ def _load_profiles(state: State) -> set[str]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     if PlexosPropertyCol.CHILD_CLASS not in properties.collect_schema().names():
         return set()
-    demand_classes = (PlexosClass.REGION, PlexosClass.NODE)
+    # Polars 1.x casts enum members to an Enum dtype, which stops on any unlisted class.
+    demand_classes = [PlexosClass.REGION.value, PlexosClass.NODE.value]
     paths = (
         properties.filter(
             pl.col(PlexosPropertyCol.CHILD_CLASS).is_in(demand_classes)

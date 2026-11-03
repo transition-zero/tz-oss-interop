@@ -48,6 +48,18 @@ def given_model_contains_load(
 
 
 @given(
+    parsers.parse(
+        'the model contains a Load object "{name}" on node "{node}"'
+        ' with peak {peak:g} from data file "{data_file}"'
+    )
+)
+def given_model_contains_load_object(
+    plexos_model_builder: PlexosModelBuilder, name: str, node: str, peak: float, data_file: str
+) -> None:
+    plexos_model_builder.add_load_object(name, node, peak, data_file)
+
+
+@given(
     parsers.parse('the model contains load "{node}" with peak {peak:g} in scenario "{scenario}"')
 )
 def given_model_contains_load_in_scenario(
