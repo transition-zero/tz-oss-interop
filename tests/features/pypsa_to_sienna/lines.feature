@@ -31,6 +31,9 @@ Feature: pypsa_to_sienna translates PyPSA Line rows to Sienna Line plus a shared
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "angle_limits.min" set to -1.5707963267948966
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "angle_limits.max" set to 1.5707963267948966
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "rating_b" set to null
+    And every "Line" component in the written Sienna system is valid SiennaSchemas 0.2
+    And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "power_units" set to "COMPONENT_BASE"
+    And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "base_power" set to 100.0
     And the file "outputs/system.json" parses as JSON with component "Line" named "line_1_2" having "arc" set to 4
     And the file "outputs/system.json" parses as JSON with "components.Arc.0.id" set to 4
     And the file "outputs/system.json" parses as JSON with "components.Arc.0.from" set to 1

@@ -55,11 +55,13 @@ from interop.plugins.shared.plexos_sienna_translations._storage_series import (
 from interop.plugins.shared.sienna_constants import (
     CYCLIC_ENERGY_PENALTY,
     DEFAULT_CYCLE_LIMITS,
+    STORAGE_UNITS_NOTE,
     SiennaComponent,
     SiennaCostType,
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
     SiennaStorageTech,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve_value,
@@ -157,6 +159,7 @@ class _StorageMapping:
     conversion_factor: Decision = maps_to(SiennaEnergyReservoirStorageCol.CONVERSION_FACTOR)
     storage_target: Decision = maps_to(SiennaEnergyReservoirStorageCol.STORAGE_TARGET)
     cycle_limits: Decision = maps_to(SiennaEnergyReservoirStorageCol.CYCLE_LIMITS)
+    power_units: Decision = maps_to(SiennaEnergyReservoirStorageCol.POWER_UNITS)
 
 
 @dataclass(frozen=True)
@@ -301,6 +304,7 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
         conversion_factor=Decision.default(CONVERSION_FACTOR, _CONVERSION_NOTE),
         storage_target=replace(mapping.cyclic, value=_target(hours, is_cyclic)),
         cycle_limits=Decision.default(DEFAULT_CYCLE_LIMITS, _CYCLE_LIMITS_NOTE),
+        power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, STORAGE_UNITS_NOTE),
     )
 
 

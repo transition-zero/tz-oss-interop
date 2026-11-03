@@ -36,6 +36,7 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
+from interop.plugins.shared.pypsa_sienna_translations._units import build_load_power_units
 from interop.plugins.shared.series_earliest import build_earliest_values
 from interop.plugins.shared.sienna_constants import (
     LOAD_CONFORMITY_DTYPE,
@@ -294,6 +295,7 @@ def _load_translations(component: SiennaComponent) -> list[Translation]:
         ),
         direct(source_col=PyPSALoadCol.NAME, dest_col=SiennaLoadCol.NAME),
         default(dest_col=SiennaLoadCol.AVAILABLE, value=True, note=_AVAILABLE_NOTE),
+        build_load_power_units(component),
         direct(source_col=PyPSALoadCol.BUS, dest_col=SiennaLoadCol.BUS_NAME, note=_BUS_NAME_NOTE),
         _load_sienna_type(dest, component),
         _load_active_power(dest),
