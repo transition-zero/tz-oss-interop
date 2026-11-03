@@ -21,6 +21,22 @@ Feature: PLEXOS reserves are carried through the plexos_to_pypsa pipeline
     And the extensions sidecar "outputs/extensions.json" reserve "SpinningReserve" lists contributor "GasPlant"
     And the file "decisions.md" contains "reserve carried to the extensions sidecar"
 
+  Scenario: a property on a class the translator does not list does not stop a reserve
+    A reserve looks for the demand profiles among the Region and Node properties. This
+    model also states a Load property on an object of the PLEXOS Load class, which the
+    translator does not read, so that row is passed over and the reserve still translates.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "NodeDemand" at "profiles/demand.csv" with hourly values "100, 110, 120"
+    And the model contains a Load object "Grid_Demand" on node "Grid_Node" with peak 120 from data file "NodeDemand"
+    And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, VO&M Charge=45"
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "GasPlant"
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the file "outputs/network.nc" exists
+    And the extensions sidecar "outputs/extensions.json" reserve "SpinningReserve" requires 60 MW
+
   Scenario: a Type code says which way the reserve moves output, and which product it is
     PLEXOS packs both into one integer. Type 3 is Regulation Raise, so the sidecar states
     the direction and the product separately, each in its own vocabulary.

@@ -80,6 +80,26 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "requirement_series" set to "reserves.parquet"
     And the file "outputs/reserves.parquet" exists
 
+  Scenario: a property on a class the translator does not list does not stop a reserve
+    A reserve looks for the demand profiles among the Region and Node properties. This
+    model also states a Load property on an object of the PLEXOS Load class, which the
+    translator does not read, so that row is passed over and the reserve still translates.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "NodeDemand" at "profiles/demand.csv" with hourly values "100, 110, 120"
+    And the model contains a Load object "North_Demand" on node "North_Node" with peak 120 from data file "NodeDemand"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "GasPlant"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
+    And the file "outputs/extensions.json" parses as JSON reserve extension record for "SpinningReserve" having "requirement_mw" set to 60.0
+
   Scenario: the report names the fuel behind a generator's Sienna type
     Given a Plexos model
     And the model contains region "North"
