@@ -62,9 +62,17 @@ Feature: the pypsa-to-sienna pipeline validates the source network before transl
       | attribute           | value | severity | message                                   |
       | p_nom               | -50.0 | CRITICAL | p_nom must be non-negative                |
       | max_hours           | -1.0  | CRITICAL | max_hours must be non-negative            |
-      | efficiency_store    | 0.0   | CRITICAL | efficiency_store must be within (0, 1]    |
+      | efficiency_store    | -0.5  | CRITICAL | efficiency_store must be within [0, 1]    |
       | efficiency_dispatch | 1.5   | CRITICAL | efficiency_dispatch must be within (0, 1] |
       | standing_loss       | 2.0   | CRITICAL | standing_loss must be within [0, 1]       |
+
+  Scenario: a storage unit off the hydro carrier that states no charge efficiency is not flagged
+    Given a PyPSA network
+    And the network contains bus "bus_1" carrier "AC" v_nom 380.0 location "R1"
+    And the network contains storage unit "su_1" on "bus_1" carrier "PHS" p_nom 100.0 max_hours 4.0 efficiency_store 0.0 efficiency_dispatch 0.9
+    And the network is saved as "inputs/su_no_charge.nc"
+    When I run validate against "inputs/su_no_charge.nc" pipeline "pypsa-to-sienna"
+    Then the file "validation-report.md" contains "No validation issues found."
 
   Scenario: a storage unit's initial charge above its energy capacity is a critical bound error
     Given a PyPSA network
