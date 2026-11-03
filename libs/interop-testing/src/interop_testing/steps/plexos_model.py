@@ -345,6 +345,20 @@ def given_reserve_prices_shortage(
     plexos_model_builder.price_reserve_shortage(name, price)
 
 
+@given(parsers.parse('reserve "{name}" draws on battery "{battery}"'))
+def given_reserve_draws_on_battery(
+    plexos_model_builder: PlexosModelBuilder, name: str, battery: str
+) -> None:
+    plexos_model_builder.add_reserve_battery(name, battery)
+
+
+@given(parsers.parse('reserve "{name}" has property "{property_name}" {value:g}'))
+def given_reserve_has_property(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, value: float
+) -> None:
+    plexos_model_builder.add_reserve_property(name, property_name, value)
+
+
 @given(parsers.parse('reserve "{name}" is mutually exclusive'))
 def given_reserve_is_mutually_exclusive(
     plexos_model_builder: PlexosModelBuilder, name: str

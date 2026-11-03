@@ -781,3 +781,50 @@ def _find_ts_association(path: str, owner_type: str, owner_id: int) -> dict[str,
         f"no TimeSeriesAssociation for owner_type={owner_type!r} owner_id={owner_id} in {path}"
     )
     return matching[0]
+
+
+# The SiennaSchemas 0.2 document key, and the two fields of one row under it.
+_SERVICE_ASSOCIATIONS = "service_associations"
+_SERVICE_ID = "service_id"
+_ENTITY_ID = "entity_id"
+
+
+def list_service_members(data: dict[str, Any], service_type: str, service: str) -> list[int]:
+    """The ids of every component that the written system joins to one service."""
+    service_id = find_sienna_component(data, service_type, service)["id"]
+    return [
+        row[_ENTITY_ID]
+        for row in data.get(_SERVICE_ASSOCIATIONS, [])
+        if row[_SERVICE_ID] == service_id
+    ]
+
+
+@then(
+    parsers.parse(
+        'the written Sienna system associates the {service_type} "{service}"'
+        ' with the {entity_type} "{entity}"'
+    )
+)
+def assert_service_association(
+    service_type: str, service: str, entity_type: str, entity: str
+) -> None:
+    data = read_json(SYSTEM_PATH)
+    entity_id = find_sienna_component(data, entity_type, entity)["id"]
+    members = list_service_members(data, service_type, service)
+    assert entity_id in members, (
+        f"expected [{entity_type}:{entity}] (id {entity_id}) to join [{service_type}:{service}]"
+        f" in {SYSTEM_PATH}, got member ids {members}"
+    )
+
+
+@then(
+    parsers.re(
+        r"the written Sienna system associates (?P<count>\d+) units? with the "
+        r'(?P<service_type>\w+) "(?P<service>[^"]+)"'
+    )
+)
+def assert_service_member_count(count: str, service_type: str, service: str) -> None:
+    members = list_service_members(read_json(SYSTEM_PATH), service_type, service)
+    assert len(members) == int(count), (
+        f"expected {count} members of [{service_type}:{service}] in {SYSTEM_PATH}, got {members}"
+    )

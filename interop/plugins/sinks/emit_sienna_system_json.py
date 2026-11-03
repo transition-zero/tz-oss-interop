@@ -19,8 +19,22 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSchemasSystem,
     SiennaThermalGeneratorCol,
 )
-from interop.plugins.sinks._sienna_files import serialise_system_document, validate_refs
+from interop.plugins.sinks._sienna_files import (
+    SystemContents,
+    serialise_system_document,
+    validate_refs,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location
+
+# A service names no bus, so its row reaches the document as the step wrote it.
+_SERVICE_TYPES: tuple[SiennaComponent, ...] = (
+    SiennaComponent.ONLINE_RESERVE,
+    SiennaComponent.OFFLINE_RESERVE,
+)
+
+
+def _list_rows(table: pl.DataFrame | None) -> list[dict[str, Any]]:
+    return [] if table is None else table.to_dicts()
 
 
 class EmitSiennaSystemJsonParams(BaseModel):
@@ -42,9 +56,12 @@ class EmitSiennaSystemJson(Sink):
                 f"got {type(params).__name__}"
             )
         payload = self.build_payload(state)
-        serialised = serialise_system_document(
-            payload[SiennaSchemasSystem.COMPONENTS], [], None, params.indent
+        contents = SystemContents(
+            payload[SiennaSchemasSystem.COMPONENTS],
+            payload[SiennaSchemasSystem.SERVICE_ASSOCIATIONS],
+            [],
         )
+        serialised = serialise_system_document(contents, None, params.indent)
         self._fs.write_bytes(params.output_path, serialised)
 
     @staticmethod
@@ -140,9 +157,16 @@ class EmitSiennaSystemJson(Sink):
             components[SiennaComponent.LINE] = line_components
         if hvdc_components:
             components[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = hvdc_components
+        for service_type in _SERVICE_TYPES:
+            service_components = _list_rows(state.destination_tables.get(service_type))
+            if service_components:
+                components[service_type] = service_components
 
         return {
             SiennaSchemasSystem.COMPONENTS: components,
+            SiennaSchemasSystem.SERVICE_ASSOCIATIONS: _list_rows(
+                state.destination_tables.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS)
+            ),
         }
 
     @staticmethod

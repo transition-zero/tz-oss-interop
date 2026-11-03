@@ -18,6 +18,7 @@ from power_openapi_models.document import (
     write_document,
     write_portfolio_document,
 )
+from power_openapi_models.operations.models import ServiceAssociation
 from power_openapi_models.timeseries.models import TimeSeriesAssociation
 
 from interop.core.pipeline import State
@@ -59,30 +60,43 @@ class WritesSiennaFiles(WritesExtensionsSidecar):
         self._fs.write_bytes(
             paths.system_json,
             serialise_system_document(
-                payload[SiennaSchemasSystem.COMPONENTS], rows, location_name(paths.h5), indent
+                SystemContents(
+                    payload[SiennaSchemasSystem.COMPONENTS],
+                    payload.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS, []),
+                    rows,
+                ),
+                location_name(paths.h5),
+                indent,
             ),
         )
 
 
+class SystemContents(NamedTuple):
+    """What one system document holds: its components and the two lists that join them."""
+
+    components: dict[str, Any]
+    service_associations: list[dict[str, Any]]
+    time_series_associations: list[dict[str, Any]]
+
+
 def serialise_system_document(
-    components: dict[str, Any],
-    time_series_associations: list[dict[str, Any]],
-    time_series_storage_file: str | None,
-    indent: int,
+    contents: SystemContents, time_series_storage_file: str | None, indent: int
 ) -> bytes:
     """The system document as the SDK writes it: validated, stamped, with its keys sorted."""
     document = SystemDocument(
         name=None,
         description=None,
         frequency=None,
-        components=components,
+        components=contents.components,
         supplemental_attributes=[],
         supplemental_attribute_associations=[],
         plant_associations=[],
         combined_cycle_associations=[],
-        service_associations=[],
+        service_associations=[
+            ServiceAssociation.model_validate(row) for row in contents.service_associations
+        ],
         time_series_associations=[
-            TimeSeriesAssociation.model_validate(row) for row in time_series_associations
+            TimeSeriesAssociation.model_validate(row) for row in contents.time_series_associations
         ],
         time_series_storage_file=time_series_storage_file,
     )
