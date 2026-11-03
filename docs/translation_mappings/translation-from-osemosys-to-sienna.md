@@ -19,7 +19,7 @@ The command of tz-oss-interop is `interop`. Four pipelines read an OSeMOSYS mode
 
 | Pipeline | Reads | Writes |
 | --- | --- | --- |
-| `osemosys-csv-to-sienna` | an otoole model: a configuration YAML file and a directory of CSV files | `system.json`, its HDF5 companion and `extensions.json` |
+| `osemosys-csv-to-sienna` | an otoole model: a configuration YAML file and a directory of CSV files | `system.json`, its time-series sidecar and `extensions.json` |
 | `tz-osemosys-to-sienna` | a TZ-format `model.json` file | the same three files |
 | `osemosys-csv-to-sienna-investments` | an otoole model | the same three files, and `portfolio.json` |
 | `tz-osemosys-to-sienna-investments` | a TZ-format `model.json` file | the same four files |
@@ -241,17 +241,19 @@ the MW of one unit of `units: capacity`.
 - **A name comes from the member.** A component takes the name of its technology, fuel or
   storage. When two regions hold a member of the same name, the name starts with
   `<region>/`.
-- **The time series go into the HDF5 companion.** Each series is a `TimeSeriesAssociation`
-  record whose values are in `system_time_series_storage.h5`.
+- **The time series go into the time-series sidecar.** Each series is a
+  `TimeSeriesAssociation` record whose values are in the InfraStore file
+  `system_time_series_storage.h5`. A stored value is in MW: the value per unit times the
+  capacity of its owner.
+- **Each component has an id that is unique in the document.** A table counts on from the
+  ids of the tables before it.
 - **A value with no Sienna field goes to `extensions.json`.** For example, the fixed cost and
   the emission rates of a generator. A field takes the name of the PyPSA attribute with the same
   meaning, in the PyPSA unit. Sienna does not read the sidecar. A later tz-oss-interop step can
   read it. Refer to [The values that Sienna has no field for](#the-values-that-sienna-has-no-field-for).
-- **The field names are the names that every Sienna translation of tz-oss-interop writes.**
-  Two of them differ from the current SiennaSchemas. A `ThermalStandard` states `fuel_type`,
-  which SiennaSchemas calls `fuel`. A `TwoTerminalGenericHVDCLine` states
-  `active_power_limits_from` and `active_power_limits_to`, and SiennaSchemas now states
-  `rating`, `rating_from`, `rating_to` and `operational_flow_limit`.
+- **The field names and the units are those of SiennaSchemas 0.2.** A generator and a line
+  state their power in MW, with `power_units` `NATURAL_UNITS`. A storage states its rating and
+  its limits per unit of `base_power`, with `power_units` `COMPONENT_BASE`.
 
 ---
 
@@ -376,7 +378,8 @@ names. These checks leave a technology out, in this order:
 | `bus` | | The bus of the largest electricity fuel that it puts out at the operations mode | `derived` |
 | `prime_mover_type` | | The carriers row of the category | `mapped by you` |
 | `base_power` | MVA | `ResidualCapacity` (`residual_capacity`) of the operations year × `CapacityToActivityUnit` (`capacity_to_activity_unit`) in MWh / 8760 h × the electricity `OutputActivityRatio` (`output_activity_ratio`) at the operations mode | `derived` |
-| `rating` | pu | `1.0`. The generator rates at its whole base power, and its availability limits it in each hour. | `default` |
+| `rating` | MVA | `base_power`. The generator rates at its whole base power, and its availability limits it in each hour. | `derived` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
 | `active_power` / `reactive_power` | MW / MVAR | `0.0` | `default` |
 | `available` | | `true` | `default` |
 
@@ -414,19 +417,19 @@ it as a derate in each hour. Refer to [Availability as a derate](#availability-a
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
-| `fuel_type` | | The carriers row of the category | `mapped by you` |
+| `fuel` | | The carriers row of the category | `mapped by you` |
 | `active_power_limits` | MW | `(0, base_power × the share)` when the share is the same in each hour, else `(0, base_power)` | `derived` |
-| `operation_cost.variable` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
 | `operation_cost.fixed` | $ | `0.0`. OSeMOSYS charges its fixed cost on capacity, so the fixed cost goes to `extensions.json`. | `default` |
 | `operation_cost.start_up` / `shut_down` | $ | `0.0` | `default` |
-| `status` / `must_run` | | `true` / `false` | `default` |
+| `status` | | `ONLINE` | `default` |
 | `time_at_status` | h | `10000.0` | `default` |
 | `ramp_limits` / `time_limits` | | None, because OSeMOSYS states no unit commitment data | `dropped` |
 | `reactive_power_limits` | MVAR | None | `default` |
 
 The lower limit is 0, because OSeMOSYS states no minimum stable level.
 
-`ramp_limits`, `time_limits`, `status`, `must_run` and `time_at_status` each record
+`ramp_limits`, `time_limits`, `status` and `time_at_status` each record
 `NOT_MAPPED` with the note "OSeMOSYS states no unit commitment data". A solve with unit
 commitment then has no start cost and no minimum up time to apply.
 
@@ -434,7 +437,7 @@ commitment then has no start cost and no minimum up time to apply.
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
-| `operation_cost.variable` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
 | `operation_cost.fixed` | $ | `0.0` | `default` |
 | `power_factor` | | `1.0` | `default` |
 | `reactive_power_limits` | MVAR | None | `default` |
@@ -450,7 +453,7 @@ records it.
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `active_power_limits` | MW | `(0, base_power)` | `derived` |
-| `operation_cost.variable` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | A linear curve. Refer to [The variable cost](#the-variable-cost). | `derived` |
 | `operation_cost.fixed` | $ | `0.0` | `default` |
 
 A `HydroDispatch` gets two time series on the same per-unit values: `max_active_power` and
@@ -528,6 +531,7 @@ One technology can do both. These checks leave a storage out, in this order:
 | `storage_technology_type` | | `OTHER_MECH`, because OSeMOSYS states no storage technology | `default` |
 | `base_power` | MVA | `residual_capacity` of the discharging technology × its `capacity_to_activity_unit` in MWh / 8760 h × its electricity `output_activity_ratio` at the discharge mode | `derived` |
 | `rating` | pu | `1.0` | `default` |
+| `power_units` | | `COMPONENT_BASE` | `default` |
 | `output_active_power_limits` | pu | min = 0. max = the lower of `base_power` × the `availability_factor` of the discharging technology, and `StorageMaxDischargeRate` (`storage_max_discharge_rate`) in MWh / 8760 h × the electricity `output_activity_ratio` at the discharge mode / `technology_from_storage`. Then / `base_power`. | `derived` |
 | `input_active_power_limits` | pu | min = 0. max = the lower of `residual_capacity` of the charging technology × its `capacity_to_activity_unit` in MWh / 8760 h × its electricity `input_activity_ratio` at the charge mode × its `availability_factor`, and `StorageMaxChargeRate` (`storage_max_charge_rate`) in MWh / 8760 h × that `input_activity_ratio` / `technology_to_storage`. Then / `base_power`. | `derived` |
 | `efficiency.in` | | `technology_to_storage` / the electricity `input_activity_ratio` at the charge mode | `derived` |
@@ -587,11 +591,13 @@ limit rates at that limit.
 | --- | --- | --- | --- |
 | `name` | | The technology | `direct` |
 | `arc` | | The bus of the electricity fuel that it takes in → the bus of the electricity fuel that it puts out | `derived` |
-| `active_power_limits_from.max` | MW | The capacity in MW × `availability_factor` × the electricity `input_activity_ratio` at the operations mode | `derived` |
-| `active_power_limits_to.max` | MW | The capacity in MW × `availability_factor` × the electricity `output_activity_ratio` at the operations mode | `derived` |
-| `active_power_limits_from.min` | MW | − the capacity in MW × `availability_factor` × the electricity output ratio of the flow back, or 0 with no flow back | `derived` |
-| `active_power_limits_to.min` | MW | − the capacity in MW × `availability_factor` × the electricity input ratio of the flow back, or 0 with no flow back | `derived` |
-| `loss` | | A linear curve with the proportional term `1 − output ratio / input ratio` at the operations mode | `derived` |
+| `operational_flow_limit.from_to_max` | MW | The capacity in MW × `availability_factor` × the electricity `input_activity_ratio` at the operations mode | `derived` |
+| `operational_flow_limit.to_from_max` | MW | The capacity in MW × `availability_factor` × the electricity output ratio of the flow back, or 0 with no flow back | `derived` |
+| `operational_flow_limit.from_to_min` / `to_from_min` | MW | `0.0` | `derived` |
+| `rating` | MVA | The larger of `from_to_max` and `to_from_max` | `derived` |
+| `loss` | | A loss curve with the proportional term `1 − output ratio / input ratio` at the operations mode | `derived` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
+| `base_power` | MVA | `100.0`, the system base | `default` |
 | `reactive_power_limits_from` / `_to` | MVAR | `(0.0, 0.0)` | `default` |
 | `active_power_flow` | MW | `0.0` | `default` |
 | `available` | | `true` | `default` |
@@ -644,12 +650,12 @@ value as `TRANSLATOR_DEFAULT_APPLIED`.
 | `name` | | `<line>/import/<mode>`. `<line>` is the name of the line. | `derived` |
 | `bus` | | The bus of the electricity fuel that the mode puts out | `derived` |
 | `prime_mover_type` | | `OT` | `default` |
-| `fuel_type` | | `OTHER` | `default` |
+| `fuel` | | `OTHER` | `default` |
 | `base_power` | MVA | `residual_capacity` of the line × its `capacity_to_activity_unit` in MWh / 8760 h × the electricity `output_activity_ratio` of the mode | `derived` |
 | `active_power_limits` | MW | As for a `ThermalStandard`, with the `capacity_factor` and the `availability_factor` of the line. Refer to [The availability of each hour](#the-availability-of-each-hour). | `derived` |
-| `operation_cost.variable` | $/MWh | A linear curve: `variable_operation_cost` of the mode in $/MWh / the electricity output ratio of the mode + the emission penalty of each pollutant | `derived` |
+| `operation_cost.variable_operation_cost` | $/MWh | A linear curve: `variable_operation_cost` of the mode in $/MWh / the electricity output ratio of the mode + the emission penalty of each pollutant | `derived` |
 | `operation_cost.fixed` | $ | `0.0`. OSeMOSYS states the fixed cost for the technology, and the line record holds it. | `default` |
-| `rating` | pu | `1.0` | `default` |
+| `rating` | MVA | `base_power` | `derived` |
 
 The availability of each hour is that of the line: its `capacity_factor` × its
 `availability_factor`. When the share differs from hour to hour, the generator gets a

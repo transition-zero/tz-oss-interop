@@ -17,7 +17,8 @@ writes **two documents**:
   [translation-from-osemosys-to-sienna.md](translation-from-osemosys-to-sienna.md) describes it.
 - `portfolio.json` is the Sienna Investments Portfolio (the portfolio in this document): the
   technologies that a plan may build, the demand that they must meet, and the caps that they
-  run under. Its HDF5 companion, `portfolio_time_series_storage.h5`, holds its time series.
+  run under. Its InfraStore companion, `portfolio_time_series_storage.h5`, holds its time
+  series.
 
 The portfolio names the system in its `base_system_file`, so the two are read together. This
 document calls that system **the base system**, as the field does.
