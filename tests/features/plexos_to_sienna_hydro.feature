@@ -189,3 +189,21 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "outputs/system.json" parses as JSON with 0 components of type "HydroReservoir"
     And the file "decisions.md" contains "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
     And the log contains "1 Storage(s): only thermal units draw on this Storage"
+
+  Scenario: a turbine between two reservoirs of a cascade is a hydro turbine, not pumped storage
+    A unit of a cascade releases water from its head Storage into its tail Storage, and a
+    Waterway carries that water on. It states no pump, so it cannot lift the water back, and
+    it becomes a HydroTurbine on its head reservoir.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains turbine "Cascade_U" on node "North_Node" with max_capacity 150 head "Upper" tail "Lower"
+    And storage "Upper" has property "Max Volume" 900
+    And storage "Lower" has property "Max Volume" 300
+    And the model contains waterway "Lower_Out" from storage "Lower"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Cascade_U" having "active_power_limits.max" set to 150.0
+    And the file "outputs/system.json" parses as JSON with 0 components of type "EnergyReservoirStorage"

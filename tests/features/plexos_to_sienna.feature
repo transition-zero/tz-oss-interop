@@ -469,3 +469,24 @@ Feature: PLEXOS to Sienna, in one hop
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
     And the file "decisions.md" contains "states no Mean Time to Repair above 0"
+
+  Scenario: a forced outage rate and a repair time that data files date become a forced outage
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9"
+    And the model contains data file "Rates" at "Gen_ForcedOutageRate.csv" with rows:
+      | NAME     | YEAR | MONTH | DAY | VALUE |
+      | GasPlant | 2026 | 1     | 1   | 5     |
+    And the model contains data file "Repairs" at "Gen_MeanRepairTime.csv" with rows:
+      | NAME     | YEAR | MONTH | DAY | VALUE |
+      | GasPlant | 2026 | 1     | 1   | 10    |
+    And generator "GasPlant" has property "Forced Outage Rate" from data file "Rates"
+    And generator "GasPlant" has property "Mean Time to Repair" from data file "Repairs"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system states a "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant" with "mean_time_to_recovery" set to 600

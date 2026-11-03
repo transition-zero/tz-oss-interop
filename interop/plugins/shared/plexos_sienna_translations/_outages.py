@@ -65,6 +65,7 @@ _SIENNA_TYPES: dict[PlexosClass, tuple[SiennaComponent, ...]] = {
         SiennaComponent.RENEWABLE_DISPATCH,
         SiennaComponent.RENEWABLE_NON_DISPATCH,
         SiennaComponent.HYDRO_DISPATCH,
+        SiennaComponent.HYDRO_TURBINE,
         SiennaComponent.ENERGY_RESERVOIR_STORAGE,
     ),
     PlexosClass.BATTERY: (SiennaComponent.ENERGY_RESERVOIR_STORAGE,),

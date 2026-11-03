@@ -47,6 +47,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     collapse_units_by_object,
     read_file_backed_properties,
     relate_child,
+    relate_children,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_STATE_OF_CHARGE_INITIAL,
@@ -209,6 +210,8 @@ class StorageLookups:
     head_by_generator: dict[str, str]
     tail_by_generator: dict[str, str]
     storages_with_inflow_profile: set[str]
+    # The Storages a Waterway leaves, whose water a cascade carries on downstream.
+    waterway_sources: set[str]
 
     def read_properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
         return self.by_class[plexos_class].properties
@@ -232,6 +235,10 @@ class StorageLookups:
 
     def has_tail(self, generator: str) -> bool:
         return generator in self.tail_by_generator
+
+    def has_tail_that_flows_on(self, generator: str) -> bool:
+        """Whether a Waterway carries the water of this turbine's tail Storage downstream."""
+        return self.tail_by_generator.get(generator) in self.waterway_sources
 
     def turbine_fed_storages(self) -> set[str]:
         """The Storages some Generator names as its head or its tail."""
@@ -309,6 +316,13 @@ def build_lookups(state: State) -> StorageLookups:
             memberships, PlexosClass.GENERATOR, PlexosCollection.TAIL_STORAGE
         ),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
+        waterway_sources={
+            storage
+            for storages in relate_children(
+                memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM
+            ).values()
+            for storage in storages
+        },
     )
 
 

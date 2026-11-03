@@ -184,9 +184,14 @@ def map_turbine(name: str, lookups: StorageLookups) -> MappedOrSkipped:
 def _classify_turbine(
     staged: StagedObject, lookups: StorageLookups
 ) -> _GeneratorStorageVariant | None:
-    """Which storage variant a Generator is, or None when it has no reservoir to draw from."""
+    """Which storage variant a Generator is, or None when it has no reservoir to draw from.
+
+    A unit that states no pump and whose tail Storage a Waterway leaves is a cascade turbine:
+    it releases water downstream and cannot lift it back.
+    """
     pumps = PlexosProperty.PUMP_EFFICIENCY in staged.properties
-    if lookups.has_head_and_tail(staged.name) or pumps:
+    is_cascade = not pumps and lookups.has_tail_that_flows_on(staged.name)
+    if (lookups.has_head_and_tail(staged.name) and not is_cascade) or pumps:
         return _PUMPED_STORAGE
     if lookups.has_head(staged.name):
         return _RESERVOIR_HYDRO
