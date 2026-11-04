@@ -5,11 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Literal, Protocol
 
-import polars as pl
-
 from interop.core.pipeline import State
-from interop.plugins.shared.osemosys_canonical.constants import YEAR
-from interop.plugins.shared.osemosys_sienna_constants import OPERATIONS_YEAR_KEY
 from interop.plugins.shared.osemosys_sienna_translations._calendar import Calendar
 from interop.plugins.shared.osemosys_sienna_translations._canonical import list_model_years
 from interop.plugins.shared.osemosys_sienna_translations._units import ModelUnits
@@ -36,18 +32,17 @@ class OperationsMapping(Protocol):
 
 def set_operations_year(state: State, year: int) -> None:
     """Keep the operations year in the state, for a later step of the pipeline."""
-    state.source_time_series[OPERATIONS_YEAR_KEY] = pl.LazyFrame({YEAR: [year]})
+    state.operations_year = year
 
 
 def require_operations_year(state: State) -> int:
     """The year that the operations step translated; a pipeline with no such step stops."""
-    table = state.source_time_series.get(OPERATIONS_YEAR_KEY)
-    if table is None:
+    if state.operations_year is None:
         raise UserInputError(
             "The report of the parameters that no step applies needs the operations year. Put "
             "the step after osemosys_to_sienna_map_components in the pipeline."
         )
-    return int(table.collect().item(0, YEAR))
+    return state.operations_year
 
 
 def require_model_year(state: State, requested: int | Literal["earliest"]) -> int:

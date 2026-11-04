@@ -316,7 +316,7 @@ def set_days_persisted(state: State, records: Sequence[RepresentativePeriodExten
     """Note that the records of the days hold days_in_day_type, when the days stand for one."""
     if any(record.days_in_day_type is not None for record in records):
         rows = pl.DataFrame({SEASON: [record.season for record in records]})
-        set_persisted_rows(state, ExtensionKind.REPRESENTATIVE_PERIOD, DAYS_IN_DAY_TYPE, [rows])
+        set_persisted_rows(state, DAYS_IN_DAY_TYPE, [rows])
 
 
 def _read_days_in_day_type(

@@ -11,7 +11,6 @@ from collections.abc import Sequence
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
@@ -23,11 +22,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     STORAGE,
     TECHNOLOGY,
 )
-from interop.plugins.shared.osemosys_sienna_constants import (
-    OSEMOSYS_SIENNA_PERSISTED,
-    REGION_NAME_SEPARATOR,
-    SERIES_KEY_SEPARATOR,
-)
+from interop.plugins.shared.osemosys_sienna_constants import REGION_NAME_SEPARATOR
 
 MEMBER_KEY = "member_key"
 # The key of a row with no region and no member, which stands for every row of its parameter.
@@ -50,39 +45,22 @@ def express_member_key(columns: Sequence[str]) -> pl.Expr:
     return pl.concat_str(parts, separator=REGION_NAME_SEPARATOR)
 
 
-def set_persisted_rows(
-    state: State,
-    kind: ExtensionKind,
-    parameter: str,
-    tables: Sequence[pl.DataFrame],
-    scope: str = "",
-) -> None:
-    """Note the members of each table, whose values the records of `kind` hold or apply.
+def set_persisted_rows(state: State, parameter: str, tables: Sequence[pl.DataFrame]) -> None:
+    """Note the members of each table, whose values a component or an extension record holds.
 
     Each table keys its members by its own columns, so tables of two key sets can be noted at
-    once. `scope` keeps apart two notes of one kind and parameter, so neither replaces the other.
+    once. A later note of the same parameter adds to the earlier ones.
     """
     keys = pl.concat(
         [table.select(express_member_key(table.columns).alias(MEMBER_KEY)) for table in tables]
     )
-    state.source_time_series[_build_key(kind, scope, parameter)] = keys.unique().lazy()
+    state.applied_source_rows.setdefault(parameter, set()).update(keys[MEMBER_KEY].to_list())
 
 
 def drop_persisted_rows(state: State, parameter: str, rows: pl.DataFrame) -> pl.DataFrame:
-    """The rows of `parameter` whose member no extension record holds."""
-    tables = [
-        table
-        for (owner, name), table in state.source_time_series.items()
-        if owner == OSEMOSYS_SIENNA_PERSISTED
-        and name.rpartition(SERIES_KEY_SEPARATOR)[2] == parameter
-    ]
-    if not tables or rows.height == 0:
+    """The rows of `parameter` whose member no component and no extension record holds."""
+    held = state.applied_source_rows.get(parameter)
+    if not held or rows.height == 0:
         return rows
-    held = pl.concat(tables).collect()
     keyed = rows.with_columns(express_member_key(rows.columns).alias(MEMBER_KEY))
-    return keyed.join(held, on=MEMBER_KEY, how="anti").drop(MEMBER_KEY)
-
-
-def _build_key(kind: ExtensionKind, scope: str, parameter: str) -> tuple[str, str]:
-    name = SERIES_KEY_SEPARATOR.join((kind, scope, parameter))
-    return (OSEMOSYS_SIENNA_PERSISTED, name)
+    return keyed.filter(~pl.col(MEMBER_KEY).is_in(sorted(held))).drop(MEMBER_KEY)
