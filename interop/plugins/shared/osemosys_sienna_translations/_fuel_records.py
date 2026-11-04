@@ -94,7 +94,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     STATED_RATE,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
-    PenaltyNote,
     build_penalty_keys,
     set_penalties_persisted,
 )
@@ -103,8 +102,6 @@ from interop.plugins.shared.pypsa_constants import LINK_FURTHER_PORTS
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 _FLOWS = (FlowParameter.INPUT_ACTIVITY_RATIO, FlowParameter.OUTPUT_ACTIVITY_RATIO)
-_FUEL_SCOPE = "fuel"
-_FUEL_PENALTY_SCOPE = "fuel-penalties"
 
 
 @dataclass(frozen=True)
@@ -162,25 +159,20 @@ def set_fuel_values_persisted(state: State, modes: pl.DataFrame) -> None:
     A limit of the technology binds the sum of its modes, so only a technology of one mode
     applies it.
     """
-    for kind, held in (
-        (ExtensionKind.GENERATOR, modes.filter(pl.col(ROLE) == SUPPLY)),
-        (ExtensionKind.CONVERSION, modes.filter(pl.col(ROLE) != SUPPLY)),
-    ):
-        groups = (
-            (_HELD_PARAMETERS, held),
-            (_TECHNOLOGY_LIMITS, held.filter(pl.col(MODE_COUNT) == 1)),
-            (FREE_BUILD_PARAMETERS, held.filter(pl.col(IS_EXTENDABLE))),
-        )
-        for parameters, rows in groups:
-            for parameter in parameters:
-                _set_persisted(state, kind, parameter, rows)
-        note = PenaltyNote(kind, _FUEL_PENALTY_SCOPE)
-        set_penalties_persisted(state, note, build_penalty_keys(held, (RATES,)))
+    groups = (
+        (_HELD_PARAMETERS, modes),
+        (_TECHNOLOGY_LIMITS, modes.filter(pl.col(MODE_COUNT) == 1)),
+        (FREE_BUILD_PARAMETERS, modes.filter(pl.col(IS_EXTENDABLE))),
+    )
+    for parameters, rows in groups:
+        for parameter in parameters:
+            _set_persisted(state, parameter, rows)
+    set_penalties_persisted(state, build_penalty_keys(modes, (RATES,)))
 
 
-def _set_persisted(state: State, kind: ExtensionKind, parameter: str, held: pl.DataFrame) -> None:
+def _set_persisted(state: State, parameter: str, held: pl.DataFrame) -> None:
     if held.height > 0:
-        set_persisted_rows(state, kind, parameter, [held.select(REGION, TECHNOLOGY)], _FUEL_SCOPE)
+        set_persisted_rows(state, parameter, [held.select(REGION, TECHNOLOGY)])
 
 
 _HELD_PARAMETERS: tuple[str, ...] = (
