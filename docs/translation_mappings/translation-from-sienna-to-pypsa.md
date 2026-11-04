@@ -201,6 +201,7 @@ shape whose peak is 1.0. The translator multiplies each value by the static
 | `efficiency` | | `extensions.efficiency` of the `generator` record. If absent, PyPSA's own default of 1.0. | `sidecar` or `default` |
 | `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `generator` record. `overnight_cost` only if the record also states a `discount_rate` and a `lifetime_years`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `e_sum_min`, `e_sum_max` | MWh | The value of the year of the snapshots in `extensions.e_sum_min` and `.e_sum_max`. Refer to [Annual energy bounds](#annual-energy-bounds). | `sidecar` |
+| `fom_cost` | $/MW | `extensions.fom_charge_per_mw_year` of the `generator` record, where the snapshots count for one whole year. Refer to [Yearly fixed charges](#yearly-fixed-charges). | `sidecar` |
 
 Sienna states a ramp rate in MW for each minute, and PyPSA states it as a share of `p_nom`
 for each snapshot. Sienna states a run-time limit in hours, and PyPSA states it in
@@ -306,6 +307,7 @@ field of a `generator` record of the same name, travels on to the PyPSA sidecar.
 | `p_nom_min` | MW | `extensions.p_nom_min` of the `storage` record. If absent, `base_power`, for an extendable storage unit whose `base_power` is above 0. | `sidecar` or `derived` |
 | `p_nom_max`, `overnight_cost`, `discount_rate`, `lifetime`, `build_year` | | `extensions.p_nom_max`, `.overnight_cost_per_mw`, `.discount_rate`, `.lifetime_years` and `.build_year` of the `storage` record. `overnight_cost` only if the record also states a `discount_rate` and a `lifetime_years`. Refer to [Overnight cost](#overnight-cost). | `sidecar` |
 | `cyclic_state_of_charge_per_period` | | `extensions.cyclic_state_of_charge_per_period` of the `storage` record | `sidecar` |
+| `fom_cost` | $/MW | `extensions.fom_charge_per_mw_year` of the `storage` record, where the snapshots count for one whole year. Refer to [Yearly fixed charges](#yearly-fixed-charges). | `sidecar` |
 | `inflow` | MW | `extensions.inflow_mw` of the `storage` record. If absent, `0.0`. | `sidecar` or `default` |
 
 PyPSA applies `cyclic_state_of_charge_per_period` only to a unit whose
@@ -483,6 +485,7 @@ all three conditions hold:
 | `efficiency` | | `efficiency`. If absent, `1.0`. | `sidecar` or `default` |
 | `marginal_cost` | cost for each MWh in | `marginal_cost` | `sidecar` |
 | `p_max_pu` | per unit of `p_nom` | `p_max_pu` | `sidecar` |
+| `fom_cost` | $/MW of the energy in | `fom_charge_per_mw_year`, where the snapshots count for one whole year. Refer to [Yearly fixed charges](#yearly-fixed-charges). | `sidecar` |
 | `p_min_pu` | per unit of `p_nom` | `0.0` | `default` |
 | `active` | | `True` | `default` |
 
@@ -628,6 +631,20 @@ bound. The report gives a `NOT_MAPPED` row for each bound, and the log names the
 `sienna_to_pypsa_map_components` and not this step, as it writes no network.
 
 For a generator of the network, both fields travel on, with every year, to the PyPSA sidecar.
+
+## Yearly fixed charges
+
+A `generator`, a `storage` or a `conversion` record can state `fom_charge_per_mw_year`, the
+fixed charge of a year in $/MW. PyPSA 1.4 adds `fom_cost` once to the build cost of the whole
+horizon: `overnight_cost` × the annuity × the years that the snapshots count for, + `fom_cost`.
+The two agree only for one year, so the translator writes the charge to `fom_cost` only where
+the snapshots count for one whole year, as [Annual energy bounds](#annual-energy-bounds) states
+it.
+
+Elsewhere the translator writes no `fom_cost`. The report gives a `NOT_MAPPED` row for each
+charge, and the log names them. The step `sienna_to_pypsa_map_fixed_charges` writes the
+charges. A `controllable_line` record keeps its charge in the sidecar only, because a two-way
+line that splits gives one record two links. The charge also travels on to the PyPSA sidecar.
 
 ## Time series
 

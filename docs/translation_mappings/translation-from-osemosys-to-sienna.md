@@ -238,9 +238,10 @@ the MW of one unit of `units: capacity`.
 - **A missing parameter stops the run.** A `year` that is not a model year, a location or a
   year of the scope that the model does not hold, and a unit that a conversion needs and that
   `units:` does not state, each stop the run with a message.
-- **A name comes from the member.** A component takes the name of its technology, fuel or
-  storage. When two regions hold a member of the same name, the name starts with
-  `<region>/`.
+- **A name comes from the member.** A component takes the `name` that the canonical stage
+  gives its technology, fuel or storage. The stage names each member once in the whole model,
+  before a scope removes a row. When two regions hold a member of the same name, the name
+  starts with `<region>/`.
 - **The time series go into the time-series sidecar.** Each series is a
   `TimeSeriesAssociation` record whose values are in the InfraStore file
   `system_time_series_storage.h5`. A stored value is in MW: the value per unit times the
@@ -539,9 +540,9 @@ One technology can do both. These checks leave a storage out, in this order:
 | `storage_capacity` | h | `residual_storage_capacity` of the operations year in MWh / `base_power` | `derived` |
 | `storage_level_limits` | pu | `(MinStorageCharge (min_storage_charge), 1.0)`, held between 0 and 1 | `derived` |
 | `initial_storage_capacity_level` | pu | `StorageLevelStart` (`storage_level_start`) in MWh / `residual_storage_capacity` in MWh, held between 0 and 1 | `derived` |
-| `operation_cost` | $/MWh | A `StorageCost`. The charge cost is (`variable_operation_cost` + Σ `emission_rate` × `emission_penalty`) at the charge mode / the electricity input ratio. The discharge cost is the same sum at the discharge mode / the electricity output ratio. Every other cost is 0. | `derived` |
+| `operation_cost` | $/MWh | A `StorageCost`. The charge cost is (`variable_operation_cost` + Σ `emission_rate` × `emission_penalty`) at the charge mode / the electricity input ratio. The discharge cost is the same sum at the discharge mode / the electricity output ratio. The energy shortage cost and the energy surplus cost are 1000000 $/MWh where a storage balance flag is 1, which holds `storage_target`. Every other cost is 0. | `derived` |
 | `conversion_factor` | | `1.0`, because the energy and the level are both in MWh | `default` |
-| `storage_target` | pu | `0.0` | `default` |
+| `storage_target` | pu | `initial_storage_capacity_level`, where `StorageBalanceYear`, `StorageBalanceSeason` or `StorageBalanceDay` is 1, so the storage ends the operations horizon at the level where it starts. Else `0.0`. SiennaSchemas states the target as a ratio of `storage_capacity`. | `derived` |
 | `cycle_limits` | | `10000` | `default` |
 | `active_power` / `reactive_power` | MW / MVAR | `0.0` | `default` |
 
@@ -925,8 +926,8 @@ that states one. The investments pipelines write the same records.
 | `ReserveMargin` (`reserve_margin`), for a region with a tag | `<region>/reserve_margin` | `reserve_margin` | `>=` | For each year, the margin, or its default | The technologies of `ReserveMarginTagTechnology` and the fuels of `ReserveMarginTagFuel`, each with its tag as `coefficient` |
 
 A limit of a year is a `limits` entry with `period: year` and `investment_period`, the year. A
-technology member takes the name of its component: the technology, with `<region>/` in front
-when two regions hold a technology of that name and kind. A fuel member takes the name of its
+technology member takes the name of its component, which is the `name` of the technology in the
+canonical stage. A fuel member takes the name of its
 bus, for example `R1/ATELEC`. A tag that changes from year to year keeps the value of the
 earliest year that states one. A region group keeps the regions of the earliest year that
 states them. `decisions.md` records each value of a year with a limit that differs from the
@@ -1016,11 +1017,15 @@ as a model in dollars.
 ### The fuel producer rule
 
 A plant pays for each fuel that it takes in at the price of the producer of that fuel. The
-producer is the cheapest `fuel_supply` technology that puts out the fuel in the region of the
-plant, at the operations mode:
+producer is the `fuel_supply` technology with the lowest delivered cost that puts out the fuel
+in the region of the plant, at the operations mode:
 
-- The price of a producer is its `variable_operation_cost` / its `output_activity_ratio` for the
-  fuel.
+- The delivered cost of a producer is (its `variable_operation_cost` + the sum of its
+  `emission_rate` × the `emission_penalty` of each pollutant) / its `output_activity_ratio` for
+  the fuel. OSeMOSYS minimises both terms, so the rule ranks by both.
+- The price of the producer is its `variable_operation_cost` / its `output_activity_ratio` for
+  the fuel. The plant pays the penalty of the producer emissions through its own emission rate,
+  so the price leaves the penalty out.
 - A tie goes to the first technology name.
 - A technology of any other kind, for example a pipeline, is not a producer.
 - A producer must be able to run in the operations year. It must have residual capacity or a
@@ -1140,7 +1145,8 @@ location, and one short hour makes the whole dispatch infeasible. Answer `penali
 | `AnnualEmissionLimit`, `ModelPeriodEmissionLimit` and the region group limits | The `constraint` records hold them. No step applies them to the system. |
 | `ReserveMargin`, `ReserveMarginTagFuel`, `ReserveMarginTagTechnology` | The `constraint` records hold them. No step applies them. |
 | `REMinProductionTarget`, `RETagFuel`, `RETagTechnology` | The `constraint` records hold them. No step applies them. |
-| `StorageBalanceDay`, `StorageBalanceSeason`, `StorageBalanceYear`, `StorageMaxHours` | The `storage` records hold them. No step applies them to the system. |
+| `StorageBalanceDay`, `StorageBalanceSeason`, `StorageBalanceYear` | The `storage` records hold them. A flag of 1 sets `storage_target` and the shortage and surplus costs of the storage. Refer to [`STORAGE` → `EnergyReservoirStorage`](#storage--energyreservoirstorage). |
+| `StorageMaxHours` | The `storage` records hold it. No step applies it to the system. |
 | `CapacityToActivityUnit` | The records hold it. Each component, the `conversion` record of an export and the records of the fuels that are not electricity convert their capacity with it. The capacity limits and the growth values of a record, and a trade route, convert with `units: capacity`. Refer to [Assumptions](#assumptions-worth-checking-against-your-model). |
 | The values of another operating mode | The `operating_modes` of the records hold them. Refer to [Technology](#technology). |
 | The `capacity_factor` of a storage or a transport technology | The companion parquet holds it. The system does not apply it. |
@@ -1164,6 +1170,6 @@ convention, the translator gives wrong values.
 | `StorageMaxChargeRate`, `StorageMaxDischargeRate` | Energy in a year, in the unit of `units: energy`. A value of 0 states no limit. |
 | `StorageLevelStart` | The level at the start of the operations year |
 | `TechnologyToStorage`, `TechnologyFromStorage` | One technology and one mode in each direction |
-| The cheapest `fuel_supply` technology of a fuel that can run in the year | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
+| The `fuel_supply` technology of a fuel with the lowest delivered cost that can run in the year | The price that a plant pays for that fuel in the Sienna system, with no limit on what that producer makes |
 | A fuel technology with no residual capacity, no capital cost and no fixed cost | Capacity that the model builds at no cost, so its PyPSA component is extendable |
 | A category | One Sienna type, one prime mover and, for a thermal type, one fuel |
