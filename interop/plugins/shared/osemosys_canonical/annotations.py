@@ -11,6 +11,7 @@ from interop.plugins.shared.osemosys_canonical.absent_members import build_set_m
 from interop.plugins.shared.osemosys_canonical.constants import (
     ANNOTATION_NAME_SEPARATOR,
     ELECTRICITY_CARRIER,
+    MEMBER_NAME,
     OBJECT_PART_COLUMNS,
     OBJECT_PART_SETS,
     REGION,
@@ -20,6 +21,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.events import AnnotatedMember, record_annotation
 from interop.plugins.shared.osemosys_canonical.mappings import ObjectRows
+from interop.plugins.shared.osemosys_canonical.member_names import express_member_name
 from interop.plugins.shared.osemosys_canonical.object_rows import (
     MemberKey,
     RowAnnotations,
@@ -249,7 +251,10 @@ def _build_table(part: ObjectPart, annotations: list[MemberAnnotation]) -> pl.Da
     keys = [REGION] if part == ObjectPart.REGIONS else [REGION, OBJECT_PART_SETS[part]]
     columns = OBJECT_PART_COLUMNS[part]
     rows = [_build_table_row(found, columns) for found in annotations]
-    return pl.DataFrame(rows, schema=dict.fromkeys([*keys, *columns], pl.Utf8), orient="row")
+    table = pl.DataFrame(rows, schema=dict.fromkeys([*keys, *columns], pl.Utf8), orient="row")
+    if part == ObjectPart.REGIONS:
+        return table
+    return table.with_columns(express_member_name(OBJECT_PART_SETS[part]).alias(MEMBER_NAME))
 
 
 def _build_table_row(

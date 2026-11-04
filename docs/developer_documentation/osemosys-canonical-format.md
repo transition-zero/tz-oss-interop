@@ -538,10 +538,15 @@ table has one row for each region. An annotation that nothing gives stays empty.
 
 | Table | Columns |
 | --- | --- |
-| `annotations/technology.parquet` | `region`, `technology`, `kind`, `category`, `location` |
-| `annotations/fuel.parquet` | `region`, `fuel`, `carrier`, `location` |
-| `annotations/storage.parquet` | `region`, `storage`, `location` |
+| `annotations/technology.parquet` | `region`, `technology`, `kind`, `category`, `location`, `name` |
+| `annotations/fuel.parquet` | `region`, `fuel`, `carrier`, `location`, `name` |
+| `annotations/storage.parquet` | `region`, `storage`, `location`, `name` |
 | `annotations/region.parquet` | `region`, `location` |
+
+`name` names the member once in the whole model. It is the member, or `<region>/<member>` when
+the table holds the member in two regions. The stage writes it before a scope filters any row,
+so every step that reads the annotations gives a member the same name. A user mappings file
+cannot set it.
 
 `category`, `carrier` and `location` have no Sienna field with the same meaning, so they keep
 these names.

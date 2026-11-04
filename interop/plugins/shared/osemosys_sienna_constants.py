@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from interop.plugins.shared.osemosys_canonical.constants import (
+    REGION_NAME_SEPARATOR as REGION_NAME_SEPARATOR,
+)
+
 # The pipeline name that each warning of the translation starts with.
 OSEMOSYS_TO_SIENNA_PIPELINE = "osemosys-to-sienna"
 
@@ -33,8 +37,6 @@ EARLIEST_YEAR = "earliest"
 # The character between the season and the day type in the name of a representative day.
 PERIOD_NAME_SEPARATOR = "/"
 
-# The character between a region and a member, in a name that needs both.
-REGION_NAME_SEPARATOR = "/"
 # A load of accumulated annual demand takes the name of its fuel, this separator and suffix.
 LOAD_NAME_SEPARATOR = "/"
 ACCUMULATED_LOAD_SUFFIX = "accumulated"

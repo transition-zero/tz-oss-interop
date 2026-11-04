@@ -15,6 +15,7 @@ from interop.plugins.shared.osemosys_canonical.canonical_stage import build_tabl
 from interop.plugins.shared.osemosys_canonical.constants import (
     ELECTRICITY_CARRIER,
     FUEL,
+    MEMBER_NAME,
     OPERATING_MODE,
     POLLUTANT,
     REGION,
@@ -27,7 +28,6 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     TableKind,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import list_set_members
-from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 
 # The column that holds the results component name of a member.
 COMPONENT = "component"
@@ -82,13 +82,13 @@ def build_electricity_producers(model: ResultsModel) -> pl.DataFrame:
 
 
 def _read_technologies(state: State) -> pl.DataFrame:
-    columns = [REGION, TECHNOLOGY, AnnotationColumn.CATEGORY, AnnotationColumn.KIND]
+    columns = [REGION, TECHNOLOGY, AnnotationColumn.CATEGORY, AnnotationColumn.KIND, MEMBER_NAME]
     annotations = state.source_topology.get(build_table_key(TableKind.ANNOTATION, TECHNOLOGY))
     if annotations is None:
         technologies = pl.DataFrame(schema=dict.fromkeys(columns, pl.Utf8))
     else:
         technologies = annotations.select(columns).collect()
-    return technologies.with_columns(express_component_name(TECHNOLOGY).alias(COMPONENT))
+    return technologies.rename({MEMBER_NAME: COMPONENT})
 
 
 def _read_storage_links(state: State) -> pl.DataFrame:
@@ -119,9 +119,9 @@ def _read_storage_names(state: State) -> pl.DataFrame:
     if annotations is None:
         return pl.DataFrame(schema=dict.fromkeys([REGION, STORAGE, STORAGE_COMPONENT], pl.Utf8))
     return (
-        annotations.select(REGION, STORAGE)
+        annotations.select(REGION, STORAGE, MEMBER_NAME)
         .collect()
-        .with_columns(express_component_name(STORAGE).alias(STORAGE_COMPONENT))
+        .rename({MEMBER_NAME: STORAGE_COMPONENT})
     )
 
 

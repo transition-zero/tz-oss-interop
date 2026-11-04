@@ -41,9 +41,9 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/fuel.parquet" has the rows:
-      | region | fuel | carrier     | location |
-      | R1     | ATE1 | electricity | AT       |
-      | R1     | DEE1 | electricity | DE       |
+      | region | fuel | carrier     | location | name |
+      | R1     | ATE1 | electricity | AT       | ATE1 |
+      | R1     | DEE1 | electricity | DE       | DEE1 |
     And the file "decisions.md" contains "row 0 of `objects: fuels` gives carrier, location"
 
   Scenario: A link is inferred
@@ -62,8 +62,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind                         | category | location |
-      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+      | region | technology | kind                         | category | location | name     |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    | ATDELINK |
     And the section "Values derived" of "decisions.md" contains "kind AggregateTransportTechnology: it takes in electricity at one location and puts it out at another" 2 times
     And the file "decisions.md" contains "location AT~DE: the locations of the fuels that it takes in and puts out"
 
@@ -86,8 +86,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind                         | category | location |
-      | R1     | ATDELINK   | AggregateTransportTechnology |          | DE~AT    |
+      | region | technology | kind                         | category | location | name     |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | DE~AT    | ATDELINK |
 
   Scenario: A generator is inferred
     Given the otoole set "REGION" holds "R1"
@@ -105,8 +105,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind             | category | location |
-      | R1     | ATGAS      | SupplyTechnology |          | AT       |
+      | region | technology | kind             | category | location | name  |
+      | R1     | ATGAS      | SupplyTechnology |          | AT       | ATGAS |
     And the file "decisions.md" contains "kind SupplyTechnology: it puts out electricity, and takes in no electricity"
 
   Scenario: Storage is inferred first
@@ -126,11 +126,11 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind              | category | location |
-      | R1     | ATBAT      | StorageTechnology |          | AT       |
+      | region | technology | kind              | category | location | name  |
+      | R1     | ATBAT      | StorageTechnology |          | AT       | ATBAT |
     And the canonical table "canonical/annotations/storage.parquet" has the rows:
-      | region | storage | location |
-      | R1     | ATBATS  | R1       |
+      | region | storage | location | name   |
+      | R1     | ATBATS  | R1       | ATBATS |
 
   Scenario: Supply, export and conversion are inferred
     Given the otoole set "REGION" holds "R1"
@@ -150,10 +150,10 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind        | category | location |
-      | R1     | ATNGX      | fuel_supply |          | AT       |
-      | R1     | ATEXP      | export      |          | AT       |
-      | R1     | ATTD       | conversion  |          | AT       |
+      | region | technology | kind        | category | location | name  |
+      | R1     | ATNGX      | fuel_supply |          | AT       | ATNGX |
+      | R1     | ATEXP      | export      |          | AT       | ATEXP |
+      | R1     | ATTD       | conversion  |          | AT       | ATTD  |
 
   Scenario: A row overrides an inference
     Given the otoole set "REGION" holds "R1"
@@ -171,8 +171,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind       | category       | location |
-      | R1     | ATDELINK   | conversion | interconnector | AT~DE    |
+      | region | technology | kind       | category       | location | name     |
+      | R1     | ATDELINK   | conversion | interconnector | AT~DE    | ATDELINK |
     And the section "User config defaults applied" of "decisions.md" contains "row 0 of `objects: technologies` gives kind, category" 2 times
     And the file "decisions.md" does not contain "kind AggregateTransportTechnology"
 
@@ -182,9 +182,9 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/fuel.parquet" has the rows:
-      | region | fuel | carrier | location |
-      | R1     | ATE1 |         | R1       |
-      | R2     | ATE1 |         | R2       |
+      | region | fuel | carrier | location | name    |
+      | R1     | ATE1 |         | R1       | R1/ATE1 |
+      | R2     | ATE1 |         | R2       | R2/ATE1 |
     And the file "decisions.md" contains "location R1: a fuel takes the location of its region"
 
   Scenario: A technology that no kind fits keeps an empty kind
@@ -193,8 +193,8 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind | category | location |
-      | R1     | IDLE       |      |          | R1       |
+      | region | technology | kind | category | location | name |
+      | R1     | IDLE       |      |          | R1       | IDLE |
     And the log contains "no kind fits"
     And the log contains "IDLE"
     And the section "Fields not mapped" of "decisions.md" contains "no kind fits its rows in input_activity_ratio" 1 times
@@ -226,9 +226,9 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/fuel.parquet" has the rows:
-      | region | fuel | carrier | location |
-      | R1     | E1   |         |          |
-      | R1     | ATE1 |         | AT       |
+      | region | fuel | carrier | location | name |
+      | R1     | E1   |         |          | E1   |
+      | R1     | ATE1 |         | AT       | ATE1 |
     And the log contains "1 member(s) match an `objects:` row whose location captures nothing for them, so each keeps an empty location: R1/E1"
     And the section "Fields not mapped" of "decisions.md" contains "row 0 of `objects: fuels` gives the location {country}, but its match captures no country for E1, so location stays empty" 1 times
 
@@ -250,9 +250,9 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind       | category | location |
-      | R1     | ATELY      | conversion |          | AT       |
-      | R1     | ATCONV     | conversion |          | AT       |
+      | region | technology | kind       | category | location | name   |
+      | R1     | ATELY      | conversion |          | AT       | ATELY  |
+      | R1     | ATCONV     | conversion |          | AT       | ATCONV |
 
   Scenario: A mode name that is a digit but not a decimal number does not stop the run
     Given the otoole set "REGION" holds "R1"
@@ -271,5 +271,17 @@ Feature: The objects part of a user mappings file and the inferences annotate ea
     When I stage the otoole model into "canonical"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind                         | category | location |
-      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+      | region | technology | kind                         | category | location | name     |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    | ATDELINK |
+
+  Scenario: A member that two regions hold is named after its region in every table
+    The canonical stage names each member once, over every region of the model, before a scope
+    filters any row. So each step that reads the annotations gives a member the same name.
+    Given the otoole set "REGION" holds "R1 R2"
+    And the otoole set "TECHNOLOGY" holds "GAS"
+    When I stage the otoole model into "canonical"
+    Then the pipeline exit code is 0
+    And the canonical table "canonical/annotations/technology.parquet" has the rows:
+      | region | technology | kind | category | location | name |
+      | R1     | GAS        |      |          | R1       | R1/GAS |
+      | R2     | GAS        |      |          | R2       | R2/GAS |
