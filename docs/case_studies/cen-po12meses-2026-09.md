@@ -180,6 +180,9 @@ interop headless_cli --pipeline plexos-to-sienna \
   --user-mappings-path inputs/plexos_user_mappings.yaml
 ```
 
+`source.horizon_year=2026` translates calendar year 2026 only, from 2026-01-01 up to
+2027-01-01. The months of the programme in 2027 are outside this run.
+
 To see the warnings on the console, set `INTEROP_LOG_LEVEL=INFO`.
 
 The run completes in about 5 seconds. It writes `outputs/system.json`,
@@ -406,7 +409,8 @@ These are defects, and not missing features.
 
 ## What this page does not cover
 
-- **No solve.** The system holds no demand and no generation, so a solve tells you nothing.
+- **No solve.** The system holds no demand and only 0.59 MW of generation, so a solve tells
+  you nothing.
   This page will give a solve and a comparison when causes 1 to 4 are closed.
 - **One model of nine.** The `RP_base4s` models use other horizons and more scenarios. They
   can find more gaps.
