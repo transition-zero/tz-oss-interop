@@ -172,6 +172,9 @@ These rows are a first choice for this page. CEN did not check them.
 The command of tz-oss-interop is `interop`. Do this command in a project that `interop init`
 made. Replace `<repository>` with the path of your tz-oss-interop clone.
 
+The bare command `interop` needs the uv tool install in the README. If you use `uv sync`
+only, put `uv run` before `interop`.
+
 ```bash
 interop headless_cli --pipeline plexos-to-sienna \
   --override 'source.path=<repository>/case_study_inputs/cen-po12meses-2026-09/DBSEN_202609_PO12meses.xml' \
