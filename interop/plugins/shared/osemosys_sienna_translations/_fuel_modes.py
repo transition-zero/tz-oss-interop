@@ -26,6 +26,7 @@ from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    MEMBER_NAME,
     OPERATING_MODE,
     POLLUTANT,
     REGION,
@@ -80,7 +81,6 @@ from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
     read_left_out_technologies,
 )
-from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     TECHNOLOGY_NAME,
@@ -239,7 +239,7 @@ def _read_technologies(state: State, operations: OperationsYear) -> pl.DataFrame
     technologies = read_left_out_technologies(state, operations).filter(
         ~pl.col(IS_ALL_ELECTRICITY) & pl.col(HAS_FLOWS)
     )
-    return technologies.with_columns(express_component_name(TECHNOLOGY).alias(MODE_NAME))
+    return technologies.with_columns(pl.col(MEMBER_NAME).alias(MODE_NAME))
 
 
 def _read_flows(state: State, year: int, technologies: pl.DataFrame) -> pl.DataFrame:

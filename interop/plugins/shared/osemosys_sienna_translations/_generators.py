@@ -23,6 +23,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    MEMBER_NAME,
     OPERATING_MODE,
     POLLUTANT,
     REGION,
@@ -93,7 +94,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_translations
     GENERATOR_TYPE_MAPPINGS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
@@ -367,12 +367,12 @@ def _enrich_capacity(
 
 
 def _read_supply_technologies(state: State) -> pl.DataFrame:
-    """Every supply technology, so that each Sienna name knows of a clash in another region."""
+    """Every supply technology, with the model-wide name of its member as its Sienna name."""
     return (
         read_annotations(state, TECHNOLOGY)
         .filter(pl.col(AnnotationColumn.KIND) == TechnologyKind.SUPPLY_TECHNOLOGY)
         .with_columns(
-            express_component_name(TECHNOLOGY).alias(GENERATOR_NAME),
+            pl.col(MEMBER_NAME).alias(GENERATOR_NAME),
             express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME),
         )
     )
