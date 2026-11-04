@@ -8,11 +8,9 @@ it burns, × the penalty in $/t. A negative rate gives a credit, as it does in O
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
@@ -40,20 +38,6 @@ OPERATION_COST_MWH = "operation_cost_mwh"
 
 _KEYS = [REGION, TECHNOLOGY]
 _PENALTY_KEYS = [REGION, POLLUTANT]
-
-
-class PenaltyNote(NamedTuple):
-    """The kind of the records that apply a penalty, and a scope that keeps their note apart."""
-
-    kind: ExtensionKind
-    scope: str
-
-
-GENERATOR_PENALTIES = PenaltyNote(ExtensionKind.GENERATOR, "generator-penalties")
-IMPORT_PENALTIES = PenaltyNote(ExtensionKind.GENERATOR, "import-penalties")
-STORAGE_PENALTIES = PenaltyNote(ExtensionKind.STORAGE, "storage-penalties")
-LINE_PENALTIES = PenaltyNote(ExtensionKind.CONTROLLABLE_LINE, "line-penalties")
-CONVERSION_PENALTIES = PenaltyNote(ExtensionKind.CONVERSION, "conversion-penalties")
 
 
 def enrich_emission_penalties(
@@ -107,9 +91,9 @@ def build_penalty_keys(table: pl.DataFrame, rate_cols: Sequence[str]) -> pl.Data
     return pl.concat(keys).unique()
 
 
-def set_penalties_persisted(state: State, note: PenaltyNote, keys: pl.DataFrame) -> None:
-    """Note that the records apply the emission penalty of each region and pollutant of `keys`."""
-    set_persisted_rows(state, note.kind, SupplyParameter.EMISSION_PENALTY, [keys], note.scope)
+def set_penalties_persisted(state: State, keys: pl.DataFrame) -> None:
+    """Note that a record applies the emission penalty of each region and pollutant of `keys`."""
+    set_persisted_rows(state, SupplyParameter.EMISSION_PENALTY, [keys])
 
 
 def build_penalty_terms(

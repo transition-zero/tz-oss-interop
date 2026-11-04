@@ -21,6 +21,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     VALUE_COL,
     YEAR,
 )
+from interop.plugins.shared.osemosys_canonical.member_names import express_member_name
 from interop.plugins.shared.osemosys_sienna_constants import (
     NO_LIMIT,
     EmissionParameter,
@@ -33,7 +34,6 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_yearly_values,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._units import (
@@ -100,7 +100,7 @@ def read_pollutants(state: State, years: Sequence[int]) -> pl.DataFrame:
         .join(emitters, on=POLLUTANT_KEYS, how="left")
         .with_columns(
             covers.fill_null(False).alias(COVERS_MODEL),  # noqa: FBT003
-            express_component_name(POLLUTANT).alias(POLLUTANT_NAME),
+            express_member_name(POLLUTANT).alias(POLLUTANT_NAME),
             express_report_name(POLLUTANT).alias(POLLUTANT_REPORT_NAME),
         )
     )

@@ -88,7 +88,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     enrich_emission_rates,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
-    GENERATOR_PENALTIES,
     build_penalty_keys,
     enrich_emission_penalties,
     set_penalties_persisted,
@@ -287,7 +286,7 @@ def set_generator_values_persisted(state: State, generators: pl.DataFrame) -> No
     set_applied_rows(state, GENERATOR_OWNERS, generators, _APPLIED_PARAMETERS)
     set_applied_rows(state, _PRODUCER_OWNERS, list_fuel_producers(generators), _PRODUCER_PARAMETERS)
     penalty_keys = build_penalty_keys(generators, (EMISSION_TERMS, OWN_RATES))
-    set_penalties_persisted(state, GENERATOR_PENALTIES, penalty_keys)
+    set_penalties_persisted(state, penalty_keys)
 
 
 # --- the generators of the year -----------------------------------------------------

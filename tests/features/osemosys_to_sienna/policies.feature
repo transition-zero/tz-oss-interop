@@ -168,8 +168,9 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
 
 
   Scenario: Each technology member of a policy takes the name of its component
-    ATGASCC is a supply technology in both regions, so its generators are R1/ATGASCC and
-    R2/ATGASCC. ATOILCT is a supply technology in R1 only, so its generator is ATOILCT.
+    The model has two regions, so the name of each component starts with its region. ATGASCC
+    is a supply technology in both regions, so its generators are R1/ATGASCC and R2/ATGASCC.
+    ATOILCT is a supply technology in R1 only, so its generator is R1/ATOILCT.
     Given the otoole set "REGION" holds "R1 R2"
     And the otoole set "TECHNOLOGY" holds "ATGASCC ATOILCT"
     And the otoole parameter "ResidualCapacity" keyed by "REGION TECHNOLOGY YEAR" with default 0 has the rows:
@@ -204,8 +205,8 @@ Feature: osemosys-csv-to-sienna writes each policy of the model to a constraint 
     When I translate the otoole model to Sienna for the year "2030"
     Then the pipeline exit code is 0
     And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "R1/ATGASCC" having "prime_mover_type" set to "CC"
-    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "prime_mover_type" set to "CT"
-    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/CO2" having "members" set to [{"name": "ATOILCT", "member_class": "technology"}, {"name": "R1/ATGASCC", "member_class": "technology"}]
+    And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "R1/ATOILCT" having "prime_mover_type" set to "CT"
+    And the file "outputs/extensions.json" parses as JSON constraint extension record for "R1/CO2" having "members" set to [{"name": "R1/ATGASCC", "member_class": "technology"}, {"name": "R1/ATOILCT", "member_class": "technology"}]
     And the file "outputs/extensions.json" parses as JSON constraint extension record for "R2/CO2" having "members" set to [{"name": "R2/ATGASCC", "member_class": "technology"}]
 
   Scenario: The renewable target of a region group counts the tagged members of its regions

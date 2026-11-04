@@ -75,7 +75,6 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
-    IMPORT_PENALTIES,
     OPERATION_COST_MWH,
     PENALTY_COST_MWH,
     PENALTY_TERMS,
@@ -256,7 +255,7 @@ def build_import_extensions(imports: pl.DataFrame) -> list[GeneratorExtension]:
 
 def set_import_values_persisted(state: State, imports: pl.DataFrame) -> None:
     """Note the emission penalties that the import generators apply."""
-    set_penalties_persisted(state, IMPORT_PENALTIES, build_penalty_keys(imports, (EMISSION_TERMS,)))
+    set_penalties_persisted(state, build_penalty_keys(imports, (EMISSION_TERMS,)))
 
 
 def _read_unfed_outputs(state: State, operations: OperationsYear) -> pl.DataFrame:

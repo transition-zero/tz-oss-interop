@@ -47,14 +47,15 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    MEMBER_NAME,
     POLLUTANT,
     REGION,
     REGION_GROUP,
     TECHNOLOGY,
     VALUE_COL,
     YEAR,
-    AnnotationColumn,
 )
+from interop.plugins.shared.osemosys_canonical.member_names import express_member_name
 from interop.plugins.shared.osemosys_sienna_constants import (
     MEMBERSHIP_FLAG,
     REGION_NAME_SEPARATOR,
@@ -84,7 +85,6 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
     osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
@@ -174,7 +174,7 @@ POLICY_SPECS = (
         sense=ConstraintSense.AT_MOST,
         unit=UNIT_TONNES,
         members=(MemberRule.EMITTERS,),
-        name=express_component_name(POLLUTANT),
+        name=express_member_name(POLLUTANT),
         exogenous=EmissionParameter.ANNUAL_EXOGENOUS_EMISSION,
         horizon=PERIOD_NET_LIMIT,
     ),
@@ -301,7 +301,7 @@ def set_policies_persisted(state: State, policies: Policies) -> None:
     for held in policies.held:
         by_parameter.setdefault(held.parameter, []).append(held.rows)
     for parameter, tables in by_parameter.items():
-        set_persisted_rows(state, ExtensionKind.CONSTRAINT, parameter, tables)
+        set_persisted_rows(state, parameter, tables)
 
 
 # --- the reads that the policies share ---------------------------------------------------------
@@ -358,15 +358,10 @@ def _read_member_names(state: State, member: str) -> pl.DataFrame:
 
 
 def _read_technology_names(state: State) -> pl.DataFrame:
-    """A component group names its technologies over the technologies of its own kind."""
-    annotations = read_annotations(state, TECHNOLOGY).select(
-        REGION, TECHNOLOGY, AnnotationColumn.KIND
+    """Each component takes the model-wide name of its technology, so the policy names it so."""
+    return read_annotations(state, TECHNOLOGY).select(
+        REGION, TECHNOLOGY, pl.col(MEMBER_NAME).alias(_MEMBER_NAME)
     )
-    kinds = annotations.partition_by(AnnotationColumn.KIND) or [annotations]
-    named = [
-        kind.with_columns(express_component_name(TECHNOLOGY).alias(_MEMBER_NAME)) for kind in kinds
-    ]
-    return pl.concat(named).drop(AnnotationColumn.KIND)
 
 
 def _read_memberships(state: State, years: Sequence[int]) -> pl.DataFrame:
