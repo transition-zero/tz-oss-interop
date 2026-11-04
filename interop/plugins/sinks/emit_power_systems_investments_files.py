@@ -43,7 +43,7 @@ from interop.plugins.sinks._sienna_files import drop_absent_fields
 from interop.plugins.sinks.emit_power_simulations_h5_sidecar import EmitPowerSimulationsH5Sidecar
 from interop.plugins.sinks.emit_power_simulations_system_json import (
     EmitPowerSimulationsSystemJson,
-    reject_other_base_power,
+    SystemBaseMva,
 )
 from interop.ports.outbound.expansion import SERIES_JSON_SUFFIX, PortfolioSeries, SeriesDocument
 from interop.ports.outbound.filesystem import FilesystemPort, Location, location_name
@@ -66,7 +66,9 @@ class EmitPowerSystemsInvestmentsFilesParams(BaseModel):
     portfolio_name: str = Field(
         default="InteropPortfolio", description="name recorded on the portfolio"
     )
-    base_power: float = Field(default=SYSTEM_BASE_MVA, description="base system base power in MVA")
+    base_power: SystemBaseMva = Field(
+        default=SYSTEM_BASE_MVA, description="base system base power in MVA"
+    )
     frequency: float = Field(default=50.0, description="base system frequency in Hz")
     indent: int = Field(default=2, description="JSON indent width")
 
@@ -85,7 +87,6 @@ class EmitPowerSystemsInvestmentsFiles(Sink):
                 f"{EmitPowerSystemsInvestmentsFilesParams.__name__}, "
                 f"got {type(params).__name__}"
             )
-        reject_other_base_power(params.base_power)
         with self._fs.open_write(params.h5_output_path) as handle:
             EmitPowerSimulationsH5Sidecar.write_h5(state, handle)
         self._write_json(

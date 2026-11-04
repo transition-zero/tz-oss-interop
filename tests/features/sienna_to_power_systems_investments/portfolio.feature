@@ -80,6 +80,6 @@ Feature: a Sienna portfolio becomes the document PowerSystemsInvestments reads
 
   Scenario: a base system at a base other than 100 MVA is refused, because every per-unit value assumes 100
     When I run the investments solver translation writing "psi_200/portfolio.json" at a base power of 200 MVA
-    Then the printed output contains "The sink parameter base_power is 200 MVA"
+    Then the printed output contains "base_power is 200 MVA, but sienna-to-power-simulations states each HVDC line per unit of a system base of 100 MVA"
     And the file "psi_200/portfolio.json" does not exist
     And the file "psi_200/portfolio_base_system_time_series.h5" does not exist

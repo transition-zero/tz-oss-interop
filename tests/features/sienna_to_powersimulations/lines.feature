@@ -76,7 +76,7 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     And the system contains an HVDC line "link_1" from "bus_a" to "bus_b" with p_nom 1000.0 efficiency 0.5
     And the system is saved as "inputs/hvdc_base.json"
     When I run translate against Sienna system "inputs/hvdc_base.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5" with system base power 50.0
-    Then the printed output contains "The sink parameter base_power is 50 MVA, but sienna-to-power-simulations states each HVDC line per unit of a system base of 100 MVA"
+    Then the printed output contains "base_power is 50 MVA, but sienna-to-power-simulations states each HVDC line per unit of a system base of 100 MVA"
     And the file "outputs/system.json" does not exist
     And the file "outputs/system_ts.h5" does not exist
 
