@@ -174,6 +174,19 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 7.0
       And the file "decisions.md" contains "the cheapest of 2 fuel_supply technologies that put out ATGAS"
 
+    Scenario: A plant pays for its fuel at the price of the producer with the lowest delivered cost
+      The penalty of CO2 is 10 $/t. A MWh of gas from the well costs 3 $ and emits 0.25 t, so it
+      delivers at 3 + 0.25 × 10 = 5.5 $. A MWh of gas from the LNG terminal costs 5 $ and emits
+      nothing. So the plant burns gas from the terminal. It pays 1 + 2 × 5 for its activity and
+      its fuel, and 0.1 × 10 for its own CO2, so 12 $/MWh.
+      Given the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
+        | REGION | EMISSION | YEAR | VALUE |
+        | R1     | CO2      | 2030 | 10    |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 12.0
+      And the file "decisions.md" contains "`osemosys.variable_operation_cost.R1/ATGASLNG` = 5000.0"
+
     Scenario: A plant rates its residual capacity with its own capacity_to_activity_unit
       The gas plant runs 4380 GWh a year for each GW, so its 0.5 GW are 250 MW.
       Given the otoole parameter "CapacityToActivityUnit" keyed by "REGION TECHNOLOGY" with default 8760 has the rows:
@@ -357,18 +370,20 @@ Feature: osemosys-csv-to-sienna turns the supply technologies of one model year 
       And the file "outputs/extensions.json" parses as JSON generator extension record for "ATGASCC" having "emission_rates_t_per_mwh" set to {"CO2": -0.1}
 
     Scenario: An emission penalty adds the cost of each pollutant that a plant emits to its variable cost
-      The gas plant emits 0.6 t of CO2 for each MWh, with the CO2 of its gas. At 50 USD/t
-      that adds 30 $/MWh to its cost of 7 $/MWh.
+      At 4 USD/t, gas from the well delivers at 3 + 0.25 × 4 = 4 $/MWh, which is below the
+      5 $/MWh of the LNG terminal, so the plant burns gas from the well. The gas plant then emits
+      0.6 t of CO2 for each MWh, with the CO2 of its gas. That adds 2.4 $/MWh to its cost of
+      7 $/MWh.
       Given the otoole parameter "EmissionsPenalty" keyed by "REGION EMISSION YEAR" with default 0 has the rows:
         | REGION | EMISSION | YEAR | VALUE |
-        | R1     | CO2      | 2030 | 50    |
+        | R1     | CO2      | 2030 | 4     |
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0
-      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 37.0
+      And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATGASCC" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 9.4
       And the file "outputs/system.json" parses as JSON with component "ThermalStandard" named "ATOILCT" having "operation_cost.variable_operation_cost.value_curve.function_data.proportional_term" set to 4.0
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.extensions.emission_rates_t_per_mwh.CO2` = 0.6 t/MWh<br>`osemosys.emission_penalty.R1/CO2` = 50.0 | `sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh"
-      And the file "decisions.md" contains "the penalty is 50 \$/tonne"
-      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 30.0 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 37.0 \$/MWh"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.extensions.emission_rates_t_per_mwh.CO2` = 0.6 t/MWh<br>`osemosys.emission_penalty.R1/CO2` = 4.0 | `sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 2.4 \$/MWh"
+      And the file "decisions.md" contains "the penalty is 4 \$/tonne"
+      And the file "decisions.md" contains "`sienna.ThermalStandard.ATGASCC.operation_cost emission penalty of CO2` = 2.4 \$/MWh | `sienna.ThermalStandard.ATGASCC.operation_cost.variable_operation_cost.value_curve.function_data.proportional_term` = 9.4 \$/MWh"
 
     Scenario: An emission penalty in the units of the model reaches the variable cost in $/MWh
       The model states currency in million USD and emissions in kt. The gas plant emits 600

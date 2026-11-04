@@ -162,7 +162,8 @@ _LOST_PENALTY_NOTE = (
 def _build_producer_note(term: dict[str, Any]) -> str:
     return (
         f"the cheapest of {term[PRODUCER_COUNT]} fuel_supply technologies that put out "
-        f"{term[FUEL]} in the region"
+        f"{term[FUEL]} in the region, by the variable cost and the emission penalty of each unit "
+        "of the fuel"
     )
 
 

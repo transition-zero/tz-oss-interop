@@ -1,12 +1,17 @@
 """The price and the emission rates of a fuel, from the technology that produces it.
 
 A technology pays for each fuel that it takes in at the price of the producer of that fuel. The
-producer is the cheapest `fuel_supply` technology that puts the fuel out in the region of the
-technology, at the operations mode. A fuel balances in one region and has one location, so
-that producer makes the fuel at the place where the technology takes it in. A technology of any
-other kind, for example a pipeline, is not a producer. A producer whose activity upper limit in
-the year is zero makes nothing, and neither does a producer with no capacity that can run in the
-year, so neither is a producer. A fuel whose producers all make nothing is stranded.
+producer is the `fuel_supply` technology with the lowest delivered cost that puts the fuel out
+in the region of the technology, at the operations mode. The delivered cost of a unit of the
+fuel is the variable cost of the producer and the penalty of its emissions, divided by its output
+ratio, because OSeMOSYS minimises both terms. The price stays the variable cost alone, because
+the technology pays the penalty of the producer emissions through its own emission rate.
+
+A fuel balances in one region and has one location, so that producer makes the fuel at the place
+where the technology takes it in. A technology of any other kind, for example a pipeline, is not
+a producer. A producer whose activity upper limit in the year is zero makes nothing, and neither
+does a producer with no capacity that can run in the year, so neither is a producer. A fuel whose
+producers all make nothing is stranded.
 
 Each value stays in the units of the model: currency and emissions per energy unit of the fuel.
 """
@@ -29,7 +34,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     FlowParameter,
     TechnologyKind,
 )
-from interop.plugins.shared.osemosys_sienna_constants import NO_LIMIT, SupplyParameter
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST, NO_LIMIT, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_mode_parameter,
@@ -52,6 +57,10 @@ OUTPUT_RATIO = "output_ratio"
 COST_PER_OUTPUT = "cost_per_output"
 PRODUCER_EMISSION_RATE = "producer_emission_rate"
 EMISSION_RATE_PER_OUTPUT = "emission_rate_per_output"
+# The variable cost and the emission penalty of a producer, for each unit of its activity.
+PRODUCER_DELIVERED_COST = "producer_delivered_cost"
+_DELIVERED_COST_PER_OUTPUT = "delivered_cost_per_output"
+_PENALTY_COST = "penalty_cost"
 # Whether a fuel_supply technology makes anything in the year.
 IS_RUNNABLE = "is_runnable"
 
@@ -76,7 +85,8 @@ class FuelSupply:
 
 def build_fuel_supply(state: State, year: int, mode: str) -> FuelSupply:
     candidates = _read_candidates(state, year, mode)
-    prices = _build_prices(candidates.filter(pl.col(IS_RUNNABLE)))
+    runnable = _enrich_delivered_costs(state, year, mode, candidates.filter(pl.col(IS_RUNNABLE)))
+    prices = _build_prices(runnable)
     emission_rates = _read_emission_rates(state, year, mode, prices)
     return FuelSupply(prices, emission_rates, _list_stranded_fuels(candidates))
 
@@ -136,15 +146,51 @@ def _list_stranded_fuels(candidates: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def _enrich_delivered_costs(
+    state: State, year: int, mode: str, candidates: pl.DataFrame
+) -> pl.DataFrame:
+    """Each candidate with its variable cost and the penalty of its emissions, in model units."""
+    penalties = _read_penalty_costs(state, year, mode, candidates.select(_KEYS).unique())
+    return (
+        candidates.join(penalties, on=_KEYS, how="left")
+        .with_columns(pl.col(_PENALTY_COST).fill_null(NO_COST))
+        .with_columns(
+            (pl.col(PRODUCER_COST) + pl.col(_PENALTY_COST)).alias(PRODUCER_DELIVERED_COST)
+        )
+        .drop(_PENALTY_COST)
+    )
+
+
+def _read_penalty_costs(
+    state: State, year: int, mode: str, producers: pl.DataFrame
+) -> pl.DataFrame:
+    """The sum of emission rate × emission penalty of each producer with a penalised pollutant."""
+    rates = (
+        read_mode_parameter(state, SupplyParameter.EMISSION_RATE, year, mode)
+        .filter(pl.col(VALUE_COL) != 0)
+        .join(producers.lazy(), on=_KEYS, how="semi")
+        .select(*_KEYS, POLLUTANT, pl.col(VALUE_COL).alias(_PENALTY_COST))
+        .collect()
+    )
+    keys = rates.select(REGION, POLLUTANT).unique()
+    penalties = read_parameter_with_defaults(state, SupplyParameter.EMISSION_PENALTY, year, keys)
+    return (
+        rates.join(penalties.drop_nulls(VALUE_COL), on=[REGION, POLLUTANT])
+        .group_by(_KEYS)
+        .agg((pl.col(_PENALTY_COST) * pl.col(VALUE_COL).cast(pl.Float64)).sum())
+    )
+
+
 def _build_prices(candidates: pl.DataFrame) -> pl.DataFrame:
-    """The producer with the lowest variable cost for each unit of each fuel.
+    """The producer with the lowest delivered cost for each unit of each fuel.
 
     Two producers at one cost go to the first name, so the choice does not depend on row order.
     """
     cost = (pl.col(PRODUCER_COST) / pl.col(OUTPUT_RATIO)).alias(COST_PER_OUTPUT)
+    delivered = pl.col(PRODUCER_DELIVERED_COST) / pl.col(OUTPUT_RATIO)
     return (
-        candidates.with_columns(cost)
-        .sort(REGION, FUEL, COST_PER_OUTPUT, TECHNOLOGY)
+        candidates.with_columns(cost, delivered.alias(_DELIVERED_COST_PER_OUTPUT))
+        .sort(REGION, FUEL, _DELIVERED_COST_PER_OUTPUT, TECHNOLOGY)
         .group_by(REGION, FUEL, maintain_order=True)
         .agg(
             pl.col(TECHNOLOGY).first().alias(PRODUCER),
