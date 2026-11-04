@@ -35,6 +35,7 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.osemosys_canonical.constants import (
     END_REGION,
     FUEL,
+    MEMBER_NAME,
     OPERATING_MODE,
     REGION,
     START_REGION,
@@ -77,7 +78,6 @@ from interop.plugins.shared.osemosys_sienna_translations._link_penalties import 
     build_penalty_cost_sources,
     enrich_link_penalties,
 )
-from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
     LINK_RUN_PARAMETERS,
 )
@@ -232,7 +232,7 @@ def build_conversions_source(state: State, operations: OperationsYear) -> pl.Dat
         read_left_out_technologies(state, operations)
         .filter((kind == TechnologyKind.EXPORT) & pl.col(IS_ALL_ELECTRICITY))
         .with_columns(
-            express_component_name(TECHNOLOGY).alias(CONVERSION_NAME),
+            pl.col(MEMBER_NAME).alias(CONVERSION_NAME),
             pl.lit(ExtensionKind.CONVERSION.value).alias(_COMPONENT),
         )
     )

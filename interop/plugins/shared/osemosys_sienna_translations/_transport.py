@@ -33,6 +33,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    MEMBER_NAME,
     OPERATING_MODE,
     REGION,
     TECHNOLOGY,
@@ -85,7 +86,6 @@ from interop.plugins.shared.osemosys_sienna_translations._link_penalties import 
     enrich_link_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -194,7 +194,6 @@ LINE_OWNERS = ValueOwners(ExtensionKind.CONTROLLABLE_LINE, LINE_NAME, TECHNOLOGY
 LINE_EXTRAS = TechnologyExtras(
     LINE_OWNERS, LINK_VALUES, LINK_RUN_PARAMETERS, FlowParameter.INPUT_ACTIVITY_RATIO
 )
-_FREE_BUILD_SCOPE = "free-build"
 _FLEET_MW = "fleet_mw"
 # The source value of the rating of a line with no limit: the output of the whole fleet.
 _FLEET = "the whole fleet"
@@ -399,9 +398,7 @@ def set_line_values_persisted(state: State, lines: pl.DataFrame) -> None:
     free = lines.filter(pl.col(IS_BUILT_FREE)).select(_KEYS)
     if free.height > 0:
         for parameter in FREE_BUILD_PARAMETERS:
-            set_persisted_rows(
-                state, ExtensionKind.CONTROLLABLE_LINE, parameter, [free], _FREE_BUILD_SCOPE
-            )
+            set_persisted_rows(state, parameter, [free])
 
 
 def _build_extension(row: dict[str, Any]) -> ControllableLineExtension:
@@ -535,10 +532,10 @@ def _read_end(
 
 
 def _read_lines(state: State, operations: OperationsYear, ends: pl.DataFrame) -> pl.DataFrame:
-    """Every transport technology and every conversion of electricity alone, so that each
-    Sienna name knows of a clash in another region, with its ends at the operations mode."""
+    """Every transport technology and every conversion of electricity alone, with the
+    model-wide name of its member as its Sienna name and its ends at the operations mode."""
     lines = _read_line_technologies(state, operations).with_columns(
-        express_component_name(TECHNOLOGY).alias(LINE_NAME),
+        pl.col(MEMBER_NAME).alias(LINE_NAME),
         express_report_name(TECHNOLOGY).alias(TECHNOLOGY_NAME),
     )
     lines = enrich_residual_capacity(state, operations.year, lines)

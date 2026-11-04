@@ -294,6 +294,7 @@ RATED_PARAMETERS: tuple[str, ...] = (
 )
 # A storage takes the values of the technology that discharges it, and states its own life.
 DISCHARGE_TECHNOLOGY_VALUES: tuple[TechnologyValue, ...] = _TECHNOLOGY_VALUES
+_BALANCE_DERIVATION = "1 sets the flag; storage_target and the shortage and surplus costs apply it"
 STORAGE_VALUES: tuple[TechnologyValue, ...] = (
     TechnologyValue(
         InvestmentParameter.ENERGY_CAPITAL_COST,
@@ -313,13 +314,25 @@ STORAGE_VALUES: tuple[TechnologyValue, ...] = (
         InvestmentParameter.DURATION_LIMITS_MAX, "duration_max_hours", Scale.NONE, UNIT_HOURS
     ),
     TechnologyValue(
-        StorageBalanceParameter.YEAR, "cyclic_state_of_charge_per_period", Scale.FLAG, None
+        StorageBalanceParameter.YEAR,
+        "cyclic_state_of_charge_per_period",
+        Scale.FLAG,
+        None,
+        derivation=_BALANCE_DERIVATION,
     ),
     TechnologyValue(
-        StorageBalanceParameter.SEASON, "cyclic_state_of_charge_per_season", Scale.FLAG, None
+        StorageBalanceParameter.SEASON,
+        "cyclic_state_of_charge_per_season",
+        Scale.FLAG,
+        None,
+        derivation=_BALANCE_DERIVATION,
     ),
     TechnologyValue(
-        StorageBalanceParameter.DAY, "cyclic_state_of_charge_per_day", Scale.FLAG, None
+        StorageBalanceParameter.DAY,
+        "cyclic_state_of_charge_per_day",
+        Scale.FLAG,
+        None,
+        derivation=_BALANCE_DERIVATION,
     ),
 )
 
@@ -590,6 +603,6 @@ _DERIVATIONS: dict[Scale, str] = {
     ),
     Scale.COST_PER_ENERGY: "the value of the operations year, in $/MWh; no Sienna field holds it",
     Scale.ENERGY_PER_CAPACITY: "the value, in MWh for each MW; no Sienna field holds it",
-    Scale.FLAG: "1 sets the flag; storage_target and the shortage and surplus costs apply it",
+    Scale.FLAG: "1 sets the flag; no Sienna field holds it",
     Scale.COMPLEMENT: "1 - the value of the operations year; no Sienna field holds it",
 }
