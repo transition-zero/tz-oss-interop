@@ -16,6 +16,7 @@ from interop.core.extensions import (
     BusExtension,
     ControllableLineExtension,
     ConversionExtension,
+    ExpansionExtension,
     ExtensionRecord,
     GeneratorExtension,
     LineExtension,
@@ -236,6 +237,10 @@ ANNUAL_BOUNDS: tuple[MappedField, ...] = (
     MappedField("e_sum_max", PyPSAGeneratorCol.E_SUM_MAX, UNIT_MWH),
 )
 ANNUAL_BOUND_FIELDS = build_field_names(ActivityExtension, *ANNUAL_BOUNDS)
+# The yearly fixed charge of a candidate, which fom_cost holds where the snapshots count for
+# one whole year.
+FIXED_CHARGE_FIELD = "fom_charge_per_mw_year"
+FIXED_CHARGE_FIELDS = build_field_names(ExpansionExtension, FIXED_CHARGE_FIELD)
 HORIZON_BOUND_FIELDS = build_field_names(
     ActivityExtension, "e_sum_min_horizon", "e_sum_max_horizon"
 )

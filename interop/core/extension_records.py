@@ -43,8 +43,8 @@ class ExpansionExtension(ExtensionRecord):
     # yr. How long the plant runs. PyPSA has one lifetime and the capital recovery period
     # claims it, so this has no field there.
     technical_life_years: float | None = None
-    # $/MW/yr. PyPSA's fom_cost is a charge for the whole modelled horizon, not a yearly
-    # one, so a yearly charge has no field there.
+    # $/MW/yr. PyPSA's fom_cost is a charge for the whole modelled horizon, so it holds this
+    # yearly charge only where the snapshots count for one whole year.
     fom_charge_per_mw_year: float | None = None
     # The year the object leaves service, which PLEXOS states as a dated Units of zero.
     # PyPSA carries build_year on the component and nothing for the other end of its life.

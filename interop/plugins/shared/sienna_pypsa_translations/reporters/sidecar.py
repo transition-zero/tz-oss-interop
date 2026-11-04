@@ -7,9 +7,13 @@ from interop.plugins.shared.constants import EXTENSIONS_PREFIX
 from interop.plugins.shared.sienna_pypsa_translations.reporters._base import SiennaToPypsaReporter
 
 _RELAYED_DERIVATION = "relayed unchanged to extensions.json, as PyPSA has no attribute for it"
-_RELAYED_BY_YEAR_DERIVATION = (
+RELAYED_BY_YEAR_DERIVATION = (
     "relayed unchanged to extensions.json with every year that it states, as a PyPSA Generator "
     "holds the bound of one year at most"
+)
+RELAYED_FIXED_CHARGE_DERIVATION = (
+    "relayed unchanged to extensions.json, as fom_cost holds the yearly charge only where the "
+    "snapshots count for one whole year"
 )
 
 
@@ -23,9 +27,11 @@ class ExtensionRelayReporter(SiennaToPypsaReporter):
     def record_relayed(self, name: str, field_name: str, value: object) -> None:
         self._record_relay(name, field_name, value, _RELAYED_DERIVATION)
 
-    def record_relayed_by_year(self, name: str, field_name: str, value: object) -> None:
-        """A bound by year that travels on whole, of which the Generator holds one year."""
-        self._record_relay(name, field_name, value, _RELAYED_BY_YEAR_DERIVATION)
+    def record_relayed_in_part(
+        self, name: str, field_name: str, value: object, derivation: str
+    ) -> None:
+        """A field that travels on whole, and that the network also holds in part."""
+        self._record_relay(name, field_name, value, derivation)
 
     def _record_relay(self, name: str, field_name: str, value: object, derivation: str) -> None:
         attribute = f"{EXTENSIONS_PREFIX}{field_name}"

@@ -45,7 +45,10 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     choose_p_nom_min,
     record_p_nom_min,
 )
-from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
+from interop.plugins.shared.sienna_pypsa_translations.relay import (
+    FIXED_CHARGE_IN_PART,
+    relay_records,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ConversionReporter
 from interop.plugins.shared.warning_text import name_a_few
 
@@ -81,7 +84,8 @@ class SiennaToPypsaMapConversions(TranslationStep):
         joining = [record for record in records if _is_joining_buses(record, buses)]
         self._report_taken_names([record.name for record in joining if record.name in links])
         self._map_links(state, lookup, [record for record in joining if record.name not in links])
-        relay_records(state, lookup, [record.name for record in records], self._recorder)
+        names = [record.name for record in records]
+        relay_records(state, lookup, names, self._recorder, partly_mapped=FIXED_CHARGE_IN_PART)
         return state
 
     def _report_taken_names(self, names: list[str]) -> None:

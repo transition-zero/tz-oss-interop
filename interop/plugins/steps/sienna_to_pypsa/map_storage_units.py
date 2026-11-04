@@ -79,7 +79,10 @@ from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
     find_unpriced_cost,
     report_unpriced_costs,
 )
-from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
+from interop.plugins.shared.sienna_pypsa_translations.relay import (
+    FIXED_CHARGE_IN_PART,
+    relay_records,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
 from interop.plugins.shared.translation_runner import filter_component
 
@@ -187,7 +190,8 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
     def _carry_on(self, state: State, names: list[str], hydro_names: list[str]) -> None:
         """Pass on each unmapped field of a unit's records, with a hydro unit's generator record."""
-        relay_records(state, self._extensions.read(ExtensionKind.STORAGE), names, self._recorder)
+        storage = self._extensions.read(ExtensionKind.STORAGE)
+        relay_records(state, storage, names, self._recorder, partly_mapped=FIXED_CHARGE_IN_PART)
         generators = self._extensions.read(ExtensionKind.GENERATOR)
         relay_records(state, generators, hydro_names, self._recorder)
 

@@ -67,6 +67,31 @@ Feature: Sienna to PyPSA maps or relays each field of the extensions sidecar
     Then the PyPSA network "outputs/network.nc" generator "gas" attribute "e_sum_max" is inf
     And the log contains "because the snapshots count for 8770.0 h, not one whole year: gas.e_sum_max"
 
+  Scenario: A yearly fixed charge becomes fom_cost where the snapshots count for one whole year
+    The one period of four hours occurs 2190 times, so the snapshots count for 8760 h. PyPSA
+    adds fom_cost to one year of the annuity, so it holds the yearly charge as it is.
+    Given the system has a representative period "year" from "2020-01-01T00:00:00" of 4 hours with weight 2190
+    And the ThermalStandard "gas" has ext "fom_charge_per_mw_year" set to 20000.0
+    And the system contains an EnergyReservoirStorage "battery" on bus "node_b" with base_power 10 storage_capacity 4 initial_level 0 rating 1 input_max 1 output_max 1 efficiency_in 1 efficiency_out 1 discharge_cost 0
+    And the EnergyReservoirStorage "battery" has ext "fom_charge_per_mw_year" set to 5000.0
+    And the system is saved as "inputs/fixed_charges.json"
+    When I run translate against "inputs/fixed_charges.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "fom_cost" is 20000.0
+    And the PyPSA network "outputs/network.nc" storage unit "battery" attribute "fom_cost" is 5000.0
+    And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "fom_charge_per_mw_year" set to 20000.0
+    And the file "decisions.md" contains "`pypsa.Generator.gas.fom_cost` = 20000.0"
+    And the file "decisions.md" contains "the yearly charge, because the snapshots count for 8760.0 h, one whole year"
+    And the file "decisions.md" contains "relayed unchanged to extensions.json, as fom_cost holds the yearly charge only where the snapshots count for one whole year"
+
+  Scenario: A yearly fixed charge stays in extensions.json where the snapshots count for less than a year
+    Given the ThermalStandard "gas" has ext "fom_charge_per_mw_year" set to 20000.0
+    And the system is saved as "inputs/part_year_charge.json"
+    When I run translate against "inputs/part_year_charge.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "gas" attribute "fom_cost" is 0.0
+    And the file "outputs/extensions.json" parses as JSON generator extension record for "gas" having "fom_charge_per_mw_year" set to 20000.0
+    And the log contains "1 yearly fixed charge(s) stay in extensions.json and PyPSA charges none of them, because the snapshots count for 4.0 h, not one whole year: gas"
+    And the file "decisions.md" contains "the snapshots count for 4.0 h, not one whole year, and PyPSA adds fom_cost once over them, so the network charges no fixed cost; extensions.json keeps it"
+
   Scenario: An energy bound that the network does not apply stays in extensions.json, and the log names it for each kind of component
     A PyPSA StorageUnit and a PyPSA Link have no e_sum_min or e_sum_max, and a Generator takes
     only the annual bounds.

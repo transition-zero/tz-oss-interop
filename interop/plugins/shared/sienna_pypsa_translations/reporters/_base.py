@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from interop.plugins.shared.constants import EXTENSIONS_PREFIX, UNIT_DOLLARS_PER_MW, Framework
+from interop.plugins.shared.constants import (
+    EXTENSIONS_PREFIX,
+    UNIT_DOLLARS_PER_MW,
+    UNIT_DOLLARS_PER_MW_YEAR,
+    Framework,
+)
 from interop.plugins.shared.framework_reporting import DestinationReporter
 from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 from interop.plugins.shared.sienna_constants import SiennaGeneratorCol, SiennaStructField
+from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import FIXED_CHARGE_FIELD
 
 ACTIVE_POWER_LIMITS_MIN = f"{SiennaGeneratorCol.ACTIVE_POWER_LIMITS}.{SiennaStructField.MIN}"
 CARRIER_FROM_PRIME_MOVER = "(sienna_type, prime_mover_type) -> carrier"
@@ -20,6 +26,9 @@ P_NOM_FLOOR_DERIVATION = EXTENDABLE_FLOOR_TEMPLATE.format(capacity=PyPSAGenerato
 AVAILABLE_TO_ACTIVE = "available -> active"
 
 _EXT_OVERNIGHT_COST_ATTR = f"{EXTENSIONS_PREFIX}overnight_cost_per_mw"
+_EXT_FIXED_CHARGE_ATTR = f"{EXTENSIONS_PREFIX}{FIXED_CHARGE_FIELD}"
+# Generator, StorageUnit and Link each name the fixed charge fom_cost.
+_FOM_COST = PyPSAGeneratorCol.FOM_COST
 _UNPRICED_OVERNIGHT_COST_NOTE = (
     "the record states no {missing_field}, and PyPSA annualises an overnight_cost only over a "
     "discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it"
@@ -56,6 +65,33 @@ class SiennaToPypsaReporter(DestinationReporter):
         attribute = f"{EXTENSIONS_PREFIX}{field_name}"
         self._not_mapped(
             sources=[self._source_field(sienna_type, name, attribute, None)], note=note
+        )
+
+    def record_fixed_charge(
+        self, sienna_type: str, name: str, value: float, derivation: str
+    ) -> None:
+        """The yearly fixed charge of a sidecar record, as the fom_cost of its component."""
+        self._derived(
+            sources=[
+                self._source_field(
+                    sienna_type, name, _EXT_FIXED_CHARGE_ATTR, value, UNIT_DOLLARS_PER_MW_YEAR
+                )
+            ],
+            destinations=[self._destination(name, _FOM_COST, value, UNIT_DOLLARS_PER_MW)],
+            derivation=derivation,
+        )
+
+    def record_fixed_charge_unapplied(
+        self, sienna_type: str, name: str, value: float, note: str
+    ) -> None:
+        """A yearly fixed charge of a sidecar record that the network does not charge."""
+        self._not_mapped(
+            sources=[
+                self._source_field(
+                    sienna_type, name, _EXT_FIXED_CHARGE_ATTR, value, UNIT_DOLLARS_PER_MW_YEAR
+                )
+            ],
+            note=note,
         )
 
     def record_overnight_cost_unpriced(

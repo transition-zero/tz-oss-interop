@@ -569,6 +569,8 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSAGeneratorCol.FOM_COST: pl.Float64,
     # MWh over the snapshots, null where the source states no bound.
     PyPSAGeneratorCol.E_SUM_MIN: pl.Float64,
     PyPSAGeneratorCol.E_SUM_MAX: pl.Float64,
@@ -610,6 +612,8 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
     PyPSAStorageUnitCol.BUILD_YEAR: pl.Int64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSAStorageUnitCol.FOM_COST: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -654,6 +658,8 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSALinkCol.P_NOM_MIN: pl.Float64,
     PyPSALinkCol.P_NOM_MAX: pl.Float64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSALinkCol.FOM_COST: pl.Float64,
     # A third and a fourth bus, null for a link of two buses; a negative efficiency draws.
     PyPSALinkCol.BUS2: pl.Utf8,
     PyPSALinkCol.EFFICIENCY2: pl.Float64,

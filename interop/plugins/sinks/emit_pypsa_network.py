@@ -299,6 +299,7 @@ def _add_links(network: pypsa.Network, links: pl.DataFrame | None) -> None:
             PyPSALinkCol.UP_TIME_BEFORE,
             PyPSALinkCol.RAMP_LIMIT_UP,
             PyPSALinkCol.RAMP_LIMIT_DOWN,
+            PyPSALinkCol.FOM_COST,
         ),
     )
 
@@ -359,6 +360,7 @@ def _add_generators(network: pypsa.Network, generators: pl.DataFrame | None) -> 
             PyPSAGeneratorCol.BUILD_YEAR,
             PyPSAGeneratorCol.E_SUM_MIN,
             PyPSAGeneratorCol.E_SUM_MAX,
+            PyPSAGeneratorCol.FOM_COST,
         ),
     )
 
@@ -396,6 +398,7 @@ def _add_storage_units(network: pypsa.Network, storage_units: pl.DataFrame | Non
             PyPSAStorageUnitCol.LIFETIME,
             PyPSAStorageUnitCol.BUILD_YEAR,
             PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE_PER_PERIOD,
+            PyPSAStorageUnitCol.FOM_COST,
         ),
     )
 
