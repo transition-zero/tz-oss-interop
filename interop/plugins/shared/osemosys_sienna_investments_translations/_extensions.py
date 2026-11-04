@@ -111,7 +111,6 @@ _FIELD_ATTRIBUTES = {
 
 _COMPONENT = "component"
 _STATED_PREFIX = "stated "
-_PRODUCERS = "producers"
 _OWNERS = ValueOwners(ExtensionKind.TECHNOLOGY, CANDIDATE_NAME, REPORT_NAME, _COMPONENT)
 _DERIVATION = (
     "the value of each year of the plan in Sienna units, keyed by the year, because no Sienna "
@@ -196,7 +195,7 @@ def set_technology_extensions_persisted(state: State, families: Sequence[Candida
         for parameter, members in _list_persisted_members(family):
             by_parameter.setdefault(parameter, []).extend(members)
     for parameter, tables in by_parameter.items():
-        set_persisted_rows(state, ExtensionKind.TECHNOLOGY, parameter, tables)
+        set_persisted_rows(state, parameter, tables)
 
 
 def _list_persisted_members(family: Candidates) -> list[tuple[str, list[pl.DataFrame]]]:
@@ -236,7 +235,7 @@ def set_producers_persisted(state: State, supply_yearly: pl.DataFrame) -> None:
     )
     for parameter, yearly in noted:
         producers = list_fuel_producers(yearly)
-        set_persisted_rows(state, ExtensionKind.TECHNOLOGY, parameter, [producers], _PRODUCERS)
+        set_persisted_rows(state, parameter, [producers])
 
 
 def _build_record(row: dict[str, Any], fields: Mapping[str, YearlyField]) -> TechnologyExtension:

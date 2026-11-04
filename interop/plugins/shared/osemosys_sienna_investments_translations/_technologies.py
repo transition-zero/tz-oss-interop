@@ -8,6 +8,7 @@ import polars as pl
 
 from interop.core.pipeline import State
 from interop.plugins.shared.osemosys_canonical.constants import (
+    MEMBER_NAME,
     REGION,
     TECHNOLOGY,
     VALUE_COL,
@@ -48,7 +49,6 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_parameter_with_defaults,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 
@@ -72,11 +72,13 @@ def read_kind_technologies(state: State, kind: TechnologyKind) -> pl.DataFrame:
     return (
         read_annotations(state, TECHNOLOGY)
         .filter(pl.col(AnnotationColumn.KIND) == kind)
-        .select(*TECHNOLOGY_KEYS, AnnotationColumn.CATEGORY, AnnotationColumn.LOCATION)
-        .with_columns(
-            express_component_name(TECHNOLOGY).alias(CANDIDATE_NAME),
-            express_report_name(TECHNOLOGY).alias(REPORT_NAME),
+        .select(
+            *TECHNOLOGY_KEYS,
+            AnnotationColumn.CATEGORY,
+            AnnotationColumn.LOCATION,
+            pl.col(MEMBER_NAME).alias(CANDIDATE_NAME),
         )
+        .with_columns(express_report_name(TECHNOLOGY).alias(REPORT_NAME))
     )
 
 

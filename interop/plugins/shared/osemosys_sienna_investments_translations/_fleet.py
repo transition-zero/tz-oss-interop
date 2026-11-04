@@ -15,6 +15,7 @@ import polars as pl
 from interop.core.pipeline import State
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.osemosys_canonical.constants import (
+    MEMBER_NAME,
     TECHNOLOGY,
     YEAR,
 )
@@ -36,7 +37,6 @@ from interop.plugins.shared.osemosys_sienna_translations._canonical import (
     read_annotations,
     read_yearly_values,
 )
-from interop.plugins.shared.osemosys_sienna_translations._names import express_component_name
 from interop.plugins.shared.pypsa_sienna_investments_translations import (
     OSEMOSYS_TO_SIENNA_INVESTMENTS,
     InvestmentsSource,
@@ -84,7 +84,7 @@ def build_portfolio_technologies(state: State, families: Sequence[Candidates]) -
     base_names = sorted(_list_base_names(state, base_types))
     fleet = (
         read_annotations(state, TECHNOLOGY)
-        .with_columns(express_component_name(TECHNOLOGY).alias(CANDIDATE_NAME))
+        .with_columns(pl.col(MEMBER_NAME).alias(CANDIDATE_NAME))
         .filter(pl.col(CANDIDATE_NAME).is_in(base_names))
     )
     keys = [family.build_technology_keys() for family in families]
