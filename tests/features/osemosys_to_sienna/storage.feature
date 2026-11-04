@@ -197,6 +197,27 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "carrier" set to "pumped-storage"
       And the file "decisions.md" contains "| `osemosys.technology.R1/ATPHS.category` = pumped-storage | `sienna.EnergyReservoirStorage.ATPHSS.extensions.carrier` = pumped-storage | the category of the discharging technology, which names its carriers: row |"
 
+    Scenario: A storage that states no balance of its level has no level to meet at the end of the horizon
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "storage_target" set to 0.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.energy_shortage_cost" set to 0.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.energy_surplus_cost" set to 0.0
+      And the file "decisions.md" contains "so the storage has no level to meet at the end of the operations horizon"
+
+    Scenario: A storage that balances its level over a year ends the operations horizon at the level where it starts
+      The storage starts at 0.25 of its capacity. A penalty on each side of the target holds the
+      end of the horizon at that level.
+      Given the otoole parameter "StorageBalanceYear" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "storage_target" set to 0.25
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.energy_shortage_cost" set to 1000000.0
+      And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "ATPHSS" having "operation_cost.energy_surplus_cost" set to 1000000.0
+      And the file "decisions.md" contains "| `osemosys.storage_balance_year.R1/ATPHSS` = 1.0<br>`sienna.EnergyReservoirStorage.ATPHSS.initial_storage_capacity_level` = 0.25 | `sienna.EnergyReservoirStorage.ATPHSS.storage_target` = 0.25 |"
+
     Scenario: An emission penalty adds the cost of each pollutant that a storage emits at each mode
       ATPHS emits 0.125 t of CO2 for each MWh of its activity when it charges, and 0.4 t when it
       discharges. At 10 USD/t that adds 1.25 $/MWh of activity to the charge and 4 to the

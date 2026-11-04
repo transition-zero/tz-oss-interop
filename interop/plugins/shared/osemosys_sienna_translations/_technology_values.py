@@ -590,6 +590,6 @@ _DERIVATIONS: dict[Scale, str] = {
     ),
     Scale.COST_PER_ENERGY: "the value of the operations year, in $/MWh; no Sienna field holds it",
     Scale.ENERGY_PER_CAPACITY: "the value, in MWh for each MW; no Sienna field holds it",
-    Scale.FLAG: "1 sets the flag; no Sienna field holds it",
+    Scale.FLAG: "1 sets the flag; storage_target and the shortage and surplus costs apply it",
     Scale.COMPLEMENT: "1 - the value of the operations year; no Sienna field holds it",
 }

@@ -31,6 +31,7 @@ from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
     WHOLE_CAPACITY,
     ActivityParameter,
+    StorageBalanceParameter,
     StorageParameter,
     SupplyParameter,
 )
@@ -38,6 +39,7 @@ from interop.plugins.shared.osemosys_sienna_translations._buses import ELECTRICI
 from interop.plugins.shared.osemosys_sienna_translations._component_mapping import ComponentMapping
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     ComputedValues,
+    build_defaulted,
     build_derived,
     build_sienna_field,
     build_sienna_source,
@@ -99,6 +101,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
     build_value_events,
 )
 from interop.plugins.shared.sienna_constants import (
+    CYCLIC_ENERGY_PENALTY,
     DEFAULT_CYCLE_LIMITS,
     EFFICIENCY_DTYPE,
     ENERGY_RESERVOIR_STORAGE_DESTINATION_SCHEMA,
@@ -131,6 +134,9 @@ _default = partial(default_translation, _dest, name_col=STORAGE_NAME)
 
 _NO_POWER = 0.0
 _NO_TARGET = 0.0
+_BALANCE_VALUES = tuple(
+    value for value in STORAGE_VALUES if value.parameter in set(StorageBalanceParameter)
+)
 
 _ID_NOTE = (
     "assigned by row position in the table of the Sienna type, after the ids of earlier components"
@@ -154,7 +160,14 @@ _RATING_SERIES_DERIVATION = (
     "companion parquet; a Sienna storage applies no factor in each hour"
 )
 _CONVERSION_NOTE = "the energy and the level are both in MWh, so no conversion applies"
-_TARGET_NOTE = "OSeMOSYS states no level at the end of the operations horizon"
+_TARGET_NOTE = (
+    "the model states no storage_balance_year, storage_balance_season or storage_balance_day of "
+    "1, so the storage has no level to meet at the end of the operations horizon"
+)
+_TARGET_DERIVATION = (
+    "initial_storage_capacity_level, a ratio of storage_capacity, because a storage_balance flag "
+    "of 1 makes the storage end where it starts"
+)
 _CYCLE_LIMITS_NOTE = "OSeMOSYS states no limit on the cycles of a storage"
 _NAME_DERIVATION = "the storage, after its region when two regions hold it"
 _BUS_DERIVATION = (
@@ -200,7 +213,9 @@ _COST_DERIVATION = (
     "charge = variable_operation_cost at the charge mode, in $/MWh, / the electricity "
     "input_activity_ratio; discharge = variable_operation_cost at the discharge mode, in $/MWh, "
     "/ the electricity output_activity_ratio; each plus the emission penalty of each pollutant "
-    "at that mode"
+    "at that mode; energy_shortage_cost and energy_surplus_cost = "
+    f"{CYCLIC_ENERGY_PENALTY:g} $/MWh where a storage_balance flag is 1, which holds "
+    "storage_target, else 0"
 )
 _PENALTY_DERIVATION = (
     "emission_rate of the pollutant at the {direction} mode, in t/MWh of activity, × "
@@ -447,13 +462,50 @@ def _build_energy() -> list[Translation]:
             _INITIAL_LEVEL_DERIVATION,
         ),
         _default(dest_col=_Col.CONVERSION_FACTOR, value=UNSCALED, note=_CONVERSION_NOTE),
-        _default(dest_col=_Col.STORAGE_TARGET, value=_NO_TARGET, note=_TARGET_NOTE),
+        Translation(
+            exprs=[
+                pl.when(_express_is_cyclic())
+                .then(pl.col(INITIAL_LEVEL))
+                .otherwise(pl.lit(_NO_TARGET))
+                .alias(_Col.STORAGE_TARGET)
+            ],
+            make_events=_build_target_events,
+        ),
         _default(
             dest_col=_Col.CYCLE_LIMITS,
             value=DEFAULT_CYCLE_LIMITS,
             note=_CYCLE_LIMITS_NOTE,
             dtype=pl.Int64,
         ),
+    ]
+
+
+def _express_is_cyclic() -> pl.Expr:
+    """Whether the storage states a balance of its level over a year, a season or a day."""
+    return pl.any_horizontal(pl.col(value.column).fill_null(False) for value in _BALANCE_VALUES)  # noqa: FBT003
+
+
+def _build_target_events(old: dict[str, Any], new: dict[str, Any]) -> list[TranslationEvent]:
+    destination = _dest(old[STORAGE_NAME], _Col.STORAGE_TARGET, new[_Col.STORAGE_TARGET])
+    balances = _build_balance_sources(old)
+    if not balances:
+        return build_defaulted([destination], _TARGET_NOTE)
+    level = build_sienna_source(
+        SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+        old[STORAGE_NAME],
+        _Col.INITIAL_STORAGE_CAPACITY_LEVEL,
+        old[INITIAL_LEVEL],
+        None,
+    )
+    return build_derived([*balances, level], [destination], _TARGET_DERIVATION)
+
+
+def _build_balance_sources(old: dict[str, Any]) -> list[SourceField]:
+    """The storage_balance flags of 1 that the storage states."""
+    return [
+        _build_source(value.parameter, old[STORAGE_REPORT_NAME], None, old[value.stated_column])
+        for value in _BALANCE_VALUES
+        if old[value.column]
     ]
 
 
@@ -475,6 +527,7 @@ def _build_cost_sources(old: dict[str, Any]) -> list[SourceField]:
         ),
         _build_output_ratio_source(old),
         *_build_penalty_cost_sources(old, DISCHARGE_SIDE),
+        *_build_balance_sources(old),
     ]
 
 
@@ -541,12 +594,16 @@ def _build_cost() -> Translation:
         fixed=pl.lit(NO_COST),
         start_up=pl.lit(NO_COST),
         shut_down=pl.lit(NO_COST),
-        energy_shortage_cost=pl.lit(NO_COST),
-        energy_surplus_cost=pl.lit(NO_COST),
+        energy_shortage_cost=_express_cyclic_penalty(),
+        energy_surplus_cost=_express_cyclic_penalty(),
     ).cast(STORAGE_COST_DTYPE)
     return _build_value(
         _Col.OPERATION_COST, cost, _build_cost_sources, _COST_DERIVATION, UNIT_DOLLARS_PER_MWH
     )
+
+
+def _express_cyclic_penalty() -> pl.Expr:
+    return pl.when(_express_is_cyclic()).then(pl.lit(CYCLIC_ENERGY_PENALTY)).otherwise(NO_COST)
 
 
 def _build_fixed_cost_events(old: dict[str, Any]) -> list[TranslationEvent]:
