@@ -168,6 +168,9 @@ These rows are a first choice for this page. CEN did not check them.
 The command of tz-oss-interop is `interop`. Do this command in a project that `interop init`
 made. Replace `<repository>` with the path of your tz-oss-interop clone.
 
+The bare command `interop` needs the uv tool install in the README. If you use `uv sync`
+only, put `uv run` before `interop`.
+
 ```bash
 interop headless_cli --pipeline plexos-to-sienna \
   --override 'source.path=<repository>/case_study_inputs/cen-po12meses-2026-09/DBSEN_202609_PO12meses.xml' \
@@ -220,7 +223,8 @@ this system for a study.
 ## Why so little translates
 
 Four causes stop nearly all of the model. Each one is a gap in tz-oss-interop, and not a
-limit of Sienna. The first two causes each block the whole translation on their own.
+limit of Sienna. Cause 1 blocks each value that a dated data file supplies. Cause 2 sets no
+snapshots, so no data file gives a time series.
 
 ### 1. The translator cannot read a dated value in a data file
 
@@ -319,7 +323,7 @@ JUNCALITO,"M1,H1",0
 | Data file | Rows | What it carries | The patterns |
 | --- | --- | --- | --- |
 | `Load_Load.csv` | 483,840 | The demand of each of the 420 `Load` objects | 48 named day types, each with the hours `H1` to `H24` |
-| `Gen_RatingFactor.csv` | 298,944 | The available share of 1,047 generators, such as solar and wind | 288 patterns, `M1,H1` to `M12,H24`: a month and an hour |
+| `Gen_RatingFactor.csv` | 298,944 | The available share of 1,038 generators, such as solar and wind | 288 patterns, `M1,H1` to `M12,H24`: a month and an hour |
 
 A pattern such as `M1,H1` names a month and an hour of the day. A pattern such as `DO_01,H1`
 names a `Timeslice` object and an hour. `Load_TimeSlice.csv` says which day belongs to which
