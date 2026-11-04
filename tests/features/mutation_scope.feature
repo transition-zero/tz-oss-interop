@@ -13,6 +13,7 @@ Feature: A pull request mutates only the files that it changes
       | interop/core/runner.py                      | interop/core/runner.py |
       | interop/core/runner.py, README.md           | interop/core/runner.py |
       | interop/core/runner.py, interop/pipelines/noop.yaml | interop/core/runner.py |
+      | interop/plugins/sources/noop.py             | interop/plugins/sources/noop.py |
 
     Examples: a file that mutmut does not mutate is not a target
       | changed                                      | targets |
@@ -22,6 +23,8 @@ Feature: A pull request mutates only the files that it changes
       | interop/core/__init__.py                     |         |
       | interop/plugins/steps/sienna_relate_components.py |    |
       | interop/plugins/sinks/_sienna_files.py       |         |
+      | interop/plugins/sources/plexos_patterns.py   |         |
+      | interop/plugins/sources/plexos_horizon.py, interop/plugins/sources/plexos_tables.py | |
 
   Scenario: no target makes a report that skips the run by choice
     Given a pull request run with no mutation target
