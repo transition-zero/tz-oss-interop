@@ -27,6 +27,7 @@ from interop.core.extensions import (
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.osemosys_canonical.constants import (
+    MEMBER_NAME,
     OPERATING_MODE,
     REGION,
     STORAGE,
@@ -60,7 +61,6 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     express_has_capacity_factors,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operating_modes import (
@@ -351,14 +351,11 @@ def _express_charges_itself() -> pl.Expr:
 
 
 def _read_storages(state: State, operations: OperationsYear) -> pl.DataFrame:
-    """Every storage, so that each Sienna name knows of a clash in another region."""
-    storages = (
-        read_annotations(state, STORAGE)
-        .select(*_STORAGE_KEYS)
-        .with_columns(
-            express_component_name(STORAGE).alias(STORAGE_NAME),
-            express_report_name(STORAGE).alias(STORAGE_REPORT_NAME),
-        )
+    """Every storage, with the model-wide name of its member as its Sienna name."""
+    storages = read_annotations(state, STORAGE).select(
+        *_STORAGE_KEYS,
+        pl.col(MEMBER_NAME).alias(STORAGE_NAME),
+        express_report_name(STORAGE).alias(STORAGE_REPORT_NAME),
     )
     energy = read_parameter_with_defaults(
         state,
