@@ -189,7 +189,10 @@ and its weight. So the step splits the series of each year into one record for e
 
 The model looks a slice up by its index among all the slices of the plan, not by its index in
 its year, so `rep_day` counts on across the years. The step writes one investment period for
-each year.
+each year. Each period runs from 1 January to 31 December of its own year, and not to the year
+before the next period. The model reads the end of a period only to put each slice in its
+period and to match the target year of an energy share, so the end does not change the
+objective.
 
 Two kinds of technology need a series in every slice, and the portfolio can state none:
 
