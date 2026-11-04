@@ -72,7 +72,6 @@ _FROM_DEFAULT = "default"
 _FROM_FALLBACK = "fallback"
 _VALUE_SCALED = "value_scaled"
 _FALLBACK = "fallback"
-_APPLIED_SCOPE = "applied"
 _DETAIL = "detail"
 _STATED = "stated"
 _VALUE = "value"
@@ -361,8 +360,7 @@ def set_applied_rows(
 ) -> None:
     """Note that the components of `owners.kind` apply or keep each row of `members`."""
     for parameter in parameters:
-        scope = f"{_APPLIED_SCOPE}-{owners.report_col}"
-        set_persisted_rows(state, owners.kind, parameter, [members.select(owners.keys)], scope)
+        set_persisted_rows(state, parameter, [members.select(owners.keys)])
 
 
 def set_values_persisted(
@@ -371,11 +369,9 @@ def set_values_persisted(
     """Note that the records of `owners.kind` hold each value of `members`."""
     keys = members.select(owners.keys)
     for value in values:
-        set_persisted_rows(state, owners.kind, value.parameter, [keys], value.field)
+        set_persisted_rows(state, value.parameter, [keys])
         if value.fallback is not None:
-            set_persisted_rows(
-                state, owners.kind, value.fallback, [keys.select(REGION)], value.field
-            )
+            set_persisted_rows(state, value.fallback, [keys.select(REGION)])
 
 
 # --- the read of one value ---------------------------------------------------------------------

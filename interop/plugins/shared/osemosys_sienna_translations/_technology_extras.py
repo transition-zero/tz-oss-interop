@@ -80,8 +80,8 @@ class TechnologyExtras:
     def set_persisted(self, state: State, members: pl.DataFrame) -> None:
         """Note that the records of the kind hold each value, bound and mode value of `members`."""
         set_values_persisted(state, self.owners, members, self.values)
-        set_mode_bounds_persisted(state, self.owners, members)
-        set_bounds_persisted(state, self.owners, members)
+        set_mode_bounds_persisted(state, members)
+        set_bounds_persisted(state, members)
 
     def build_fields(self, row: dict[str, Any]) -> dict[str, Any]:
         """The fields of the record of one member that these values fill."""

@@ -116,12 +116,10 @@ def build_bound_events(
     ]
 
 
-def set_bounds_persisted(state: State, owners: ValueOwners, rated: pl.DataFrame) -> None:
-    """Note that the records of `owners.kind` hold the annual activity bounds of `rated`."""
+def set_bounds_persisted(state: State, rated: pl.DataFrame) -> None:
+    """Note that a record holds the annual activity bounds of each row of `rated`."""
     for bound in ACTIVITY_BOUNDS:
-        set_persisted_rows(
-            state, owners.kind, bound.parameter, [rated.select(_KEYS)], bound.extension_field
-        )
+        set_persisted_rows(state, bound.parameter, [rated.select(_KEYS)])
 
 
 def _list_bounds(

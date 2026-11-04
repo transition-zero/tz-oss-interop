@@ -228,12 +228,10 @@ def build_mode_events(row: dict[str, Any], owners: ValueOwners) -> list[Translat
     return [_build_event(row, entry, owners) for entry in row[_VALUES] or []]
 
 
-def set_mode_bounds_persisted(state: State, owners: ValueOwners, members: pl.DataFrame) -> None:
-    """Note that the records of `owners.kind` hold the mode bounds and the emission rates."""
+def set_mode_bounds_persisted(state: State, members: pl.DataFrame) -> None:
+    """Note that a record holds the mode bounds and the emission rates of `members`."""
     for parameter in (*MODE_BOUND_PARAMETERS, SupplyParameter.EMISSION_RATE):
-        set_persisted_rows(
-            state, owners.kind, parameter, [members.select(REGION, TECHNOLOGY)], OPERATING_MODES
-        )
+        set_persisted_rows(state, parameter, [members.select(REGION, TECHNOLOGY)])
 
 
 # --- the rows ----------------------------------------------------------------------------------
