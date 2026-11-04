@@ -78,10 +78,10 @@ Feature: The scope step leaves out the locations and the years that a run does n
       | ATE1  |
       | DEE1  |
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind                         | category | location |
-      | R1     | ATGAS      | SupplyTechnology             |          | AT       |
-      | R1     | DEGAS      | SupplyTechnology             |          | DE       |
-      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+      | region | technology | kind                         | category | location | name     |
+      | R1     | ATGAS      | SupplyTechnology             |          | AT       | ATGAS    |
+      | R1     | DEGAS      | SupplyTechnology             |          | DE       | DEGAS    |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    | ATDELINK |
     And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
       | region | technology | year | value |
       | R1     | ATGAS      | 2030 | 10    |
@@ -122,11 +122,11 @@ Feature: The scope step leaves out the locations and the years that a run does n
     When I run the pipeline "scoped" with overrides "source.config_path=model/config.yaml source.csv_dir=model/csv sink[0].output_dir=canonical" with user mappings "user_mappings.yaml"
     Then the pipeline exit code is 0
     And the canonical table "canonical/annotations/technology.parquet" has the rows:
-      | region | technology | kind                         | category | location |
-      | R1     | ATGAS      | SupplyTechnology             |          | AT       |
-      | R1     | DEGAS      | SupplyTechnology             |          | DE       |
-      | R2     | DEGAS      | SupplyTechnology             |          | DE       |
-      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    |
+      | region | technology | kind                         | category | location | name        |
+      | R1     | ATGAS      | SupplyTechnology             |          | AT       | R1/ATGAS    |
+      | R1     | DEGAS      | SupplyTechnology             |          | DE       | R1/DEGAS    |
+      | R2     | DEGAS      | SupplyTechnology             |          | DE       | R2/DEGAS    |
+      | R1     | ATDELINK   | AggregateTransportTechnology |          | AT~DE    | R1/ATDELINK |
     And the canonical table "canonical/parameters/capital_cost.parquet" has the rows:
       | region | technology | year | value |
       | R1     | ATGAS      | 2030 | 10    |
