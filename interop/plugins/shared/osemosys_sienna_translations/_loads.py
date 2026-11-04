@@ -28,6 +28,7 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import HOURS_PER_YEAR, UNIT_MVA, UNIT_MW, StagedTimeSeriesCol
 from interop.plugins.shared.osemosys_canonical.constants import (
     FUEL,
+    MEMBER_NAME,
     REGION,
     TIMESLICE,
     VALUE_COL,
@@ -48,6 +49,7 @@ from interop.plugins.shared.osemosys_sienna_translations._calendar import (
     YEAR_SPLIT,
 )
 from interop.plugins.shared.osemosys_sienna_translations._canonical import (
+    read_annotations,
     read_parameter,
     read_parameter_with_defaults,
 )
@@ -63,7 +65,6 @@ from interop.plugins.shared.osemosys_sienna_translations._fuels import (
     read_other_fuels,
 )
 from interop.plugins.shared.osemosys_sienna_translations._names import (
-    express_component_name,
     express_report_name,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
@@ -222,7 +223,7 @@ def _read_located_electricity_fuels(state: State) -> pl.DataFrame:
 
 def _build_loads(state: State, operations: OperationsYear, inputs: _LoadInputs) -> LoadSources:
     drop = inputs.drop
-    demands = _enrich_load_names(_read_demands(state, operations.year, inputs.fuels, drop))
+    demands = _enrich_load_names(state, _read_demands(state, operations.year, inputs.fuels, drop))
     if demands.height == 0:
         return LoadSources(demands, pl.DataFrame(schema=SERIES_SCHEMA))
     demands = demands.with_columns(
@@ -297,16 +298,21 @@ def _build_negative_demand_skip(parameter: DemandParameter) -> SkipReport:
     )
 
 
-def _enrich_load_names(demands: pl.DataFrame) -> pl.DataFrame:
-    """A load takes the Sienna name of its fuel, and a suffix for accumulated demand."""
+def _enrich_load_names(state: State, demands: pl.DataFrame) -> pl.DataFrame:
+    """A load takes the model-wide name of its fuel, and a suffix for accumulated demand."""
     accumulated = pl.col(DEMAND_PARAMETER) == DemandParameter.ACCUMULATED_ANNUAL_DEMAND
     suffix = f"{LOAD_NAME_SEPARATOR}{ACCUMULATED_LOAD_SUFFIX}"
-    base = express_component_name(FUEL)
-    return demands.with_columns(
-        pl.when(accumulated)
-        .then(pl.concat_str(base, pl.lit(suffix)))
-        .otherwise(base)
-        .alias(LOAD_NAME)
+    names = read_annotations(state, FUEL).select(REGION, FUEL, MEMBER_NAME)
+    base = pl.col(MEMBER_NAME)
+    return (
+        demands.join(names, on=[REGION, FUEL], how="left")
+        .with_columns(
+            pl.when(accumulated)
+            .then(pl.concat_str(base, pl.lit(suffix)))
+            .otherwise(base)
+            .alias(LOAD_NAME)
+        )
+        .drop(MEMBER_NAME)
     )
 
 
