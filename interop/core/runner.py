@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -179,21 +179,50 @@ def run_pipeline(
 ) -> list[EnergyModelValidationError]:
     source = source_factory(spec.source.name)
     source_params = _build_params(NodeKind.SOURCE, source, spec.source)
+    steps = _build_ready_steps(spec, step_factory)
+    sinks = _build_ready_sinks(spec, sink_factory)
     with source.load(source_params, keep_staging=keep_staging) as state:
         _run_validators(state, spec, validator_factory, on_validators_complete)
         _reject_untranslatable_input(state)
-
-        pipeline_steps = PipelineSteps(frozenset(node.name for node in spec.steps))
-        for step_node in spec.steps:
-            step = step_factory(step_node.name, pipeline_steps)
-            state = step.run(state, _build_params(NodeKind.STEP, step, step_node))
+        for ready_step in steps:
+            state = ready_step.step.run(state, ready_step.params)
         state.report_unread_extensions(spec.source_framework)
-
-        for sink_node in spec.sinks:
-            sink = sink_factory(sink_node.name)
-            sink.write(state, _build_params(NodeKind.SINK, sink, sink_node))
-
+        for ready_sink in sinks:
+            ready_sink.sink.write(state, ready_sink.params)
         return list(state.validation_errors)
+
+
+class _ReadyStep(NamedTuple):
+    """A step and its checked params, built before the source loads."""
+
+    step: TranslationStep
+    params: BaseModel | None
+
+
+class _ReadySink(NamedTuple):
+    """A sink and its checked params, built before the source loads."""
+
+    sink: Sink
+    params: BaseModel | None
+
+
+def _build_ready_steps(spec: PipelineSpec, step_factory: StepFactory) -> list[_ReadyStep]:
+    """Each step with its params, so a bad param stops the run before any work."""
+    pipeline_steps = PipelineSteps(frozenset(node.name for node in spec.steps))
+    ready: list[_ReadyStep] = []
+    for node in spec.steps:
+        step = step_factory(node.name, pipeline_steps)
+        ready.append(_ReadyStep(step, _build_params(NodeKind.STEP, step, node)))
+    return ready
+
+
+def _build_ready_sinks(spec: PipelineSpec, sink_factory: SinkFactory) -> list[_ReadySink]:
+    """Each sink with its params, so a bad param stops the run before any work."""
+    ready: list[_ReadySink] = []
+    for node in spec.sinks:
+        sink = sink_factory(node.name)
+        ready.append(_ReadySink(sink, _build_params(NodeKind.SINK, sink, node)))
+    return ready
 
 
 def run_validation(
