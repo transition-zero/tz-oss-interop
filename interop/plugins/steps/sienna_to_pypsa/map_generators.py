@@ -48,7 +48,6 @@ from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.constants import pypsa_carrier
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
-    ANNUAL_BOUND_FIELDS,
     GENERATOR_CARRIER,
     GENERATOR_COMMITTABLE,
     GENERATOR_EXTENDABLE,
@@ -80,11 +79,10 @@ from interop.plugins.shared.sienna_pypsa_translations.overnight_cost import (
     report_unpriced_costs,
 )
 from interop.plugins.shared.sienna_pypsa_translations.relay import (
-    FIXED_CHARGE_IN_PART,
+    GENERATOR_COLUMN_IN_PART,
     relay_records,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
-    RELAYED_BY_YEAR_DERIVATION,
     RELAYED_TO_LINK_DERIVATION,
     GeneratorReporter,
     ThermalLimit,
@@ -93,9 +91,8 @@ from interop.plugins.shared.translation_runner import filter_component
 
 # The fields that travel on whole and also map in part, each with the derivation of its relay.
 _PARTLY_MAPPED = {
-    **dict.fromkeys(ANNUAL_BOUND_FIELDS, RELAYED_BY_YEAR_DERIVATION),
+    **GENERATOR_COLUMN_IN_PART,
     **dict.fromkeys(PLANT_LINK_FIELDS, RELAYED_TO_LINK_DERIVATION),
-    **FIXED_CHARGE_IN_PART,
 }
 
 # Generator series carried back to p_max_pu. The h5 holds a peak-1.0 shape; the per-unit

@@ -20,10 +20,12 @@ from interop.core.extensions import (
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
+    ANNUAL_BOUND_FIELDS,
     FIXED_CHARGE_FIELD,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import ExtensionRelayReporter
 from interop.plugins.shared.sienna_pypsa_translations.reporters.sidecar import (
+    RELAYED_BY_YEAR_DERIVATION,
     RELAYED_FIXED_CHARGE_DERIVATION,
 )
 
@@ -60,6 +62,12 @@ def relay_records(
 
 # The fixed charge, which a later step maps in part, with what its relay event says of it.
 FIXED_CHARGE_IN_PART: dict[str, str] = {FIXED_CHARGE_FIELD: RELAYED_FIXED_CHARGE_DERIVATION}
+# The fields of a record of a PyPSA Generator that a later step maps in part: the annual bounds
+# and the fixed charge.
+GENERATOR_COLUMN_IN_PART: dict[str, str] = {
+    **dict.fromkeys(ANNUAL_BOUND_FIELDS, RELAYED_BY_YEAR_DERIVATION),
+    **FIXED_CHARGE_IN_PART,
+}
 
 
 def _build_report_values(record: ExtensionRecord) -> dict[str, object]:

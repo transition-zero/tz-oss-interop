@@ -8,7 +8,7 @@ to a Link from the bus of that fuel.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar, NamedTuple
 
@@ -57,7 +57,10 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import (
     choose_p_nom_min,
     record_p_nom_min,
 )
-from interop.plugins.shared.sienna_pypsa_translations.relay import relay_records
+from interop.plugins.shared.sienna_pypsa_translations.relay import (
+    GENERATOR_COLUMN_IN_PART,
+    relay_records,
+)
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
     FuelGeneratorReporter,
     LoadReporter,
@@ -96,6 +99,7 @@ class _FuelMapping:
     build_row: Callable[[Any], dict[str, Any]]
     build_reporter: Callable[[ScopedRecorder], FuelGeneratorReporter | LoadReporter]
     record_values: Callable[[Any, Any], None]
+    partly_mapped: Mapping[str, str]
 
 
 class SiennaToPypsaMapFuels(TranslationStep):
@@ -131,7 +135,8 @@ class SiennaToPypsaMapFuels(TranslationStep):
             _record_defaults(reporter, mapping, record)
         rows = [mapping.build_row(record) for record in records]
         append_destination_rows(state, mapping.table, rows, mapping.schema)
-        relay_records(state, lookup, [record.name for record in records], self._recorder)
+        names = [record.name for record in records]
+        relay_records(state, lookup, names, self._recorder, partly_mapped=mapping.partly_mapped)
         return records
 
 
@@ -219,6 +224,7 @@ _GENERATORS = _FuelMapping(
     build_row=_build_generator_row,
     build_reporter=FuelGeneratorReporter,
     record_values=_record_generator,
+    partly_mapped=GENERATOR_COLUMN_IN_PART,
 )
 _LOADS = _FuelMapping(
     model=LoadExtension,
@@ -230,4 +236,5 @@ _LOADS = _FuelMapping(
     build_row=_build_load_row,
     build_reporter=LoadReporter,
     record_values=_record_load,
+    partly_mapped={},
 )

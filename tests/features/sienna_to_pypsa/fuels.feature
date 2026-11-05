@@ -54,6 +54,18 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the file "decisions.md" contains "| `pypsa.Generator.well.p_nom` = 0.0 |  | the sidecar record states no p_nom, so PyPSA's own default applies |"
     And the file "decisions.md" does not contain "| `pypsa.Generator.terminal.p_max_pu` = 1.0 |"
 
+  Scenario: The annual bound of a fuel generator applies for a whole year, and its relay says so
+    The one period of four hours occurs 2190 times, so the snapshots count for 8760 h of 2020.
+    Given the system has a generator extension record "well" with "bus" set to "R1/DEGAS"
+    And the system has a generator extension record "well" with "carrier" set to "gas"
+    And the system has a generator extension record "well" with "p_nom" set to 500.0
+    And the system has a generator extension record "well" with "e_sum_max" set to {"2020": 3000.0}
+    And the system has a representative period "year" from "2020-01-01T00:00:00" of 4 hours with weight 2190
+    And the system is saved as "inputs/well_bound.json"
+    When I run translate against "inputs/well_bound.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "well" attribute "e_sum_max" is 3000.0
+    And the file "decisions.md" contains "| `pypsa.generator.well.extensions.e_sum_max` = {'2020': 3000.0} | relayed unchanged to extensions.json with every year that it states, as a PyPSA Generator holds the bound of one year at most |"
+
   Scenario: An extendable fuel generator keeps the capacity that it has as a floor, unless its record states a floor
     Given the system has a generator extension record "well" with "bus" set to "R1/DEGAS"
     And the system has a generator extension record "well" with "p_nom" set to 500.0
