@@ -44,6 +44,8 @@ TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW = [
     "interop/plugins/sinks/emit_results_parquet.py",
     "interop/adapters/outbound/julia_solver.py",
     "interop/templates/*",
+    # The one method of the record base, has_any_value, runs only inside a translation step.
+    "interop/core/extension_records.py",
 ]
 
 
