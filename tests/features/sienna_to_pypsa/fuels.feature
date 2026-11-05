@@ -135,6 +135,21 @@ Feature: Sienna to PyPSA builds the fuels that are not electricity from the exte
     And the file "decisions.md" contains "| `pypsa.Link.gas.p_nom` = 400.0 MW | base_power × the MWh of that fuel for each MWh of electricity |  | sienna-to-pypsa | sienna_to_pypsa_map_plant_links |"
     And the file "decisions.md" contains "| `pypsa.generator.gas.extensions.own_marginal_cost` = 5.0 | relayed unchanged to extensions.json; where the network holds the bus of each fuel of the plant, the plant becomes a PyPSA Link that also maps it |"
 
+  Scenario: A plant Link pays the yearly fixed charge of the plant for each MW of its fuel
+    The plant charges 20000 $/MW of electricity a year, and it burns 2 MWh of gas for each MWh
+    of electricity. The Link rates its capacity in MW of gas, so it charges 20000 × 0.5 = 10000
+    $/MW. The one period of four hours occurs 2190 times, so the snapshots count for one whole
+    year.
+    Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}
+    And the ThermalStandard "gas" has ext "fom_charge_per_mw_year" set to 20000.0
+    And the system has a representative period "year" from "2020-01-01T00:00:00" of 4 hours with weight 2190
+    And the system is saved as "inputs/plant_charge.json"
+    When I run translate against "inputs/plant_charge.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has no generator "gas"
+    And the PyPSA network "outputs/network.nc" link "gas" attribute "fom_cost" is 10000.0
+    And the file "decisions.md" contains "`pypsa.Link.gas.fom_cost` = 10000.0"
+    And the file "decisions.md" contains "× the efficiency of the Link, as a plant Link rates its capacity in MW of its fuel"
+
   Scenario: A gas plant with an annual energy bound stays a Generator, and the log says so
     Given the ThermalStandard "gas" has ext "fuel_buses" set to {"R1/ATGAS": 2.0}
     And the ThermalStandard "gas" has ext "e_sum_min" set to {"2020": 1000.0}

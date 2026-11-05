@@ -36,9 +36,11 @@ from interop.plugins.shared.sienna_pypsa_translations.mapping import find_source
 from interop.plugins.shared.sienna_pypsa_translations.reporters import (
     ConversionReporter,
     GeneratorReporter,
+    PlantLinkReporter,
     StorageUnitReporter,
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters._base import (
+    FixedValue,
     SiennaToPypsaReporter,
 )
 from interop.plugins.shared.warning_text import name_a_few
@@ -55,6 +57,10 @@ _FOM_COST = PyPSAGeneratorCol.FOM_COST
 _MAPPED_DERIVATION = (
     "the yearly charge, because the snapshots count for {hours:.1f} h, one whole year, so PyPSA "
     "adds fom_cost to one year of the annuity"
+)
+_PLANT_LINK_DERIVATION = (
+    "the yearly charge, in $/MW of electricity, × the efficiency of the Link, as a plant Link "
+    "rates its capacity in MW of its fuel; the snapshots count for {hours:.1f} h, one whole year"
 )
 _PART_YEAR_NOTE = (
     "the snapshots count for {hours:.1f} h, not one whole year, and PyPSA adds fom_cost once "
@@ -74,13 +80,19 @@ _NO_SNAPSHOTS_WARNING = (
 
 
 class ChargeOwner(NamedTuple):
-    """A record model, the PyPSA table that holds its components, and how to report them."""
+    """A record model, the PyPSA table that holds its components, and how to report them.
+
+    `scale_col` names a column of the table that the yearly charge is multiplied by, where the
+    component rates its capacity in other MW than the record.
+    """
 
     model: type[ExpansionExtension]
     table: str
     name_col: str
     source_table: str | None
     reporter: type[SiennaToPypsaReporter]
+    derivation: str = _MAPPED_DERIVATION
+    scale_col: str | None = None
 
 
 _OWNERS = (
@@ -105,6 +117,15 @@ _OWNERS = (
         None,
         ConversionReporter,
     ),
+    ChargeOwner(
+        GeneratorExtension,
+        PyPSADestinationTable.LINKS,
+        PyPSALinkCol.NAME,
+        SiennaTable.GENERATORS,
+        PlantLinkReporter,
+        _PLANT_LINK_DERIVATION,
+        PyPSALinkCol.EFFICIENCY,
+    ),
 )
 
 
@@ -114,6 +135,7 @@ class FixedCharge(NamedTuple):
     owner: ChargeOwner
     name: str
     sienna_type: str
+    stated: float
     value: float
 
 
@@ -152,10 +174,12 @@ class FixedChargeMapper:
             self._report_no_snapshots(charges)
 
     def _map_year(self, state: State, charges: list[FixedCharge], span: SnapshotSpan) -> None:
-        derivation = _MAPPED_DERIVATION.format(hours=span.represented_hours)
         for charge in charges:
             reporter = charge.owner.reporter(self._recorder)
-            reporter.record_fixed_charge(charge.sienna_type, charge.name, charge.value, derivation)
+            derivation = charge.owner.derivation.format(hours=span.represented_hours)
+            reporter.record_fixed_charge(
+                charge.sienna_type, charge.name, FixedValue(charge.stated, charge.value), derivation
+            )
         for owner in _OWNERS:
             values = {charge.name: charge.value for charge in charges if charge.owner is owner}
             if values:
@@ -176,7 +200,7 @@ class FixedChargeMapper:
         for charge in charges:
             reporter = charge.owner.reporter(self._recorder)
             reporter.record_fixed_charge_unapplied(
-                charge.sienna_type, charge.name, charge.value, note
+                charge.sienna_type, charge.name, charge.stated, note
             )
 
 
@@ -195,12 +219,13 @@ def _list_owner_charges(
 ) -> list[FixedCharge]:
     types = find_source_types(state, owner.source_table) if owner.source_table else None
     lookup = reader.read(owner.model)
+    scales = table[owner.scale_col].to_list() if owner.scale_col else [1.0] * table.height
     charges: list[FixedCharge] = []
-    for name in table[owner.name_col].to_list():
-        value = lookup.get_fields(name, ()).fom_charge_per_mw_year
-        if value is not None:
+    for name, scale in zip(table[owner.name_col].to_list(), scales, strict=True):
+        stated = lookup.get_fields(name, ()).fom_charge_per_mw_year
+        if stated is not None:
             sienna_type = (types or {}).get(name, get_record_kind(owner.model))
-            charges.append(FixedCharge(owner, name, sienna_type, value))
+            charges.append(FixedCharge(owner, name, sienna_type, stated, stated * scale))
     return charges
 
 

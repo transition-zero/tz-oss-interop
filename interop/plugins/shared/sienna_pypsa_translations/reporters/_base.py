@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 from interop.plugins.shared.constants import (
     EXTENSIONS_PREFIX,
@@ -38,6 +38,13 @@ _UNPRICED_OVERNIGHT_COST_NOTE = (
 )
 _UNSTATED_DEFAULT_NOTE = "the {record} record states no {column}, so PyPSA's own default applies"
 _EXT_P_NOM_ATTR = f"{EXTENSIONS_PREFIX}p_nom"
+
+
+class FixedValue(NamedTuple):
+    """A yearly fixed charge as its record states it, and as the PyPSA component holds it."""
+
+    stated: float
+    written: float
 
 
 class SiennaToPypsaReporter(DestinationReporter):
@@ -90,16 +97,20 @@ class SiennaToPypsaReporter(DestinationReporter):
         )
 
     def record_fixed_charge(
-        self, sienna_type: str, name: str, value: float, derivation: str
+        self, sienna_type: str, name: str, charge: FixedValue, derivation: str
     ) -> None:
         """The yearly fixed charge of a sidecar record, as the fom_cost of its component."""
         self._derived(
             sources=[
                 self._source_field(
-                    sienna_type, name, _EXT_FIXED_CHARGE_ATTR, value, UNIT_DOLLARS_PER_MW_YEAR
+                    sienna_type,
+                    name,
+                    _EXT_FIXED_CHARGE_ATTR,
+                    charge.stated,
+                    UNIT_DOLLARS_PER_MW_YEAR,
                 )
             ],
-            destinations=[self._destination(name, _FOM_COST, value, UNIT_DOLLARS_PER_MW)],
+            destinations=[self._destination(name, _FOM_COST, charge.written, UNIT_DOLLARS_PER_MW)],
             derivation=derivation,
         )
 
