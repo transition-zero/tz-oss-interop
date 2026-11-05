@@ -44,6 +44,11 @@ with the published build of the same components.
 
 ## The dispatch of 2021
 
+We did the runs of this section and of the next two sections on 2026-10-19, with the code of
+that date. [The AETOS case study](aetos.md#compare-the-three-results) gives the run of
+2026-11-05, with the current code. Its values differ a little from those below. For example, its
+PyPSA emissions are 1,702.5 Mt, against 1,702.1 Mt below.
+
 The dispatch covers 96 hours: four representative days of 24 hours, one for each season. Each
 results pipeline multiplies each hour by the weight of its day. Thus each value below is a value
 for the whole year. The unserved energy is the total of the 96 hours, with no weight.
@@ -238,8 +243,9 @@ We did not measure a cause for the storage output. Pumped storage makes 8.9 TWh,
 day to the next.
 
 The translation now leaves out a plant whose fuel has producers that all cannot run in the
-year, and it reports each plant. A run with the current code thus holds no plant that a
-backstop prices, such as `MRNGCCPH1`. We did not run the model again.
+year, and it reports each plant. The run of 2026-11-05 in
+[the AETOS case study](aetos.md#translate-the-model-into-a-sienna-system) thus holds no plant
+that a backstop prices, such as `MRNGCCPH1`.
 
 [The gap analysis](../translation_mappings/osemosys-to-sienna-gap-analysis.md) gives one entry for
 each loss, with its cause and its effect.
@@ -282,7 +288,8 @@ The comparison measured these three differences in both dispatches:
 
 ## The expansion subset
 
-The subset holds 92 supply technologies and 2 transport technologies. The expansion solve gave
+We did the run of this section on 2026-10-16, with the code of that date. The subset holds 92
+supply technologies and 2 transport technologies. The expansion solve gave
 the run status `SUCCESSFULLY_FINALIZED` and the objective 3.17745 × 10¹⁰ USD. It took 2 min 49 s
 and 2.2 GB of memory.
 
@@ -323,8 +330,9 @@ almost nothing else. These causes apply:
 - Trade has no loss, and a line flows both ways.
 
 The scope step now keeps each fuel and each storage that a technology in the scope uses, and
-the supply of each kept fuel. A run with the current code thus keeps these fuels, their
-supplies and the storages. We did not run the subset again.
+the supply of each kept fuel. The run of 2026-11-05 in
+[the AETOS case study](aetos.md#a-subset-of-the-model) keeps these fuels, their supplies and the
+storages, and gives the objective 1.50999 × 10¹¹ USD.
 
 We did not measure the effect of each cause by itself. The published run optimises all 78
 countries over 35 years. Thus these totals are an observation, and not a test of the

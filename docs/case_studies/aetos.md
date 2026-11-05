@@ -341,9 +341,10 @@ A supply with no residual capacity and no capital cost, for example coal supply,
 extendable, because the model builds its capacity at no cost. The model states no
 `CapacityToActivityUnit` for a fuel technology, so that parameter takes its default of 1. Thus
 one unit of its capacity is 1 PJ of activity in a year. The run rates each capacity as
-capacity × `CapacityToActivityUnit` / 8760 h, in MW. The record of each of the 557 gas, coal, oil and
-biomass plants with a fleet also names the bus of its fuel, its own cost and its own emission
-rate.
+capacity × `CapacityToActivityUnit`, converted from PJ to MWh, / 8760 h, in MW. One PJ is
+277,777.8 MWh, so one unit of capacity of a fuel technology is 277,777.8 MWh / 8760 h = 31.7 MW.
+The record of each of the 557 gas, coal, oil and biomass plants with a fleet also names the bus
+of its fuel, its own cost and its own emission rate.
 
 ## Translate the model into a Sienna Investments Portfolio
 
