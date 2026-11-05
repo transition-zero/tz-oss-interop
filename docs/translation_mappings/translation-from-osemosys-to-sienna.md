@@ -699,7 +699,10 @@ all electricity, has records of its own. Refer to
 no kind and no flow in the year moves no energy, so the step does not report it.
 
 A technology of kind `export` that takes in electricity gets a `conversion` record in
-`extensions.json`. The record states the technology as a PyPSA `Link`:
+`extensions.json`. An export that takes in electricity at no bus, or at more than one bus, at the
+operations mode gets no record, because a `conversion` record draws from one bus. `decisions.md`
+records it as `COMPONENT_SKIPPED`, and one warning names three exports. The record states the
+technology as a PyPSA `Link`:
 
 | Field | Unit | From |
 | --- | --- | --- |
