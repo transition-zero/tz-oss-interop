@@ -197,6 +197,18 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       And the file "outputs/extensions.json" parses as JSON storage extension record for "ATPHSS" having "carrier" set to "pumped-storage"
       And the file "decisions.md" contains "| `osemosys.technology.R1/ATPHS.category` = pumped-storage | `sienna.EnergyReservoirStorage.ATPHSS.extensions.carrier` = pumped-storage | the category of the discharging technology, which names its carriers: row |"
 
+    Scenario: The level at the start of a storage that is left out is reported as a parameter that no step applies
+      ATLONES has no technology that charges or discharges it, so it is left out, and nothing
+      applies its storage_level_start. ATPHSS becomes a storage that applies its own.
+      Given the otoole parameter "StorageLevelStart" keyed by "REGION STORAGE" with default 0 has the rows:
+        | REGION | STORAGE | VALUE |
+        | R1     | ATPHSS  | 0.2   |
+        | R1     | ATLONES | 0.3   |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "1 storage(s) whose storage_level_start states 1 row(s) for every year that no step of the pipeline applies or keeps. Storages: R1/ATLONES"
+      And the log does not contain "Storages: R1/ATPHSS"
+
     Scenario: A storage that states no balance of its level has no level to meet at the end of the horizon
       When I translate the otoole model to Sienna for the year "2030"
       Then the pipeline exit code is 0

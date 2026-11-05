@@ -54,20 +54,15 @@ from interop.plugins.shared.osemosys_sienna_translations._persisted import (
 from interop.plugins.shared.translation_runner import SkippedNames, SkipReport, report_not_mapped
 
 # Each parameter that a part of the operations step applies to the system as a whole; a
-# parameter of a technology is applied row by row, by the component that holds the technology.
-OPERATIONS_PARAMETERS: frozenset[str] = frozenset(
-    {
-        *CalendarParameter,
-        *DemandParameter,
-        *StorageParameter,
-        FlowParameter.TECHNOLOGY_TO_STORAGE,
-        FlowParameter.TECHNOLOGY_FROM_STORAGE,
-    }
-)
+# parameter of a technology or a storage is applied row by row, by the component that holds it.
+OPERATIONS_PARAMETERS: frozenset[str] = frozenset({*CalendarParameter, *DemandParameter})
 # Each parameter that the operations step or the investments portfolio step applies.
 INVESTMENTS_PARAMETERS: frozenset[str] = frozenset(
     {
         *OPERATIONS_PARAMETERS,
+        *StorageParameter,
+        FlowParameter.TECHNOLOGY_TO_STORAGE,
+        FlowParameter.TECHNOLOGY_FROM_STORAGE,
         *InvestmentParameter,
         *EmissionParameter,
         SupplyParameter.EMISSION_PENALTY,
