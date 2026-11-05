@@ -252,7 +252,8 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
     for parameter in StorageParameter:
         set_persisted_rows(state, parameter, [storages.select(_STORAGE_KEYS)])
-    set_persisted_rows(state, FlowParameter.TECHNOLOGY_TO_STORAGE, [charging])
+    every_charger = storages.select(REGION, pl.col(CHARGE_SIDE.technology).alias(TECHNOLOGY))
+    set_persisted_rows(state, FlowParameter.TECHNOLOGY_TO_STORAGE, [every_charger])
     set_persisted_rows(state, FlowParameter.TECHNOLOGY_FROM_STORAGE, [discharging])
     penalty_terms = tuple(side.penalty_terms for side in STORAGE_SIDES)
     set_penalties_persisted(state, build_penalty_keys(storages, penalty_terms))

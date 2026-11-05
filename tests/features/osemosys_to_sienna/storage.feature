@@ -208,6 +208,8 @@ Feature: osemosys-csv-to-sienna turns the storages of one model year into Sienna
       Then the pipeline exit code is 0
       And the log contains "1 storage(s) whose storage_level_start states 1 row(s) for every year that no step of the pipeline applies or keeps. Storages: R1/ATLONES"
       And the log does not contain "Storages: R1/ATPHSS"
+      And the file "decisions.md" contains "`osemosys.technology_to_storage.R1/ATFLY.every year`"
+      And the file "decisions.md" does not contain "`osemosys.technology_to_storage.R1/ATPHS.every year`"
 
     Scenario: A storage that states no balance of its level has no level to meet at the end of the horizon
       When I translate the otoole model to Sienna for the year "2030"
