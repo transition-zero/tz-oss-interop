@@ -399,14 +399,14 @@ def _read_value(
         *keys,
         pl.col(VALUE_COL).alias(value.stated_column),
         pl.col(_VALUE_SCALED).alias(value.column),
-        *_select_year(value),
+        *_express_year_column(value),
     )
     if value.fallback is None:
         return table
     return _fill_fallback(state, operations, members.select(keys), table, value)
 
 
-def _select_year(value: TechnologyValue) -> list[pl.Expr]:
+def _express_year_column(value: TechnologyValue) -> list[pl.Expr]:
     """The year of a value by year, as an integer, so the field can key by it."""
     if not value.is_by_year:
         return []
