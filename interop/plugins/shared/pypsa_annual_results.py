@@ -551,9 +551,9 @@ def _find_rates(state: State, name: str, fuels: FuelComponents) -> dict[str, flo
     electricity, as the generator of its fuel emits for the fuel. Every other link emits
     nothing, so the caller gives no other link."""
     if name in fuels.fuel_links:
-        conversion = record_for(state.source_extensions, ExtensionKind.CONVERSION, name)
+        conversion = record_for(state.source_extensions, ConversionExtension, name)
         return None if conversion is None else conversion.emission_rates_t_per_mwh
-    record = record_for(state.source_extensions, ExtensionKind.GENERATOR, name)
+    record = record_for(state.source_extensions, GeneratorExtension, name)
     if record is None:
         return None
     if name in fuels.plant_links:

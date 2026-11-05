@@ -26,6 +26,7 @@ from interop.core.extensions import (
     ExtensionLookup,
     ExtensionReader,
     GeneratorExtension,
+    RepresentativePeriodExtension,
 )
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
@@ -204,7 +205,7 @@ class AnnualResultsMapper:
         self, reader: ExtensionReader, production: Production, capacity: pl.DataFrame
     ) -> list[pl.LazyFrame]:
         produced = production.build_table()
-        generators = reader.read(ExtensionKind.GENERATOR)
+        generators = reader.read(GeneratorExtension)
         return [
             *self._mapper.map_production(produced, _PRODUCTION),
             *self._mapper.map_installed_capacity(capacity, produced, _INSTALLED_CAPACITY),
@@ -214,7 +215,7 @@ class AnnualResultsMapper:
         ]
 
     def _build_weights(self, reader: ExtensionReader, hourly: HourlyResults) -> pl.DataFrame:
-        records = reader.read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
+        records = reader.read(RepresentativePeriodExtension).read_all()
         if not records:
             return pl.DataFrame()
         weighter = HourWeighter(self._recorder)

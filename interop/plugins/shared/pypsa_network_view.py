@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from interop.core.extensions import NETWORK_RECORD_NAME, ExtensionKind, record_for
+from interop.core.extensions import NETWORK_RECORD_NAME, NetworkExtension, record_for
 from interop.core.pipeline import State
 from interop.plugins.shared.conversion_lines import build_conversion_lines
 from interop.plugins.shared.pypsa_constants import (
@@ -49,5 +49,5 @@ def _build_reverse_links(state: State) -> dict[str, str]:
 
 
 def _has_objective(state: State) -> bool:
-    record = record_for(state.source_extensions, ExtensionKind.NETWORK, NETWORK_RECORD_NAME)
+    record = record_for(state.source_extensions, NetworkExtension, NETWORK_RECORD_NAME)
     return record is not None and record.objective is not None

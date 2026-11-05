@@ -21,7 +21,7 @@ from typing import Any, NamedTuple
 
 import polars as pl
 
-from interop.core.extensions import ExtensionKind
+from interop.core.extensions import ExtensionKind, RepresentativePeriodExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
