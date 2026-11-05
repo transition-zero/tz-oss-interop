@@ -20,7 +20,7 @@ from typing import Any, ClassVar, NamedTuple
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader, GeneratorExtension
+from interop.core.extensions import ExtensionReader, GeneratorExtension
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
@@ -219,7 +219,7 @@ def _list_plants(
             is_priced=record.name in priced,
             has_buses=set(record.fuel_buses) <= buses,
         )
-        for record in reader.read(ExtensionKind.GENERATOR).list_records()
+        for record in reader.read(GeneratorExtension).list_records()
         if record.fuel_buses and record.name in thermal and record.name in held
     ]
 

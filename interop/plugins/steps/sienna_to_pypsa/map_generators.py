@@ -224,7 +224,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
 
     def _carry_on(self, state: State, names: list[str]) -> None:
         """Pass on each field of a generator's record that no PyPSA column holds."""
-        lookup = self._extensions.read(ExtensionKind.GENERATOR)
+        lookup = self._extensions.read(GeneratorExtension)
         relay_records(state, lookup, names, self._recorder, partly_mapped=_PARTLY_MAPPED)
 
     def _record_generator_time_series(

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, NamedTuple
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -87,7 +87,7 @@ class _RowDefault(NamedTuple):
 class _FuelMapping:
     """What differs between the generators and the loads of a fuel that is not electricity."""
 
-    kind: Literal[ExtensionKind.GENERATOR, ExtensionKind.LOAD]
+    model: type[GeneratorExtension] | type[LoadExtension]
     table: str
     name_col: str
     schema: dict[str, pl.DataType | type[pl.DataType]]
@@ -117,7 +117,7 @@ class SiennaToPypsaMapFuels(TranslationStep):
         self, state: State, buses: set[str], mapping: _FuelMapping
     ) -> list[GeneratorExtension | LoadExtension]:
         """Each record on a bus of the network becomes a row, and its other fields travel on."""
-        lookup: ExtensionLookup[Any] = self._extensions.read(mapping.kind)
+        lookup: ExtensionLookup[Any] = self._extensions.read(mapping.model)
         held = set(list_destination_names(state, mapping.table, mapping.name_col))
         records = [
             record
@@ -203,7 +203,7 @@ def _build_load_row(record: LoadExtension) -> dict[str, Any]:
 
 
 _GENERATORS = _FuelMapping(
-    kind=ExtensionKind.GENERATOR,
+    model=GeneratorExtension,
     table=PyPSADestinationTable.GENERATORS,
     name_col=PyPSAGeneratorCol.NAME,
     schema=GENERATORS_DESTINATION_SCHEMA,
@@ -221,7 +221,7 @@ _GENERATORS = _FuelMapping(
     record_values=_record_generator,
 )
 _LOADS = _FuelMapping(
-    kind=ExtensionKind.LOAD,
+    model=LoadExtension,
     table=PyPSADestinationTable.LOADS,
     name_col=PyPSALoadCol.NAME,
     schema=LOADS_DESTINATION_SCHEMA,
