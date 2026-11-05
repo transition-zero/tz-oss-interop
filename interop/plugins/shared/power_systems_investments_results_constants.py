@@ -48,13 +48,16 @@ class StagedResultCol:
 
     RESULT = "result"
     TECHNOLOGY = "technology"
+    FORMULATION = "formulation"
     COMPONENT = "component"
     PERIOD = "period"
     SNAPSHOT = "snapshot"
     VALUE = "value"
     YEAR = "year"
+    REPRESENTATIVE_DAY = "rep_day"
     WEIGHT = "weight"
     HOURS = "hours"
+    UNIT_SIZE = "unit_size"
 
 
 _LAYOUT = ExpansionResultsLayout
@@ -165,7 +168,10 @@ PERIOD_YEARS_KEY = "period_years"
 """``State.source_topology`` key of the year of each investment period."""
 
 HOUR_WEIGHTS_KEY = "hour_weights"
-"""``State.source_topology`` key of each hour of the solve, its year, its weight and its length."""
+"""``State.source_topology`` key of each hour of each slice, its year, its weight and its length."""
+
+UNIT_SIZES_KEY = "unit_sizes"
+"""``State.source_topology`` key of the MW of one unit of each technology of an integer solve."""
 
 OBJECTIVE_KEY = "objective"
 """``State.source_topology`` key of the one-row objective table."""
