@@ -102,6 +102,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operations import Oper
 from interop.plugins.shared.osemosys_sienna_translations._plant_fuels import (
     OWN_RATES,
     build_fuel_buses_field,
+    build_output_buses_field,
     build_own_cost_field,
     build_own_rates_field,
     enrich_plant_fuels,
@@ -235,11 +236,14 @@ NO_ELECTRICITY_OUTPUT_SKIP = osemosys_skip_report(
 OTHER_OUTPUT_REPORT = osemosys_skip_report(
     component=FlowParameter.OUTPUT_ACTIVITY_RATIO,
     name_col=TECHNOLOGY_NAME,
-    reason="are not electricity at the operations mode, so each is left out",
+    reason=(
+        "are not electricity at the operations mode, so the Sienna system leaves each out, and "
+        "output_buses of extensions.json keeps it"
+    ),
     counted_noun="fuel output(s) of a supply technology",
     note=lambda row: (
-        f"a Sienna generator puts out electricity only, so the output of {row[FUEL]} at the "
-        "operations mode is left out"
+        f"a Sienna generator puts out electricity only, so the system leaves out the output of "
+        f"{row[FUEL]} at the operations mode; output_buses of extensions.json keeps it"
     ),
     listed=_LISTED,
     attribute_col=VALUE_COL,
@@ -428,6 +432,7 @@ def _build_extension(row: dict[str, Any]) -> GeneratorExtension:
         fom_charge_per_mw_year=row[FIXED_COST_MW_YEAR],
         emission_rates_t_per_mwh=build_emission_rates(row[EMISSION_TERMS]),
         fuel_buses=build_fuel_buses_field(row),
+        output_buses=build_output_buses_field(row),
         own_marginal_cost=build_own_cost_field(row),
         own_emission_rates_t_per_mwh=build_own_rates_field(row),
         **GENERATOR_EXTRAS.build_fields(row),

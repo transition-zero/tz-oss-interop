@@ -8,7 +8,9 @@ The Link draws the fuel at bus0 and puts out electricity at bus1, at an efficien
 the MWh of fuel for each MWh of electricity. Its capacity, its limits and its commitment are
 those of the generator, for each MWh that goes in. Its marginal cost is the cost of the plant
 without its fuel, as the network prices the fuel at its bus. A further fuel goes to bus2 or
-bus3 with a negative efficiency. The p_max_pu series of the generator moves to the Link.
+bus3 with a negative efficiency, and a fuel that the plant puts out besides electricity goes to
+the next free one with a positive efficiency. The p_max_pu series of the generator moves to the
+Link.
 """
 
 from __future__ import annotations
@@ -87,9 +89,18 @@ class _Plant(NamedTuple):
 
     record: GeneratorExtension
     fuels: dict[str, float]
+    outputs: dict[str, float]
     is_extendable: bool
     is_priced: bool
     has_buses: bool
+
+
+class _FurtherFlow(NamedTuple):
+    """A fuel at bus2 or bus3 of a plant Link, for each MWh of the fuel at bus0."""
+
+    bus: str
+    efficiency: float
+    is_drawn: bool
 
 
 class _KeptReason(NamedTuple):
@@ -177,23 +188,32 @@ class PlantLinkMapper:
             PyPSALinkCol.P_NOM_EXTENDABLE: _NOT_EXTENDABLE,
             **{link: generator[column] for column, link in _KEPT_COLUMNS},
         }
-        further = list(zip(fuels[1:], LINK_FURTHER_PORTS, strict=False))
-        for (bus, share), port in further:
-            row[port.bus] = bus
-            row[port.efficiency] = -share / ratio
-        self._record_link(generator, row, [ports for _, ports in further])
+        drawn = [_FurtherFlow(bus, -share / ratio, is_drawn=True) for bus, share in fuels[1:]]
+        outputs = sorted((record.output_buses or {}).items())
+        put_out = [_FurtherFlow(bus, share / ratio, is_drawn=False) for bus, share in outputs]
+        further = list(zip([*drawn, *put_out], LINK_FURTHER_PORTS, strict=False))
+        for flow, port in further:
+            row[port.bus] = flow.bus
+            row[port.efficiency] = flow.efficiency
+        self._record_link(generator, row, further)
         return row
 
     def _record_link(
-        self, generator: dict[str, Any], row: dict[str, Any], ports: list[LinkPort]
+        self,
+        generator: dict[str, Any],
+        row: dict[str, Any],
+        further: list[tuple[_FurtherFlow, LinkPort]],
     ) -> None:
         name = row[PyPSALinkCol.NAME]
         self._reporter.record_link(name, row, generator[PyPSAGeneratorCol.P_NOM])
         for column, link in _KEPT_COLUMNS:
             if row[link] is not None:
                 self._reporter.record_moved(name, column, link, row[link])
-        for port in ports:
-            self._reporter.record_further_port(name, row, port)
+        for flow, port in further:
+            if flow.is_drawn:
+                self._reporter.record_further_port(name, row, port)
+            else:
+                self._reporter.record_output_port(name, row, port)
         for column in _DROPPED_COLUMNS:
             if generator[column] is not None:
                 self._reporter.record_dropped(name, column, generator[column])
@@ -215,9 +235,10 @@ def _list_plants(
         _Plant(
             record=record,
             fuels=record.fuel_buses,
+            outputs=record.output_buses or {},
             is_extendable=record.name in extendable,
             is_priced=record.name in priced,
-            has_buses=set(record.fuel_buses) <= buses,
+            has_buses=set(record.fuel_buses) | set(record.output_buses or {}) <= buses,
         )
         for record in reader.read(GeneratorExtension).list_records()
         if record.fuel_buses and record.name in thermal and record.name in held
@@ -266,6 +287,13 @@ _KEPT_REASONS = (
         "bus3 only",
         f"the plant burns more than {_MAX_FUELS} fuels, and a Link of this hop draws at bus0, "
         f"bus2 and bus3 only, {_STAYS}",
+    ),
+    _KeptReason(
+        lambda plant: len(plant.fuels) - 1 + len(plant.outputs) > len(LINK_FURTHER_PORTS),
+        "puts out fuels besides electricity that bus2 and bus3 cannot hold beside its further "
+        "fuels",
+        f"the plant puts out fuels besides electricity that bus2 and bus3 cannot hold beside its "
+        f"further fuels, {_STAYS}",
     ),
     _KeptReason(
         lambda plant: plant.is_extendable,

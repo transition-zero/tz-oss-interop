@@ -185,6 +185,10 @@ class GeneratorExtension(ActivityExtension):
     # MWh of each fuel for each MWh of electricity, by the bus of the fuel; no PyPSA field, as
     # PyPSA states it as Link.bus0 and Link.efficiency; OSeMOSYS InputActivityRatio.
     fuel_buses: ByBus | None = None
+    # MWh of each fuel that is not electricity that the plant puts out for each MWh of
+    # electricity, by the bus of the fuel; no PyPSA field, as PyPSA states it as a further port
+    # of a Link with a positive efficiency; OSeMOSYS OutputActivityRatio.
+    output_buses: ByBus | None = None
     # $/MWh of electricity without the price of the fuels that fuel_buses names; no PyPSA
     # field, as PyPSA states it as Link.marginal_cost for each MWh of fuel.
     own_marginal_cost: float | None = None

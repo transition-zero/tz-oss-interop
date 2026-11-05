@@ -216,6 +216,10 @@ _PLANT_FURTHER_DERIVATION = (
     "a further fuel of extensions.fuel_buses -> the bus; - its MWh for each MWh of electricity / "
     "the MWh of the fuel at bus0 -> the efficiency, negative as the Link draws it"
 )
+_PLANT_OUTPUT_DERIVATION = (
+    "a fuel of extensions.output_buses -> the bus; its MWh for each MWh of electricity / the MWh "
+    "of the fuel at bus0 -> the efficiency, positive as the Link puts it out"
+)
 _PLANT_DROPPED_NOTE = (
     "the Generator of the plant states the column, and the Link that replaces it does not hold it"
 )
@@ -288,6 +292,20 @@ class PlantLinkReporter(SiennaToPypsaReporter):
                 self._destination(name, port.efficiency, row[port.efficiency]),
             ],
             derivation=_PLANT_FURTHER_DERIVATION,
+        )
+
+    def record_output_port(self, name: str, row: dict[str, Any], port: LinkPort) -> None:
+        """A fuel that the plant puts out besides electricity, at bus2 or bus3 of the Link."""
+        source = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}output_buses", None
+        )
+        self._derived(
+            sources=[source],
+            destinations=[
+                self._destination(name, port.bus, row[port.bus]),
+                self._destination(name, port.efficiency, row[port.efficiency]),
+            ],
+            derivation=_PLANT_OUTPUT_DERIVATION,
         )
 
     def record_dropped(self, name: str, column: str, value: object) -> None:

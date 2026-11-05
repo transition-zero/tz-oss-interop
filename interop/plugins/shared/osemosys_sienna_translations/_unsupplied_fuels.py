@@ -1,7 +1,9 @@
 """The fuel buses that a load or a plant draws from, and that no technology supplies.
 
 A PyPSA network balances each bus in each hour, so a load on such a bus cannot be met, and a
-plant that burns its fuel cannot run.
+plant that burns its fuel cannot run. A plant that burns a fuel with a bus becomes a Link of the
+later hop, which also puts out each fuel of its `output_buses`, so that plant supplies those
+buses.
 """
 
 from __future__ import annotations
@@ -33,7 +35,9 @@ def report_unsupplied_fuel_buses(
     recorder: ScopedRecorder,
 ) -> None:
     """Record NOT_MAPPED for each fuel bus with a draw and no supply, and warn once."""
-    supplied = _list_supplied_buses(suppliers)
+    supplied = _list_supplied_buses(suppliers) | {
+        bus for plant in plants for bus in plant.output_buses or {}
+    }
     load_names = _build_draws((load.bus, load.name) for load in loads)
     plant_names = _build_draws(
         (bus, plant.name) for plant in plants for bus in plant.fuel_buses or {}

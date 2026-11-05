@@ -26,12 +26,14 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     POLLUTANT,
     REGION,
     TECHNOLOGY,
+    VALUE_COL,
     FlowParameter,
 )
 from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._activity import (
     ELECTRICITY_OUTPUT_RATIO,
 )
+from interop.plugins.shared.osemosys_sienna_translations._canonical import read_mode_parameter
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_derived,
     build_osemosys_field,
@@ -66,16 +68,23 @@ from interop.plugins.shared.translation_runner import DestinationFieldFactory
 from interop.ports.outbound.reporting import SourceField, TranslationEvent
 
 FUEL_BUSES = "fuel_buses"
+OUTPUT_BUSES = "output_buses"
 OWN_RATES = "own_rates"
 OWN_OPERATION_COST_MWH = "own_operation_cost_mwh"
 
 _KEYS = [REGION, TECHNOLOGY]
 _FUEL_RATIO = "fuel_ratio"
+_OUTPUT_RATIO = "output_ratio"
+_OUTPUT_SHARE = "output_share"
 _RATE = "rate"
 _OWN_PENALTY = "own_penalty"
 _FUEL_BUSES_DERIVATION = (
     "input_activity_ratio / the electricity output_activity_ratio, by the bus of the fuel, "
     "<region>/<fuel>"
+)
+_OUTPUT_BUSES_DERIVATION = (
+    "output_activity_ratio of the fuel / the electricity output_activity_ratio, by the bus of "
+    "the fuel, <region>/<fuel>"
 )
 _OWN_COST_DERIVATION = (
     "(variable_operation_cost + Σ emission_rate of the plant × emission_penalty) / the "
@@ -96,8 +105,13 @@ def enrich_plant_fuels(
     their electricity output ratio and own variable cost.
     """
     buses = _build_fuel_buses(state, generators, inputs)
+    outputs = _build_output_buses(state, operations, generators)
     rates = _build_own_rates(state, operations, generators)
-    table = generators.join(buses, on=_KEYS, how="left").join(rates, on=_KEYS, how="left")
+    table = (
+        generators.join(buses, on=_KEYS, how="left")
+        .join(outputs, on=_KEYS, how="left")
+        .join(rates, on=_KEYS, how="left")
+    )
     own_cost = pl.col(OWN_COST_MWH).fill_null(NO_COST) + pl.col(_OWN_PENALTY).fill_null(NO_COST)
     return table.with_columns(own_cost.alias(OWN_OPERATION_COST_MWH)).drop(_OWN_PENALTY)
 
@@ -105,6 +119,11 @@ def enrich_plant_fuels(
 def build_fuel_buses_field(row: dict[str, Any]) -> dict[str, float] | None:
     buses = row[FUEL_BUSES]
     return {bus[FUEL_BUS]: bus[_FUEL_RATIO] for bus in buses} if buses else None
+
+
+def build_output_buses_field(row: dict[str, Any]) -> dict[str, float] | None:
+    buses = row[OUTPUT_BUSES]
+    return {bus[FUEL_BUS]: bus[_OUTPUT_SHARE] for bus in buses} if buses else None
 
 
 def build_own_rates_field(row: dict[str, Any]) -> dict[str, float] | None:
@@ -120,7 +139,7 @@ def build_own_cost_field(row: dict[str, Any]) -> float | None:
 def build_plant_fuel_events(
     dest: DestinationFieldFactory, old: dict[str, Any], name_col: str
 ) -> list[TranslationEvent]:
-    """One event for each of the three fields, where the generator burns a fuel with a bus."""
+    """One event for each field that the fuels of the generator fill."""
     return [
         build_derived(
             field.build_sources(old),
@@ -141,6 +160,17 @@ def _build_fuel_bus_sources(old: dict[str, Any]) -> list[SourceField]:
         for bus in old[FUEL_BUSES] or []
     ]
     return [*inputs, build_output_ratio_source(old)]
+
+
+def _build_output_bus_sources(old: dict[str, Any]) -> list[SourceField]:
+    report = old[TECHNOLOGY_NAME]
+    outputs = [
+        build_osemosys_field(
+            FlowParameter.OUTPUT_ACTIVITY_RATIO, report, bus[FUEL], bus[_OUTPUT_RATIO]
+        )
+        for bus in old[OUTPUT_BUSES] or []
+    ]
+    return [*outputs, build_output_ratio_source(old)]
 
 
 def _build_own_cost_sources(old: dict[str, Any]) -> list[SourceField]:
@@ -193,6 +223,13 @@ _PLANT_FUEL_FIELDS = (
         _FUEL_BUSES_DERIVATION,
     ),
     _PlantFuelField(
+        require_extension_attribute(GeneratorExtension, OUTPUT_BUSES),
+        None,
+        build_output_buses_field,
+        _build_output_bus_sources,
+        _OUTPUT_BUSES_DERIVATION,
+    ),
+    _PlantFuelField(
         require_extension_attribute(GeneratorExtension, "own_marginal_cost"),
         UNIT_DOLLARS_PER_MWH,
         build_own_cost_field,
@@ -220,6 +257,30 @@ def _build_fuel_buses(state: State, generators: pl.DataFrame, inputs: pl.DataFra
         .sort([_FUEL_RATIO, FUEL_BUS], descending=[True, False])
         .group_by(_KEYS, maintain_order=True)
         .agg(pl.struct(FUEL_BUS, FUEL, INPUT_RATIO, _FUEL_RATIO).alias(FUEL_BUSES))
+    )
+
+
+def _build_output_buses(
+    state: State, operations: OperationsYear, generators: pl.DataFrame
+) -> pl.DataFrame:
+    """Each fuel that is not electricity that the generator puts out at the operations mode."""
+    fuels = read_fuel_buses(state).filter(~pl.col(IS_ELECTRICITY)).select(REGION, FUEL, FUEL_BUS)
+    outputs = (
+        read_mode_parameter(
+            state, FlowParameter.OUTPUT_ACTIVITY_RATIO, operations.year, operations.mode
+        )
+        .filter(pl.col(VALUE_COL) > 0)
+        .select(*_KEYS, FUEL, pl.col(VALUE_COL).cast(pl.Float64).alias(_OUTPUT_RATIO))
+        .collect()
+    )
+    share = (pl.col(_OUTPUT_RATIO) / pl.col(ELECTRICITY_OUTPUT_RATIO)).alias(_OUTPUT_SHARE)
+    return (
+        outputs.join(fuels, on=[REGION, FUEL])
+        .join(generators.select(*_KEYS, ELECTRICITY_OUTPUT_RATIO), on=_KEYS)
+        .select(*_KEYS, FUEL_BUS, FUEL, _OUTPUT_RATIO, share)
+        .sort([_OUTPUT_SHARE, FUEL_BUS], descending=[True, False])
+        .group_by(_KEYS, maintain_order=True)
+        .agg(pl.struct(FUEL_BUS, FUEL, _OUTPUT_RATIO, _OUTPUT_SHARE).alias(OUTPUT_BUSES))
     )
 
 
