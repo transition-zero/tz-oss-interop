@@ -225,8 +225,8 @@ and a half-hourly slice weighs 730. The step derives one investment period per y
 fall in, running that whole year. Clustering a real year into several representative days is
 not done here.
 
-A demand profile is multiplied by the load's own `max_active_power`, because a SiennaSchemas
-system stores it per unit of that peak and the model reads `ops_demand` as MW. A technology
+A demand profile is multiplied by the load's own `max_active_power`, because the Sienna source
+stages it per unit of that peak and the model reads `ops_demand` as MW. A technology
 with no profile gets the series of the rules above: `1.0` for a `RenewableDispatch` or a
 `HydroDispatch`, and the `max_active_power` of a load with a static demand.
 

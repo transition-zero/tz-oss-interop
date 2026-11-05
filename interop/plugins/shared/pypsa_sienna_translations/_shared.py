@@ -25,7 +25,6 @@ from interop.plugins.shared.translation_runner import (
     fill_defaults,
 )
 from interop.ports.outbound.reporting import (
-    DestinationField,
     SourceField,
 )
 
@@ -244,23 +243,6 @@ def pypsa_source_field(
 ) -> SourceField:
     return SourceField(
         framework=Framework.PYPSA,
-        component=component,
-        name=name,
-        attribute=attribute,
-        value=value,
-        unit=unit,
-    )
-
-
-def sienna_dest_field(
-    component: str,
-    name: str,
-    attribute: str | None = None,
-    value: object = None,
-    unit: str | None = None,
-) -> DestinationField:
-    return DestinationField(
-        framework=Framework.SIENNA,
         component=component,
         name=name,
         attribute=attribute,

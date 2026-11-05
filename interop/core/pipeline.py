@@ -81,6 +81,12 @@ class State:
     through. Every step builds its reader through `extension_reader`,
     so one record covers the whole hop and the run can report what
     none of them asked for.
+
+    `applied_source_rows` is the key of each row of a source table that
+    a step applied, by the name of the table, so a report of the source
+    values that no step applies can leave those rows out.
+    `operations_year` is the one model year that a translation of one
+    year holds, for a later step of the same hop.
     """
 
     staging_dir: Path
@@ -94,6 +100,8 @@ class State:
     destination_time_series: dict[str, pl.LazyFrame] = field(default_factory=dict)
     validation_errors: list[EnergyModelValidationError] = field(default_factory=list)
     consumed_extensions: ExtensionConsumption | None = None
+    applied_source_rows: dict[str, set[str]] = field(default_factory=dict)
+    operations_year: int | None = None
 
     def extension_reader(self, recorder: EventRecorder) -> ExtensionReader:
         """A reader over this hop's sidecar, recorded against the step that asks for one.

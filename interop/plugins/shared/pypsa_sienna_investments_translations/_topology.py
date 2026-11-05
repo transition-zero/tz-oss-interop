@@ -11,8 +11,8 @@ from functools import partial
 import polars as pl
 
 from interop.plugins.shared.constants import Framework
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_constants import SiennaACBusCol, SiennaComponent
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     SiennaSupplementalAttribute,
     SiennaTopologyMappingCol,
@@ -25,7 +25,7 @@ AREA_NAME = "area_name"
 
 T = SiennaTopologyMappingCol
 
-_dest = partial(sienna_dest_field, SiennaSupplementalAttribute.TOPOLOGY_MAPPING)
+_dest = partial(build_sienna_field, SiennaSupplementalAttribute.TOPOLOGY_MAPPING)
 
 
 def build_topology_source_table(buses: pl.DataFrame) -> pl.DataFrame:

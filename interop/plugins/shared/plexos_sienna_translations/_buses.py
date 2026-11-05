@@ -26,10 +26,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     relate_child,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
-    defaulted,
-    derived,
     plexos_field,
-    sienna_field,
 )
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
 from interop.plugins.shared.sienna_constants import (
@@ -39,6 +36,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaACBusCol,
     SiennaComponent,
 )
+from interop.plugins.shared.sienna_events import build_defaulted, build_derived, build_sienna_field
 from interop.plugins.shared.translation_runner import Translation
 
 # What a Node states in PLEXOS words, one row per Node, before any Sienna column exists.
@@ -117,9 +115,9 @@ def build_bus_extensions(buses: pl.DataFrame) -> list[BusExtension]:
 
 BUS_ID = Translation(
     exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaACBusCol.ID)],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.ID,
@@ -132,10 +130,10 @@ BUS_ID = Translation(
 
 BUS_NAME = Translation(
     exprs=[pl.col(NODE_NAME).alias(SiennaACBusCol.NAME)],
-    make_events=lambda old, new: derived(
+    make_events=lambda old, new: build_derived(
         [plexos_field(PlexosClass.NODE, old[NODE_NAME], PlexosObjectCol.NAME, old[NODE_NAME])],
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[SiennaACBusCol.NAME],
                 SiennaACBusCol.NAME,
@@ -148,9 +146,9 @@ BUS_NAME = Translation(
 
 BUS_NUMBER = Translation(
     exprs=[pl.int_range(1, pl.len() + 1, dtype=pl.Int64).alias(SiennaACBusCol.NUMBER)],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.NUMBER,
@@ -163,9 +161,9 @@ BUS_NUMBER = Translation(
 
 BUS_AVAILABLE = Translation(
     exprs=[pl.lit(True).alias(SiennaACBusCol.AVAILABLE)],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.AVAILABLE,
@@ -184,9 +182,9 @@ BUS_BASE_VOLTAGE = Translation(
         .alias(SiennaACBusCol.BASE_VOLTAGE)
     ],
     make_events=lambda old, new: (
-        defaulted(
+        build_defaulted(
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.BASE_VOLTAGE,
@@ -197,7 +195,7 @@ BUS_BASE_VOLTAGE = Translation(
             _BASE_VOLTAGE_NOTE,
         )
         if old[NODE_VOLTAGE] is None
-        else derived(
+        else build_derived(
             [
                 plexos_field(
                     PlexosClass.NODE,
@@ -208,7 +206,7 @@ BUS_BASE_VOLTAGE = Translation(
                 )
             ],
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.BASE_VOLTAGE,
@@ -232,9 +230,9 @@ BUS_TYPE = Translation(
         .alias(SiennaACBusCol.BUSTYPE)
     ],
     make_events=lambda old, new: (
-        defaulted(
+        build_defaulted(
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.BUSTYPE,
@@ -244,7 +242,7 @@ BUS_TYPE = Translation(
             _BUSTYPE_NOTE,
         )
         if old[NODE_IS_SLACK] is None
-        else derived(
+        else build_derived(
             [
                 plexos_field(
                     PlexosClass.NODE,
@@ -254,7 +252,7 @@ BUS_TYPE = Translation(
                 )
             ],
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.BUSTYPE,
@@ -268,9 +266,9 @@ BUS_TYPE = Translation(
 
 BUS_ANGLE = Translation(
     exprs=[pl.lit(DEFAULT_ANGLE).alias(SiennaACBusCol.ANGLE)],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.ANGLE,
@@ -283,9 +281,9 @@ BUS_ANGLE = Translation(
 
 BUS_MAGNITUDE = Translation(
     exprs=[pl.lit(DEFAULT_MAGNITUDE).alias(SiennaACBusCol.MAGNITUDE)],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.MAGNITUDE,
@@ -302,9 +300,9 @@ BUS_VOLTAGE_LIMITS = Translation(
         .cast(VOLTAGE_LIMIT_DTYPE)
         .alias(SiennaACBusCol.VOLTAGE_LIMITS)
     ],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 SiennaACBusCol.VOLTAGE_LIMITS,
@@ -318,9 +316,9 @@ BUS_VOLTAGE_LIMITS = Translation(
 BUS_AREA = Translation(
     exprs=[pl.col(NODE_REGION).fill_null("").alias(SiennaACBusCol.AREA)],
     make_events=lambda old, new: (
-        defaulted(
+        build_defaulted(
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.AREA,
@@ -330,7 +328,7 @@ BUS_AREA = Translation(
             _AREA_NOTE,
         )
         if old[NODE_REGION] is None
-        else derived(
+        else build_derived(
             [
                 plexos_field(
                     PlexosClass.REGION,
@@ -340,7 +338,7 @@ BUS_AREA = Translation(
                 )
             ],
             [
-                sienna_field(
+                build_sienna_field(
                     SiennaComponent.AC_BUS,
                     new[NODE_NAME],
                     SiennaACBusCol.AREA,
@@ -354,9 +352,9 @@ BUS_AREA = Translation(
 
 BUS_CARRIER = Translation(
     exprs=[],
-    make_events=lambda old, new: defaulted(
+    make_events=lambda old, new: build_defaulted(
         [
-            sienna_field(
+            build_sienna_field(
                 SiennaComponent.AC_BUS,
                 new[NODE_NAME],
                 "extensions.carrier",

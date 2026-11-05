@@ -17,8 +17,8 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     REGION_COL,
     InvestmentsSource,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_constants import SIENNA_TYPE_ATTRIBUTE
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     SiennaDemandRequirementCol,
     SiennaInvestmentsComponent,
@@ -31,7 +31,7 @@ from interop.plugins.shared.translation_runner import (
 )
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
-_dest = partial(sienna_dest_field, SiennaInvestmentsComponent.DEMAND_REQUIREMENT)
+_dest = partial(build_sienna_field, SiennaInvestmentsComponent.DEMAND_REQUIREMENT)
 
 D = SiennaDemandRequirementCol
 
