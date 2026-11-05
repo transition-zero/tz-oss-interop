@@ -9,7 +9,6 @@ from pydantic import BaseModel
 
 from interop.core.extensions import (
     ControllableLineExtension,
-    ExtensionKind,
     ExtensionReader,
     LineExtension,
 )
@@ -222,7 +221,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         source = state.source_topology.get(SiennaTable.LINES)
         if source is None:
             return
-        extensions = self._extensions.read(ExtensionKind.LINE)
+        extensions = self._extensions.read(LineExtension)
         reporter = LineReporter(self._recorder)
         rows: list[dict[str, Any]] = []
         supported, _ = filter_component(
@@ -282,7 +281,7 @@ class SiennaToPypsaMapTransmission(TranslationStep):
         source = state.source_topology.get(SiennaTable.LINKS)
         if source is None:
             return
-        extensions = self._extensions.read(ExtensionKind.CONTROLLABLE_LINE)
+        extensions = self._extensions.read(ControllableLineExtension)
         reporter = LinkReporter(self._recorder)
         rows: list[dict[str, Any]] = []
         for row in source.collect().iter_rows(named=True):

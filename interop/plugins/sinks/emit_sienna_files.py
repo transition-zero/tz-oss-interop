@@ -13,7 +13,7 @@ from interop.plugins.sinks._sienna_files import (
     WritesSiennaFiles,
 )
 from interop.plugins.sinks.emit_sienna_system_json import EmitSiennaSystemJson
-from interop.ports.outbound.filesystem import FilesystemPort, Location
+from interop.ports.outbound.filesystem import FilesystemPort, Location, build_sibling_location
 
 _DEFAULT_OUTPUT_DIR = Path("outputs")
 
@@ -23,22 +23,31 @@ class EmitSiennaFilesParams(BaseModel):
         default=_DEFAULT_OUTPUT_DIR / SYSTEM_JSON_FILENAME,
         description="the SiennaSchemas system.json: every component and its fields",
     )
-    output_h5_file_path: Location = Field(
-        default=_DEFAULT_OUTPUT_DIR / SiennaCompanionFilename.TIME_SERIES_H5,
-        description="the HDF5 companion holding the time-series arrays system.json references",
+    output_h5_file_path: Location | None = Field(
+        default=None,
+        description=(
+            "the HDF5 companion holding the time-series arrays system.json references; empty "
+            "writes it beside system.json"
+        ),
     )
-    output_extensions_file_path: Location = Field(
-        default=_DEFAULT_OUTPUT_DIR / SiennaCompanionFilename.EXTENSIONS_JSON,
-        description="the sidecar JSON carrying PyPSA fields SiennaSchemas has no home for",
+    output_extensions_file_path: Location | None = Field(
+        default=None,
+        description=(
+            "the sidecar JSON carrying fields SiennaSchemas has no home for; empty writes it "
+            "beside system.json"
+        ),
     )
     indent: int = Field(default=2, description="JSON indent width")
 
     def file_paths(self) -> SiennaFilePaths:
         """The system and the two companions, in the order the shared write expects them."""
+        system_json = self.output_system_json_file_path
         return SiennaFilePaths(
-            system_json=self.output_system_json_file_path,
-            h5=self.output_h5_file_path,
-            extensions=self.output_extensions_file_path,
+            system_json=system_json,
+            h5=self.output_h5_file_path
+            or build_sibling_location(system_json, SiennaCompanionFilename.TIME_SERIES_H5),
+            extensions=self.output_extensions_file_path
+            or build_sibling_location(system_json, SiennaCompanionFilename.EXTENSIONS_JSON),
         )
 
 

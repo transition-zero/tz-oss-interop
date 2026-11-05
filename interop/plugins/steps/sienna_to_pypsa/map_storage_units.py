@@ -118,7 +118,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
         storage = state.source_topology.get(SiennaTable.STORAGE)
         if storage is not None:
-            extensions = self._extensions.read(ExtensionKind.STORAGE)
+            extensions = self._extensions.read(StorageExtension)
             storage_supported, _ = filter_component(
                 storage.collect(),
                 express_power_units_kept(
@@ -160,7 +160,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         The size of one unit, the Technical Life and the yearly charge have no PyPSA column,
         so they travel to the next hop in the sidecar rather than stopping here.
         """
-        staged = self._extensions.read(ExtensionKind.STORAGE)
+        staged = self._extensions.read(StorageExtension)
         append_extensions(
             state.destination_extensions,
             ExtensionKind.STORAGE,
@@ -242,7 +242,7 @@ def _derive_hydro(
     row: dict[str, Any], bus_names: dict[int, str], extensions: ExtensionReader
 ) -> _HydroMapping:
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
-    carried = extensions.read(ExtensionKind.STORAGE).get(str(row[SiennaGeneratorCol.NAME]))
+    carried = extensions.read(StorageExtension).get(str(row[SiennaGeneratorCol.NAME]))
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]

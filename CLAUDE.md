@@ -116,6 +116,7 @@ that touches the disk can still raise.
 | `delete_` | Remove a file or a directory | raises | a container in memory, which is `drop_` |
 | `copy_` | Duplicate a file or a directory | raises | a copy in memory |
 | `record_` | Append a `TranslationEvent` through the recorder | no absent case | the console, which is `warn_` |
+| `relay_` | Pass a sidecar record or field unchanged to the destination sidecar, and record it | no absent case | a value the destination holds, which is `map_` |
 | `warn_` | Write one `log.warning`, and name at most three components | no absent case | the audit trail, which is `record_` |
 | `report_` | Record the events **and** write the warning | no absent case | one of the two alone |
 | `reject_` | A guard. Raises when the named condition holds | no absent case | a call that returns a value |
@@ -124,6 +125,7 @@ that touches the disk can still raise.
 | `normalise_` | The canonical form of a value | raises | a check that returns nothing |
 | `serialise_` | A model, in its wire or storage shape | no absent case | a read back, which is `parse_` |
 | `render_` | A report, in its output format, through a report port | no absent case | data a later node reads |
+| `prompt_` | Ask the user of the REPL for one answer, and give it back | returns `None` when the user cancels | a value from a file, which is `read_` |
 
 A domain verb is not in the table. A name can use a domain verb when it names an action
 of the domain: `solve`, `translate`, `compare`, `discover` and `init`. Every other verb

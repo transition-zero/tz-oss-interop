@@ -1,0 +1,10 @@
+source_framework: sienna
+destination_framework: power-systems-investments
+source:
+  name: stage_sienna_portfolio_json
+steps:
+  - name: sienna_to_powersimulations_fill_availability
+  - name: sienna_to_powersimulations_map_components
+  - name: sienna_to_powersystemsinvestments_map_technologies
+sinks:
+  - name: emit_power_systems_investments_files

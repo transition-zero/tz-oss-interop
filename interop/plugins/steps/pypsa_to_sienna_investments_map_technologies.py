@@ -11,14 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from functools import partial
-from typing import ClassVar, Literal, NamedTuple
+from typing import ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel, Field
 
 from interop.core.extensions import (
-    ExtensionKind,
+    ConstraintExtension,
+    ExpansionExtension,
     ExtensionReader,
+    GeneratorExtension,
+    StorageExtension,
 )
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
@@ -39,6 +42,8 @@ from interop.plugins.shared.pypsa_sienna_investments_translations import (
     FUEL_COL,
     GENERATOR_SOURCE,
     LOAD_TYPE_COL,
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
     PYPSA_TO_SIENNA_INVESTMENTS,
@@ -131,6 +136,8 @@ _LOADS = InvestmentsSource(
     component=PyPSAComponent.LOAD,
     display=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].display,
     plural=PYPSA_COMPONENT_NAMING[PyPSATable.LOADS].plural,
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 _BASE_LOAD_TYPES: tuple[SiennaComponent, ...] = (
@@ -154,7 +161,7 @@ class _CandidateKind(NamedTuple):
     extendable_col: str
     fill: _FillDefaults
     skips: Callable[[InvestmentsSource], tuple[SkipRule, ...]]
-    extension: Literal[ExtensionKind.GENERATOR, ExtensionKind.STORAGE]
+    extension: type[ExpansionExtension]
     build: _CandidateTranslations
     schema: _Schema
     component: SiennaInvestmentsComponent
@@ -170,7 +177,7 @@ _SUPPLY = _CandidateKind(
     extendable_col=PyPSAGeneratorCol.P_NOM_EXTENDABLE,
     fill=fill_supply_defaults,
     skips=build_supply_skips,
-    extension=ExtensionKind.GENERATOR,
+    extension=GeneratorExtension,
     build=build_supply_translations,
     schema=SUPPLY_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.SUPPLY_TECHNOLOGY,
@@ -186,7 +193,7 @@ _STORAGE = _CandidateKind(
     extendable_col=PyPSAStorageUnitCol.P_NOM_EXTENDABLE,
     fill=fill_storage_technology_defaults,
     skips=build_storage_skips,
-    extension=ExtensionKind.STORAGE,
+    extension=StorageExtension,
     build=build_storage_technology_translations,
     schema=STORAGE_TECHNOLOGY_DESTINATION_SCHEMA,
     component=SiennaInvestmentsComponent.STORAGE_TECHNOLOGY,
@@ -454,7 +461,7 @@ class PypsaToSiennaInvestmentsMapTechnologies(TranslationStep):
         numbering: _Numbering,
         candidates: Sequence[tuple[_CandidateKind, pl.DataFrame]],
     ) -> None:
-        records = reader.read(ExtensionKind.CONSTRAINT).read_all()
+        records = reader.read(ConstraintExtension).read_all()
         if not records:
             return
         table = build_carbon_caps_source_table(records, _model_components(state, candidates))

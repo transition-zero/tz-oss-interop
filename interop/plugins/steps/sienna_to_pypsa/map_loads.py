@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader
+from interop.core.extensions import ExtensionReader, LoadExtension
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
@@ -59,7 +59,7 @@ class SiennaToPypsaMapLoads(TranslationStep):
 
         bus_names = bus_id_to_name(state)
         reporter = LoadReporter(self._recorder)
-        records = self._extensions.read(ExtensionKind.LOAD)
+        records = self._extensions.read(LoadExtension)
         rows: list[dict[str, Any]] = []
         max_active_power_by_name: dict[str, float] = {}
 

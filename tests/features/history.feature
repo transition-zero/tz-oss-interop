@@ -48,6 +48,7 @@ Feature: REPL history records and re-runs past invocations
     And a file "outputs/system.json" exists
     When I run solve from the menu for "outputs/system.json" with network model "dcp"
     Then the history file records a "solve" invocation with detail "network_model" set to "dcp"
+    And the history file records a "solve" invocation with detail "unserved_energy" set to "penalised"
     And the history file records a "solve" invocation with detail "sienna_json_path" set to "outputs/system.json"
 
   Scenario: the history menu shows solve invocation details
@@ -65,6 +66,37 @@ Feature: REPL history records and re-runs past invocations
     When I replay the recorded solve invocation
     Then the prompt "Path to PowerSimulations.jl system JSON?" offered default "outputs/system.json"
     And the select prompt "Network model?" offered default "dcp"
+    And the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered default "penalised"
+
+  Scenario: replaying a solve entry recorded before the unserved energy prompt asks it with no default
+    Given a fake solver adapter in project plugins
+    And adapters.yaml binds solver to "fake_solver"
+    And a file "outputs/system.json" exists
+    And a recorded solve of "outputs/system.json" with network model "dcp" and no unserved energy answer in my history
+    When I replay the recorded solve invocation
+    Then the select prompt "Network model?" offered default "dcp"
+    And the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered no default
+
+  Scenario: a PyPSA solve records its unserved energy answer, and a replay offers it again
+    Given a PyPSA network with 24 hourly snapshots saved as "inputs/net.nc"
+    When I run a PyPSA solve from the menu for "inputs/net.nc" with unserved energy "penalised"
+    Then the history file records a "solve" invocation with detail "unserved_energy" set to "penalised"
+    When I replay the last PyPSA solve invocation
+    Then the select prompt "Unserved energy? (refused = every load is met, so one short hour makes the solve infeasible; penalised = a shortfall goes unserved at a high penalty cost)" offered default "penalised"
+
+  Scenario: an expansion records its answers, and a replay offers them again
+    Given a fake expansion adapter in project plugins
+    And adapters.yaml binds expansion to "fake_expansion"
+    And a file "outputs/portfolio.json" exists
+    When I run an expansion from the menu for "outputs/portfolio.json" with balance model "nodal" investment treatment "integer" and discount rate "0.07"
+    Then the history file records a "solve" invocation with detail "balance_model" set to "nodal"
+    And the history file records a "solve" invocation with detail "investment_treatment" set to "integer"
+    And the history file records a "solve" invocation with detail "discount_rate" set to "0.07"
+    When I replay the last expansion invocation
+    Then the prompt "Path to the PowerSystemsInvestments portfolio JSON?" offered the path "outputs/portfolio.json" as its default
+    And the select prompt "Balance model? (single-region = one zone; multi-region = zone by zone; nodal = bus by bus)" offered default "nodal"
+    And the select prompt "Investment treatment? (continuous = build any amount of capacity; integer = build whole units only, which is slower)" offered default "integer"
+    And the prompt "Discount rate?" offered default "0.07"
 
   Scenario: a compare run records its answers in the history file
     Given a compare-ready working directory

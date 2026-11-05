@@ -33,3 +33,7 @@ class ResultsVariable(StrEnum):
     PRICE = "price"  # cost/MWh; positive = cost of one more MWh at the bus
     SNAPSHOT_WEIGHT = "snapshot_weight"  # h; hours the snapshot represents
     OBJECTIVE = "objective"  # cost; one scalar row, all dimensions null
+    INSTALLED_CAPACITY = "installed_capacity"  # MW; capacity in service in the year
+    NEW_CAPACITY = "new_capacity"  # MW; capacity built in the year
+    PRODUCTION = "production"  # MWh in the year; positive = electricity put out
+    EMISSIONS = "emissions"  # t in the year; negative = removed from the air

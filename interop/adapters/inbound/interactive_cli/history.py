@@ -24,7 +24,12 @@ class DetailKey(StrEnum):
     TARGET = "target"
     MODEL_TYPE = "model_type"
     SIENNA_JSON_PATH = "sienna_json_path"
+    PORTFOLIO_JSON_PATH = "portfolio_json_path"
+    BALANCE_MODEL = "balance_model"
+    INVESTMENT_TREATMENT = "investment_treatment"
+    DISCOUNT_RATE = "discount_rate"
     NETWORK_MODEL = "network_model"
+    UNSERVED_ENERGY = "unserved_energy"
     OUTPUT_DIR = "output_dir"
     SOLVER = "solver"
     PRESOLVE = "presolve"
@@ -43,6 +48,8 @@ class DetailKey(StrEnum):
     SIDE_B_FRAMEWORK = "side_b_framework"
     SIDE_B_PIPELINE = "side_b_pipeline"
     SIDE_B_PARAMS = "side_b_params"
+    SIDE_A_USER_MAPPINGS_PATH = "side_a_user_mappings_path"
+    SIDE_B_USER_MAPPINGS_PATH = "side_b_user_mappings_path"
     OUTPUT_PATH = "output_path"
 
 

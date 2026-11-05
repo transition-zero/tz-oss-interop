@@ -25,11 +25,15 @@ _RESULTS = "results"
 
 _THERMAL_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__ThermalStandard.csv"
 _HYDRO_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__HydroDispatch.csv"
+_RENEWABLE_DISPATCH = f"{_VARIABLES}/ActivePowerVariable__RenewableDispatch.csv"
 _STORAGE_OUT = f"{_VARIABLES}/ActivePowerOutVariable__EnergyReservoirStorage.csv"
 _STORAGE_IN = f"{_VARIABLES}/ActivePowerInVariable__EnergyReservoirStorage.csv"
 _LINE_FLOW = f"{_VARIABLES}/FlowActivePowerVariable__Line.csv"
 _LINK_FLOW = f"{_VARIABLES}/FlowActivePowerVariable__TwoTerminalGenericHVDCLine.csv"
 _LOAD = f"{_PARAMETERS}/ActivePowerTimeSeriesParameter__PowerLoad.csv"
+_RENEWABLE_NON_DISPATCH_OUTPUT = (
+    f"{_PARAMETERS}/ActivePowerTimeSeriesParameter__RenewableNonDispatch.csv"
+)
 _OPTIMIZER_STATS = f"{_RESULTS}/optimizer_stats.csv"
 
 
@@ -61,6 +65,12 @@ class SiennaResultsBuilder:
     def add_hydro_dispatch(self, component: str, values: list[float]) -> None:
         self._add(_HYDRO_DISPATCH, component, values)
 
+    def add_renewable_dispatch(self, component: str, values: list[float]) -> None:
+        self._add(_RENEWABLE_DISPATCH, component, values)
+
+    def add_renewable_non_dispatch_output(self, component: str, values: list[float]) -> None:
+        self._add(_RENEWABLE_NON_DISPATCH_OUTPUT, component, values)
+
     def add_storage_output(self, component: str, values: list[float]) -> None:
         self._add(_STORAGE_OUT, component, values)
 
@@ -73,7 +83,12 @@ class SiennaResultsBuilder:
     def add_link_flow(self, component: str, values: list[float]) -> None:
         self._add(_LINK_FLOW, component, values)
 
-    def add_load(self, component: str, values: list[float]) -> None:
+    def add_load(self, component: str, demand: list[float]) -> None:
+        """PowerSimulations writes the load parameter as -1 × the demand, so the file does too."""
+        self._add(_LOAD, component, [-value for value in demand])
+
+    def add_load_parameter(self, component: str, values: list[float]) -> None:
+        """The load parameter as the file states it, with no change of sign."""
         self._add(_LOAD, component, values)
 
     def set_objective(self, value: float) -> None:
