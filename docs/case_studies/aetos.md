@@ -80,6 +80,13 @@ osemosys:
       - match: "^(?P<country>[A-Z]{2})NG$"
         carrier: natural-gas
         location: "{country}"
+      - match: "^(?P<country>[A-Z]{2})"
+        location: "{country}"
+    storages:
+      - match: "^STHYDSS"
+        location: PT
+      - match: "^(?P<country>[A-Z]{2})"
+        location: "{country}"
     technologies:
       - {match: "^[A-Z]{2}NGCC", category: gas-combined-cycle}
       - {match: "^[A-Z]{2}NG(GC|HPF)", category: gas-turbine}
@@ -127,7 +134,8 @@ carriers:
 The file has three parts:
 
 - `units:` gives the units of the values.
-- `objects:` gives each fuel a carrier and a location, and each technology a category.
+- `objects:` gives each fuel and each storage a location, each electricity and gas fuel a
+  carrier, and each technology a category.
 - `carriers:` gives each category its Sienna type.
 
 The [OSeMOSYS mappings tutorial](../tutorials/osemosys-mappings.md) teaches `units:` and
@@ -150,18 +158,23 @@ million times too small, and every plant is almost free. With `currency: million
 
 ### The objects
 
-The two `fuels:` rows give each electricity fuel and each natural gas fuel its carrier. They
-give the country code as its location.
+The first two `fuels:` rows give each electricity fuel and each natural gas fuel its carrier.
+They give the country code as its location. The third row gives each other fuel the country code
+at the start of its name as its location, and no carrier.
 
 Each `technologies:` row gives a category to the technologies whose names agree with its
 pattern. The pattern reads the technology code after the country code, for example `NGCC` in
 `DENGCCPH1`. The first row that matches a technology wins. Thus the row for `SOST`, which is
 solar thermal, must come before the row for `SO`, which is solar.
 
-The other fuels and the storages have no row, so each takes the location of its region,
-`REGION1`. A scope does not need a row for them. The scope step keeps each fuel and each
-storage that a technology in the scope uses, for example the coal `DECO` of the plant
-`DECOSTPH1`.
+The `storages:` rows give each storage the country code at the start of its name. AETOS names
+the storages of the two pumped-storage plants of Portugal, `PTHYDSPH1` and `PTHYDSPN1`,
+`STHYDSSH1` and `STHYDSSN1`. So the first row gives them `PT`.
+
+A fuel or a storage with no row takes the location of its region, `REGION1`. A scope then
+still keeps each fuel and each storage that a technology in the scope uses, for example the coal
+`DECO` of the plant `DECOSTPH1`. The rows give the same result directly, and the report of a
+scope names fewer components.
 
 ### The carriers
 
@@ -194,7 +207,8 @@ WARNING ... no kind fits 213 technology(ies) in their region, so each keeps an e
 ## What the run gives
 
 We did this run on 2026-10-13. A second run on 2026-10-16, with the mappings file above, gave
-the same counts and the same two warnings. A third run on 2026-11-03 gave them again.
+the same counts and the same two warnings. A third run on 2026-11-03 gave them again. So did a
+fourth run on 2026-11-05, with the location rows of the other fuels and the storages.
 
 | Part of the canonical stage | Count |
 | --- | --- |
@@ -221,7 +235,7 @@ which the PyPSA network builds as a link.
 
 ## Translate the model into a Sienna system
 
-We did each run from this section to the end on 2026-11-03, on the branch
+We did each run from this section to the end on 2026-11-05, on the branch
 `osemosys-stack/17-aetos-case-study` of tz-oss-interop. Two parts are older:
 [The full model](#the-full-model) and the diagnostic runs of
 [What PyPSA removes, and what remains](#what-pypsa-removes-and-what-remains).
@@ -280,7 +294,7 @@ where the load is. The other 14 buses are the `E1` of countries outside the mode
 The 269 lines are the 113 transport lines and the 156 conversions from `E1` to `E2` and from
 `E2` to `E3`. The 21 import modes are 21 of the 573 `ThermalStandard`.
 
-The console shows 27 warnings. Two of them are the warnings of the canonical stage. Each
+The console shows 30 warnings. Two of them are the warnings of the canonical stage. Each
 warning names three components at most. `decisions.md` names each component and gives the
 reason. These warnings tell you the most:
 
@@ -302,8 +316,10 @@ reason. These warnings tell you the most:
   the model builds none at no cost, for example `ATNGBACKSTOP`. The other technologies of those
   fuels become records of `extensions.json`. Refer to
   [The fuels that are not electricity](#the-fuels-that-are-not-electricity).
-- 17 warnings each name one parameter that no step applies, for example `capital_cost` and
-  `variable_operation_cost`.
+- 20 warnings each name one parameter that no step applies, for example `capital_cost` and
+  `variable_operation_cost`. Three of them name the rows of the 99 storages that the run
+  leaves out: the `residual_storage_capacity` of 48 of them, and the `technology_to_storage` and
+  the `technology_from_storage` of their 99 technologies.
 
 21 transport technologies have a mode that imports from outside the model. Each import mode
 becomes a `ThermalStandard` named `<line>/import/<mode>`, about 37.8 GW in total. The console
@@ -532,7 +548,7 @@ energy bound, the cost of a line, and the fuels that are not electricity. This s
 that network and compares three results: the published results, the Sienna dispatch and the
 PyPSA dispatch.
 
-We did the runs of this section on 2026-11-03, on the branch
+We did the runs of this section on 2026-11-05, on the branch
 `osemosys-stack/17-aetos-case-study`. They read the files of [Translate the model into a Sienna system](#translate-the-model-into-a-sienna-system)
 and the Sienna solve of [Solve the dispatch](#solve-the-dispatch).
 
@@ -572,6 +588,10 @@ conversions, 127 for the fuels and 527 for the plants. It also holds these value
   pipelines and the LNG export terminals.
 - 527 gas, coal, oil and biomass plants become links that draw their fuel from its bus. Each
   link pays the cost of the plant without its fuel, and the network prices the fuel.
+- The yearly fixed charge of 157 generators, 26 storage units and the 527 plant links is their
+  `fom_cost`, because the snapshots count for 8,760.5 h, one whole year. No component with a
+  fixed charge is extendable, and PyPSA adds the fixed charge of a component that it cannot
+  build to no variable. So the fixed charges do not change the objective.
 
 - 24 gas plants state an `e_sum_min` for 2021, 450.6 TWh in total. This is the
   `TotalTechnologyAnnualActivityLowerLimit` of the model. A PyPSA link has no `e_sum_min`, so
@@ -773,7 +793,11 @@ These causes remain:
   extra coal and the extra emissions.
 - **The imports from outside the model.** The 21 import generators make 5.5 TWh in PyPSA and
   5.1 TWh in Sienna. The 21 lines that import from outside the model carry 69.4 TWh in the
-  published results. `HUELUAPH1` alone carries 16.0 TWh.
+  published results. `HUELUAPH1` alone carries 16.0 TWh. A test copy of the PyPSA network
+  forces each import generator to its published import, 69.6 TWh in total. Its objective rises
+  by 20.2 million USD, which is 0.32 USD for each extra MWh. The import costs 135 USD/MWh, and
+  the plants that it replaces cost almost as much. So the dispatch has many solutions of almost
+  the same cost, and the solver chooses one with little import.
 - **The storage cycle.** Pumped storage makes 0.6 TWh in PyPSA, 9.4 TWh in Sienna and
   48.1 GWh in the published results. Its capacity is 42.9 GW in each dispatch against
   51.6 GW published. AETOS states no `StorageLevelStart`, so each storage starts empty, and
@@ -816,8 +840,8 @@ above:
   after 55 minutes, to keep the computer usable. The peak memory was 15.1 GB.
 - HiGHS did not start. Thus the time limit of 3600 seconds did not apply.
 
-We did this try on 2026-10-16, on a computer with 8 cores and 16 GB of memory. The run of
-2026-11-03 did not try the full model, because its computer has 8 GB of memory.
+We did this try on 2026-10-16, on a computer with 8 cores and 16 GB of memory. The runs of
+2026-11-03 and 2026-11-05 did not try the full model, because their computer has 8 GB of memory.
 
 The problem holds 35 investment periods, one for each model year, and 1,345 candidate
 technologies. The subset below holds 3 periods and 5 countries. To expand the full model, use a
@@ -840,8 +864,8 @@ these changes:
 
 The portfolio holds 92 `SupplyTechnology`, 7 `StorageTechnology`, 2
 `AggregateTransportTechnology` and 5 `DemandRequirement`. The two transport technologies are
-`ESELFRPH1` and `ESELPTPH1`. The scope step keeps 127 components whose location is outside the
-scope. A component in the scope needs each of them: a fuel, its supply or a storage.
+`ESELFRPH1` and `ESELPTPH1`. The scope step keeps no component whose location is outside the
+scope, because the `objects:` rows give each fuel and each storage its country.
 
 Select `translate` again. Then give these answers:
 
@@ -956,7 +980,9 @@ are the entries that explain the large differences above:
   the system, and the solve applies no loss. The PyPSA dispatch applies both. A line that flows
   both ways states one loss. Thus the flow back that leaves its to bus is at most the limit at
   its from bus × (1 − the loss). The 21 imports from outside the model happen in both dispatches,
-  but at less than a tenth of the published 69.4 TWh: 5.1 TWh in Sienna and 5.5 TWh in PyPSA. Refer to
+  but at less than a tenth of the published 69.4 TWh: 5.1 TWh in Sienna and 5.5 TWh in PyPSA.
+  The cause is the optimum: the import costs almost what the plants that it replaces cost, so a
+  solution with the published import costs 0.32 USD more for each MWh. Refer to
   [Costs and prices](../translation_mappings/osemosys-to-sienna-gap-analysis.md#costs-and-prices)
   and [Operating modes](../translation_mappings/osemosys-to-sienna-gap-analysis.md#operating-modes).
 - **The emissions are 609.5 Mt lower in the Sienna dispatch.** The published emissions also count the
@@ -987,31 +1013,31 @@ effect of each cause on the PyPSA dispatch.
 
 ## What it costs
 
-We measured each run of 2026-11-03 with `/usr/bin/time -v` on a computer with 4 cores and 8 GB
+We measured each run of 2026-11-05 with `/usr/bin/time -v` on a computer with 4 cores and 8 GB
 of memory. The time of a solve does not include the download and the compilation of the Julia
-packages, which took 8 min on the first solve.
+packages, which took about 9 min 30 s on the first solve.
 
 | Run | Status | Objective | Time | Peak memory |
 | --- | --- | --- | --- | --- |
-| `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 8.5 s | 0.35 GB |
-| `osemosys-csv-to-sienna`, year 2021 | exit 0, 27 warnings | none | 12.5 s | 0.39 GB |
-| `osemosys-csv-to-sienna-investments`, every year | exit 0, 22 warnings | none | 44.5 s | 0.90 GB |
-| `sienna-to-power-simulations` | exit 0 | none | 13.8 s | 0.27 GB |
-| Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.54114 × 10⁹ USD | 3 min 43 s | 2.28 GB |
-| `sienna-to-results` | exit 0, 4 warnings | none | 3.1 s | 0.29 GB |
-| `aetos-to-results` | exit 0, 5 warnings | none | 5.7 s | 0.63 GB |
-| Compare of the dispatch | exit 0, 1,901 differences | none | 7.8 s | 0.58 GB |
-| `sienna-to-pypsa` | exit 0, 3 warnings | none | 13.3 s | 0.44 GB |
-| PyPSA dispatch solve | `optimal` | 5.54591 × 10⁹ USD | 48.5 s | 1.62 GB |
-| `pypsa-to-results` | exit 0, 1 warning | none | 4.0 s | 0.29 GB |
-| Compare of the published results and PyPSA | exit 0, 1,901 differences | none | 6.8 s | 0.62 GB |
-| Compare of Sienna and PyPSA | exit 0, 113,970 differences | none | 5.6 s | 0.34 GB |
-| `sienna-to-power-systems-investments`, full model | exit 0, 9 warnings | none | 57.0 s | 1.42 GB |
-| `osemosys-csv-to-sienna-investments`, subset | exit 0, 19 warnings | none | 5.9 s | 0.39 GB |
-| `sienna-to-power-systems-investments`, subset | exit 0, 10 warnings | none | 2.2 s | 0.26 GB |
-| Expansion solve, subset | `SUCCESSFULLY_FINALIZED` | 1.50999 × 10¹¹ USD | 3 min 10 s | 1.95 GB |
-| `power-systems-investments-to-results`, subset | exit 0 | none | 1.4 s | 0.16 GB |
-| Compare of the expansion | exit 0, 1,962 differences | none | 4.5 s | 0.64 GB |
+| `osemosys-csv-to-canonical` | exit 0, 2 warnings | none | 3.9 s | 0.36 GB |
+| `osemosys-csv-to-sienna`, year 2021 | exit 0, 30 warnings | none | 7.6 s | 0.40 GB |
+| `osemosys-csv-to-sienna-investments`, every year | exit 0, 22 warnings | none | 31.7 s | 0.90 GB |
+| `sienna-to-power-simulations` | exit 0 | none | 7.7 s | 0.27 GB |
+| Dispatch solve | `SUCCESSFULLY_FINALIZED` | 1.54114 × 10⁹ USD | 4 min 25 s | 2.28 GB |
+| `sienna-to-results` | exit 0, 4 warnings | none | 3.8 s | 0.30 GB |
+| `aetos-to-results` | exit 0, 5 warnings | none | 6.9 s | 0.58 GB |
+| Compare of the dispatch | exit 0, 1,901 differences | none | 8.3 s | 0.60 GB |
+| `sienna-to-pypsa` | exit 0, 3 warnings | none | 9.0 s | 0.45 GB |
+| PyPSA dispatch solve | `optimal` | 5.54591 × 10⁹ USD | 45.9 s | 1.62 GB |
+| `pypsa-to-results` | exit 0, 1 warning | none | 3.8 s | 0.29 GB |
+| Compare of the published results and PyPSA | exit 0, 1,901 differences | none | 8.7 s | 0.60 GB |
+| Compare of Sienna and PyPSA | exit 0, 113,970 differences | none | 5.7 s | 0.34 GB |
+| `sienna-to-power-systems-investments`, full model | exit 0, 9 warnings | none | 1 min 19 s | 1.42 GB |
+| `osemosys-csv-to-sienna-investments`, subset | exit 0, 18 warnings | none | 8.1 s | 0.40 GB |
+| `sienna-to-power-systems-investments`, subset | exit 0, 10 warnings | none | 3.1 s | 0.26 GB |
+| Expansion solve, subset | `SUCCESSFULLY_FINALIZED` | 1.50999 × 10¹¹ USD | 3 min 29 s | 1.79 GB |
+| `power-systems-investments-to-results`, subset | exit 0 | none | 1.4 s | 0.15 GB |
+| Compare of the expansion | exit 0, 1,962 differences | none | 5.8 s | 0.62 GB |
 
 The expansion solve of the full model is not in the table. We stopped it on 2026-10-16 at
 14.5 GB, after 55 min 9 s, before HiGHS started. Its peak memory was 15.1 GB. That computer had

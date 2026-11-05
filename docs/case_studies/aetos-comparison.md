@@ -170,13 +170,20 @@ year, such as `MRNGCCPH1`. We did not run the model again.
 **4. The storage rating.** Pumped storage has 42.9 GW, against 51.6 GW published, because a
 Sienna storage is rated on its electricity output.
 
+**5. The imports from outside the model.** The 21 import generators make 5.5 TWh. In the
+published results, the import modes of the 21 lines import 69.4 TWh from outside the model.
+`HUELUAPH1` alone imports 16.0 TWh. A test copy of the PyPSA network of 2026-11-05 forces each
+import generator to its published import, 69.6 TWh in total. The published import of `ITELMEPH1`,
+4,993.2 GWh, is within 0.01% of the most that it can make, so the copy holds it at 99.9% of that
+most, 4,988.5 GWh. The objective rises
+by 20.2 million USD, which is 0.32 USD for each extra MWh. The import costs 135 USD/MWh, and the
+plants that it replaces cost almost as much. So the cause is the optimum: the dispatch has many
+solutions of almost the same cost, and the solver chooses one with little import.
+
 ### Differences with no measured cause
 
 We did not measure a cause for these differences of the PyPSA dispatch:
 
-- **The imports from outside the model.** The 21 import generators make 5.5 TWh. In the
-  published results, the import modes of the 21 lines import 69.4 TWh from outside the model.
-  `HUELUAPH1` alone imports 16.0 TWh.
 - **Four categories in the test copy with both corrections.** `gas-steam` is 37.6 TWh above the
   published value. `oil-steam` is 33.8 TWh below it, `biomass` 18.4 TWh and `nuclear`
   15.0 TWh. The year-to-year limit also holds gas extraction, LNG and the gas pipelines. This
