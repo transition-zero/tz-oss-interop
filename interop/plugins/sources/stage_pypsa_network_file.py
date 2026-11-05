@@ -19,6 +19,7 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.pypsa_constants import (
     PYPSA_NETWORK_ATTR_PREFIX,
+    PYPSA_SNAPSHOTS_GENERATORS_VAR,
     PYPSA_SNAPSHOTS_OBJECTIVE_VAR,
     PyPSASolvedAttr,
     PyPSATable,
@@ -100,11 +101,10 @@ def stage_network(network_file: IO[bytes], staging_dir: Path) -> StagedNetwork:
                 topology_frames[cls] = topology_frame
             for attr, ts_frame in _stage_time_series(ds, cls, data_vars, staging_dir):
                 time_series_frames[(cls, attr)] = ts_frame
-        weightings = _stage_snapshot_weightings(ds, data_vars, staging_dir)
-        if weightings is not None:
-            time_series_frames[(PyPSATable.SNAPSHOTS, PyPSASolvedAttr.SNAPSHOT_WEIGHTING)] = (
-                weightings
-            )
+        for variable, attribute in _WEIGHTINGS:
+            weightings = _stage_snapshot_weightings(ds, data_vars, staging_dir, variable, attribute)
+            if weightings is not None:
+                time_series_frames[(PyPSATable.SNAPSHOTS, attribute)] = weightings
         network = _network_extension(ds)
     return StagedNetwork(topology_frames, time_series_frames, network)
 
@@ -118,24 +118,27 @@ def _snapshots(ds: xr.Dataset) -> np.ndarray:
     return ds["snapshots"].values
 
 
-def _stage_snapshot_weightings(
-    ds: xr.Dataset, data_vars: list[str], staging_dir: Path
-) -> pl.LazyFrame | None:
-    """Stage the per-snapshot objective weightings (hours) a solved network carries.
+# Each snapshot weighting staged, by its netCDF variable and the attribute it is staged under.
+_WEIGHTINGS = (
+    (PYPSA_SNAPSHOTS_OBJECTIVE_VAR, PyPSASolvedAttr.SNAPSHOT_WEIGHTING),
+    (PYPSA_SNAPSHOTS_GENERATORS_VAR, PyPSASolvedAttr.GENERATOR_WEIGHTING),
+)
 
-    Absent from an unsolved network; returns None so the pypsa->sienna pipeline,
-    which never reads this key, is unaffected.
-    """
-    if PYPSA_SNAPSHOTS_OBJECTIVE_VAR not in data_vars:
+
+def _stage_snapshot_weightings(
+    ds: xr.Dataset, data_vars: list[str], staging_dir: Path, variable: str, attribute: str
+) -> pl.LazyFrame | None:
+    """Stage one per-snapshot weighting (hours), or None where the file states none."""
+    if variable not in data_vars:
         return None
     df = pl.DataFrame(
         {
             PyPSATimeSeriesCol.SNAPSHOT: _snapshots(ds),
-            PyPSATimeSeriesCol.VALUE: ds[PYPSA_SNAPSHOTS_OBJECTIVE_VAR].values,
+            PyPSATimeSeriesCol.VALUE: ds[variable].values,
         }
     )
     weighting_dir = staging_dir / "time_series" / PyPSATable.SNAPSHOTS
-    out = weighting_dir / f"{PyPSASolvedAttr.SNAPSHOT_WEIGHTING}.parquet"
+    out = weighting_dir / f"{attribute}.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out)
     return pl.scan_parquet(out)

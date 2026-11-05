@@ -93,8 +93,8 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
     And the file "decisions.md" contains "× the hours between two rows of the solve"
 
   Scenario: A line whose sidecar marks its limit as a stand-in has no installed capacity
-    A source can state no binding limit for a line, so its active_power_limits_from.max is a
-    finite stand-in that never binds, not the capacity of the line.
+    A source can state no binding limit for a line, so its rating is a finite stand-in that
+    never binds, not the capacity of the line.
     Given the TwoTerminalGenericHVDCLine "link" has ext "has_stand_in_limit" set to true
     And the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00
     And the results have ThermalStandard dispatch for "gas" of 10 20

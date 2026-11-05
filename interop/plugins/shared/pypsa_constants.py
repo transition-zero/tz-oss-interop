@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import NamedTuple
 
 import polars as pl
 
@@ -440,6 +441,7 @@ PYPSA_STORAGE_UNIT_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSAStorageUnitCol.P_MAX_PU: 1.0,
     PyPSAStorageUnitCol.MARGINAL_COST: 0.0,
     PyPSAStorageUnitCol.CARRIER: "",
+    PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL: 0.0,
 }
 PYPSA_LINK_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSALinkCol.P_NOM: 0.0,
@@ -449,6 +451,19 @@ PYPSA_LINK_DEFAULTS: dict[str, PyPSADefault] = {
     PyPSALinkCol.EFFICIENCY: 1.0,
     PyPSALinkCol.MARGINAL_COST: 0.0,
     PyPSALinkCol.CARRIER: "",
+    PyPSALinkCol.ACTIVE: True,
+    PyPSALinkCol.BUS2: "",
+    PyPSALinkCol.EFFICIENCY2: 1.0,
+    PyPSALinkCol.BUS3: "",
+    PyPSALinkCol.EFFICIENCY3: 1.0,
+}
+PYPSA_BUS_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSABusCol.V_NOM: 1.0,
+    PyPSABusCol.CONTROL: PyPSABusControl.PQ,
+}
+PYPSA_LINE_DEFAULTS: dict[str, PyPSADefault] = {
+    PyPSALineCol.LENGTH: 0.0,
+    PyPSALineCol.NUM_PARALLEL: 1.0,
 }
 
 # Six places holds a per-unit factor down to a millionth of a component's own rating, which
@@ -554,6 +569,8 @@ GENERATORS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAGeneratorCol.DISCOUNT_RATE: pl.Float64,
     PyPSAGeneratorCol.LIFETIME: pl.Float64,
     PyPSAGeneratorCol.BUILD_YEAR: pl.Int64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSAGeneratorCol.FOM_COST: pl.Float64,
     # MWh over the snapshots, null where the source states no bound.
     PyPSAGeneratorCol.E_SUM_MIN: pl.Float64,
     PyPSAGeneratorCol.E_SUM_MAX: pl.Float64,
@@ -595,6 +612,8 @@ STORAGE_UNITS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSAStorageUnitCol.DISCOUNT_RATE: pl.Float64,
     PyPSAStorageUnitCol.LIFETIME: pl.Float64,
     PyPSAStorageUnitCol.BUILD_YEAR: pl.Int64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSAStorageUnitCol.FOM_COST: pl.Float64,
 }
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
@@ -639,6 +658,8 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.P_NOM_EXTENDABLE: pl.Boolean,
     PyPSALinkCol.P_NOM_MIN: pl.Float64,
     PyPSALinkCol.P_NOM_MAX: pl.Float64,
+    # $/MW over the snapshots, null where the source states no fixed charge.
+    PyPSALinkCol.FOM_COST: pl.Float64,
     # A third and a fourth bus, null for a link of two buses; a negative efficiency draws.
     PyPSALinkCol.BUS2: pl.Utf8,
     PyPSALinkCol.EFFICIENCY2: pl.Float64,
@@ -655,10 +676,17 @@ LINKS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     PyPSALinkCol.RAMP_LIMIT_DOWN: pl.Float64,
 }
 
-# Each further bus of a link after bus0 and bus1, and the efficiency that goes with it.
-LINK_FURTHER_PORTS: tuple[tuple[str, str], ...] = (
-    (PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
-    (PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
+
+class LinkPort(NamedTuple):
+    """A further bus column of a link after bus0 and bus1, and its efficiency column."""
+
+    bus: str
+    efficiency: str
+
+
+LINK_FURTHER_PORTS: tuple[LinkPort, ...] = (
+    LinkPort(PyPSALinkCol.BUS2, PyPSALinkCol.EFFICIENCY2),
+    LinkPort(PyPSALinkCol.BUS3, PyPSALinkCol.EFFICIENCY3),
 )
 
 SNAPSHOT_WEIGHTINGS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {

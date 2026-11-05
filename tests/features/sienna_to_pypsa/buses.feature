@@ -139,3 +139,22 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     Then the log contains "1 series belong to a component with no name, so each is left out: Arc"
     And the PyPSA network "outputs/network.nc" has 1 line
     And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
+
+  Scenario: A fuel bus of the sidecar becomes a PyPSA bus when the system holds no ACBus
+    Given a Sienna system
+    And the system has a bus extension record "R1/ATGAS" with "carrier" set to "gas"
+    And the system has a bus extension record "R1/ATGAS" with "location" set to "AT"
+    And the system is saved as "inputs/fuel_only.json"
+    When I run translate against Sienna system "inputs/fuel_only.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" bus "R1/ATGAS" has carrier "gas"
+    And the file "decisions.md" contains "|  | `pypsa.Bus.R1/ATGAS.v_nom` = 1.0 kV |  | a bus of a fuel has no voltage, so v_nom takes PyPSA's own default |"
+    And the file "decisions.md" contains "|  | `pypsa.Bus.R1/ATGAS.control` = PQ |  | a bus of a fuel controls no voltage, so control takes PyPSA's own default |"
+
+  Scenario: A fuel bus whose record states no location takes none, and the report says so
+    Given a Sienna system
+    And the system has a bus extension record "ATGAS" with "carrier" set to "gas"
+    And the system is saved as "inputs/fuel_nowhere.json"
+    When I run translate against Sienna system "inputs/fuel_nowhere.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" bus "ATGAS" has empty location
+    And the file "decisions.md" contains "|  | `pypsa.Bus.ATGAS.location` |  | the bus record states no location, so the bus takes none |"
