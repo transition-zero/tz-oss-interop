@@ -244,6 +244,9 @@ class ControllableLineExtension(ActivityExtension):
     # No PyPSA field: the line converts one electricity fuel into another at one location, so
     # the results count it neither as production nor as trade.
     is_conversion: bool | None = None
+    # No PyPSA field: the source states no binding limit, so the rating of the line is a finite
+    # stand-in that never binds, not the capacity of the line.
+    has_stand_in_limit: bool | None = None
 
 
 class StorageExtension(ActivityExtension):
