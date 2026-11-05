@@ -393,9 +393,10 @@ capacity in MW is that activity / 8760 h. A model that declares no `CapacityToAc
 takes the canonical default of 1. A canonical stage with no default for it converts the
 capacity with `units: capacity`.
 
-A Sienna generator puts out electricity only. Each other fuel that a generator puts out at the
-operations mode is left out. `decisions.md` records its `output_activity_ratio` as `NOT_MAPPED`,
-and one warning names three technologies.
+A Sienna generator puts out electricity only. So the Sienna system leaves out each other fuel
+that a generator puts out at the operations mode. `decisions.md` records its
+`output_activity_ratio` as `NOT_MAPPED`, and one warning names three technologies. The
+`output_buses` field of the `generator` record keeps the output, for the Sienna to PyPSA hop.
 
 ### The availability of each hour
 
@@ -487,13 +488,17 @@ penalty as an event of its own, and the cost event reads them.
 | `e_sum_min` | MWh | For each year, `TotalTechnologyAnnualActivityLowerLimit` (`total_technology_annual_activity_lower_limit`) in MWh × the electricity output ratio of that year. A limit of 0 is left out. |
 | `e_sum_max` | MWh | For each year, `TotalTechnologyAnnualActivityUpperLimit` (`total_technology_annual_activity_upper_limit`) in MWh × the electricity output ratio of that year. A negative limit is left out. |
 | `fuel_buses` | MWh/MWh | For each fuel that the plant takes in at the operations mode and that is not electricity, `input_activity_ratio` / the electricity output ratio, keyed by the bus of the fuel, `<region>/<fuel>`. No PyPSA field: PyPSA states it as the `bus0` and the `efficiency` of a `Link`. |
+| `output_buses` | MWh/MWh | For each fuel that the plant puts out at the operations mode and that is not electricity, `output_activity_ratio` / the electricity output ratio, keyed by the bus of the fuel, `<region>/<fuel>`. No PyPSA field: PyPSA states it as a further port of a `Link` with a positive efficiency. |
 | `own_marginal_cost` | $/MWh | The own cost, plus the penalty of the own emissions of the plant, without a fuel term. Only where `fuel_buses` is stated. |
 | `own_emission_rates_t_per_mwh` | t/MWh | For each pollutant, `EmissionActivityRatio` at the operations mode / the electricity output ratio, without the rate of a fuel. Only where `fuel_buses` is stated. |
 | Each other field | | Refer to [The values that Sienna has no field for](#the-values-that-sienna-has-no-field-for). |
 
-The Sienna to PyPSA hop reads `fuel_buses`, `own_marginal_cost` and
+The Sienna to PyPSA hop reads `fuel_buses`, `output_buses`, `own_marginal_cost` and
 `own_emission_rates_t_per_mwh`. Where the network holds the bus of each fuel, a `ThermalStandard`
-becomes a PyPSA `Link` that draws the fuel from its bus, so the network prices the fuel once.
+becomes a PyPSA `Link` that draws the fuel from its bus, so the network prices the fuel once. The
+`Link` also puts out each fuel of `output_buses`, for example the heat of a combined heat and
+power plant. The report of the fuel buses that have a load and no supply counts that output as
+supply.
 
 No step applies the two annual limits. A Sienna system has no field for a limit on the energy
 of a year.
@@ -1111,7 +1116,8 @@ residual capacity, the availability, the costs, the emission rates, the emission
 the flow rows of `input_activity_ratio` and `output_activity_ratio` among them. The report
 counts only those rows as applied. A generator notes each of its flow rows, so the report does
 not name the output of another fuel, for example the heat of a combined heat and power plant.
-The generator records that output as `NOT_MAPPED` itself. So a row of a technology that has no component and no record,
+The generator records that output as `NOT_MAPPED` itself, and its record keeps it in
+`output_buses`. So a row of a technology that has no component and no record,
 for example the residual capacity of a supply technology with no carriers row, is reported. So
 are the capacity factor of a technology that charges a storage that another technology
 discharges, and the capital cost, the fixed cost and the life of a technology of a fuel that is

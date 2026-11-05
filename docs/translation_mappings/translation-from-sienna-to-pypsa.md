@@ -551,9 +551,11 @@ PyPSA `Link` from that bus. The sub-step `sienna_to_pypsa_map_plant_links` of
 These reasons keep a plant with `fuel_buses` a `Generator` that pays the Sienna price of its
 fuel:
 
-- the network does not hold a bus that `fuel_buses` names;
+- the network does not hold a bus that `fuel_buses` or `output_buses` names;
 - a fuel ratio of `fuel_buses` is not above 0;
 - `fuel_buses` names more than three buses;
+- the further fuels of `fuel_buses` and the fuels of `output_buses` need more ports than
+  `bus2` and `bus3`;
 - the network may build the plant, because it is extendable;
 - its marginal cost changes from hour to hour;
 - its record states an annual energy bound.
@@ -569,7 +571,7 @@ reason. Each reason gets one warning that names three plants.
 | `p_nom` | `base_power` × the MWh of that fuel for each MWh of electricity |
 | `efficiency` | 1 / the MWh of that fuel for each MWh of electricity |
 | `marginal_cost` | `own_marginal_cost` / the MWh of that fuel for each MWh of electricity, as a link prices the power at `bus0` |
-| `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel) |
+| `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel). Then each fuel of `output_buses`, with +(its MWh / the MWh of the largest fuel). |
 | `p_min_pu`, `p_max_pu`, `carrier`, `committable`, `start_up_cost`, `shut_down_cost`, `min_up_time`, `min_down_time`, `up_time_before`, `ramp_limit_up`, `ramp_limit_down` | The value of the generator, per unit of the link |
 
 `decisions.md` gives a row for each column that moves from the generator to the link, and for
@@ -689,8 +691,8 @@ table of this document names becomes that PyPSA attribute. Each other field that
 states goes, unchanged, to the `extensions.json` that the pipeline writes beside the
 network. The report gives one row for each field that travels on, with the rule
 `relayed unchanged to extensions.json, as PyPSA has no attribute for it`. The row of
-`fuel_buses` and of `own_marginal_cost` says that the plant becomes a PyPSA `Link` that also
-maps the field, where the network holds the bus of each fuel of the plant.
+`fuel_buses`, of `output_buses` and of `own_marginal_cost` says that the plant becomes a PyPSA
+`Link` that also maps the field, where the network holds the bus of each fuel of the plant.
 
 These rules apply to a record that a step reads. A step of the fuels reads a `generator` or a
 `load` record only when the network holds its bus, and no other component holds its name. A
