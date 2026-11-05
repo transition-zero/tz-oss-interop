@@ -399,7 +399,8 @@ the Sienna default of 1.0.
 | `active_power_limits` | MW | `(0, the available capacity)` | `derived` |
 | `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `ramp_limits`, `time_limits`, `status`, `time_at_status` | | The type carries them, and the chain supplies none. | `dropped` |
-| `efficiency`, `conversion_factor`, `outflow_limits`, `turbine_type`, `travel_time` | | Not written, so a reader takes the SiennaSchemas default. The translator reads no PLEXOS property for them. | `default` |
+| `conversion_factor` | | `Efficiency Incr / 3600 / base_power`, or `1.0` where the turbine states no `Efficiency Incr` | `derived` |
+| `efficiency`, `outflow_limits`, `turbine_type`, `travel_time` | | Not written, so a reader takes the SiennaSchemas default. The translator reads no PLEXOS property for them. | `default` |
 
 ### The reservoir
 
@@ -429,7 +430,7 @@ level and of the inflow.
 | `head_to_volume_factor` | | A linear function with both terms `0.0` | `default` |
 | `operation_cost` | | A `HydroReservoirCost` with every cost `0.0` | `default` |
 | `downstream_turbines` | | The `HydroTurbine`s that name the `Storage` as their `Head Storage` | `derived` |
-| `upstream_turbines` | | `[]` | `default` |
+| `upstream_turbines` | | The `HydroTurbine`s that name the `Storage` as their `Tail Storage`, or `[]` where none does | `derived` |
 | `upstream_reservoirs` | | The `Storage From` of each `Waterway` whose `Storage To` is this `Storage` | `derived` |
 
 A `Natural Inflow` that reads a data file becomes a `TimeSeriesAssociation` named `inflow`

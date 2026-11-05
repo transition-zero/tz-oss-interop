@@ -12,7 +12,7 @@ home, so tz-oss-interop can close it. This spec records how.
 
 PLEXOS reads a data file header without letter case. The CEN files write `NAME`, `YEAR`,
 `MONTH`, `DAY`, `PERIOD` and `VALUE`. The source renames each header that names a known
-column (`Name`, `Year`, `Month`, `Day`, `Period`, `Value`, `Pattern`, `Band`, `DateTime`) to
+column (`Name`, `Year`, `Month`, `Day`, `Period`, `Value`, `Pattern`, `DateTime`) to
 the canonical spelling before it chooses a layout. A header that names an object or a sample
 keeps its spelling.
 
@@ -39,17 +39,23 @@ reads a week as seven days. Other step types keep the warning that sets no snaps
 
 A file with the columns `Name`, `Pattern` and `Value` (and an optional `Year`, or sample
 columns in place of `Value`) gives a value for each pattern. A pattern is a list of terms,
-separated by commas, and a snapshot matches when it matches every term:
+separated by commas, and a snapshot matches when it matches every term. A `;` separates two
+such lists, and a snapshot matches the pattern when it matches one of them:
 
-- `M<n>` is the month `n`, from 1 to 12.
-- `H<n>` is the hour `n` of the day, from 1 to 24.
+- `M<n>` is the month `n`, from 1 to 12, and `Q<n>` is the quarter.
+- `D<n>` is the day of the month, `W<n>` the day of the week from Sunday, and `K<n>` the ISO
+  week.
+- `H<n>` is the hour `n` of the day, from 1 to 24, and `P<n>` the trading period of the day.
+- A term can state a range, such as `H1-3`. A comma before a digit adds a range to the term
+  before it, so `H1-3,24` is the hours 1, 2, 3 and 24.
+- `!` before a term negates it.
 - Any other term names a `Timeslice` object. Its `Include` property reads a file with the
-  columns `Year`, `Month`, `Day` and one column for each `Timeslice`. A day is in the
-  `Timeslice` when its value in that column is not 0.
+  columns `Year`, `Month`, `Day` and one column for each `Timeslice`, or states a pattern of
+  its own. A day is in the `Timeslice` when its value in that column is not 0.
 
 The source needs the snapshots to expand a pattern, so a pattern file stages only when the
-horizon sets snapshots. A term that the source cannot read leaves the file out, with one
-warning.
+horizon sets snapshots. A pattern that the source cannot read covers no snapshot. One
+warning names it, and the rows of the other patterns in the file remain.
 
 ### 5. A `Load` object becomes a `PowerLoad`
 

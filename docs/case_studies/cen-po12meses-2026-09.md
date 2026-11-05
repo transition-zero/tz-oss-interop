@@ -209,14 +209,12 @@ The run takes about 5 minutes. It writes `outputs/system.json`, the time series 
 | 13 `Reserve` objects | 3 `OnlineReserve`, with 1,192 service associations. All 13 reach `extensions.json`. |
 | The data files | 1,840 time series |
 
-The numbers come from tz-oss-interop on the branch that closes the translator gaps, with
-Polars 2.0.0.
+The numbers come from tz-oss-interop with pull request #176, and Polars 2.0.0.
 
-### What the translation reads that it did not read before
+### The PLEXOS rules that the translation applies
 
-The first run of this model kept 0.59 MW of generation and no load. These changes to
-tz-oss-interop closed that gap. Each one is a general rule of PLEXOS, and not a rule of this
-model.
+The translator applies the rules below. Each one is a general rule of PLEXOS, and not a rule
+of this model.
 
 | The rule | What it gave this model |
 | --- | --- |
