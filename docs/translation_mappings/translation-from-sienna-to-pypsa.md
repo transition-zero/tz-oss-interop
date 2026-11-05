@@ -571,6 +571,7 @@ reason. Each reason gets one warning that names three plants.
 | `p_nom` | `base_power` × the MWh of that fuel for each MWh of electricity |
 | `efficiency` | 1 / the MWh of that fuel for each MWh of electricity |
 | `marginal_cost` | `own_marginal_cost` / the MWh of that fuel for each MWh of electricity, as a link prices the power at `bus0` |
+| `fom_cost` | `fom_charge_per_mw_year` × the efficiency, where the snapshots count for one whole year. Refer to [Yearly fixed charges](#yearly-fixed-charges). |
 | `bus2`, `efficiency2`, `bus3`, `efficiency3` | Each further fuel, with −(its MWh / the MWh of the largest fuel). Then each fuel of `output_buses`, with +(its MWh / the MWh of the largest fuel). |
 | `p_min_pu`, `p_max_pu`, `carrier`, `committable`, `start_up_cost`, `shut_down_cost`, `min_up_time`, `min_down_time`, `up_time_before`, `ramp_limit_up`, `ramp_limit_down` | The value of the generator, per unit of the link |
 
@@ -642,6 +643,9 @@ horizon: `overnight_cost` × the annuity × the years that the snapshots count f
 The two agree only for one year, so the translator writes the charge to `fom_cost` only where
 the snapshots count for one whole year, as [Annual energy bounds](#annual-energy-bounds) states
 it.
+
+A plant that becomes a `Link` rates its capacity in MW of its fuel. So the `fom_cost` of a plant
+`Link` is the yearly charge of its `generator` record × the efficiency of the `Link`.
 
 Elsewhere the translator writes no `fom_cost`. The report gives a `NOT_MAPPED` row for each
 charge, and the log names them. The step `sienna_to_pypsa_map_fixed_charges` writes the
