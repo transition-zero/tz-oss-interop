@@ -5,7 +5,7 @@ from typing import Any
 
 import polars as pl
 
-from interop.core.extensions import BusExtension, ExtensionKind, ExtensionReader
+from interop.core.extensions import BusExtension, ExtensionReader
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
@@ -32,7 +32,7 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
     if source is None:
         return
     reporter = BusReporter(recorder)
-    records = extensions.read(ExtensionKind.BUS)
+    records = extensions.read(BusExtension)
     rows: list[dict[str, Any]] = []
     for row in source.collect().iter_rows(named=True):
         mapping = _derive_bus(row, records.get(row[SiennaACBusCol.NAME]))

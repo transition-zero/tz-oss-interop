@@ -435,7 +435,7 @@ class PypsaToSiennaMapComponents(TranslationStep):
         only thing it can report.
         """
         priced: dict[str, float] = {}
-        lookup = reader.read(ExtensionKind.BUS)
+        lookup = reader.read(BusExtension)
         for name in self._ac_bus_names(state):
             record = lookup.get(name)
             self._report_unread_bus_fields(record)

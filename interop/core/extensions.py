@@ -24,7 +24,16 @@ from collections import Counter
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Generic, Literal, NamedTuple, Self, TypeAlias, TypeVar, get_args, overload
+from typing import (
+    Any,
+    Generic,
+    NamedTuple,
+    Self,
+    TypeAlias,
+    TypeVar,
+    cast,
+    get_args,
+)
 
 import polars as pl
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -400,6 +409,18 @@ def _build_extension_models() -> dict[ExtensionKind, type[ExtensionRecord]]:
 
 
 EXTENSION_MODELS: dict[ExtensionKind, type[ExtensionRecord]] = _build_extension_models()
+_KINDS_BY_MODEL: dict[type[ExtensionRecord], ExtensionKind] = {
+    model: kind for kind, model in EXTENSION_MODELS.items()
+}
+
+
+def get_record_kind(model: type[ExtensionRecord]) -> ExtensionKind:
+    """The kind whose records `model` describes, or raise for a model that is not a kind."""
+    kind = _KINDS_BY_MODEL.get(model)
+    if kind is None:
+        raise TypeError(f"{model.__name__} is the record model of no ExtensionKind")
+    return kind
+
 
 # A PyPSA file holds one network and PyPSA gives it no name, so its record is named for what
 # it describes.
@@ -630,63 +651,14 @@ def _is_scalar(value: Any) -> bool:
     return isinstance(value, str | int | float | bool)
 
 
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.BUS], name: str
-) -> BusExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.GENERATOR], name: str
-) -> GeneratorExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.LOAD], name: str
-) -> LoadExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.LINE], name: str
-) -> LineExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.CONTROLLABLE_LINE], name: str
-) -> ControllableLineExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.STORAGE], name: str
-) -> StorageExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.RESERVE], name: str
-) -> ReserveExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.CONSTRAINT], name: str
-) -> ConstraintExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.NETWORK], name: str
-) -> NetworkExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD], name: str
-) -> RepresentativePeriodExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.TECHNOLOGY], name: str
-) -> TechnologyExtension | None: ...
-@overload
-def record_for(
-    staged: StagedExtensions, kind: Literal[ExtensionKind.CONVERSION], name: str
-) -> ConversionExtension | None: ...
-
-
-def record_for(staged: StagedExtensions, kind: ExtensionKind, name: str) -> Any:
-    """One staged record, for a reader that is not a mapping hop. The kind fixes the type.
+def record_for(staged: StagedExtensions, model: type[RecordT], name: str) -> RecordT | None:
+    """One staged record, for a reader that is not a mapping hop. The model fixes the kind.
 
     No consume tracking: a caller reaching for one known record is not deciding what travels
     onward, so it has nothing to report as dropped.
     """
-    return next((record for record in staged.get(kind, []) if record.name == name), None)
+    records = cast("list[RecordT]", staged.get(get_record_kind(model), []))
+    return next((record for record in records if record.name == name), None)
 
 
 @dataclass
@@ -844,47 +816,11 @@ class ExtensionReader:
         self._staged = staged
         self._consumption = consumption
 
-    @overload
-    def read(self, kind: Literal[ExtensionKind.BUS]) -> ExtensionLookup[BusExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.GENERATOR]
-    ) -> ExtensionLookup[GeneratorExtension]: ...
-    @overload
-    def read(self, kind: Literal[ExtensionKind.LOAD]) -> ExtensionLookup[LoadExtension]: ...
-    @overload
-    def read(self, kind: Literal[ExtensionKind.LINE]) -> ExtensionLookup[LineExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.CONTROLLABLE_LINE]
-    ) -> ExtensionLookup[ControllableLineExtension]: ...
-    @overload
-    def read(self, kind: Literal[ExtensionKind.STORAGE]) -> ExtensionLookup[StorageExtension]: ...
-    @overload
-    def read(self, kind: Literal[ExtensionKind.RESERVE]) -> ExtensionLookup[ReserveExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.CONSTRAINT]
-    ) -> ExtensionLookup[ConstraintExtension]: ...
-    @overload
-    def read(self, kind: Literal[ExtensionKind.NETWORK]) -> ExtensionLookup[NetworkExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.REPRESENTATIVE_PERIOD]
-    ) -> ExtensionLookup[RepresentativePeriodExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.TECHNOLOGY]
-    ) -> ExtensionLookup[TechnologyExtension]: ...
-    @overload
-    def read(
-        self, kind: Literal[ExtensionKind.CONVERSION]
-    ) -> ExtensionLookup[ConversionExtension]: ...
-
-    def read(self, kind: ExtensionKind) -> ExtensionLookup[Any]:
-        """One kind's records, by name. The kind fixes the record type."""
-        model = EXTENSION_MODELS[kind]
-        return ExtensionLookup(model, self._staged.get(kind, []), self._consumption.get_kind(kind))
+    def read(self, model: type[RecordT]) -> ExtensionLookup[RecordT]:
+        """The records of the kind that `model` holds, by name."""
+        kind = get_record_kind(model)
+        records = cast("list[RecordT]", self._staged.get(kind, []))
+        return ExtensionLookup(model, records, self._consumption.get_kind(kind))
 
     def relay(self, kind: ExtensionKind) -> list[ExtensionRecord]:
         """Every record of a kind, marked as read, for a hop that carries it on unchanged."""

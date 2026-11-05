@@ -106,7 +106,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
             return state
 
         bus_names = bus_id_to_name(state)
-        extensions = self._extensions.read(ExtensionKind.GENERATOR)
+        extensions = self._extensions.read(GeneratorExtension)
         # Snapshot duration the forward used to express ramp_limits (MW/min) and time_limits
         # / time_at_status (hours); the reverse needs it to recover the per-snapshot fields.
         # Every series in one system shares its snapshots, so any staged series fixes the
@@ -185,7 +185,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
         The size of one unit, the Technical Life and the yearly charge have no PyPSA column,
         so they travel to the next hop in the sidecar rather than stopping here.
         """
-        staged = self._extensions.read(ExtensionKind.GENERATOR)
+        staged = self._extensions.read(GeneratorExtension)
         append_extensions(
             state.destination_extensions,
             ExtensionKind.GENERATOR,

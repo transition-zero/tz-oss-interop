@@ -453,7 +453,7 @@ def _drop_unprofiled(
 
 def _list_days(state: State, recorder: ScopedRecorder) -> list[Day]:
     """The representative days of the base system, in the order of their first hours."""
-    records = state.extension_reader(recorder).read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
+    records = state.extension_reader(recorder).read(RepresentativePeriodExtension).read_all()
     faulty = [record.name for record in records if not _is_usable(record)]
     for name in faulty:
         record_not_mapped(

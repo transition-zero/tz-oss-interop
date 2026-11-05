@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from interop.core.extensions import (
     NETWORK_RECORD_NAME,
-    ExtensionKind,
+    NetworkExtension,
     record_for,
 )
 from interop.core.pipeline import State, TranslationStep
@@ -307,7 +307,7 @@ class PypsaToResultsMapObservations(TranslationStep):
 
     def _map_objective(self, state: State) -> list[pl.LazyFrame]:
         """Solve objective as a single scalar row, all dimensions null."""
-        record = record_for(state.source_extensions, ExtensionKind.NETWORK, NETWORK_RECORD_NAME)
+        record = record_for(state.source_extensions, NetworkExtension, NETWORK_RECORD_NAME)
         # The record is there for an unsolved network too: only the objective field itself
         # says the network was solved.
         if record is None or record.objective is None:
