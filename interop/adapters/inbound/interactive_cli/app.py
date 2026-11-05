@@ -374,12 +374,12 @@ _SIDE_B_REPLAY_KEYS = _SideReplayKeys(
 )
 
 
-def _build_compare_side(
+def _prompt_compare_side(
     container: Container, framework: str, pipelines: list[str], replay: _SideReplay
 ) -> CompareSide | None:
     """Pick the framework's results pipeline (when it has more than one), its source params,
     and its user mappings file when the pipeline needs one."""
-    pipeline_name = _choose_results_pipeline(framework, pipelines, replay.pipeline)
+    pipeline_name = _prompt_results_pipeline(framework, pipelines, replay.pipeline)
     if pipeline_name is None:
         return None
     with container() as scope:
@@ -401,7 +401,7 @@ def _build_compare_side(
     )
 
 
-def _choose_results_pipeline(framework: str, pipelines: list[str], replay: Any) -> str | None:
+def _prompt_results_pipeline(framework: str, pipelines: list[str], replay: Any) -> str | None:
     if len(pipelines) == 1:
         return pipelines[0]
     answer: str | None = questionary.select(
@@ -458,7 +458,7 @@ def _run_compare(
     if framework_b is None:
         return None
 
-    side_a = _build_compare_side(
+    side_a = _prompt_compare_side(
         container,
         framework_a,
         pipelines_by_framework[framework_a],
@@ -466,7 +466,7 @@ def _run_compare(
     )
     if side_a is None:
         return None
-    side_b = _build_compare_side(
+    side_b = _prompt_compare_side(
         container,
         framework_b,
         pipelines_by_framework[framework_b],

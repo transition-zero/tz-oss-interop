@@ -125,6 +125,7 @@ that touches the disk can still raise.
 | `normalise_` | The canonical form of a value | raises | a check that returns nothing |
 | `serialise_` | A model, in its wire or storage shape | no absent case | a read back, which is `parse_` |
 | `render_` | A report, in its output format, through a report port | no absent case | data a later node reads |
+| `prompt_` | Ask the user of the REPL for one answer, and give it back | returns `None` when the user cancels | a value from a file, which is `read_` |
 
 A domain verb is not in the table. A name can use a domain verb when it names an action
 of the domain: `solve`, `translate`, `compare`, `discover` and `init`. Every other verb
