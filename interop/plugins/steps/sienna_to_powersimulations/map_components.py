@@ -69,6 +69,11 @@ _SYSTEM_BASE_SCALING_DERIVATION = (
 _CONSTANT_LOSS_SCALING_DERIVATION = (
     f"constant loss in MW / system base {SYSTEM_BASE_MVA:g} MVA -> per-unit for PS.jl"
 )
+# The Sienna loss states its value curve, and the PowerSimulations loss its function data alone.
+_SOURCE_CONSTANT_LOSS_FIELD = (
+    f"{SiennaLinkCol.LOSS}.{SiennaStructField.VALUE_CURVE}.{SiennaStructField.FUNCTION_DATA}"
+    f".{SiennaStructField.CONSTANT_TERM}"
+)
 _CONSTANT_LOSS_FIELD = (
     f"{SiennaLinkCol.LOSS}.{SiennaStructField.FUNCTION_DATA}.{SiennaStructField.CONSTANT_TERM}"
 )
@@ -1043,7 +1048,7 @@ def _convert_constant_loss_to_per_unit(
                     Framework.SIENNA,
                     sienna_type,
                     comp_name,
-                    _CONSTANT_LOSS_FIELD,
+                    _SOURCE_CONSTANT_LOSS_FIELD,
                     natural_val,
                 )
             ],

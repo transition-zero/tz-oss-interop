@@ -93,3 +93,4 @@ Feature: Sienna to PowerSimulations Pipeline emits Arc components and resolves L
     Then the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.constant_term" equal to "0.05"
     And the PS.jl system "outputs/system.json" component "TwoTerminalGenericHVDCLine" named "link_1" has "loss.function_data.proportional_term" equal to "0.5"
     And the file "decisions.md" contains "constant loss in MW / system base 100 MVA -> per-unit for PS.jl"
+    And the file "decisions.md" contains "loss.value_curve.function_data.constant_term` = 5.0"
