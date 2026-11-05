@@ -250,6 +250,19 @@ Feature: Translate PLEXOS generators into a PyPSA network
     And the PyPSA generator "OutagePlant" in "outputs/network.nc" has p_max_pu at hour 2 equal to 0.75
     And the PyPSA generator "OutagePlant" in "outputs/network.nc" has p_max_pu at hour 3 equal to 0.5
 
+  Scenario: an outage factor beside a units-out trace derates only the units that are out
+    Units Out says when units are out, so the outage capacity belongs to those units. A
+    units-out trace in a data file counts as a stated Units Out.
+    Given a Plexos model
+    And the model contains data file "FallingRating" at "profiles/falling_rating.csv" with hourly values "200, 150, 100"
+    And the model contains data file "OutageTrace" at "profiles/units_out.csv" with hourly values "0, 0, 0"
+    And the model contains generator "TracedPlant" with "node=Grid_Node, category=Solar, Max Capacity=100, Units=2, Outage Factor=50, Rating=file:FallingRating, Units Out=file:OutageTrace"
+    And the model is saved as "inputs/traced.xml"
+    When I run translate against "inputs/traced.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA generator "TracedPlant" in "outputs/network.nc" has p_max_pu at hour 1 equal to 1.0
+    And the PyPSA generator "TracedPlant" in "outputs/network.nc" has p_max_pu at hour 2 equal to 0.75
+    And the PyPSA generator "TracedPlant" in "outputs/network.nc" has p_max_pu at hour 3 equal to 0.5
+
   Scenario: a minimum stable level cannot exceed the availability the generator ever has
     Given a Plexos model
     And the model contains data file "DipProfile" at "profiles/dip.csv" with hourly values "100, 0, 100"
