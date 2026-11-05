@@ -7,6 +7,8 @@ it burns, × the penalty in $/t. A negative rate gives a credit, as it does in O
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import polars as pl
 
 from interop.core.pipeline import State
@@ -15,7 +17,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
     REGION,
     TECHNOLOGY,
 )
-from interop.plugins.shared.osemosys_sienna_constants import NO_COST
+from interop.plugins.shared.osemosys_sienna_constants import NO_COST, SupplyParameter
 from interop.plugins.shared.osemosys_sienna_translations._generator_costs import (
     VARIABLE_COST_MWH,
 )
@@ -27,6 +29,7 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_emissions im
     read_emission_penalties,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 
 PENALTY_TERMS = "penalty_terms"
 PENALTY_COST_MWH = "penalty_cost_mwh"
@@ -74,6 +77,23 @@ def _list_emission_rates(generators: pl.DataFrame) -> pl.DataFrame:
             pl.col(EMISSION_TERMS).struct.field(RATE_T_PER_MWH),
         )
     )
+
+
+def build_penalty_keys(table: pl.DataFrame, rate_cols: Sequence[str]) -> pl.DataFrame:
+    """The region and pollutant of each rate in the lists of `rate_cols`, once each."""
+    keys = [
+        table.select(REGION, column)
+        .explode(column)
+        .drop_nulls(column)
+        .select(REGION, pl.col(column).struct.field(POLLUTANT))
+        for column in rate_cols
+    ]
+    return pl.concat(keys).unique()
+
+
+def set_penalties_persisted(state: State, keys: pl.DataFrame) -> None:
+    """Note that a record applies the emission penalty of each region and pollutant of `keys`."""
+    set_persisted_rows(state, SupplyParameter.EMISSION_PENALTY, [keys])
 
 
 def build_penalty_terms(

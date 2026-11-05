@@ -78,7 +78,9 @@ from interop.plugins.shared.osemosys_sienna_translations._generator_penalties im
     OPERATION_COST_MWH,
     PENALTY_COST_MWH,
     PENALTY_TERMS,
+    build_penalty_keys,
     build_penalty_terms,
+    set_penalties_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generators import (
     GeneratorSources,
@@ -249,6 +251,11 @@ def build_imports_source(
 def build_import_extensions(imports: pl.DataFrame) -> list[GeneratorExtension]:
     """The generator record of each import mode."""
     return [_build_extension(row) for row in imports.iter_rows(named=True)]
+
+
+def set_import_values_persisted(state: State, imports: pl.DataFrame) -> None:
+    """Note the emission penalties that the import generators apply."""
+    set_penalties_persisted(state, build_penalty_keys(imports, (EMISSION_TERMS,)))
 
 
 def _read_unfed_outputs(state: State, operations: OperationsYear) -> pl.DataFrame:

@@ -60,6 +60,10 @@ from interop.plugins.shared.osemosys_sienna_translations._capacity_factors impor
     build_capacity_factor_series,
     express_has_capacity_factors,
 )
+from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
+    build_penalty_keys,
+    set_penalties_persisted,
+)
 from interop.plugins.shared.osemosys_sienna_translations._names import (
     express_report_name,
 )
@@ -67,6 +71,7 @@ from interop.plugins.shared.osemosys_sienna_translations._operating_modes import
     LINK_RUN_PARAMETERS,
 )
 from interop.plugins.shared.osemosys_sienna_translations._operations import OperationsYear
+from interop.plugins.shared.osemosys_sienna_translations._persisted import set_persisted_rows
 from interop.plugins.shared.osemosys_sienna_translations._storage_buses import (
     enrich_storage_buses,
     report_storage_buses,
@@ -245,6 +250,13 @@ def set_storage_values_persisted(state: State, storages: pl.DataFrame) -> None:
     charging = _build_chargers(storages).select(REGION, TECHNOLOGY)
     set_values_persisted(state, CHARGE_TECHNOLOGY_OWNERS, charging, CHARGE_VALUES)
     set_applied_rows(state, CHARGE_TECHNOLOGY_OWNERS, charging, _CHARGE_APPLIED)
+    for parameter in StorageParameter:
+        set_persisted_rows(state, parameter, [storages.select(_STORAGE_KEYS)])
+    every_charger = storages.select(REGION, pl.col(CHARGE_SIDE.technology).alias(TECHNOLOGY))
+    set_persisted_rows(state, FlowParameter.TECHNOLOGY_TO_STORAGE, [every_charger])
+    set_persisted_rows(state, FlowParameter.TECHNOLOGY_FROM_STORAGE, [discharging])
+    penalty_terms = tuple(side.penalty_terms for side in STORAGE_SIDES)
+    set_penalties_persisted(state, build_penalty_keys(storages, penalty_terms))
 
 
 def _enrich_capacity_factors(

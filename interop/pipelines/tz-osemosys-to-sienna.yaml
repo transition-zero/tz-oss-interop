@@ -6,6 +6,9 @@ steps:
   - name: osemosys_canonical_drop_outside_scope
   - name: osemosys_to_sienna_map_components
   - name: sienna_relate_components
+  - name: osemosys_to_sienna_report_unapplied_parameters
+    params:
+      documents: operations
 sinks:
   - name: emit_sienna_files
     params:

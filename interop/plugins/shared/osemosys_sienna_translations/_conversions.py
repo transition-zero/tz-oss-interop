@@ -71,6 +71,9 @@ from interop.plugins.shared.osemosys_sienna_translations._events import (
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
+    PENALTY_TERMS,
+    build_penalty_keys,
+    set_penalties_persisted,
 )
 from interop.plugins.shared.osemosys_sienna_translations._left_out import (
     IS_ALL_ELECTRICITY,
@@ -307,6 +310,8 @@ def set_conversion_values_persisted(
     if conversions.height > 0:
         CONVERSION_EXTRAS.set_persisted(state, conversions)
         set_applied_rows(state, CONVERSION_OWNERS, conversions, _APPLIED_PARAMETERS)
+        penalty_keys = build_penalty_keys(conversions, (PENALTY_TERMS,))
+        set_penalties_persisted(state, penalty_keys)
     if routes.height > 0:
         set_values_persisted(state, ROUTE_OWNERS, routes, ROUTE_VALUES)
 
