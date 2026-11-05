@@ -122,6 +122,23 @@ def parse_results_rows(raw: bytes, years: list[int]) -> ParsedResults:
     )
 
 
+def find_value_count(raw: bytes) -> int | None:
+    """The number of value fields that most rows of a variable with known index fields hold,
+    or None where the CSV holds no such row."""
+    fields = _parse_fields(raw)
+    variable = pl.col(_FIELDS).list.get(0)
+    known = fields.filter(variable.is_in([str(name) for name in INDEX_FIELD_COUNT]))
+    if known.height == 0:
+        return None
+    index_count = variable.replace_strict(
+        {str(name): count for name, count in INDEX_FIELD_COUNT.items()}, return_dtype=pl.Int64
+    )
+    counts = known.select(
+        (pl.col(_FIELD_COUNT) - LEADING_FIELD_COUNT - index_count).alias(_ROW_COUNT)
+    )
+    return int(counts[_ROW_COUNT].mode().sort()[0])
+
+
 def report_left_out_rows(parsed: ParsedResults, source: ReportedSource) -> None:
     _report_left_out_rows(parsed.short_rows, _SHORT_ROW_WARNING, source)
     _report_left_out_rows(parsed.wrong_index_rows, _WRONG_INDEX_WARNING, source)

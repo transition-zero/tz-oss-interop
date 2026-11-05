@@ -21,6 +21,7 @@ from interop.plugins.shared.yearly_results_csv_constants import (
 )
 from interop.plugins.shared.yearly_results_csv_rows import (
     ReportedSource,
+    find_value_count,
     parse_results_rows,
     report_left_out_rows,
 )
@@ -49,10 +50,10 @@ class StageAetosResultsCsv(StageOsemosysCsv, StagedSource):
         state = super().load_into_state(results_params, staging_dir)
         model_years = list_model_years(state)
         _reject_unknown_first_year(model_years, results_params.first_year)
-        parsed = parse_results_rows(
-            self._read_results_csv(results_params.results_csv_path),
-            _list_value_years(model_years, results_params.first_year),
-        )
+        raw = self._read_results_csv(results_params.results_csv_path)
+        value_years = _list_value_years(model_years, results_params.first_year)
+        _reject_wrong_first_year(model_years, value_years, find_value_count(raw))
+        parsed = parse_results_rows(raw, value_years)
         report_left_out_rows(parsed, ReportedSource(Framework.AETOS, self._recorder))
         state.source_time_series[YEARLY_RESULTS_KEY] = _write_rows(parsed.rows, staging_dir)
         return state
@@ -85,6 +86,25 @@ def _reject_unknown_first_year(model_years: list[int], first_year: int) -> None:
             f"first_year is {first_year}, which is not a year of the model. "
             f"The model years are: {stated}."
         )
+
+
+def _reject_wrong_first_year(
+    model_years: list[int], value_years: list[int], value_count: int | None
+) -> None:
+    """Stop where the rows hold a number of values that a different first_year gives."""
+    if value_count is None or value_count == len(value_years):
+        return
+    fits = (
+        f" The values fit first_year {model_years[-value_count]}."
+        if 0 < value_count <= len(model_years)
+        else ""
+    )
+    raise UserInputError(
+        f"first_year is {value_years[0]}, so each row of the results CSV must hold "
+        f"{len(value_years)} value(s), one for each model year from {value_years[0]}. The rows "
+        f"of TotalCapacityAnnual, NewCapacity, TotalAnnualTechnologyActivityByMode and "
+        f"AnnualEmissions hold {value_count}.{fits}"
+    )
 
 
 def _list_value_years(model_years: list[int], first_year: int) -> list[int]:

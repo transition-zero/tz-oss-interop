@@ -313,6 +313,13 @@ Feature: aetos-to-results reads a published results CSV into the results format
     Then the pipeline exit code is 1
     And the log contains "first_year is 2029, which is not a year of the model. The model years are: 2030, 2031."
 
+  Scenario: A first year after the first value of the rows stops the run and names the year that fits
+    Each row holds a value for 2030 and for 2031, so the first value is the value of 2030.
+    When I read the results CSV through aetos-to-results from the year "2031"
+    Then the pipeline exit code is 1
+    And the log contains "first_year is 2031, so each row of the results CSV must hold 1 value(s), one for each model year from 2031."
+    And the log contains "The values fit first_year 2030."
+
   Scenario: A mappings file with no capacity unit stops the run and names the field
     Given a file "user_mappings.yaml" containing the lines:
       | line                                                                                                                                                        |
