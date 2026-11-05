@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import math
 from collections.abc import Callable
 from datetime import datetime
 from typing import NamedTuple
@@ -114,13 +115,14 @@ def _to_date(year: object, month: object, day: object) -> datetime | None:
 
 
 def _to_number(value: object) -> float | None:
-    """A cell's number. A blank cell, or text such as ``-``, states none."""
+    """A cell's finite number. A blank cell, text such as ``-``, or ``nan`` states none."""
     if value is None:
         return None
     try:
-        return float(str(value))
+        number = float(str(value))
     except ValueError:
         return None
+    return number if math.isfinite(number) else None
 
 
 def _warn_unreadable(relative: str, unreadable_count: int) -> None:

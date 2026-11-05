@@ -253,7 +253,8 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
     And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
 
-  Scenario: a row whose value is not a number is left out with a warning
+  Scenario Outline: a row whose value is "<cell>" is left out with a warning
+    A value must be a finite number, so text and a non-finite number each state none.
     Given a Plexos model
     And the model contains region "Grid"
     And the model contains node "Grid_Node" in region "Grid"
@@ -261,7 +262,7 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
       | NAME | YEAR | MONTH | DAY | VALUE |
       | Farm | 2026 | 1     | 1   | 60    |
-      | Farm | 2026 | 6     | 1   | -     |
+      | Farm | 2026 | 6     | 1   | <cell> |
     And generator "Farm" has property "Max Capacity" from data file "Capacities"
     And the model contains model "Plan"
     And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
@@ -269,6 +270,12 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
     And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
+
+    Examples:
+      | cell |
+      | -    |
+      | nan  |
+      | inf  |
 
   Scenario: a data file names an object without regard to letter case
     PLEXOS reads an object name without letter case, so a row for "farm" is the row of "Farm".
