@@ -465,7 +465,7 @@ def _read_horizon_limits(
 
 
 def _build_spec_policies(inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame) -> Policies:
-    members = _group_members(inputs, spec, limits)
+    members = _build_members_by_record(inputs, spec, limits)
     by_record = limits.partition_by(_RECORD, as_dict=True)
     records = [
         _build_record(spec, rows, members.get(record, []))
@@ -569,7 +569,7 @@ def _build_tagged_regions(
 # --- the members -------------------------------------------------------------------------------
 
 
-def _group_members(
+def _build_members_by_record(
     inputs: _PolicyInputs, spec: PolicySpec, limits: pl.DataFrame
 ) -> dict[str, list[ConstraintMember]]:
     """The members of each record, by record name."""
@@ -621,10 +621,10 @@ def _build_emitter_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.Data
 
 def _build_tag_rows(inputs: _PolicyInputs, spec: PolicySpec) -> list[pl.DataFrame]:
     """The members of each region, one table for each tag, each with its tag as the coefficient."""
-    return [_select_tag_members(inputs.tags[tag], tag) for tag in spec.tags]
+    return [_build_tag_member_rows(inputs.tags[tag], tag) for tag in spec.tags]
 
 
-def _select_tag_members(tags: pl.DataFrame, tag: str) -> pl.DataFrame:
+def _build_tag_member_rows(tags: pl.DataFrame, tag: str) -> pl.DataFrame:
     return tags.select(
         REGION,
         _MEMBER_NAME,
