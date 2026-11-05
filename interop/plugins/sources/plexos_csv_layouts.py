@@ -393,6 +393,14 @@ def _reshape_monthly_in_year(csv: _CsvToReshape) -> pl.LazyFrame | None:
     return _reshape_monthly_by_name(csv.scan, csv.horizon_year)
 
 
+# A shared value column names no component until its owners join it.
+_SERIES_KEYS = (
+    StagedTimeSeriesCol.COMPONENT,
+    StagedTimeSeriesCol.SAMPLE,
+    StagedTimeSeriesCol.SNAPSHOT,
+)
+
+
 def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
     """A value for each object and pattern, spread over the snapshots each pattern covers.
 
@@ -418,7 +426,8 @@ def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
         named = _select_series(stamped, value_columns, csv.sample_scope, csv.owner_names)
     if named is None:
         return None
-    keys = [StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SAMPLE, StagedTimeSeriesCol.SNAPSHOT]
+    present = named.collect_schema().names()
+    keys = [key for key in _SERIES_KEYS if key in present]
     return named.unique(subset=keys, keep="first", maintain_order=True)
 
 
@@ -551,12 +560,12 @@ def _owner_table(owners: Rows) -> pl.LazyFrame:
         {
             StagedTimeSeriesCol.COMPONENT: [row[PlexosPropertyCol.CHILD_OBJECT] for row in owners],
             _OWNER_SCALING_COL: [row[PlexosPropertyCol.SCALING] for row in owners],
-            _ROW_KEY_COL: [_name_row_key(row) for row in owners],
+            _ROW_KEY_COL: [_build_row_key(row) for row in owners],
         }
     )
 
 
-def _name_row_key(row: dict[str, Any]) -> str:
+def _build_row_key(row: dict[str, Any]) -> str:
     """The owner's row name in a self-naming file, folded to lower case."""
     return str(row.get(PlexosPropertyCol.ROW_NAME) or row[PlexosPropertyCol.CHILD_OBJECT]).lower()
 
