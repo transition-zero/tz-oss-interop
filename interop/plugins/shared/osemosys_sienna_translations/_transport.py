@@ -498,11 +498,9 @@ def _read_mode_ends(state: State, year: int) -> pl.DataFrame:
     fuels = read_electricity_fuels(state).select(
         REGION, FUEL, AnnotationColumn.LOCATION, ELECTRICITY_BUS
     )
-    ends = [
-        _read_end(state, year, parameter, fuels, columns)
-        for parameter, columns in ((_FLOWS[0], _FROM), (_FLOWS[1], _TO))
-    ]
-    return ends[0].join(ends[1], on=_MODE_KEYS, how="full", coalesce=True)
+    takes_in = _read_end(state, year, FlowParameter.INPUT_ACTIVITY_RATIO, fuels, _FROM)
+    puts_out = _read_end(state, year, FlowParameter.OUTPUT_ACTIVITY_RATIO, fuels, _TO)
+    return takes_in.join(puts_out, on=_MODE_KEYS, how="full", coalesce=True)
 
 
 def _drop_other_modes(mode_ends: pl.DataFrame, mode: str) -> pl.DataFrame:

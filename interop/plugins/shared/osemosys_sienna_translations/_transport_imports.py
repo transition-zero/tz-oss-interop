@@ -196,7 +196,7 @@ def read_import_modes(
     )
     modes, _ = filter_component(modes, ~pl.col(IS_UNLIMITED), UNLIMITED_IMPORT_SKIP, recorder)
     report_not_mapped(
-        _count_import_modes(modes, lines),
+        _build_import_mode_counts(modes, lines),
         pl.col(_IMPORT_MODE_COUNT) == _ONE_IMPORT,
         _SHARED_CAPACITY_REPORT,
         recorder,
@@ -285,7 +285,7 @@ def _build_import_modes(outputs: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def _count_import_modes(modes: pl.DataFrame, lines: pl.DataFrame) -> pl.DataFrame:
+def _build_import_mode_counts(modes: pl.DataFrame, lines: pl.DataFrame) -> pl.DataFrame:
     """Each line with an import mode, with its capacity, its import modes and their count."""
     capacities = lines.select(*_KEYS, CAPACITY_PARAMETER, LINE_CAPACITY)
     mode = pl.col(OPERATING_MODE).sort()
