@@ -22,6 +22,7 @@ import polars as pl
 
 from interop.core.extensions import ConversionExtension, ExtensionKind
 from interop.core.pipeline import State
+from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MWH,
@@ -49,6 +50,7 @@ from interop.plugins.shared.osemosys_canonical.constants import (
 )
 from interop.plugins.shared.osemosys_sienna_constants import (
     REGION_NAME_SEPARATOR,
+    TECHNOLOGIES_LABEL,
     WHOLE_CAPACITY,
     ActivityParameter,
     SupplyParameter,
@@ -65,6 +67,7 @@ from interop.plugins.shared.osemosys_sienna_translations._component_mapping impo
 from interop.plugins.shared.osemosys_sienna_translations._events import (
     build_osemosys_field,
     build_sienna_field,
+    osemosys_skip_report,
 )
 from interop.plugins.shared.osemosys_sienna_translations._generator_penalties import (
     EMISSION_COST_MWH,
@@ -113,6 +116,7 @@ from interop.plugins.shared.osemosys_sienna_translations._technology_values impo
 from interop.plugins.shared.osemosys_sienna_translations._transport import read_transport_ends
 from interop.plugins.shared.osemosys_sienna_translations._transport_columns import (
     FROM_BUS,
+    FROM_BUSES,
     FROM_FUEL,
     INPUT_RATIO,
     OUTPUT_RATIO,
@@ -120,6 +124,7 @@ from interop.plugins.shared.osemosys_sienna_translations._transport_columns impo
     TO_FUEL,
 )
 from interop.plugins.shared.pypsa_constants import PyPSALinkCol
+from interop.plugins.shared.translation_runner import SkippedNames, filter_component
 from interop.ports.outbound.reporting import EventKind, SourceField, TranslationEvent
 
 CONVERSION_NAME = "conversion_name"
@@ -225,8 +230,11 @@ ROUTE_VALUES: tuple[TechnologyValue, ...] = (
 )
 
 
-def build_conversions_source(state: State, operations: OperationsYear) -> pl.DataFrame:
-    """One row for each export whose fuels are all electricity."""
+def build_conversions_source(
+    state: State, operations: OperationsYear, recorder: ScopedRecorder
+) -> pl.DataFrame:
+    """One row for each export whose fuels are all electricity, and that takes in electricity at
+    one bus at the operations mode."""
     kind = pl.col(AnnotationColumn.KIND)
     conversions = (
         read_left_out_technologies(state, operations)
@@ -239,10 +247,27 @@ def build_conversions_source(state: State, operations: OperationsYear) -> pl.Dat
     if conversions.height == 0:
         return conversions
     conversions = _enrich_link(state, operations, conversions)
+    conversions, _ = filter_component(
+        conversions, pl.col(FROM_BUSES) == _ONE_BUS, NO_INPUT_BUS_SKIP, recorder
+    )
     rated = conversions.with_columns(
         pl.lit(operations.mode).alias(OPERATING_MODE), pl.col(INPUT_RATIO).alias(RATING_RATIO)
     )
     return CONVERSION_EXTRAS.enrich(state, operations, rated).sort(CONVERSION_NAME)
+
+
+_ONE_BUS = 1
+NO_INPUT_BUS_SKIP = osemosys_skip_report(
+    component=TECHNOLOGY,
+    name_col=TECHNOLOGY_NAME,
+    reason="do not take in electricity at one bus at the operations mode",
+    counted_noun="export(s)",
+    note=(
+        "a conversion record draws its electricity from one bus, and the export takes in "
+        "electricity at no bus or at more than one bus at the operations mode"
+    ),
+    listed=SkippedNames(column=TECHNOLOGY_NAME, label=TECHNOLOGIES_LABEL),
+)
 
 
 def build_routes_source(state: State, operations: OperationsYear) -> pl.DataFrame:
@@ -295,7 +320,7 @@ def _enrich_link(
     """The ends, the capacity, the efficiency, the cost and the availability of each Link."""
     keys = conversions.select(_KEYS)
     ends = read_transport_ends(state, operations.year, operations.mode).select(
-        *_KEYS, FROM_BUS, TO_BUS, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
+        *_KEYS, FROM_BUS, FROM_BUSES, TO_BUS, FROM_FUEL, TO_FUEL, INPUT_RATIO, OUTPUT_RATIO
     )
     table = (
         enrich_residual_capacity(state, operations.year, conversions)

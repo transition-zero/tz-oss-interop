@@ -279,6 +279,48 @@ Feature: osemosys-csv-to-sienna turns the transport technologies of one model ye
       And the log does not contain "line_loss states"
       And the log does not contain "residual_transport_capacity states"
 
+    Scenario: An export that takes in electricity at two buses is left out and reported
+      ATEXPORT takes in electricity at AT and at DE at the operations mode. A conversion record
+      draws from one bus, so the step leaves the export out.
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY     | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDELINK       | ATELEC | 1                 | 2030 | 1.25  |
+        | R1     | ATDELINK       | DEELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEIDLE       | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDESPARE      | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATEXPORT       | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATEXPORT       | DEELEC | 1                 | 2030 | 0.5   |
+        | R1     | ATSTEPDOWN     | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATSTEPUP       | ATELECLV | 1               | 2035 | 1     |
+        | R1     | ATELECTROLYSER | ATELEC | 1                 | 2030 | 1.5   |
+        | R1     | DEATPIPE       | DEGAS  | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "1 export(s) do not take in electricity at one bus at the operations mode, so each is left out. Technologies: R1/ATEXPORT"
+      And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATEXPORT"
+
+    Scenario: An export that takes in electricity at another mode only is left out and reported
+      ATEXPORT takes in electricity in mode 2 only, and the operations mode is 1.
+      Given the otoole parameter "InputActivityRatio" keyed by "REGION TECHNOLOGY FUEL MODE_OF_OPERATION YEAR" with default 0 has the rows:
+        | REGION | TECHNOLOGY     | FUEL   | MODE_OF_OPERATION | YEAR | VALUE |
+        | R1     | ATDELINK       | ATELEC | 1                 | 2030 | 1.25  |
+        | R1     | ATDELINK       | DEELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDEODD        | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATDEIDLE       | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATDESPARE      | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATEXPORT       | ATELEC | 2                 | 2030 | 1     |
+        | R1     | ATSTEPDOWN     | ATELEC | 1                 | 2030 | 1     |
+        | R1     | ATSTEPUP       | ATELECLV | 1               | 2035 | 1     |
+        | R1     | ATELECTROLYSER | ATELEC | 1                 | 2030 | 1.5   |
+        | R1     | DEATPIPE       | DEGAS  | 1                 | 2030 | 1     |
+      When I translate the otoole model to Sienna for the year "2030"
+      Then the pipeline exit code is 0
+      And the log contains "1 export(s) do not take in electricity at one bus at the operations mode, so each is left out. Technologies: R1/ATEXPORT"
+      And the file "outputs/extensions.json" parses as JSON with no conversion extension record for "ATEXPORT"
+
     Scenario: The emission penalty of an export adds to the cost of its record
       ATEXPORT emits 0.5 t of CO2 for each MWh that it takes in, at a penalty of 10 $/t, which is
       5 $ for each MWh. It states no variable cost, so its record costs 5 $ for each MWh.
