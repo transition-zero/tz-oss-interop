@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+from bisect import bisect_left
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import NamedTuple
@@ -52,6 +53,34 @@ class Period(NamedTuple):
         return self.first_hour + self.hours * ONE_HOUR
 
 
+class _KeptPeriods:
+    """The periods kept so far, in record order, with a lookup of them by first hour."""
+
+    def __init__(self) -> None:
+        self.in_order: list[Period] = []
+        self._order: dict[str, int] = {}
+        self._by_start: list[Period] = []
+        self._starts: list[datetime] = []
+
+    def add(self, period: Period) -> None:
+        index = bisect_left(self._starts, period.first_hour)
+        self._starts.insert(index, period.first_hour)
+        self._by_start.insert(index, period)
+        self._order[period.name] = len(self.in_order)
+        self.in_order.append(period)
+
+    def find_first_overlap(self, period: Period) -> Period | None:
+        """The kept period earliest in record order that holds an hour of `period`.
+
+        Kept periods never overlap, so only the one that starts before `period` and those that
+        start inside it can hold one of its hours.
+        """
+        low = max(bisect_left(self._starts, period.first_hour) - 1, 0)
+        high = bisect_left(self._starts, period.end_hour)
+        overlapping = [one for one in self._by_start[low:high] if period.is_overlapping(one)]
+        return min(overlapping, key=lambda one: self._order[one.name], default=None)
+
+
 class LeftOutPeriodText(NamedTuple):
     """The note and the warning that a reader writes for a period it leaves out."""
 
@@ -86,16 +115,16 @@ class PeriodChooser:
         return [_parse_period(record) for record in records if record.name not in faults]
 
     def _drop_overlapping(self, periods: list[Period]) -> list[Period]:
-        kept: list[Period] = []
+        kept = _KeptPeriods()
         notes: dict[str, str] = {}
         for period in periods:
-            earlier = next((other for other in kept if period.is_overlapping(other)), None)
+            earlier = kept.find_first_overlap(period)
             if earlier is None:
-                kept.append(period)
+                kept.add(period)
             else:
                 notes[period.name] = self._text.overlapping_note.format(earlier=earlier.name)
         self._report_left_out_periods(notes, self._text.overlapping_warning)
-        return kept
+        return kept.in_order
 
     def _report_left_out_periods(self, notes: dict[str, str], warning: str) -> None:
         for name, note in notes.items():

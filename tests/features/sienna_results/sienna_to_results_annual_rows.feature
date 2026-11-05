@@ -40,6 +40,26 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
       | variable  | component | category | timestamp           | value |
       | emissions | CO2       |          | 2030-01-01T00:00:00 | 3250  |
 
+  Scenario: A period that holds hours of two earlier periods is left out, and the report names the first of them
+    The sidecar states day_2 before day_1. day_3 holds 01:00 of day_1 and 02:00 of day_2, so it
+    is left out, and its note names day_2, the earlier of the two in the sidecar.
+    Given the results cover snapshots 2030-01-01T00:00:00 2030-01-01T01:00:00 2030-01-01T02:00:00 2030-01-01T03:00:00
+    And the results have ThermalStandard dispatch for "gas" of 10 20 30 40
+    And the results have HVDC flow for "link" of 0 0 0 0
+    And the results are saved in "results"
+    And the system has a representative period "day_2" from "2030-01-01T02:00:00" of 2 hours with weight 50
+    And the system has a representative period "day_1" from "2030-01-01T00:00:00" of 2 hours with weight 100
+    And the system has a representative period "day_3" from "2030-01-01T01:00:00" of 2 hours with weight 10
+    And the system is saved as "inputs/system.json"
+    When I run the pipeline "sienna-to-results" with overrides "source.system_json_path=inputs/system.json source.extensions_json_path=inputs/system_extensions.json source.results_dir=results"
+    Then the pipeline exit code is 0
+    And the log contains "1 representative period(s) hold an hour that an earlier period holds, so each is left out: day_3"
+    And the file "decisions.md" contains "the representative period holds an hour that the period day_2 also holds"
+    And the results parquet "outputs/results.parquet" has these "production" rows:
+      | variable   | component | category | timestamp           | value |
+      | production | gas       | gas      | 2030-01-01T00:00:00 | 6500  |
+      | production | link      |          | 2030-01-01T00:00:00 | 0     |
+
   Scenario: The annual events name the results rows that they sum, so the report shows each step
     Production sums the dispatch and flow rows that the step writes, and emissions multiply the
     production rows by the rate of each generator.
