@@ -111,3 +111,5 @@ Feature: sienna-to-results weights the annual rows by the hours that each row of
       | variable   | component | category | timestamp           | value |
       | production | link      |          | 2030-01-01T00:00:00 | 2920  |
     And the log contains "sienna-to-results: 1 line(s) state a stand-in limit that never binds, not a capacity, so they have no installed_capacity row. Each one: link"
+    And the log does not contain "reach no mapping"
+    And the log does not contain "nothing maps or relays"
