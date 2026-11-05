@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import ClassVar, NamedTuple
+
 from interop.plugins.shared.constants import (
     EXTENSIONS_PREFIX,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MW_YEAR,
+    UNIT_MW,
     Framework,
 )
 from interop.plugins.shared.framework_reporting import DestinationReporter
@@ -33,6 +36,15 @@ _UNPRICED_OVERNIGHT_COST_NOTE = (
     "the record states no {missing_field}, and PyPSA annualises an overnight_cost only over a "
     "discount_rate and a lifetime, so the network leaves the cost out; extensions.json keeps it"
 )
+_UNSTATED_DEFAULT_NOTE = "the {record} record states no {column}, so PyPSA's own default applies"
+_EXT_P_NOM_ATTR = f"{EXTENSIONS_PREFIX}p_nom"
+
+
+class FixedValue(NamedTuple):
+    """A yearly fixed charge as its record states it, and as the PyPSA component holds it."""
+
+    stated: float
+    written: float
 
 
 class SiennaToPypsaReporter(DestinationReporter):
@@ -40,6 +52,8 @@ class SiennaToPypsaReporter(DestinationReporter):
 
     source_framework = Framework.SIENNA
     destination_framework = Framework.PYPSA
+    # The record that the note of a PyPSA default names.
+    unstated_record: ClassVar[str] = "sidecar"
 
     def record_carried(
         self,
@@ -58,6 +72,21 @@ class SiennaToPypsaReporter(DestinationReporter):
             derivation=f"{attribute} (PyPSA round-trip)",
         )
 
+    def record_unstated_default(self, name: str, column: str, value: object) -> None:
+        """A PyPSA column that takes PyPSA's own value, as the sidecar record states none."""
+        self._default_applied(
+            destinations=[self._destination(name, column, value)],
+            note=_UNSTATED_DEFAULT_NOTE.format(record=self.unstated_record, column=column),
+        )
+
+    def _record_stated_floor(self, sienna_type: str, name: str, p_nom: float) -> None:
+        """The p_nom that a sidecar record states, as the floor of an extendable build."""
+        self._derived(
+            sources=[self._source_field(sienna_type, name, _EXT_P_NOM_ATTR, p_nom, UNIT_MW)],
+            destinations=[self._destination(name, PyPSAGeneratorCol.P_NOM_MIN, p_nom, UNIT_MW)],
+            derivation=P_NOM_FLOOR_DERIVATION,
+        )
+
     def record_bound_unapplied(
         self, sienna_type: str, name: str, field_name: str, note: str
     ) -> None:
@@ -68,16 +97,20 @@ class SiennaToPypsaReporter(DestinationReporter):
         )
 
     def record_fixed_charge(
-        self, sienna_type: str, name: str, value: float, derivation: str
+        self, sienna_type: str, name: str, charge: FixedValue, derivation: str
     ) -> None:
         """The yearly fixed charge of a sidecar record, as the fom_cost of its component."""
         self._derived(
             sources=[
                 self._source_field(
-                    sienna_type, name, _EXT_FIXED_CHARGE_ATTR, value, UNIT_DOLLARS_PER_MW_YEAR
+                    sienna_type,
+                    name,
+                    _EXT_FIXED_CHARGE_ATTR,
+                    charge.stated,
+                    UNIT_DOLLARS_PER_MW_YEAR,
                 )
             ],
-            destinations=[self._destination(name, _FOM_COST, value, UNIT_DOLLARS_PER_MW)],
+            destinations=[self._destination(name, _FOM_COST, charge.written, UNIT_DOLLARS_PER_MW)],
             derivation=derivation,
         )
 

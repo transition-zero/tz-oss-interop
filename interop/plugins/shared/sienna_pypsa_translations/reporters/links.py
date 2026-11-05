@@ -179,13 +179,13 @@ _TAKEN_NAME_NOTE = (
     "a link of the network has the name of the conversion record, so the record becomes no "
     "link and travels on to extensions.json"
 )
-_DEFAULT_LINK_NOTE = "the conversion record states no {column}, so PyPSA's own default applies"
 
 
 class ConversionReporter(SiennaToPypsaReporter):
     """Records a conversion record of the sidecar that becomes a PyPSA Link."""
 
     destination_component = PyPSAComponent.LINK
+    unstated_record = "conversion"
 
     def record_name_taken(self, name: str) -> None:
         self._not_mapped(
@@ -193,20 +193,8 @@ class ConversionReporter(SiennaToPypsaReporter):
             note=_TAKEN_NAME_NOTE,
         )
 
-    def record_default(self, name: str, column: str, value: object) -> None:
-        self._default_applied(
-            destinations=[self._destination(name, column, value)],
-            note=_DEFAULT_LINK_NOTE.format(column=column),
-        )
-
     def record_p_nom_min(self, sienna_type: str, name: str, p_nom: float) -> None:
-        self._derived(
-            sources=[
-                self._source_field(sienna_type, name, f"{EXTENSIONS_PREFIX}p_nom", p_nom, UNIT_MW)
-            ],
-            destinations=[self._destination(name, PyPSALinkCol.P_NOM_MIN, p_nom, UNIT_MW)],
-            derivation=P_NOM_FLOOR_DERIVATION,
-        )
+        self._record_stated_floor(sienna_type, name, p_nom)
 
 
 _PLANT_LINK_NOTE = (
@@ -228,13 +216,12 @@ _PLANT_FURTHER_DERIVATION = (
     "a further fuel of extensions.fuel_buses -> the bus; - its MWh for each MWh of electricity / "
     "the MWh of the fuel at bus0 -> the efficiency, negative as the Link draws it"
 )
+_PLANT_OUTPUT_DERIVATION = (
+    "a fuel of extensions.output_buses -> the bus; its MWh for each MWh of electricity / the MWh "
+    "of the fuel at bus0 -> the efficiency, positive as the Link puts it out"
+)
 _PLANT_DROPPED_NOTE = (
     "the Generator of the plant states the column, and the Link that replaces it does not hold it"
-)
-_BOUNDED_PLANT_NOTE = (
-    "the plant states an annual energy bound, and a PyPSA Link has no e_sum_min or e_sum_max, "
-    "so it stays a Generator that pays the Sienna price of its fuel and does not draw the fuel "
-    "from its bus"
 )
 
 
@@ -307,20 +294,38 @@ class PlantLinkReporter(SiennaToPypsaReporter):
             derivation=_PLANT_FURTHER_DERIVATION,
         )
 
+    def record_output_port(self, name: str, row: dict[str, Any], port: LinkPort) -> None:
+        """A fuel that the plant puts out besides electricity, at bus2 or bus3 of the Link."""
+        source = self._source_field(
+            SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}output_buses", None
+        )
+        self._derived(
+            sources=[source],
+            destinations=[
+                self._destination(name, port.bus, row[port.bus]),
+                self._destination(name, port.efficiency, row[port.efficiency]),
+            ],
+            derivation=_PLANT_OUTPUT_DERIVATION,
+        )
+
     def record_dropped(self, name: str, column: str, value: object) -> None:
         """A column of the PyPSA Generator of the plant that a Link of this hop does not hold."""
         self._not_mapped(
             sources=[_build_generator_field(name, column, value)], note=_PLANT_DROPPED_NOTE
         )
 
-    def record_bounded(self, name: str) -> None:
+    def record_kept(self, name: str, fuel_buses: object, note: str) -> None:
+        """A plant that states the buses of its fuels and stays a Generator, and why."""
         self._not_mapped(
             sources=[
                 self._source_field(
-                    SiennaComponent.THERMAL_STANDARD, name, f"{EXTENSIONS_PREFIX}fuel_buses", None
+                    SiennaComponent.THERMAL_STANDARD,
+                    name,
+                    f"{EXTENSIONS_PREFIX}fuel_buses",
+                    fuel_buses,
                 )
             ],
-            note=_BOUNDED_PLANT_NOTE,
+            note=note,
         )
 
 

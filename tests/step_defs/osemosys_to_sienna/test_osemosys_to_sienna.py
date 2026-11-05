@@ -18,6 +18,7 @@ scenarios(
     "osemosys_to_sienna/transport.feature",
     "osemosys_to_sienna/policies.feature",
     "osemosys_to_sienna/unapplied_parameters.feature",
+    "osemosys_to_sienna/fuels.feature",
 )
 
 _PIPELINE = "osemosys-csv-to-sienna"
