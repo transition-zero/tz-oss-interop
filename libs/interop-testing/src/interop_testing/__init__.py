@@ -17,6 +17,7 @@ from interop_testing.builders.plexos_models import PlexosModelBuilder
 from interop_testing.builders.pypsa_networks import PyPSANetworkBuilder, read_network
 from interop_testing.builders.sienna_results import SiennaResultsBuilder
 from interop_testing.builders.sienna_systems import SiennaSystemBuilder
+from interop_testing.builders.yearly_results_csv import YearlyResultsCsvBuilder
 from interop_testing.pipeline_driver import run_pipeline
 from interop_testing.projects import (
     DEFAULT_ADAPTERS_YAML,
@@ -36,6 +37,7 @@ __all__ = [
     "PyPSANetworkBuilder",
     "SiennaResultsBuilder",
     "SiennaSystemBuilder",
+    "YearlyResultsCsvBuilder",
     "read_network",
     "run_pipeline",
     "write_adapters_config",

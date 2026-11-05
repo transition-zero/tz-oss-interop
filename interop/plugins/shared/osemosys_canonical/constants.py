@@ -117,6 +117,12 @@ class ObjectPart(StrEnum):
     REGIONS = "regions"
 
 
+# The column of an annotation table that names each member once in the whole model.
+MEMBER_NAME = "name"
+# The character between a region and a member, in a name that needs both.
+REGION_NAME_SEPARATOR = "/"
+
+
 class AnnotationColumn(StrEnum):
     KIND = "kind"
     CATEGORY = "category"
