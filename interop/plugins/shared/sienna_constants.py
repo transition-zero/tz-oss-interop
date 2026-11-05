@@ -391,6 +391,9 @@ class SiennaStructField:
     VOM_COST = "vom_cost"
     ENERGY_SHORTAGE_COST = "energy_shortage_cost"
     ENERGY_SURPLUS_COST = "energy_surplus_cost"
+    LEVEL_SHORTAGE_COST = "level_shortage_cost"
+    LEVEL_SURPLUS_COST = "level_surplus_cost"
+    SPILLAGE_COST = "spillage_cost"
     # operation cost top-level discriminator / scalar fields
     COST_TYPE = "cost_type"
     VARIABLE_COST_TYPE = "variable_cost_type"

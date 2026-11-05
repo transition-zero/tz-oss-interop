@@ -633,7 +633,7 @@ def _resolve_properties(
     resolved = [
         row
         for winner in _winning_data_rows(tables, model)
-        for row in _property_rows(winner, lookups, dropped, units)
+        for row in _build_property_rows(winner, lookups, dropped, units)
     ]
     units.warn()
     return resolved
@@ -670,7 +670,7 @@ def _property_candidates(
             yield _Candidate(key, priority, data)
 
 
-def _property_rows(
+def _build_property_rows(
     winner: _WinningRow,
     lookups: _PropertyLookups,
     dropped: _DroppedRecords,
@@ -696,18 +696,18 @@ def _property_rows(
         **{column: membership[column] for column in _MEMBERSHIP_NAME_COLUMNS},
         PlexosPropertyCol.PROPERTY: property_name,
         PlexosPropertyCol.BAND: winner.band,
-        PlexosPropertyCol.ROW_NAME: _row_name(profile, membership),
+        PlexosPropertyCol.ROW_NAME: _build_row_name(profile, membership),
     }
     dated = _find_dated_values(profile, naming, lookups.dated_files)
     if dated is None:
-        return [DatedRow(winner.dates, {**naming, **_value_columns(stated, profile, units)})]
+        return [DatedRow(winner.dates, {**naming, **_build_value_columns(stated, profile, units)})]
     return [
-        DatedRow(one.dates, {**naming, **_dated_value_columns(stated, one, profile, units)})
+        DatedRow(one.dates, {**naming, **_build_dated_value_columns(stated, one, profile, units)})
         for one in dated
     ]
 
 
-def _row_name(profile: _ProfileRef | None, membership: dict[str, Any]) -> str:
+def _build_row_name(profile: _ProfileRef | None, membership: dict[str, Any]) -> str:
     """The name a data file gives this value's rows."""
     if profile is not None and profile.variable is not None:
         return profile.variable
@@ -739,7 +739,7 @@ def _list_row_names(naming: dict[str, Any]) -> list[str]:
     return [row_name, parent + row_name, row_name + parent]
 
 
-def _dated_value_columns(
+def _build_dated_value_columns(
     stated: StatedValue, dated: DatedValue, profile: _ProfileRef | None, units: UnitConversions
 ) -> dict[str, Any]:
     """The value a data file dates, scaled by the object's share and in the unit interop reads."""
@@ -754,7 +754,7 @@ def _dated_value_columns(
     }
 
 
-def _value_columns(
+def _build_value_columns(
     stated: StatedValue, profile: _ProfileRef | None, units: UnitConversions
 ) -> dict[str, Any]:
     """The value in the unit interop reads it in, the unit the model stated, and the CSV."""
@@ -961,7 +961,7 @@ def _group_by_series_key(rows: _Rows) -> dict[tuple[str, str], _Rows]:
     """
     grouped: dict[tuple[str, str], _Rows] = {}
     for row in rows:
-        grouped.setdefault(_group_key(row), []).append(row)
+        grouped.setdefault(_build_group_key(row), []).append(row)
     return grouped
 
 
@@ -973,9 +973,9 @@ def _drop_empty_series(
     Reading one row is a column-scale check, so it is safe on a long series.
     """
     kept: dict[tuple[str, str], pl.LazyFrame] = {}
-    for key, frame in staged.items():
-        if frame.limit(1).collect().height:
-            kept[key] = frame
+    for key, table in staged.items():
+        if table.limit(1).collect().height:
+            kept[key] = table
         else:
             _warn_empty_series(key, rows_by_file)
     return kept
@@ -983,12 +983,12 @@ def _drop_empty_series(
 
 def _warn_empty_series(key: tuple[str, str], rows_by_file: dict[str, _Rows]) -> None:
     for relative, rows in rows_by_file.items():
-        owners = [row for row in rows if _group_key(row) == key]
+        owners = [row for row in rows if _build_group_key(row) == key]
         if owners:
             warn_no_series(relative, owners)
 
 
-def _group_key(row: dict[str, Any]) -> tuple[str, str]:
+def _build_group_key(row: dict[str, Any]) -> tuple[str, str]:
     return (row[PlexosPropertyCol.CHILD_CLASS], row[PlexosPropertyCol.PROPERTY])
 
 

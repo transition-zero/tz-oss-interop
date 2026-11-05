@@ -263,7 +263,7 @@ def read_transmission(state: State) -> TransmissionSource:
     names = sorted(source.select(PlexosObjectCol.NAME).collect()[PlexosObjectCol.NAME])
     return TransmissionSource(
         lines=tuple(
-            _staged_line(
+            _build_staged_line(
                 name,
                 endpoints_by_line[name],
                 properties.get(name, {}),
@@ -282,7 +282,7 @@ def read_transmission(state: State) -> TransmissionSource:
     )
 
 
-def _staged_line(
+def _build_staged_line(
     name: str, endpoints: Endpoints, properties: dict[str, float], unstaged: tuple[str, ...]
 ) -> StagedLine:
     readable = {key: value for key, value in properties.items() if key not in unstaged}

@@ -13,7 +13,7 @@ metres with an inflow in cubic metres per second.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -56,20 +56,21 @@ from interop.plugins.shared.sienna_constants import (
     TIME_SERIES_ASSOCIATION_SCHEMA,
     SiennaComponent,
     SiennaCostType,
+    SiennaFunctionType,
     SiennaHydroReservoirCol,
     SiennaLevelDataType,
     SiennaSeriesName,
+    SiennaStructField,
 )
 from interop.plugins.shared.sienna_time_series import collect_ts_info, ts_association_row
 
-R = SiennaHydroReservoirCol
+ReservoirCol = SiennaHydroReservoirCol
 
 _VOLUME_PROPERTIES = (
     PlexosProperty.MAX_VOLUME,
     PlexosProperty.MIN_VOLUME,
     PlexosProperty.INITIAL_VOLUME,
 )
-_LINEAR = "LINEAR"
 _NO_INFLOW = 0.0
 _EMPTY = 0.0
 _NO_OUTFLOW = 0.0
@@ -191,14 +192,26 @@ class TranslatedReservoirs:
     )
 
 
+class _Turbine(NamedTuple):
+    name: str
+    turbine_id: int
+
+
+class _Route(NamedTuple):
+    """The Storage a Waterway leaves and the Storage it reaches, where it names one."""
+
+    leaves: str | None
+    reaches: str | None
+
+
 @dataclass(frozen=True)
 class _Cascade:
     """The turbines and Waterways that join the reservoirs to each other."""
 
-    turbines_by_storage: dict[str, list[tuple[str, int]]]
-    waterways: dict[str, tuple[str | None, str | None]]
+    turbines_by_storage: dict[str, list[_Turbine]]
+    waterways: dict[str, _Route]
     # The turbines that release their water into each Storage, as its tail.
-    tail_turbines_by_storage: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
+    tail_turbines_by_storage: dict[str, list[_Turbine]] = field(default_factory=dict)
 
     def list_storages(self) -> list[str]:
         """Every Storage of the cascade: each turbine's head and tail, and each Storage a
@@ -209,9 +222,9 @@ class _Cascade:
         while is_growing:
             joined = {
                 end
-                for leaves, reaches in self.waterways.values()
-                if leaves in found or reaches in found
-                for end in (leaves, reaches)
+                for route in self.waterways.values()
+                if route.leaves in found or route.reaches in found
+                for end in route
                 if end is not None
             }
             is_growing = not joined <= found
@@ -249,23 +262,23 @@ def _read_cascade(state: State, lookups: StorageLookups, turbines: dict[str, int
 
 def _group_turbines(
     turbines: dict[str, int], storage_by_turbine: dict[str, str]
-) -> dict[str, list[tuple[str, int]]]:
+) -> dict[str, list[_Turbine]]:
     """The turbines that name each Storage in one collection, with their ids."""
-    by_storage: dict[str, list[tuple[str, int]]] = {}
+    by_storage: dict[str, list[_Turbine]] = {}
     for turbine, turbine_id in sorted(turbines.items()):
         storage = storage_by_turbine.get(turbine)
         if storage is not None:
-            by_storage.setdefault(storage, []).append((turbine, turbine_id))
+            by_storage.setdefault(storage, []).append(_Turbine(turbine, turbine_id))
     return by_storage
 
 
-def _read_waterways(state: State) -> dict[str, tuple[str | None, str | None]]:
+def _read_waterways(state: State) -> dict[str, _Route]:
     """Each Waterway, and the Storage it leaves and the Storage it reaches, where it names one."""
     memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
     leaves = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM)
     reaches = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_TO)
     names = read_object_names(state, PlexosClass.WATERWAY)
-    return {name: (leaves.get(name), reaches.get(name)) for name in names}
+    return {name: _Route(leaves.get(name), reaches.get(name)) for name in names}
 
 
 def _read_storages(state: State, names: list[str]) -> list[_StorageReading]:
@@ -353,7 +366,7 @@ def _build_row(
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
     name = reservoir.reading.name
-    reporter.record_id(name, R.ID, reservoir.reservoir_id, _ID_NOTE)
+    reporter.record_id(name, ReservoirCol.ID, reservoir.reservoir_id, _ID_NOTE)
     fields = [
         *_derive_identity(reservoir),
         *_derive_levels(reservoir),
@@ -361,7 +374,7 @@ def _build_row(
         *_derive_defaults(),
         *_derive_links(reservoir, reservoirs, cascade),
     ]
-    row: dict[str, Any] = {R.ID: reservoir.reservoir_id}
+    row: dict[str, Any] = {ReservoirCol.ID: reservoir.reservoir_id}
     for one in fields:
         reporter.record(name, MappedColumns((one.column,), one.unit), one.decision)
         _set_nested(row, one.column, one.decision.value)
@@ -374,12 +387,12 @@ def _derive_identity(reservoir: _Reservoir) -> list[_Field]:
     unit_source = SourceValue(PlexosClass.STORAGE, reading.name, PlexosProperty.MAX_VOLUME, stated)
     return [
         _Field(
-            R.NAME,
+            ReservoirCol.NAME,
             Decision.derived(reading.name, [_build_storage_source(reading.name)], _NAME_DERIVATION),
         ),
-        _Field(R.AVAILABLE, Decision.default(True, _AVAILABLE_NOTE)),
+        _Field(ReservoirCol.AVAILABLE, Decision.default(True, _AVAILABLE_NOTE)),
         _Field(
-            R.LEVEL_DATA_TYPE,
+            ReservoirCol.LEVEL_DATA_TYPE,
             Decision.derived(
                 str(reservoir.scale.level_data_type), [unit_source], _LEVEL_TYPE_DERIVATION
             ),
@@ -400,9 +413,9 @@ def _derive_levels(reservoir: _Reservoir) -> list[_Field]:
         _read_volume(reservoir, PlexosProperty.INITIAL_VOLUME), floor, ceiling
     )
     return [
-        _Field(f"{R.STORAGE_LEVEL_LIMITS}.max", ceiling, unit),
-        _Field(f"{R.STORAGE_LEVEL_LIMITS}.min", floor, unit),
-        _Field(R.INITIAL_LEVEL, start, unit),
+        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.max", ceiling, unit),
+        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.min", floor, unit),
+        _Field(ReservoirCol.INITIAL_LEVEL, start, unit),
     ]
 
 
@@ -453,17 +466,21 @@ def _derive_inflow(reservoir: _Reservoir) -> _Field:
     if reading.inflow_peak is not None:
         source = _build_inflow_source(reading, reading.inflow_peak, source_unit)
         return _Field(
-            R.INFLOW, Decision.derived(reading.inflow_peak, [source], _PROFILE_DERIVATION), unit
+            ReservoirCol.INFLOW,
+            Decision.derived(reading.inflow_peak, [source], _PROFILE_DERIVATION),
+            unit,
         )
     value = reading.values.get(PlexosProperty.NATURAL_INFLOW)
     if value is None:
-        return _Field(R.INFLOW, Decision.default(_NO_INFLOW, _NO_INFLOW_NOTE), unit)
+        return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _NO_INFLOW_NOTE), unit)
     factor = _find_flow_factor(stated, reservoir.scale)
     if factor is None:
-        return _Field(R.INFLOW, Decision.default(_NO_INFLOW, _INFLOW_UNIT_NOTE), unit)
+        return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _INFLOW_UNIT_NOTE), unit)
     source = _build_inflow_source(reading, value, source_unit)
     explanation = _build_explanation(PlexosProperty.NATURAL_INFLOW, factor, stated)
-    return _Field(R.INFLOW, Decision.derived(value * factor, [source], explanation), unit)
+    return _Field(
+        ReservoirCol.INFLOW, Decision.derived(value * factor, [source], explanation), unit
+    )
 
 
 def _build_inflow_source(reading: _StorageReading, value: float, stated: str | None) -> SourceValue:
@@ -483,23 +500,31 @@ def _find_flow_factor(stated: str | None, scale: _LevelScale) -> float | None:
 
 def _derive_defaults() -> list[_Field]:
     return [
-        _Field(R.OUTFLOW, Decision.default(_NO_OUTFLOW, _OUTFLOW_NOTE)),
-        _Field(R.INTAKE_ELEVATION, Decision.default(_SEA_LEVEL, _ELEVATION_NOTE), UNIT_METRES),
+        _Field(ReservoirCol.OUTFLOW, Decision.default(_NO_OUTFLOW, _OUTFLOW_NOTE)),
         _Field(
-            R.HEAD_TO_VOLUME_FACTOR,
+            ReservoirCol.INTAKE_ELEVATION,
+            Decision.default(_SEA_LEVEL, _ELEVATION_NOTE),
+            UNIT_METRES,
+        ),
+        _Field(
+            ReservoirCol.HEAD_TO_VOLUME_FACTOR,
             Decision.default(
-                {"function_type": _LINEAR, "proportional_term": 0.0, "constant_term": 0.0},
+                {
+                    SiennaStructField.FUNCTION_TYPE: str(SiennaFunctionType.LINEAR),
+                    SiennaStructField.PROPORTIONAL_TERM: 0.0,
+                    SiennaStructField.CONSTANT_TERM: 0.0,
+                },
                 _HEAD_NOTE,
             ),
         ),
         _Field(
-            R.OPERATION_COST,
+            ReservoirCol.OPERATION_COST,
             Decision.default(
                 {
-                    "cost_type": str(SiennaCostType.HYDRO_RES),
-                    "level_shortage_cost": 0.0,
-                    "level_surplus_cost": 0.0,
-                    "spillage_cost": 0.0,
+                    SiennaStructField.COST_TYPE: str(SiennaCostType.HYDRO_RES),
+                    SiennaStructField.LEVEL_SHORTAGE_COST: 0.0,
+                    SiennaStructField.LEVEL_SURPLUS_COST: 0.0,
+                    SiennaStructField.SPILLAGE_COST: 0.0,
                 },
                 _COST_NOTE,
             ),
@@ -513,17 +538,17 @@ def _derive_links(
     name = reservoir.reading.name
     turbines = cascade.turbines_by_storage.get(name, [])
     head_sources = [
-        SourceValue(PlexosClass.GENERATOR, turbine, PlexosCollection.HEAD_STORAGE, name)
-        for turbine, _ in turbines
+        SourceValue(PlexosClass.GENERATOR, turbine.name, PlexosCollection.HEAD_STORAGE, name)
+        for turbine in turbines
     ]
-    downstream = [turbine_id for _, turbine_id in turbines]
+    downstream = [turbine.turbine_id for turbine in turbines]
     return [
         _Field(
-            R.DOWNSTREAM_TURBINES,
+            ReservoirCol.DOWNSTREAM_TURBINES,
             Decision.derived(downstream, head_sources, _DOWNSTREAM_DERIVATION),
         ),
-        _Field(R.UPSTREAM_TURBINES, _derive_upstream_turbines(name, cascade)),
-        _Field(R.UPSTREAM_RESERVOIRS, _derive_upstream(name, reservoirs, cascade)),
+        _Field(ReservoirCol.UPSTREAM_TURBINES, _derive_upstream_turbines(name, cascade)),
+        _Field(ReservoirCol.UPSTREAM_RESERVOIRS, _derive_upstream(name, reservoirs, cascade)),
     ]
 
 
@@ -533,19 +558,19 @@ def _derive_upstream_turbines(name: str, cascade: _Cascade) -> Decision:
     if not turbines:
         return Decision.default([], _NO_UPSTREAM_TURBINE_NOTE)
     sources = [
-        SourceValue(PlexosClass.GENERATOR, turbine, PlexosCollection.TAIL_STORAGE, name)
-        for turbine, _ in turbines
+        SourceValue(PlexosClass.GENERATOR, turbine.name, PlexosCollection.TAIL_STORAGE, name)
+        for turbine in turbines
     ]
     return Decision.derived(
-        [turbine_id for _, turbine_id in turbines], sources, _UPSTREAM_TURBINE_DERIVATION
+        [turbine.turbine_id for turbine in turbines], sources, _UPSTREAM_TURBINE_DERIVATION
     )
 
 
 def _derive_upstream(name: str, reservoirs: dict[str, _Reservoir], cascade: _Cascade) -> Decision:
     routes = [
-        (waterway, leaves)
-        for waterway, (leaves, reaches) in sorted(cascade.waterways.items())
-        if reaches == name and leaves in reservoirs
+        (waterway, route.leaves)
+        for waterway, route in sorted(cascade.waterways.items())
+        if route.reaches == name and route.leaves in reservoirs
     ]
     if not routes:
         return Decision.default([], _NO_UPSTREAM_NOTE)
@@ -583,8 +608,8 @@ def _record_waterways(
     field for."""
     loose = [
         waterway
-        for waterway, (leaves, reaches) in sorted(cascade.waterways.items())
-        if leaves not in reservoirs or reaches not in reservoirs
+        for waterway, route in sorted(cascade.waterways.items())
+        if route.leaves not in reservoirs or route.reaches not in reservoirs
     ]
     for waterway in loose:
         reporter.record_dropped(

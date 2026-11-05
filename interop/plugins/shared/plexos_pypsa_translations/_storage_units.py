@@ -112,12 +112,12 @@ def derive_storage_units(
         _map_each(read_object_names(state, PlexosClass.BATTERY), map_battery, lookups),
         _map_each(turbines, map_turbine, lookups),
         _DerivedStorageUnits([], orphan_storage_skips(storages, lookups)),
-        _DerivedStorageUnits([], _fuel_store_skips(state, claimed, thermal_store_users)),
+        _DerivedStorageUnits([], _list_fuel_store_skips(state, claimed, thermal_store_users)),
         _DerivedStorageUnits([], [], _dropped_values(state, lookups)),
     )
 
 
-def _fuel_store_skips(
+def _list_fuel_store_skips(
     state: State, turbines: frozenset[str], thermal_store_users: frozenset[str]
 ) -> list[SkippedComponent]:
     """Each Storage that only thermal units draw on, so it holds fuel that Sienna cannot store."""

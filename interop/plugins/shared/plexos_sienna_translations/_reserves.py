@@ -10,7 +10,7 @@ the document's ``service_associations`` list.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -296,7 +296,9 @@ def _add_service(
     service = _Service(service_type, context.first_id + translated.count)
     _add_service_row(translated, source, reporter, service, requirement)
     _add_requirement_series(translated, source, context.state, service)
-    _add_associations(translated, source, reporter, (service.id, context.device_ids), absent)
+    _add_associations(
+        translated, source, reporter, _ServiceUnits(service.id, context.device_ids), absent
+    )
     _record_sidecar_only(reporter, source.record)
 
 
@@ -306,6 +308,13 @@ class _Service:
 
     type: SiennaComponent
     id: int
+
+
+class _ServiceUnits(NamedTuple):
+    """One service's id, and the ids that each unit able to join it takes."""
+
+    service_id: int
+    device_ids: dict[str, list[int]]
 
 
 def _choose_service_type(record: ReserveExtension) -> SiennaComponent:
@@ -445,13 +454,12 @@ def _add_associations(
     translated: TranslatedServices,
     source: _ReserveSource,
     reporter: SiennaComponentReporter,
-    service: tuple[int, dict[str, list[int]]],
+    service: _ServiceUnits,
     absent: list[str],
 ) -> None:
     """One association for each named unit the system holds; the rest are recorded."""
-    service_id, device_ids = service
     for contributor in _list_contributors(source):
-        unit_ids = device_ids.get(contributor.name)
+        unit_ids = service.device_ids.get(contributor.name)
         if unit_ids is None:
             _record_absent(reporter, source.record.name, contributor)
             absent.append(contributor.name)
@@ -459,7 +467,7 @@ def _add_associations(
         for unit_id in unit_ids:
             translated.associations.append(
                 {
-                    SiennaServiceAssociationCol.SERVICE_ID: service_id,
+                    SiennaServiceAssociationCol.SERVICE_ID: service.service_id,
                     SiennaServiceAssociationCol.ENTITY_ID: unit_id,
                 }
             )

@@ -322,8 +322,8 @@ def _load_object_rows(
     names = sorted(set(demand_by_load) | profile_loads)
     busless = [name for name in names if node_by_load.get(name) not in buses]
     duplicate = [name for name in names if name not in busless and name in taken_names]
-    _report_left_out_load_objects(busless, demand_by_load, _LeftOut.busless(), recorder)
-    _report_left_out_load_objects(duplicate, demand_by_load, _LeftOut.duplicate(), recorder)
+    _report_left_out_load_objects(busless, demand_by_load, _LeftOut.build_busless(), recorder)
+    _report_left_out_load_objects(duplicate, demand_by_load, _LeftOut.build_duplicate(), recorder)
     stats = _series_stats(state, LOAD_OBJECT_SERIES_KEY)
     return [
         _load_row(
@@ -354,11 +354,11 @@ class _LeftOut(NamedTuple):
     reason: str
 
     @classmethod
-    def busless(cls) -> _LeftOut:
+    def build_busless(cls) -> _LeftOut:
         return cls(_LOAD_OBJECT_BUSLESS_NOTE, _LOAD_OBJECT_BUSLESS_REASON)
 
     @classmethod
-    def duplicate(cls) -> _LeftOut:
+    def build_duplicate(cls) -> _LeftOut:
         return cls(_LOAD_OBJECT_DUPLICATE_NOTE, _LOAD_OBJECT_DUPLICATE_REASON)
 
 

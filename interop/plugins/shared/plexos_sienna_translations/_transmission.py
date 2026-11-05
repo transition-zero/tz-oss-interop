@@ -351,7 +351,7 @@ def _rating(line: StagedLine) -> Decision:
         stated = line.properties.get(PlexosProperty.MAX_FLOW)
         plexos_property = PlexosProperty.MAX_FLOW
     if stated is None:
-        return Decision.default(0.0, _unrated_note(line, _RATING_NOTE))
+        return Decision.default(0.0, _build_unrated_note(line, _RATING_NOTE))
     source = SourceValue(PlexosClass.LINE, line.name, plexos_property, stated, UNIT_MVA)
     return Decision.derived(stated / SYSTEM_BASE_MVA, [source], _RATING_DERIVATION)
 
@@ -373,7 +373,7 @@ def _ratings(line: StagedLine) -> Decision:
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        return Decision.default(_build_ratings(0.0, 0.0), _unrated_note(line, note))
+        return Decision.default(_build_ratings(0.0, 0.0), _build_unrated_note(line, note))
     reverse_max = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
@@ -382,7 +382,7 @@ def _ratings(line: StagedLine) -> Decision:
     return Decision.derived(_build_ratings(max_flow, reverse_max), sources, _LIMITS_DERIVATION)
 
 
-def _unrated_note(line: StagedLine, stated_nothing_note: str) -> str:
+def _build_unrated_note(line: StagedLine, stated_nothing_note: str) -> str:
     """Why a line has no rating: a rating in a data file that did not stage, or none at all."""
     for plexos_property in (PlexosProperty.MAX_RATING, PlexosProperty.MAX_FLOW):
         if plexos_property in line.unstaged:

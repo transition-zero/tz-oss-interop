@@ -103,9 +103,13 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
         [
             {
                 NODE_NAME: name,
-                NODE_VOLTAGE: _readable(properties, unstaged, name, PlexosProperty.VOLTAGE),
+                NODE_VOLTAGE: _find_readable_value(
+                    properties, unstaged, name, PlexosProperty.VOLTAGE
+                ),
                 NODE_VOLTAGE_IS_UNSTAGED: PlexosProperty.VOLTAGE in unstaged.get(name, []),
-                NODE_IS_SLACK: _readable(properties, unstaged, name, PlexosProperty.IS_SLACK_BUS),
+                NODE_IS_SLACK: _find_readable_value(
+                    properties, unstaged, name, PlexosProperty.IS_SLACK_BUS
+                ),
                 NODE_REGION: region_by_node.get(name),
                 NODE_ZONE: zone_by_node.get(name),
             }
@@ -122,7 +126,7 @@ def build_buses_source_table(state: State) -> pl.DataFrame:
     )
 
 
-def _readable(
+def _find_readable_value(
     properties: dict[str, dict[str, float]],
     unstaged: dict[str, list[str]],
     name: str,
@@ -211,7 +215,7 @@ BUS_AVAILABLE = Translation(
 )
 
 
-def _base_voltage_note(is_unstaged: bool) -> str:
+def _build_base_voltage_note(is_unstaged: bool) -> str:
     if is_unstaged:
         return UNSTAGED_PLACEHOLDER_NOTE.format(property=PlexosProperty.VOLTAGE)
     return _BASE_VOLTAGE_NOTE
@@ -235,7 +239,7 @@ BUS_BASE_VOLTAGE = Translation(
                     UNIT_KV,
                 )
             ],
-            _base_voltage_note(old[NODE_VOLTAGE_IS_UNSTAGED]),
+            _build_base_voltage_note(old[NODE_VOLTAGE_IS_UNSTAGED]),
         )
         if old[NODE_VOLTAGE] is None
         else derived(

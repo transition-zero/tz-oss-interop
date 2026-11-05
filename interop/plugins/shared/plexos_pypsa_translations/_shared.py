@@ -326,7 +326,7 @@ def read_unstaged_placeholders(state: State, plexos_class: PlexosClass) -> dict[
     file_backed = read_file_backed_properties(
         state.source_topology[PlexosResolvedTable.PROPERTIES], plexos_class
     )
-    staged = _staged_components(state, plexos_class, file_backed)
+    staged = _build_staged_components(state, plexos_class, file_backed)
     unstaged: dict[str, list[str]] = {}
     for name, property_names in file_backed.items():
         missing = sorted(p for p in property_names if name not in staged.get(p, set()))
@@ -335,16 +335,16 @@ def read_unstaged_placeholders(state: State, plexos_class: PlexosClass) -> dict[
     return unstaged
 
 
-def _staged_components(
+def _build_staged_components(
     state: State, plexos_class: PlexosClass, file_backed: dict[str, list[str]]
 ) -> dict[str, set[str]]:
     """The objects each file-backed property of a class staged a series for."""
     property_names = {name for names in file_backed.values() for name in names}
     staged: dict[str, set[str]] = {}
     for property_name in property_names:
-        frame = state.source_time_series.get((plexos_class, property_name))
-        if frame is not None:
-            staged[property_name] = set(series_components(frame))
+        table = state.source_time_series.get((plexos_class, property_name))
+        if table is not None:
+            staged[property_name] = set(series_components(table))
     return staged
 
 
