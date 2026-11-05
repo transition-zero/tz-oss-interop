@@ -10,11 +10,18 @@ from ._existing import (
     TECHNOLOGY_NAME,
     TECHNOLOGY_TYPE,
     CandidateTechnology,
+    TechnologyFleet,
     build_existing_devices_translations,
     build_existing_fleet_source_table,
+    build_fleet_source_table,
     build_retirement_potential_translations,
 )
-from ._financials import build_financial_data_events, build_portfolio_financial_data
+from ._financials import (
+    build_financial_data_events,
+    build_financial_data_field,
+    build_portfolio_financial_data,
+)
+from ._portfolio import BuildTranslations, PortfolioMapper, PortfolioTable, Schema
 from ._shared import (
     FOM_CHARGE_COL,
     FOM_CHARGE_DERIVATION,
@@ -49,6 +56,7 @@ from ._supply import (
     build_supply_translations,
     express_capital_cost,
     express_cost_type,
+    express_fuel_list,
     express_operation_cost,
     fill_supply_defaults,
 )
@@ -64,7 +72,11 @@ __all__ = [
     "SIENNA_TO_POWER_SYSTEMS_INVESTMENTS",
     "SIDECAR_RETIREMENT_DERIVATION",
     "STORAGE_UNIT_SOURCE",
+    "BuildTranslations",
     "InvestmentsSource",
+    "PortfolioMapper",
+    "PortfolioTable",
+    "Schema",
     "build_expansion_skips",
     "AREA_NAME",
     "build_carbon_cap_skips",
@@ -84,6 +96,8 @@ __all__ = [
     "TECHNOLOGY_TYPE",
     "UNIT_SIZE_COL",
     "CandidateTechnology",
+    "TechnologyFleet",
+    "build_fleet_source_table",
     "build_association_rows",
     "build_carbon_cap_translations",
     "build_carbon_caps_source_table",
@@ -91,6 +105,8 @@ __all__ = [
     "build_existing_devices_translations",
     "build_existing_fleet_source_table",
     "build_financial_data_events",
+    "build_financial_data_field",
+    "express_fuel_list",
     "build_portfolio_financial_data",
     "build_retirement_potential_translations",
     "build_scope_skips",

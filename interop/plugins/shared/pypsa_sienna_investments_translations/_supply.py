@@ -130,6 +130,15 @@ def fill_supply_defaults(table: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def express_fuel_list(column: str) -> pl.Expr:
+    """The one fuel of a column as the list that SupplyTechnology.fuel holds, or null."""
+    return (
+        pl.when(pl.col(column).is_not_null())
+        .then(pl.concat_list(pl.col(column)))
+        .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8)))
+    )
+
+
 def express_capital_cost(overnight_cost: pl.Expr) -> pl.Expr:
     """A Sienna ``CapitalCost`` whose curve prices one MW of new capacity linearly."""
     return pl.struct(
@@ -240,9 +249,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
     supply_fuel = _direct(
         source_col=PyPSAGeneratorCol.CARRIER,
         dest_col=S.FUEL,
-        expr=pl.when(pl.col(FUEL_COL).is_not_null())
-        .then(pl.concat_list(pl.col(FUEL_COL)))
-        .otherwise(pl.lit(None, dtype=pl.List(pl.Utf8))),
+        expr=express_fuel_list(FUEL_COL),
         derivation="carrier -> the one ThermalFuels entry the user mappings file names, or none",
     )
 
