@@ -41,7 +41,19 @@ CONSTRAINTS_COLLECTION = "Constraints"
 MODELS_COLLECTION = "Models"
 SCENARIOS_COLLECTION = "Scenarios"
 REGION_COLLECTION = "Region"
+LOAD_CLASS = "Load"
+LOADS_COLLECTION = "Loads"
+# A Load object joins its Node through the singular collection name.
+NODE_COLLECTION = "Node"
+ZONE_CLASS = "Zone"
+ZONES_COLLECTION = "Zones"
+# A Node names the Zone it sits in through the singular collection.
+ZONE_COLLECTION = "Zone"
 DATA_FILE_CLASS = "Data File"
+WATERWAY_CLASS = "Waterway"
+WATERWAYS_COLLECTION = "Waterways"
+STORAGE_FROM_COLLECTION = "Storage From"
+STORAGE_TO_COLLECTION = "Storage To"
 DATA_FILES_COLLECTION = "Data Files"
 
 # The collection a Constraint reaches each class of member through, since a Constraint can
@@ -111,6 +123,8 @@ VARIABLES_COLLECTION = "Variables"
 VARIABLE_CLASS = "Variable"
 # The class of a t_text value, which says what the text is rather than who owns it.
 TIMESLICE_CLASS = "Timeslice"
+TIMESLICES_COLLECTION = "Timeslices"
+INCLUDE_PROPERTY = "Include"
 VOLL_PROPERTY = "VoLL"
 # A Scenario's read-order priority is a PLEXOS object attribute, not a property.
 READ_ORDER_ATTRIBUTE = "Read Order"

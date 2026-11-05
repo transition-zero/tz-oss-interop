@@ -162,7 +162,7 @@ class SiennaToPypsaMapGenerators(TranslationStep):
                     _record_renewable(reporter, non_dispatch)
                     rows.append(_renewable_row(non_dispatch))
                     p_max_pu_scale_by_name[non_dispatch.name] = non_dispatch.p_max_pu
-                case SiennaComponent.HYDRO_DISPATCH:
+                case SiennaComponent.HYDRO_DISPATCH | SiennaComponent.HYDRO_TURBINE:
                     continue
                 case SiennaComponent.ENERGY_RESERVOIR_STORAGE:
                     continue

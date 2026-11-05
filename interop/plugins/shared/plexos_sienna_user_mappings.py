@@ -70,7 +70,7 @@ CARRIER_BY_STORAGE_KIND: dict[PlexosStorageKind, str] = {
 DEFAULT_TARGET_BY_STORAGE_KIND: dict[
     PlexosStorageKind, tuple[SiennaComponent, SiennaPrimeMovers]
 ] = {
-    PlexosStorageKind.RESERVOIR_HYDRO: (SiennaComponent.HYDRO_DISPATCH, SiennaPrimeMovers.HY),
+    PlexosStorageKind.RESERVOIR_HYDRO: (SiennaComponent.HYDRO_TURBINE, SiennaPrimeMovers.HY),
     PlexosStorageKind.PUMPED_STORAGE: (
         SiennaComponent.ENERGY_RESERVOIR_STORAGE,
         SiennaPrimeMovers.PS,

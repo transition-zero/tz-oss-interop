@@ -7,8 +7,8 @@ It gives the source of each field.
 > pipeline translates them for dispatch. It writes no capacity expansion: what your plan may
 > build becomes a Sienna investments portfolio instead, which
 > [the `plexos-to-sienna-investments` pipeline](translation-from-plexos-to-sienna-investments.md)
-> writes. This pipeline does not translate custom constraints or hydro cascades, and it does
-> not carry the reserves to a file you keep. Refer to [Not translated](#not-translated) and to
+> writes. This pipeline does not translate custom constraints. Refer to
+> [Not translated](#not-translated) and to
 > [the gap analysis](plexos-to-sienna-gap-analysis.md), which names each thing a PLEXOS model
 > states that SiennaSchemas holds no type and no field for.
 
@@ -25,19 +25,23 @@ what you get.
 | --- | --- |
 | [`Node`](#node--acbus) | `ACBus`, and an `Arc` for each pair of nodes a branch joins |
 | [`Region`](#region--area) | `Area`. It also gives a `PowerLoad`. |
+| [`Zone`](#zone--loadzone) | `LoadZone` |
 | [Region `Load` property](#region-load--powerload) | `PowerLoad` |
+| [`Load` object](#load-object--powerload) | `PowerLoad` |
 | [`Line`](#line--line-or-twoterminalgenerichvdcline) | `Line` if it has impedance, or `TwoTerminalGenericHVDCLine` if it has none |
 | [`Generator`](#generator--thermalstandard), thermal | `ThermalStandard` |
 | [`Generator`](#generator--renewabledispatch), renewable | `RenewableDispatch`, or `RenewableNonDispatch` where your mappings file says so |
-| [`Generator`](#hydro--hydrodispatch), reservoir hydro | `HydroDispatch` |
+| [`Generator`](#hydro--hydroturbine-and-hydroreservoir), reservoir hydro | `HydroTurbine`, or `HydroDispatch` where your mappings file says so |
+| [`Storage` and `Waterway`](#hydro--hydroturbine-and-hydroreservoir), the head reservoir of a reservoir-hydro turbine | `HydroReservoir` |
 | [`Generator` and two `Storage`](#pumped-storage--energyreservoirstorage), pumped storage | One `EnergyReservoirStorage` |
 | [`Battery`](#battery--energyreservoirstorage) | `EnergyReservoirStorage` |
 | [`Fuel`](#fuel) | No component. It names the carrier your mappings file turns into `fuel` and `prime_mover_type`, and it sets part of `operation_cost`. |
 | [`Emission`](#emission) | No component. It adds a carbon term to `operation_cost`. |
 | [`Market`](#market--thermalstandard) | An import `ThermalStandard` |
-| `Reserve` | No component. The record reaches `extensions.json`. Refer to [Not translated](#not-translated). |
+| [`Reserve`](#reserve--onlinereserve-or-offlinereserve) | `OnlineReserve`, or `OfflineReserve` for a replacement reserve, and one service association for each unit that supplies it. The record also reaches `extensions.json`. |
+| [`Forced Outage Rate` and `Mean Time to Repair`](#forced-outage--geometricdistributionforcedoutage) on a `Generator` or a `Battery` | A `GeometricDistributionForcedOutage` supplemental attribute of the unit |
 | Region `VoLL` | Nothing. `decisions.md` names it as dropped, because Sienna has no home for a region `VoLL`. |
-| `Zone`, `Interface`, `Transformer`, `Constraint`, `Waterway`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
+| `Interface`, `Transformer`, `Constraint`, `Decision Variable` | [Not translated](#not-translated). A `Constraint` reaches the sidecar, but nothing applies it. |
 | `Transmission`, `ST`/`MT Schedule`, `PASA`, `Production`, `Performance`, `Stochastic`, `Report`, `Diagnostic`, `System`, `List` | Not translated. These are solver settings, not model data. |
 
 ## Reading the tables
@@ -75,9 +79,11 @@ what you get.
   `EnergyReservoirStorage` state `COMPONENT_BASE`, so each of their power values is per unit on
   its `base_power`. A `Line` states a `base_power` of 100 MVA.
 - **A profile Sienna states no field for goes into a parquet beside the sidecar.** A
-  reservoir inflow, a storage unit's units-out derate and the cost a dated `Fuel` makes have
-  no Sienna field, static or varying, so each one rides a column of `storage.parquet` or
-  `generators.parquet`. The record in `extensions.json` names the file it rides in.
+  storage unit's units-out derate and the cost a dated `Fuel` makes have no Sienna field,
+  static or varying, so each one rides a column of `storage.parquet` or `generators.parquet`.
+  The record in `extensions.json` names the file it rides in. A reservoir inflow also rides
+  `storage.parquet`, because the PyPSA hop reads it from there. A `HydroReservoir` states it
+  as well.
 
 ---
 
@@ -111,7 +117,7 @@ only to change a default:
 
 | Storage kind | Sienna type | Prime mover |
 | --- | --- | --- |
-| `reservoir_hydro` | `HydroDispatch` | `HY` |
+| `reservoir_hydro` | `HydroTurbine` | `HY` |
 | `pumped_storage` | `EnergyReservoirStorage` | `PS` |
 | `battery` | `EnergyReservoirStorage` | `BA` |
 
@@ -132,11 +138,16 @@ type, or the run stops and names the word.
 | `available` | | `True` | `default` |
 | `angle` / `magnitude` | | `0.0` / `1.0` | `default` |
 | `voltage_limits` | | PLEXOS states no voltage limit. | `default` |
-| `load_zone` | | PLEXOS `Zone` is not translated. | `dropped` |
+| `load_zone` | | The `LoadZone` of the Zone that contains the node. A node in no Zone keeps a null `load_zone`. | `derived` |
 
 Each `Node` becomes one `ACBus`. PLEXOS marks no node AC or DC, so every bus is AC. A node
 that a branch touches also gives an `Arc`, which is the Sienna object holding the two ends of
 a `Line` or an HVDC line.
+
+A `Voltage` can read a data file. If that file does not stage, the XML holds only a
+placeholder, such as `0`. The translator does not use the placeholder. `base_voltage` takes
+the default of 1.0, and `decisions.md` records the `Voltage` as `NOT_MAPPED`. One warning
+names three such nodes and counts the rest.
 
 ## `Region` → `Area`
 
@@ -147,6 +158,22 @@ PLEXOS states none of them on a Region.
 
 `Price of Dump Energy` is `dropped`. So is `VoLL`, because a `PowerLoad` prices no
 shortfall.
+
+## `Zone` → `LoadZone`
+
+A Node names the Zone it sits in through its `Zone` collection. Each Zone that a node names
+becomes one `LoadZone`, and the `load_zone` of each bus in it is the id of that `LoadZone`.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | `Zone.name` | `direct` |
+| `id` | | The position of the zone, after the ids of earlier components | `default` |
+| `peak_active_power` | MW | `0.0`. PLEXOS states no peak on a Zone. | `default` |
+| `peak_reactive_power` | MVAR | `0.0` | `default` |
+| `base_power` | MVA | The system base of 100 MVA | `default` |
+| `power_units` | | `NATURAL_UNITS` | `default` |
+
+A Zone that no node names gives no `LoadZone`.
 
 ## Region `Load` → `PowerLoad`
 
@@ -175,6 +202,34 @@ rather than reading a share as a quantity of power.
 
 A region that contains more than one node is not translated, because a Sienna `PowerLoad`
 sits on one bus.
+
+## `Load` object → `PowerLoad`
+
+An object of the PLEXOS `Load` class states its own `Load`, and joins one `Node` through the
+`Load.Node` collection. The translator writes one `PowerLoad` for each `Load` object, on the
+bus of that node.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The name of the `Load` object | `derived` |
+| `bus` | | The node that the `Load` object joins | `derived` |
+| `max_active_power` | MW | `Load.Load`, or the peak of its profile | `derived` |
+| `active_power` | MW | `Load.Load` at the first snapshot | `derived` |
+| `base_power` | MVA | The peak demand | `derived` |
+| `reactive_power` | MVAR | `0.0` | `default` |
+| `max_reactive_power` | MVAR | `0.0` | `default` |
+| `conformity` | | `UNDEFINED` | `default` |
+| `available` | | `True` | `default` |
+
+A `Load` that reads a data file becomes a `TimeSeriesAssociation` on `max_active_power`, in
+the same way as a region `Load`.
+
+The translator leaves out a `Load` object in two cases. `decisions.md` names each one, and
+the run writes one warning for each case:
+
+- The `Load` object joins no node that became a bus.
+- Another load already has the name of the `Load` object. Sienna gives each `PowerLoad` one
+  name, and a region load or a node load comes first.
 
 ## `Line` → `Line` or `TwoTerminalGenericHVDCLine`
 
@@ -221,6 +276,25 @@ connects nothing, so the translator leaves it out and records it.
 
 A line that flows in two directions has a negative `Min Flow`, so its lower limit is
 negative. A line that flows one way has a lower limit of zero.
+
+### A line value in a data file that did not stage
+
+A `Resistance`, a `Reactance`, a `Max Rating` or a `Max Flow` can read a data file. If that
+file does not stage, the XML holds only a placeholder, such as `0` for a reactance or `1e30`
+for a rating. The translator does not use the placeholder:
+
+| Field | What the translator writes |
+| --- | --- |
+| `r` or `x` | `0.0`, as for a line that states no such value |
+| `rating` of a `Line` | `0.0`, as for a line that states no rating |
+| `operational_flow_limit` and `rating` of a `TwoTerminalGenericHVDCLine` | `0.0` |
+
+`decisions.md` records each such value as `NOT_MAPPED`, with the note `<property> is in a
+data file that did not stage`. One warning for each property names three lines and counts
+the rest.
+
+A line that states a `Resistance` or a `Reactance` in such a file still states impedance. So
+it stays a `Line`, and it does not become a `TwoTerminalGenericHVDCLine`.
 
 ## `Generator` → `ThermalStandard`
 
@@ -294,13 +368,25 @@ validation run gives it a flat one so PowerSimulations can read the whole fleet.
 `RenewableNonDispatch` takes the same mapping, minus `operation_cost`, which that type does
 not have. A `VO&M Charge` on such a generator is `dropped`.
 
-## Hydro → `HydroDispatch`
+## Hydro → `HydroTurbine` and `HydroReservoir`
 
 | Your unit | Becomes |
 | --- | --- |
-| It has a `Head Storage` membership | `HydroDispatch` |
+| It has a `Head Storage` membership | `HydroTurbine`, and its head `Storage` becomes a `HydroReservoir` |
+| Your mappings file names `HydroDispatch` for `reservoir_hydro` | `HydroDispatch`, with no `HydroReservoir` |
+| It has a `Head Storage` and a `Tail Storage`, states no pump, and a `Waterway` leaves the tail | `HydroTurbine`, because it releases water down a cascade and cannot lift it back |
 | It has a `Tail Storage` and no `Head Storage` | Not translated |
 | It has no storage at all | An ordinary generator, from the `category` or `fuel` row its carrier names |
+| It has a `Head Storage`, and your mappings file names its carrier as `ThermalStandard` | A `ThermalStandard`. Its `Storage` holds fuel, and Sienna states no fuel store, so the `Storage` is left out and `decisions.md` says why. |
+
+### The turbine
+
+A `HydroTurbine` and a `HydroDispatch` take the same fields from your model.
+
+A `HydroTurbine` also states `conversion_factor`, the energy that one cubic metre of water
+gives. Your `Efficiency Incr`, in MW for each m³/s, gives it as
+`Efficiency Incr / 3600 / base_power`. A turbine that states no `Efficiency Incr` keeps
+the Sienna default of 1.0.
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
@@ -313,11 +399,68 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 | `active_power_limits` | MW | `(0, the available capacity)` | `derived` |
 | `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `ramp_limits`, `time_limits`, `status`, `time_at_status` | | The type carries them, and the chain supplies none. | `dropped` |
+| `conversion_factor` | | `Efficiency Incr / 3600 / base_power`, or `1.0` where the turbine states no `Efficiency Incr` | `derived` |
+| `efficiency`, `outflow_limits`, `turbine_type`, `travel_time` | | Not written, so a reader takes the SiennaSchemas default. The translator reads no PLEXOS property for them. | `default` |
 
-A `HydroDispatch` gets two time series: a flat `max_active_power`, which is its own limit,
-and a `hydro_budget`, which is its `Natural Inflow` as an energy over the horizon. The solve
-applies the budget through `HydroDispatchRunOfRiverBudget`. A `Natural Inflow` in cumec or in
-m³/day is a flow of water rather than a power, so it does not reach the budget.
+### The reservoir
+
+Each `Storage` of a cascade becomes one `HydroReservoir`, named for the `Storage`. A
+cascade holds the head and the tail `Storage` of each `HydroTurbine`, and each `Storage`
+that a `Waterway` joins to one of them. A reservoir names the turbines whose head it is in
+`downstream_turbines`, and the turbines whose tail it is in `upstream_turbines`. The unit
+that the `Storage` states its volumes in sets `level_data_type`, and so the unit of every
+level and of the inflow.
+
+| Your volumes are stated in | `level_data_type` | Levels | Inflow |
+| --- | --- | --- | --- |
+| `MWh`, `GWh`, or no unit | `ENERGY` | MWh | MW |
+| `CMD` (one m³/s for one day, 86,400 m³) or `m3` | `USABLE_VOLUME` | m³ | m³/s, from `cumec` or `m3/s` |
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The `Storage.name` | `direct` |
+| `available` | | `True` | `default` |
+| `level_data_type` | | The unit of the volumes, from the table above | `derived` |
+| `storage_level_limits.max` | MWh or m³ | `Max Volume` | `derived` |
+| `storage_level_limits.min` | MWh or m³ | `Min Volume`, or `0.0` | `derived` |
+| `initial_level` | MWh or m³ | `Initial Volume`, held between the two limits, or the floor | `derived` |
+| `inflow` | MW or m³/s | `Natural Inflow`, or the peak of its profile, or `0.0` | `derived` |
+| `outflow` | MW or m³/s | `0.0`, because the turbines draw the water | `default` |
+| `intake_elevation` | m | `0.0` | `default` |
+| `head_to_volume_factor` | | A linear function with both terms `0.0` | `default` |
+| `operation_cost` | | A `HydroReservoirCost` with every cost `0.0` | `default` |
+| `downstream_turbines` | | The `HydroTurbine`s that name the `Storage` as their `Head Storage` | `derived` |
+| `upstream_turbines` | | The `HydroTurbine`s that name the `Storage` as their `Tail Storage`, or `[]` where none does | `derived` |
+| `upstream_reservoirs` | | The `Storage From` of each `Waterway` whose `Storage To` is this `Storage` | `derived` |
+
+A `Natural Inflow` that reads a data file becomes a `TimeSeriesAssociation` named `inflow`
+on the reservoir. The store holds the profile as the model states it, in the unit of the
+reservoir.
+
+A reservoir is left out, and `decisions.md` and the log name it, in these cases:
+
+- The `Storage` states its volumes in a unit that converts to neither MWh nor m³.
+- `Max Volume` comes from a data file rather than a value.
+- The `Storage` states no `Max Volume`.
+
+The turbine still translates.
+
+A `Natural Inflow` in a unit that does not match the volumes gives an `inflow` of `0.0`, and
+`decisions.md` says so.
+
+### The waterway
+
+A `Waterway` makes its `Storage To` name its `Storage From` among its
+`upstream_reservoirs`. Sienna states no route between two reservoirs, so every property of a
+`Waterway`, such as `Max Flow` and `Min Flow`, is `dropped`. A `Waterway` that does not join
+two reservoirs of the system is also `dropped`.
+
+### In a solve
+
+The solve template gives a `HydroDispatch` the `HydroDispatchRunOfRiverBudget`
+formulation, and it states no formulation for a `HydroTurbine` or a `HydroReservoir`. So the
+`sienna-to-power-simulations` pipeline writes each `HydroTurbine` as a `HydroDispatch`, and it
+leaves each `HydroReservoir` out. `decisions.md` names both.
 
 ## Pumped storage → `EnergyReservoirStorage`
 
@@ -388,6 +531,43 @@ carbon term to `operation_cost.variable_operation_cost`, which is `price × prod
 
 An emission cap is `dropped`. Only the price reaches the cost.
 
+## `Reserve` → `OnlineReserve` or `OfflineReserve`
+
+The PLEXOS `Type` of a reserve chooses the Sienna service:
+
+| PLEXOS `Type` | Sienna service | `reserve_direction` |
+| --- | --- | --- |
+| 1 Raise, 3 Regulation Raise | `OnlineReserve` | `UP` |
+| 2 Lower, 4 Regulation Lower | `OnlineReserve` | `DOWN` |
+| 7 Regulation | `OnlineReserve` | `SYMMETRIC` |
+| 5 Replacement | `OfflineReserve` | An `OfflineReserve` states no direction. |
+| 6 Operational, or a code the translator does not know | No service | |
+| 8 Inertia | No service, because an inertia reserve is not a quantity of MW | |
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `name` | | The `Reserve` name | `direct` |
+| `available` | | `Is Enabled`, else `True` | `derived` or `default` |
+| `requirement` | MW | `Min Provision` in MW, or the peak of a requirement that varies | `derived` |
+| `time_frame` | min | `60.0`, one hourly snapshot | `default` |
+| `sustained_time` | min | `Duration` in seconds / 60, else `60.0` | `derived` or `default` |
+| `max_output_fraction` | | `1.0` | `default` |
+| `max_participation_factor` | | `1.0` | `default` |
+| `deployed_fraction` | | `0.0` | `default` |
+| `reserve_direction` | | The `Type`, as the table above gives | `derived` |
+
+A requirement that varies becomes a `TimeSeriesAssociation` on `requirement`. The store holds
+the requirement in MW at each snapshot, and `requirement` states its peak.
+
+Each generator in the `Generators` collection of the reserve, and each battery in its
+`Batteries` collection, becomes one row of the document's `service_associations` list. A
+unit that the Sienna system does not hold joins no service. `decisions.md` names each one.
+
+A reserve with no requirement in MW becomes no service. `Mutually Exclusive` is `dropped`,
+because a Sienna service has no field for it. `VoRS` is `dropped`, because the translator
+writes no demand curve to the `variable` field of the service. The record in
+`extensions.json` keeps both.
+
 ## `Market` → `ThermalStandard`
 
 A `Market` becomes one import generator on the node where it trades, priced at the purchase
@@ -395,6 +575,44 @@ price of the market. It takes the `ThermalStandard` mapping. The export side of 
 `dropped`.
 
 ---
+
+## Forced outage → `GeometricDistributionForcedOutage`
+
+A `Generator` or a `Battery` that translates, and that states a `Forced Outage Rate` above
+0, gets one `GeometricDistributionForcedOutage` supplemental attribute. A
+`supplemental_attribute_associations` row joins the attribute to the Sienna component of
+the unit.
+
+PLEXOS states the share of the time that the unit is out, as a percentage, and the hours
+that one repair takes. Sienna states the minutes that one recovery takes, and the chance in
+each minute that a unit in service fails. In a model with two states, the share of the time
+out is `p / (p + 1 / T)` for a chance `p` and a recovery time `T`. So the chance is
+`r / (1 - r) / T` for a share `r`.
+
+| Sienna field | Unit | From | Mapping |
+| --- | --- | --- | --- |
+| `mean_time_to_recovery` | min | `Mean Time to Repair` in hours × 60 | `derived` |
+| `outage_transition_probability` | | `Forced Outage Rate / 100 / (1 - Forced Outage Rate / 100) / mean_time_to_recovery` | `derived` |
+| `identifier` | | The PLEXOS name of the unit | `derived` |
+| `monitored_components` | | An empty list. PLEXOS names no component that an outage watches. | `default` |
+| `id` | | The position of the attribute, after the ids of all components | `default` |
+
+The unit keeps no forced outage, and `decisions.md` records a `NOT_MAPPED` row, in these
+cases:
+
+| The case | The reason |
+| --- | --- |
+| `Forced Outage Rate` is 100 % or more | The unit has no time in service to fail from. |
+| `Mean Time to Repair` is absent, or 0 or less | The recovery time and the chance cannot be stated. |
+| `Forced Outage Rate` comes from a data file | A forced outage states one rate. |
+
+The run also writes one warning that names three of the units and counts the rest. A
+`Mean Time to Repair` on a unit with no `Forced Outage Rate` above 0 has nothing to belong to,
+so `decisions.md` records it as `NOT_MAPPED`.
+
+The `sienna-to-power-simulations` pipeline writes no supplemental attribute and no
+`LoadZone`. Each bus there takes a null `load_zone`, and `decisions.md` records each one. The
+`sienna-to-pypsa` pipeline reads neither.
 
 ## The unit commitment answer
 
@@ -447,6 +665,10 @@ value that changes during that year becomes a time series over the snapshots.
 | Neither property, but the model has outage data | None. This is a full outage. |
 | The model has no outage data | The full capacity |
 
+A generator that states `Units Out` takes no derate from these properties. `Units Out`
+says when its units are out, so the capacity during an outage belongs to those units and
+not to the units that run.
+
 A `Rating` profile and an outage derate **multiply**. A static `Rating` above `Max Capacity ×
 Units` is the capacity of the generator, so `base_power` takes the `Rating`.
 
@@ -491,16 +713,15 @@ energy than your model gives it.
 
 | PLEXOS | Effect |
 | --- | --- |
-| `Reserve` requirements | The record reaches `extensions.json`, and a varying requirement reaches `reserves.parquet` beside it, but nothing applies them. Every generator can run at full output. |
-| A reservoir `Natural Inflow` | The value reaches `extensions.json`, and one that changes reaches `storage.parquet` beside it, but Sienna's `EnergyReservoirStorage` states no inflow, so nothing refills the reservoir. |
+| A `Reserve` with no direction, an inertia `Reserve`, or a `Reserve` with no requirement in MW | No Sienna service. The record still reaches `extensions.json`. Refer to [`Reserve` → `OnlineReserve` or `OfflineReserve`](#reserve--onlinereserve-or-offlinereserve). |
+| A pumped-storage reservoir `Natural Inflow` | The value reaches `extensions.json`, and one that changes reaches `storage.parquet` beside it, but Sienna's `EnergyReservoirStorage` states no inflow, so nothing refills the reservoir. A reservoir-hydro `Natural Inflow` reaches the `HydroReservoir`. |
 | A storage unit's `Units Out` | The derate reaches `storage.parquet`, but Sienna states one rating and no series against it, so the unit discharges at full power all year. |
 | A `Fuel` priced by date | The cost it makes at each snapshot reaches `generators.parquet`, but a Sienna cost curve states one price, so the generator pays the price in force at the start of the year. |
 | Region `VoLL` | The system has no load shedding resource, so a window short of capacity does not solve and no run reports the unserved energy. |
-| `Zone` | The zonal group is lost. The regional group still becomes an `Area`. |
 | `Interface` | Nothing applies the group flow limits, so a transfer can go above a limit your model obeys. |
 | `Transformer` | The translator does not carry it. |
 | `Constraint` | The record reaches `extensions.json`, but nothing applies the custom constraints, which include the RPS targets and the emission targets. |
-| `Waterway` | The cascade route between reservoirs is lost. Each reservoir is independent. |
+| `Waterway` properties | `Max Flow`, `Min Flow` and the penalties are lost, because Sienna states no route between two reservoirs. The route itself reaches `upstream_reservoirs`. |
 | `Decision Variable` | The translator does not carry it. |
 | Emission caps | Nothing applies them. Only the carbon price reaches the cost. |
 | Market exports | Refer to [`Market`](#market--thermalstandard). |

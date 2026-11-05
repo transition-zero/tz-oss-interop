@@ -76,6 +76,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     declares,
@@ -91,6 +92,7 @@ from interop.plugins.shared.plexos_sienna_translations._availability import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
+    list_thermal_store_users,
 )
 from interop.plugins.shared.plexos_sienna_translations._fuel_prices import (
     build_fuel_price_series,
@@ -182,6 +184,12 @@ _INFEASIBLE_NOTE = (
     "generator is dropped"
 )
 _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispatch"
+# Each note states the unit's own numbers, so one warning per reason names the units instead.
+_INFEASIBLE_GROUP = SkipGroup(
+    "Generator(s)",
+    "state a minimum output above the most they can reach",
+    "so no dispatch meets it and each is left out",
+)
 
 # The Sienna types a generator may become. Every other target names a storage unit, which a
 # different sub-step writes.
@@ -302,7 +310,7 @@ def map_generators(
     bus_names = _bus_names(state)
     with_a_series = _generators_with_a_series(state, lookups)
     # A turbine drawing on a Storage becomes a storage unit, never also a generator.
-    turbines = storage_turbine_names(state)
+    turbines = storage_turbine_names(state) - list_thermal_store_users(state, targets)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
@@ -548,6 +556,7 @@ def _infeasible(mapping: GeneratorMapping) -> SkippedComponent:
             minimum=mapping.minimum.p_min_pu,
             ceiling=mapping.availability.static_p_max_pu,
         ),
+        warn_with=_INFEASIBLE_GROUP,
     )
 
 

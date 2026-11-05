@@ -12,9 +12,8 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.plexos_sienna_translations import (
     LOAD_BASE_POWER_TRANSLATIONS,
+    LOAD_SERIES_KEYS,
     LOAD_TRANSLATIONS,
-    NODE_LOAD_SERIES_KEY,
-    REGION_LOAD_SERIES_KEY,
     build_load_extensions,
     build_load_ts_associations,
     build_loads_source_table,
@@ -32,7 +31,7 @@ from interop.plugins.shared.translation_runner import (
 
 
 class PlexosToSiennaMapLoads(TranslationStep):
-    """Writes one Sienna PowerLoad per Region Load and per Node Load."""
+    """Writes one Sienna PowerLoad per Region Load, per Node Load and per Load object."""
 
     name: ClassVar[str] = "plexos_to_sienna_map_loads"
     params_schema: ClassVar[type[BaseModel] | None] = None
@@ -61,9 +60,8 @@ class PlexosToSiennaMapLoads(TranslationStep):
 
     def _append_associations(self, state: State, source: pl.DataFrame, loads: pl.DataFrame) -> None:
         """The sink streams a file-backed Load straight from the PLEXOS frame it was staged in."""
-        frame = state.source_time_series.get(REGION_LOAD_SERIES_KEY)
-        if frame is None:
-            frame = state.source_time_series.get(NODE_LOAD_SERIES_KEY)
+        frames = (state.source_time_series.get(key) for key in LOAD_SERIES_KEYS)
+        frame = next((frame for frame in frames if frame is not None), None)
         associations = build_load_ts_associations(source, loads, collect_ts_info(frame))
         if associations.height == 0:
             return

@@ -11,6 +11,7 @@ that is sink formatting.
 
 from __future__ import annotations
 
+import logging
 import uuid as _uuid
 from typing import Any, ClassVar
 
@@ -45,7 +46,12 @@ from interop.plugins.shared.sienna_hvdc_flow import (
     FLOW_BOUNDS_DERIVATION,
     build_hvdc_flow_bounds,
 )
+from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
+from interop.plugins.steps.sienna_to_powersimulations._hydro import (
+    map_turbine_to_dispatch,
+    report_unsolved_reservoirs,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -53,7 +59,10 @@ from interop.ports.outbound.reporting import (
     TranslationEvent,
 )
 
+log = logging.getLogger(__name__)
+
 _FK_DERIVATION = "integer id -> uuid"
+_LOAD_ZONE_NOTE = "the PowerSystems.jl document states no LoadZone, so the bus takes no load zone"
 _BUS_FK_DERIVATION = "integer bus id -> bus uuid"
 _ARC_FK_DERIVATION = "integer arc id -> arc uuid"
 _FUEL_DERIVATION = "direct mapping"
@@ -181,6 +190,7 @@ class SiennaToPowerSimulationsMapComponents(TranslationStep):
         _map_bus_backed_component(state, registry, self._recorder, SiennaTable.LOADS)
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINES)
         _map_arc_backed_component(state, registry, self._recorder, SiennaTable.LINKS)
+        report_unsolved_reservoirs(state, self._recorder)
 
         return state
 
@@ -597,6 +607,7 @@ def _map_buses(state: State, registry: _UuidRegistry, recorder: ScopedRecorder) 
     if source is None:
         return
     rows: list[dict[str, Any]] = []
+    zoned_buses: list[str] = []
     for row in source.collect().iter_rows(named=True):
         bus_id = row[SiennaACBusCol.ID]
         bus_name = row[SiennaACBusCol.NAME]
@@ -606,6 +617,8 @@ def _map_buses(state: State, registry: _UuidRegistry, recorder: ScopedRecorder) 
 
         out = dict(row)
         out.pop(SiennaACBusCol.AREA, None)
+        if _drop_load_zone(out, bus_name, recorder):
+            zoned_buses.append(bus_name)
         out[PowerSimulationsCol.UUID] = bus_uuid
         out[PowerSimulationsCol.AREA] = area_uuid
 
@@ -620,6 +633,35 @@ def _map_buses(state: State, registry: _UuidRegistry, recorder: ScopedRecorder) 
 
     if rows:
         state.destination_tables[SiennaComponent.AC_BUS] = pl.DataFrame(rows)
+    warn_load_zones_dropped(zoned_buses)
+
+
+def _drop_load_zone(out: dict[str, Any], bus_name: str, recorder: ScopedRecorder) -> bool:
+    """Take the load zone off one bus, and record it where the bus named one."""
+    load_zone = out.pop(SiennaACBusCol.LOAD_ZONE, None)
+    if load_zone is None:
+        return False
+    source = SourceField(
+        Framework.SIENNA,
+        SiennaComponent.AC_BUS.value,
+        bus_name,
+        SiennaACBusCol.LOAD_ZONE,
+        load_zone,
+    )
+    recorder.append(
+        TranslationEvent(kind=EventKind.NOT_MAPPED, sources=[source], note=_LOAD_ZONE_NOTE)
+    )
+    return True
+
+
+def warn_load_zones_dropped(bus_names: list[str]) -> None:
+    if bus_names:
+        log.warning(
+            "power-simulations: %d bus(es) name a load zone that the PowerSystems.jl document "
+            "does not state, so each takes none: %s",
+            len(bus_names),
+            name_a_few(sorted(bus_names)),
+        )
 
 
 def _map_areas(state: State, registry: _UuidRegistry, recorder: ScopedRecorder) -> None:
@@ -707,6 +749,9 @@ def _map_bus_backed_component(
         }
         out[PowerSimulationsCol.UUID] = comp_uuid
         out[PowerSimulationsCol.BUS] = bus_uuid
+        if sienna_type == SiennaComponent.HYDRO_TURBINE:
+            map_turbine_to_dispatch(out, comp_name, recorder)
+            sienna_type = SiennaComponent.HYDRO_DISPATCH
 
         fuel: str | None = None
         if sienna_type == SiennaComponent.THERMAL_STANDARD:

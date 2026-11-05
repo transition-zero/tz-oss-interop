@@ -803,6 +803,10 @@ the model has:
 | Neither property, but the model has outage data | None. This is a full outage. |
 | The model has no outage data | The full capacity |
 
+A generator that states `Units Out` takes no derate from these properties. `Units Out`
+says when its units are out, so the capacity during an outage belongs to those units and
+not to the units that run.
+
 `Units Out` gives the quantity of units that are not available at each snapshot. Thus it
 becomes a derate of `1 - Units Out / Units`. It applies to generators and to batteries. On
 a battery, it limits the discharge. A generator can also have a `Rating` profile or a

@@ -139,3 +139,16 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     Then the log contains "1 series belong to a component with no name, so each is left out: Arc"
     And the PyPSA network "outputs/network.nc" has 1 line
     And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
+
+  Scenario: a bus in a load zone, beside a generator with a forced outage, still translates
+    PyPSA has no load zone and no forced outage, so the reader passes over both and keeps
+    the bus and the generator.
+    Given a Sienna system
+    And the system contains a load zone "Coast"
+    And the system contains a bus "node_a" in load zone "Coast"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the ThermalStandard "coal_1" has a forced outage of 600 minutes at probability 0.0001
+    And the system is saved as "inputs/zoned.json"
+    When I run translate against Sienna system "inputs/zoned.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 bus
+    And the PyPSA network "outputs/network.nc" generator "coal_1" has bus "node_a"

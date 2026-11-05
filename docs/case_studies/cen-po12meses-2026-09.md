@@ -27,12 +27,15 @@ The model is a large hydro-thermal system:
 | `Reserve` | 13 |
 | `Region` | 2 |
 
-The XML file holds nine `Model` objects. This page translates `PRGMEN_Base`, which uses the
-horizon `Coordinador_mensual`.
+The XML file holds nine `Model` objects. This page translates `MT_base4s`. Its horizon,
+`RP-56w`, starts on 2026-09-01 and runs 56 weeks, which is the period of the programme.
 
-**Today, the translation keeps almost none of this model.** The Sienna system holds 0.59 MW
-of generation, no load and no time series. This page says why, and what it
-costs to close each gap. Refer to [What the translation writes today](#what-the-translation-writes-today).
+Do not translate `PRGMEN_Base` for this period. Its horizon, `Coordinador_mensual`, starts on
+2023-05-01, and the data files start on 2026-09-01.
+
+**What is left out is what Sienna has no home for.** Every class and property below that the
+system does not hold is a thing that no SiennaSchemas 0.2 type or field can hold. Refer to
+[What Sienna has no home for](#what-sienna-has-no-home-for).
 
 ## Get the input
 
@@ -163,6 +166,7 @@ carriers:
 
 These rows are a first choice for this page. CEN did not check them.
 
+
 ## Translate
 
 The command of tz-oss-interop is `interop`. Do this command in a project that `interop init`
@@ -174,245 +178,166 @@ only, put `uv run` before `interop`.
 ```bash
 interop headless_cli --pipeline plexos-to-sienna \
   --override 'source.path=<repository>/case_study_inputs/cen-po12meses-2026-09/DBSEN_202609_PO12meses.xml' \
-  --override 'source.model=PRGMEN_Base' \
-  --override 'source.horizon_year=2026' \
+  --override 'source.model=MT_base4s' \
   --override 'sink[0].output_system_json_file_path=outputs/system.json' \
   --user-mappings-path inputs/plexos_user_mappings.yaml
 ```
 
-`source.horizon_year=2026` translates calendar year 2026 only, from 2026-01-01 up to
-2027-01-01. The months of the programme in 2027 are outside this run.
+Give no `source.horizon_year`. Then the window is the whole horizon, from 2026-09-01, and
+each dated value is the one in force on that day.
 
 To see the warnings on the console, set `INTEROP_LOG_LEVEL=INFO`.
 
-The run completes in about 5 seconds. It writes `outputs/system.json`,
-`outputs/extensions.json`, the time series store and `decisions.md`.
+The run takes about 5 minutes. It writes `outputs/system.json`, the time series store,
+`outputs/extensions.json`, `outputs/storage.parquet` and `decisions.md`, 53 MB in all.
 
-## What the translation writes today
-
-The numbers below come from tz-oss-interop at commit `7bdd194`, with Polars 2.0.0.
+## What the translation writes
 
 | What the model states | What the Sienna system holds |
 | --- | --- |
 | 241 `Node` objects | 241 `ACBus` |
 | 2 `Region` objects | 2 `Area` |
-| 340 `Line` objects | 340 `Line`, each with `r` 0, `x` 0 and `rating` 1e+28 |
-| 1,994 `Generator` objects | 59 `ThermalStandard`, each rated 0.01 MW |
-| 144 `Battery` objects | 14 `EnergyReservoirStorage` |
-| 161 `Storage` objects and 206 `Waterway` objects | Nothing |
-| 420 `Load` objects | Nothing |
-| 13 `Reserve` objects | 13 records in `extensions.json` |
-| 509 `Constraint` objects | 432 records in `extensions.json` |
-| 87 `Data File` objects | No time series |
+| 16 `Zone` objects | 16 `LoadZone`, which each bus names |
+| 340 `Line` objects | 340 `Line`. 339 state a reactance, and one states none. |
+| 420 `Load` objects | 420 `PowerLoad`, with a peak of 14,093 MW in all |
+| 766 thermal `Generator` objects | 766 `ThermalStandard` |
+| 1,170 solar, wind and hydro `Generator` objects with no head `Storage` | 1,169 `RenewableDispatch`. One unit states a capacity of 0 MW. |
+| 58 hydro `Generator` objects with a head `Storage` | 58 `HydroTurbine`, 5,636 MW in all |
+| 161 `Storage` objects | 67 `HydroReservoir`. The other 94 are below. |
+| 206 `Waterway` objects | The routes between the reservoirs, as `upstream_reservoirs` |
+| 144 `Battery` objects | 144 `EnergyReservoirStorage` |
+| 13 `Reserve` objects | 3 `OnlineReserve`, with 1,192 service associations. All 13 reach `extensions.json`. |
+| The data files | 1,840 time series |
 
-The 59 thermal units that translate are all in the category `Thermal Gen X`. Their names,
-such as `ATA_CC1_TGA_GNL`, are the operating modes of combined-cycle plants. The 14 batteries
-that translate are the `_AUX` batteries, such as `BAT_ARICA_2_AUX`.
+The numbers come from tz-oss-interop with pull request #176, and Polars 2.0.0.
 
-`decisions.md` holds 2,091 `COMPONENT_SKIPPED` rows:
+### The PLEXOS rules that the translation applies
 
-| Component | Rows | The reason that `decisions.md` gives |
-| --- | --- | --- |
-| `Generator` | 1,371 | `Max Capacity comes from a data file rather than a value` |
-| `Generator` with a head `Storage` | 564 | `Max Capacity comes from a data file rather than a value` |
-| `Battery` | 130 | `Max Power comes from a data file rather than a value` |
-| `Storage` | 26 | `no Generator names this Storage as a head or tail` |
+The translator applies the rules below. Each one is a general rule of PLEXOS, and not a rule
+of this model.
 
-So a Sienna solve of this system has 0.59 MW of generation and no demand to meet. Do not use
-this system for a study.
-
----
-
-## Why so little translates
-
-Four causes stop nearly all of the model. Each one is a gap in tz-oss-interop, and not a
-limit of Sienna. Cause 1 blocks each value that a dated data file supplies. Cause 2 sets no
-snapshots, so no data file gives a time series.
-
-### 1. The translator cannot read a dated value in a data file
-
-65 of the data files in this package use one layout. Each row gives one object, one date and
-the value that holds from that date:
-
-```
-NAME,YEAR,MONTH,DAY,VALUE
-LOS_CONDORES,2026,9,1,150.00
-LA_MINA,2026,9,1,36.73
-```
-
-The source does not read this layout. It writes one warning for each file, such as
-`plexos: deferring Data File with unsupported layout: Gen_MaxCapacity.csv`. Then the
-translator has no value for the property.
-
-The layout carries the core data of the model:
-
-| What it carries | Data files |
+| The rule | What it gave this model |
 | --- | --- |
-| The capacity, rating, outages, costs and heat rate of each generator | `Gen_MaxCapacity.csv`, `Gen_Rating.csv`, `Gen_UnitsOut.csv`, `Gen_OutageRating.csv`, `Gen_FuelCost.csv`, `Gen_HeatRate.csv`, `Gen_VOMCharge.csv` |
-| The power, energy, efficiency and state of charge of each battery | `Bat_MaxPower.csv`, `Bat_Capacity.csv`, `Bat_ChargeEfficiency.csv`, `Bat_MinSOC.csv` and 23 more |
-| The rating and impedance of each line | `Lin_MaxRating.csv`, `Lin_MinRating.csv`, `Lin_Reactance.csv`, `Lin_Resistance.csv`, `Lin_UnitsOut.csv` |
-| The volume limits of each reservoir | `Sto_MaxVolume.csv`, `Sto_MinVolume.csv`, `Sto_InitialVolume.csv` |
-| The flow limits of each waterway | `Wat_MaxFlow.csv`, `Wat_MinFlow.csv` |
+| A data file header reads without letter case. | The files headed `NAME`, `YEAR` and `VALUE` stage. |
+| A file headed `Name`, `Year`, `Month`, `Day` and `Value` gives dated property values. | Every capacity, rating, cost, heat rate and line impedance |
+| A chronology step type of 3 is a week. | The snapshots of the horizon |
+| A value by pattern expands onto the snapshots, with the whole PLEXOS timeslice grammar. | The demand and the rating factors |
+| A `Load` object becomes a `PowerLoad` on the bus of its node. | The 420 loads |
+| A `Variable` that a property row names escalates the row's data file values. | The demand growth factors of `Load_Escalator.csv` |
+| A data file row matches its object without letter case, and by the `Variable` it reads through. | The rows of `Var_StoInitialVolume.csv`, and four lines such as `Ohiggins220_Farellon220` |
+| A membership property's row is named after both of its objects, in either order. | The reserve response limits and the constraint coefficients |
+| A generator that states `Units Out` takes its outage from `Units Out` alone. | 102 thermal units that the old rule gave a ceiling of 0 |
+| A thermal unit that draws on a `Storage` stays thermal, and the `Storage` is a fuel store. | 506 gas units that were turbines before |
+| A turbine whose tail a `Waterway` leaves is a cascade turbine, not pumped storage. | 41 hydro units that could pump before |
+| Every `Storage` of a cascade is a reservoir. | 67 reservoirs, joined by their turbines and routes |
 
-`Params/Gen_StartCost.csv`, `Params/Gen_ShutDownCost.csv` and `Gas_Inflow.csv` add a
-`PERIOD` column to the same layout.
+### No forced outage in `MT_base4s`
 
-A dated value in a data file means the same thing as a dated `t_data` row in the XML file.
-The source already reads a dated `t_data` row in
-`interop/plugins/sources/plexos_dated_properties.py`. It takes the value in force when the
-window opens, and the steps inside the window. So the new code reads the CSV rows into that
-same form.
-
-**Size:** a new layout reader in `plexos_csv_layouts.py` that hands its rows to
-`plexos_dated_properties.py`. About 150 to 250 lines in two or three files, and four BDD
-scenarios. About one hour for a coding agent.
-
-### 2. The horizon steps in weeks, and the translator reads only days
-
-The model `PRGMEN_Base` uses the horizon `Coordinador_mensual`. That horizon states
-`Chrono Step Type` 3 and `Chrono Step Count` 53. The source reads only step type 2, a day.
-For any other step type, it writes this warning and sets no snapshots:
-
-```
-plexos: horizon step type 3 is not a day chronology; snapshots not set
-```
-
-With no snapshots, no profile can stage. So even a data file in a layout that the source
-reads gives no time series.
-
-53 steps of a week cover about one year, which agrees with a 12-month programme. PLEXOS
-documentation is not in this repository, so this page does not state the code of a week as a
-fact.
-
-The horizon also states `Chrono Date From` 45047, which is 2023-05-01. The data files start
-on 2026-09-01. The `source.horizon_year` override chooses the year that the translator reads,
-so this difference does not stop the run.
-
-**Size:** `plexos_horizon.py` maps each step type to a step length. About 30 to 60 lines in
-one file, and two BDD scenarios. About 20 minutes.
-
-### 3. The translator makes a load only from a `Region` or a `Node`
-
-This model states its demand on 420 objects of the PLEXOS `Load` class. Each object joins one
-`Node` through the `Load.Node` collection and states one `Load` property. The objects come in
-threes on 140 nodes, with the suffixes `_R`, `_L` and `_LD`, such as `Coronel066_R`.
-
-The translator reads demand only from a `Load` property on a `Region` or on a `Node`. It
-does not read the `Load` class. It also does not translate a region load when the region
-holds more than one node. This model has two regions over 241 nodes. So the Sienna system
-holds no `PowerLoad`, and `decisions.md` holds no row that says so.
-
-Sienna has a home: a `PowerLoad` names its `bus`. One `PowerLoad` for each `Load` object, on
-the bus of its node, keeps the demand at the node where the model states it.
-
-The `Load` property reads `Load_Load.csv`, in the timeslice layout of
-[cause 4](#4-the-translator-cannot-read-a-value-by-timeslice-pattern). So a `PowerLoad`
-needs cause 4 for its profile.
-
-**Size:** a new mapping from the `Load` class to `PowerLoad` in
-`plexos_sienna_translations/_loads.py`, beside the region load. About 150 to 250 lines in two
-files, and three BDD scenarios. About 45 minutes, after cause 4.
-
-### 4. The translator cannot read a value by timeslice pattern
-
-Two important data files give one value for each object and each pattern:
-
-```
-NAME,PATTERN,VALUE
-Coronel066_R,"DO_01,H1",35.61602
-JUNCALITO,"M1,H1",0
-```
-
-| Data file | Rows | What it carries | The patterns |
-| --- | --- | --- | --- |
-| `Load_Load.csv` | 483,840 | The demand of each of the 420 `Load` objects | 48 named day types, each with the hours `H1` to `H24` |
-| `Gen_RatingFactor.csv` | 298,944 | The available share of 1,038 generators, such as solar and wind | 288 patterns, `M1,H1` to `M12,H24`: a month and an hour |
-
-A pattern such as `M1,H1` names a month and an hour of the day. A pattern such as `DO_01,H1`
-names a `Timeslice` object and an hour. `Load_TimeSlice.csv` says which day belongs to which
-`Timeslice`. It gives one row for each day from 2026-09-01 to 2027-09-27. It gives one column
-for each of the 48 day types: `DO`, `LU`, `SA` and `TR`, each with a number from `01` to `12`.
-
-So the translator can build an hourly series for each snapshot. It finds the day type of the
-date, then reads the value for that day type and that hour.
-
-Add the 420 loads in each of the 1,152 pattern slots. The mean of those totals is about
-8,987 MW, before the growth factors. `Load_Escalator.csv` gives a weekly growth factor for each
-of the three load groups, which three `Variable` objects read.
-
-**Size:** a new pattern reader that expands a month or `Timeslice` pattern onto the
-snapshots, and reads the `Timeslice` `Include` file. About 250 to 400 lines in a new source
-module and `plexos_csv_layouts.py`, and five BDD scenarios. About one and a half hours.
+The model states its `Forced Outage Rate` and `Mean Time to Repair` only in the scenarios
+`ForcedOutage` and `ForcedOutageGN`. `MT_base4s` reads neither, so the system holds no
+`GeometricDistributionForcedOutage`. The `RP_base4s` models read them.
 
 ---
 
-## The other gaps that tz-oss-interop can close
+## What Sienna has no home for
 
-Sienna has a home for each row below, and the translator does not write it yet. The Sienna
-types come from `power-openapi-models` 0.2.0, the SiennaSchemas 0.2 package.
+Each row below is a thing the model states that no SiennaSchemas 0.2 type or field can hold.
+The evidence is the `power-openapi-models` 0.2.0 package. Its `core`, `operations` and
+`investments` modules hold 481 distinct field names.
 
-| What the model states | The Sienna home | Seen in this model | Size |
-| --- | --- | --- | --- |
-| The hydro cascade: 161 `Storage` objects, 564 generators that name a head storage, and 206 `Waterway` objects | `HydroReservoir`, with `upstream_reservoirs`, `upstream_turbines` and `downstream_turbines`, and `HydroTurbine` | 161, 564 and 206 objects | A new hydro module. About 500 to 800 lines, and eight BDD scenarios. About three hours. |
-| The combined-cycle plants, stated as one generator for each operating mode, such as `ATA_CC1_TGA_GNL` | `CombinedCycleBlock` and `CombinedCycleAssociation` | 59 units in `Thermal Gen X` | Not sized. This page did not find how the model joins the modes of one plant. |
-| `Zone`, which groups the nodes | `LoadZone`, which `ACBus.load_zone` names | 16 zones over 241 nodes | About 80 to 120 lines, and two BDD scenarios. About 30 minutes. |
-| `Reserve`, with its contributors | `OnlineReserve` and `ServiceAssociation` | 13 reserves, and 3,633 generator memberships | About 300 lines, and four BDD scenarios. About one and a half hours. |
-| `Forced Outage Rate` and `Mean Time to Repair` | `GeometricDistributionForcedOutage` | 1,427 generators and 130 batteries | About 150 lines, and two BDD scenarios. About 45 minutes. |
-| `Units Out`, which takes units out on dates | `PlannedOutage` | 1,935 generators, 130 batteries and 340 lines | About 150 lines, and two BDD scenarios. About 45 minutes, after cause 1. |
+The [gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) gives the
+evidence for the rows that it already holds, from three other models.
 
-The `Reserve` row is already a known gap. Refer to the
-[gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#a-worked-example-of-the-difference).
-
-## The gaps that Sienna has no home for
-
-The [gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md) already holds
-most of these rows, from three other models. This model also states them:
-
-| What the model states | Seen in this model | The row in the gap analysis |
-| --- | --- | --- |
-| `Constraint` | 509 objects | [The object level, for a dispatch](../translation_mappings/plexos-to-sienna-gap-analysis.md#the-object-level-for-a-dispatch) |
-| `Decision Variable` | 46 objects | The same section |
-| `Timeslice` | 101 objects | The same section. Cause 4 above expands the patterns into series, so the values can still reach Sienna. |
-| `Company` | 143 objects | The same section |
-| The run settings, such as `Horizon`, `MT Schedule`, `ST Schedule` and `Stochastic` | 9 `Model` objects | The same section |
-| `Unit Commitment Optimality` | 2,793 rows on generators, 288 rows on batteries | [On a `Generator`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-generator) |
-| `Max Cycles Day` on a `Battery` | 130 rows | [On a `Storage` or a `Battery`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-storage-or-a-battery) |
-| `Balance Period` on a `Storage` | 88 rows | The same section |
-| `Mutually Exclusive` on a `Reserve` | 12 rows | [On a `Reserve`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-reserve) |
-| `Max Flow Penalty` on a `Waterway` | 373 rows | [On a `Waterway`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-waterway) |
-| `Load Metering Point` on a `Region` | 2 rows | [On a `Region` or a `Node`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-region-or-a-node) |
-
-The rows below are not in the gap analysis. The evidence is a search of the field names in
-the `core`, `operations` and `investments` modules of `power-openapi-models` 0.2.0. Those
-modules hold 481 distinct field names.
+### The object level
 
 | What the model states | Why Sienna has no home | Seen in this model |
 | --- | --- | --- |
-| `Aux Base` on a `Generator`. The fixed auxiliary load of a unit while it runs. | No field name holds `aux`. The gap analysis already lists `Aux Incr`, the auxiliary load for each MW. | 707 rows |
-| `Max Capacity Factor Day` on a `Generator`. A limit on the share of a day that a unit may run at. | No field name holds `day`. The nearest limit, `energy_import_weekly_limit`, applies to an import cost alone. | 128 rows on 117 generators |
-| `Capacity Degradation`, `Power Degradation` and `Initial Age` on a `Battery`. How a battery loses energy and power as it ages. | No field name holds `degrad`, and `EnergyReservoirStorage` states no age. | 130 rows each |
-| `Min Flow Penalty` on a `Waterway`. What it costs to send less water down a route than the route needs. | No type prices a flow below a limit on the route between two reservoirs. This is the same evidence as the `Max Flow Penalty` row. | 192 rows |
-| `Non-physical Inflow Penalty`, `Non-physical Spill Penalty` and `Target Penalty` on a `Storage`. Penalties that a PLEXOS solve charges. | These tune a solve, and are not properties of the plant. A SiennaSchemas document states a system. | 14, 10 and 4 rows |
+| `Constraint` | Refer to [the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#the-object-level-for-a-dispatch). 441 of them reach `extensions.json`. | 509 objects |
+| `Decision Variable` | The same section of the gap analysis | 46 objects |
+| `Timeslice` | The same section. The values that a pattern gives against a `Timeslice` do reach the system, as time series. | 101 objects |
+| `Company` | The same section | 143 objects |
+| The run settings: `Horizon`, `MT Schedule`, `ST Schedule`, `Stochastic` and the others | The same section | 9 `Model` objects |
+| A fuel store: a `Storage` that only thermal units draw on, such as a tank of liquefied gas | No type holds a stock of fuel. The fields that name a fuel are `fuel`, `fuel_cost`, `fuel_cost_time_series`, `start_fuel_mmbtu_per_mw` and `startup_fuel_offtake`, and each one is a type or a price. | 83 `Storage` objects |
+| A `Storage` that no turbine draws on and no `Waterway` joins to a cascade | A `HydroReservoir` holds water that a turbine or a route uses. This `Storage` takes part in neither. | 11 `Storage` objects |
+
+### The combined-cycle plants
+
+The model states each operating mode and each fuel of a combined-cycle plant as a
+`Generator` of its own. Eight of them, `KELAR-TG1+TG2+TV_GN_A` to `KELAR-TG1+TG2+TV_GNL_D`,
+state 521.71 MW each. Every `KELAR` mode takes part in 11 to 18 `Constraint` objects, which
+join the modes of the plant. Sienna holds no `Constraint`, so nothing stops two modes of one
+plant from running at once. The 766 `ThermalStandard` units therefore state 120,042 MW in all,
+which counts each mode of a plant as a plant of its own.
+
+The units of 0.01 MW in the category `Thermal Gen X` take part in the same constraints.
+Sienna has a `CombinedCycleBlock` type, but PLEXOS states no plant that a block can name. The
+plant exists only in the `Constraint` objects.
+
+### On a `Generator`
+
+| What the model states | Why Sienna has no home | Seen in this model |
+| --- | --- | --- |
+| `Unit Commitment Optimality` | Refer to [On a `Generator`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-generator) | 2,793 rows |
+| `Aux Base`. The fixed auxiliary load of a unit while it runs. | No field name holds `aux`. The gap analysis already holds `Aux Incr`. | 707 rows |
+| `Max Capacity Factor Day`. A limit on the share of a day that a unit may run at. | No field name holds `day`. The nearest limit, `energy_import_weekly_limit`, applies to an import cost alone. | 128 rows on 117 units |
+
+### On a `Battery` or a `Storage`
+
+| What the model states | Why Sienna has no home | Seen in this model |
+| --- | --- | --- |
+| `Max Cycles Day` on a `Battery` | Refer to [On a `Storage` or a `Battery`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-storage-or-a-battery) | 130 rows |
+| `Capacity Degradation`, `Power Degradation` and `Initial Age` on a `Battery` | No field name holds `degrad`, and `EnergyReservoirStorage` states no age. | 130 rows each |
+| `Unit Commitment Optimality` and `End Effects Method` on a `Battery` | These tune a solve, and are not properties of the plant. | 288 and 144 rows |
+| `Balance Period` on a `Storage` | Refer to the same section of the gap analysis | 88 rows |
+| `Non-physical Inflow Penalty`, `Non-physical Spill Penalty` and `Target Penalty` on a `Storage` | These are penalties that a PLEXOS solve charges. A SiennaSchemas document states a system. | 14, 10 and 4 rows |
+
+### On a `Waterway`
+
+A `Waterway` reaches the system as the link between two reservoirs, in
+`upstream_reservoirs`. 128 routes name no `Storage To`, so they leave the cascade. In all,
+135 routes link no two reservoirs that the system holds. The properties of a route have no
+home.
+
+| What the model states | Why Sienna has no home | Seen in this model |
+| --- | --- | --- |
+| `Max Flow Penalty` | Refer to [On a `Waterway`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-waterway) | 190 objects |
+| `Max Flow`, `Min Flow` | No type states a route between two reservoirs. `spillage_limits` belongs to one reservoir, and `outflow_limits` to one turbine. | 200 and 191 objects |
+| `Min Flow Penalty` | The same evidence as `Max Flow Penalty` | 185 objects |
+
+### On a `Reserve`
+
+| What the model states | Why Sienna has no home | Seen in this model |
+| --- | --- | --- |
+| `Mutually Exclusive` | Refer to [On a `Reserve`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-reserve) | 12 reserves |
+| `Max Response` and `Max Charge Response` of one unit for one reserve | A unit joins a service through one `ServiceAssociation` row, which states the service and the unit and nothing more. `max_participation_factor` is one share for the whole service. | 3,631 rows on generators, and 56 and 56 on batteries |
+| The requirement of the six reserves `CPF_LW_BESS` to `CTF_RS_BESS` | These reserves state no `Min Provision` above 0. Each one takes part in 15 to 40 `Constraint` objects, and Sienna holds no `Constraint`. So they become no service, and their records reach `extensions.json`. | 6 reserves |
+
+### On a `Region`
+
+| What the model states | Why Sienna has no home | Seen in this model |
+| --- | --- | --- |
+| `Load Metering Point` | Refer to [On a `Region` or a `Node`](../translation_mappings/plexos-to-sienna-gap-analysis.md#on-a-region-or-a-node) | 2 rows |
 
 ---
 
-## Faults that this model found in the translator
-
-These are defects, and not missing features.
-
-| The fault | What a user sees | Size |
-| --- | --- | --- |
-| A line whose `Reactance`, `Resistance` or `Max Rating` comes from a data file takes the placeholder value of the XML file: 0 or 1e+30. | All 340 lines get `r` 0, `x` 0 and `rating` 1e+28. The rating is 1e+30 MW over the system base of 100 MVA. `decisions.md` records each as `VALUE_DERIVED`, so nothing tells the user that the numbers are wrong. A line with `x` 0 is not a valid DC power flow branch. | About 40 to 80 lines, and two BDD scenarios. The line must drop the value and record it, as a generator does now. About 30 minutes. |
-| The drop warnings name one component each. | The run writes 2,091 warnings, one for each unit. The rule is one warning that names three components and counts the rest. | About 20 to 40 lines in `plexos_pypsa_translations/decisions.py`. About 15 minutes. |
-| The source finds a data file only when the letter case of its name agrees. | The XML file names `Res_Timeslice.csv`, and the package holds `Res_TimeSlice.csv`. On Linux, the source leaves the file out and writes a warning. A Windows file system ignores letter case, so PLEXOS on Windows finds the file. | About 20 lines in `stage_plexos_xml.py`, and one BDD scenario. About 15 minutes. |
-| A reserve stopped the run when the model stated a property on a class that `PlexosClass` does not list, such as `Load`. | `translate failed: conversion from str to enum failed in column 'child_class'`, with Polars 1.44.1. Issue #142 reported it, and PR #174 fixes it. | Done in PR #174 |
-
 ## What this page does not cover
 
-- **No solve.** The system holds no demand and only 0.59 MW of generation, so a solve tells
-  you nothing.
-  This page will give a solve and a comparison when causes 1 to 4 are closed.
-- **One model of nine.** The `RP_base4s` models use other horizons and more scenarios. They
-  can find more gaps.
-- **No reference data.** CEN publishes a report in `po12meses_sep26.zip`. A comparison against
-  the report needs the translation first.
+- **No solve.** The combined-cycle modes can all run at once, so a solve overstates the
+  thermal capacity. A solve needs the `Constraint` objects first.
+- **One model of nine.** The `RP_base4s` models read the forced outage scenarios, and use
+  horizons of 2-hour periods.
+- **Four items that need a decision.** tz-oss-interop can hold each of them, but each one
+  changes a contract or a solve. Until then, each is left out with a warning.
+  - The model names `Res_Timeslice.csv`, and the package holds `Res_TimeSlice.csv`. On Linux
+    the source cannot find it, so four reserves (`CSF_LW`, `CSF_RS`, `CTF_LW`, `CTF_RS`) read
+    no requirement. A lookup that ignores letter case needs a way to list a folder, which is a
+    new method on `FilesystemPort`, a published contract.
+  - `VoRS` can become the demand curve of a reserve, `OnlineReserve.variable`. That makes the
+    requirement a priced curve, not a hard limit, which changes what PowerSimulations solves.
+  - The 2 `Flow Control` objects state the angle range of a phase shifter on a line. Sienna
+    holds that in `TransformerCircuit.phase_angle_limits`, so the line would become a
+    transformer.
+  - The 2 `Region` objects state a `VoLL`. An `InterruptiblePowerLoad` at that price could
+    hold it, but that adds a load shedding resource to the solve.
+- **No reference data.** CEN publishes a report in `po12meses_sep26.zip`, and this page does
+  not compare against it.

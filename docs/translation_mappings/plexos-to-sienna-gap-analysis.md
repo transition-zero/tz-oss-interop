@@ -98,17 +98,17 @@ Two other kinds of loss exist. Neither is a limit of Sienna, so neither is here.
 
 ### A worked example of the difference
 
-Both a `Reserve` object and a `Constraint` object end up in the same place today: the
-`extensions.json` file beside your `system.json`. Neither becomes a Sienna component. So the
-two look like one kind of loss, and they are not. What SiennaSchemas states tells them apart.
+A `Reserve` object and a `Constraint` object both reach the `extensions.json` file beside
+your `system.json`. So the two can look like one kind of loss, and they are not. What
+SiennaSchemas states tells them apart.
 
 **A `Reserve` is not in this document.** Say your model asks for 75 MW of spinning reserve
 and names the 40 generators that can supply it. SiennaSchemas has a shape for exactly that.
 The schema for a spinning reserve, `Operations/Service/OnlineReserve.json`, states a
 `requirement` field in MW and a `reserve_direction` field that takes `UP`. The schema that
 joins a device to a service, `Operations/Associations/ServiceAssociation.json`, gives one row
-for each of the 40 generators. Every part of what your model said has somewhere to go. This
-translation does not write it yet, which makes it our defect and a ticket.
+for each of the 40 generators. Every part of what your model said has somewhere to go, and
+the translation writes all of it.
 
 **A `Constraint` is in this document.** Say your model holds 0.5 times the output of one unit,
 plus 1.0 times the output of another, at or below 250 MW. No SiennaSchemas type anywhere
@@ -256,10 +256,10 @@ this one value does not.
 
 ### On a `Reserve`
 
-A reserve requirement itself is **not** in this document, because SiennaSchemas states three
-reserve types and we simply do not write them yet. Refer to
+A reserve requirement itself is **not** in this document, because the translation writes it
+as an `OnlineReserve` or an `OfflineReserve`. Refer to
 [A worked example of the difference](#a-worked-example-of-the-difference). One property of a
-reserve has no home even after we do write them.
+reserve has no home in either type.
 
 | What your model states | Why Sienna has no home | Seen in |
 | --- | --- | --- |

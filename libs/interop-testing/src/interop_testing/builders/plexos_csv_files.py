@@ -6,6 +6,7 @@ able to produce each one so the source's reshaper is read against the real thing
 
 from __future__ import annotations
 
+import csv
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -31,6 +32,13 @@ def write_csv(csv_path: Path, samples: list[list[float]]) -> None:
             ",".join([str(_CSV_YEAR_DEFAULT), "1", "1", str(hour + 1), *(str(v) for v in values)])
         )
     csv_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_csv_rows(csv_path: Path, rows: list[list[str]]) -> None:
+    """Write rows as given, quoting a cell that holds a comma, as a PLEXOS pattern does."""
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        csv.writer(handle).writerows(rows)
 
 
 def write_csv_by_object(csv_path: Path, values_by_object: dict[str, list[float]]) -> None:

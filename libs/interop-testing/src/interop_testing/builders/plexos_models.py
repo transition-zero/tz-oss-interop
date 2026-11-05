@@ -24,6 +24,7 @@ from interop_testing.builders.plexos_csv_files import (
     write_csv,
     write_csv_by_object,
     write_csv_by_period_column,
+    write_csv_rows,
     write_csv_with_text_column,
     write_daily_csv,
     write_monthly_csv,
@@ -43,13 +44,17 @@ from interop_testing.builders.plexos_vocabulary import (
     FUELS_COLLECTION,
     HORIZON_CLASS,
     HORIZONS_COLLECTION,
+    INCLUDE_PROPERTY,
     IS_SLACK_BUS_PROPERTY,
+    LOAD_CLASS,
     LOAD_PROPERTY,
+    LOADS_COLLECTION,
     MARKET_CLASS,
     MARKETS_COLLECTION,
     MODEL_CLASS,
     MODELS_COLLECTION,
     NODE_CLASS,
+    NODE_COLLECTION,
     NODES_COLLECTION,
     OLE_EPOCH,
     PERIODS_PER_DAY_ATTRIBUTE,
@@ -63,10 +68,14 @@ from interop_testing.builders.plexos_vocabulary import (
     SCENARIO_CLASS,
     SCENARIOS_COLLECTION,
     TIMESLICE_CLASS,
+    TIMESLICES_COLLECTION,
     VARIABLE_CLASS,
     VARIABLES_COLLECTION,
     VOLL_PROPERTY,
     VOLTAGE_PROPERTY,
+    ZONE_CLASS,
+    ZONE_COLLECTION,
+    ZONES_COLLECTION,
 )
 
 PLEXOS_NAMESPACE = "http://tempuri.org/MasterDataSet.xsd"
@@ -91,6 +100,13 @@ class PlexosModelBuilder(ResourceBuilder):
         if voltage is not None:
             self._add_node_property(name, VOLTAGE_PROPERTY, voltage)
 
+    def add_zone(self, name: str, nodes: list[str]) -> None:
+        """A Zone, and the Nodes that name it as the Zone they sit in."""
+        self._check_not_saved(f"zone {name!r}")
+        self._add_system_object(ZONE_CLASS, name, ZONES_COLLECTION)
+        for node in nodes:
+            self._membership_id(NODE_CLASS, node, ZONE_CLASS, name, ZONE_COLLECTION)
+
     def add_slack_node(self, name: str, region: str | None = None, voltage: float = 0.0) -> None:
         self.add_node(name, region=region, voltage=voltage or None)
         self._add_node_property(name, IS_SLACK_BUS_PROPERTY, PLEXOS_TRUE)
@@ -101,6 +117,15 @@ class PlexosModelBuilder(ResourceBuilder):
         """A node whose Is Slack Bus is present and false, which PLEXOS writes as 0."""
         self.add_node(name, region=region, voltage=voltage or None)
         self._add_node_property(name, IS_SLACK_BUS_PROPERTY, PLEXOS_FALSE)
+
+    def add_node_property_from_data_file(
+        self, node: str, property_name: str, placeholder: float, data_file: str
+    ) -> None:
+        """A Node property whose value reads a data file, beside the placeholder the XML holds."""
+        self._check_not_saved(f"property {property_name!r} on node {node!r}")
+        self._add_system_property(
+            NODE_CLASS, node, NODES_COLLECTION, property_name, placeholder, data_file=data_file
+        )
 
     def _add_node_property(self, node: str, property_name: str, value: float) -> None:
         self._add_system_property(NODE_CLASS, node, NODES_COLLECTION, property_name, value)
@@ -118,6 +143,26 @@ class PlexosModelBuilder(ResourceBuilder):
             NODE_CLASS, node, NODES_COLLECTION, LOAD_PROPERTY, peak, scenarios, data_file
         )
 
+    def add_escalated_load(self, node: str, peak: float, data_file: str, variable: str) -> None:
+        """A Load on a Node that reads a data file, and that a Variable's profile escalates."""
+        self._check_not_saved(f"escalated load on node {node!r}")
+        self._add_system_property(
+            NODE_CLASS,
+            node,
+            NODES_COLLECTION,
+            LOAD_PROPERTY,
+            peak,
+            data_file=data_file,
+            variable=variable,
+        )
+
+    def add_load_share(self, node: str, share: float, variable: str) -> None:
+        """A Load property on a Node that reads its share of the profile a Variable names."""
+        self._check_not_saved(f"load share on node {node!r}")
+        self._add_system_property(
+            NODE_CLASS, node, NODES_COLLECTION, LOAD_PROPERTY, share, variable=variable
+        )
+
     def add_region_load(
         self,
         region: str,
@@ -131,6 +176,18 @@ class PlexosModelBuilder(ResourceBuilder):
             REGION_CLASS, region, REGIONS_COLLECTION, LOAD_PROPERTY, peak, scenarios, data_file
         )
 
+    def add_load_object(
+        self, name: str, node: str | None, peak: float, data_file: str | None = None
+    ) -> None:
+        """An object of the PLEXOS Load class that states its own Load, joined to a Node."""
+        self._check_not_saved(f"load object {name!r}")
+        self._add_system_object(LOAD_CLASS, name, LOADS_COLLECTION)
+        if node is not None:
+            self._membership_id(LOAD_CLASS, name, NODE_CLASS, node, NODE_COLLECTION)
+        self._add_system_property(
+            LOAD_CLASS, name, LOADS_COLLECTION, LOAD_PROPERTY, peak, data_file=data_file
+        )
+
     def add_region_property(self, region: str, property_name: str, value: float) -> None:
         """Any other Region property, named as PLEXOS spells it."""
         self._check_not_saved(f"property {property_name!r} on region {region!r}")
@@ -142,6 +199,13 @@ class PlexosModelBuilder(ResourceBuilder):
         self._add_system_object(DATA_FILE_CLASS, name, DATA_FILES_COLLECTION)
         self._add_filename(name, path)
         self._register_csv(path, lambda target: write_csv(target, [hourly_values]))
+
+    def add_data_file_with_rows(self, name: str, path: str, rows: list[list[str]]) -> None:
+        """Register a Data File whose CSV holds these rows verbatim, the first row its header."""
+        self._check_not_saved(f"data file {name!r}")
+        self._add_system_object(DATA_FILE_CLASS, name, DATA_FILES_COLLECTION)
+        self._add_filename(name, path)
+        self._register_csv(path, lambda target: write_csv_rows(target, rows))
 
     def add_missing_data_file(self, name: str, path: str) -> None:
         """Register a Data File and its Filename without writing the CSV, as a package that
@@ -329,6 +393,30 @@ class PlexosModelBuilder(ResourceBuilder):
         self._check_not_saved(f"variable {name!r}")
         self._add_system_object(VARIABLE_CLASS, name, VARIABLES_COLLECTION)
         self._add_variable_profile(name, pattern, TIMESLICE_CLASS)
+
+    def add_timeslice_from_data_file(self, name: str, data_file: str) -> None:
+        """A Timeslice whose Include reads a data file of days."""
+        self._check_not_saved(f"timeslice {name!r}")
+        self._add_system_object(TIMESLICE_CLASS, name, TIMESLICES_COLLECTION)
+        self._add_system_property(
+            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, 0, data_file=data_file
+        )
+
+    def add_timeslice_with_pattern(self, name: str, pattern: str) -> None:
+        """A Timeslice whose Include states a pattern, such as M4,D1-7, as its own text."""
+        self._check_not_saved(f"timeslice {name!r}")
+        self._add_system_object(TIMESLICE_CLASS, name, TIMESLICES_COLLECTION)
+        self._add_system_property(
+            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, PLEXOS_TRUE
+        )
+        include_data_id = self._data_rows[-1]["data_id"]
+        self._text_rows.append(
+            {
+                "data_id": include_data_id,
+                "class_id": self._class_id(TIMESLICE_CLASS),
+                "value": pattern,
+            }
+        )
 
     def add_model(self, name: str, scenarios: list[str] | None = None) -> None:
         self._check_not_saved(f"model {name!r}")

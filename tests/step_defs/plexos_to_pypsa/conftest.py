@@ -424,6 +424,31 @@ sinks:
 """
 
 
+_RESOLVE_YEAR_TIME_SERIES_PIPELINE_YAML = """\
+source_framework: plexos
+destination_framework: pypsa
+source:
+  name: stage_plexos_xml
+  params:
+    model: {model}
+    horizon_year: {year}
+steps:
+  - name: dump_time_series
+sinks:
+  - name: emit_json
+"""
+
+
+@given(
+    parsers.parse(
+        'a project-local pipeline "{name}" that stages plexos for model "{model}" in {year:d} '
+        "and dumps a time series"
+    )
+)
+def given_plexos_resolve_year_time_series_pipeline(name: str, model: str, year: int) -> None:
+    write_pipeline(name, _RESOLVE_YEAR_TIME_SERIES_PIPELINE_YAML.format(model=model, year=year))
+
+
 @given('a step plugin "dump_table" that writes a source_topology table to JSON')
 def given_dump_table_step_plugin() -> None:
     write_project_plugin("steps", "dump_table", _DUMP_TABLE_STEP_PY)

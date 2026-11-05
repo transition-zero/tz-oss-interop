@@ -21,6 +21,7 @@ class PlexosClass(StrEnum):
     NODE = "Node"
     REGION = "Region"
     ZONE = "Zone"
+    LOAD = "Load"
     LINE = "Line"
     TRANSFORMER = "Transformer"
     INTERFACE = "Interface"
@@ -35,6 +36,7 @@ class PlexosClass(StrEnum):
     CONSTRAINT = "Constraint"
     DECISION_VARIABLE = "Decision Variable"
     DATA_FILE = "Data File"
+    TIMESLICE = "Timeslice"
     MODEL = "Model"
     SCENARIO = "Scenario"
 
@@ -94,6 +96,10 @@ class PlexosPropertyCol:
     UNIT = "unit"
     DATA_FILE = "data_file"
     SCALING = "scaling"
+    # The name a data file gives this value's rows: the Variable it reads through, else the object.
+    ROW_NAME = "row_name"
+    # The Variable whose profile escalates a value that a data file states, else null.
+    ESCALATOR = "escalator"
 
 
 class PlexosDatedPropertyCol(PlexosPropertyCol):
@@ -122,7 +128,11 @@ class PlexosCollection(StrEnum):
     REGIONS = "Regions"
     # A Node's membership to its containing Region uses the singular collection name.
     REGION = "Region"
+    # A Load object's membership to its Node uses the singular collection name too.
+    NODE = "Node"
     ZONES = "Zones"
+    # A Node names the Zone it sits in through the singular collection.
+    ZONE = "Zone"
     GENERATORS = "Generators"
     FUELS = "Fuels"
     START_FUELS = "Start Fuels"
@@ -131,6 +141,8 @@ class PlexosCollection(StrEnum):
     NODE_TO = "Node To"
     HEAD_STORAGE = "Head Storage"
     TAIL_STORAGE = "Tail Storage"
+    STORAGE_FROM = "Storage From"
+    STORAGE_TO = "Storage To"
     LINES = "Lines"
     BATTERIES = "Batteries"
     STORAGES = "Storages"
@@ -165,6 +177,8 @@ class PlexosProperty(StrEnum):
     RATING_FACTOR = "Rating Factor"
     OUTAGE_FACTOR = "Outage Factor"
     OUTAGE_RATING = "Outage Rating"
+    FORCED_OUTAGE_RATE = "Forced Outage Rate"
+    MEAN_TIME_TO_REPAIR = "Mean Time to Repair"
     HEAT_RATE = "Heat Rate"
     HEAT_RATE_BASE = "Heat Rate Base"
     HEAT_RATE_INCR = "Heat Rate Incr"
@@ -194,6 +208,7 @@ class PlexosProperty(StrEnum):
     DURATION = "Duration"
     # Storage (hydro reservoir)
     MAX_VOLUME = "Max Volume"
+    MIN_VOLUME = "Min Volume"
     INITIAL_VOLUME = "Initial Volume"
     NATURAL_INFLOW = "Natural Inflow"
     END_EFFECTS_METHOD = "End Effects Method"
@@ -225,6 +240,8 @@ class PlexosProperty(StrEnum):
     RHS_WEEK = "RHS Week"
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
+    INCLUDE = "Include"
+    EFFICIENCY_INCR = "Efficiency Incr"
     INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 

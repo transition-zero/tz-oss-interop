@@ -8,7 +8,7 @@ document primitives it writes through in ``interop_testing.builders.sienna_docum
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from interop_testing.builders.sienna_documents import (
     ac_bus,
@@ -22,6 +22,16 @@ from interop_testing.builders.sienna_documents import (
 )
 
 
+class HydroLimits(NamedTuple):
+    """The ratings and the cost a hydro generator states."""
+
+    base_power: float
+    rating: float
+    active_power_min: float
+    active_power_max: float
+    marginal_cost: float
+
+
 class SiennaSystemBuilder:
     """Incrementally builds a Sienna system and serialises it once.
 
@@ -32,6 +42,9 @@ class SiennaSystemBuilder:
 
     def __init__(self) -> None:
         self._areas: list[dict[str, Any]] = []
+        self._load_zones: list[dict[str, Any]] = []
+        self._load_zone_ids: dict[str, int] = {}
+        self._forced_outages: list[dict[str, Any]] = []
         self._buses: list[dict[str, Any]] = []
         self._generators: list[dict[str, Any]] = []
         self._storage: list[dict[str, Any]] = []
@@ -69,7 +82,22 @@ class SiennaSystemBuilder:
             {"id": area_id, "name": name, "base_power": 100.0, "power_units": "NATURAL_UNITS"}
         )
 
-    def add_bus(self, name: str, area: str | None = None) -> None:
+    def add_load_zone(self, name: str) -> None:
+        self._check_not_saved(f"load zone {name!r}")
+        zone_id = self._next_id()
+        self._load_zone_ids[name] = zone_id
+        self._load_zones.append(
+            {
+                "id": zone_id,
+                "name": name,
+                "peak_active_power": 0.0,
+                "peak_reactive_power": 0.0,
+                "base_power": 100.0,
+                "power_units": "NATURAL_UNITS",
+            }
+        )
+
+    def add_bus(self, name: str, area: str | None = None, load_zone: str | None = None) -> None:
         self._check_not_saved(f"bus {name!r}")
         bus_id = self._next_bus_id
         self._next_bus_id += 1
@@ -77,7 +105,28 @@ class SiennaSystemBuilder:
         bus = ac_bus(bus_id, name)
         if area is not None:
             bus["area"] = self._area_ids[area]
+        if load_zone is not None:
+            bus["load_zone"] = self._load_zone_ids[load_zone]
         self._buses.append(bus)
+
+    def add_forced_outage(
+        self, owner_type: str, owner_name: str, mean_time_to_recovery: float, probability: float
+    ) -> None:
+        """A GeometricDistributionForcedOutage attribute joined to one named component."""
+        self._check_not_saved(f"forced outage for {owner_name!r}")
+        self._forced_outages.append(
+            {
+                "owner_type": owner_type,
+                "owner_name": owner_name,
+                "attribute": {
+                    "id": self._next_id(),
+                    "mean_time_to_recovery": mean_time_to_recovery,
+                    "outage_transition_probability": probability,
+                    "monitored_components": [],
+                    "identifier": owner_name,
+                },
+            }
+        )
 
     def add_thermal_standard(
         self,
@@ -178,10 +227,21 @@ class SiennaSystemBuilder:
         active_power_max: float,
         marginal_cost: float,
     ) -> None:
-        self._check_not_saved(f"HydroDispatch {name!r}")
+        limits = HydroLimits(base_power, rating, active_power_min, active_power_max, marginal_cost)
+        self._add_hydro_generator("HydroDispatch", name, bus, limits)
+
+    def add_hydro_turbine(self, name: str, bus: str, limits: HydroLimits) -> None:
+        """A HydroTurbine stating only the fields a HydroDispatch also states."""
+        self._add_hydro_generator("HydroTurbine", name, bus, limits)
+
+    def _add_hydro_generator(
+        self, sienna_type: str, name: str, bus: str, limits: HydroLimits
+    ) -> None:
+        self._check_not_saved(f"{sienna_type} {name!r}")
+        base_power, rating, active_power_min, active_power_max, marginal_cost = limits
         self._generators.append(
             {
-                "sienna_type": "HydroDispatch",
+                "sienna_type": sienna_type,
                 "id": self._next_id(),
                 "name": name,
                 "available": True,
@@ -495,6 +555,10 @@ class SiennaSystemBuilder:
         sections: dict[str, list[dict[str, Any]]] = {}
         if self._areas:
             sections["areas"] = self._areas
+        if self._load_zones:
+            sections["load_zones"] = self._load_zones
+        if self._forced_outages:
+            sections["forced_outages"] = self._forced_outages
         sections["buses"] = self._buses
         if self._generators:
             sections["generators"] = self._generators
