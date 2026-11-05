@@ -137,7 +137,7 @@ class SnapshotWeightingMapper:
         self, state: State, reader: ExtensionReader, window: SnapshotWindow | None
     ) -> SnapshotSpan:
         """Write the weightings where the sidecar states periods, and answer what they span."""
-        records = reader.read(ExtensionKind.REPRESENTATIVE_PERIOD).read_all()
+        records = reader.read(RepresentativePeriodExtension).read_all()
         if window is None:
             self._record_unweighted([record.name for record in records], _NO_SNAPSHOTS_NOTE)
             return SnapshotSpan(None, 0.0, 0)

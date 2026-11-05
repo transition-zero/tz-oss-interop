@@ -7,7 +7,6 @@ import polars as pl
 
 from interop.core.extensions import (
     BusExtension,
-    ExtensionKind,
     ExtensionLookup,
     ExtensionReader,
 )
@@ -42,7 +41,7 @@ def map_buses(state: State, recorder: ScopedRecorder, extensions: ExtensionReade
     """
     source = state.source_topology.get(SiennaTable.BUSES)
     reporter = BusReporter(recorder)
-    records = extensions.read(ExtensionKind.BUS)
+    records = extensions.read(BusExtension)
     rows = [] if source is None else _map_electricity_buses(reporter, records, source)
     rows += _map_fuel_buses(reporter, records, {row[PyPSABusCol.NAME] for row in rows})
     if rows:

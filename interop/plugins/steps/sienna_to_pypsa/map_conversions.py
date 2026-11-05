@@ -75,7 +75,7 @@ class SiennaToPypsaMapConversions(TranslationStep):
         self._extensions = extensions
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        lookup = self._extensions.read(ExtensionKind.CONVERSION)
+        lookup = self._extensions.read(ConversionExtension)
         records = lookup.list_records()
         if not records:
             return state

@@ -4,7 +4,16 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionLookup, ExtensionReader, RecordT
+from interop.core.extensions import (
+    ConstraintExtension,
+    ExtensionLookup,
+    ExtensionReader,
+    NetworkExtension,
+    RecordT,
+    RepresentativePeriodExtension,
+    ReserveExtension,
+    TechnologyExtension,
+)
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
@@ -79,11 +88,11 @@ class SiennaToPypsaMapComponents(TranslationStep):
         PyPSA states none of these kinds, other than the weights of the representative
         periods, which also become the snapshot weightings.
         """
-        self._relay_whole(state, reader.read(ExtensionKind.RESERVE))
-        self._relay_whole(state, reader.read(ExtensionKind.CONSTRAINT))
-        self._relay_whole(state, reader.read(ExtensionKind.NETWORK))
-        self._relay_whole(state, reader.read(ExtensionKind.REPRESENTATIVE_PERIOD))
-        self._relay_whole(state, reader.read(ExtensionKind.TECHNOLOGY))
+        self._relay_whole(state, reader.read(ReserveExtension))
+        self._relay_whole(state, reader.read(ConstraintExtension))
+        self._relay_whole(state, reader.read(NetworkExtension))
+        self._relay_whole(state, reader.read(RepresentativePeriodExtension))
+        self._relay_whole(state, reader.read(TechnologyExtension))
 
     def _relay_whole(self, state: State, lookup: ExtensionLookup[RecordT]) -> None:
         names = [record.name for record in lookup.list_records()]

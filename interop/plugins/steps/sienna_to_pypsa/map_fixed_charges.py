@@ -10,13 +10,19 @@ the components relay it.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from typing import ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind, ExtensionReader
+from interop.core.extensions import (
+    ConversionExtension,
+    ExpansionExtension,
+    ExtensionReader,
+    GeneratorExtension,
+    StorageExtension,
+    get_record_kind,
+)
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
@@ -68,55 +74,36 @@ _NO_SNAPSHOTS_WARNING = (
 
 
 class ChargeOwner(NamedTuple):
-    """A kind of record, the PyPSA table that holds its components, and how to report them.
+    """A record model, the PyPSA table that holds its components, and how to report them."""
 
-    `read_charge` answers the charge that the record of one component states, or None.
-    """
-
-    kind: ExtensionKind
+    model: type[ExpansionExtension]
     table: str
     name_col: str
     source_table: str | None
     reporter: type[SiennaToPypsaReporter]
-    read_charge: Callable[[ExtensionReader, str], float | None]
-
-
-def _read_generator_charge(reader: ExtensionReader, name: str) -> float | None:
-    return reader.read(ExtensionKind.GENERATOR).get_fields(name, ()).fom_charge_per_mw_year
-
-
-def _read_storage_charge(reader: ExtensionReader, name: str) -> float | None:
-    return reader.read(ExtensionKind.STORAGE).get_fields(name, ()).fom_charge_per_mw_year
-
-
-def _read_conversion_charge(reader: ExtensionReader, name: str) -> float | None:
-    return reader.read(ExtensionKind.CONVERSION).get_fields(name, ()).fom_charge_per_mw_year
 
 
 _OWNERS = (
     ChargeOwner(
-        ExtensionKind.GENERATOR,
+        GeneratorExtension,
         PyPSADestinationTable.GENERATORS,
         PyPSAGeneratorCol.NAME,
         SiennaTable.GENERATORS,
         GeneratorReporter,
-        _read_generator_charge,
     ),
     ChargeOwner(
-        ExtensionKind.STORAGE,
+        StorageExtension,
         PyPSADestinationTable.STORAGE_UNITS,
         PyPSAStorageUnitCol.NAME,
         SiennaTable.STORAGE,
         StorageUnitReporter,
-        _read_storage_charge,
     ),
     ChargeOwner(
-        ExtensionKind.CONVERSION,
+        ConversionExtension,
         PyPSADestinationTable.LINKS,
         PyPSALinkCol.NAME,
         None,
         ConversionReporter,
-        _read_conversion_charge,
     ),
 )
 
@@ -207,11 +194,12 @@ def _list_owner_charges(
     state: State, reader: ExtensionReader, owner: ChargeOwner, table: pl.DataFrame
 ) -> list[FixedCharge]:
     types = find_source_types(state, owner.source_table) if owner.source_table else None
+    lookup = reader.read(owner.model)
     charges: list[FixedCharge] = []
     for name in table[owner.name_col].to_list():
-        value = owner.read_charge(reader, name)
+        value = lookup.get_fields(name, ()).fom_charge_per_mw_year
         if value is not None:
-            sienna_type = (types or {}).get(name, owner.kind)
+            sienna_type = (types or {}).get(name, get_record_kind(owner.model))
             charges.append(FixedCharge(owner, name, sienna_type, value))
     return charges
 

@@ -12,7 +12,15 @@ import logging
 from collections.abc import Collection
 from typing import NamedTuple
 
-from interop.core.extensions import ActivityExtension, ExtensionKind, ExtensionReader
+from interop.core.extensions import (
+    ActivityExtension,
+    ControllableLineExtension,
+    ConversionExtension,
+    ExtensionKind,
+    ExtensionReader,
+    GeneratorExtension,
+    StorageExtension,
+)
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_constants import (
@@ -129,12 +137,12 @@ def _build_link_group(
     owners = [
         *(
             _BoundOwner(line_types[record.name], record)
-            for record in reader.read(ExtensionKind.CONTROLLABLE_LINE).list_records()
+            for record in reader.read(ControllableLineExtension).list_records()
             if record.name in lines
         ),
         *(
             _BoundOwner(ExtensionKind.CONVERSION, record)
-            for record in reader.read(ExtensionKind.CONVERSION).list_records()
+            for record in reader.read(ConversionExtension).list_records()
             if record.name in links - lines
         ),
     ]
@@ -153,8 +161,8 @@ def _build_storage_group(
         **(find_source_types(state, SiennaTable.STORAGE) or {}),
     }
     records = [
-        *reader.read(ExtensionKind.STORAGE).list_records(),
-        *reader.read(ExtensionKind.GENERATOR).list_records(),
+        *reader.read(StorageExtension).list_records(),
+        *reader.read(GeneratorExtension).list_records(),
     ]
     owners = [
         _BoundOwner(types.get(record.name, ExtensionKind.STORAGE), record)
@@ -174,7 +182,7 @@ def _build_horizon_group(
     types = find_source_types(state, SiennaTable.GENERATORS) or {}
     owners = [
         _BoundOwner(types.get(record.name, ExtensionKind.GENERATOR), record)
-        for record in reader.read(ExtensionKind.GENERATOR).list_records()
+        for record in reader.read(GeneratorExtension).list_records()
         if record.name in generators
     ]
     return _BoundGroup(GeneratorReporter(recorder), owners, HORIZON_BOUND_FIELDS, _HORIZON_TEXT)

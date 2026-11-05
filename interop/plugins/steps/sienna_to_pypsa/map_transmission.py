@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from interop.core.extensions import (
     ControllableLineCompanionCol,
     ControllableLineExtension,
+    ExtensionKind,
     ExtensionReader,
     LineExtension,
 )

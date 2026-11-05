@@ -10,12 +10,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from interop.core.extensions import (
-    EXTENSION_MODELS,
-    ExtensionKind,
     ExtensionLookup,
     ExtensionRecord,
     RecordT,
     append_extensions,
+    get_record_kind,
     names_companion_series,
 )
 from interop.core.pipeline import State
@@ -29,10 +28,6 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters.sidecar import (
     RELAYED_BY_YEAR_DERIVATION,
     RELAYED_FIXED_CHARGE_DERIVATION,
 )
-
-_KIND_BY_MODEL: dict[type[ExtensionRecord], ExtensionKind] = {
-    model: kind for kind, model in EXTENSION_MODELS.items()
-}
 
 
 def relay_records(
@@ -52,7 +47,7 @@ def relay_records(
     stated = [record for record in map(lookup.build_relayed, names) if record.has_any_value()]
     if not stated:
         return
-    kind = _KIND_BY_MODEL[type(stated[0])]
+    kind = get_record_kind(type(stated[0]))
     append_extensions(state.destination_extensions, kind, stated)
     reporter = ExtensionRelayReporter(recorder, kind)
     for record in stated:

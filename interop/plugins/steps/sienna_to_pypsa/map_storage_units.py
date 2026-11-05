@@ -10,6 +10,7 @@ from interop.core.extensions import (
     ExtensionKind,
     ExtensionLookup,
     ExtensionReader,
+    GeneratorExtension,
     StorageCompanionCol,
     StorageExtension,
 )
@@ -190,9 +191,9 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
 
     def _carry_on(self, state: State, names: list[str], hydro_names: list[str]) -> None:
         """Pass on each unmapped field of a unit's records, with a hydro unit's generator record."""
-        storage = self._extensions.read(ExtensionKind.STORAGE)
+        storage = self._extensions.read(StorageExtension)
         relay_records(state, storage, names, self._recorder, partly_mapped=FIXED_CHARGE_IN_PART)
-        generators = self._extensions.read(ExtensionKind.GENERATOR)
+        generators = self._extensions.read(GeneratorExtension)
         relay_records(state, generators, hydro_names, self._recorder)
 
     def _record_hydro_inflow(self, state: State, hydro_base_power: dict[str, float]) -> None:
@@ -258,7 +259,7 @@ def _derive_hydro(
     row: dict[str, Any], bus_names: dict[int, str], extensions: ExtensionReader
 ) -> _HydroMapping:
     base_power = float(row[SiennaGeneratorCol.BASE_POWER])
-    carried = extensions.read(ExtensionKind.STORAGE).get_fields(
+    carried = extensions.read(StorageExtension).get_fields(
         str(row[SiennaGeneratorCol.NAME]), HYDRO_MAPPED_FIELDS
     )
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])

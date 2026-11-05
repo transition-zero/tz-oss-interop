@@ -65,7 +65,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from interop.core.extensions import ExtensionKind
+from interop.core.extensions import ExtensionKind, GeneratorExtension
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 
@@ -78,7 +78,7 @@ class ReadCarrierOnly(TranslationStep):
         self._recorder = recorder
 
     def run(self, state: State, params: BaseModel | None) -> State:
-        generators = state.extension_reader(self._recorder).read(ExtensionKind.GENERATOR)
+        generators = state.extension_reader(self._recorder).read(GeneratorExtension)
         for record in generators.list_records():
             generators.get_fields(record.name, ["carrier"])
         return state

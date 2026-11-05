@@ -16,7 +16,7 @@ from typing import ClassVar, NamedTuple
 import polars as pl
 from pydantic import BaseModel
 
-from interop.core.extensions import ByYear, ExtensionKind, ExtensionReader
+from interop.core.extensions import ByYear, ExtensionKind, ExtensionReader, GeneratorExtension
 from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import EXTENSIONS_PREFIX
@@ -161,7 +161,7 @@ class EnergyLimitMapper:
 
 def _list_bounds(reader: ExtensionReader, names: list[str]) -> list[EnergyBound]:
     """Each annual bound that a written generator's record states."""
-    lookup = reader.read(ExtensionKind.GENERATOR)
+    lookup = reader.read(GeneratorExtension)
     bounds: list[EnergyBound] = []
     for name in names:
         record = lookup.get_fields(name, ())
