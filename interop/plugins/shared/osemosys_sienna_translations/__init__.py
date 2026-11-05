@@ -72,6 +72,14 @@ from interop.plugins.shared.osemosys_sienna_translations._series import (
     add_series,
     add_to_per_unit_series,
 )
+from interop.plugins.shared.osemosys_sienna_translations._storage import (
+    build_storage_extensions,
+    build_storages_source,
+    set_storage_values_persisted,
+)
+from interop.plugins.shared.osemosys_sienna_translations._storage_translations import (
+    STORAGE_MAPPING,
+)
 from interop.plugins.shared.osemosys_sienna_translations._technology_columns import (
     SIENNA_TYPE,
 )
@@ -88,6 +96,7 @@ __all__ = [
     "GENERATOR_TYPE_MAPPINGS",
     "LOAD_MAPPING",
     "SIENNA_TYPE",
+    "STORAGE_MAPPING",
     "BuiltRecords",
     "Calendar",
     "ComponentMapping",
@@ -111,6 +120,8 @@ __all__ = [
     "build_load_series",
     "build_loads_source",
     "build_period_records",
+    "build_storage_extensions",
+    "build_storages_source",
     "enrich_technology_values",
     "list_model_years",
     "map_component_table",
@@ -125,4 +136,5 @@ __all__ = [
     "set_generator_values_persisted",
     "warn_lost_costs",
     "set_operations_year",
+    "set_storage_values_persisted",
 ]
