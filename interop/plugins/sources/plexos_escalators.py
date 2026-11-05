@@ -28,6 +28,8 @@ _PROFILE_PROPERTY = "Profile"
 _VARIABLE_PROFILE_KEY = (_VARIABLE_CLASS, _PROFILE_PROPERTY)
 _FACTOR = "escalation_factor"
 _NO_ESCALATION = 1.0
+_NO_SNAPSHOTS = "the model's Horizon sets no snapshots to escalate them on"
+_NO_PROFILE = "no Variable profile staged to escalate them"
 
 SeriesByKey = dict[tuple[str, str], pl.LazyFrame]
 
@@ -39,9 +41,12 @@ def apply_escalators(
     escalators = _list_escalators(properties, series)
     if not escalators:
         return series
+    if index is None:
+        _warn_not_escalated(escalators, _NO_SNAPSHOTS)
+        return series
     factors = series.get(_VARIABLE_PROFILE_KEY)
-    if factors is None or index is None:
-        _warn_not_escalated(escalators)
+    if factors is None:
+        _warn_not_escalated(escalators, _NO_PROFILE)
         return series
     escalated = dict(series)
     for key, by_component in escalators.items():
@@ -63,7 +68,7 @@ def _list_escalators(
 
 
 def _escalate(
-    frame: pl.LazyFrame,
+    table: pl.LazyFrame,
     by_component: dict[str, str],
     factors: pl.LazyFrame,
     out_dir: Path,
@@ -81,7 +86,7 @@ def _escalate(
         pl.col(StagedTimeSeriesCol.VALUE).alias(_FACTOR),
     ).unique(subset=[StagedTimeSeriesCol.SNAPSHOT, PlexosPropertyCol.ESCALATOR], keep="first")
     escalated = (
-        frame.join(escalator, on=StagedTimeSeriesCol.COMPONENT, how="left")
+        table.join(escalator, on=StagedTimeSeriesCol.COMPONENT, how="left")
         .join(
             factor_rows, on=[StagedTimeSeriesCol.SNAPSHOT, PlexosPropertyCol.ESCALATOR], how="left"
         )
@@ -90,7 +95,7 @@ def _escalate(
                 StagedTimeSeriesCol.VALUE
             )
         )
-        .select(frame.collect_schema().names())
+        .select(table.collect_schema().names())
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{series_name}.parquet"
@@ -98,11 +103,12 @@ def _escalate(
     return pl.scan_parquet(path)
 
 
-def _warn_not_escalated(escalators: dict[tuple[str, str], dict[str, str]]) -> None:
+def _warn_not_escalated(escalators: dict[tuple[str, str], dict[str, str]], reason: str) -> None:
     names = sorted({name for by_component in escalators.values() for name in by_component})
     log.warning(
-        "plexos: %d value(s) name a Variable that escalates them, but the model's Horizon sets "
-        "no snapshots to escalate them on, so each keeps its data file's values: %s",
+        "plexos: %d value(s) name a Variable that escalates them, but %s, so each keeps its "
+        "data file's values: %s",
         len(names),
+        reason,
         name_a_few(names),
     )
