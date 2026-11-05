@@ -184,16 +184,17 @@ Try it: launch `interop` and pick `translate`:
 interop            # pick: translate
 ```
 
-Answer the prompts (each is prefilled with the value shown, so you can press
-Enter through them):
+Answer the prompts. Each prompt is prefilled with the value shown, so you can press
+Enter through them. The two companion prompts are empty, and an empty answer writes each
+companion beside `system.json`.
 
 1. **Source framework?** `pypsa`
 2. **Destination framework?** `sienna`
 3. **Pipeline?** `pypsa-csv-to-sienna`
 4. **source.path?** `inputs/pypsa_network_csv`
 5. **sink[0].output_system_json_file_path?** `outputs/system.json`
-6. **sink[0].output_h5_file_path?** `outputs/system_time_series_storage.h5`
-7. **sink[0].output_extensions_file_path?** `outputs/extensions.json`
+6. **sink[0].output_h5_file_path?** (empty, so `outputs/system_time_series_storage.h5`)
+7. **sink[0].output_extensions_file_path?** (empty, so `outputs/extensions.json`)
 8. **sink[0].indent?** `2`
 9. **User mappings file?** `inputs/user_mappings.yaml`
 
