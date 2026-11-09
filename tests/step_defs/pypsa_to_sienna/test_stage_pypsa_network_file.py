@@ -54,6 +54,7 @@ from typing import ClassVar
 from pydantic import BaseModel
 
 from interop.core.extensions import (
+    NetworkExtension,
     NETWORK_RECORD_NAME,
     ExtensionKind,
     record_for,
@@ -72,7 +73,7 @@ class _RecordExtensions(TranslationStep):
     def run(self, state: State, params: BaseModel | None) -> State:
         assert isinstance(params, _RecordExtensionsParams)
         params.out.parent.mkdir(parents=True, exist_ok=True)
-        record = record_for(state.source_extensions, ExtensionKind.NETWORK, NETWORK_RECORD_NAME)
+        record = record_for(state.source_extensions, NetworkExtension, NETWORK_RECORD_NAME)
         stated = {} if record is None else record.model_dump(exclude_none=True)
         params.out.write_text(json.dumps(stated), encoding="utf-8")
         return state

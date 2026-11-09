@@ -17,10 +17,10 @@ from interop.plugins.shared.pypsa_constants import PyPSAGeneratorCol
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     InvestmentsSource,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_cost_curves import (
     ZERO_IO_CURVE,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     NAMED_YEAR_DTYPE,
     NamedYearField,
@@ -76,22 +76,51 @@ def build_existing_fleet_source_table(
     where it shares both the carrier and the region. A technology no such device matches has
     no fleet to name, so it gets no row and neither attribute.
     """
-    rows: list[dict[str, Any]] = []
-    for technology in technologies:
-        fleet = (technology.carrier, technology.region)
-        devices = list(devices_by_carrier_and_region.get(fleet, []))
-        if not devices:
-            continue
-        rows.append(
-            {
-                TECHNOLOGY_NAME: technology.name,
-                TECHNOLOGY_TYPE: technology.component_type,
-                DEVICE_CLASS: technology.device_class,
-                DEVICES: devices,
-                BUILD_YEARS: _named_years(devices, build_years),
-                RETIREMENT_YEARS: _named_years(devices, retirement_years),
-            }
+    fleets = [
+        TechnologyFleet(
+            name=technology.name,
+            component_type=technology.component_type,
+            device_class=technology.device_class,
+            devices=list(
+                devices_by_carrier_and_region.get((technology.carrier, technology.region), [])
+            ),
         )
+        for technology in technologies
+    ]
+    return build_fleet_source_table(fleets, build_years, retirement_years)
+
+
+class TechnologyFleet(NamedTuple):
+    """One technology in the portfolio, and the base system devices of its fleet.
+
+    ``device_class`` is the class those devices belong to, so the report names each one by the
+    class it came from.
+    """
+
+    name: str
+    component_type: str
+    device_class: str
+    devices: Sequence[str]
+
+
+def build_fleet_source_table(
+    fleets: Sequence[TechnologyFleet],
+    build_years: Mapping[str, int],
+    retirement_years: Mapping[str, int],
+) -> pl.DataFrame:
+    """One row per technology whose fleet holds a device; a technology with none gets no row."""
+    rows = [
+        {
+            TECHNOLOGY_NAME: fleet.name,
+            TECHNOLOGY_TYPE: fleet.component_type,
+            DEVICE_CLASS: fleet.device_class,
+            DEVICES: list(fleet.devices),
+            BUILD_YEARS: _named_years(fleet.devices, build_years),
+            RETIREMENT_YEARS: _named_years(fleet.devices, retirement_years),
+        }
+        for fleet in fleets
+        if fleet.devices
+    ]
     return pl.DataFrame(rows, schema=EXISTING_FLEET_SOURCE_SCHEMA)
 
 
@@ -104,8 +133,8 @@ def _named_years(devices: Sequence[str], years: Mapping[str, int]) -> list[dict[
     ]
 
 
-_existing_dest = partial(sienna_dest_field, SiennaSupplementalAttribute.EXISTING_DEVICES)
-_retirement_dest = partial(sienna_dest_field, SiennaSupplementalAttribute.RETIREMENT_POTENTIAL)
+_existing_dest = partial(build_sienna_field, SiennaSupplementalAttribute.EXISTING_DEVICES)
+_retirement_dest = partial(build_sienna_field, SiennaSupplementalAttribute.RETIREMENT_POTENTIAL)
 
 # The extensions sidecar field carrying the year a device leaves service.
 _RETIREMENT_YEAR_FIELD = "retirement_year"
@@ -213,7 +242,7 @@ def _retirement_translations(source: InvestmentsSource) -> list[Translation]:
                         new[R.PLANNED_RETIREMENT_YEAR],
                     )
                 ],
-                derivation="the retirement year the extensions sidecar carries, per device",
+                derivation=source.retirement_derivation,
             )
         ],
     )
@@ -228,10 +257,7 @@ def _retirement_translations(source: InvestmentsSource) -> list[Translation]:
                         old[TECHNOLOGY_NAME], R.RETIREMENT_COST, new[R.RETIREMENT_COST]
                     )
                 ],
-                note=(
-                    "RetirementPotential requires a retirement cost and PyPSA prices no "
-                    "retirement, so retiring a device costs nothing"
-                ),
+                note=source.retirement_cost_note,
             )
         ],
     )

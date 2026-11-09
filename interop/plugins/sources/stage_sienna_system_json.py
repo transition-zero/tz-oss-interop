@@ -17,10 +17,12 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_SOURCE_AREAS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
     InfraStoreSidecar,
     SiennaACBusCol,
     SiennaArcCol,
+    SiennaAreaCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
@@ -124,11 +126,17 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     components = system.get(SiennaSchemasSystem.COMPONENTS, {})
 
     area_name_by_id = {
-        area[SiennaACBusCol.ID]: area[SiennaACBusCol.NAME]
+        area[SiennaAreaCol.ID]: area[SiennaAreaCol.NAME]
         for area in components.get(SiennaComponent.AREA, [])
     }
 
     frames: dict[str, pl.LazyFrame] = {}
+    area_rows = [
+        {SiennaAreaCol.ID: area_id, SiennaAreaCol.NAME: area_name}
+        for area_id, area_name in area_name_by_id.items()
+    ]
+    _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
+
     bus_rows = [_bus_row(c, area_name_by_id) for c in components.get(SiennaComponent.AC_BUS, [])]
     _stage_table(bus_rows, SIENNA_SOURCE_BUSES_SCHEMA, SiennaTable.BUSES, staging_dir, frames)
 
@@ -257,7 +265,9 @@ def _stage_time_series(
     associations = _drop_unnamed_owners(_drop_unconvertible(associations), name_by_owner)
     capacity_by_owner = _capacity_by_owner(system, associations)
     key_dirs: dict[tuple[str, str], Path] = {}
-    with _open_store(h5_file, associations, staging_dir) as store:
+    with load_series_store(
+        h5_file, associations, staging_dir / InfraStoreSidecar.STAGING_DIRECTORY
+    ) as store:
         for association in associations:
             length = association[TimeSeriesAssociationCol.LENGTH]
             if length == 0:
@@ -364,13 +374,14 @@ def _capacity_by_owner(
     return build_capacity_by_owner(owners, system.get(SiennaSchemasSystem.COMPONENTS, {}))
 
 
-def _open_store(h5_file: IO[bytes], associations: list[dict[str, Any]], staging_dir: Path) -> Store:
+def load_series_store(
+    h5_file: IO[bytes], associations: list[dict[str, Any]], store_dir: Path
+) -> Store:
     """Open the sidecar as a store that holds the rows of the document.
 
-    The file arrives as a stream and the store needs a path, so the bytes go to staging
-    scratch first. The sidecar holds arrays only, and its catalog is the document's rows.
+    The file arrives as a stream and the store needs a path, so the bytes go to ``store_dir``
+    first. The sidecar holds arrays only, and its catalog is the document's rows.
     """
-    store_dir = staging_dir / InfraStoreSidecar.STAGING_DIRECTORY
     store_dir.mkdir(parents=True, exist_ok=True)
     path = store_dir / InfraStoreSidecar.SCRATCH_FILENAME
     with path.open("wb") as scratch:

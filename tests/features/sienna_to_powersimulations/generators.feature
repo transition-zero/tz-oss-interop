@@ -58,6 +58,18 @@ Feature: Sienna to PowerSimulations Pipeline translates generators to PS.jl comp
     Then the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has field "rating" equal to 1.0
     And the PS.jl system "outputs/system.json" component "RenewableDispatch" named "solar_1" has field "active_power" equal to 0.5
 
+  Scenario: A RenewableDispatch availability series gives its rating in MW times the series value in each hour
+    SiennaSchemas states rating in MW, and PowerSimulations reads it per unit of base_power.
+    PowerSimulations multiplies the series by rating times base_power, so a plant of 50 MW at
+    a value of 0.5 can give 25 MW.
+    Given a Sienna system
+    And the system contains a bus "bus_1"
+    And the system contains a RenewableDispatch "solar_1" on bus "bus_1" with base_power 50.0 rating 50.0 active_power 0.0 marginal_cost 0.0 prime_mover "PVe"
+    And the RenewableDispatch "solar_1" has a max_active_power series 0.5 1.0
+    And the system is saved as "inputs/renewable_ts.json"
+    When I run translate against Sienna system "inputs/renewable_ts.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
+    Then the PS.jl system "outputs/system.json" and its H5 sidecar "outputs/system_ts.h5" give "RenewableDispatch" component "solar_1" a "max_active_power" of 25.0 50.0 MW
+
   Scenario: a ThermalStandard with no availability series takes a flat one
     PowerSimulations reads an availability forecast for a whole component type or for none of
     it, so one unit without the series stops every unit's outage profile from reaching the

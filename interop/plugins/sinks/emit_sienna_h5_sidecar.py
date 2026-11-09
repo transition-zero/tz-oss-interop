@@ -23,6 +23,7 @@ from interop.plugins.shared.sienna_constants import (
     InfraStoreSidecar,
     SiennaComponent,
     SiennaTimeSeriesAssociationCol,
+    SiennaUnitSystem,
     TimeSeriesAssociationCol,
 )
 from interop.plugins.shared.sienna_time_series import (
@@ -30,9 +31,16 @@ from interop.plugins.shared.sienna_time_series import (
     SeriesLabels,
     build_capacity_by_owner,
     build_labels_by_owner,
+    has_series_capacity,
 )
 from interop.plugins.shared.staged_samples import filter_to_sample, list_staged_samples
 from interop.ports.outbound.filesystem import FilesystemPort, Location
+
+# The store's own spelling of each unit system.
+_STORE_UNIT_SYSTEM = {
+    SiennaUnitSystem.NATURAL_UNITS: InfraStoreSeriesLabel.UNIT_SYSTEM_NATURAL,
+    SiennaUnitSystem.COMPONENT_BASE: InfraStoreSeriesLabel.UNIT_SYSTEM_COMPONENT_BASE,
+}
 
 
 class EmitSiennaH5SidecarParams(BaseModel):
@@ -68,9 +76,17 @@ class EmitSiennaH5Sidecar(Sink):
         stages every replication in one frame and names the one it is writing, because an
         association row declares the length of one replication's series, not of all of them.
         """
+        associations = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
+        return EmitSiennaH5Sidecar.write_associated_h5(state, associations, f, sample)
+
+    @staticmethod
+    def write_associated_h5(
+        state: State, associations: pl.DataFrame | None, f: IO[bytes], sample: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Write each series that a row of `associations` names, and return the stored rows."""
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / InfraStoreSidecar.SCRATCH_FILENAME
-            association_rows = _association_rows(state)
+            association_rows = _association_rows(associations)
             owners = _read_owners(state, association_rows)
             with Store.create(str(path), catalog="memory") as store:
                 with store.transaction():
@@ -129,12 +145,11 @@ def _rows_by_source_key(
     return grouped
 
 
-def _association_rows(state: State) -> list[dict[str, Any]]:
-    assoc_df = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
-    if assoc_df is None or len(assoc_df) == 0:
+def _association_rows(associations: pl.DataFrame | None) -> list[dict[str, Any]]:
+    if associations is None or len(associations) == 0:
         return []
     # A series with no snapshot has no start time, which the store needs.
-    stored = assoc_df.drop_nulls(SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP)
+    stored = associations.drop_nulls(SiennaTimeSeriesAssociationCol.INITIAL_TIMESTAMP)
     return list(stored.iter_rows(named=True))
 
 
@@ -145,11 +160,25 @@ class _Owners(NamedTuple):
     labels: dict[tuple[str, int], SeriesLabels]
 
 
+class _StoredBasis(NamedTuple):
+    """The unit system a stored series takes, and its labels."""
+
+    unit_system: SiennaUnitSystem
+    labels: SeriesLabels
+
+
 def _read_owners(state: State, association_rows: list[dict[str, Any]]) -> _Owners:
     """The capacity that turns each owner's per-unit series into its stored values, and the
-    labels a series takes where it is not power."""
+    labels a series takes where it is not power.
+
+    An owner type with no capacity rule, such as a portfolio technology, is left out.
+    """
     col = SiennaTimeSeriesAssociationCol
-    owners = {(row[col.OWNER_TYPE], row[col.OWNER_ID]) for row in association_rows}
+    owners = {
+        (row[col.OWNER_TYPE], row[col.OWNER_ID])
+        for row in association_rows
+        if has_series_capacity(row[col.OWNER_TYPE])
+    }
     components_by_type = {
         owner_type: list(
             state.destination_tables[SiennaComponent(owner_type)].iter_rows(named=True)
@@ -168,9 +197,7 @@ def _add_series(
     by_component: dict[str, FloatArray],
     owners: _Owners,
 ) -> None:
-    """Stored arrays hold megawatts: the per-unit shape times the owner's capacity.
-
-    The row supplies the divisor that reaches the per-unit shape.
+    """Add one stored series for each row, with the features the row states.
 
     A row naming a component the staged series holds no value for writes an empty array, the
     same as a row whose component the series never mentioned.
@@ -178,20 +205,54 @@ def _add_series(
     col = SiennaTimeSeriesAssociationCol
     for row in rows:
         values = by_component.get(row[col.COMPONENT_NAME], NO_VALUES)
-        owner = (row[col.OWNER_TYPE], row[col.OWNER_ID])
-        labels = owners.labels.get(owner, POWER_LABELS)
-        series = SingleTimeSeries(
-            datetime.fromisoformat(row[col.INITIAL_TIMESTAMP]),
-            row[col.RESOLUTION],
-            values * (owners.capacity[owner] / row[col.SCALING_FACTOR]),
-            row[col.NAME],
-            units=labels.units,
-            quantity_kind=labels.quantity_kind,
-            unit_system=InfraStoreSeriesLabel.UNIT_SYSTEM_NATURAL,
-        )
         store.add_time_series(
-            row[col.OWNER_ID], row[col.OWNER_TYPE], OwnerCategory.Component, series
+            row[col.OWNER_ID],
+            row[col.OWNER_TYPE],
+            OwnerCategory.Component,
+            _build_series(row, values, owners),
+            features=_parse_features(row),
         )
+
+
+def _build_series(row: dict[str, Any], values: FloatArray, owners: _Owners) -> SingleTimeSeries:
+    """Natural units where the owner has a capacity, else the values on the basis the row states.
+
+    Natural units are the per-unit shape times the owner's capacity. The row supplies the
+    divisor that reaches the per-unit shape.
+    """
+    col = SiennaTimeSeriesAssociationCol
+    owner = (row[col.OWNER_TYPE], row[col.OWNER_ID])
+    labels = owners.labels.get(owner, POWER_LABELS)
+    capacity = owners.capacity.get(owner)
+    scaling_factor = row[col.SCALING_FACTOR]
+    if capacity is not None:
+        natural = _StoredBasis(SiennaUnitSystem.NATURAL_UNITS, labels)
+        return _build_single_series(row, values * (capacity / scaling_factor), natural)
+    stated = row.get(col.UNIT_SYSTEM) or SiennaUnitSystem.COMPONENT_BASE
+    basis = _StoredBasis(SiennaUnitSystem(stated), labels)
+    return _build_single_series(row, values / scaling_factor, basis)
+
+
+def _build_single_series(
+    row: dict[str, Any], values: FloatArray, basis: _StoredBasis
+) -> SingleTimeSeries:
+    col = SiennaTimeSeriesAssociationCol
+    is_natural = basis.unit_system is SiennaUnitSystem.NATURAL_UNITS
+    return SingleTimeSeries(
+        datetime.fromisoformat(row[col.INITIAL_TIMESTAMP]),
+        row[col.RESOLUTION],
+        values,
+        row[col.NAME],
+        units=basis.labels.units if is_natural else None,
+        quantity_kind=basis.labels.quantity_kind,
+        unit_system=_STORE_UNIT_SYSTEM[basis.unit_system],
+    )
+
+
+def _parse_features(row: dict[str, Any]) -> dict[str, Any] | None:
+    """The tags a row states for its series, or None where it states none."""
+    stated = row.get(SiennaTimeSeriesAssociationCol.FEATURES)
+    return None if stated is None else dict(json.loads(stated))
 
 
 def _staged_series(state: State, source_key: tuple[str, str]) -> pl.LazyFrame:

@@ -37,7 +37,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_skip_report,
     pypsa_source_field,
     rated_from,
-    sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_translations._units import STORAGE_POWER_UNITS
@@ -62,6 +61,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     variable_cost_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.translation_runner import (
     SkipRule,
     Translation,
@@ -80,7 +80,7 @@ _PRIME_MOVER_COL = "_prime_mover_raw"
 
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
-_dest = partial(sienna_dest_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
+_dest = partial(build_sienna_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
 
 
 def fill_storage_defaults(table: pl.DataFrame) -> pl.DataFrame:
@@ -110,12 +110,14 @@ def build_storage_extensions(
 
     Records each unit's PyPSA ``p_nom_extendable`` value regardless of whether it is True
     or False — it has no SiennaSchemas home, and the translation makes no capacity-expansion
-    decision, so the source value is preserved for round-trip purposes.
+    decision, so the source value is preserved for round-trip purposes. ``carrier`` is kept
+    because several carriers share one prime mover, and the reverse names only ``PHS``.
     """
     name_to_src = {row[PyPSAStorageUnitCol.NAME]: row for row in enriched_src.iter_rows(named=True)}
     records = [
         StorageExtension(
             name=name,
+            carrier=name_to_src[name][PyPSAStorageUnitCol.CARRIER],
             p_nom_extendable=name_to_src[name][PyPSAStorageUnitCol.P_NOM_EXTENDABLE],
         )
         for name in dst[SiennaEnergyReservoirStorageCol.NAME].to_list()

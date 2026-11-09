@@ -26,3 +26,9 @@ def append_destination_rows(
     new = pl.DataFrame(rows, schema=schema)
     existing = state.destination_tables.get(table)
     state.destination_tables[table] = pl.concat([existing, new]) if existing is not None else new
+
+
+def list_destination_names(state: State, table: str, column: str) -> list[str]:
+    """The values of one column of a destination table; none where no mapping wrote it."""
+    written = state.destination_tables.get(table)
+    return [] if written is None else written[column].to_list()

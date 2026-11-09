@@ -58,6 +58,7 @@ class TimeSeriesAssociationCol:
     INITIAL_TIMESTAMP = "initial_timestamp"
     LENGTH = "length"
     UNIT_SYSTEM = "unit_system"
+    FEATURES = "features"
 
 
 class InfraStoreSidecar:
@@ -71,6 +72,7 @@ class InfraStoreSeriesLabel:
     """What a stored power series states about its values."""
 
     UNIT_SYSTEM_NATURAL = "natural_units"
+    UNIT_SYSTEM_COMPONENT_BASE = "component_base"
     UNITS_POWER = UNIT_MW
     QUANTITY_ACTIVE_POWER = "ActivePower"
     UNITS_FLOW = "m3/s"
@@ -224,6 +226,8 @@ class SiennaLoadCol:
 
     ID = "id"
     NAME = "name"
+    # The Sienna type of a staged row, such as PowerLoad or InterruptiblePowerLoad.
+    SIENNA_TYPE = "sienna_type"
     AVAILABLE = "available"
     BUS = "bus"
     BUS_NAME = "bus_name"
@@ -333,6 +337,7 @@ class SiennaGeneratorCol:
     ID = "id"
     SIENNA_TYPE = "sienna_type"
     NAME = "name"
+    AVAILABLE = "available"
     BUS = "bus"
     BASE_POWER = "base_power"
     RATING = "rating"
@@ -435,6 +440,10 @@ class SiennaTimeSeriesAssociationCol:
     # component capacity: stored array = source values / scaling_factor * capacity.
     # 1.0 for sources that are already per-unit (e.g. p_max_pu).
     SCALING_FACTOR = "scaling_factor"
+    # Optional: a JSON object of the tags the store keeps with the series, such as its year.
+    FEATURES = "features"
+    # Optional: the basis of a series whose owner has no capacity rule. COMPONENT_BASE if absent.
+    UNIT_SYSTEM = "unit_system"
 
 
 SiennaTimeSeriesMetadataCol = SiennaTimeSeriesAssociationCol  # backwards-compat alias
@@ -799,6 +808,10 @@ SYSTEM_BASE_MVA: float = 100.0
 # series is emitted. Matches the np.ptp < 1e-9 test in the translation doc.
 FLAT_TIME_SERIES_EPSILON: float = 1e-9
 
+# Sienna reads a unit that has never run as having run for this long, which is the schema's
+# own way of saying the commitment history is unknown.
+TIME_AT_STATUS_SENTINEL: float = 10000.0
+
 # Polars Enum dtypes
 BUSTYPE_DTYPE: pl.DataType = pl.Enum([t.value for t in ACBusType])
 LOAD_CONFORMITY_DTYPE: pl.DataType = pl.Enum([c.value for c in LoadConformity])
@@ -806,6 +819,13 @@ UNIT_SYSTEM_DTYPE: pl.DataType = pl.Enum([u.value for u in SiennaUnitSystem])
 PRIME_MOVERS_DTYPE: pl.DataType = pl.Enum([p.value for p in SiennaPrimeMovers])
 THERMAL_FUELS_DTYPE: pl.DataType = pl.Enum([f.value for f in SiennaThermalFuels])
 VOLTAGE_LIMIT_DTYPE: pl.DataType = pl.Struct({"min": pl.Float64, "max": pl.Float64})
+
+# The bus values that a Sienna consumer assumes when a source states no voltage, in per unit.
+DEFAULT_BUS_BASE_VOLTAGE: float = 1.0
+DEFAULT_BUS_MAGNITUDE: float = 1.0
+DEFAULT_BUS_ANGLE: float = 0.0
+BUS_VOLTAGE_LIMIT_MIN: float = 0.9
+BUS_VOLTAGE_LIMIT_MAX: float = 1.1
 FROM_TO_DTYPE: pl.DataType = pl.Struct({FromToField.FROM: pl.Float64, FromToField.TO: pl.Float64})
 MIN_MAX_DTYPE: pl.DataType = pl.Struct({MinMaxField.MIN: pl.Float64, MinMaxField.MAX: pl.Float64})
 OPERATIONAL_FLOW_LIMIT_DTYPE: pl.DataType = pl.Struct(
@@ -1204,3 +1224,10 @@ HVDC_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLinkCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
     SiennaLinkCol.BASE_POWER: pl.Float64,
 }
+
+
+SIENNA_SOURCE_AREAS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaAreaCol.ID: pl.Int64,
+    SiennaAreaCol.NAME: pl.Utf8,
+}
+"""An Area as a reverse pipeline stages it: the id a portfolio names it by, and its name."""

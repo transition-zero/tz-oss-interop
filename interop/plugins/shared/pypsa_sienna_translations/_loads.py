@@ -33,7 +33,6 @@ from interop.plugins.shared.pypsa_sienna_translations._shared import (
     NOT_AN_ELECTRICITY_BUS_REASON,
     pypsa_skip_report,
     pypsa_source_field,
-    sienna_dest_field,
 )
 from interop.plugins.shared.pypsa_sienna_translations._ts_info import TimeSeriesInfo
 from interop.plugins.shared.pypsa_sienna_translations._units import build_load_power_units
@@ -50,6 +49,7 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_cost_curves import (
     load_cost,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_time_series import (
     UNSCALABLE_LOAD_SERIES_NOTE,
     is_unscalable_load_series,
@@ -314,7 +314,7 @@ _bus_source = partial(pypsa_source_field, PyPSAComponent.BUS)
 
 def _load_translations(component: SiennaComponent) -> list[Translation]:
     """Every field a load fills from the source table alone."""
-    dest = partial(sienna_dest_field, component)
+    dest = partial(build_sienna_field, component)
     direct = partial(direct_translation, _source, dest, name_col=PyPSALoadCol.NAME)
     default = partial(default_translation, dest, name_col=PyPSALoadCol.NAME)
     return [
@@ -450,7 +450,7 @@ def _load_max_active_power(dest: DestinationFieldFactory) -> Translation:
 
 def _load_base_power(component: SiennaComponent) -> Translation:
     """The MVA base, which reads the max_active_power Phase 1 wrote rather than a source column."""
-    dest = partial(sienna_dest_field, component)
+    dest = partial(build_sienna_field, component)
     return Translation(
         exprs=[
             pl.max_horizontal(
@@ -487,7 +487,7 @@ def _load_base_power(component: SiennaComponent) -> Translation:
 
 def _load_operation_cost() -> Translation:
     """The price the solve pays for the load it serves, which only an interruptible load has."""
-    dest = partial(sienna_dest_field, SiennaComponent.INTERRUPTIBLE_POWER_LOAD)
+    dest = partial(build_sienna_field, SiennaComponent.INTERRUPTIBLE_POWER_LOAD)
     return Translation(
         exprs=[load_cost(pl.col(_VOLL)).alias(SiennaLoadCol.OPERATION_COST)],
         make_events=lambda old, new: [

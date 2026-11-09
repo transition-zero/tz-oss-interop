@@ -13,6 +13,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+import pytest
 from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
@@ -28,6 +29,9 @@ from interop_testing.steps.sienna_schema import (
     assert_no_problems,
     list_type_problems,
 )
+
+# Separates the count of a run of values from its value, as in `6 × 0.5`.
+RUN_SEPARATOR = "×"
 
 
 @given("a Sienna system", target_fixture="sienna_system_builder")
@@ -384,6 +388,13 @@ def given_hvdc_line_converter_ratings(
     sienna_system_builder.set_link_converter_ratings(name, rating_from, rating_to)
 
 
+@given(parsers.parse('the HVDC line "{name}" has a constant loss of {megawatts:g} MW'))
+def given_hvdc_line_constant_loss(
+    sienna_system_builder: SiennaSystemBuilder, name: str, megawatts: float
+) -> None:
+    sienna_system_builder.set_link_constant_loss(name, megawatts)
+
+
 @given(parsers.parse('the HVDC line "{name}" is extendable in ext'))
 def given_hvdc_line_extendable_in_ext(
     sienna_system_builder: SiennaSystemBuilder, name: str
@@ -507,6 +518,99 @@ def given_component_has_ext_carrier(
     sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str, carrier: str
 ) -> None:
     sienna_system_builder.add_ext(sienna_type, name, {"carrier": carrier})
+
+
+@given(
+    parsers.parse(
+        'the {sienna_type} "{name}" has ext emission rate {rate:g} t/MWh of "{pollutant}"'
+    )
+)
+def given_component_has_ext_emission_rate(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    rate: float,
+    pollutant: str,
+) -> None:
+    sienna_system_builder.add_emission_rate(sienna_type, name, pollutant, rate)
+
+
+@given(
+    parsers.parse(
+        'the system has a representative period "{name}" from "{first_timestamp}" '
+        "of {hours:d} hours with weight {weight:g}"
+    )
+)
+def given_system_has_representative_period(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    first_timestamp: str,
+    hours: int,
+    weight: float,
+) -> None:
+    sienna_system_builder.add_representative_period(name, first_timestamp, hours, weight)
+
+
+@given(parsers.parse('the {sienna_type} "{name}" has ext "{field}" set to {value}'))
+def given_component_has_ext_field(
+    sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str, field: str, value: str
+) -> None:
+    """One field of a component's sidecar record, stated as JSON."""
+    sienna_system_builder.add_ext(sienna_type, name, {field: json.loads(value)})
+
+
+@given(
+    parsers.parse('the system has a {kind} extension record "{name}" with "{field}" set to {value}')
+)
+def given_system_has_extension_record(
+    sienna_system_builder: SiennaSystemBuilder, kind: str, name: str, field: str, value: str
+) -> None:
+    """One field of a sidecar record that no component owns, stated as JSON."""
+    sienna_system_builder.add_record(kind, name, {field: json.loads(value)})
+
+
+@given(
+    parsers.parse(
+        'the system has a load record "{name}" on bus "{bus}" with a p_set series {series}'
+    )
+)
+def given_system_has_load_record_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, bus: str, series: str
+) -> None:
+    """A load that only the sidecar holds, whose MW in each hour sit in the companion parquet."""
+    sienna_system_builder.add_ext("PowerLoad", name, {"bus": bus})
+    sienna_system_builder.add_companion_series(
+        "PowerLoad",
+        name,
+        "p_set_series",
+        [float(value) for value in series.split()],
+    )
+
+
+@given(parsers.parse('the {sienna_type} "{name}" has an ext "{field}" series {series}'))
+def given_component_has_ext_series(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    field: str,
+    series: str,
+) -> None:
+    """A record field that names the companion parquet, which holds one value for each hour."""
+    sienna_system_builder.add_companion_series(
+        sienna_type, name, field, [float(value) for value in series.split()]
+    )
+
+
+@given(parsers.parse('the HVDC line "{name}" has an ext p_max_pu series {series}'))
+def given_hvdc_line_has_ext_p_max_pu_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series: str
+) -> None:
+    sienna_system_builder.add_companion_series(
+        "TwoTerminalGenericHVDCLine",
+        name,
+        "p_max_pu_series",
+        [float(value) for value in series.split()],
+    )
 
 
 @given(parsers.parse('the {sienna_type} "{name}" is committable in ext'))
@@ -669,6 +773,22 @@ def assert_sienna_component_lists(
 @then(
     parsers.parse(
         'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
+        ' having "{field_path}" close to {value:g}'
+    )
+)
+def assert_sienna_component_field_close(
+    path: str, sienna_type: str, name: str, field_path: str, value: float
+) -> None:
+    component = find_sienna_component(read_json(path), sienna_type, name)
+    actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
+    assert actual == pytest.approx(value), (
+        f"expected [{sienna_type}:{name}].{field_path!r} ≈ {value!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON with component "{sienna_type}" named "{name}"'
         ' without field "{field_path}"'
     )
 )
@@ -714,6 +834,23 @@ def assert_h5_ts_values(
         assert math.isclose(actual_value, expected_value, rel_tol=1e-9, abs_tol=1e-9), (
             f"expected values {expected}, got {actual}"
         )
+
+
+@then(
+    parsers.parse(
+        'the h5 file "{path}" has a time series for component "{sienna_type}" named "{name}"'
+        ' attribute "{attribute}" with runs of values {runs}'
+    )
+)
+def assert_h5_ts_runs(path: str, sienna_type: str, name: str, attribute: str, runs: str) -> None:
+    """`runs` is a comma-separated list of `<count> × <value>`, in the order of the series."""
+    expected = [float(value) for run in runs.split(",") for value in _expand_run(run)]
+    assert_h5_ts_values(path, sienna_type, name, attribute, " ".join(map(repr, expected)))
+
+
+def _expand_run(run: str) -> list[str]:
+    count, _, value = run.partition(RUN_SEPARATOR)
+    return [value.strip()] * int(count)
 
 
 @then(parsers.parse('the Sienna systems "{first}" and "{second}" state the same components'))
@@ -776,6 +913,25 @@ def assert_extension_record_field(path: str, kind: str, name: str, field: str, v
     record = matching[0]
     assert field in record, f"field {field!r} not in record: {record!r}"
     assert record[field] == expected, f"expected {field}={expected!r}, got {record[field]!r}"
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON {kind} extension record for "{name}"'
+        ' having "{field}" close to {value:g}'
+    )
+)
+def assert_extension_record_field_close(
+    path: str, kind: str, name: str, field: str, value: float
+) -> None:
+    """A number that a translation computes, equal to `value` within a relative 1e-6."""
+    matching = _find_extension_records(path, kind, name)
+    assert len(matching) == 1, (
+        f"expected 1 {kind} record for {name!r} in {path}, got {len(matching)}"
+    )
+    actual = matching[0].get(field)
+    assert isinstance(actual, int | float), f"expected a number in {field!r}, got {actual!r}"
+    assert math.isclose(actual, value, rel_tol=1e-6), f"expected {field}≈{value}, got {actual}"
 
 
 @then(
@@ -842,6 +998,25 @@ def assert_ts_association_name(
 ) -> None:
     actual = _find_ts_association(path, owner_type, owner_id).get("name")
     assert actual == expected_name, f"expected series name {expected_name!r}, got {actual!r}"
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where component "{owner_type}" owner id {owner_id:d}'
+        ' has a TimeSeriesAssociation named "{expected_name}"'
+    )
+)
+def assert_ts_association_named(
+    path: str, owner_type: str, owner_id: int, expected_name: str
+) -> None:
+    """An owner can carry several series, so this looks at each of its associations."""
+    associations: list[dict[str, Any]] = read_json(path).get("time_series_associations", [])
+    names = [
+        a.get("name")
+        for a in associations
+        if a.get("owner_type") == owner_type and a.get("owner_id") == owner_id
+    ]
+    assert expected_name in names, f"expected a series named {expected_name!r}, got {names!r}"
 
 
 def _find_ts_association(path: str, owner_type: str, owner_id: int) -> dict[str, Any]:

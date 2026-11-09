@@ -30,6 +30,8 @@ from interop.plugins.shared.pypsa_constants import (
 from interop.plugins.shared.pypsa_sienna_investments_translations._shared import (
     FOM_CHARGE_COL,
     FOM_CHARGE_DERIVATION,
+    NO_RETIREMENT_COST_NOTE,
+    NO_RETIREMENT_DERIVATION,
     PORTFOLIO_ID_NOTE,
     POWER_SYSTEMS_TYPE_COL,
     PRIME_MOVER_COL,
@@ -40,13 +42,12 @@ from interop.plugins.shared.pypsa_sienna_investments_translations._shared import
     InvestmentsSource,
     build_expansion_skips,
     build_financial_data_translation,
-    capacity_limits_struct,
+    express_capacity_limits,
     finite_or_null,
     yearly_fixed_charge,
 )
 from interop.plugins.shared.pypsa_sienna_translations._shared import (
     pypsa_source_field,
-    sienna_dest_field,
 )
 from interop.plugins.shared.sienna_constants import (
     EFFICIENCY_DTYPE,
@@ -60,6 +61,7 @@ from interop.plugins.shared.sienna_cost_curves import (
     ZERO_IO_CURVE,
     linear_value_curve,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.sienna_investments_constants import (
     STORAGE_CAPITAL_COST_DTYPE,
     STORAGE_OPERATION_COST_DTYPE,
@@ -79,7 +81,7 @@ from interop.plugins.shared.translation_runner import (
 from interop.ports.outbound.reporting import EventKind, TranslationEvent
 
 _source = partial(pypsa_source_field, PyPSAComponent.STORAGE_UNIT)
-_dest = partial(sienna_dest_field, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY)
+_dest = partial(build_sienna_field, SiennaInvestmentsComponent.STORAGE_TECHNOLOGY)
 
 S = SiennaStorageTechnologyCol
 
@@ -92,6 +94,8 @@ STORAGE_UNIT_SOURCE = InvestmentsSource(
     component=PyPSAComponent.STORAGE_UNIT,
     display=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].display,
     plural=PYPSA_COMPONENT_NAMING[PyPSATable.STORAGE_UNITS].plural,
+    retirement_derivation=NO_RETIREMENT_DERIVATION,
+    retirement_cost_note=NO_RETIREMENT_COST_NOTE,
 )
 
 
@@ -159,7 +163,7 @@ def fill_storage_technology_defaults(table: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def storage_capital_cost_struct(overnight_cost: pl.Expr) -> pl.Expr:
+def express_storage_capital_cost(overnight_cost: pl.Expr) -> pl.Expr:
     """A Sienna ``StorageCapitalCost`` pricing the discharge side alone."""
     return pl.struct(
         ZERO_IO_CURVE.alias(SiennaStorageCapitalCostField.CHARGE_CAPITAL_COST),
@@ -240,7 +244,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
     storage_capital_costs = _direct(
         source_col=PyPSAStorageUnitCol.OVERNIGHT_COST,
         dest_col=S.CAPITAL_COSTS,
-        expr=storage_capital_cost_struct(pl.col(PyPSAStorageUnitCol.OVERNIGHT_COST)),
+        expr=express_storage_capital_cost(pl.col(PyPSAStorageUnitCol.OVERNIGHT_COST)),
         unit=UNIT_DOLLARS_PER_MW,
         derivation="overnight_cost as the discharge capital cost; charge and energy cost nothing",
     )
@@ -268,7 +272,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
 
     storage_capacity_limits_discharge = Translation(
         exprs=[
-            capacity_limits_struct(
+            express_capacity_limits(
                 pl.col(PyPSAStorageUnitCol.P_NOM_MIN), pl.col(PyPSAStorageUnitCol.P_NOM_MAX)
             ).alias(S.CAPACITY_LIMITS_DISCHARGE)
         ],
@@ -304,7 +308,7 @@ def _translations(source: InvestmentsSource) -> list[Translation]:
 
     storage_capacity_limits_energy = Translation(
         exprs=[
-            capacity_limits_struct(
+            express_capacity_limits(
                 pl.col(PyPSAStorageUnitCol.P_NOM_MIN) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
                 pl.col(PyPSAStorageUnitCol.P_NOM_MAX) * pl.col(PyPSAStorageUnitCol.MAX_HOURS),
             ).alias(S.CAPACITY_LIMITS_ENERGY)

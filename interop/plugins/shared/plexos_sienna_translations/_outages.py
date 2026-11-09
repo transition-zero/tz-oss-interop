@@ -32,13 +32,9 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     read_file_backed_properties,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
-    defaulted,
-    derived,
     dropped,
     plexos_field,
     record,
-    sienna_field,
-    sienna_source,
 )
 from interop.plugins.shared.sienna_constants import (
     FORCED_OUTAGES_DESTINATION_SCHEMA,
@@ -47,6 +43,12 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaForcedOutageCol,
     SiennaSupplementalAttribute,
+)
+from interop.plugins.shared.sienna_events import (
+    build_defaulted,
+    build_derived,
+    build_sienna_field,
+    build_sienna_source,
 )
 from interop.plugins.shared.translation_runner import build_first_free_id
 from interop.plugins.shared.warning_text import name_a_few
@@ -260,25 +262,25 @@ def derive_transition_probability(rate_percent: float, recovery_minutes: float) 
 def _build_outage_events(unit: _Unit, row: dict[str, object]) -> list[TranslationEvent]:
     """The full chain: the repair time becomes the recovery time, which the chance reads."""
     recovery = row[SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY]
-    recovery_read = sienna_source(
+    recovery_read = build_sienna_source(
         _OUTAGE, unit.name, SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY, recovery, UNIT_MINUTES
     )
     name_read = plexos_field(unit.plexos_class, unit.name, PlexosObjectCol.NAME, unit.name)
     return [
-        *derived(
+        *build_derived(
             [_repair_source(unit)],
             [_outage_field(unit, row, SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY, UNIT_MINUTES)],
             _RECOVERY_DERIVATION,
         ),
-        *derived(
+        *build_derived(
             [_rate_source(unit), recovery_read],
             [_outage_field(unit, row, SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY)],
             _PROBABILITY_DERIVATION,
         ),
-        *defaulted(
+        *build_defaulted(
             [_outage_field(unit, row, SiennaForcedOutageCol.MONITORED_COMPONENTS)], _MONITORED_NOTE
         ),
-        *derived(
+        *build_derived(
             [name_read],
             [_outage_field(unit, row, SiennaForcedOutageCol.IDENTIFIER)],
             _IDENTIFIER_DERIVATION,
@@ -288,8 +290,10 @@ def _build_outage_events(unit: _Unit, row: dict[str, object]) -> list[Translatio
 
 def _build_id_events(row: dict[str, object]) -> list[TranslationEvent]:
     name = str(row[SiennaForcedOutageCol.IDENTIFIER])
-    id_field = sienna_field(_OUTAGE, name, SiennaForcedOutageCol.ID, row[SiennaForcedOutageCol.ID])
-    return defaulted([id_field], _ID_NOTE)
+    id_field = build_sienna_field(
+        _OUTAGE, name, SiennaForcedOutageCol.ID, row[SiennaForcedOutageCol.ID]
+    )
+    return build_defaulted([id_field], _ID_NOTE)
 
 
 def _rate_source(unit: _Unit) -> SourceField:
@@ -311,4 +315,4 @@ def _repair_source(unit: _Unit) -> SourceField:
 def _outage_field(
     unit: _Unit, row: dict[str, object], column: str, unit_label: str | None = None
 ) -> DestinationField:
-    return sienna_field(_OUTAGE, unit.name, column, row[column], unit_label)
+    return build_sienna_field(_OUTAGE, unit.name, column, row[column], unit_label)

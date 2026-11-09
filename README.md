@@ -1,4 +1,4 @@
-# interop
+# tz-oss-interop
 
 [![Lint](https://github.com/transition-zero/tz-oss-interop/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/transition-zero/tz-oss-interop/actions/workflows/lint.yml?query=branch%3Amain)
 [![Test](https://github.com/transition-zero/tz-oss-interop/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/transition-zero/tz-oss-interop/actions/workflows/test.yml?query=branch%3Amain)
@@ -7,25 +7,28 @@
 
 Translation tooling for energy-system model formats (PyPSA, Sienna, Plexos, OSeMOSYS). Pipelines compose source / step / sink plugins discovered from built-ins, project-local files, and installed third-party packages.
 
-interop is beta software. It runs end to end on published models, and the plugin interfaces and pipeline YAML shape are settled enough to build on, but they still change between versions.
+tz-oss-interop is beta software. It runs end to end on published models, and the plugin interfaces and pipeline YAML shape are settled enough to build on, but they still change between versions.
 
 ## Supported translations
 
-Sienna is the hub. Each built-in pipeline translates a model into Sienna, or translates Sienna into a different format.
+Sienna is the hub. Most built-in pipelines translate a model into Sienna, or translate Sienna into a different format. The two canonical pipelines stage an OSeMOSYS model only. They write the canonical stage: the sets and the parameters of the model in one fixed schema, as Parquet files, which each OSeMOSYS translation reads.
 
 ```mermaid
 flowchart LR
     plexos[PLEXOS]
     pypsa_in[PyPSA]
+    osemosys[OSeMOSYS]
     sienna[Sienna]
     investments[Sienna investments]
     pypsa_out[PyPSA]
 
     plexos -->|"plexos-to-sienna<br/><i>plexos-to-pypsa, part 1</i>"| sienna
     pypsa_in -->|"pypsa-to-sienna<br/>pypsa-to-sienna-ensemble"| sienna
+    osemosys -->|"osemosys-csv-to-sienna<br/>tz-osemosys-to-sienna"| sienna
     sienna -->|"sienna-to-pypsa<br/>sienna-to-pypsa-ensemble<br/><i>plexos-to-pypsa, part 2</i>"| pypsa_out
     plexos -->|plexos-to-sienna-investments| investments
     pypsa_in -->|pypsa-to-sienna-investments| investments
+    osemosys -->|"osemosys-csv-to-sienna-investments<br/>tz-osemosys-to-sienna-investments"| investments
 ```
 
 | Pipeline | From | To |
@@ -36,14 +39,34 @@ flowchart LR
 | `pypsa-to-sienna` | PyPSA network | Sienna system |
 | `pypsa-to-sienna-ensemble` | PyPSA network ensemble | Sienna system ensemble |
 | `pypsa-to-sienna-investments` | PyPSA network | Sienna system and Sienna investments portfolio |
-| `sienna-to-pypsa` | Sienna system | PyPSA network |
+| `osemosys-csv-to-sienna` | otoole OSeMOSYS model (configuration YAML and CSV files) | Sienna system of one model year |
+| `tz-osemosys-to-sienna` | TZ-format OSeMOSYS `model.json` | Sienna system of one model year |
+| `osemosys-csv-to-sienna-investments` | otoole OSeMOSYS model | Sienna system and Sienna investments portfolio over every model year |
+| `tz-osemosys-to-sienna-investments` | TZ-format OSeMOSYS `model.json` | Sienna system and Sienna investments portfolio over every model year |
+| `osemosys-csv-to-canonical` | otoole OSeMOSYS model | Canonical OSeMOSYS stage, as Parquet files |
+| `tz-osemosys-to-canonical` | TZ-format OSeMOSYS `model.json` | Canonical OSeMOSYS stage, as Parquet files |
+| `sienna-to-pypsa` | Sienna system and its `extensions.json` | PyPSA network and its `extensions.json` |
 | `sienna-to-pypsa-ensemble` | Sienna system ensemble | PyPSA network ensemble |
+| `sienna-to-power-simulations` | Sienna system | PowerSimulations.jl system, which `solve` dispatches |
+| `sienna-to-power-systems-investments` | Sienna investments portfolio and its base system | PowerSystemsInvestments.jl portfolio, which `solve` expands |
 
-A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. interop writes a portfolio, but it does not read one. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
+A Sienna investments portfolio is the SiennaSchemas document for an expansion problem. tz-oss-interop writes a portfolio, and the leg `sienna-to-power-systems-investments` reads one so that `solve` can expand it. An ensemble is a directory that holds one model for each Monte Carlo replication. The diagram shows the two parts of the composed pipeline `plexos-to-pypsa` in italics. `docs/developer_documentation/pipeline-composition.md` tells you how to compose a pipeline.
+
+tz-oss-interop writes each value of a source model that a Sienna system has no field for to `extensions.json`, a sidecar file beside `system.json`. For example, it keeps an annual energy limit, the cost of a line, and the fuels that are not electricity. The sidecar names each value with the PyPSA attribute of the same meaning, for example `e_sum_min`. Sienna does not read it. The Sienna → PyPSA leg, `sienna-to-pypsa`, reads it, and gives each value that PyPSA has an attribute for to that attribute. Each other value goes on, unchanged, to the `extensions.json` beside the PyPSA network.
+
+A results pipeline turns a solve, or a set of published results, into the [results format](docs/results-format.md). `compare` runs one results pipeline for each side.
+
+| Results pipeline | From |
+| --- | --- |
+| `sienna-to-results` | PowerSimulations.jl solve of a Sienna system |
+| `pypsa-to-results` | Solved PyPSA network |
+| `power-systems-investments-to-results` | PowerSystemsInvestments.jl expansion solve |
+| `aetos-to-results` | Published results of the AETOS OSeMOSYS model |
+| `caiso-plexos-to-results` | Stack model and appendix CSV files of the CAISO 2026 Summer Assessment |
 
 ## Install
 
-interop is managed with [`uv`](https://docs.astral.sh/uv/); if you do not already have it, follow uv's [installation instructions](https://docs.astral.sh/uv/getting-started/installation/). Then sync the environment:
+tz-oss-interop is managed with [`uv`](https://docs.astral.sh/uv/); if you do not already have it, follow uv's [installation instructions](https://docs.astral.sh/uv/getting-started/installation/). Then sync the environment:
 
 ```bash
 uv sync
@@ -59,7 +82,7 @@ uv tool install git+https://github.com/transition-zero/tz-oss-interop
 
 If your shell does not find `interop`, run `uv tool update-shell`. Then open a new terminal.
 
-The tool install is a copy of the repository at the time you install it. Run `uv tool upgrade interop` to get a newer version. Run `uv tool uninstall interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on interop itself.
+The tool install is a copy of the repository at the time you install it. Run `uv tool upgrade interop` to get a newer version. Run `uv tool uninstall interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on tz-oss-interop itself.
 
 ## Quickstart
 
@@ -85,35 +108,43 @@ my-interop-project/
   README.md
 ```
 
-`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The console shows only errors. To see the summary line and each warning, start interop with `INTEROP_LOG_LEVEL=INFO uv run interop`. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
+`translate` resolves the pipeline by name (`pipelines/<name>.yaml`), runs every node in order, and logs a summary line (duration, plus each output file's size) on completion. The console shows only errors. To see the summary line and each warning, start tz-oss-interop with `INTEROP_LOG_LEVEL=INFO uv run interop`. The `noop` source, step, and sink let you exercise the pipeline machinery without a real translation; replace any of them with project-local plugins in `plugins/<category>/` or with a third-party package shipping the same plugin protocols.
 
 The interactive shell needs a real terminal (keypresses, cursor control).
-Beyond `translate`, the shell also offers `solve` (run a translated Sienna
-system through PowerSimulations.jl; the first run installs Julia and the solver
-packages automatically, see `docs/tutorials/solve.md`) and `compare` (diff a
-Sienna solve against a PyPSA solve). For a
+Beyond `translate`, the shell also offers `solve` and `compare`. For a
 worked end-to-end example, `docs/tutorials/user-tutorial.md` walks through `translate -> solve
 -> compare` against the network `interop init` scaffolds with its `pypsa` example.
 
+`solve` runs a translated model through the HiGHS solver. The prompt `Model type?` takes one of three answers:
+
+- `sienna` dispatches a PowerSimulations.jl system with PowerSimulations.jl. The first run installs Julia and the solver packages.
+- `pypsa` dispatches a PyPSA network with PyPSA, and needs no Julia.
+- `sienna-investments` expands a PowerSystemsInvestments.jl portfolio. `docs/developer_documentation/capacity-expansion.md` tells you how.
+
+At the prompt `Unserved energy?`, the answer `penalised` lets a dispatch leave load unserved at a penalty. With the default `refused`, one location that cannot meet its load makes the whole solve infeasible. [`docs/tutorials/solve.md`](docs/tutorials/solve.md) gives each prompt.
+
+`compare` runs the results pipeline of each of two sides, and compares the two results tables. A table holds hourly variables, and the annual variables `installed_capacity`, `new_capacity`, `production` and `emissions`. When the results pipeline of a side needs a user mappings file, `compare` asks for one for that side. [`docs/results-format.md`](docs/results-format.md) gives each variable.
+
 ## Case studies
 
-We ran interop against three published PLEXOS models. Each page below says where to download
-the model, and exactly what to answer at the prompts.
+We ran tz-oss-interop against three published PLEXOS models and one published OSeMOSYS model.
+Each page below says where to download the model, and exactly what to answer at the prompts.
 
 | Model | Published by | Headline | Reproduce |
 | --- | --- | --- | --- |
 | SEM 2024-2032 | SEM Committee | The peak demand of each year, and the rating of each of the four interconnectors, match the published report to the digit. The average wholesale price that we calculate is 8.9% below the report in 2026. In 2032 it is 10.9% below. | [sem-2024-2032.md](docs/case_studies/sem-2024-2032.md) |
 | CAISO 2026 Summer Assessment | CAISO | All five summer months reach an optimal solve. Four of the five hold each generator strictly on or off. May solves only when that rule relaxes. We also solved September with a network that can cut customer load at a price. It cut none, so the generators covered every hour of demand. | [caiso-sa26.md](docs/case_studies/caiso-sa26.md) |
 | AEMO 2024 ISP | AEMO | The translation changes no demand value. All 210,240 half-hourly values match the demand traces of the model exactly, in each of the three scenarios. The hydro does not translate: the model measures its reservoirs in water, and the translator reads energy. | [aemo-isp-2024.md](docs/case_studies/aemo-isp-2024.md) |
+| AETOS v2.0.0 | Kousoulos et al., RE-INTEGRATE project | In 2021, the PyPSA dispatch makes 4,140 TWh against 4,103 TWh published, and trades 377 TWh against 390 TWh. Its emissions are 243 Mt high. Two causes explain almost all of it: a limit between two years, and 24 gas plants outside the gas network. The Sienna dispatch makes 370 TWh less, because its solve ignores the loss of each conversion between two electricity fuels of one country. | [aetos.md](docs/case_studies/aetos.md), [aetos-comparison.md](docs/case_studies/aetos-comparison.md) |
 
-You can translate and solve these models from this repository. We measured each figure that a
-publisher's own report gives on 2026-08-18, with the translator on branch
-`caiso-compare-dataset-v2`. The tooling that took those particular measurements is not in this
-repository, so those exact figures are not reproducible here. No publisher's data is
-redistributed with interop: a case study page says where to download the model, and where a
-comparison needs the numbers from a report, which columns to write them out in.
+You can translate and solve these models from this repository. For the three PLEXOS models, we
+measured each figure that a publisher's own report gives on 2026-08-18. The tooling that took those particular measurements is not in
+this repository, so those exact figures are not reproducible here. No publisher's data is
+redistributed with tz-oss-interop: a case study page says where to download the model, and where a
+comparison needs the numbers from a report, which columns to write them out in. For AETOS, a
+script outside tz-oss-interop made the test copies, so their figures are not reproducible here.
 
-Two limits apply to every figure above.
+Two limits apply to the figures of the three PLEXOS models. The first limit also applies to AETOS.
 
 - **No solve holds back reserve.** A source model keeps spare capacity in hand, to cover a
   generator that fails. The translator writes those reserve requirements to a sidecar file
@@ -121,7 +152,8 @@ Two limits apply to every figure above.
   of the source model.
 - **No network can report a shortage.** None holds a generator that supplies an hour the
   other generators cannot cover. Thus such an hour makes the solve fail, and it gives no
-  quantity for the energy that the network did not serve.
+  quantity for the energy that the network did not serve. The AETOS runs use the answer
+  `penalised` at the `Unserved energy?` prompt, which reports the unserved energy.
 
 ## Extending
 
@@ -133,7 +165,7 @@ Two limits apply to every figure above.
 uv add --group dev "interop" "interop-testing"
 ```
 
-`interop-testing` is a separate, optional package (`libs/interop-testing/`) publishing the harness interop tests itself with: fixture builders for every framework it reads, assertion vocabulary for every one it writes, project scaffolding, and an in-process pipeline driver, wrapped in a pytest-bdd step vocabulary. It depends on `interop`, never the reverse, so it never becomes a runtime dependency of anything. A project writes BDD scenarios against its own pipelines without copying any of it. Nothing registers itself on install; `docs/developer_documentation/extending.md` covers the one line that registers the steps, then the full vocabulary.
+`interop-testing` is a separate, optional package (`libs/interop-testing/`) publishing the harness that tz-oss-interop tests itself with: fixture builders for every framework it reads, assertion vocabulary for every one it writes, project scaffolding, and an in-process pipeline driver, wrapped in a pytest-bdd step vocabulary. It depends on `interop`, never the reverse, so it never becomes a runtime dependency of anything. A project writes BDD scenarios against its own pipelines without copying any of it. Nothing registers itself on install; `docs/developer_documentation/extending.md` covers the one line that registers the steps, then the full vocabulary.
 
 ## Headless invocation
 
@@ -206,7 +238,7 @@ when that's what a deployment binds. Override values are location strings
 either way; which adapter is bound determines whether they're interpreted
 as local paths or URLs.
 
-## Running interop in a container
+## Running tz-oss-interop in a container
 
 A `Dockerfile` in the repo root builds a generic image whose entrypoint is
 the headless CLI (see "Headless invocation" above) — no project baked in.
@@ -328,8 +360,11 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/tutorials/user-tutorial.md` is the end-to-end walkthrough: `translate -> solve -> compare` against the network `interop init` scaffolds with its `pypsa` example.
 - `docs/tutorials/developer-tutorial.md` extends that example with a custom pipeline step (writing your own translation logic).
 - `docs/tutorials/solve.md` covers the `solve` command (Julia and PowerSimulations.jl install automatically on first run).
-- `docs/case_studies/` holds one page per published model interop has been run against: where to download it, what to answer at the prompts, and what the run measured.
-- `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three case study models and over synthetic PyPSA networks.
+- `docs/case_studies/` holds the pages for each published model that tz-oss-interop ran against: where to download it, what to answer at the prompts, and what the run measured.
+- `docs/case_studies/aetos-comparison.md` measures how close the OSeMOSYS → Sienna → PyPSA translation of AETOS comes to the published results, and gives the cause of each difference.
+- `docs/results-format.md` defines the results table that each results pipeline writes and that `compare` reads.
+- `docs/performance.md` gives the time and the memory a translation needs, against the size of the model, measured over the three PLEXOS case study models and over synthetic PyPSA networks.
+- `docs/developer_documentation/capacity-expansion.md` covers running a Sienna portfolio as a capacity expansion in PowerSystemsInvestments.jl.
 - `docs/developer_documentation/comparison.md` covers the `compare` command and the report it produces.
 - `docs/developer_documentation/extending.md` shows how to write project-local plugins, ship plugin packages, and contribute upstream plugins.
 - `docs/developer_documentation/osemosys-canonical-format.md` describes how an OSeMOSYS model stages into the canonical OSeMOSYS stage, and the user mappings file that controls it.
@@ -339,13 +374,14 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/translation_mappings/translation-from-plexos-to-pypsa.md` states what each part of a PLEXOS model becomes in PyPSA.
 - `docs/translation_mappings/translation-from-plexos-to-sienna.md` states the same for Sienna, and `plexos-to-sienna-gap-analysis.md` beside it names each thing a PLEXOS model states that SiennaSchemas holds no type and no field for.
 - `docs/translation_mappings/translation-from-plexos-to-sienna-investments.md` states what a PLEXOS expansion plan becomes in a Sienna investments portfolio, which `plexos-to-sienna-investments` writes beside the base system.
+- `docs/translation_mappings/translation-from-osemosys-to-sienna.md` states what each part of an OSeMOSYS model becomes in a Sienna system, and `translation-from-osemosys-to-sienna-investments.md` states the same for a Sienna investments portfolio. `osemosys-to-sienna-gap-analysis.md` beside them names each thing that the translation and the solves lose, and its effect.
 - `docs/developer_documentation/mutation-testing.md` covers the mutmut workflow.
 - `docs/developer_documentation/routines.md` covers the nightly and PR steward agents that run on this repository as Conductor routines.
 - `tests/features/README.md` explains the in-process REPL-driven BDD harness and when subprocess is needed.
 
 ## Community
 
-- [Discussions](https://github.com/transition-zero/tz-oss-interop/discussions) — questions, ideas, and showing what you have run interop against. Start here rather than with an issue if you are not sure something is a bug.
+- [Discussions](https://github.com/transition-zero/tz-oss-interop/discussions): questions, ideas, and showing what you have run tz-oss-interop against. Start here rather than with an issue if you are not sure something is a bug.
 - [Issues](https://github.com/transition-zero/tz-oss-interop/issues) — bug reports and feature requests.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to set up, what a change needs, and how it gets merged.
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — the Contributor Covenant, and how to report a problem.
@@ -355,7 +391,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 
 Development of this tool would not have been possible without the funding from [Breakthrough Energy](https://www.breakthroughenergy.org/).
 
-interop builds on [PyPSA](https://pypsa.org/) and on NREL's [Sienna](https://www.nrel.gov/analysis/sienna.html) ecosystem, and would not exist without the work of both communities.
+tz-oss-interop builds on [PyPSA](https://pypsa.org/) and on NREL's [Sienna](https://www.nrel.gov/analysis/sienna.html) ecosystem, and would not exist without the work of both communities.
 
 ## License
 

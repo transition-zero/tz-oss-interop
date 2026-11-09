@@ -32,6 +32,7 @@ import polars as pl
 from interop.core.extensions import (
     CompanionSeriesCol,
     ExtensionKind,
+    ReserveCompanionCol,
     ReserveDirection,
     ReserveExtension,
     ReserveKind,
@@ -59,10 +60,6 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceReporter,
     SourceValue,
 )
-
-# The requirement column of the reserves companion parquet, named for the record field it
-# stands in for so it carries that field's unit.
-RESERVE_REQUIREMENT_COLUMN = "requirement_mw"
 
 # PLEXOS packs direction and product into one Type code. The decode table is the model
 # file's own input_mask on that property: 1 Raise, 2 Lower, 3 Regulation Raise, 4 Regulation
@@ -341,7 +338,7 @@ def _companion_frame(wanted: pl.LazyFrame) -> pl.LazyFrame:
     return wanted.select(
         pl.col(StagedTimeSeriesCol.SNAPSHOT).alias(CompanionSeriesCol.SNAPSHOT),
         pl.col(StagedTimeSeriesCol.COMPONENT).alias(CompanionSeriesCol.NAME),
-        pl.col(StagedTimeSeriesCol.VALUE).alias(RESERVE_REQUIREMENT_COLUMN),
+        pl.col(StagedTimeSeriesCol.VALUE).alias(ReserveCompanionCol.REQUIREMENT_MW),
     ).sort(CompanionSeriesCol.NAME, CompanionSeriesCol.SNAPSHOT)
 
 

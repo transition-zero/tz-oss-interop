@@ -12,7 +12,6 @@ from functools import partial
 import polars as pl
 
 from interop.plugins.shared.constants import UNIT_MVA, UNIT_MVAR, UNIT_MW, Framework
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.pypsa_sienna_translations._units import (
     build_power_units_translation,
 )
@@ -23,6 +22,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadZoneCol,
     SiennaUnitSystem,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.translation_runner import (
     Translation,
     default_translation,
@@ -44,7 +44,7 @@ _UNITS_NOTE = "LoadZone power values are in MW, so the units are NATURAL_UNITS"
 _BASE_POWER_NOTE = "the source states no power base for a load zone; the system base applies"
 _PEAK_NOTE = "the source states no peak for a load zone; the peak is 0"
 
-_load_zone_field = partial(sienna_dest_field, SiennaComponent.LOAD_ZONE)
+_load_zone_field = partial(build_sienna_field, SiennaComponent.LOAD_ZONE)
 
 
 def build_load_zones_source_table(sienna_buses: pl.DataFrame) -> pl.DataFrame:

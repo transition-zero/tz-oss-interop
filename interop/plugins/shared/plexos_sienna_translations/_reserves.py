@@ -17,6 +17,7 @@ import polars as pl
 from interop.core.extensions import (
     CompanionSeriesCol,
     ExtensionKind,
+    ReserveCompanionCol,
     ReserveDirection,
     ReserveExtension,
     ReserveKind,
@@ -29,9 +30,6 @@ from interop.plugins.shared.plexos_constants import (
     PlexosCollection,
     PlexosProperty,
     PlexosResolvedTable,
-)
-from interop.plugins.shared.plexos_pypsa_translations._reserves import (
-    RESERVE_REQUIREMENT_COLUMN,
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     collapse_properties_by_object,
@@ -251,13 +249,13 @@ def _read_requirement_peaks(state: State) -> dict[str, float]:
         return {}
     peaks = (
         series.group_by(CompanionSeriesCol.NAME)
-        .agg(pl.col(RESERVE_REQUIREMENT_COLUMN).max())
+        .agg(pl.col(ReserveCompanionCol.REQUIREMENT_MW).max())
         .collect()
     )
     return dict(
         zip(
             peaks[CompanionSeriesCol.NAME].to_list(),
-            peaks[RESERVE_REQUIREMENT_COLUMN].to_list(),
+            peaks[ReserveCompanionCol.REQUIREMENT_MW].to_list(),
             strict=True,
         )
     )

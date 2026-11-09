@@ -25,6 +25,7 @@ Feature: A pull request mutates only the files that it changes
       | interop/plugins/sinks/_sienna_files.py       |         |
       | interop/plugins/sources/plexos_patterns.py   |         |
       | interop/plugins/sources/plexos_horizon.py, interop/plugins/sources/plexos_tables.py | |
+      | interop/core/extension_records.py            |         |
 
   Scenario: no target makes a report that skips the run by choice
     Given a pull request run with no mutation target
