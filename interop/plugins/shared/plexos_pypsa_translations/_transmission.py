@@ -31,6 +31,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     MultiValueRule,
     built_bus_names,
     collapse_properties_by_object,
+    read_unstaged_placeholders,
     relate_child,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -40,6 +41,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceValue,
     destination_row,
     maps_to,
+    report_unstaged_placeholders,
 )
 from interop.plugins.shared.pypsa_constants import (
     DEFAULT_COMPONENT_ACTIVE,
@@ -137,6 +139,8 @@ class StagedLine:
     endpoints: Endpoints
     properties: dict[str, float]
     is_electrical: bool
+    # The properties whose value is in a data file that did not stage, so absent above.
+    unstaged: tuple[str, ...] = ()
 
 
 class EndpointlessLine(NamedTuple):
@@ -204,8 +208,17 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> None:
         link=ComponentReporter(recorder, PyPSAComponent.LINK),
     )
     mappable = _record_skipped(reporters, source, built_bus_names(state))
-    _write_lines(state, reporters.line, [line for line in mappable if line.is_electrical])
-    _write_links(state, reporters.link, [line for line in mappable if not line.is_electrical])
+    lines = [line for line in mappable if line.is_electrical]
+    links = [line for line in mappable if not line.is_electrical]
+    report_unstaged_placeholders(reporters.line, PlexosClass.LINE, build_unstaged_by_line(lines))
+    report_unstaged_placeholders(reporters.link, PlexosClass.LINE, build_unstaged_by_line(links))
+    _write_lines(state, reporters.line, lines)
+    _write_links(state, reporters.link, links)
+
+
+def build_unstaged_by_line(lines: list[StagedLine]) -> dict[str, list[str]]:
+    """The placeholders each line carries, keyed by line, for the lines that carry one."""
+    return {line.name: list(line.unstaged) for line in lines if line.unstaged}
 
 
 def _write_lines(state: State, reporter: ComponentReporter, lines: list[StagedLine]) -> None:
@@ -245,36 +258,47 @@ def read_transmission(state: State) -> TransmissionSource:
         PlexosClass.LINE,
         _LINE_MULTI_VALUE_RULES,
     )
+    unstaged = read_unstaged_placeholders(state, PlexosClass.LINE)
     endpoints_by_line = _endpoints_by_line(state)
     names = sorted(source.select(PlexosObjectCol.NAME).collect()[PlexosObjectCol.NAME])
     return TransmissionSource(
         lines=tuple(
-            _staged_line(name, endpoints_by_line[name], properties.get(name, {}))
+            _build_staged_line(
+                name,
+                endpoints_by_line[name],
+                properties.get(name, {}),
+                tuple(unstaged.get(name, [])),
+            )
             for name in names
             if name in endpoints_by_line
         ),
         endpointless=tuple(
-            EndpointlessLine(name, _has_impedance(properties.get(name, {})))
+            EndpointlessLine(
+                name, _has_impedance(properties.get(name, {}), tuple(unstaged.get(name, [])))
+            )
             for name in names
             if name not in endpoints_by_line
         ),
     )
 
 
-def _staged_line(name: str, endpoints: Endpoints, properties: dict[str, float]) -> StagedLine:
+def _build_staged_line(
+    name: str, endpoints: Endpoints, properties: dict[str, float], unstaged: tuple[str, ...]
+) -> StagedLine:
+    readable = {key: value for key, value in properties.items() if key not in unstaged}
     return StagedLine(
         name=name,
         endpoints=endpoints,
-        properties=properties,
-        is_electrical=_has_impedance(properties),
+        properties=readable,
+        is_electrical=_has_impedance(properties, unstaged),
+        unstaged=unstaged,
     )
 
 
-def _has_impedance(properties: dict[str, float]) -> bool:
-    return (
-        properties.get(PlexosProperty.RESISTANCE) is not None
-        or properties.get(PlexosProperty.REACTANCE) is not None
-    )
+def _has_impedance(properties: dict[str, float], unstaged: tuple[str, ...]) -> bool:
+    """A line that states impedance is electrical, even where the value did not stage."""
+    stated = set(properties) | set(unstaged)
+    return PlexosProperty.RESISTANCE in stated or PlexosProperty.REACTANCE in stated
 
 
 def _endpoints_by_line(state: State) -> dict[str, Endpoints]:

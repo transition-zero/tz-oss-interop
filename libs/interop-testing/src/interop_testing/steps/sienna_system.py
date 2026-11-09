@@ -17,10 +17,11 @@ from pytest_bdd import given, parsers, then
 
 from interop_testing.builders.sienna_documents import (
     find_sienna_component,
+    list_attributes_for,
     read_stored_series,
     sienna_components_of_type,
 )
-from interop_testing.builders.sienna_systems import SiennaSystemBuilder
+from interop_testing.builders.sienna_systems import HydroLimits, SiennaSystemBuilder
 from interop_testing.files import navigate_json, read_json
 from interop_testing.steps.sienna_schema import (
     SYSTEM_PATH,
@@ -42,6 +43,34 @@ def given_system_contains_area(sienna_system_builder: SiennaSystemBuilder, name:
 @given(parsers.parse('the system contains a bus "{name}"'))
 def given_system_contains_bus(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
     sienna_system_builder.add_bus(name)
+
+
+@given(parsers.parse('the system contains a load zone "{name}"'))
+def given_system_contains_load_zone(sienna_system_builder: SiennaSystemBuilder, name: str) -> None:
+    sienna_system_builder.add_load_zone(name)
+
+
+@given(parsers.parse('the system contains a bus "{name}" in load zone "{load_zone}"'))
+def given_system_contains_bus_in_load_zone(
+    sienna_system_builder: SiennaSystemBuilder, name: str, load_zone: str
+) -> None:
+    sienna_system_builder.add_bus(name, load_zone=load_zone)
+
+
+@given(
+    parsers.parse(
+        'the {sienna_type} "{name}" has a forced outage of {minutes:g} minutes'
+        " at probability {probability:g}"
+    )
+)
+def given_component_has_forced_outage(
+    sienna_system_builder: SiennaSystemBuilder,
+    sienna_type: str,
+    name: str,
+    minutes: float,
+    probability: float,
+) -> None:
+    sienna_system_builder.add_forced_outage(sienna_type, name, minutes, probability)
 
 
 @given(parsers.parse('the system contains a bus "{name}" in area "{area}"'))
@@ -424,6 +453,28 @@ def given_power_load_power_units(
     sienna_system_builder.set_load_power_units(name, power_units)
 
 
+@given(
+    parsers.parse(
+        'the system contains a HydroTurbine "{name}" on bus "{bus}" '
+        "with base_power {base_power:g} rating {rating:g} "
+        "active_power_min {active_power_min:g} active_power_max {active_power_max:g} "
+        "marginal_cost {marginal_cost:g}"
+    )
+)
+def given_system_contains_hydro_turbine(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    bus: str,
+    base_power: float,
+    rating: float,
+    active_power_min: float,
+    active_power_max: float,
+    marginal_cost: float,
+) -> None:
+    limits = HydroLimits(base_power, rating, active_power_min, active_power_max, marginal_cost)
+    sienna_system_builder.add_hydro_turbine(name, bus, limits)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
@@ -589,6 +640,29 @@ def assert_sienna_component_field(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == expected, (
         f"expected [{sienna_type}:{name}].{field_path!r} = {expected!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.re(
+        r'the file "(?P<path>[^"]+)" parses as JSON with component "(?P<sienna_type>[^"]+)"'
+        r' named "(?P<name>[^"]+)" listing (?P<listed_type>\w+) "(?P<listed>[^"]+)"'
+        r' in "(?P<field>[^"]+)"'
+    )
+)
+def assert_sienna_component_lists(
+    path: str, sienna_type: str, name: str, listed_type: str, listed: str, field: str
+) -> None:
+    """A field that holds the ids of other components, named here by their names."""
+    data = read_json(path)
+    component = find_sienna_component(data, sienna_type, name)
+    expected = [
+        find_sienna_component(data, listed_type, one.strip())["id"] for one in listed.split(",")
+    ]
+    actual = component.get(field)
+    assert actual == expected, (
+        f"expected [{sienna_type}:{name}].{field} = {expected!r} ({listed}) in {path}, "
+        f"got {actual!r}"
     )
 
 
@@ -781,3 +855,125 @@ def _find_ts_association(path: str, owner_type: str, owner_id: int) -> dict[str,
         f"no TimeSeriesAssociation for owner_type={owner_type!r} owner_id={owner_id} in {path}"
     )
     return matching[0]
+
+
+# The SiennaSchemas 0.2 document key, and the two fields of one row under it.
+_SERVICE_ASSOCIATIONS = "service_associations"
+_SERVICE_ID = "service_id"
+_ENTITY_ID = "entity_id"
+
+
+def list_service_members(data: dict[str, Any], service_type: str, service: str) -> list[int]:
+    """The ids of every component that the written system joins to one service."""
+    service_id = find_sienna_component(data, service_type, service)["id"]
+    return [
+        row[_ENTITY_ID]
+        for row in data.get(_SERVICE_ASSOCIATIONS, [])
+        if row[_SERVICE_ID] == service_id
+    ]
+
+
+@then(
+    parsers.parse(
+        'the written Sienna system associates the {service_type} "{service}"'
+        ' with the {entity_type} "{entity}"'
+    )
+)
+def assert_service_association(
+    service_type: str, service: str, entity_type: str, entity: str
+) -> None:
+    data = read_json(SYSTEM_PATH)
+    entity_id = find_sienna_component(data, entity_type, entity)["id"]
+    members = list_service_members(data, service_type, service)
+    assert entity_id in members, (
+        f"expected [{entity_type}:{entity}] (id {entity_id}) to join [{service_type}:{service}]"
+        f" in {SYSTEM_PATH}, got member ids {members}"
+    )
+
+
+@then(
+    parsers.re(
+        r"the written Sienna system associates (?P<count>\d+) units? with the "
+        r'(?P<service_type>\w+) "(?P<service>[^"]+)"'
+    )
+)
+def assert_service_member_count(count: str, service_type: str, service: str) -> None:
+    members = list_service_members(read_json(SYSTEM_PATH), service_type, service)
+    assert len(members) == int(count), (
+        f"expected {count} members of [{service_type}:{service}] in {SYSTEM_PATH}, got {members}"
+    )
+
+
+def read_written_attributes(
+    attribute_type: str, sienna_type: str, name: str
+) -> list[dict[str, Any]]:
+    """The attributes of one type that the written system joins to one named component."""
+    data = read_json(SYSTEM_PATH)
+    component = find_sienna_component(data, sienna_type, name)
+    return list_attributes_for(data, attribute_type, sienna_type, component["id"])
+
+
+def read_one_written_attribute(attribute_type: str, sienna_type: str, name: str) -> dict[str, Any]:
+    attributes = read_written_attributes(attribute_type, sienna_type, name)
+    assert len(attributes) == 1, (
+        f"expected 1 {attribute_type!r} for {sienna_type}:{name} in {SYSTEM_PATH}, "
+        f"got {attributes!r}"
+    )
+    return attributes[0]
+
+
+@then(parsers.parse('the written Sienna system puts bus "{bus}" in load zone "{load_zone}"'))
+def assert_bus_in_load_zone(bus: str, load_zone: str) -> None:
+    data = read_json(SYSTEM_PATH)
+    zone = find_sienna_component(data, "LoadZone", load_zone)
+    actual = find_sienna_component(data, "ACBus", bus).get("load_zone")
+    assert actual == zone["id"], (
+        f"expected ACBus {bus!r} load_zone {zone['id']} ({load_zone!r}), got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the written Sienna system states a "{attribute_type}" attribute for "{sienna_type}"'
+        ' "{name}" with "{field}" set to {value}'
+    )
+)
+def assert_attribute_field(
+    attribute_type: str, sienna_type: str, name: str, field: str, value: str
+) -> None:
+    attribute = read_one_written_attribute(attribute_type, sienna_type, name)
+    expected = json.loads(value)
+    assert attribute.get(field) == expected, (
+        f"expected {attribute_type}.{field} = {expected!r} for {sienna_type}:{name}, "
+        f"got {attribute.get(field)!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the written Sienna system states a "{attribute_type}" attribute for "{sienna_type}"'
+        ' "{name}" with "{field}" close to {value:g}'
+    )
+)
+def assert_attribute_field_close(
+    attribute_type: str, sienna_type: str, name: str, field: str, value: float
+) -> None:
+    attribute = read_one_written_attribute(attribute_type, sienna_type, name)
+    actual = attribute.get(field)
+    assert isinstance(actual, float) and math.isclose(actual, value, rel_tol=1e-6), (
+        f"expected {attribute_type}.{field} close to {value!r} for {sienna_type}:{name}, "
+        f"got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the written Sienna system states no "{attribute_type}" attribute for "{sienna_type}"'
+        ' "{name}"'
+    )
+)
+def assert_no_attribute(attribute_type: str, sienna_type: str, name: str) -> None:
+    attributes = read_written_attributes(attribute_type, sienna_type, name)
+    assert not attributes, (
+        f"expected no {attribute_type!r} for {sienna_type}:{name}, got {attributes!r}"
+    )

@@ -38,6 +38,16 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     Then the PyPSA network "outputs/network.nc" load "Grid_load" has bus "Grid_Node"
     And the PyPSA network "outputs/network.nc" load "Grid_load" attribute "p_set" is 30000
 
+  Scenario: a Load object becomes a static Load on the node it joins
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid" with voltage 230
+    And the model contains a Load object "Grid_Homes" on node "Grid_Node" with peak 400
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" load "Grid_Homes" has bus "Grid_Node"
+    And the PyPSA network "outputs/network.nc" load "Grid_Homes" attribute "p_set" is 400
+
   Scenario: a Node named External is translated like any other Node
     Given a Plexos model
     And the model contains region "Grid"

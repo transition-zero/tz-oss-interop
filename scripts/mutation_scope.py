@@ -36,6 +36,7 @@ TRANSLATION_LAYER_ONLY_COVERED_BY_SLOW = [
     "interop/plugins/steps/*",
     "interop/plugins/shared/*",
     "interop/plugins/sources/stage_*",
+    "interop/plugins/sources/plexos_*",
     "interop/plugins/sinks/_extensions_json.py",
     "interop/plugins/sinks/_sienna_files.py",
     "interop/plugins/sinks/emit_pypsa_*",

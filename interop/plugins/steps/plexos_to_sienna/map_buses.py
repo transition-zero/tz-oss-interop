@@ -14,6 +14,7 @@ from interop.plugins.shared.plexos_sienna_translations import (
     BUS_TRANSLATIONS,
     build_bus_extensions,
     build_buses_source_table,
+    report_unstaged_node_values,
 )
 from interop.plugins.shared.sienna_constants import (
     BUSES_DESTINATION_SCHEMA,
@@ -35,6 +36,7 @@ class PlexosToSiennaMapBuses(TranslationStep):
         if state.source_topology.get(PlexosClass.NODE) is None:
             return state
         source = build_buses_source_table(state)
+        report_unstaged_node_values(state, self._recorder)
         destination = apply_translations(source, BUS_TRANSLATIONS, self._recorder)
         buses = finalise(
             destination,

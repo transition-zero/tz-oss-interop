@@ -181,3 +181,180 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/undated_units.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Steady" attribute "build_year" is 0
     And the file "outputs/extensions.json" does not contain "retirement_year"
+
+  Scenario: a data file that dates one value for each object gives the value in force
+    A data file headed Name, Year, Month, Day and Value states what a dated property row
+    states: one value for each object, from a date onward. The XML holds a placeholder.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains generator "Park" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 80    |
+      | Park | 2026 | 1     | 1   | 30    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And generator "Park" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 80
+    And the PyPSA network "outputs/network.nc" generator "Park" attribute "p_nom" is 30
+
+  Scenario: a value that a data file changes within the year becomes a series of steps
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 12    | 30  | 50    |
+      | Farm | 2027 | 1     | 2   | 100   |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-12-30" spanning 4 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2027 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 2 snapshots
+    And the PyPSA network "outputs/network.nc" generator "Farm" has a p_max_pu time series 0.5 1.0
+
+  Scenario: the earliest date in the data file also holds before that date
+    A staged series takes its earliest value before its first row, so a dated file does too.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 3     | 1   | 70    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 70
+
+  Scenario: a row whose date is not a date is left out with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 60    |
+      | Farm | 2026 | 2     | 30  | 90    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
+    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
+
+  Scenario Outline: a row whose value is "<cell>" is left out with a warning
+    A value must be a finite number, so text and a non-finite number each state none.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 60    |
+      | Farm | 2026 | 6     | 1   | <cell> |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 60
+    And the log contains "Gen_MaxCapacity.csv holds 1 row(s) whose date or value cannot be read"
+
+    Examples:
+      | cell |
+      | -    |
+      | nan  |
+      | inf  |
+
+  Scenario: a data file names an object without regard to letter case
+    PLEXOS reads an object name without letter case, so a row for "farm" is the row of "Farm".
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | farm | 2026 | 1     | 1   | 75    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 75
+
+  Scenario: an object that a dated data file has no row for is named in one warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains generator "Park" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 75    |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And generator "Park" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 75
+    And the log contains "Gen_MaxCapacity.csv has no row for 1 object(s) that read it, so their values are left out: Park"
+    And the log does not contain "unsupported layout: Gen_MaxCapacity.csv"
+
+  Scenario: an outage rating beside a schedule of units out derates only the units that are out
+    Units Out says when a unit is out. The capacity during the outage then belongs to the
+    units out, so it does not also derate the unit while it runs.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Plant" with "node=Grid_Node, fuel=Coal, Max Capacity=100, Units=1, Heat Rate=9, Min Stable Level=25"
+    And the model contains data file "OutageRatings" at "Gen_OutageRating.csv" with rows:
+      | NAME  | YEAR | MONTH | DAY | VALUE |
+      | Plant | 2026 | 1     | 1   | 100   |
+      | Plant | 2026 | 1     | 2   | 0     |
+      | Plant | 2026 | 1     | 3   | 100   |
+    And the model contains data file "UnitsOut" at "Gen_UnitsOut.csv" with rows:
+      | NAME  | YEAR | MONTH | DAY | VALUE |
+      | Plant | 2026 | 1     | 1   | 0     |
+      | Plant | 2026 | 1     | 2   | 1     |
+      | Plant | 2026 | 1     | 3   | 0     |
+    And generator "Plant" has property "Outage Rating" from data file "OutageRatings"
+    And generator "Plant" has property "Units Out" from data file "UnitsOut"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 3 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Plant" has a p_max_pu time series 1.0 0.0 1.0
+
+  Scenario: a dated data file names a membership's row after both of its objects
+    A property of a membership between two objects, such as a Reserve and a Generator, takes
+    a row named after both of them, in either order.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "GasPlant" with "node=Grid_Node, fuel=Natural Gas, Max Capacity=500"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains reserve "Spin" of type 1 requiring 60 from generators "GasPlant, Farm"
+    And the model contains data file "Responses" at "Gen_MaxResponse.csv" with rows:
+      | NAME         | YEAR | MONTH | DAY | VALUE |
+      | SpinGasPlant | 2026 | 1     | 1   | 40    |
+      | FarmSpin     | 2026 | 1     | 1   | 15    |
+    And reserve "Spin" states "Max Response" for generator "GasPlant" from data file "Responses"
+    And reserve "Spin" states "Max Response" for generator "Farm" from data file "Responses"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_table" that writes a source_topology table to JSON
+    And a project-local pipeline "plexos-resolve" that stages plexos and dumps a table
+    When I stage "inputs/model.xml" through "plexos-resolve" dumping table "properties" to "outputs/properties.json" with system output "outputs/system.json"
+    Then the property dump "outputs/properties.json" has "GasPlant" "Max Response" = 40
+    And the property dump "outputs/properties.json" has "Farm" "Max Response" = 15

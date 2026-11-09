@@ -1,8 +1,8 @@
 """The chronology one PLEXOS translation covers, and reconciling a series onto it.
 
 PLEXOS keeps its chronology on a ``Horizon`` object the selected Model relates to: a
-``Chrono Date From`` (an OLE Automation serial date), a ``Chrono Step Count`` of days,
-and a ``Periods per Day`` for the resolution within each day. That, narrowed to the year
+``Chrono Date From`` (an OLE Automation serial date), a ``Chrono Step Count`` of days or
+weeks, and a ``Periods per Day`` for the resolution within each day. That, narrowed to the year
 being translated, is the window every staged series is reconciled onto.
 
 Every attribute is raw text out of the file, so a Horizon stating a value nobody can read
@@ -51,7 +51,9 @@ _ATTR_CHRONO_DATE_FROM = "Chrono Date From"
 _ATTR_CHRONO_STEP_COUNT = "Chrono Step Count"
 _ATTR_CHRONO_STEP_TYPE = "Chrono Step Type"
 _ATTR_PERIODS_PER_DAY = "Periods per Day"
-_CHRONO_STEP_TYPE_DAY = 2
+# The days in one chronology step, by the ``Chrono Step Type`` code PLEXOS writes.
+_DAYS_PER_CHRONO_STEP = {2: 1, 3: 7}
+_DEFAULT_DAYS_PER_STEP = 1
 _HOURS_PER_DAY = 24
 _OLE_EPOCH = datetime(1899, 12, 30)
 
@@ -124,8 +126,8 @@ def _snapshot_index(horizon: Horizon | None, window: Window) -> pl.DataFrame | N
 def _parse_horizon(tables: RowsByTable, model: str | None) -> Horizon | None:
     """The selected Model's chronological Horizon as a snapshot window, or None when absent.
 
-    Only a day-stepped chronology is handled: the window runs ``Chrono Step Count`` days
-    from ``Chrono Date From`` at ``Periods per Day`` steps within each day.
+    A day-stepped or week-stepped chronology is handled: the window runs ``Chrono Step
+    Count`` steps from ``Chrono Date From`` at ``Periods per Day`` steps within each day.
     """
     horizon_id = _model_horizon_id(tables, model)
     if horizon_id is None:
@@ -139,22 +141,23 @@ def _horizon_from(attributes: dict[str, str | None]) -> Horizon | None:
     Every attribute is raw text out of the file, so a Horizon stating a value nobody can
     read leaves the snapshots unset rather than stopping the whole staging run.
     """
-    if not _is_day_chronology(attributes.get(_ATTR_CHRONO_STEP_TYPE)):
+    days_per_step = _read_days_per_step(attributes.get(_ATTR_CHRONO_STEP_TYPE))
+    if days_per_step is None:
         return None
     date_from = _to_horizon_number(attributes.get(_ATTR_CHRONO_DATE_FROM))
     step_count = _to_horizon_number(attributes.get(_ATTR_CHRONO_STEP_COUNT))
     per_day = _to_periods_per_day(attributes.get(_ATTR_PERIODS_PER_DAY))
     if date_from is None or step_count is None or per_day is None:
         return None
-    return _horizon_of(date_from, int(step_count), per_day)
+    return _horizon_of(date_from, int(step_count) * days_per_step, per_day)
 
 
-def _horizon_of(date_from: float, step_count: int, per_day: int) -> Horizon | None:
+def _horizon_of(date_from: float, day_count: int, per_day: int) -> Horizon | None:
     """The window itself, or None where the stated serial date is not a date at all."""
     try:
         return Horizon(
             start=_OLE_EPOCH + timedelta(days=date_from),
-            periods=step_count * per_day,
+            periods=day_count * per_day,
             interval=timedelta(hours=_HOURS_PER_DAY / per_day),
         )
     except (OverflowError, OSError, ValueError):
@@ -166,22 +169,22 @@ def _horizon_of(date_from: float, step_count: int, per_day: int) -> Horizon | No
         return None
 
 
-def _is_day_chronology(step_type: str | None) -> bool:
-    """Whether the Horizon steps in days, which is the only chronology handled.
+def _read_days_per_step(step_type: str | None) -> int | None:
+    """How many days one chronology step spans, or None where the step type is not a day or a week.
 
     A Horizon naming no step type at all is taken at its word as a day chronology.
     """
     if step_type is None:
-        return True
+        return _DEFAULT_DAYS_PER_STEP
     stated = _to_horizon_number(step_type)
     if stated is None:
-        return False
-    if int(stated) == _CHRONO_STEP_TYPE_DAY:
-        return True
-    log.warning(
-        "plexos: horizon step type %s is not a day chronology; snapshots not set", step_type
-    )
-    return False
+        return None
+    days = _DAYS_PER_CHRONO_STEP.get(int(stated))
+    if days is None:
+        log.warning(
+            "plexos: horizon step type %s is not a day or a week; snapshots not set", step_type
+        )
+    return days
 
 
 def _to_horizon_number(value: Any) -> float | None:
@@ -322,6 +325,11 @@ def reindex_onto(
     labelled.sink_parquet(PartitionBy(staged, key=StagedTimeSeriesCol.SAMPLE, include_key=True))
     reindexed = out / series
     reindexed.mkdir(parents=True, exist_ok=True)
+    if not staged.exists():
+        # A series with no rows writes no partition, and reindexes to no rows.
+        path = reindexed / "empty.parquet"
+        _reconcile_to_horizon(combined.clear(), index).sink_parquet(path)
+        return pl.scan_parquet(path)
     for partition in sorted(staged.iterdir()):
         one = pl.scan_parquet(partition / "*.parquet", hive_partitioning=False)
         _reconcile_to_horizon(one, index).sink_parquet(reindexed / f"{partition.name}.parquet")

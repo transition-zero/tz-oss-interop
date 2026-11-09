@@ -28,6 +28,8 @@ from interop_testing.files import read_json
 SYSTEM_PATH = "outputs/system.json"
 PORTFOLIO_PATH = "outputs/portfolio.json"
 SCHEMA_VERSION = "0.2.0"
+_ATTRIBUTES = "supplemental_attributes"
+_ASSOCIATIONS = "supplemental_attribute_associations"
 
 
 @cache
@@ -133,7 +135,44 @@ def list_document_problems(
     for type_name, rows in components.items():
         problems.extend(list_component_problems(type_name, rows, document_class))
     problems.extend(list_id_problems(document))
+    if document_class is SystemDocument:
+        problems.extend(list_attribute_problems(document))
     return problems
+
+
+def list_attribute_problems(document: dict[str, Any]) -> list[str]:
+    """What is wrong with each association row, and with the attribute it names.
+
+    The SDK leaves each attribute a plain mapping, so each one is checked as the type its
+    association names.
+    """
+    attributes = {row.get("id"): row for row in document.get(_ATTRIBUTES, [])}
+    component_types = {
+        row.get("id"): type_name
+        for type_name, rows in document.get("components", {}).items()
+        for row in rows
+    }
+    problems: list[str] = []
+    for association in document.get(_ASSOCIATIONS, []):
+        problems.extend(list_association_problems(association, attributes, component_types))
+    return problems
+
+
+def list_association_problems(
+    association: dict[str, Any],
+    attributes: dict[Any, dict[str, Any]],
+    component_types: dict[Any, str],
+) -> list[str]:
+    """What is wrong with one association: the component it names, and its attribute."""
+    problems: list[str] = []
+    if component_types.get(association["component_id"]) != association["component_type"]:
+        problems.append(
+            f"association: no {association['component_type']} with id {association['component_id']}"
+        )
+    attribute = attributes.get(association["attribute_id"])
+    if attribute is None:
+        return [*problems, f"association: no attribute with id {association['attribute_id']}"]
+    return [*problems, *list_type_problems(association["attribute_type"], [attribute])]
 
 
 def assert_no_problems(problems: list[str], path: str) -> None:

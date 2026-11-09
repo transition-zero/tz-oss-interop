@@ -62,6 +62,10 @@ from interop.plugins.shared.translation_runner import filter_component
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 
+# The Sienna types a hydro StorageUnit comes from. A HydroTurbine reads like a HydroDispatch,
+# and the extensions sidecar carries its reservoir for this hop.
+_HYDRO_TYPES = (SiennaComponent.HYDRO_DISPATCH, SiennaComponent.HYDRO_TURBINE)
+
 # What the storage companion parquet holds. Sienna names no field for an inflow or for a
 # rating that changes, so both arrive beside the sidecar rather than in the system file.
 _COMPANION_COLUMNS: tuple[CompanionColumn, ...] = (
@@ -96,9 +100,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         if generators is not None:
             hydro_supported, _ = filter_component(
                 generators.collect(),
-                express_power_units_kept(
-                    SiennaUnitSystem.NATURAL_UNITS, [SiennaComponent.HYDRO_DISPATCH]
-                ),
+                express_power_units_kept(SiennaUnitSystem.NATURAL_UNITS, list(_HYDRO_TYPES)),
                 build_power_units_skip_report(
                     "Hydro generator",
                     "hydro generators",
@@ -108,9 +110,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 self._recorder,
             )
             for row in hydro_supported.iter_rows(named=True):
-                if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) is (
-                    SiennaComponent.HYDRO_DISPATCH
-                ):
+                if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) in _HYDRO_TYPES:
                     hydro = _derive_hydro(row, bus_names, self._extensions)
                     _record_hydro(reporter, hydro)
                     rows.append(_hydro_row(hydro))
@@ -219,9 +219,10 @@ def _record_inflow(
 
 @dataclass(frozen=True)
 class _HydroMapping:
-    """Values derived from one Sienna HydroDispatch row, before events and the output row."""
+    """Values derived from one Sienna HydroDispatch or HydroTurbine row, before the events."""
 
     name: str
+    sienna_type: SiennaComponent
     bus_id: int
     bus_name: str
     prime_mover: PrimeMover
@@ -232,7 +233,7 @@ class _HydroMapping:
     active_power_min: float
     p_min_pu: float
     marginal_cost: float
-    # Sienna's HydroDispatch states no reservoir, so all three cross the hub in the sidecar.
+    # The sidecar carries all three, whichever hydro type the row is.
     max_hours: float
     state_of_charge_initial: float
     inflow_mw: float
@@ -246,12 +247,14 @@ def _derive_hydro(
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]
+    sienna_type = SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE])
     return _HydroMapping(
         name=row[SiennaGeneratorCol.NAME],
+        sienna_type=sienna_type,
         bus_id=bus_id,
         bus_name=bus_names[bus_id],
         prime_mover=prime_mover,
-        carrier=pypsa_carrier(SiennaComponent.HYDRO_DISPATCH, prime_mover, None),
+        carrier=pypsa_carrier(sienna_type, prime_mover, None),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         p_max_pu=rated_per_unit(float(row[SiennaGeneratorCol.RATING]), base_power),
@@ -275,23 +278,25 @@ def _carried(record: Any, field_name: str, fallback: float) -> float:
 
 
 def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
-    sienna_type = SiennaComponent.HYDRO_DISPATCH
+    sienna_type = m.sienna_type
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
     reporter.record_p_max_pu(
         sienna_type, m.name, SiennaGeneratorCol.RATING, m.rating, m.p_max_pu, "rating / base_power"
     )
-    reporter.record_p_min_pu_from_active_power_limits(m.name, m.active_power_min, m.p_min_pu)
+    reporter.record_p_min_pu_from_active_power_limits(
+        sienna_type, m.name, m.active_power_min, m.p_min_pu
+    )
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
     # HydroDispatch is sourced from a PyPSA Generator with no extensions sidecar, so the storage
     # fields below have no Sienna source; each falls back to a PyPSA default. Lossy.
-    reporter.record_max_hours_default(m.name, m.max_hours)
-    reporter.record_efficiency_default(m.name, DEFAULT_STORAGE_EFFICIENCY)
-    reporter.record_state_of_charge_initial_default(m.name)
-    reporter.record_cyclic_default(m.name)
+    reporter.record_max_hours_default(sienna_type, m.name, m.max_hours)
+    reporter.record_efficiency_default(sienna_type, m.name, DEFAULT_STORAGE_EFFICIENCY)
+    reporter.record_state_of_charge_initial_default(sienna_type, m.name)
+    reporter.record_cyclic_default(sienna_type, m.name)
     reporter.record_p_nom_extendable_default(m.name)
-    _record_inflow(reporter, SiennaComponent.HYDRO_DISPATCH, m.name, m.inflow_mw)
+    _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
 
 
 def _hydro_row(m: _HydroMapping) -> dict[str, Any]:

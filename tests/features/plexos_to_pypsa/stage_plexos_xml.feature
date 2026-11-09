@@ -265,6 +265,60 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 3 is 7
     And the load time series "outputs/load_ts.json" for "Grid_Node" has snapshot 2 at "2026-01-02 00:00:00"
 
+  Scenario: a data file header reads without letter case
+    PLEXOS reads the header of a data file without letter case, so a file headed in capitals
+    stages as one headed in the usual spelling.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "LoadProfile" at "Traces/load.csv" with rows:
+      | YEAR | MONTH | DAY | PERIOD | VALUE |
+      | 2026 | 1     | 1   | 1      | 10    |
+      | 2026 | 1     | 1   | 2      | 20    |
+    And the model contains load "Grid_Node" with peak 20 from data file "LoadProfile"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 20
+
+  Scenario: a value read through a Variable matches the rows of the file that name the Variable
+    A data file that a Variable profiles names each row after the Variable, and not after the
+    object that reads a share of it.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Shared" at "Var_Profiles.csv" with rows:
+      | NAME      | YEAR | MONTH | DAY | PERIOD | VALUE |
+      | Profile_A | 2026 | 1     | 1   | 1      | 10    |
+      | Profile_A | 2026 | 1     | 1   | 2      | 20    |
+      | Profile_B | 2026 | 1     | 1   | 1      | 99    |
+    And the model contains variable "Profile_A" profiling data file "Shared"
+    And the model contains load "Grid_Node" with share 2 of variable "Profile_A"
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 20
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 40
+
+  Scenario: a sampled file whose rows name nothing that reads it does not stop the run
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Shared" at "Var_Profiles.csv" with rows:
+      | NAME   | YEAR | MONTH | DAY | PERIOD | 1  | 2  |
+      | Nobody | 2026 | 1     | 1   | 1      | 10 | 11 |
+    And the model contains load "Grid_Node" with peak 10 from data file "Shared"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 100
+    And the log contains "Var_Profiles.csv yields no series for: Grid_Node"
+
   Scenario: the plexos-to-pypsa pipeline emits an empty network for a model with no mapped components
     Given a Plexos model
     And the model contains region "Grid"
@@ -311,6 +365,33 @@ Feature: stage_plexos_xml source stages a PLEXOS model into per-class Parquet pa
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the log contains "ignoring unreadable horizon attribute 'weekly'"
     And the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 100
+
+  Scenario: a Horizon that steps in weeks spans seven days for each step
+    PLEXOS codes a chronology step of one day as 2 and of one week as 3. Two weekly steps at
+    24 periods per day are 336 hourly snapshots.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=50"
+    And generator "Farm" states "Max Capacity" of 100 from "2026-01-10"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And horizon "H1" states "Chrono Step Type" as "3"
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 336 snapshots
+
+  Scenario: a Horizon stepping in a unit the source does not read leaves the snapshots unset
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And horizon "H1" states "Chrono Step Type" as "4"
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the log contains "horizon step type 4 is not a day or a week; snapshots not set"
 
   Scenario: a Horizon starting on a date nobody can read leaves the snapshots unset
     Given a Plexos model

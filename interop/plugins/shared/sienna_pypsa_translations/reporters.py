@@ -114,17 +114,17 @@ _EXTENDABLE_FLOOR_TEMPLATE = (
 _P_NOM_FLOOR_DERIVATION = _EXTENDABLE_FLOOR_TEMPLATE.format(capacity=PyPSAGeneratorCol.P_NOM)
 _S_NOM_FLOOR_DERIVATION = _EXTENDABLE_FLOOR_TEMPLATE.format(capacity=PyPSALineCol.S_NOM)
 _HYDRO_MAX_HOURS_DEFAULT = (
-    "HydroDispatch carries no storage capacity; max_hours uses the PyPSA storage default"
+    "{sienna_type} carries no storage capacity; max_hours uses the PyPSA storage default"
 )
 _HYDRO_EFFICIENCY_DEFAULT = (
-    "HydroDispatch carries no round-trip efficiency; "
+    "{sienna_type} carries no round-trip efficiency; "
     "efficiency_store/efficiency_dispatch use the PyPSA storage default"
 )
 _HYDRO_STATE_OF_CHARGE_DEFAULT = (
-    "HydroDispatch carries no reservoir level; state_of_charge_initial defaults to 0.0"
+    "{sienna_type} carries no reservoir level; state_of_charge_initial defaults to 0.0"
 )
 _HYDRO_CYCLIC_DEFAULT = (
-    "HydroDispatch carries no energy_shortage_cost; cyclic_state_of_charge defaults to False"
+    "{sienna_type} carries no energy_shortage_cost; cyclic_state_of_charge defaults to False"
 )
 
 
@@ -536,12 +536,12 @@ class StorageUnitReporter(_Reporter):
         )
 
     def record_p_min_pu_from_active_power_limits(
-        self, name: str, active_power_min: float, p_min_pu: float
+        self, sienna_type: SiennaComponent, name: str, active_power_min: float, p_min_pu: float
     ) -> None:
         self._derived(
             sources=[
                 self._source(
-                    SiennaComponent.HYDRO_DISPATCH,
+                    sienna_type,
                     name,
                     _ACTIVE_POWER_LIMITS_MIN,
                     active_power_min,
@@ -689,35 +689,41 @@ class StorageUnitReporter(_Reporter):
             note=_P_NOM_EXTENDABLE_DEFAULT,
         )
 
-    def record_max_hours_default(self, name: str, max_hours: float) -> None:
+    def record_max_hours_default(
+        self, sienna_type: SiennaComponent, name: str, max_hours: float
+    ) -> None:
         self._default_applied(
             destinations=[self._destination(name, PyPSAStorageUnitCol.MAX_HOURS, max_hours)],
-            note=_HYDRO_MAX_HOURS_DEFAULT,
+            note=_HYDRO_MAX_HOURS_DEFAULT.format(sienna_type=sienna_type),
         )
 
-    def record_efficiency_default(self, name: str, efficiency: float) -> None:
+    def record_efficiency_default(
+        self, sienna_type: SiennaComponent, name: str, efficiency: float
+    ) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_STORE, efficiency),
                 self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, efficiency),
             ],
-            note=_HYDRO_EFFICIENCY_DEFAULT,
+            note=_HYDRO_EFFICIENCY_DEFAULT.format(sienna_type=sienna_type),
         )
 
-    def record_state_of_charge_initial_default(self, name: str) -> None:
+    def record_state_of_charge_initial_default(
+        self, sienna_type: SiennaComponent, name: str
+    ) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL, 0.0)
             ],
-            note=_HYDRO_STATE_OF_CHARGE_DEFAULT,
+            note=_HYDRO_STATE_OF_CHARGE_DEFAULT.format(sienna_type=sienna_type),
         )
 
-    def record_cyclic_default(self, name: str) -> None:
+    def record_cyclic_default(self, sienna_type: SiennaComponent, name: str) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False)
             ],
-            note=_HYDRO_CYCLIC_DEFAULT,
+            note=_HYDRO_CYCLIC_DEFAULT.format(sienna_type=sienna_type),
         )
 
 

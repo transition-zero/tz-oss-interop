@@ -99,6 +99,36 @@ def given_storage_has_property(
     plexos_model_builder.add_storage_property(name, property_name, value)
 
 
+@given(
+    parsers.re(
+        r'the model contains waterway "(?P<name>[^"]+)" from storage "(?P<storage_from>[^"]+)"'
+        r' to storage "(?P<storage_to>[^"]+)"'
+    )
+)
+def given_model_contains_waterway_between(
+    plexos_model_builder: PlexosModelBuilder, name: str, storage_from: str, storage_to: str
+) -> None:
+    plexos_model_builder.add_waterway(name, storage_from, storage_to)
+
+
+@given(
+    parsers.re(
+        r'the model contains waterway "(?P<name>[^"]+)" from storage "(?P<storage_from>[^"]+)"$'
+    )
+)
+def given_model_contains_waterway_out(
+    plexos_model_builder: PlexosModelBuilder, name: str, storage_from: str
+) -> None:
+    plexos_model_builder.add_waterway(name, storage_from)
+
+
+@given(parsers.parse('waterway "{name}" has property "{property_name}" {value:g}'))
+def given_waterway_has_property(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, value: float
+) -> None:
+    plexos_model_builder.add_waterway_property(name, property_name, value)
+
+
 @given(parsers.parse('the model contains battery "{name}" on node "{node}"'))
 def given_model_contains_bare_battery(
     plexos_model_builder: PlexosModelBuilder, name: str, node: str
@@ -431,12 +461,86 @@ def given_line_has_property(
 
 
 @given(
+    parsers.parse(
+        'line "{name}" has property "{property_name}" of {placeholder:g} '
+        'from data file "{data_file}"'
+    )
+)
+def given_line_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    placeholder: float,
+    data_file: str,
+) -> None:
+    plexos_model_builder.add_line_property_from_data_file(
+        name, property_name, placeholder, data_file
+    )
+
+
+@given(
+    parsers.parse(
+        'node "{name}" has property "{property_name}" of {placeholder:g} '
+        'from data file "{data_file}"'
+    )
+)
+def given_node_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    placeholder: float,
+    data_file: str,
+) -> None:
+    plexos_model_builder.add_node_property_from_data_file(
+        name, property_name, placeholder, data_file
+    )
+
+
+@given(
     parsers.parse('storage "{name}" has property "{property_name}" from data file "{data_file}"')
 )
 def given_storage_has_property_from_data_file(
     plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, data_file: str
 ) -> None:
     plexos_model_builder.add_storage_property_from_data_file(name, property_name, data_file)
+
+
+@given(
+    parsers.parse('generator "{name}" has property "{property_name}" from data file "{data_file}"')
+)
+def given_generator_has_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, data_file: str
+) -> None:
+    plexos_model_builder.add_generator_property_from_data_file(name, property_name, data_file)
+
+
+@given(
+    parsers.parse(
+        'generator "{generator}" names head storage "{storage}" with Max Volume {max_volume:g}'
+    )
+)
+def given_generator_names_head_storage(
+    plexos_model_builder: PlexosModelBuilder, generator: str, storage: str, max_volume: float
+) -> None:
+    plexos_model_builder.add_head_storage(generator, storage, max_volume)
+
+
+@given(
+    parsers.parse(
+        'reserve "{reserve}" states "{property_name}" for generator "{generator}" '
+        'from data file "{data_file}"'
+    )
+)
+def given_reserve_generator_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    reserve: str,
+    property_name: str,
+    generator: str,
+    data_file: str,
+) -> None:
+    plexos_model_builder.add_reserve_generator_property_from_data_file(
+        reserve, generator, property_name, data_file
+    )
 
 
 @given(parsers.parse('the model contains region "{name}" with VoLL {voll:g}'))
