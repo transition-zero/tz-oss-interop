@@ -1,0 +1,21 @@
+source_framework: aetos
+destination_framework: results
+source:
+  name: stage_aetos_results_csv
+  # Defaults only: the prompts offer these and the user edits them. tz-oss-interop does not
+  # ship the model. docs/case_studies/aetos.md says where to download it.
+  params:
+    config_path: case_study_inputs/aetos/AETOS_Runner/config_otoole_AETOS.yaml
+    csv_dir: case_study_inputs/aetos/AETOS_Runner/CSVFiles
+    results_csv_path: case_study_inputs/aetos/AETOS_Runner/results/20260123_UNNZv2.csv
+    first_year: 2021
+steps:
+  - name: aetos_results_to_results_format
+sinks:
+  - name: emit_results_parquet
+    params:
+      output_dir: outputs
+      framework: aetos
+      label: AETOS published results
+      timezone: UTC
+      source_artifact: the published AETOS results CSV

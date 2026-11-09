@@ -27,6 +27,10 @@ Unless overridden in a specific prompt:
 - **Electricity-only networks.** All buses are AC or DC. Non-electricity carriers (hydrogen, heat, gas) are out of scope and handled in Deferred sections of documentation.
 - The authoritative translation mapping lives at `./docs/translation_mappings/translation-from-pypsa-to-sienna.md`. Consult it before making decisions about field mappings, defaults, or scope questions. When adding new mappings, extend the document rather than deriving mappings from scratch. The doc is the single source of truth for translation design decisions. Open questions flagged in the doc take precedence over inferences from code or schemas.
 
+### OSeMOSYS to Sienna
+
+- **The Sienna system and the portfolio hold electricity.** Each electricity fuel with a location is an `ACBus` named `<region>/<fuel>`, in the `Area` of its location, and a conversion between two electricity fuels is a line. Every fuel that is not electricity, and each technology that supplies, moves or converts it, travels in `extensions.json` as `bus`, `generator`, `conversion` and `load` records in PyPSA terms. The bus of such a fuel is `<region>/<fuel>` too. The Sienna → PyPSA leg builds them as PyPSA buses, generators, links and loads, and a `ThermalStandard` whose `generator` record states `fuel_buses` becomes a `Link` from those buses, unless a reason that the mapping lists keeps it a `Generator`. The mapping lives at `./docs/translation_mappings/translation-from-osemosys-to-sienna.md`.
+
 ### Sienna to PyPSA
 
 - **Input contract is a SiennaSchemas 0.2 system, and only that.** The Sienna source (`stage_sienna_system_json`) consumes a SiennaSchemas 0.2 document, as `power-openapi-models` 0.2.0 defines it and as `./docs/translation_mappings/translation-from-pypsa-to-sienna.md` describes it. The document is a JSON object with `schema_version` and a `components` object that maps each Sienna type name to a list of that type's objects. Each object is flat. It has an integer `id` that is unique in the whole document, integer references (`bus`/`area`/`arc`/`owner_id`) and its own `power_units`, and it has no `__metadata__`/`internal`/`ext` envelope. Time series are the `time_series_associations` list of the document. Each row is a 0.2 row from the InfraStore store, and its `uri` is the locator of the store. `time_series_storage_file` names the InfraStore sidecar beside the document, and the readers read the values through `infrastore`. PyPSA round-trip fields with no SiennaSchemas home travel in an `extensions.json` sidecar, a document keyed by kind whose records are identified by `name`. A path parameter gives the `extensions.json` sidecar, and the document does not name it. The `extensions.json` sidecar is an optional input, since only this translator writes one. The InfraStore sidecar is a required input.
@@ -116,6 +120,7 @@ that touches the disk can still raise.
 | `delete_` | Remove a file or a directory | raises | a container in memory, which is `drop_` |
 | `copy_` | Duplicate a file or a directory | raises | a copy in memory |
 | `record_` | Append a `TranslationEvent` through the recorder | no absent case | the console, which is `warn_` |
+| `relay_` | Pass a sidecar record or field unchanged to the destination sidecar, and record it | no absent case | a value the destination holds, which is `map_` |
 | `warn_` | Write one `log.warning`, and name at most three components | no absent case | the audit trail, which is `record_` |
 | `report_` | Record the events **and** write the warning | no absent case | one of the two alone |
 | `reject_` | A guard. Raises when the named condition holds | no absent case | a call that returns a value |
@@ -124,6 +129,7 @@ that touches the disk can still raise.
 | `normalise_` | The canonical form of a value | raises | a check that returns nothing |
 | `serialise_` | A model, in its wire or storage shape | no absent case | a read back, which is `parse_` |
 | `render_` | A report, in its output format, through a report port | no absent case | data a later node reads |
+| `prompt_` | Ask the user of the REPL for one answer, and give it back | returns `None` when the user cancels | a value from a file, which is `read_` |
 
 A domain verb is not in the table. A name can use a domain verb when it names an action
 of the domain: `solve`, `translate`, `compare`, `discover` and `init`. Every other verb
@@ -313,6 +319,8 @@ class SkipReport:
     note: str | Callable[[dict], str]  # what decisions.md carries against the component
 ```
 Two optional fields cover the rows that need them: `listed` makes the warning list a column other than `name_col`, under a word of its own, and `attribute_col` names the one source attribute a drop turns on. `SkipRule` pairs a keep expression with a `SkipReport` where a step applies several in a row.
+
+**`drop_skipped(table, rules, recorder)`** applies a sequence of `SkipRule` in order, each through `filter_component`, and returns the rows that pass every rule. **`report_not_mapped(table, condition, report, recorder)`** is the `NOT_MAPPED` twin of `filter_component`, for a row whose component survives but whose value does not: it splits into `(kept, not_mapped)`, records `SkipReport.build_not_mapped_event` for each row that the condition does not keep, and logs one warning naming a few of them. That warning reads `<pipeline>: N <counted_noun> <reason>. <label>: <names>`, with no ", so each is left out". In both helpers, a null in the condition counts as not kept.
 
 **`finalise(table, schema, recorder, component, name_col)`** — null-initialises unmapped schema columns with `NOT_MAPPED` events, then selects to the pure destination schema. `EventKind.NOT_MAPPED` is filterable in user-facing views; a schema column with no event at all is a detectable gap.
 

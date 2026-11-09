@@ -190,6 +190,15 @@ class PyPSANetworkBuilder:
         self._check_not_saved(f"generator {name!r} attribute {attribute!r}")
         self._network.generators.loc[name, attribute] = value
 
+    def add_generator_copies(self, name: str, count: int) -> None:
+        """Add `count` generators named `<name> 1` to `<name> <count>`, each stating every static
+        attribute of the generator `name`."""
+        self._check_not_saved(f"copies of generator {name!r}")
+        generators = self._network.generators
+        copies = pd.concat([generators.loc[[name]]] * count)
+        copies.index = pd.Index([f"{name} {number}" for number in range(1, count + 1)])
+        self._network.generators = pd.concat([generators, copies])
+
     def add_storage_unit(
         self,
         name: str,
@@ -367,10 +376,16 @@ class PyPSANetworkBuilder:
         self._network.lines_t["p0"][name] = pd.Series(values, index=self._network.snapshots)
 
     def set_link_flow(self, name: str, values: list[float]) -> None:
-        """Write a solved links_t.p0 series (positive = from bus0 towards bus1)."""
+        """Write solved links_t.p0 and p1 series (p0 positive = from bus0 towards bus1).
+
+        p1 is what a solve states at bus1: the flow at bus0 times the efficiency, negated.
+        """
         self._check_not_saved(f"flow for link {name!r}")
         self._require_snapshots(f"flow for link {name!r}")
-        self._network.links_t["p0"][name] = pd.Series(values, index=self._network.snapshots)
+        sent = pd.Series(values, index=self._network.snapshots)
+        efficiency = float(self._network.links.at[name, "efficiency"])
+        self._network.links_t["p0"][name] = sent
+        self._network.links_t["p1"][name] = -efficiency * sent
 
     def set_bus_marginal_price(self, name: str, values: list[float]) -> None:
         """Write a solved buses_t.marginal_price series (cost per MWh at the bus)."""
@@ -388,11 +403,24 @@ class PyPSANetworkBuilder:
             values, index=self._network.snapshots
         )
 
+    def set_generator_weightings(self, values: list[float]) -> None:
+        """Set the hours each snapshot counts for in a generator's energy."""
+        self._check_not_saved("generator snapshot weightings")
+        self._require_snapshots("generator snapshot weightings")
+        self._network.snapshot_weightings["generators"] = pd.Series(
+            values, index=self._network.snapshots
+        )
+
     def set_objective(self, value: float) -> None:
         """Set the solve objective value, exported as the network__objective attribute."""
         self._check_not_saved("network objective")
         # n.objective is a read-only property; the private attribute is what export serialises.
         self._network._objective = value
+
+    def clear_objective(self) -> None:
+        """State no solve objective, as an unsolved network does."""
+        self._check_not_saved("network objective")
+        self._network._objective = None
 
     def set_pypsa_version(self, version: str) -> None:
         """State the PyPSA version the file records as its writer.

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from interop.ports.inbound.pipeline_catalog import FrameworkName, PipelineName
+from interop.ports.outbound.filesystem import Location
 
 
 @dataclass
@@ -14,11 +15,13 @@ class CompareSide:
     ``source_params`` are the source-node overrides for the framework's results
     pipeline (the answers a user gives at its source prompts), so compare runs the
     same pipeline translate runs, just into a scratch directory it owns.
+    ``user_mappings_path`` is the user mappings file of a results pipeline that needs one.
     """
 
     framework: str
     pipeline: str
     source_params: dict[str, Any] = field(default_factory=dict)
+    user_mappings_path: Location | None = None
 
 
 @dataclass

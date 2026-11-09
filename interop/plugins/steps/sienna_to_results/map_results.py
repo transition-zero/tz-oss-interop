@@ -5,8 +5,11 @@ names and carriers into the ``generators`` and ``storage_units`` tables. This st
 reads the staged solve series, looks up each dispatch row's carrier from those tables,
 and normalises every value to the results-format conventions: dispatch positive into
 the bus, load positive for consumption, flow positive from bus0 to bus1, storage as
-output minus input, and HVDC flow rescaled from per-unit. It builds one row per
+output minus input. It builds one row per
 observation and keeps the work lazy until a single collect of the finished table.
+
+When the extensions sidecar holds representative periods, the step also writes annual
+production, installed capacity and emissions rows (see ``map_annual``).
 
 This step only adds the ``results`` table; it leaves the tables the earlier mapping
 step produced untouched. The results sink writes just the ``results`` table, so the
@@ -26,6 +29,7 @@ from interop.plugins.shared.constants import Framework, StagedTimeSeriesCol
 from interop.plugins.shared.pypsa_constants import (
     PyPSADestinationTable,
     PyPSAGeneratorCol,
+    PyPSALinkCol,
     PyPSAStorageUnitCol,
 )
 from interop.plugins.shared.pypsa_time_series import series_components
@@ -38,17 +42,22 @@ from interop.plugins.shared.results_constants import (
     ResultsVariable,
 )
 from interop.plugins.shared.sienna_results_constants import (
-    HVDC_WIDE_SCALE,
     HYDRO_DISPATCH_KEY,
     LINE_FLOW_KEY,
     LINK_FLOW_KEY,
     LOAD_KEY,
     OBJECTIVE_VALUE_FIELD,
+    RENEWABLE_DISPATCH_KEY,
+    RENEWABLE_NON_DISPATCH_KEY,
     RESULTS_OBJECTIVE_KEY,
     STORAGE_INPUT_KEY,
     STORAGE_OUTPUT_KEY,
     THERMAL_DISPATCH_KEY,
     ResultSeriesKey,
+)
+from interop.plugins.steps.sienna_to_results.map_annual import (
+    AnnualResultsMapper,
+    HourlyResults,
 )
 from interop.ports.outbound.reporting import (
     DestinationField,
@@ -60,11 +69,15 @@ from interop.ports.outbound.reporting import (
 _STORAGE_OUT_COL = "_storage_out"
 _STORAGE_IN_COL = "_storage_in"
 
-_DISPATCH_FROM_ACTIVE_POWER = "ActivePowerVariable -> dispatch"
+_DISPATCH_FROM_SERIES = "{series} -> dispatch"
 _DISPATCH_FROM_STORAGE = "ActivePowerOutVariable - ActivePowerInVariable -> dispatch"
 _FLOW_FROM_FLOW = "FlowActivePowerVariable -> flow"
-_FLOW_FROM_SCALED_FLOW = "FlowActivePowerVariable / system base -> flow"
-_LOAD_FROM_PARAMETER = "ActivePowerTimeSeriesParameter -> load (positive = consumption)"
+_LOAD_FROM_PARAMETER = (
+    "-1 × ActivePowerTimeSeriesParameter -> load (positive = consumption); PowerSimulations "
+    "writes the load parameter as -1 × max_active_power"
+)
+# PowerSimulations writes the load parameter of a StaticPowerLoad as -1 × max_active_power.
+_LOAD_PARAMETER_SIGN = -1.0
 _OBJECTIVE_FROM_STATS = "optimizer_stats.objective_value -> objective"
 
 _RESULT_COLUMNS = [
@@ -85,19 +98,25 @@ class SiennaResultsToResultsFormat(TranslationStep):
 
     def run(self, state: State, params: BaseModel | None) -> State:
         carrier_lookup = _build_carrier_lookup(state)
-        frames: list[pl.LazyFrame] = []
-        frames += self._map_dispatch(state, THERMAL_DISPATCH_KEY, carrier_lookup)
-        frames += self._map_dispatch(state, HYDRO_DISPATCH_KEY, carrier_lookup)
-        frames += self._map_storage_dispatch(state, carrier_lookup)
-        frames += self._map_flow(state, LINE_FLOW_KEY, scale=1.0, derivation=_FLOW_FROM_FLOW)
-        frames += self._map_flow(
-            state, LINK_FLOW_KEY, scale=1.0 / HVDC_WIDE_SCALE, derivation=_FLOW_FROM_SCALED_FLOW
-        )
-        frames += self._map_load(state)
-        frames += self._map_objective(state)
-
+        hourly = self._map_hourly(state, carrier_lookup)
+        annual = AnnualResultsMapper(self._recorder).map_annual(state, hourly, carrier_lookup)
+        frames = [*hourly.list_frames(), *self._map_objective(state), *annual]
         state.destination_tables[RESULTS_TABLE_KEY] = _assemble_results_table(frames)
         return state
+
+    def _map_hourly(self, state: State, carrier_lookup: pl.LazyFrame | None) -> HourlyResults:
+        return HourlyResults(
+            generator_dispatch=[
+                *self._map_dispatch(state, THERMAL_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, HYDRO_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, RENEWABLE_DISPATCH_KEY, carrier_lookup),
+                *self._map_dispatch(state, RENEWABLE_NON_DISPATCH_KEY, carrier_lookup),
+            ],
+            storage_dispatch=self._map_storage_dispatch(state, carrier_lookup),
+            line_flow=self._map_flow(state, LINE_FLOW_KEY),
+            link_flow=self._map_flow(state, LINK_FLOW_KEY),
+            load=self._map_load(state),
+        )
 
     def _map_dispatch(
         self,
@@ -113,7 +132,7 @@ class SiennaResultsToResultsFormat(TranslationStep):
             sienna_type=key.owner_type,
             series=key.series_name,
             variable=ResultsVariable.DISPATCH,
-            derivation=_DISPATCH_FROM_ACTIVE_POWER,
+            derivation=_DISPATCH_FROM_SERIES.format(series=key.series_name),
         )
         return [_build_dispatch_frame(frame, carrier_lookup, pl.col(StagedTimeSeriesCol.VALUE))]
 
@@ -154,9 +173,7 @@ class SiennaResultsToResultsFormat(TranslationStep):
         )
         return [_build_dispatch_frame(net, carrier_lookup, value_expr)]
 
-    def _map_flow(
-        self, state: State, key: ResultSeriesKey, *, scale: float, derivation: str
-    ) -> list[pl.LazyFrame]:
+    def _map_flow(self, state: State, key: ResultSeriesKey) -> list[pl.LazyFrame]:
         frame = state.source_time_series.get(key)
         if frame is None:
             return []
@@ -165,11 +182,11 @@ class SiennaResultsToResultsFormat(TranslationStep):
             sienna_type=key.owner_type,
             series=key.series_name,
             variable=ResultsVariable.FLOW,
-            derivation=derivation,
+            derivation=_FLOW_FROM_FLOW,
         )
         return [
             _build_frame_without_category(
-                frame, ResultsVariable.FLOW, pl.col(StagedTimeSeriesCol.VALUE) * scale
+                frame, ResultsVariable.FLOW, pl.col(StagedTimeSeriesCol.VALUE)
             )
         ]
 
@@ -186,7 +203,9 @@ class SiennaResultsToResultsFormat(TranslationStep):
         )
         return [
             _build_frame_without_category(
-                frame, ResultsVariable.LOAD, pl.col(StagedTimeSeriesCol.VALUE)
+                frame,
+                ResultsVariable.LOAD,
+                _LOAD_PARAMETER_SIGN * pl.col(StagedTimeSeriesCol.VALUE),
             )
         ]
 
@@ -264,30 +283,30 @@ class SiennaResultsToResultsFormat(TranslationStep):
 
 
 def _build_carrier_lookup(state: State) -> pl.LazyFrame | None:
-    frames: list[pl.LazyFrame] = []
-    generators = state.destination_tables.get(PyPSADestinationTable.GENERATORS)
-    if generators is not None:
-        frames.append(
-            generators.lazy().select(
-                [
-                    pl.col(PyPSAGeneratorCol.NAME).alias(StagedTimeSeriesCol.COMPONENT),
-                    pl.col(PyPSAGeneratorCol.CARRIER).alias(ResultsCol.CATEGORY),
-                ]
-            )
+    """The carrier of each generator and storage unit of the mapped network, and of each link,
+    as a plant that draws its fuel from a bus becomes a link that keeps its carrier.
+
+    Only the rows of a generator and a storage join the lookup, so a line keeps no category.
+    """
+    frames = [
+        table.lazy().select(
+            pl.col(name).alias(StagedTimeSeriesCol.COMPONENT),
+            pl.col(carrier).alias(ResultsCol.CATEGORY),
         )
-    storage_units = state.destination_tables.get(PyPSADestinationTable.STORAGE_UNITS)
-    if storage_units is not None:
-        frames.append(
-            storage_units.lazy().select(
-                [
-                    pl.col(PyPSAStorageUnitCol.NAME).alias(StagedTimeSeriesCol.COMPONENT),
-                    pl.col(PyPSAStorageUnitCol.CARRIER).alias(ResultsCol.CATEGORY),
-                ]
-            )
-        )
+        for key, name, carrier in _CARRIER_TABLES
+        if (table := state.destination_tables.get(key)) is not None
+    ]
     if not frames:
         return None
-    return pl.concat(frames)
+    lookup = pl.concat(frames)
+    return lookup.unique(StagedTimeSeriesCol.COMPONENT, keep="first", maintain_order=True)
+
+
+_CARRIER_TABLES = (
+    (PyPSADestinationTable.GENERATORS, PyPSAGeneratorCol.NAME, PyPSAGeneratorCol.CARRIER),
+    (PyPSADestinationTable.STORAGE_UNITS, PyPSAStorageUnitCol.NAME, PyPSAStorageUnitCol.CARRIER),
+    (PyPSADestinationTable.LINKS, PyPSALinkCol.NAME, PyPSALinkCol.CARRIER),
+)
 
 
 def _build_dispatch_frame(

@@ -49,7 +49,7 @@ Relative to a PowerSystems.jl `System`, the association layer is JSON rows from 
 
 SiennaSchemas components have **no free-form `ext` field**, so PyPSA attributes with no SiennaSchemas home are carried in a **separate companion file** (`extensions.json`), in our own format. The SiennaSchemas system is complete without it; a SiennaSchemas-only consumer ignores it.
 
-The document is keyed by **kind**, and the key fixes every attribute's type. A kind names a concept rather than a framework's class, so a `ThermalStandard`, a `RenewableDispatch` and a `HydroDispatch` all land under `generator`. Every record is identified by `name`, one type across every framework, so the hop that reads a record matches it to a component without knowing which framework wrote it. Pydantic models in `interop/core/extensions.py` are the schema; a field only one framework carries is absent from the others' records.
+The document is keyed by **kind**, and the key fixes every attribute's type. A kind names a concept rather than a framework's class, so a `ThermalStandard`, a `RenewableDispatch` and a `HydroDispatch` all land under `generator`. Every record is identified by `name`, one type across every framework, so the hop that reads a record matches it to a component without knowing which framework wrote it. Pydantic models in `interop/core/extensions.py` are the schema. That module also re-exports the models of `interop/core/osemosys_extensions.py`. A field only one framework carries is absent from the others' records.
 
 ```json
 {
@@ -676,6 +676,10 @@ The translator emits each PHS unit as a single `EnergyReservoirStorage` componen
 ```
 
 In this example, `storage_capacity = 125.9` (pu-hours = `max_hours`); on result export PSI multiplies by `base_power = 4241.3` MVA to give the natural unit `533991 MWh`. Likewise the power limit `max = 1.0` (pu) becomes `4241.3 MW` on export.
+
+The `storage` record of `extensions.json` keeps the `carrier` and `p_nom_extendable` of each
+unit. Several carriers share one prime mover, so the hop back to PyPSA reads the carrier from
+the record, not from the prime mover.
 
 #### StorageUnit fields with no `EnergyReservoirStorage` mapping
 

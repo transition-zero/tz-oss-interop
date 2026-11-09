@@ -107,11 +107,30 @@ class WrittenComponent:
             f"expected {self.kind} {self.name} {attribute} {expected!r}, got {actual!r}"
         )
 
+    def assert_yearly_capital_cost(self, expected: float) -> None:
+        """What one MW of the component costs a year, as PyPSA annualises its build cost."""
+        network = read_network(self.path)
+        components = getattr(network.components, COMPONENTS[self.kind].frame)
+        horizon_years = network.nyears
+        assert isinstance(horizon_years, float), f"expected one horizon in {self.path}"
+        actual = float(components.capital_cost.loc[self.name]) / horizon_years
+        assert math.isclose(
+            actual, expected, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE
+        ), f"expected {self.kind} {self.name} to cost {expected} a year for each MW, got {actual}"
+
     def assert_close(self, attribute: str, expected: float) -> None:
         actual = float(self.read(attribute))
         assert math.isclose(
             actual, expected, rel_tol=_RELATIVE_TOLERANCE, abs_tol=_ABSOLUTE_TOLERANCE
         ), f"expected {self.kind} {self.name} {attribute} = {expected}, got {actual}"
+
+    def assert_unstated(self, attribute: str) -> None:
+        frame = read_frame(self.path, self.kind)
+        assert self.name in frame.index, f"no {self.kind} {self.name!r} in {self.path}"
+        value = frame.at[self.name, attribute] if attribute in frame.columns else math.nan
+        assert pd.isna(value), (
+            f"expected {self.kind} {self.name} to state no {attribute}, got {value!r}"
+        )
 
     def assert_flag_set(self, attribute: str) -> None:
         assert bool(self.read(attribute)), f"expected {self.kind} {self.name} {attribute} to be set"

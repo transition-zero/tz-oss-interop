@@ -142,6 +142,8 @@ The pipeline writes two files:
 
 > The sidecar filename is derived automatically from the JSON output stem (`{stem}_time_series_storage.h5`). Do not rename or move the `.h5` file independently — PowerSystems.jl looks it up by stem at load time.
 
+The sink parameter `base_power` must be 100 MVA, the system base of each HVDC line limit, and another value stops the run.
+
 ---
 
 ## Step 6: Solve with PowerSimulations
@@ -176,6 +178,9 @@ Run `interop`, select **compare**, and provide:
 - **Path to Sienna output directory?** → `outputs/sienna_results`
 - **Path to decisions CSV?** → `outputs/decisions.csv`
 - **Output path for summary report?** → `outputs/comparison_summary.md`
+
+When the results pipeline of a side needs a user mappings file, compare also asks
+**User mappings file for `<framework>`?** for that side. `aetos-to-results` is an example.
 
 The command writes a Markdown report with six sections:
 

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AfterValidator, BaseModel, Field, ValidationError
 
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.power_simulations_schema import (
@@ -39,7 +39,11 @@ from interop.plugins.shared.power_simulations_schema import (
     _PSUuidRef,
     get_new_uuid,
 )
-from interop.plugins.shared.sienna_constants import SiennaComponent, SiennaUnitSystem
+from interop.plugins.shared.sienna_constants import (
+    SYSTEM_BASE_MVA,
+    SiennaComponent,
+    SiennaUnitSystem,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location
 
 _PS_COMPONENTS: tuple[type[PSComponentBase], ...] = (
@@ -67,8 +71,25 @@ class EmitPowerSimulationsSystemJsonParams(BaseModel):
         description="path this system.json records for its HDF5 time-series sidecar"
     )
     system_name: str = Field(default="SiennaSystem", description="name recorded on the system")
-    base_power: float = Field(default=100.0, description="system base power in MVA")
+    base_power: SystemBaseMva = Field(
+        default=SYSTEM_BASE_MVA, description="system base power in MVA"
+    )
     frequency: float = Field(default=50.0, description="system frequency in Hz")
+
+
+def require_system_base(base_power: float) -> float:
+    """The system base, or raise when it is not the one that the PowerSimulations leg divides by."""
+    if base_power != SYSTEM_BASE_MVA:
+        raise ValueError(
+            f"base_power is {base_power:g} MVA, but sienna-to-power-simulations "
+            f"states each HVDC line per unit of a system base of {SYSTEM_BASE_MVA:g} MVA. "
+            f"Set base_power to {SYSTEM_BASE_MVA:g}."
+        )
+    return base_power
+
+
+SystemBaseMva = Annotated[float, AfterValidator(require_system_base)]
+"""The base power of a PowerSimulations system, which takes one value: ``SYSTEM_BASE_MVA``."""
 
 
 class EmitPowerSimulationsSystemJson(Sink):

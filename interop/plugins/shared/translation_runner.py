@@ -3,6 +3,8 @@
 A filter step can be broken down as:
 1. Filtering source components with ``filter_component`` to select components by a condition,
     emit COMPONENT_SKIPPED events for the rest, and warn once naming a few of them.
+    ``drop_skipped`` applies a sequence of ``SkipRule`` in order, and ``report_not_mapped``
+    records NOT_MAPPED, not COMPONENT_SKIPPED, for a value that a component survives without.
 2. One or more sequences of ``Translation``, each applied by ``apply_translations`` to create
     new columns and emit the corresponding DEFAULT_APPLIED or VALUE_DERIVED events.
 3. ``finalise`` to select only the appropriate destination columns from the table, and
@@ -288,7 +290,7 @@ DROPPED_NAMES_LABEL = "Each one"
 
 @dataclass(frozen=True)
 class SkipReport:
-    """One reason a filter drops rows, as both the event and the warning read it.
+    """One reason a filter drops rows or leaves out values, as the events and the warning read it.
 
     ``reason`` completes the sentence "N Generator(s) <reason>, so each is left out".
     ``counted_noun`` is what stands where "Generator(s)" does, already plural.
@@ -316,8 +318,16 @@ class SkipReport:
         return self.listed or SkippedNames(column=self.name_col, label=DROPPED_NAMES_LABEL)
 
     def build_event(self, row: dict[str, Any]) -> TranslationEvent:
+        """The COMPONENT_SKIPPED event of a row that the translation leaves out."""
+        return self._build_event(EventKind.COMPONENT_SKIPPED, row)
+
+    def build_not_mapped_event(self, row: dict[str, Any]) -> TranslationEvent:
+        """The NOT_MAPPED event of a row whose value the translation leaves out."""
+        return self._build_event(EventKind.NOT_MAPPED, row)
+
+    def _build_event(self, kind: EventKind, row: dict[str, Any]) -> TranslationEvent:
         return TranslationEvent(
-            kind=EventKind.COMPONENT_SKIPPED,
+            kind=kind,
             sources=[self._build_source_field(row)],
             note=self.note(row) if callable(self.note) else self.note,
         )
@@ -351,21 +361,70 @@ def filter_component(
     recorder: ScopedRecorder,
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     """Split table into (passing, skipped), record each skipped row, and warn once for the lot."""
-    # A null in the filtered column keeps a row in neither half, so it must count as a drop.
-    keep = condition.fill_null(False)  # noqa: FBT003
-    passing = table.filter(keep)
-    skipped = table.filter(~keep)
+    passing, skipped = _split_rows(table, condition)
     for row in skipped.iter_rows(named=True):
         recorder.append(report.build_event(row))
     _warn_dropped(report, skipped)
     return passing, skipped
 
 
+def drop_skipped(
+    table: pl.DataFrame, rules: Sequence[SkipRule], recorder: ScopedRecorder
+) -> pl.DataFrame:
+    """The rows that pass each rule, applied in order, each through ``filter_component``."""
+    for rule in rules:
+        table, _ = filter_component(table, rule.keep, rule.report, recorder)
+    return table
+
+
+def report_not_mapped(
+    table: pl.DataFrame,
+    condition: pl.Expr,
+    report: SkipReport,
+    recorder: ScopedRecorder,
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split table into (kept, not_mapped), record each row not mapped, and warn once for the lot.
+
+    The twin of ``filter_component`` for a row whose component survives: each row the
+    condition does not keep takes a ``NOT_MAPPED`` event rather than ``COMPONENT_SKIPPED``.
+    """
+    kept, not_mapped = _split_rows(table, condition)
+    for row in not_mapped.iter_rows(named=True):
+        recorder.append(report.build_not_mapped_event(row))
+    _warn_not_mapped(report, not_mapped)
+    return kept, not_mapped
+
+
+def _split_rows(table: pl.DataFrame, condition: pl.Expr) -> tuple[pl.DataFrame, pl.DataFrame]:
+    # A null in the filtered column keeps a row in neither half, so it must count as a drop.
+    keep = condition.fill_null(False)  # noqa: FBT003
+    return table.filter(keep), table.filter(~keep)
+
+
+def _warn_not_mapped(report: SkipReport, not_mapped: pl.DataFrame) -> None:
+    if not_mapped.is_empty():
+        return
+    listing = report.listing
+    log.warning(
+        "%s: %d %s %s. %s: %s",
+        report.pipeline,
+        not_mapped.height,
+        report.counted_noun,
+        report.reason,
+        listing.label,
+        name_a_few(_list_named(not_mapped, listing)),
+    )
+
+
+def _list_named(table: pl.DataFrame, listing: SkippedNames) -> list[str]:
+    return sorted(str(value) for value in table[listing.column].unique().to_list())
+
+
 def _warn_dropped(report: SkipReport, skipped: pl.DataFrame) -> None:
     if skipped.is_empty():
         return
     listing = report.listing
-    named = sorted(str(value) for value in skipped[listing.column].unique().to_list())
+    named = _list_named(skipped, listing)
     log.warning(
         "%s: %d %s %s, so each is left out. %s: %s",
         report.pipeline,

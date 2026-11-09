@@ -99,7 +99,7 @@ def write_system_document(
 
 # The sidecar kind each Sienna type's records land under. Kinds are neutral, so several
 # Sienna types share one.
-_KIND_BY_SIENNA_TYPE = {
+KIND_BY_SIENNA_TYPE = {
     "ACBus": "bus",
     "ThermalStandard": "generator",
     "RenewableDispatch": "generator",
@@ -113,10 +113,13 @@ _KIND_BY_SIENNA_TYPE = {
 
 
 def _build_extensions(records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """The kind-keyed sidecar document: each record is its name and the fields beside it."""
+    """The kind-keyed sidecar document: each record is its name and the fields beside it.
+
+    A record that no component owns states its kind instead of an owner type.
+    """
     document: dict[str, list[dict[str, Any]]] = {}
     for record in records:
-        kind = _KIND_BY_SIENNA_TYPE[record["owner_type"]]
+        kind = record.get("kind") or KIND_BY_SIENNA_TYPE[record["owner_type"]]
         document.setdefault(kind, []).append({"name": record["owner_name"], **record["ext"]})
     return document
 
@@ -381,8 +384,7 @@ def read_stored_series(
     """The values the InfraStore file at ``h5_path`` holds for one series.
 
     The system JSON beside the file names the series: its row gives the owner and the series
-    name, and the store finds the values by the row's ``association_id``. The file holds
-    arrays only, so the rows of the document replay into a copy of it.
+    name, and the store finds the values by the row's ``association_id``.
     """
     store_path = Path(h5_path)
     system_path = store_path.with_name(_SYSTEM_FILENAME)
@@ -400,12 +402,23 @@ def read_stored_series(
         f"expected 1 time series {attribute!r} for {sienna_type!r} {name!r} in "
         f"{system_path}, got {len(matching)}"
     )
+    return read_store_values(store_path, rows, matching[0]["association_id"])
+
+
+def read_store_values(
+    store_path: str | Path, rows: list[dict[str, Any]], association_id: int
+) -> list[float]:
+    """The values of one series in an InfraStore file, found by its ``association_id``.
+
+    The file holds arrays only, so ``rows``, the association rows of the document that names
+    the file, replay into a copy of it.
+    """
     with tempfile.TemporaryDirectory() as scratch:
-        copy = Path(scratch) / store_path.name
+        copy = Path(scratch) / Path(store_path).name
         shutil.copyfile(store_path, copy)
         with Store.open_without_catalog(str(copy)) as store:
             store.import_time_series_associations_openapi(json.dumps(rows))
-            series = store.read_by_id(matching[0]["association_id"])
+            series = store.read_by_id(association_id)
             values = [float(value) for value in series.data]
     return values
 

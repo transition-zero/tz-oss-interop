@@ -18,7 +18,6 @@ from interop.plugins.shared.pypsa_constants import (
     PyPSALoadCol,
     PyPSAStorageUnitCol,
 )
-from interop.plugins.shared.pypsa_sienna_translations._shared import sienna_dest_field
 from interop.plugins.shared.sienna_constants import (
     LINE_UNITS_NOTE,
     LINK_UNITS_NOTE,
@@ -34,6 +33,7 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLoadCol,
     SiennaUnitSystem,
 )
+from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.translation_runner import (
     DestinationFieldFactory,
     Translation,
@@ -71,7 +71,7 @@ def _system_base_power(
     component: SiennaComponent, *, name_col: str, dest_col: str, note: str
 ) -> Translation:
     return default_translation(
-        partial(sienna_dest_field, component),
+        partial(build_sienna_field, component),
         name_col=name_col,
         dest_col=dest_col,
         value=SYSTEM_BASE_MVA,
@@ -83,7 +83,7 @@ def _system_base_power(
 
 AREA_UNIT_TRANSLATIONS: list[Translation] = [
     build_power_units_translation(
-        partial(sienna_dest_field, SiennaComponent.AREA),
+        partial(build_sienna_field, SiennaComponent.AREA),
         name_col=SiennaAreaCol.NAME,
         dest_col=SiennaAreaCol.POWER_UNITS,
         units=SiennaUnitSystem.NATURAL_UNITS,
@@ -99,7 +99,7 @@ AREA_UNIT_TRANSLATIONS: list[Translation] = [
 
 LINE_UNIT_TRANSLATIONS: list[Translation] = [
     build_power_units_translation(
-        partial(sienna_dest_field, SiennaComponent.LINE),
+        partial(build_sienna_field, SiennaComponent.LINE),
         name_col=PyPSALineCol.NAME,
         dest_col=SiennaLineCol.POWER_UNITS,
         units=SiennaUnitSystem.COMPONENT_BASE,
@@ -115,7 +115,7 @@ LINE_UNIT_TRANSLATIONS: list[Translation] = [
 
 LINK_UNIT_TRANSLATIONS: list[Translation] = [
     build_power_units_translation(
-        partial(sienna_dest_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE),
+        partial(build_sienna_field, SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE),
         name_col=PyPSALinkCol.NAME,
         dest_col=SiennaLinkCol.POWER_UNITS,
         units=SiennaUnitSystem.NATURAL_UNITS,
@@ -130,7 +130,7 @@ LINK_UNIT_TRANSLATIONS: list[Translation] = [
 ]
 
 STORAGE_POWER_UNITS: Translation = build_power_units_translation(
-    partial(sienna_dest_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE),
+    partial(build_sienna_field, SiennaComponent.ENERGY_RESERVOIR_STORAGE),
     name_col=PyPSAStorageUnitCol.NAME,
     dest_col=SiennaEnergyReservoirStorageCol.POWER_UNITS,
     units=SiennaUnitSystem.COMPONENT_BASE,
@@ -141,7 +141,7 @@ STORAGE_POWER_UNITS: Translation = build_power_units_translation(
 def build_load_power_units(component: SiennaComponent) -> Translation:
     """The units label of a load, for the Sienna load type that the pipeline writes."""
     return build_power_units_translation(
-        partial(sienna_dest_field, component),
+        partial(build_sienna_field, component),
         name_col=PyPSALoadCol.NAME,
         dest_col=SiennaLoadCol.POWER_UNITS,
         units=SiennaUnitSystem.NATURAL_UNITS,
