@@ -1114,18 +1114,10 @@ HYDRO_TURBINE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
 
 HYDRO_RESERVOIR_COST_DTYPE: pl.DataType = pl.Struct(
     {
-        "cost_type": COST_TYPE_DTYPE,
-        "level_shortage_cost": pl.Float64,
-        "level_surplus_cost": pl.Float64,
-        "spillage_cost": pl.Float64,
-    }
-)
-
-LINEAR_FUNCTION_DTYPE: pl.DataType = pl.Struct(
-    {
-        "function_type": pl.Utf8,
-        "proportional_term": pl.Float64,
-        "constant_term": pl.Float64,
+        SiennaStructField.COST_TYPE: COST_TYPE_DTYPE,
+        SiennaStructField.LEVEL_SHORTAGE_COST: pl.Float64,
+        SiennaStructField.LEVEL_SURPLUS_COST: pl.Float64,
+        SiennaStructField.SPILLAGE_COST: pl.Float64,
     }
 )
 
@@ -1138,7 +1130,7 @@ HYDRO_RESERVOIR_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] =
     SiennaHydroReservoirCol.INFLOW: pl.Float64,
     SiennaHydroReservoirCol.OUTFLOW: pl.Float64,
     SiennaHydroReservoirCol.INTAKE_ELEVATION: pl.Float64,
-    SiennaHydroReservoirCol.HEAD_TO_VOLUME_FACTOR: LINEAR_FUNCTION_DTYPE,
+    SiennaHydroReservoirCol.HEAD_TO_VOLUME_FACTOR: LINEAR_FUNC_DTYPE,
     SiennaHydroReservoirCol.UPSTREAM_TURBINES: pl.List(pl.Int64),
     SiennaHydroReservoirCol.DOWNSTREAM_TURBINES: pl.List(pl.Int64),
     SiennaHydroReservoirCol.UPSTREAM_RESERVOIRS: pl.List(pl.Int64),
