@@ -361,6 +361,88 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
     And the load time series "outputs/load_ts.json" for "Node_A" at hour 25 is 200
 
+  Scenario: a dated value keeps its steps beside the data file of another component
+    One generator reads its capacity from a data file. The dated capacity of another
+    generator still steps in the same series, and the first keeps the file's values.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Gen_A" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains generator "Gen_B" with "node=Grid_Node, category=Wind, Max Capacity=100"
+    And generator "Gen_B" states "Max Capacity" of 150 from "2026-01-02"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | YEAR | MONTH | DAY | Gen_A |
+      | 2026 | 1     | 1   | 80    |
+      | 2026 | 1     | 2   | 40    |
+    And generator "Gen_A" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Generator"/"Max Capacity" to "outputs/capacity_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/capacity_ts.json" for "Gen_B" has 2 rows
+    And the load time series "outputs/capacity_ts.json" for "Gen_B" at hour 1 is 100
+    And the load time series "outputs/capacity_ts.json" for "Gen_B" at hour 2 is 150
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" has 2 rows
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 1 is 80
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 2 is 40
+
+  Scenario: an escalated dated value keeps its escalated steps beside the data file of another component
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Gen_A" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains generator "Gen_B" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | YEAR | MONTH | DAY | Gen_A |
+      | 2026 | 1     | 1   | 80    |
+      | 2026 | 1     | 2   | 40    |
+    And the model contains data file "DatedCapacities" at "Gen_DatedMaxCapacity.csv" with rows:
+      | NAME  | YEAR | MONTH | DAY | VALUE |
+      | Gen_B | 2026 | 1     | 1   | 100   |
+      | Gen_B | 2026 | 1     | 2   | 150   |
+    And the model contains data file "Growth" at "Gen_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | Growth_B |
+      | 2026 | 1     | 1   | 1.5      |
+      | 2026 | 1     | 2   | 2.0      |
+    And the model contains variable "Growth_B" profiling data file "Growth"
+    And generator "Gen_A" has property "Max Capacity" from data file "Capacities"
+    And generator "Gen_B" has property "Max Capacity" from data file "DatedCapacities" escalated by variable "Growth_B"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Generator"/"Max Capacity" to "outputs/capacity_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/capacity_ts.json" for "Gen_B" has 2 rows
+    And the load time series "outputs/capacity_ts.json" for "Gen_B" at hour 1 is 150
+    And the load time series "outputs/capacity_ts.json" for "Gen_B" at hour 2 is 300
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 1 is 80
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 2 is 40
+
+  Scenario: a component that reads a data file and also dates the value keeps the file's values once
+    The file values and the dated value sit in two bands of one property of one generator.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Gen_A" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | YEAR | MONTH | DAY | Gen_A |
+      | 2026 | 1     | 1   | 80    |
+      | 2026 | 1     | 2   | 40    |
+    And generator "Gen_A" has property "Max Capacity" from data file "Capacities"
+    And generator "Gen_A" states "Max Capacity" of 150 from "2026-01-02" in band 2
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Generator"/"Max Capacity" to "outputs/capacity_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/capacity_ts.json" for "Gen_A" has 2 rows
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 1 is 80
+    And the load time series "outputs/capacity_ts.json" for "Gen_A" at hour 2 is 40
+
   Scenario: a dated data file names a membership's row after both of its objects
     A property of a membership between two objects, such as a Reserve and a Generator, takes
     a row named after both of them, in either order.

@@ -506,6 +506,24 @@ def given_storage_has_property_from_data_file(
 
 
 @given(
+    parsers.parse(
+        'generator "{name}" has property "{property_name}" from data file "{data_file}" '
+        'escalated by variable "{variable}"'
+    )
+)
+def given_generator_has_escalated_property_from_data_file(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    data_file: str,
+    variable: str,
+) -> None:
+    plexos_model_builder.add_escalated_generator_property_from_data_file(
+        name, property_name, data_file, variable
+    )
+
+
+@given(
     parsers.parse('generator "{name}" has property "{property_name}" from data file "{data_file}"')
 )
 def given_generator_has_property_from_data_file(
@@ -627,6 +645,25 @@ def given_generator_property_dated_from(
 ) -> None:
     plexos_model_builder.date_generator_property(
         name, property_name, value, DateBand(date.fromisoformat(date_from))
+    )
+
+
+@given(
+    parsers.parse(
+        'generator "{name}" states "{property_name}" of {value:g} from "{date_from}" '
+        "in band {band:d}"
+    )
+)
+def given_generator_property_dated_from_in_band(
+    plexos_model_builder: PlexosModelBuilder,
+    name: str,
+    property_name: str,
+    value: float,
+    date_from: str,
+    band: int,
+) -> None:
+    plexos_model_builder.date_generator_property(
+        name, property_name, value, DateBand(date.fromisoformat(date_from)), band
     )
 
 

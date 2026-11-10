@@ -871,6 +871,12 @@ def assert_time_series_snapshot(path: str, component: str, index: int, timestamp
     )
 
 
+@then(parsers.parse('the load time series "{path}" for "{component}" has {count:d} rows'))
+def assert_time_series_row_count(path: str, component: str, count: int) -> None:
+    actual = len(_sorted_series(path, component))
+    assert actual == count, f"expected {count} rows for {component!r} in {path}; got {actual}"
+
+
 @then(
     parsers.parse('the load time series "{path}" for "{component}" at hour {hour:d} is {value:g}')
 )
