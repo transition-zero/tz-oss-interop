@@ -81,7 +81,6 @@ _EMPTY = 0.0
 _NO_OUTFLOW = 0.0
 _SEA_LEVEL = 0.0
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no reservoir availability; every reservoir is available"
 _NAME_DERIVATION = "the Storage name"
 _LEVEL_TYPE_DERIVATION = "the unit the Storage states its volumes in"
@@ -338,7 +337,7 @@ def _build_row(
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
     name = reservoir.reading.name
-    reporter.record_id(name, ReservoirCol.ID, reservoir.reservoir_id, _ID_NOTE)
+    reporter.record_id(name, ReservoirCol.ID, reservoir.reservoir_id)
     fields = [
         *_derive_identity(reservoir),
         *_derive_levels(reservoir),

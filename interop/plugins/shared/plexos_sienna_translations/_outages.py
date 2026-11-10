@@ -38,6 +38,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     read_file_backed_properties,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
+    ID_NOTE,
     UNIT_TYPES,
     TranslatedUnit,
     build_translated_units,
@@ -102,9 +103,6 @@ _SIENNA_TYPES: dict[PlexosClass, tuple[SiennaComponent, ...]] = {
 _RECOVERY_DERIVATION = "Mean Time to Repair in hours x 60"
 _PROBABILITY_DERIVATION = (
     "Forced Outage Rate / 100 / (1 - Forced Outage Rate / 100) / mean_time_to_recovery"
-)
-_ID_NOTE = (
-    "assigned by row position in the forced outage table, after the ids of earlier components"
 )
 _MONITORED_NOTE = "PLEXOS names no component whose state an outage watches; the list is empty"
 _IDENTIFIER_DERIVATION = "the PLEXOS name of the unit the outage describes"
@@ -374,7 +372,7 @@ def _build_outage_value(
 # --- Translation constants ---
 
 OUTAGE_ID = build_document_id_translation(
-    _build_outage_field, dest_name_col=_UNIT_NAME, id_col=SiennaForcedOutageCol.ID, note=_ID_NOTE
+    _build_outage_field, dest_name_col=_UNIT_NAME, id_col=SiennaForcedOutageCol.ID, note=ID_NOTE
 )
 
 OUTAGE_RECOVERY = Translation(

@@ -136,7 +136,6 @@ _HYDRO_COST_COLUMN = MappedColumns((SiennaHydroGeneratorCol.OPERATION_COST,), UN
 # The Sienna types a reservoir-hydro turbine can take. Only a HydroTurbine names a reservoir.
 _HYDRO_TURBINE_TYPES = frozenset({SiennaComponent.HYDRO_DISPATCH, SiennaComponent.HYDRO_TURBINE})
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no unit availability; every storage unit is available"
 _RATING_NOTE = "the unit states no availability cap, so it runs at its whole rating"
 _NATURAL_UNITS_NOTE = "PLEXOS states turbine power in MW, so power_units is NATURAL_UNITS"
@@ -293,7 +292,6 @@ def map_storage(
             mapping.name,
             SiennaEnergyReservoirStorageCol.ID,
             row[SiennaEnergyReservoirStorageCol.ID],
-            _ID_NOTE,
         )
         rows.append(row)
         translated.extensions.append(_extension_for(mapping, reporter, series))

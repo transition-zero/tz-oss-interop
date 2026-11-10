@@ -22,6 +22,7 @@ from interop.core.extensions import ExtensionKind, GeneratorExtension, companion
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    MINUTES_PER_HOUR,
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MW_YEAR,
@@ -97,7 +98,10 @@ from interop.plugins.shared.plexos_sienna_translations._carriers import (
 from interop.plugins.shared.plexos_sienna_translations._fuel_prices import (
     build_fuel_price_series,
 )
-from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
+from interop.plugins.shared.plexos_sienna_translations._shared import (
+    ID_NOTE,
+    SiennaComponentReporter,
+)
 from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
     RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
@@ -126,9 +130,7 @@ NO_REACTIVE_POWER: float = 0.0
 UNITY_POWER_FACTOR: float = 1.0
 NO_COST: float = 0.0
 
-_MINUTES_PER_HOUR = 60.0
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no generator availability; every generator is available"
 _STATUS_NOTE = "PLEXOS states no starting commitment; status defaults to on"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
@@ -331,7 +333,7 @@ def map_generators(
         reporter.record(
             target.mapping.name,
             MappedColumns((SiennaThermalGeneratorCol.ID,)),
-            Decision.default(row[SiennaThermalGeneratorCol.ID], _ID_NOTE),
+            Decision.default(row[SiennaThermalGeneratorCol.ID], ID_NOTE),
         )
         rows.append(row)
         _record_category(reporter, target.mapping)
@@ -830,10 +832,10 @@ def _time_struct(translated: _Translated) -> dict[str, float] | None:
     if commitment is None or commitment.min_up_time is None:
         return None
     return {
-        "up": (commitment.min_up_time or 0.0) * translated.minutes_per_snapshot / _MINUTES_PER_HOUR,
+        "up": (commitment.min_up_time or 0.0) * translated.minutes_per_snapshot / MINUTES_PER_HOUR,
         "down": (commitment.min_down_time or 0.0)
         * translated.minutes_per_snapshot
-        / _MINUTES_PER_HOUR,
+        / MINUTES_PER_HOUR,
     }
 
 

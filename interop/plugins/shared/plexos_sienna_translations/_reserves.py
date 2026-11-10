@@ -86,7 +86,6 @@ _DIRECTIONS: dict[ReserveDirection, SiennaReserveDirection] = {
     ReserveDirection.SYMMETRIC: SiennaReserveDirection.SYMMETRIC,
 }
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "the Reserve states no Is Enabled, so the service is available"
 _AVAILABLE_DERIVATION = "Is Enabled -> available"
 _TIME_FRAME_NOTE = "PLEXOS states no reserve time frame; a unit may take one hourly snapshot"
@@ -356,7 +355,7 @@ def _add_service_row(
     reporter.record_mapping(source.record.name, mapping)
     row = destination_row(mapping, SiennaReserveCol.NAME, source.record.name)
     row[SiennaReserveCol.ID] = service.id
-    reporter.record_id(source.record.name, SiennaReserveCol.ID, service.id, _ID_NOTE)
+    reporter.record_id(source.record.name, SiennaReserveCol.ID, service.id)
     translated.rows[service.type].append(row)
 
 

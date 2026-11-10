@@ -64,7 +64,6 @@ SINGLE_CIRCUIT: float = 1.0
 ZERO_LENGTH: float = 0.0
 NO_REACTIVE_LIMIT: float = 0.0
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
 _BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
@@ -204,7 +203,7 @@ def _add_line(
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLineCol.NAME, line.name)
     row[SiennaLineCol.ID] = first_id + len(translated.lines) + len(translated.links)
-    reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID], _ID_NOTE)
+    reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID])
     translated.lines.append(row)
     _record_dropped(reporter, line, _DROPPED_LINE_PROPERTIES)
     translated.line_extensions.append(
@@ -228,7 +227,7 @@ def _add_link(
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLinkCol.NAME, line.name)
     row[SiennaLinkCol.ID] = first_id + len(translated.lines) + len(translated.links)
-    reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID], _ID_NOTE)
+    reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID])
     translated.links.append(row)
     _record_dropped(reporter, line, _DROPPED_LINK_PROPERTIES)
     translated.link_extensions.append(

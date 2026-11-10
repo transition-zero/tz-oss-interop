@@ -43,6 +43,8 @@ UNIT_TYPES: tuple[SiennaComponent, ...] = (
     SiennaComponent.ENERGY_RESERVOIR_STORAGE,
 )
 
+ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
+
 
 class TranslatedUnit(NamedTuple):
     """One Sienna component that a PLEXOS unit became: its type and its id."""
@@ -126,7 +128,7 @@ class SiennaComponentReporter(SiennaSourceReporter):
         for mapped, decision in mapped_fields(mapping):
             self.record(name, mapped, decision)
 
-    def record_id(self, name: str, column: str, value: int, note: str) -> None:
+    def record_id(self, name: str, column: str, value: int, note: str = ID_NOTE) -> None:
         """The 1-based row position the component takes, which its row order fixes."""
         self.record(name, MappedColumns((column,)), Decision.default(value, note))
 

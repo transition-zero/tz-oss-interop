@@ -36,6 +36,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     relate_child,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
+    ID_NOTE,
     dropped,
     plexos_field,
     record,
@@ -118,7 +119,6 @@ _PARTICIPATION_FRACTION_SUM = 1.0
 _PARTICIPATION_FRACTION_TOLERANCE = 1e-6
 _PARTICIPATION_REGIONS_MINIMUM = 2
 
-_ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no Load availability; every load is available"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; reactive_power defaults to 0.0"
@@ -655,7 +655,7 @@ def _load_dest(name: str, attribute: str, value: Any = None, unit: str | None = 
 LOAD_ID = Translation(
     exprs=[express_document_id().alias(SiennaLoadCol.ID)],
     make_events=lambda old, new: build_defaulted(
-        [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], _ID_NOTE
+        [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], ID_NOTE
     ),
 )
 
