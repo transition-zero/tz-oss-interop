@@ -602,13 +602,14 @@ cases:
 
 | The case | The reason |
 | --- | --- |
-| `Forced Outage Rate` is 100 % or more | The unit has no time in service to fail from. |
-| `Mean Time to Repair` is absent, or 0 or less | The recovery time and the chance cannot be stated. |
 | `Forced Outage Rate` comes from a data file | A forced outage states one rate. |
+| `Forced Outage Rate` is 100 % or more | The unit has no time in service to fail from. |
+| `Mean Time to Repair` comes from a data file | A forced outage states one recovery time. The placeholder beside the file is not read. |
+| `Mean Time to Repair` is absent, or 0 or less | The recovery time and the chance cannot be stated. |
 
-The run also writes one warning that names three of the units and counts the rest. A
-`Mean Time to Repair` on a unit with no `Forced Outage Rate` above 0 has nothing to belong to,
-so `decisions.md` records it as `NOT_MAPPED`.
+A `Mean Time to Repair` on a unit with no `Forced Outage Rate` above 0 has nothing to belong to,
+so `decisions.md` records it as `NOT_MAPPED` too. The run writes one warning for each case and
+each PLEXOS class. The warning names three of the units and counts the rest.
 
 The `sienna-to-power-simulations` pipeline writes no supplemental attribute and no
 `LoadZone`. Each bus there takes a null `load_zone`, and `decisions.md` records each one. The

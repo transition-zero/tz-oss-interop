@@ -1,8 +1,9 @@
-"""Event factories every PLEXOS to Sienna translation uses.
+"""Event factories and the unit lookup that every PLEXOS to Sienna translation uses.
 
 A ``Translation`` states a Polars expression and a factory that turns one row into
 ``TranslationEvent``s. The factories here hold the framework names and the event shape, so
-a component module states only what it reads and what it writes.
+a component module states only what it reads and what it writes. ``build_translated_units``
+gives the Sienna component that each unit became, for a step that runs after the units.
 """
 
 from __future__ import annotations
