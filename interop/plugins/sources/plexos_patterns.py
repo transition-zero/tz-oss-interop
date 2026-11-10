@@ -7,39 +7,32 @@ digit adds a range to the condition before it: ``H1-3,24`` is the hours 1, 2, 3 
 
 ``H`` is the hour of the day, ``W`` the day of the week from Sunday, ``D`` the day of the
 month, ``M`` the month, ``Q`` the quarter, ``K`` the ISO week and ``P`` the trading period of
-the day. Any other condition names a ``Timeslice``. A ``Timeslice`` either reads a data file
-that gives one row for each day and one column for each ``Timeslice``, or states a pattern
-of its own. A defined ``Timeslice`` wins over a letter condition of the same name.
+the day. Any other condition names a ``Timeslice`` (see ``plexos_timeslices``). A defined
+``Timeslice`` wins over a letter condition of the same name.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
-from interop.plugins.shared.plexos_constants import (
-    PlexosClass,
-    PlexosMembershipCol,
-    PlexosProperty,
-    PlexosPropertyCol,
-)
+from interop.plugins.shared.plexos_constants import PlexosCsvCol
 from interop.plugins.shared.warning_text import name_a_few
-from interop.plugins.sources.plexos_tables import RowsByTable, class_id_of, objects_of_class
+from interop.plugins.sources.plexos_timeslices import (
+    ScanFile,
+    Timeslice,
+    TimesliceSource,
+    build_timeslices,
+)
 
 log = logging.getLogger(__name__)
 
-PATTERN_COLUMN = "Pattern"
-_CSV_YEAR = "Year"
-_CSV_MONTH = "Month"
-_CSV_DAY = "Day"
-_DAY_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY)
 _LIST_SEPARATOR = ";"
 _CONDITION_SEPARATOR = ","
 _NEGATION = "!"
@@ -47,34 +40,12 @@ _CONDITION = re.compile(r"^([HWDMQKP])(\d+)(?:-(\d+))?$")
 _RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 # A Timeslice that names another one is followed this far, so a cycle cannot loop forever.
 _MAX_TIMESLICE_DEPTH = 8
-# A day column of a Timeslice data file states 0 for a day the Timeslice leaves out.
-_LEFT_OUT = 0
 _MINUTES_PER_HOUR = 60
 _MINUTES_PER_DAY = 24 * _MINUTES_PER_HOUR
 # Polars counts Monday as 1 and Sunday as 7. PLEXOS counts Sunday as 1.
 _DAYS_PER_WEEK = 7
-
-_TEXT_TABLE = "t_text"
-_DATA_TABLE = "t_data"
-_MEMBERSHIP_TABLE = "t_membership"
-_OBJECT_TABLE = "t_object"
-_DATA_ID = "data_id"
-_MEMBERSHIP_ID = "membership_id"
-_CHILD_OBJECT_ID = "child_object_id"
-_CLASS_ID = "class_id"
-_OBJECT_ID = "object_id"
-_NAME = "name"
-_VALUE = "value"
-
-# A data file the source copies to scratch and scans, or None where the package omits it.
-ScanFile = Callable[[str], pl.LazyFrame | None]
-
-
-class Timeslice(NamedTuple):
-    """The days a Timeslice reads from a data file, or the pattern it states as its text."""
-
-    days: frozenset[date] | None
-    pattern: str | None
+# How a warning names a row whose Pattern cell is blank.
+_BLANK_PATTERN = "(blank)"
 
 
 @dataclass(frozen=True)
@@ -84,30 +55,33 @@ class PatternCalendar:
     index: pl.DataFrame
     timeslices: dict[str, Timeslice]
 
-    def build_assignment(self, patterns: Iterable[str], relative: str) -> pl.DataFrame:
+    def build_assignment(self, patterns: Iterable[str | None], relative: str) -> pl.DataFrame:
         """One row for each pattern and each snapshot it covers.
 
-        A pattern the source cannot read covers no snapshot, and one warning names it.
+        A pattern the source cannot read covers no snapshot, and one warning names it. A blank
+        Pattern cell is such a pattern.
         """
+        stated = set(patterns)
         parts: list[pl.DataFrame] = []
-        unreadable: list[str] = []
-        for pattern in sorted(set(patterns)):
-            covered = self._list_covered(pattern)
+        unreadable = [_BLANK_PATTERN] if None in stated or "" in stated else []
+        for pattern in sorted(pattern for pattern in stated if pattern):
+            covered = self._find_covered_snapshots(pattern)
             if covered is None:
                 unreadable.append(pattern)
             else:
                 parts.append(covered)
         _warn_unreadable(relative, unreadable)
         if not parts:
-            return _empty_assignment()
+            return _build_empty_assignment()
         return pl.concat(parts)
 
-    def _list_covered(self, pattern: str) -> pl.DataFrame | None:
-        expression = express_pattern(pattern, _Grammar(self.timeslices, self._minutes_per_period))
+    def _find_covered_snapshots(self, pattern: str) -> pl.DataFrame | None:
+        grammar = _Grammar(self.timeslices, self._minutes_per_period)
+        expression = _find_pattern_expression(pattern, grammar)
         if expression is None:
             return None
         covered = self.index.filter(expression).select(StagedTimeSeriesCol.SNAPSHOT)
-        return covered.with_columns(pl.lit(pattern).alias(PATTERN_COLUMN))
+        return covered.with_columns(pl.lit(pattern).alias(PlexosCsvCol.PATTERN))
 
     @property
     def _minutes_per_period(self) -> int:
@@ -135,23 +109,23 @@ class _Condition(NamedTuple):
     name: str
 
 
-def express_pattern(pattern: str, grammar: _Grammar, depth: int = 0) -> pl.Expr | None:
+def _find_pattern_expression(pattern: str, grammar: _Grammar, depth: int = 0) -> pl.Expr | None:
     """The snapshots a pattern covers, as a filter on the snapshot column, or None where the
     pattern holds a condition the source cannot read.
     """
     if depth > _MAX_TIMESLICE_DEPTH:
         return None
-    lists = [_express_all(part, grammar, depth) for part in pattern.split(_LIST_SEPARATOR)]
+    lists = [_find_all_expression(part, grammar, depth) for part in pattern.split(_LIST_SEPARATOR)]
     if not lists or any(expression is None for expression in lists):
         return None
     return pl.any_horizontal([expression for expression in lists if expression is not None])
 
 
-def _express_all(conditions: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
+def _find_all_expression(conditions: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
     parsed = _parse_conditions(conditions, grammar.timeslices)
     if parsed is None:
         return None
-    expressions = [_express_condition(one, grammar, depth) for one in parsed]
+    expressions = [_find_condition_expression(one, grammar, depth) for one in parsed]
     if not expressions or any(expression is None for expression in expressions):
         return None
     return pl.all_horizontal([expression for expression in expressions if expression is not None])
@@ -164,7 +138,7 @@ def _parse_conditions(text: str, timeslices: dict[str, Timeslice]) -> list[_Cond
         part = raw.strip()
         extra = _RANGE.match(part)
         if extra is not None and conditions and conditions[-1].letter is not None:
-            conditions[-1].ranges.append(_read_range(extra))
+            conditions[-1].ranges.append(_parse_range(extra))
             continue
         if not part:
             return None
@@ -183,24 +157,26 @@ def _parse_condition(part: str, timeslices: dict[str, Timeslice]) -> _Condition:
     return _Condition(is_negated, letter, [(low, int(last) if last else low)], body)
 
 
-def _read_range(matched: re.Match[str]) -> tuple[int, int]:
+def _parse_range(matched: re.Match[str]) -> tuple[int, int]:
     first, last = matched.groups()
     return int(first), int(last) if last is not None else int(first)
 
 
-def _express_condition(condition: _Condition, grammar: _Grammar, depth: int) -> pl.Expr | None:
+def _find_condition_expression(
+    condition: _Condition, grammar: _Grammar, depth: int
+) -> pl.Expr | None:
     if condition.letter is not None:
         expression: pl.Expr | None = _express_letter(
             condition.letter, condition.ranges, grammar.minutes_per_period
         )
     else:
-        expression = _express_timeslice(condition.name, grammar, depth)
+        expression = _find_timeslice_expression(condition.name, grammar, depth)
     if expression is None or not condition.is_negated:
         return expression
     return ~expression
 
 
-def _express_timeslice(name: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
+def _find_timeslice_expression(name: str, grammar: _Grammar, depth: int) -> pl.Expr | None:
     timeslice = grammar.timeslices.get(name)
     if timeslice is None:
         return None
@@ -208,7 +184,7 @@ def _express_timeslice(name: str, grammar: _Grammar, depth: int) -> pl.Expr | No
         return pl.col(StagedTimeSeriesCol.SNAPSHOT).dt.date().is_in(sorted(timeslice.days))
     if timeslice.pattern is None:
         return None
-    return express_pattern(timeslice.pattern, grammar, depth + 1)
+    return _find_pattern_expression(timeslice.pattern, grammar, depth + 1)
 
 
 def _express_letter(letter: str, ranges: list[tuple[int, int]], minutes_per_period: int) -> pl.Expr:
@@ -233,79 +209,15 @@ def _express_calendar_part(letter: str, minutes_per_period: int) -> pl.Expr:
 
 
 def build_calendar(
-    index: pl.DataFrame, tables: RowsByTable, properties: list[dict[str, Any]], scan_file: ScanFile
+    index: pl.DataFrame, source: TimesliceSource, scan_file: ScanFile
 ) -> PatternCalendar:
     """The snapshots, and every Timeslice the model defines by a data file or by a pattern."""
-    timeslices: dict[str, Timeslice] = {
-        name: Timeslice(None, pattern) for name, pattern in _read_timeslice_patterns(tables).items()
-    }
-    for relative, names in _list_timeslice_files(properties).items():
-        scan = scan_file(relative)
-        if scan is not None:
-            for name, days in _read_timeslice_days(scan, names).items():
-                timeslices[name] = Timeslice(days, None)
-    return PatternCalendar(index, timeslices)
+    return PatternCalendar(index, build_timeslices(source, scan_file))
 
 
-def is_timeslice_include(row: dict[str, Any]) -> bool:
-    """Whether a property row is a Timeslice's Include, which the calendar reads itself."""
-    return bool(
-        row[PlexosPropertyCol.CHILD_CLASS] == PlexosClass.TIMESLICE
-        and row[PlexosPropertyCol.PROPERTY] == PlexosProperty.INCLUDE
-    )
-
-
-def _list_timeslice_files(properties: list[dict[str, Any]]) -> dict[str, list[str]]:
-    """The Timeslices each data file defines, by the file's path."""
-    names_by_file: dict[str, list[str]] = {}
-    for row in properties:
-        relative = row[PlexosPropertyCol.DATA_FILE]
-        if relative is not None and is_timeslice_include(row):
-            names_by_file.setdefault(relative, []).append(row[PlexosMembershipCol.CHILD_OBJECT])
-    return names_by_file
-
-
-def _read_timeslice_days(scan: pl.LazyFrame, names: list[str]) -> dict[str, frozenset[date]]:
-    """The days each named column includes. The file holds one row a day, so it is safe to
-    collect.
-    """
-    header = scan.collect_schema().names()
-    if not set(_DAY_KEY) <= set(header):
-        return {}
-    present = [name for name in names if name in header]
-    day = pl.date(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY)).alias(_CSV_DAY)
-    rows = scan.select(day, *(pl.col(name) for name in present)).collect()
-    return {
-        name: frozenset(rows.filter(pl.col(name) != _LEFT_OUT)[_CSV_DAY].to_list())
-        for name in present
-    }
-
-
-def _read_timeslice_patterns(tables: RowsByTable) -> dict[str, str]:
-    """Each Timeslice that states its Include as a pattern of its own text, by its name."""
-    timeslice_class = class_id_of(tables, PlexosClass.TIMESLICE)
-    if timeslice_class is None:
-        return {}
-    timeslice_ids = objects_of_class(tables, PlexosClass.TIMESLICE)
-    names = {row[_OBJECT_ID]: row[_NAME] for row in tables.get(_OBJECT_TABLE, [])}
-    child_by_membership = {
-        row[_MEMBERSHIP_ID]: row[_CHILD_OBJECT_ID] for row in tables.get(_MEMBERSHIP_TABLE, [])
-    }
-    child_by_data = {
-        row[_DATA_ID]: child_by_membership.get(row[_MEMBERSHIP_ID])
-        for row in tables.get(_DATA_TABLE, [])
-    }
-    patterns: dict[str, str] = {}
-    for row in tables.get(_TEXT_TABLE, []):
-        child = child_by_data.get(row[_DATA_ID])
-        if row.get(_CLASS_ID) == timeslice_class and child in timeslice_ids:
-            patterns[names[child]] = row[_VALUE]
-    return patterns
-
-
-def _empty_assignment() -> pl.DataFrame:
+def _build_empty_assignment() -> pl.DataFrame:
     return pl.DataFrame(
-        schema={StagedTimeSeriesCol.SNAPSHOT: pl.Datetime, PATTERN_COLUMN: pl.String}
+        schema={StagedTimeSeriesCol.SNAPSHOT: pl.Datetime, PlexosCsvCol.PATTERN: pl.String}
     )
 
 

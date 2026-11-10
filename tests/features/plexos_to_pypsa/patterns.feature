@@ -272,3 +272,249 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
     Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 40
     And the load time series "outputs/load_ts.json" for "Node_B" at hour 1 is 60
+
+  Scenario: a row with a blank pattern is left out with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | M1      | 10    |
+      | Grid_Node |         | 20    |
+    And the model contains load "Grid_Node" with peak 20 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the log contains "Load_Load.csv holds 1 pattern(s) the source cannot read, so their rows are left out: (blank)"
+
+  Scenario: a row of a Timeslice data file whose date is not a date is left out with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "DayTypes" at "Load_TimeSlice.csv" with rows:
+      | YEAR | MONTH | DAY | WD | WE |
+      | 2026 | 1     | 1   | -1 | 0  |
+      | 2026 | 13    | 1   | -1 | 0  |
+      | 2026 | 1     | 2   | 0  | -1 |
+    And the model contains timeslice "WD" read from data file "DayTypes"
+    And the model contains timeslice "WE" read from data file "DayTypes"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | WD,H1   | 10    |
+      | Grid_Node | WE,H1   | 50    |
+    And the model contains load "Grid_Node" with peak 50 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 50
+    And the log contains "Load_TimeSlice.csv holds 1 row(s) whose date cannot be read, so each is left out"
+
+  Scenario: a Timeslice cell that is not a number leaves that day out of the Timeslice
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "DayTypes" at "Load_TimeSlice.csv" with rows:
+      | YEAR | MONTH | DAY | WD | WE |
+      | 2026 | 1     | 1   | -1 | 0  |
+      | 2026 | 1     | 2   | x  | -1 |
+    And the model contains timeslice "WD" read from data file "DayTypes"
+    And the model contains timeslice "WE" read from data file "DayTypes"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | WD,H1   | 10    |
+      | Grid_Node | WE,H1   | 50    |
+    And the model contains load "Grid_Node" with peak 50 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 50
+    And the log contains "Load_TimeSlice.csv holds 1 Timeslice value(s) that are not a number, so each of those days is left out of its Timeslice"
+
+  Scenario: a Timeslice data file with no date columns is named in a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "DayTypes" at "Load_TimeSlice.csv" with rows:
+      | DATE       | WD |
+      | 2026-01-01 | -1 |
+    And the model contains timeslice "WD" read from data file "DayTypes"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | M1      | 10    |
+      | Grid_Node | WD,H1   | 50    |
+    And the model contains load "Grid_Node" with peak 50 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the log contains "Load_TimeSlice.csv has no Year, Month and Day columns, so 1 Timeslice(s) it defines include no day: WD"
+
+  Scenario: a Timeslice data file with no column for a Timeslice is named in a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "DayTypes" at "Load_TimeSlice.csv" with rows:
+      | YEAR | MONTH | DAY | WD |
+      | 2026 | 1     | 1   | -1 |
+    And the model contains timeslice "WD" read from data file "DayTypes"
+    And the model contains timeslice "WE" read from data file "DayTypes"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | WD,H1   | 10    |
+    And the model contains load "Grid_Node" with peak 10 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the log contains "Load_TimeSlice.csv has no column for 1 Timeslice(s) it defines, so each includes no day: WE"
+
+  Scenario: a Timeslice data file that the package omits is named in a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model names data file "DayTypes" at "Load_TimeSlice.csv" but the package omits it
+    And the model contains timeslice "WD" read from data file "DayTypes"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | M1      | 10    |
+      | Grid_Node | WD,H1   | 50    |
+    And the model contains load "Grid_Node" with peak 50 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the log contains "Load_TimeSlice.csv is not in the package, so 1 Timeslice(s) it defines include no day: WD"
+
+  Scenario: a Timeslice pattern in a Scenario that the Model does not read does not apply
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains scenario "Alt"
+    And the model contains timeslice "Peak" with pattern "M1,D1"
+    And scenario "Alt" gives timeslice "Peak" the pattern "M1,D2"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | Peak    | 5     |
+      | Grid_Node | M1      | 8     |
+    And the model contains load "Grid_Node" with peak 8 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 5
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 8
+
+  Scenario: a Timeslice pattern of the Scenario with the highest read order applies
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains scenario "High" with read order 2
+    And the model contains scenario "Low" with read order 1
+    And the model contains timeslice "Peak" with pattern "M1,D1"
+    And scenario "High" gives timeslice "Peak" the pattern "M1,D3"
+    And scenario "Low" gives timeslice "Peak" the pattern "M1,D2"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | Peak    | 5     |
+      | Grid_Node | M1      | 8     |
+    And the model contains load "Grid_Node" with peak 8 from data file "Demand"
+    And the model contains model "Plan" with scenarios "Low, High"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 3 days at 1 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 8
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 8
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 3 is 5
+
+  Scenario: a value whose Variable has no profile row keeps its data file's values with a warning
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains node "Node_B" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME   | PATTERN | VALUE |
+      | Node_A | M1      | 100   |
+      | Node_B | M1      | 100   |
+    And the model contains data file "Growth" at "Load_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | Growth_A |
+      | 2026 | 1     | 1   | 1.5      |
+    And the model contains variable "Growth_A" profiling data file "Growth"
+    And the model contains variable "Growth_B" profiling data file "Growth"
+    And the model contains load "Node_A" with peak 100 from data file "Demand" escalated by variable "Growth_A"
+    And the model contains load "Node_B" with peak 100 from data file "Demand" escalated by variable "Growth_B"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
+    And the load time series "outputs/load_ts.json" for "Node_B" at hour 1 is 100
+    And the log contains "1 value(s) name a Variable whose profile states no value at some snapshot, so each keeps its data file's value there: Node_B"
+
+  Scenario: each sample of an escalated value takes the factor of its own sample
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME   | PATTERN | 1   | 2   |
+      | Node_A | M1      | 100 | 200 |
+    And the model contains data file "Growth" at "Load_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | PERIOD | 1   | 2   |
+      | 2026 | 1     | 1   | 1      | 1.5 | 3.0 |
+    And the model contains variable "Growth_A" profiling data file "Growth"
+    And the model contains load "Node_A" with peak 200 from data file "Demand" escalated by variable "Growth_A"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages every sample of plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the sample "1" of the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
+    And the sample "2" of the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 600
+
+  Scenario: an unsampled value escalated by a sampled Variable takes one series for each sample
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME   | PATTERN | VALUE |
+      | Node_A | M1      | 100   |
+    And the model contains data file "Growth" at "Load_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | PERIOD | 1   | 2   |
+      | 2026 | 1     | 1   | 1      | 1.5 | 3.0 |
+    And the model contains variable "Growth_A" profiling data file "Growth"
+    And the model contains load "Node_A" with peak 100 from data file "Demand" escalated by variable "Growth_A"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages every sample of plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the sample "1" of the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
+    And the sample "2" of the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 300

@@ -68,7 +68,8 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     """Narrow dated properties to one window: the value in force, and the steps within it.
 
     The value in force is the one the window opens on. Only a property that takes more
-    than one value inside the window contributes stepped rows.
+    than one value inside the window contributes stepped rows, or a property whose value a
+    Variable escalates, since only a series can carry the escalation.
     """
     by_property: dict[tuple[Any, ...], list[DatedRow]] = {}
     for dated in resolved:
@@ -78,9 +79,17 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     for read_dated_rows in by_property.values():
         steps = _steps_within(sorted(read_dated_rows, key=opens_at), window)
         in_force.append(steps[0].row)
-        if len(steps) > 1:
+        if len(steps) > 1 or _is_escalated_value(steps[0].row):
             stepped.extend({**step.row, StagedTimeSeriesCol.SNAPSHOT: step.at} for step in steps)
     return in_force, stepped
+
+
+def _is_escalated_value(row: dict[str, Any]) -> bool:
+    """Whether a Variable escalates a value that the row states, not one a data file states."""
+    return (
+        row[PlexosPropertyCol.DATA_FILE] is None
+        and row.get(PlexosPropertyCol.ESCALATOR) is not None
+    )
 
 
 def read_dated_rows(resolved: list[DatedRow]) -> Rows:

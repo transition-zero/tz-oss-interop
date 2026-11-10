@@ -259,6 +259,13 @@ def given_model_contains_timeslice_with_pattern(
     plexos_model_builder.add_timeslice_with_pattern(name, pattern)
 
 
+@given(parsers.parse('scenario "{scenario}" gives timeslice "{name}" the pattern "{pattern}"'))
+def given_scenario_gives_timeslice_pattern(
+    plexos_model_builder: PlexosModelBuilder, scenario: str, name: str, pattern: str
+) -> None:
+    plexos_model_builder.add_timeslice_with_pattern(name, pattern, scenarios=[scenario])
+
+
 @given(
     parsers.parse(
         'the model contains load "{node}" with peak {peak:g} from data file "{name}" '

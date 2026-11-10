@@ -402,12 +402,17 @@ class PlexosModelBuilder(ResourceBuilder):
             TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, 0, data_file=data_file
         )
 
-    def add_timeslice_with_pattern(self, name: str, pattern: str) -> None:
-        """A Timeslice whose Include states a pattern, such as M4,D1-7, as its own text."""
+    def add_timeslice_with_pattern(
+        self, name: str, pattern: str, scenarios: list[str] | None = None
+    ) -> None:
+        """A Timeslice whose Include states a pattern, such as M4,D1-7, as its own text.
+
+        An Include in a Scenario overrides the base Include of the same Timeslice.
+        """
         self._check_not_saved(f"timeslice {name!r}")
         self._add_system_object(TIMESLICE_CLASS, name, TIMESLICES_COLLECTION)
         self._add_system_property(
-            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, PLEXOS_TRUE
+            TIMESLICE_CLASS, name, TIMESLICES_COLLECTION, INCLUDE_PROPERTY, PLEXOS_TRUE, scenarios
         )
         include_data_id = self._data_rows[-1]["data_id"]
         self._text_rows.append(

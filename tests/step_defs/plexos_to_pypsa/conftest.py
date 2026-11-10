@@ -449,6 +449,17 @@ def given_plexos_resolve_year_time_series_pipeline(name: str, model: str, year: 
     write_pipeline(name, _RESOLVE_YEAR_TIME_SERIES_PIPELINE_YAML.format(model=model, year=year))
 
 
+@given(
+    parsers.parse(
+        'a project-local pipeline "{name}" that stages every sample of plexos for model '
+        '"{model}" in {year:d} and dumps a time series'
+    )
+)
+def given_plexos_resolve_ensemble_time_series_pipeline(name: str, model: str, year: int) -> None:
+    yaml = _RESOLVE_YEAR_TIME_SERIES_PIPELINE_YAML.format(model=model, year=year)
+    write_pipeline(name, yaml.replace("name: stage_plexos_xml", "name: stage_plexos_xml_ensemble"))
+
+
 @given('a step plugin "dump_table" that writes a source_topology table to JSON')
 def given_dump_table_step_plugin() -> None:
     write_project_plugin("steps", "dump_table", _DUMP_TABLE_STEP_PY)
@@ -871,6 +882,27 @@ def assert_time_series_value(path: str, component: str, hour: int, value: float)
     actual = series[hour - 1]["value"]
     assert _as_float(actual) == value, (
         f"expected {component!r} hour {hour} = {value!r} in {path}; got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the sample "{sample}" of the load time series "{path}" for "{component}" at hour '
+        "{hour:d} is {value:g}"
+    )
+)
+def assert_sampled_time_series_value(
+    sample: str, path: str, component: str, hour: int, value: float
+) -> None:
+    series = [row for row in _sorted_series(path, component) if row.get("sample") == sample]
+    assert len(series) >= hour, (
+        f"expected at least {hour} snapshots for {component!r} sample {sample!r} in {path}; "
+        f"got {len(series)}"
+    )
+    actual = series[hour - 1]["value"]
+    assert _as_float(actual) == value, (
+        f"expected {component!r} sample {sample!r} hour {hour} = {value!r} in {path}; "
+        f"got {actual!r}"
     )
 
 

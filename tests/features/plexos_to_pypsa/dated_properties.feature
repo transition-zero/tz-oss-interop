@@ -337,6 +337,30 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" generator "Plant" has a p_max_pu time series 1.0 0.0 1.0
 
+  Scenario: a Variable that escalates a value from a dated data file multiplies its steps
+    A value that a data file dates is a series of steps. A Variable that the same property row
+    names escalates each step by the Variable's own series.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Node_A" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME   | YEAR | MONTH | DAY | VALUE |
+      | Node_A | 2026 | 1     | 1   | 100   |
+    And the model contains data file "Growth" at "Load_Escalator.csv" with rows:
+      | YEAR | MONTH | DAY | Growth_A |
+      | 2026 | 1     | 1   | 1.5      |
+      | 2026 | 1     | 2   | 2.0      |
+    And the model contains variable "Growth_A" profiling data file "Growth"
+    And the model contains load "Node_A" with peak 100 from data file "Demand" escalated by variable "Growth_A"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Node_A" at hour 1 is 150
+    And the load time series "outputs/load_ts.json" for "Node_A" at hour 25 is 200
+
   Scenario: a dated data file names a membership's row after both of its objects
     A property of a membership between two objects, such as a Reserve and a Generator, takes
     a row named after both of them, in either order.
