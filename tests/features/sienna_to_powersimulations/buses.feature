@@ -44,3 +44,4 @@ Feature: Sienna to PowerSimulations Pipeline translates ACBus rows to PS.jl comp
     Then the PS.jl system "outputs/system.json" component "ACBus" named "bus_1" has field "load_zone" equal to null
     And the file "decisions.md" contains "the PowerSystems.jl document states no LoadZone"
     And the file "decisions.md" contains "load_zone` = Coast"
+    And the log contains "power-simulations: 1 bus(es) name a load zone that the PowerSystems.jl document does not state, so each takes none: bus_1"
