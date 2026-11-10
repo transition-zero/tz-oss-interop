@@ -552,6 +552,24 @@ def given_system_contains_hydro_turbine(
     sienna_system_builder.add_hydro_turbine(name, bus, limits)
 
 
+@given(parsers.parse('the HydroTurbine "{name}" states "{field}" set to {value}'))
+def given_hydro_turbine_states_field(
+    sienna_system_builder: SiennaSystemBuilder, name: str, field: str, value: str
+) -> None:
+    """One field of a HydroTurbine that a HydroDispatch does not state, stated as JSON."""
+    sienna_system_builder.set_turbine_field(name, field, json.loads(value))
+
+
+@given(parsers.parse('the system contains {count:d} HydroDispatch units on bus "{bus}"'))
+def given_system_contains_hydro_dispatch_units(
+    sienna_system_builder: SiennaSystemBuilder, count: int, bus: str
+) -> None:
+    """Many plain HydroDispatch units, named hydro_1 to hydro_<count>."""
+    limits = HydroLimits(100.0, 100.0, 0.0, 100.0, 0.0)
+    for number in range(1, count + 1):
+        sienna_system_builder.add_hydro_dispatch(f"hydro_{number}", bus, *limits)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str

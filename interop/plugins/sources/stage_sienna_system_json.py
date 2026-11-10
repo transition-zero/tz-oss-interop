@@ -371,7 +371,8 @@ def _stage_table(
         return
     out = staging_dir / "topology" / f"{name}.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(rows, schema=schema).write_parquet(out)
+    # Polars otherwise reads the columns from the first 100 rows and drops a later field.
+    pl.DataFrame(rows, schema=schema, infer_schema_length=None).write_parquet(out)
     frames[name] = pl.scan_parquet(out)
 
 

@@ -32,6 +32,7 @@ direction.
 | [`RenewableDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`RenewableNonDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`HydroDispatch`](#hydrodispatch--storageunit) | `StorageUnit` with the carrier `hydro` |
+| [`HydroTurbine`](#hydroturbine--storageunit) | `StorageUnit` with the carrier `hydro`, the same as a `HydroDispatch` |
 | [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else the carrier of its prime mover |
 | [`Line`](#line-and-monitoredline--line) | `Line` |
 | [`MonitoredLine`](#line-and-monitoredline--line) | `Line`, the same as a `Line` |
@@ -286,6 +287,28 @@ The `storage` record of the same name can give `max_hours`, `state_of_charge_ini
 `inflow`. The translator maps no other field of a sidecar record for a `HydroDispatch`.
 `p_nom_extendable` is always `False`. Each other field of the `storage` record, and each
 field of a `generator` record of the same name, travels on to the PyPSA sidecar.
+
+### `HydroTurbine` → `StorageUnit`
+
+A `HydroTurbine` states every field of a `HydroDispatch`, and the translator maps those fields
+as the table above gives. The fields below are the ones that only a `HydroTurbine` states.
+
+| `HydroTurbine` field | PyPSA field | Mapping |
+| --- | --- | --- |
+| `efficiency` | `efficiency_dispatch` | `derived`. If absent, `1.0` (`default`). |
+| No field | `efficiency_store` | `1.0` (`default`), because a turbine does not pump |
+| `commitment_mode`, `conversion_factor`, `outflow_limits`, `powerhouse_elevation`, `travel_time`, `turbine_type` | No field | `NOT_MAPPED` |
+
+The translator writes one `NOT_MAPPED` row for each of these six fields that a turbine states.
+It also writes one warning for each field. The warning names three turbines.
+
+No sidecar record states an efficiency for a hydro unit. A `storage` record has no efficiency
+field. The translator does not apply the `efficiency` of a `generator` record to a hydro unit,
+and that field travels on to the PyPSA sidecar. Thus the `efficiency` of the turbine is the one
+source of `efficiency_dispatch`.
+
+The translator does not read the `HydroReservoir` of a turbine. Refer to
+[Parts that the report names](#parts-that-the-report-names).
 
 ## `EnergyReservoirStorage` → `StorageUnit`
 
@@ -775,7 +798,8 @@ number back as `up_time_before = 0`. A real prior on-time of exactly 10000 hours
 `efficiency_dispatch`, `state_of_charge_initial`, `cyclic_state_of_charge` and
 `p_nom_extendable` have no `HydroDispatch` field. A PyPSA storage unit with six hours of
 storage and 90% efficiency comes back as a one-hour unit with 100% efficiency. The report
-gives a row for each of the six.
+gives a row for each of the six. A `HydroTurbine` keeps its `efficiency` as
+`efficiency_dispatch`, but its `efficiency_store` is always `1.0`.
 
 **The carriers that share a prime mover.** Several PyPSA carriers map to one Sienna pair.
 `coal` and `lignite` are both `ST` and `COAL`. `offwind-ac` and `offwind-dc` are both `WS`.

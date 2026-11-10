@@ -9,9 +9,7 @@ solve.
 from __future__ import annotations
 
 import logging
-from typing import Any, NamedTuple
-
-from power_openapi_models.operations.models import HydroDispatch, HydroTurbine
+from typing import Any
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
@@ -21,6 +19,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaHydroReservoirCol,
     SiennaTable,
+)
+from interop.plugins.shared.sienna_hydro_turbine import (
+    TURBINE_ONLY_FIELDS,
+    UnreadTurbineField,
+    list_stated_turbine_fields,
 )
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import (
@@ -32,11 +35,6 @@ from interop.ports.outbound.reporting import (
 
 log = logging.getLogger(__name__)
 
-# The fields a HydroTurbine states that a HydroDispatch does not, read from the SDK.
-TURBINE_ONLY_FIELDS: tuple[str, ...] = tuple(
-    sorted(set(HydroTurbine.model_fields) - set(HydroDispatch.model_fields))
-)
-
 _RUNS_AS_DISPATCH = (
     "the solve template has no formulation for a HydroTurbine, so it runs as a HydroDispatch"
 )
@@ -45,14 +43,6 @@ _RESERVOIR_NOTE = (
     "the solve template has no formulation for a HydroReservoir, so the reservoir does not "
     "reach the solve and its turbines run on their own limits"
 )
-
-
-class UnreadTurbineField(NamedTuple):
-    """One field a HydroTurbine states that the solve does not read."""
-
-    turbine: str
-    field: str
-    value: Any
 
 
 def record_turbine_as_dispatch(name: str, recorder: ScopedRecorder) -> None:
@@ -81,10 +71,10 @@ def record_turbine_as_dispatch(name: str, recorder: ScopedRecorder) -> None:
 
 def drop_turbine_only_fields(out: dict[str, Any], name: str) -> list[UnreadTurbineField]:
     """Take off one turbine row each field a HydroDispatch lacks, and return those it stated."""
-    unread = [
-        UnreadTurbineField(name, field, out.pop(field, None)) for field in TURBINE_ONLY_FIELDS
-    ]
-    return [field for field in unread if field.value is not None]
+    unread = list_stated_turbine_fields(out, name, TURBINE_ONLY_FIELDS)
+    for field in TURBINE_ONLY_FIELDS:
+        out.pop(field, None)
+    return unread
 
 
 def report_unread_turbine_fields(

@@ -646,6 +646,7 @@ class SiennaHydroTurbineCol(SiennaHydroGeneratorCol):
     """Sienna HydroTurbine destination table column names: the HydroDispatch ones and its own."""
 
     CONVERSION_FACTOR = "conversion_factor"
+    EFFICIENCY = "efficiency"
 
 
 class SiennaHydroReservoirCol:
