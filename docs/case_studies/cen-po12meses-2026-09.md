@@ -189,7 +189,7 @@ each dated value is the one in force on that day.
 To see the warnings on the console, set `INTEROP_LOG_LEVEL=INFO`.
 
 The run takes about 5 minutes. It writes `outputs/system.json`, the time series store,
-`outputs/extensions.json`, `outputs/storage.parquet` and `decisions.md`, 53 MB in all.
+`outputs/extensions.json`, `outputs/storage.parquet` and `decisions.md`, 44 MB in all.
 
 ## What the translation writes
 
@@ -228,7 +228,8 @@ of this model.
 | A membership property's row is named after both of its objects, in either order. | The reserve response limits and the constraint coefficients |
 | A generator that states `Units Out` takes its outage from `Units Out` alone. | 102 thermal units that the old rule gave a ceiling of 0 |
 | A thermal unit that draws on a `Storage` stays thermal, and the `Storage` is a fuel store. | 506 gas units that were turbines before |
-| A turbine whose tail a `Waterway` leaves is a cascade turbine, not pumped storage. | 41 hydro units that could pump before |
+| A unit pumps only when it states a `Pump Load` above 0 MW. A unit with a head and a tail `Storage` and no `Pump Load` is a turbine. | The model states no `Pump Load`, so its 41 units with a head and a tail are turbines. |
+| A unit written `m³` is the same unit as `m3`. | The `Efficiency Incr` of the 58 turbines, in `MW/m³/s`, gives their `conversion_factor`. |
 | Every `Storage` of a cascade is a reservoir. | 67 reservoirs, joined by their turbines and routes |
 
 ### No forced outage in `MT_base4s`

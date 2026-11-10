@@ -59,7 +59,14 @@ _MILLION = 1_000_000.0
 _KM_PER_MILE = 1.609344
 
 # One unit written two ways, so the conversion table states each of them once.
-_SPELLINGS = {"MMBtu": "MMBTU", "hr": "h", "year": "yr", "years": "yr", "yrs": "yr"}
+_SPELLINGS = {
+    "MMBtu": "MMBTU",
+    "hr": "h",
+    "year": "yr",
+    "years": "yr",
+    "yrs": "yr",
+    "m³": "m3",
+}
 
 # The unit each property is converted into as it stages, which is the one every mapping
 # reading it already assumes. A property absent here stages as the model wrote it.

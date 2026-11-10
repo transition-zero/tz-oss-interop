@@ -398,6 +398,23 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 5e-06
     And the file "decisions.md" contains "Efficiency Incr / 3600 / base_power"
 
+  Scenario: an Efficiency Incr in MW per m³/s, written with a superscript, sets the conversion factor
+    A model can write a cubic metre as m³. That unit is the same as m3.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And the model states "Max Volume" in "CMD"
+    And the model states "Initial Volume" in "CMD"
+    And the model states "Efficiency Incr" in "MW/m³/s"
+    And generator "Dam_U" has property "Efficiency Incr" 1.8
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 5e-06
+    And the log does not contain "state Efficiency Incr in a unit that is not MW per m3/s"
+
   Scenario: an Efficiency Incr in a unit that is not MW per m3/s keeps the default conversion factor
     A conversion factor turns a volume of water into energy, so it needs MW for each cubic
     metre a second. An Efficiency Incr in any other unit gives no conversion factor.
