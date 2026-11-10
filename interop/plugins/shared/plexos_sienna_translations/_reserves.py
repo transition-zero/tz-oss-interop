@@ -46,7 +46,11 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     warn_about_groups,
     warn_about_skips,
 )
-from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
+from interop.plugins.shared.plexos_sienna_translations._shared import (
+    SiennaComponentReporter,
+    TranslatedUnit,
+    build_translated_units,
+)
 from interop.plugins.shared.sienna_constants import (
     SiennaComponent,
     SiennaReserveCol,
@@ -56,7 +60,9 @@ from interop.plugins.shared.sienna_constants import (
 )
 from interop.plugins.shared.sienna_time_series import (
     DEFAULT_RESOLUTION_MINUTES,
-    collect_ts_info,
+    TimeSeriesInfo,
+    build_ts_info,
+    build_ts_info_by_component,
     ts_association_row,
 )
 from interop.plugins.shared.translation_runner import build_first_free_id
@@ -71,6 +77,7 @@ NOTHING_DEPLOYED: float = 0.0
 SECONDS_PER_MINUTE: float = 60.0
 
 _REQUIREMENT_KEY = (str(PlexosClass.RESERVE), str(PlexosProperty.MIN_PROVISION))
+_NO_SERIES = build_ts_info(0, None, None)
 _ASSOCIATIONS_COLUMNS = MappedColumns((SiennaSchemasSystem.SERVICE_ASSOCIATIONS,))
 
 _DIRECTIONS: dict[ReserveDirection, SiennaReserveDirection] = {
@@ -78,16 +85,6 @@ _DIRECTIONS: dict[ReserveDirection, SiennaReserveDirection] = {
     ReserveDirection.DOWN: SiennaReserveDirection.DOWN,
     ReserveDirection.SYMMETRIC: SiennaReserveDirection.SYMMETRIC,
 }
-
-# The Sienna types a reserve contributor can have become.
-_DEVICE_TYPES: tuple[SiennaComponent, ...] = (
-    SiennaComponent.THERMAL_STANDARD,
-    SiennaComponent.RENEWABLE_DISPATCH,
-    SiennaComponent.RENEWABLE_NON_DISPATCH,
-    SiennaComponent.HYDRO_DISPATCH,
-    SiennaComponent.HYDRO_TURBINE,
-    SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-)
 
 _ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "the Reserve states no Is Enabled, so the service is available"
@@ -195,9 +192,9 @@ def map_reserve_services(state: State, recorder: ScopedRecorder) -> TranslatedSe
     }
     translated = TranslatedServices()
     skipped: list[SkippedComponent] = []
-    absent: list[str] = []
-    context = _ServiceContext(state, build_first_free_id(state), _list_device_ids(state))
-    for source in _read_reserve_sources(state):
+    absent: set[str] = set()
+    context = _build_context(state)
+    for source in _build_reserve_sources(state):
         _add_service(translated, source, reporters, context, skipped, absent)
     warn_about_skips(skipped)
     warn_about_groups((_ABSENT_CONTRIBUTOR, name) for name in absent)
@@ -206,17 +203,27 @@ def map_reserve_services(state: State, recorder: ScopedRecorder) -> TranslatedSe
 
 @dataclass(frozen=True)
 class _ServiceContext:
-    """What every service in one run reads: the state, the first free id and the unit ids."""
+    """What every service in one run reads: the first free id, the units and the series timing."""
 
-    state: State
     first_id: int
-    device_ids: dict[str, list[int]]
+    units: dict[str, list[TranslatedUnit]]
+    ts_info_by_reserve: dict[str, TimeSeriesInfo]
+
+
+def _build_context(state: State) -> _ServiceContext:
+    return _ServiceContext(
+        first_id=build_first_free_id(state),
+        units=build_translated_units(state),
+        ts_info_by_reserve=build_ts_info_by_component(
+            state.source_time_series.get(_REQUIREMENT_KEY)
+        ),
+    )
 
 
 # --- Reading the source ---
 
 
-def _read_reserve_sources(state: State) -> list[_ReserveSource]:
+def _build_reserve_sources(state: State) -> list[_ReserveSource]:
     records = [
         record
         for record in state.destination_extensions.get(ExtensionKind.RESERVE, [])
@@ -230,7 +237,7 @@ def _read_reserve_sources(state: State) -> list[_ReserveSource]:
         PlexosClass.RESERVE,
         PlexosCollection.BATTERIES,
     )
-    peaks = _read_requirement_peaks(state)
+    peaks = _build_requirement_peaks(state)
     return [
         _ReserveSource(
             record=record,
@@ -242,7 +249,7 @@ def _read_reserve_sources(state: State) -> list[_ReserveSource]:
     ]
 
 
-def _read_requirement_peaks(state: State) -> dict[str, float]:
+def _build_requirement_peaks(state: State) -> dict[str, float]:
     """The highest requirement each varying reserve asks for. An aggregate, so safe to collect."""
     series = state.destination_extension_series.get(ExtensionKind.RESERVE)
     if series is None:
@@ -261,18 +268,6 @@ def _read_requirement_peaks(state: State) -> dict[str, float]:
     )
 
 
-def _list_device_ids(state: State) -> dict[str, list[int]]:
-    """The id of every unit that can join a service, by name."""
-    ids: dict[str, list[int]] = {}
-    for device_type in _DEVICE_TYPES:
-        table = state.destination_tables.get(device_type)
-        if table is None:
-            continue
-        for name, device_id in table.select(SiennaReserveCol.NAME, SiennaReserveCol.ID).rows():
-            ids.setdefault(name, []).append(device_id)
-    return ids
-
-
 # --- Building one service ---
 
 
@@ -282,20 +277,20 @@ def _add_service(
     reporters: _Reporters,
     context: _ServiceContext,
     skipped: list[SkippedComponent],
-    absent: list[str],
+    absent: set[str],
 ) -> None:
     service_type = _choose_service_type(source.record)
-    requirement = _derive_requirement(source)
-    skip = _choose_skip(source, requirement)
-    if skip is not None or requirement is None:
-        _record_skip(reporters[service_type], skip, skipped)
-        return
     reporter = reporters[service_type]
+    skip = _choose_kind_skip(source.record)
+    requirement = None if skip else _derive_requirement(source)
+    if requirement is None:
+        _record_skip(reporter, skip or _build_no_requirement_skip(source.record), skipped)
+        return
     service = _Service(service_type, context.first_id + translated.count)
     _add_service_row(translated, source, reporter, service, requirement)
-    _add_requirement_series(translated, source, context.state, service)
+    _add_requirement_series(translated, source, context.ts_info_by_reserve, service)
     _add_associations(
-        translated, source, reporter, _ServiceUnits(service.id, context.device_ids), absent
+        translated, source, reporter, _ServiceUnits(service.id, context.units), absent
     )
     _record_sidecar_only(reporter, source.record)
 
@@ -309,10 +304,10 @@ class _Service:
 
 
 class _ServiceUnits(NamedTuple):
-    """One service's id, and the ids that each unit able to join it takes."""
+    """One service's id, and the Sienna components of each unit able to join it, by name."""
 
     service_id: int
-    device_ids: dict[str, list[int]]
+    units: dict[str, list[TranslatedUnit]]
 
 
 def _choose_service_type(record: ReserveExtension) -> SiennaComponent:
@@ -323,25 +318,26 @@ def _choose_service_type(record: ReserveExtension) -> SiennaComponent:
 
 
 def _record_skip(
-    reporter: SiennaComponentReporter,
-    skip: SkippedComponent | None,
-    skipped: list[SkippedComponent],
+    reporter: SiennaComponentReporter, skip: SkippedComponent, skipped: list[SkippedComponent]
 ) -> None:
-    if skip is not None:
-        reporter.record_skipped(skip.source, skip.note)
-        skipped.append(skip)
+    reporter.record_skipped(skip.source, skip.note)
+    skipped.append(skip)
 
 
-def _choose_skip(source: _ReserveSource, requirement: Decision | None) -> SkippedComponent | None:
-    """Why this reserve becomes no service, or None where it becomes one."""
-    value = _reserve_value(source.record.name)
-    if source.record.kind is ReserveKind.INERTIA:
+def _choose_kind_skip(record: ReserveExtension) -> SkippedComponent | None:
+    """Why the kind of this reserve gives no service, or None where it can give one."""
+    value = _build_reserve_value(record.name)
+    if record.kind is ReserveKind.INERTIA:
         return SkippedComponent(value, _INERTIA_NOTE, _INERTIA)
-    if not _has_direction(source.record):
+    if not _has_direction(record):
         return SkippedComponent(value, _NO_DIRECTION_NOTE, _NO_DIRECTION)
-    if requirement is None:
-        return SkippedComponent(value, _NO_REQUIREMENT_NOTE, _NO_REQUIREMENT)
     return None
+
+
+def _build_no_requirement_skip(record: ReserveExtension) -> SkippedComponent:
+    return SkippedComponent(
+        _build_reserve_value(record.name), _NO_REQUIREMENT_NOTE, _NO_REQUIREMENT
+    )
 
 
 def _has_direction(record: ReserveExtension) -> bool:
@@ -391,7 +387,11 @@ def _derive_online(source: _ReserveSource, offline: _OfflineMapping) -> _OnlineM
         **{one.name: getattr(offline, one.name) for one in fields(offline)},
         reserve_direction=Decision.derived(
             _DIRECTIONS[source.record.direction].value,
-            [_reserve_value(source.record.name, PlexosProperty.RESERVE_TYPE, source.type_code)],
+            [
+                _build_reserve_value(
+                    source.record.name, PlexosProperty.RESERVE_TYPE, source.type_code
+                )
+            ],
             _DIRECTION_DERIVATION,
         ),
     )
@@ -401,12 +401,12 @@ def _derive_requirement(source: _ReserveSource) -> Decision | None:
     """The requirement in MW: the stated value, or the peak of a varying one."""
     record = source.record
     if record.requirement_mw is not None and record.requirement_mw > 0:
-        stated = _reserve_value(
+        stated = _build_reserve_value(
             record.name, PlexosProperty.MIN_PROVISION, record.requirement_mw, UNIT_MW
         )
         return Decision.derived(record.requirement_mw, [stated], _REQUIREMENT_DERIVATION)
     if record.requirement_series is not None and source.peak is not None and source.peak > 0:
-        series = _reserve_value(
+        series = _build_reserve_value(
             record.name, PlexosProperty.MIN_PROVISION, record.requirement_series, UNIT_MW
         )
         return Decision.derived(source.peak, [series], _PEAK_DERIVATION)
@@ -416,7 +416,7 @@ def _derive_requirement(source: _ReserveSource) -> Decision | None:
 def _derive_available(record: ReserveExtension) -> Decision:
     if record.is_available is None:
         return Decision.default(True, _AVAILABLE_NOTE)
-    stated = _reserve_value(record.name, PlexosProperty.IS_ENABLED, record.is_available)
+    stated = _build_reserve_value(record.name, PlexosProperty.IS_ENABLED, record.is_available)
     return Decision.derived(record.is_available, [stated], _AVAILABLE_DERIVATION)
 
 
@@ -424,14 +424,21 @@ def _derive_sustained_time(record: ReserveExtension) -> Decision:
     seconds = record.sustained_time_seconds
     if seconds is None:
         return Decision.default(DEFAULT_SUSTAINED_TIME_MINUTES, _SUSTAINED_NOTE)
-    stated = _reserve_value(record.name, PlexosProperty.DURATION, seconds, UNIT_SECONDS)
+    stated = _build_reserve_value(record.name, PlexosProperty.DURATION, seconds, UNIT_SECONDS)
     return Decision.derived(seconds / SECONDS_PER_MINUTE, [stated], _SUSTAINED_DERIVATION)
 
 
 def _add_requirement_series(
-    translated: TranslatedServices, source: _ReserveSource, state: State, service: _Service
+    translated: TranslatedServices,
+    source: _ReserveSource,
+    ts_info_by_reserve: dict[str, TimeSeriesInfo],
+    service: _Service,
 ) -> None:
-    """A varying requirement is stored as its shape over the peak the service states."""
+    """A varying requirement is stored as its shape over the peak the service states.
+
+    Each series takes the start, step and length of its own reserve, since two data files can
+    start on different days.
+    """
     if source.record.requirement_series is None or source.peak is None:
         return
     translated.series.append(
@@ -440,7 +447,7 @@ def _add_requirement_series(
             owner_id=service.id,
             component_name=source.record.name,
             series_name=SiennaReserveCol.REQUIREMENT,
-            ts_info=collect_ts_info(state.source_time_series.get(_REQUIREMENT_KEY)),
+            ts_info=ts_info_by_reserve.get(source.record.name, _NO_SERIES),
             source_table=_REQUIREMENT_KEY[0],
             source_attribute=_REQUIREMENT_KEY[1],
             scaling_factor=source.peak,
@@ -453,20 +460,20 @@ def _add_associations(
     source: _ReserveSource,
     reporter: SiennaComponentReporter,
     service: _ServiceUnits,
-    absent: list[str],
+    absent: set[str],
 ) -> None:
     """One association for each named unit the system holds; the rest are recorded."""
     for contributor in _list_contributors(source):
-        unit_ids = service.device_ids.get(contributor.name)
-        if unit_ids is None:
+        units = service.units.get(contributor.name)
+        if units is None:
             _record_absent(reporter, source.record.name, contributor)
-            absent.append(contributor.name)
+            absent.add(contributor.name)
             continue
-        for unit_id in unit_ids:
+        for unit in units:
             translated.associations.append(
                 {
                     SiennaServiceAssociationCol.SERVICE_ID: service.service_id,
-                    SiennaServiceAssociationCol.ENTITY_ID: unit_id,
+                    SiennaServiceAssociationCol.ENTITY_ID: unit.sienna_id,
                 }
             )
         _record_association(reporter, source.record.name, contributor)
@@ -485,7 +492,7 @@ def _list_contributors(source: _ReserveSource) -> list[_Contributor]:
 # --- Reporting ---
 
 
-def _reserve_value(
+def _build_reserve_value(
     name: str, attribute: str | None = None, value: Any = None, unit: str | None = None
 ) -> SourceValue:
     return SourceValue(PlexosClass.RESERVE, name, attribute, value, unit)
@@ -494,7 +501,7 @@ def _reserve_value(
 def _record_association(
     reporter: SiennaComponentReporter, reserve: str, contributor: _Contributor
 ) -> None:
-    member = _reserve_value(reserve, contributor.collection, contributor.name)
+    member = _build_reserve_value(reserve, contributor.collection, contributor.name)
     decision = Decision.derived(contributor.name, [member], _ASSOCIATION_DERIVATION)
     reporter.record(reserve, _ASSOCIATIONS_COLUMNS, decision)
 
@@ -503,18 +510,20 @@ def _record_absent(
     reporter: SiennaComponentReporter, reserve: str, contributor: _Contributor
 ) -> None:
     note = f"the Sienna system holds no unit named {contributor.name}, so it joins no service"
-    reporter.record_dropped(_reserve_value(reserve, contributor.collection, contributor.name), note)
+    reporter.record_dropped(
+        _build_reserve_value(reserve, contributor.collection, contributor.name), note
+    )
 
 
 def _record_sidecar_only(reporter: SiennaComponentReporter, record: ReserveExtension) -> None:
     """The values the service has no field for, which only the sidecar keeps."""
     if record.shortage_price is not None:
-        shortage = _reserve_value(
+        shortage = _build_reserve_value(
             record.name, PlexosProperty.VALUE_OF_RESERVE_SHORTAGE, record.shortage_price
         )
         reporter.record_dropped(shortage, _SHORTAGE_NOTE)
     if record.is_mutually_exclusive is not None:
-        exclusive = _reserve_value(
+        exclusive = _build_reserve_value(
             record.name, PlexosProperty.MUTUALLY_EXCLUSIVE, record.is_mutually_exclusive
         )
         reporter.record_dropped(exclusive, _EXCLUSIVE_NOTE)

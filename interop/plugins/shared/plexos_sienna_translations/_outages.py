@@ -7,20 +7,26 @@ unit in service fails. In a two-state model the share of the time out is
 ``p = r / (1 - r) / T`` for a share ``r``.
 
 The attribute describes a component that an earlier sub-step wrote, so this sub-step runs
-after every unit has its Sienna id. A unit the translation left out takes no attribute.
+after every unit has its Sienna id. A unit the translation left out takes no attribute. Each
+attribute joins its unit through one row of the document's
+``supplemental_attribute_associations`` list.
 """
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_HOURS, UNIT_MINUTES, UNIT_PERCENT
+from interop.plugins.shared.constants import (
+    MINUTES_PER_HOUR,
+    UNIT_HOURS,
+    UNIT_MINUTES,
+    UNIT_PERCENT,
+    Framework,
+)
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosObjectCol,
@@ -32,14 +38,15 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     read_file_backed_properties,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
-    dropped,
+    UNIT_TYPES,
+    TranslatedUnit,
+    build_translated_units,
     plexos_field,
-    record,
 )
 from interop.plugins.shared.sienna_constants import (
+    ATTRIBUTE_ASSOCIATION_SCHEMA,
     FORCED_OUTAGES_DESTINATION_SCHEMA,
-    SIENNA_ID_COLUMN,
-    SIENNA_NAME_COLUMN,
+    SiennaAttributeAssociationCol,
     SiennaComponent,
     SiennaForcedOutageCol,
     SiennaSupplementalAttribute,
@@ -50,26 +57,45 @@ from interop.plugins.shared.sienna_events import (
     build_sienna_field,
     build_sienna_source,
 )
-from interop.plugins.shared.translation_runner import build_first_free_id
-from interop.plugins.shared.warning_text import name_a_few
-from interop.ports.outbound.reporting import DestinationField, SourceField, TranslationEvent
+from interop.plugins.shared.translation_runner import (
+    SkipReport,
+    SkipRule,
+    Translation,
+    apply_translations,
+    build_document_id_translation,
+    enrich_first_id,
+    finalise,
+    report_not_mapped,
+)
+from interop.ports.outbound.reporting import DestinationField, SourceField
 
-log = logging.getLogger(__name__)
-
-_MINUTES_PER_HOUR = 60.0
 _PERCENT = 100.0
 _OUTAGE = SiennaSupplementalAttribute.GEOMETRIC_DISTRIBUTION_FORCED_OUTAGE
 
+# One row per translated unit, in PLEXOS words, before any Sienna column exists.
+_UNIT_NAME = "unit_name"
+_UNIT_CLASS = "unit_class"
+_UNIT_TYPE = "unit_type"
+_UNIT_ID = "unit_id"
+_UNIT_RATE = "unit_rate"
+_UNIT_REPAIR_HOURS = "unit_repair_hours"
+_IS_RATE_FILE_BACKED = "is_rate_file_backed"
+_IS_REPAIR_FILE_BACKED = "is_repair_file_backed"
+
+_UNITS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    _UNIT_NAME: pl.Utf8,
+    _UNIT_CLASS: pl.Utf8,
+    _UNIT_TYPE: pl.Utf8,
+    _UNIT_ID: pl.Int64,
+    _UNIT_RATE: pl.Float64,
+    _UNIT_REPAIR_HOURS: pl.Float64,
+    _IS_RATE_FILE_BACKED: pl.Boolean,
+    _IS_REPAIR_FILE_BACKED: pl.Boolean,
+}
+
 # The Sienna types each PLEXOS class that states a forced outage can become.
 _SIENNA_TYPES: dict[PlexosClass, tuple[SiennaComponent, ...]] = {
-    PlexosClass.GENERATOR: (
-        SiennaComponent.THERMAL_STANDARD,
-        SiennaComponent.RENEWABLE_DISPATCH,
-        SiennaComponent.RENEWABLE_NON_DISPATCH,
-        SiennaComponent.HYDRO_DISPATCH,
-        SiennaComponent.HYDRO_TURBINE,
-        SiennaComponent.ENERGY_RESERVOIR_STORAGE,
-    ),
+    PlexosClass.GENERATOR: UNIT_TYPES,
     PlexosClass.BATTERY: (SiennaComponent.ENERGY_RESERVOIR_STORAGE,),
 }
 
@@ -94,100 +120,94 @@ _FILE_BACKED_NOTE = (
     "Forced Outage Rate comes from a data file, and a forced outage states one rate, so no "
     "forced outage is written"
 )
+_REPAIR_FILE_BACKED_NOTE = (
+    "Mean Time to Repair comes from a data file, and a forced outage states one recovery time, "
+    "so no forced outage is written"
+)
 _UNUSED_REPAIR_NOTE = (
     "the unit states no Forced Outage Rate above 0, so it never fails and its Mean Time to "
     "Repair has no forced outage to belong to"
 )
 
 
-@dataclass(frozen=True)
-class _Unit:
-    """One translated unit, and the outage values its PLEXOS object states."""
+class ForcedOutages(NamedTuple):
+    """The forced outage attributes, and the rows that join each one to its unit."""
 
-    plexos_class: PlexosClass
-    name: str
-    sienna_type: SiennaComponent
-    sienna_id: int
-    rate: float | None
-    repair_hours: float | None
-    is_rate_file_backed: bool
+    attributes: pl.DataFrame
+    associations: pl.DataFrame
 
 
-@dataclass(frozen=True)
-class _Reading:
-    """What one unit becomes: an outage row or none, and the events behind it."""
-
-    unit: _Unit
-    events: Sequence[TranslationEvent] = field(default_factory=list)
-    row: dict[str, object] | None = None
-    is_left_out: bool = False
-
-
-def map_forced_outages(state: State, recorder: ScopedRecorder) -> None:
-    """Write one forced outage for each translated unit that states a usable one."""
-    readings = [_read_unit(unit) for unit in _list_units(state)]
-    rows = _number_rows(readings, build_first_free_id(state))
-    for reading in readings:
-        record(recorder, reading.events)
-    for row in rows:
-        record(recorder, _build_id_events(row))
-    if rows:
-        state.destination_tables[_OUTAGE] = pl.DataFrame(
-            rows, schema=FORCED_OUTAGES_DESTINATION_SCHEMA
-        )
-    warn_left_out([reading.unit.name for reading in readings if reading.is_left_out])
+def map_forced_outages(state: State, recorder: ScopedRecorder) -> ForcedOutages:
+    """One forced outage for each translated unit that states a usable one."""
+    units = build_translated_units(state)
+    usable = pl.concat(
+        [
+            _report_unusable(_build_units_table(state, plexos_class, units), plexos_class, recorder)
+            for plexos_class in _SIENNA_TYPES
+        ]
+    )
+    outages = _translate(enrich_first_id(usable, state), recorder)
+    return ForcedOutages(
+        attributes=finalise(outages, FORCED_OUTAGES_DESTINATION_SCHEMA, recorder, _OUTAGE),
+        associations=_build_associations(outages),
+    )
 
 
-def warn_left_out(names: list[str]) -> None:
-    if names:
-        log.warning(
-            "plexos: %d unit(s) state a forced outage that Sienna cannot hold, so each keeps "
-            "none: %s",
-            len(names),
-            name_a_few(sorted(names)),
-        )
+# --- reading the staged PLEXOS tables ---------------------------------------
 
 
-def _number_rows(readings: list[_Reading], first_id: int) -> list[dict[str, object]]:
-    """Each outage row, with an id that counts on from the ids of earlier components."""
-    rows = [reading.row for reading in readings if reading.row is not None]
-    return [{SiennaForcedOutageCol.ID: first_id + index, **row} for index, row in enumerate(rows)]
+class _ClassValues(NamedTuple):
+    """The scalar values and the file-backed properties of each object of one class."""
+
+    scalars: dict[str, dict[str, float]]
+    file_backed: dict[str, list[str]]
 
 
-def _list_units(state: State) -> list[_Unit]:
+def _build_units_table(
+    state: State, plexos_class: PlexosClass, units: dict[str, list[TranslatedUnit]]
+) -> pl.DataFrame:
+    """The objects of one PLEXOS class that a Sienna table holds, with their outage values."""
+    values = _build_class_values(state, plexos_class)
+    rows = [
+        _build_unit_row(plexos_class, name, unit, values)
+        for name in _list_object_names(state, plexos_class)
+        if (unit := _find_unit(units.get(name, []), plexos_class)) is not None
+    ]
+    return pl.DataFrame(rows, schema=_UNITS_SCHEMA)
+
+
+def _build_class_values(state: State, plexos_class: PlexosClass) -> _ClassValues:
     properties = state.source_topology.get(PlexosResolvedTable.PROPERTIES)
     if properties is None:
-        return []
-    return [
-        unit
-        for plexos_class, sienna_types in _SIENNA_TYPES.items()
-        for unit in _list_class_units(state, properties, plexos_class, sienna_types)
-    ]
+        return _ClassValues({}, {})
+    return _ClassValues(
+        collapse_properties_by_object(properties, plexos_class),
+        read_file_backed_properties(properties, plexos_class),
+    )
 
 
-def _list_class_units(
-    state: State,
-    properties: pl.LazyFrame,
-    plexos_class: PlexosClass,
-    sienna_types: tuple[SiennaComponent, ...],
-) -> list[_Unit]:
-    """The objects of one PLEXOS class that a Sienna table holds, with their outage values."""
-    scalars = collapse_properties_by_object(properties, plexos_class)
-    file_backed = read_file_backed_properties(properties, plexos_class)
-    translated = _find_translated(state, sienna_types)
-    return [
-        _Unit(
-            plexos_class=plexos_class,
-            name=name,
-            sienna_type=translated[name][0],
-            sienna_id=translated[name][1],
-            rate=scalars.get(name, {}).get(PlexosProperty.FORCED_OUTAGE_RATE),
-            repair_hours=scalars.get(name, {}).get(PlexosProperty.MEAN_TIME_TO_REPAIR),
-            is_rate_file_backed=PlexosProperty.FORCED_OUTAGE_RATE in file_backed.get(name, []),
-        )
-        for name in _list_object_names(state, plexos_class)
-        if name in translated
-    ]
+def _find_unit(
+    candidates: list[TranslatedUnit], plexos_class: PlexosClass
+) -> TranslatedUnit | None:
+    """The first Sienna component of the name that this class can become."""
+    return next((one for one in candidates if one.sienna_type in _SIENNA_TYPES[plexos_class]), None)
+
+
+def _build_unit_row(
+    plexos_class: PlexosClass, name: str, unit: TranslatedUnit, values: _ClassValues
+) -> dict[str, Any]:
+    stated = values.scalars.get(name, {})
+    file_backed = values.file_backed.get(name, [])
+    return {
+        _UNIT_NAME: name,
+        _UNIT_CLASS: plexos_class,
+        _UNIT_TYPE: unit.sienna_type,
+        _UNIT_ID: unit.sienna_id,
+        _UNIT_RATE: stated.get(PlexosProperty.FORCED_OUTAGE_RATE),
+        _UNIT_REPAIR_HOURS: stated.get(PlexosProperty.MEAN_TIME_TO_REPAIR),
+        _IS_RATE_FILE_BACKED: PlexosProperty.FORCED_OUTAGE_RATE in file_backed,
+        _IS_REPAIR_FILE_BACKED: PlexosProperty.MEAN_TIME_TO_REPAIR in file_backed,
+    }
 
 
 def _list_object_names(state: State, plexos_class: PlexosClass) -> list[str]:
@@ -200,119 +220,228 @@ def _list_object_names(state: State, plexos_class: PlexosClass) -> list[str]:
     return sorted(names)
 
 
-def _find_translated(
-    state: State, sienna_types: tuple[SiennaComponent, ...]
-) -> dict[str, tuple[SiennaComponent, int]]:
-    """Each translated unit's Sienna type and id, by name. The first type that holds it wins."""
-    found: dict[str, tuple[SiennaComponent, int]] = {}
-    for sienna_type in sienna_types:
-        table = state.destination_tables.get(sienna_type)
-        if table is None:
-            continue
-        for name, sienna_id in table.select(SIENNA_NAME_COLUMN, SIENNA_ID_COLUMN).iter_rows():
-            found.setdefault(name, (sienna_type, sienna_id))
-    return found
+# --- leaving out each unit that states no usable outage ---------------------
 
 
-def _read_unit(unit: _Unit) -> _Reading:
-    """The outage one unit states, or the reason it states none."""
-    if unit.is_rate_file_backed:
-        return _Reading(unit, dropped([_rate_source(unit)], _FILE_BACKED_NOTE), is_left_out=True)
-    if unit.rate is None or unit.rate <= 0:
-        return _read_unused_repair(unit)
-    if unit.rate >= _PERCENT:
-        return _Reading(unit, dropped([_rate_source(unit)], _FULL_OUTAGE_NOTE), is_left_out=True)
-    if unit.repair_hours is None or unit.repair_hours <= 0:
-        return _Reading(unit, dropped([_rate_source(unit)], _NO_REPAIR_NOTE), is_left_out=True)
-    return _read_outage(unit, unit.rate, unit.repair_hours)
+class _OutageValue(NamedTuple):
+    """One PLEXOS value an outage reads: its column, its property and its unit."""
+
+    column: str
+    plexos_property: str
+    unit: str
 
 
-def _read_unused_repair(unit: _Unit) -> _Reading:
-    """A unit that never fails. A repair time it states has nothing to belong to."""
-    if unit.repair_hours is None:
-        return _Reading(unit)
-    return _Reading(unit, dropped([_repair_source(unit)], _UNUSED_REPAIR_NOTE))
+_RATE = _OutageValue(_UNIT_RATE, PlexosProperty.FORCED_OUTAGE_RATE, UNIT_PERCENT)
+_REPAIR = _OutageValue(_UNIT_REPAIR_HOURS, PlexosProperty.MEAN_TIME_TO_REPAIR, UNIT_HOURS)
 
 
-def _read_outage(unit: _Unit, rate: float, repair_hours: float) -> _Reading:
-    recovery_minutes = convert_hours_to_minutes(repair_hours)
-    row: dict[str, object] = {
-        SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY: recovery_minutes,
-        SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY: derive_transition_probability(
-            rate, recovery_minutes
-        ),
-        SiennaForcedOutageCol.MONITORED_COMPONENTS: [],
-        SiennaForcedOutageCol.IDENTIFIER: unit.name,
-        SiennaForcedOutageCol.COMPONENT_TYPE: unit.sienna_type.value,
-        SiennaForcedOutageCol.COMPONENT_ID: unit.sienna_id,
-    }
-    return _Reading(unit, _build_outage_events(unit, row), row)
+class _Reason(NamedTuple):
+    """One reason a unit takes no forced outage, and the units it keeps."""
+
+    keep: pl.Expr
+    reason: str
+    note: str
+    value: _OutageValue
 
 
-def convert_hours_to_minutes(hours: float) -> float:
-    return hours * _MINUTES_PER_HOUR
+# Each reason in the order it is tried, so a unit is reported for the first that holds.
+_REASONS: tuple[_Reason, ...] = (
+    _Reason(
+        ~pl.col(_IS_RATE_FILE_BACKED),
+        "read Forced Outage Rate from a data file, and a forced outage states one rate, "
+        "so none is written",
+        _FILE_BACKED_NOTE,
+        _RATE,
+    ),
+    _Reason(
+        pl.col(_UNIT_RATE) > 0,
+        "state a Mean Time to Repair but no Forced Outage Rate above 0, so the repair time "
+        "has no forced outage to belong to",
+        _UNUSED_REPAIR_NOTE,
+        _REPAIR,
+    ),
+    _Reason(
+        pl.col(_UNIT_RATE) < _PERCENT,
+        "state a Forced Outage Rate of 100 % or more, so no forced outage is written",
+        _FULL_OUTAGE_NOTE,
+        _RATE,
+    ),
+    _Reason(
+        ~pl.col(_IS_REPAIR_FILE_BACKED),
+        "read Mean Time to Repair from a data file, and a forced outage states one recovery "
+        "time, so none is written",
+        _REPAIR_FILE_BACKED_NOTE,
+        _REPAIR,
+    ),
+    _Reason(
+        pl.col(_UNIT_REPAIR_HOURS) > 0,
+        "state a Forced Outage Rate but no Mean Time to Repair above 0, so no forced outage "
+        "is written",
+        _NO_REPAIR_NOTE,
+        _RATE,
+    ),
+)
+
+# A unit that states no rate and no repair time states no outage, so there is nothing to report.
+_STATES_AN_OUTAGE = (
+    pl.col(_IS_RATE_FILE_BACKED)
+    | (pl.col(_UNIT_RATE) > 0)
+    | pl.col(_UNIT_REPAIR_HOURS).is_not_null()
+)
 
 
-def derive_transition_probability(rate_percent: float, recovery_minutes: float) -> float:
-    """The chance in each minute of failure that gives this share of the time out."""
-    share = rate_percent / _PERCENT
-    return share / (1 - share) / recovery_minutes
+def _report_unusable(
+    units: pl.DataFrame, plexos_class: PlexosClass, recorder: ScopedRecorder
+) -> pl.DataFrame:
+    """The units with a usable outage. Each reason records every unit it holds for, and warns."""
+    usable = units.filter(_STATES_AN_OUTAGE)
+    for rule in _build_rules(plexos_class):
+        usable, _ = report_not_mapped(usable, rule.keep, rule.report, recorder)
+    return usable
 
 
-def _build_outage_events(unit: _Unit, row: dict[str, object]) -> list[TranslationEvent]:
-    """The full chain: the repair time becomes the recovery time, which the chance reads."""
-    recovery = row[SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY]
-    recovery_read = build_sienna_source(
-        _OUTAGE, unit.name, SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY, recovery, UNIT_MINUTES
+def _build_rules(plexos_class: PlexosClass) -> list[SkipRule]:
+    return [SkipRule(one.keep, _build_report(plexos_class, one)) for one in _REASONS]
+
+
+def _build_report(plexos_class: PlexosClass, reason: _Reason) -> SkipReport:
+    return SkipReport(
+        pipeline=Framework.PLEXOS,
+        framework=Framework.PLEXOS,
+        component=plexos_class,
+        name_col=_UNIT_NAME,
+        reason=reason.reason,
+        counted_noun=f"{plexos_class}(s)",
+        note=reason.note,
+        attribute_col=reason.value.column,
+        attribute_name=reason.value.plexos_property,
+        attribute_unit=reason.value.unit,
     )
-    name_read = plexos_field(unit.plexos_class, unit.name, PlexosObjectCol.NAME, unit.name)
-    return [
-        *build_derived(
-            [_repair_source(unit)],
-            [_outage_field(unit, row, SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY, UNIT_MINUTES)],
-            _RECOVERY_DERIVATION,
-        ),
-        *build_derived(
-            [_rate_source(unit), recovery_read],
-            [_outage_field(unit, row, SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY)],
-            _PROBABILITY_DERIVATION,
-        ),
-        *build_defaulted(
-            [_outage_field(unit, row, SiennaForcedOutageCol.MONITORED_COMPONENTS)], _MONITORED_NOTE
-        ),
-        *build_derived(
-            [name_read],
-            [_outage_field(unit, row, SiennaForcedOutageCol.IDENTIFIER)],
-            _IDENTIFIER_DERIVATION,
-        ),
-    ]
 
 
-def _build_id_events(row: dict[str, object]) -> list[TranslationEvent]:
-    name = str(row[SiennaForcedOutageCol.IDENTIFIER])
-    id_field = build_sienna_field(
-        _OUTAGE, name, SiennaForcedOutageCol.ID, row[SiennaForcedOutageCol.ID]
-    )
-    return build_defaulted([id_field], _ID_NOTE)
+# --- the outage each usable unit becomes ------------------------------------
 
 
-def _rate_source(unit: _Unit) -> SourceField:
+def _translate(units: pl.DataFrame, recorder: ScopedRecorder) -> pl.DataFrame:
+    """The recovery time first, since the chance of failure reads it."""
+    outages = apply_translations(units, OUTAGE_TRANSLATIONS, recorder)
+    return apply_translations(outages, OUTAGE_PROBABILITY_TRANSLATIONS, recorder)
+
+
+def _build_associations(outages: pl.DataFrame) -> pl.DataFrame:
+    """One row for each outage, which names the unit the outage describes."""
+    col = SiennaAttributeAssociationCol
+    return outages.select(
+        pl.col(_UNIT_ID).alias(col.COMPONENT_ID),
+        pl.col(_UNIT_TYPE).alias(col.COMPONENT_TYPE),
+        pl.col(SiennaForcedOutageCol.ID).alias(col.ATTRIBUTE_ID),
+        pl.lit(_OUTAGE.value).alias(col.ATTRIBUTE_TYPE),
+    ).cast(pl.Schema(ATTRIBUTE_ASSOCIATION_SCHEMA))
+
+
+def _build_rate_source(row: dict[str, Any]) -> SourceField:
     return plexos_field(
-        unit.plexos_class, unit.name, PlexosProperty.FORCED_OUTAGE_RATE, unit.rate, UNIT_PERCENT
+        row[_UNIT_CLASS],
+        row[_UNIT_NAME],
+        PlexosProperty.FORCED_OUTAGE_RATE,
+        row[_UNIT_RATE],
+        UNIT_PERCENT,
     )
 
 
-def _repair_source(unit: _Unit) -> SourceField:
+def _build_repair_source(row: dict[str, Any]) -> SourceField:
     return plexos_field(
-        unit.plexos_class,
-        unit.name,
+        row[_UNIT_CLASS],
+        row[_UNIT_NAME],
         PlexosProperty.MEAN_TIME_TO_REPAIR,
-        unit.repair_hours,
+        row[_UNIT_REPAIR_HOURS],
         UNIT_HOURS,
     )
 
 
-def _outage_field(
-    unit: _Unit, row: dict[str, object], column: str, unit_label: str | None = None
+def _build_outage_field(
+    name: str, attribute: str, value: Any = None, unit: str | None = None
 ) -> DestinationField:
-    return build_sienna_field(_OUTAGE, unit.name, column, row[column], unit_label)
+    return build_sienna_field(_OUTAGE, name, attribute, value, unit)
+
+
+def _build_outage_value(
+    row: dict[str, Any], column: str, unit: str | None = None
+) -> DestinationField:
+    return _build_outage_field(row[_UNIT_NAME], column, row[column], unit)
+
+
+# --- Translation constants ---
+
+OUTAGE_ID = build_document_id_translation(
+    _build_outage_field, dest_name_col=_UNIT_NAME, id_col=SiennaForcedOutageCol.ID, note=_ID_NOTE
+)
+
+OUTAGE_RECOVERY = Translation(
+    exprs=[
+        (pl.col(_UNIT_REPAIR_HOURS) * MINUTES_PER_HOUR).alias(
+            SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY
+        )
+    ],
+    make_events=lambda old, new: build_derived(
+        [_build_repair_source(old)],
+        [_build_outage_value(new, SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY, UNIT_MINUTES)],
+        _RECOVERY_DERIVATION,
+    ),
+)
+
+OUTAGE_MONITORED = Translation(
+    exprs=[
+        pl.lit(
+            [], dtype=FORCED_OUTAGES_DESTINATION_SCHEMA[SiennaForcedOutageCol.MONITORED_COMPONENTS]
+        ).alias(SiennaForcedOutageCol.MONITORED_COMPONENTS)
+    ],
+    make_events=lambda old, new: build_defaulted(
+        [_build_outage_value(new, SiennaForcedOutageCol.MONITORED_COMPONENTS)], _MONITORED_NOTE
+    ),
+)
+
+OUTAGE_IDENTIFIER = Translation(
+    exprs=[pl.col(_UNIT_NAME).alias(SiennaForcedOutageCol.IDENTIFIER)],
+    make_events=lambda old, new: build_derived(
+        [plexos_field(old[_UNIT_CLASS], old[_UNIT_NAME], PlexosObjectCol.NAME, old[_UNIT_NAME])],
+        [_build_outage_value(new, SiennaForcedOutageCol.IDENTIFIER)],
+        _IDENTIFIER_DERIVATION,
+    ),
+)
+
+# The chance of failure reads the recovery time an earlier translation wrote, so it runs in a
+# batch of its own after them.
+OUTAGE_PROBABILITY = Translation(
+    exprs=[
+        (
+            pl.col(_UNIT_RATE)
+            / _PERCENT
+            / (1 - pl.col(_UNIT_RATE) / _PERCENT)
+            / pl.col(SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY)
+        ).alias(SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY)
+    ],
+    make_events=lambda old, new: build_derived(
+        [
+            _build_rate_source(old),
+            build_sienna_source(
+                _OUTAGE,
+                old[_UNIT_NAME],
+                SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY,
+                old[SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY],
+                UNIT_MINUTES,
+            ),
+        ],
+        [_build_outage_value(new, SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY)],
+        _PROBABILITY_DERIVATION,
+    ),
+)
+
+OUTAGE_TRANSLATIONS: list[Translation] = [
+    OUTAGE_ID,
+    OUTAGE_RECOVERY,
+    OUTAGE_MONITORED,
+    OUTAGE_IDENTIFIER,
+]
+
+OUTAGE_PROBABILITY_TRANSLATIONS: list[Translation] = [OUTAGE_PROBABILITY]

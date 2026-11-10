@@ -1160,6 +1160,24 @@ def assert_service_member_count(count: str, service_type: str, service: str) -> 
     )
 
 
+@then(
+    parsers.parse(
+        'the written Sienna system times the "{series}" series of the {owner_type} "{owner}"'
+        ' from "{start}" over {length:d} steps'
+    )
+)
+def assert_series_timing(series: str, owner_type: str, owner: str, start: str, length: int) -> None:
+    data = read_json(SYSTEM_PATH)
+    owner_id = find_sienna_component(data, owner_type, owner)["id"]
+    association = _find_ts_association(SYSTEM_PATH, owner_type, owner_id)
+    actual = (association.get("name"), association.get("initial_timestamp"))
+    actual_length = association.get("length")
+    assert actual == (series, start) and actual_length == length, (
+        f"expected [{owner_type}:{owner}] to time {series!r} from {start!r} over {length} steps,"
+        f" got {actual!r} over {actual_length!r} steps"
+    )
+
+
 def read_written_attributes(
     attribute_type: str, sienna_type: str, name: str
 ) -> list[dict[str, Any]]:

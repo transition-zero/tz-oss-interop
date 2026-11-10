@@ -75,6 +75,15 @@ Feature: PLEXOS reserves become Sienna services
     And the file "decisions.md" contains "the Sienna system holds no unit named Ghost, so it joins no service"
     And the log contains "1 reserve contributor(s) are not in the Sienna system"
 
+  Scenario: a contributor that two reserves name is warned about once
+    Given the model contains generator "Ghost" with "node=North_Node, Max Capacity=50"
+    And the model contains reserve "SpinningReserve" of type 1 requiring 60 from generators "GasPlant, Ghost"
+    And the model contains reserve "LowerReserve" of type 2 requiring 40 from generators "GasPlant, Ghost"
+    And the model is saved as "inputs/model.xml"
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the log contains "1 reserve contributor(s) are not in the Sienna system, so each joins no service. Each one: Ghost"
+    And the log does not contain "Ghost, Ghost"
+
   Scenario: a reserve whose requirement varies states its peak and a requirement series
     Given the model contains data file "SystemLoad" at "profiles/load.csv" with hourly values "1000, 2000, 3000"
     And the model contains region load "North" with peak 3000 from data file "SystemLoad"
@@ -85,6 +94,27 @@ Feature: PLEXOS reserves become Sienna services
     Then the file "outputs/system.json" parses as JSON with component "OnlineReserve" named "SpinningReserve" having "requirement" set to 150.0
     And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "OnlineReserve" named "SpinningReserve" attribute "requirement" with values 50 100 150
     And the written Sienna system is a valid SiennaSchemas 0.2 document
+
+  Scenario: two requirement series that start on different days each keep their own start
+    Each requirement series takes the start, the step and the length of its own reserve.
+    Given the model contains data file "DayOne" at "profiles/day_one.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 1   | 1      | 50    |
+      | 2026 | 1     | 1   | 2      | 100   |
+      | 2026 | 1     | 1   | 3      | 150   |
+    And the model contains reserve "EarlyReserve" of type 1 reading its requirement from data file "DayOne" from generators "GasPlant"
+    And the model contains data file "DayTwo" at "profiles/day_two.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 2   | 1      | 20    |
+      | 2026 | 1     | 2   | 2      | 40    |
+      | 2026 | 1     | 2   | 3      | 60    |
+    And the model contains reserve "LateReserve" of type 1 reading its requirement from data file "DayTwo" from generators "GasPlant"
+    And the model is saved as "inputs/model.xml"
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system times the "requirement" series of the OnlineReserve "EarlyReserve" from "2026-01-01T00:00:00Z" over 3 steps
+    And the written Sienna system times the "requirement" series of the OnlineReserve "LateReserve" from "2026-01-02T00:00:00Z" over 3 steps
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "OnlineReserve" named "LateReserve" attribute "requirement" with values 20 40 60
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
 
   Scenario: a reserve whose Type names no direction is left out of the services
     PLEXOS Type 6 names an operational reserve and no direction. An OnlineReserve must state

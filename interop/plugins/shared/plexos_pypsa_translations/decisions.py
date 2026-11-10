@@ -120,21 +120,6 @@ def report_unstaged_placeholders(
         )
 
 
-def warn_about_notes(skipped: Iterable[SkippedComponent]) -> None:
-    """One warning for each component class and note, naming a few of the components."""
-    grouped: dict[tuple[str, str], list[str]] = {}
-    for one in skipped:
-        grouped.setdefault((one.source.component, one.note), []).append(one.source.name)
-    for (component, note), names in sorted(grouped.items()):
-        log.warning(
-            "plexos: dropping %d %s(s): %s. Each one: %s",
-            len(names),
-            component,
-            note,
-            name_a_few(sorted(names)),
-        )
-
-
 def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
     grouped: dict[SkipGroup, list[str]] = {}
     for group, name in named:
@@ -151,10 +136,25 @@ def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
 
 
 def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
-    warn_about_notes(one for one in skipped if one.warn_with is None)
+    _warn_about_notes(one for one in skipped if one.warn_with is None)
     warn_about_groups(
         (one.warn_with, one.source.name) for one in skipped if one.warn_with is not None
     )
+
+
+def _warn_about_notes(skipped: Iterable[SkippedComponent]) -> None:
+    """One warning for each component class and note, naming a few of the components."""
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for one in skipped:
+        grouped.setdefault((one.source.component, one.note), []).append(one.source.name)
+    for (component, note), names in sorted(grouped.items()):
+        log.warning(
+            "plexos: dropping %d %s(s): %s. Each one: %s",
+            len(names),
+            component,
+            note,
+            name_a_few(sorted(names)),
+        )
 
 
 class DecisionKind(Enum):

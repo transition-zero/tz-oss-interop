@@ -389,7 +389,7 @@ Feature: PLEXOS to Sienna, in one hop
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 0 components of type "PowerLoad"
     And the file "decisions.md" contains "the Load object joins no Node that became a bus, so its demand has no home"
-    And the log contains "4 Load object(s) join no Node that became a bus, so each is left out: Stray_A, Stray_B, Stray_C and 1 more"
+    And the log contains "4 Load object(s) join no Node that became a bus, so each is left out. Each one: Stray_A, Stray_B, Stray_C and 1 more"
 
   Scenario: a Load object and a region load each become a PowerLoad
     Given a Plexos model
@@ -421,7 +421,7 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Node" having "max_active_power" set to 50.0
     And the file "decisions.md" contains "another load already takes the name of this Load object, and Sienna names each PowerLoad once"
-    And the log contains "1 Load object(s) share a name with another load, so each is left out: North_Node"
+    And the log contains "1 Load object(s) share a name with another load, so each is left out. Each one: North_Node"
 
   Scenario: a Zone becomes a LoadZone that each of its buses names
     A Node names the Zone it sits in. The Zone becomes a Sienna LoadZone, and each bus of a
@@ -499,7 +499,7 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/system.json" parses as JSON with 1 component of type "ThermalStandard"
     And the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
     And the file "decisions.md" contains "a Forced Outage Rate of 100 % or more leaves the unit no time in service to fail from"
-    And the log contains "1 unit(s) state a forced outage that Sienna cannot hold"
+    And the log contains "1 Generator(s) state a Forced Outage Rate of 100 % or more, so no forced outage is written. Each one: GasPlant"
 
   Scenario: a forced outage rate with no repair time states no forced outage
     Given a Plexos model
@@ -514,6 +514,52 @@ Feature: PLEXOS to Sienna, in one hop
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
     And the file "decisions.md" contains "states no Mean Time to Repair above 0"
+    And the log contains "1 Generator(s) state a Forced Outage Rate but no Mean Time to Repair above 0, so no forced outage is written. Each one: GasPlant"
+
+  Scenario: each reason a unit takes no forced outage gets a warning of its own
+    The operator reads why each unit has no forced outage. One warning for each reason names
+    the units it leaves without one.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "AlwaysOut" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=100, Mean Time to Repair=10"
+    And the model contains generator "NoRepair" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=5"
+    And the model contains generator "NeverFails" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Mean Time to Repair=10"
+    And the model contains generator "TracedRate" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Mean Time to Repair=10"
+    And the model names data file "Rates" at "profiles/rates.csv" but the package omits it
+    And generator "TracedRate" has property "Forced Outage Rate" from data file "Rates"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 4 components of type "ThermalStandard"
+    And the log contains "1 Generator(s) state a Forced Outage Rate of 100 % or more, so no forced outage is written. Each one: AlwaysOut"
+    And the log contains "1 Generator(s) state a Forced Outage Rate but no Mean Time to Repair above 0, so no forced outage is written. Each one: NoRepair"
+    And the log contains "1 Generator(s) state a Mean Time to Repair but no Forced Outage Rate above 0, so the repair time has no forced outage to belong to. Each one: NeverFails"
+    And the log contains "1 Generator(s) read Forced Outage Rate from a data file, and a forced outage states one rate, so none is written. Each one: TracedRate"
+    And the file "decisions.md" contains "Forced Outage Rate comes from a data file, and a forced outage states one rate"
+
+  Scenario: a repair time in a data file that did not stage states no forced outage, and the report says why
+    The XML file holds a placeholder of 0 beside a Mean Time to Repair that reads a data file.
+    The run does not read the placeholder as the repair time.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains fuel "Natural Gas" with price 3
+    And the model contains generator "GasPlant" with "node=North_Node, fuel=Natural Gas, Max Capacity=500, Heat Rate=9, Forced Outage Rate=5"
+    And the model names data file "Repairs" at "profiles/repairs.csv" but the package omits it
+    And generator "GasPlant" has property "Mean Time to Repair" from data file "Repairs"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the written Sienna system states no "GeometricDistributionForcedOutage" attribute for "ThermalStandard" "GasPlant"
+    And the file "decisions.md" contains "Mean Time to Repair comes from a data file, and a forced outage states one recovery time"
+    And the file "decisions.md" does not contain "states no Mean Time to Repair above 0"
+    And the log contains "1 Generator(s) read Mean Time to Repair from a data file, and a forced outage states one recovery time, so none is written. Each one: GasPlant"
 
   Scenario: a forced outage rate and a repair time that data files date become a forced outage
     Given a Plexos model
