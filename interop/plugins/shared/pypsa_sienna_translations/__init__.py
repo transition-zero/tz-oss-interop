@@ -1,5 +1,6 @@
 from ._arcs import ARC_TRANSLATIONS, build_arcs_source_table
-from ._areas import AREA_TRANSLATIONS, build_areas_source_table
+from ._areas import AREA_TRANSLATIONS
+from ._bus_groups import build_bus_group_source_table
 from ._buses import BUS_SKIP, BUS_TRANSLATIONS, build_bus_extensions, fill_bus_defaults
 from ._component_mapping import ComponentMapping
 from ._generators import (
@@ -31,7 +32,7 @@ from ._links import (
     link_in_scope,
     link_time_varying_owners,
 )
-from ._load_zones import LOAD_ZONE_TRANSLATIONS, build_load_zones_source_table
+from ._load_zones import LOAD_ZONE_TRANSLATIONS
 from ._loads import (
     INTERRUPTIBLE_LOAD_TRANSLATIONS_PHASE_1,
     INTERRUPTIBLE_LOAD_TRANSLATIONS_PHASE_2,
@@ -92,8 +93,7 @@ __all__ = [
     "build_arcs_source_table",
     "AREA_TRANSLATIONS",
     "LOAD_ZONE_TRANSLATIONS",
-    "build_load_zones_source_table",
-    "build_areas_source_table",
+    "build_bus_group_source_table",
     "LINE_TRANSLATIONS",
     "build_line_extensions",
     "enrich_line_voltage",

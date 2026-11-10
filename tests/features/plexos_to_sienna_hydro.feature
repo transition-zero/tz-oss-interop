@@ -226,6 +226,9 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the PS.jl system "outputs/power_simulations_system.json" component "HydroDispatch" named "hydro_1" has "__metadata__.type" equal to "HydroDispatch"
     And the file "decisions.md" contains "the solve template has no formulation for a HydroTurbine, so it runs as a HydroDispatch"
     And the file "decisions.md" contains "`sienna.HydroReservoir.res_1`"
+    And the file "decisions.md" contains "a HydroDispatch states no conversion_factor, so the solve does not read it"
+    And the log contains "power-simulations: 1 HydroTurbine(s) state"
+    And the log contains "which a HydroDispatch does not state, so the solve does not read them: hydro_1"
 
   Scenario: a thermal unit that draws on a Storage keeps its thermal type, and the Storage is a fuel store
     A model can state a fuel supply, such as a tank of liquefied gas, as a Storage that a

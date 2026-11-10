@@ -37,6 +37,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
     Decision,
+    DroppedValueRecorder,
     PerColumn,
     SourceValue,
     destination_row,
@@ -208,15 +209,32 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> None:
         link=ComponentReporter(recorder, PyPSAComponent.LINK),
     )
     mappable = _record_skipped(reporters, source, built_bus_names(state))
-    lines = [line for line in mappable if line.is_electrical]
-    links = [line for line in mappable if not line.is_electrical]
-    report_unstaged_placeholders(reporters.line, PlexosClass.LINE, build_unstaged_by_line(lines))
-    report_unstaged_placeholders(reporters.link, PlexosClass.LINE, build_unstaged_by_line(links))
-    _write_lines(state, reporters.line, lines)
-    _write_links(state, reporters.link, links)
+    report_unstaged_lines(reporters.line, reporters.link, mappable)
+    _write_lines(state, reporters.line, [line for line in mappable if line.is_electrical])
+    _write_links(state, reporters.link, [line for line in mappable if not line.is_electrical])
 
 
-def build_unstaged_by_line(lines: list[StagedLine]) -> dict[str, list[str]]:
+def report_unstaged_lines(
+    line_reporter: DroppedValueRecorder,
+    link_reporter: DroppedValueRecorder,
+    lines: list[StagedLine],
+) -> None:
+    """Record and warn about each line value whose data file did not stage.
+
+    An electrical line reports through ``line_reporter``, and a transport line through
+    ``link_reporter``.
+    """
+    electrical = [line for line in lines if line.is_electrical]
+    transport = [line for line in lines if not line.is_electrical]
+    report_unstaged_placeholders(
+        line_reporter, PlexosClass.LINE, _build_unstaged_by_line(electrical)
+    )
+    report_unstaged_placeholders(
+        link_reporter, PlexosClass.LINE, _build_unstaged_by_line(transport)
+    )
+
+
+def _build_unstaged_by_line(lines: list[StagedLine]) -> dict[str, list[str]]:
     """The placeholders each line carries, keyed by line, for the lines that carry one."""
     return {line.name: list(line.unstaged) for line in lines if line.unstaged}
 

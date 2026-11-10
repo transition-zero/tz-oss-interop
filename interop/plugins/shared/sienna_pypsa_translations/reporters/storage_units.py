@@ -35,6 +35,10 @@ _HYDRO_STATE_OF_CHARGE_DEFAULT = (
 _HYDRO_CYCLIC_DEFAULT = (
     "{sienna_type} carries no energy_shortage_cost; cyclic_state_of_charge defaults to False"
 )
+_TURBINE_RESERVOIR_DEFAULT = (
+    "a HydroTurbine keeps its reservoir on a HydroReservoir, which this hop does not read, and "
+    "the storage record states no {column}; {column} uses the PyPSA storage default"
+)
 
 
 class StorageUnitReporter(SiennaToPypsaReporter):
@@ -240,7 +244,9 @@ class StorageUnitReporter(SiennaToPypsaReporter):
     ) -> None:
         self._default_applied(
             destinations=[self._destination(name, PyPSAStorageUnitCol.MAX_HOURS, max_hours)],
-            note=_HYDRO_MAX_HOURS_DEFAULT.format(sienna_type=sienna_type),
+            note=_build_reservoir_note(
+                sienna_type, PyPSAStorageUnitCol.MAX_HOURS, _HYDRO_MAX_HOURS_DEFAULT
+            ),
         )
 
     def record_efficiency_default(
@@ -261,7 +267,11 @@ class StorageUnitReporter(SiennaToPypsaReporter):
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL, 0.0)
             ],
-            note=_HYDRO_STATE_OF_CHARGE_DEFAULT.format(sienna_type=sienna_type),
+            note=_build_reservoir_note(
+                sienna_type,
+                PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL,
+                _HYDRO_STATE_OF_CHARGE_DEFAULT,
+            ),
         )
 
     def record_cyclic_default(self, sienna_type: SiennaComponent, name: str) -> None:
@@ -271,3 +281,10 @@ class StorageUnitReporter(SiennaToPypsaReporter):
             ],
             note=_HYDRO_CYCLIC_DEFAULT.format(sienna_type=sienna_type),
         )
+
+
+def _build_reservoir_note(sienna_type: SiennaComponent, column: str, template: str) -> str:
+    """Why a hydro unit takes the PyPSA default for one column of its reservoir."""
+    if sienna_type == SiennaComponent.HYDRO_TURBINE:
+        return _TURBINE_RESERVOIR_DEFAULT.format(column=column)
+    return template.format(sienna_type=sienna_type)

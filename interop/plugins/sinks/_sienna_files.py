@@ -21,10 +21,16 @@ from power_openapi_models.document import (
 from power_openapi_models.infrastructure_core.models import SupplementalAttributeAssociation
 from power_openapi_models.operations.models import ServiceAssociation
 from power_openapi_models.timeseries.models import TimeSeriesAssociation
+from pydantic import BaseModel, ValidationError
 
 from interop.core.pipeline import State
 from interop.plugins.shared.extensions_sidecar import WritesExtensionsSidecar
-from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
+    SiennaSchemasSystem,
+)
+from interop.plugins.shared.sienna_document import find_component_model
 from interop.plugins.sinks.emit_sienna_h5_sidecar import EmitSiennaH5Sidecar
 from interop.ports.outbound.filesystem import Location, location_name
 
@@ -95,6 +101,7 @@ def serialise_system_document(
     contents: SystemContents, time_series_storage_file: str | None, indent: int
 ) -> bytes:
     """The system document as the SDK writes it: validated, stamped, with its keys sorted."""
+    reject_unknown_fields(contents.components)
     document = SystemDocument(
         name=None,
         description=None,
@@ -116,6 +123,45 @@ def serialise_system_document(
         time_series_storage_file=time_series_storage_file,
     )
     return _read_written(lambda target: write_document(document, target, indent=indent))
+
+
+def reject_unknown_fields(components: dict[str, Any]) -> None:
+    """Raise when a component row states a field that its SiennaSchemas model does not define.
+
+    A sink writes only the fields its column constants name, so an unknown field is a
+    programming error. The check skips a type that SiennaSchemas does not define, and a row
+    that breaks another rule of its model, because the reader leaves out each such row.
+    """
+    unknown = [
+        f"{type_name} {row.get(SIENNA_NAME_COLUMN, row.get(SIENNA_ID_COLUMN))} ({field})"
+        for type_name, rows in components.items()
+        for row in rows
+        for field in _list_unknown_fields(find_component_model(type_name), row)
+    ]
+    if unknown:
+        raise ValueError(
+            f"{len(unknown)} field(s) of the system document are not in SiennaSchemas: "
+            + "; ".join(unknown)
+        )
+
+
+def _list_unknown_fields(model: type[BaseModel] | None, row: dict[str, Any]) -> list[str]:
+    """The path of each field of ``row`` that ``model`` does not define, at any depth."""
+    if model is None or not _is_valid(model, row):
+        return []
+    try:
+        model.model_validate(row, extra="forbid")
+    except ValidationError as error:
+        return [".".join(str(part) for part in detail["loc"]) for detail in error.errors()]
+    return []
+
+
+def _is_valid(model: type[BaseModel], row: dict[str, Any]) -> bool:
+    try:
+        model.model_validate(row)
+    except ValidationError:
+        return False
+    return True
 
 
 def serialise_portfolio_document(payload: dict[str, Any], indent: int) -> bytes:

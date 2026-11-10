@@ -826,7 +826,6 @@ name one.
 | --- | --- |
 | `ACBus.number`, `.angle`, `.magnitude`, `.voltage_limits` | The bus keeps PyPSA's own defaults for the voltage state. |
 | `ACBus.available` | Every bus goes into the network. A bus stays there even where your system marks it unavailable. |
-| `ACBus.load_zone` | The zonal group is lost. The `Area` group still goes to the bus `location`. |
 | `PowerLoad.available`, `.active_power`, `.reactive_power`, `.base_power`, `.max_reactive_power`, `.conformity` | This pipeline holds no reactive demand on a load. |
 | `operation_cost.vom_cost` and `operation_cost.fixed` on a generator | Only the proportional term of the variable cost reaches `marginal_cost`. |
 | The `constant_term` and the `input_at_zero` of any cost curve | PyPSA holds one linear cost. The other terms of the curve are lost. |
@@ -836,8 +835,19 @@ name one.
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
 | A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
-| A reserve of any type | PyPSA has no reserve component. A reserve record in the sidecar travels on to the PyPSA sidecar. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
+
+### Parts that the report names
+
+PyPSA cannot hold the parts below. The translator leaves each one out. It writes one
+`decisions.md` row for each, and one warning for each type. The warning names three.
+
+| Sienna | Row kind | Effect |
+| --- | --- | --- |
+| A component of a type that no table above reads, such as `LoadZone`, `OnlineReserve` or `OfflineReserve` | `COMPONENT_SKIPPED` | The component is lost. The `load_zone` of each bus is lost with its `LoadZone`, and the `Area` still goes to the bus `location`. A reserve record in the sidecar travels on to the PyPSA sidecar. |
+| `HydroReservoir` | `COMPONENT_SKIPPED`, and `NOT_MAPPED` for `storage_level_limits`, `initial_level`, `inflow`, `outflow` and each series it owns | A hydro `StorageUnit` reads its reservoir from the `storage` record of the sidecar only. With no sidecar, it takes the PyPSA defaults. |
+| A row of `service_associations` | `NOT_MAPPED`, against the component that contributes | The contribution to the service is lost. |
+| A supplemental attribute, such as a `GeometricDistributionForcedOutage` | `NOT_MAPPED`, against the component it describes | The attribute is lost. |
 
 ## What the report tells you
 
@@ -848,9 +858,9 @@ appear.
 | --- | --- |
 | `VALUE_DERIVED` | The translator wrote the value from your data. The row gives the formula. A field of the sidecar that travels on to the PyPSA sidecar gets this kind too. |
 | `TRANSLATOR_DEFAULT_APPLIED` | Sienna held no such value. The row gives the default and says why. |
-| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, an annual energy bound that does not apply, a sidecar record that no mapping read, and a sidecar field that no mapping maps or relays. |
+| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, an annual energy bound that does not apply, a sidecar record that no mapping read, a sidecar field that no mapping maps or relays, and the parts that [Parts that the report names](#parts-that-the-report-names) lists. |
 
-`COMPONENT_SKIPPED` appears only for a representative period that cannot weight its
-snapshots. The translator leaves out no component.
-A value that it cannot use stops the run instead.
+`COMPONENT_SKIPPED` appears for a representative period that cannot weight its snapshots,
+and for each component that [Parts that the report names](#parts-that-the-report-names)
+lists. A value that the translator cannot use stops the run instead.
 [Across all components](#across-all-components) names each such value.

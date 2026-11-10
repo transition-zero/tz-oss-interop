@@ -173,3 +173,14 @@ Feature: pypsa_to_sienna_map_components and sienna_relate_components translate P
       | {"bus": [{"name": "bus_G1"}, {"name": "bus_G2"}, {"name": "bus_G3"}, {"name": "bus_G4"}]} |
     When I run translate against "inputs/unread_records.nc" with sidecar "inputs/extensions.json" pipeline "pypsa-to-sienna" sink output "outputs/system.json"
     Then the log contains "5 extension record(s) reach no mapping, so each is dropped: bus bus_G1, bus bus_G2, bus bus_G3 and 2 more"
+
+  Scenario: a written component that states a field SiennaSchemas does not define stops the sink
+    The sink checks each component it writes against its SiennaSchemas model, so a column
+    constant that drifts from SiennaSchemas stops the run and names the field.
+    Given a PyPSA network
+    And the network contains bus "bus_AL" carrier "AC" v_nom 380.0 location "AL"
+    And the network is saved as "inputs/drifted.nc"
+    And a pipeline "pypsa-to-sienna-drifted" whose last step adds the field "peak_load" to each Area
+    When I run translate against "inputs/drifted.nc" pipeline "pypsa-to-sienna-drifted" sink output "outputs/system.json"
+    Then the printed output contains "1 field(s) of the system document are not in SiennaSchemas: Area AL (peak_load)"
+    And the file "outputs/system.json" does not exist

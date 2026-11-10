@@ -9,7 +9,7 @@ solve.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NamedTuple
 
 from power_openapi_models.operations.models import HydroDispatch, HydroTurbine
 
@@ -47,8 +47,16 @@ _RESERVOIR_NOTE = (
 )
 
 
-def map_turbine_to_dispatch(out: dict[str, Any], name: str, recorder: ScopedRecorder) -> None:
-    """Record that a HydroTurbine runs as a HydroDispatch, and drop what a HydroDispatch lacks."""
+class UnreadTurbineField(NamedTuple):
+    """One field a HydroTurbine states that the solve does not read."""
+
+    turbine: str
+    field: str
+    value: Any
+
+
+def record_turbine_as_dispatch(name: str, recorder: ScopedRecorder) -> None:
+    """Record that a HydroTurbine runs as a HydroDispatch."""
     recorder.append(
         TranslationEvent(
             kind=EventKind.VALUE_DERIVED,
@@ -69,19 +77,36 @@ def map_turbine_to_dispatch(out: dict[str, Any], name: str, recorder: ScopedReco
             derivation=_RUNS_AS_DISPATCH,
         )
     )
-    for field in TURBINE_ONLY_FIELDS:
-        value = out.pop(field, None)
-        if value is not None:
-            _record_unread(recorder, name, field, value)
 
 
-def _record_unread(recorder: ScopedRecorder, name: str, field: str, value: Any) -> None:
-    recorder.append(
-        TranslationEvent(
-            kind=EventKind.NOT_MAPPED,
-            sources=[_build_turbine_source(name, field, value)],
-            note=_TURBINE_FIELD_NOTE.format(field=field),
+def drop_turbine_only_fields(out: dict[str, Any], name: str) -> list[UnreadTurbineField]:
+    """Take off one turbine row each field a HydroDispatch lacks, and return those it stated."""
+    unread = [
+        UnreadTurbineField(name, field, out.pop(field, None)) for field in TURBINE_ONLY_FIELDS
+    ]
+    return [field for field in unread if field.value is not None]
+
+
+def report_unread_turbine_fields(
+    unread: list[UnreadTurbineField], recorder: ScopedRecorder
+) -> None:
+    """Record each turbine field that the solve does not read, and warn once naming a few."""
+    if not unread:
+        return
+    for one in unread:
+        recorder.append(
+            TranslationEvent(
+                kind=EventKind.NOT_MAPPED,
+                sources=[_build_turbine_source(one.turbine, one.field, one.value)],
+                note=_TURBINE_FIELD_NOTE.format(field=one.field),
+            )
         )
+    log.warning(
+        "power-simulations: %d HydroTurbine(s) state %s, which a HydroDispatch does not state, "
+        "so the solve does not read them: %s",
+        len({one.turbine for one in unread}),
+        ", ".join(sorted({one.field for one in unread})),
+        name_a_few(sorted({one.turbine for one in unread})),
     )
 
 
@@ -99,6 +124,8 @@ def report_unsolved_reservoirs(state: State, recorder: ScopedRecorder) -> None:
     names: list[str] = (
         reservoirs.select(SiennaHydroReservoirCol.NAME).collect().to_series().to_list()
     )
+    if not names:
+        return
     for name in names:
         recorder.append(
             TranslationEvent(
