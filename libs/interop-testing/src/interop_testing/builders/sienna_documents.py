@@ -283,6 +283,16 @@ def _build_single_time_series(
     values = np.asarray(series["values"], dtype="float64")
     if series.get("is_per_unit"):
         return SingleTimeSeries(initial_time, resolution, values, series["name"])
+    if "stated_units" in series:
+        return SingleTimeSeries(
+            initial_time,
+            resolution,
+            values,
+            series["name"],
+            units=series["stated_units"],
+            quantity_kind=series["quantity_kind"],
+            unit_system="natural_units",
+        )
     return SingleTimeSeries(
         initial_time,
         resolution,
@@ -408,6 +418,22 @@ def per_unit_time_series(
         "initial_time": TIME_SERIES_INITIAL_TIME,
         "values": values,
         "is_per_unit": True,
+    }
+
+
+def stated_unit_time_series(
+    owner_type: str, owner_id: int, name: str, values: list[float], units: str
+) -> dict[str, Any]:
+    """An inflow series stored in natural units as stated, on an owner given by its id."""
+    return {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "name": name,
+        "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
+        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "values": values,
+        "stated_units": units,
+        "quantity_kind": "Inflow",
     }
 
 

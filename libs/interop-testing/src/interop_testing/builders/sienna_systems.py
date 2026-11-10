@@ -23,6 +23,7 @@ from interop_testing.builders.sienna_documents import (
     per_unit_time_series,
     renewable_generation_cost,
     single_time_series,
+    stated_unit_time_series,
     storage_cost,
     thermal_generation_cost,
     write_sienna_system,
@@ -638,6 +639,14 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"time series {name!r} for HydroReservoir {reservoir!r}")
         reservoir_id = next(row["id"] for row in self._reservoirs if row["name"] == reservoir)
         self._time_series.append(per_unit_time_series("HydroReservoir", reservoir_id, name, values))
+
+    def add_reservoir_inflow_series(self, reservoir: str, values: list[float], units: str) -> None:
+        """Add an inflow series in natural units that a HydroReservoir owns."""
+        self._check_not_saved(f"inflow series for HydroReservoir {reservoir!r}")
+        reservoir_id = next(row["id"] for row in self._reservoirs if row["name"] == reservoir)
+        self._time_series.append(
+            stated_unit_time_series("HydroReservoir", reservoir_id, "inflow", values, units)
+        )
 
     def add_ext(self, owner_type: str, owner_name: str, ext: dict[str, Any]) -> None:
         """Add (and merge) extensions.json fields for one component, keyed by owner."""

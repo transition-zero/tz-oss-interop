@@ -65,6 +65,8 @@ _LOAD_TYPES = (SiennaComponent.POWER_LOAD, SiennaComponent.INTERRUPTIBLE_POWER_L
 _LINE_TYPES = (SiennaComponent.LINE, SiennaComponent.MONITORED_LINE)
 _LINK_TYPES = (SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,)
 _RESERVOIR_TYPES = (SiennaComponent.HYDRO_RESERVOIR,)
+# A reservoir series is a level or a flow, not a share of a capacity, so it stays as stated.
+_STATED_UNIT_OWNER_TYPES = frozenset(_RESERVOIR_TYPES)
 # The types that a table above holds, or that staging folds into another row.
 _HELD_TYPES = frozenset(
     {
@@ -426,6 +428,13 @@ def _is_natural_units(association: dict[str, Any]) -> bool:
     return association.get(TimeSeriesAssociationCol.UNIT_SYSTEM) == SiennaUnitSystem.NATURAL_UNITS
 
 
+def _is_per_unit_shape(association: dict[str, Any]) -> bool:
+    """Whether a natural-units row stands for a share of its owner's capacity."""
+    return _is_natural_units(association) and (
+        association[TimeSeriesAssociationCol.OWNER_TYPE] not in _STATED_UNIT_OWNER_TYPES
+    )
+
+
 def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep the rows that can be staged, and warn once about the natural-units rows that cannot.
 
@@ -436,7 +445,7 @@ def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, An
     left_out: list[str] = []
     for association in associations:
         owner_type = association[TimeSeriesAssociationCol.OWNER_TYPE]
-        if _is_natural_units(association) and not has_series_capacity(owner_type):
+        if _is_per_unit_shape(association) and not has_series_capacity(owner_type):
             left_out.append(f"{owner_type} {association[TimeSeriesAssociationCol.NAME]}")
         else:
             kept.append(association)
@@ -497,7 +506,7 @@ def _capacity_by_owner(
             association[TimeSeriesAssociationCol.OWNER_ID],
         )
         for association in associations
-        if _is_natural_units(association)
+        if _is_per_unit_shape(association)
     }
     return build_capacity_by_owner(owners, system.get(SiennaSchemasSystem.COMPONENTS, {}))
 

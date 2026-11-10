@@ -122,6 +122,15 @@ def given_hydro_reservoir_series(
     )
 
 
+@given(parsers.parse('the HydroReservoir "{name}" has an inflow series {values} in "{units}"'))
+def given_hydro_reservoir_inflow_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, values: str, units: str
+) -> None:
+    sienna_system_builder.add_reservoir_inflow_series(
+        name, [float(value) for value in values.split()], units
+    )
+
+
 @given(parsers.parse('the system contains a bus "{name}" in area "{area}"'))
 def given_system_contains_bus_in_area(
     sienna_system_builder: SiennaSystemBuilder, name: str, area: str

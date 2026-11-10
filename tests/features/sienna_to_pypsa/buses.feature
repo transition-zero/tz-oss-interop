@@ -189,6 +189,19 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     And the file "decisions.md" contains "| `sienna.HydroReservoir.res_1.inflow` = profile |"
     And the log contains "sienna-to-pypsa: 1 HydroReservoir(s) have no PyPSA counterpart, so each is left out with its levels and its inflow: res_1"
 
+  Scenario: a reservoir inflow stated in cubic metres per second reaches the report
+    A HydroReservoir states its inflow in natural units and has no capacity to divide by, so
+    the source keeps the series as stated, and the report names it.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the system contains a HydroReservoir "res_1" with max_level 800 initial_level 400 inflow 5
+    And the HydroReservoir "res_1" has an inflow series 4.0 6.0 in "m3/s"
+    And the system is saved as "inputs/reservoir.json"
+    When I run translate against "inputs/reservoir.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the file "decisions.md" contains "| `sienna.HydroReservoir.res_1.inflow` = profile |"
+    And the log does not contain "no capacity to convert by"
+
   Scenario: A fuel bus of the sidecar becomes a PyPSA bus when the system holds no ACBus
     Given a Sienna system
     And the system has a bus extension record "R1/ATGAS" with "carrier" set to "gas"
