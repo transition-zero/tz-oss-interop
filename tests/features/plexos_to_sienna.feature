@@ -389,7 +389,7 @@ Feature: PLEXOS to Sienna, in one hop
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with 0 components of type "PowerLoad"
     And the file "decisions.md" contains "the Load object joins no Node that became a bus, so its demand has no home"
-    And the log contains "4 Load object(s) join no Node that became a bus, so each is left out: Stray_A, Stray_B, Stray_C and 1 more"
+    And the log contains "4 Load object(s) join no Node that became a bus, so each is left out. Each one: Stray_A, Stray_B, Stray_C and 1 more"
 
   Scenario: a Load object and a region load each become a PowerLoad
     Given a Plexos model
@@ -421,7 +421,7 @@ Feature: PLEXOS to Sienna, in one hop
     Then the file "outputs/system.json" parses as JSON with 1 component of type "PowerLoad"
     And the file "outputs/system.json" parses as JSON with component "PowerLoad" named "North_Node" having "max_active_power" set to 50.0
     And the file "decisions.md" contains "another load already takes the name of this Load object, and Sienna names each PowerLoad once"
-    And the log contains "1 Load object(s) share a name with another load, so each is left out: North_Node"
+    And the log contains "1 Load object(s) share a name with another load, so each is left out. Each one: North_Node"
 
   Scenario: a Zone becomes a LoadZone that each of its buses names
     A Node names the Zone it sits in. The Zone becomes a Sienna LoadZone, and each bus of a

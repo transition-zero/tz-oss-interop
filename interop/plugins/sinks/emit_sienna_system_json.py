@@ -40,27 +40,26 @@ def _list_rows(table: pl.DataFrame | None) -> list[dict[str, Any]]:
     return [] if table is None else table.to_dicts()
 
 
+class _BusReference(NamedTuple):
+    """One bus column that names another component, the id of each name, and the check label."""
+
+    column: str
+    ids: dict[str, int]
+    context: str
+
+
 class _BusReferences(NamedTuple):
-    """The ids that a bus names its area and its load zone by, keyed by name."""
+    """The two components a bus names: its area and its load zone. A bus can name neither."""
 
-    area_ids: dict[str, int]
-    load_zone_ids: dict[str, int]
-
-    def list_checks(self) -> list[tuple[str, dict[str, int], str]]:
-        return [
-            (SiennaACBusCol.AREA, self.area_ids, "buses -> areas"),
-            (SiennaACBusCol.LOAD_ZONE, self.load_zone_ids, "buses -> load zones"),
-        ]
+    area: _BusReference
+    load_zone: _BusReference
 
     def build_bus_component(self, row: dict[str, Any]) -> dict[str, Any]:
         """The bus as the document states it, with its area and load zone names as ids."""
         component = dict(row)
-        area_name = row[SiennaACBusCol.AREA]
-        load_zone_name = row.get(SiennaACBusCol.LOAD_ZONE)
-        component[SiennaACBusCol.AREA] = self.area_ids[area_name] if area_name else None
-        component[SiennaACBusCol.LOAD_ZONE] = (
-            self.load_zone_ids[load_zone_name] if load_zone_name else None
-        )
+        for reference in self:
+            name = row[reference.column]
+            component[reference.column] = reference.ids[name] if name else None
         return component
 
 
@@ -98,7 +97,10 @@ class EmitSiennaSystemJson(Sink):
         )
         bus_components, bus_ids = EmitSiennaSystemJson._build_bus_components(
             state.destination_tables.get(SiennaComponent.AC_BUS),
-            _BusReferences(area_ids, load_zone_ids),
+            _BusReferences(
+                _BusReference(SiennaACBusCol.AREA, area_ids, "buses -> areas"),
+                _BusReference(SiennaACBusCol.LOAD_ZONE, load_zone_ids, "buses -> load zones"),
+            ),
         )
         load_components = EmitSiennaSystemJson._build_bus_attached_components(
             state.destination_tables.get(SiennaComponent.POWER_LOAD),
@@ -236,9 +238,9 @@ class EmitSiennaSystemJson(Sink):
     ) -> tuple[list[dict[str, Any]], dict[str, int]]:
         if buses_df is None:
             return [], {}
-        for column, ids, context in references.list_checks():
-            referenced = buses_df[column].drop_nulls().unique().to_list()
-            validate_refs(column, referenced, set(ids), context)
+        for reference in references:
+            referenced = buses_df[reference.column].drop_nulls().unique().to_list()
+            validate_refs(reference.column, referenced, set(reference.ids), reference.context)
         components: list[dict[str, Any]] = []
         bus_ids: dict[str, int] = {}
         for row in buses_df.iter_rows(named=True):

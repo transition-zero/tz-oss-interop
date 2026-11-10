@@ -23,7 +23,7 @@ import polars as pl
 from interop.core.extensions import LoadExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW, Framework
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosCollection,
@@ -69,8 +69,13 @@ from interop.plugins.shared.sienna_time_series import (
     warn_unscalable_load_series,
 )
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
-from interop.plugins.shared.translation_runner import Translation, express_document_id
-from interop.plugins.shared.warning_text import name_a_few
+from interop.plugins.shared.translation_runner import (
+    SkipReport,
+    SkipRule,
+    Translation,
+    drop_skipped,
+    express_document_id,
+)
 
 log = logging.getLogger(__name__)
 
@@ -139,14 +144,36 @@ _MISSING_PROFILE_NOTE = (
 )
 _BUSLESS_NOTE = "Region contains no Node, so its demand has no bus"
 _NODE_BUSLESS_NOTE = "the Node was not translated to a bus, so its demand has no home"
-_LOAD_OBJECT_BUSLESS_NOTE = (
-    "the Load object joins no Node that became a bus, so its demand has no home"
+_LOAD_OBJECT_SCHEMA: dict[str, Any] = {
+    LOAD_NAME: pl.Utf8,
+    LOAD_BUS: pl.Utf8,
+    LOAD_DEMAND: pl.Float64,
+}
+_LOAD_OBJECT_BUSLESS_REPORT = SkipReport(
+    pipeline=Framework.PLEXOS,
+    framework=Framework.PLEXOS,
+    component=PlexosClass.LOAD,
+    name_col=LOAD_NAME,
+    reason="join no Node that became a bus",
+    counted_noun="Load object(s)",
+    note="the Load object joins no Node that became a bus, so its demand has no home",
+    attribute_col=LOAD_DEMAND,
+    attribute_name=PlexosProperty.LOAD,
 )
-_LOAD_OBJECT_BUSLESS_REASON = "join no Node that became a bus"
-_LOAD_OBJECT_DUPLICATE_NOTE = (
-    "another load already takes the name of this Load object, and Sienna names each PowerLoad once"
+_LOAD_OBJECT_DUPLICATE_REPORT = SkipReport(
+    pipeline=Framework.PLEXOS,
+    framework=Framework.PLEXOS,
+    component=PlexosClass.LOAD,
+    name_col=LOAD_NAME,
+    reason="share a name with another load",
+    counted_noun="Load object(s)",
+    note=(
+        "another load already takes the name of this Load object, and Sienna names each "
+        "PowerLoad once"
+    ),
+    attribute_col=LOAD_DEMAND,
+    attribute_name=PlexosProperty.LOAD,
 )
-_LOAD_OBJECT_DUPLICATE_REASON = "share a name with another load"
 
 # What each owner class names a load after, and the membership that gives it its bus.
 _NAME_DERIVATIONS = {
@@ -185,8 +212,8 @@ def load_name_for(region: str) -> str:
 def build_loads_source_table(state: State, recorder: ScopedRecorder) -> pl.DataFrame:
     """One row per load the model states, in PLEXOS words, sorted so ids are stable."""
     _record_dropped_region_prices(state, recorder)
-    rows = _region_load_rows(state, recorder) + _node_load_rows(state, recorder)
-    rows += _load_object_rows(state, recorder, {row[LOAD_NAME] for row in rows})
+    rows = _build_region_load_rows(state, recorder) + _build_node_load_rows(state, recorder)
+    rows += _build_load_object_rows(state, recorder, {row[LOAD_NAME] for row in rows})
     _report_unscalable_profiles(rows, recorder)
     return pl.DataFrame(rows, schema=_SOURCE_SCHEMA)
 
@@ -255,7 +282,7 @@ def _record_dropped_region_prices(state: State, recorder: ScopedRecorder) -> Non
             )
 
 
-def _region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
+def _build_region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     demand_by_region = _drop_participation_shares(
         _demand_by_object(properties, PlexosClass.REGION), recorder
@@ -286,7 +313,7 @@ def _region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, 
     return rows
 
 
-def _node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
+def _build_node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     demand_by_node = _demand_by_object(properties, PlexosClass.NODE)
     profile_nodes = _staged_profile_owners(
@@ -312,7 +339,7 @@ def _node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, An
     return rows
 
 
-def _load_object_rows(
+def _build_load_object_rows(
     state: State, recorder: ScopedRecorder, taken_names: set[str]
 ) -> list[dict[str, Any]]:
     """One row per Load object that joins a bus and whose name no other load takes."""
@@ -321,65 +348,40 @@ def _load_object_rows(
     profile_loads = _staged_profile_owners(
         state, properties, recorder, PlexosClass.LOAD, LOAD_OBJECT_SERIES_KEY
     )
-    node_by_load = _node_by_load_object(state)
-    buses = _bus_names(state)
-    names = sorted(set(demand_by_load) | profile_loads)
-    busless = [name for name in names if node_by_load.get(name) not in buses]
-    duplicate = [name for name in names if name not in busless and name in taken_names]
-    _report_left_out_load_objects(busless, demand_by_load, _LeftOut.build_busless(), recorder)
-    _report_left_out_load_objects(duplicate, demand_by_load, _LeftOut.build_duplicate(), recorder)
+    candidates = _build_load_object_table(state, demand_by_load, profile_loads)
+    rules = (
+        SkipRule(pl.col(LOAD_BUS).is_in(sorted(_bus_names(state))), _LOAD_OBJECT_BUSLESS_REPORT),
+        SkipRule(~pl.col(LOAD_NAME).is_in(sorted(taken_names)), _LOAD_OBJECT_DUPLICATE_REPORT),
+    )
+    kept = drop_skipped(candidates, rules, recorder)
     stats = _series_stats(state, LOAD_OBJECT_SERIES_KEY)
     return [
         _load_row(
-            name=name,
-            owner=name,
+            name=row[LOAD_NAME],
+            owner=row[LOAD_NAME],
             owner_class=PlexosClass.LOAD,
-            bus=node_by_load[name],
-            demand=demand_by_load.get(name),
-            stats=stats.get(name) if name in profile_loads else None,
+            bus=row[LOAD_BUS],
+            demand=row[LOAD_DEMAND],
+            stats=stats.get(row[LOAD_NAME]) if row[LOAD_NAME] in profile_loads else None,
         )
-        for name in names
-        if name not in busless and name not in duplicate
+        for row in kept.iter_rows(named=True)
     ]
 
 
-def _node_by_load_object(state: State) -> dict[str, str]:
-    return relate_child(
+def _build_load_object_table(
+    state: State, demand_by_load: dict[str, float], profile_loads: set[str]
+) -> pl.DataFrame:
+    """Every Load object that states a demand, with the Node it joins, sorted by name."""
+    node_by_load = relate_child(
         state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
         PlexosClass.LOAD,
         PlexosCollection.NODE,
     )
-
-
-class _LeftOut(NamedTuple):
-    """Why a Load object is left out: the note decisions.md carries, and the warning's words."""
-
-    note: str
-    reason: str
-
-    @classmethod
-    def build_busless(cls) -> _LeftOut:
-        return cls(_LOAD_OBJECT_BUSLESS_NOTE, _LOAD_OBJECT_BUSLESS_REASON)
-
-    @classmethod
-    def build_duplicate(cls) -> _LeftOut:
-        return cls(_LOAD_OBJECT_DUPLICATE_NOTE, _LOAD_OBJECT_DUPLICATE_REASON)
-
-
-def _report_left_out_load_objects(
-    names: list[str], demand_by_load: dict[str, float], left_out: _LeftOut, recorder: ScopedRecorder
-) -> None:
-    """Record each Load object left out, and warn once naming a few of them."""
-    for name in names:
-        field = plexos_field(PlexosClass.LOAD, name, PlexosProperty.LOAD, demand_by_load.get(name))
-        record(recorder, skipped([field], left_out.note))
-    if names:
-        log.warning(
-            "plexos: %d Load object(s) %s, so each is left out: %s",
-            len(names),
-            left_out.reason,
-            name_a_few(names),
-        )
+    rows = [
+        {LOAD_NAME: name, LOAD_BUS: node_by_load.get(name), LOAD_DEMAND: demand_by_load.get(name)}
+        for name in sorted(set(demand_by_load) | profile_loads)
+    ]
+    return pl.DataFrame(rows, schema=_LOAD_OBJECT_SCHEMA)
 
 
 def _load_row(
