@@ -43,3 +43,4 @@ Feature: Sienna to PowerSimulations Pipeline translates ACBus rows to PS.jl comp
     When I run translate against Sienna system "inputs/zoned_bus.json" pipeline "sienna-to-power-simulations" json output "outputs/system.json" h5 output "outputs/system_ts.h5"
     Then the PS.jl system "outputs/system.json" component "ACBus" named "bus_1" has field "load_zone" equal to null
     And the file "decisions.md" contains "the PowerSystems.jl document states no LoadZone"
+    And the file "decisions.md" contains "load_zone` = Coast"

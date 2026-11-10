@@ -125,6 +125,24 @@ Feature: a PLEXOS data file that gives a value for each pattern expands onto the
     When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
     Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 2
 
+  Scenario: a snapshot that two patterns cover takes the value of the first row
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains data file "Demand" at "Load_Load.csv" with rows:
+      | NAME      | PATTERN | VALUE |
+      | Grid_Node | M1      | 10    |
+      | Grid_Node | M1,H1   | 99    |
+    And the model contains load "Grid_Node" with peak 99 from data file "Demand"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 1 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    And a step plugin "dump_time_series" that writes a source_time_series frame to JSON
+    And a project-local pipeline "resolve-ts" that stages plexos for model "Plan" in 2026 and dumps a time series
+    When I stage "inputs/model.xml" through "resolve-ts" dumping series "Node"/"Load" to "outputs/load_ts.json" with system output "outputs/system.json"
+    Then the load time series "outputs/load_ts.json" for "Grid_Node" at hour 1 is 10
+    And the load time series "outputs/load_ts.json" for "Grid_Node" at hour 2 is 10
+
   Scenario: a pattern term the source cannot read leaves that pattern out with a warning
     Given a Plexos model
     And the model contains region "Grid"

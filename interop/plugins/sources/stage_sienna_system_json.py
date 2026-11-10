@@ -17,6 +17,8 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
     SIENNA_SOURCE_AREAS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
     InfraStoreSidecar,
@@ -125,10 +127,7 @@ def stage_system(system: dict[str, Any], h5_file: IO[bytes], staging_dir: Path) 
 def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.LazyFrame]:
     components = system.get(SiennaSchemasSystem.COMPONENTS, {})
 
-    area_name_by_id = {
-        area[SiennaAreaCol.ID]: area[SiennaAreaCol.NAME]
-        for area in components.get(SiennaComponent.AREA, [])
-    }
+    area_name_by_id = _build_name_by_id(components, SiennaComponent.AREA)
 
     frames: dict[str, pl.LazyFrame] = {}
     area_rows = [
@@ -137,7 +136,10 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     ]
     _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
 
-    bus_rows = [_bus_row(c, area_name_by_id) for c in components.get(SiennaComponent.AC_BUS, [])]
+    bus_groups = _BusGroupNames(
+        area_name_by_id, _build_name_by_id(components, SiennaComponent.LOAD_ZONE)
+    )
+    bus_rows = [_bus_row(c, bus_groups) for c in components.get(SiennaComponent.AC_BUS, [])]
     _stage_table(bus_rows, SIENNA_SOURCE_BUSES_SCHEMA, SiennaTable.BUSES, staging_dir, frames)
 
     generator_rows = [
@@ -200,9 +202,31 @@ def _line_row(
     return row
 
 
-def _bus_row(component: dict[str, Any], area_name_by_id: dict[int, str]) -> dict[str, Any]:
-    area_id = component.get(SiennaACBusCol.AREA)
-    area_name = area_name_by_id.get(area_id) if area_id is not None else None
+def _build_name_by_id(components: dict[str, Any], sienna_type: str) -> dict[int, str]:
+    return {
+        component[SIENNA_ID_COLUMN]: component[SIENNA_NAME_COLUMN]
+        for component in components.get(sienna_type, [])
+    }
+
+
+class _BusGroupNames(NamedTuple):
+    """The names of the areas and the load zones that a bus refers to by id."""
+
+    area_name_by_id: dict[int, str]
+    load_zone_name_by_id: dict[int, str]
+
+    def find_area_name(self, component: dict[str, Any]) -> str | None:
+        return _find_name(self.area_name_by_id, component.get(SiennaACBusCol.AREA))
+
+    def find_load_zone_name(self, component: dict[str, Any]) -> str | None:
+        return _find_name(self.load_zone_name_by_id, component.get(SiennaACBusCol.LOAD_ZONE))
+
+
+def _find_name(name_by_id: dict[int, str], component_id: int | None) -> str | None:
+    return None if component_id is None else name_by_id.get(component_id)
+
+
+def _bus_row(component: dict[str, Any], groups: _BusGroupNames) -> dict[str, Any]:
     return {
         SiennaACBusCol.ID: component[SiennaACBusCol.ID],
         SiennaACBusCol.NAME: component[SiennaACBusCol.NAME],
@@ -213,8 +237,8 @@ def _bus_row(component: dict[str, Any], area_name_by_id: dict[int, str]) -> dict
         SiennaACBusCol.MAGNITUDE: component.get(SiennaACBusCol.MAGNITUDE),
         SiennaACBusCol.VOLTAGE_LIMITS: component.get(SiennaACBusCol.VOLTAGE_LIMITS),
         SiennaACBusCol.BASE_VOLTAGE: float(component[SiennaACBusCol.BASE_VOLTAGE]),
-        SiennaACBusCol.AREA: area_name,
-        SiennaACBusCol.LOAD_ZONE: component.get(SiennaACBusCol.LOAD_ZONE),
+        SiennaACBusCol.AREA: groups.find_area_name(component),
+        SiennaACBusCol.LOAD_ZONE: groups.find_load_zone_name(component),
     }
 
 

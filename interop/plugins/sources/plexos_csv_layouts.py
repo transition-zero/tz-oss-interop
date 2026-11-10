@@ -393,14 +393,6 @@ def _reshape_monthly_in_year(csv: _CsvToReshape) -> pl.LazyFrame | None:
     return _reshape_monthly_by_name(csv.scan, csv.horizon_year)
 
 
-# A shared value column names no component until its owners join it.
-_SERIES_KEYS = (
-    StagedTimeSeriesCol.COMPONENT,
-    StagedTimeSeriesCol.SAMPLE,
-    StagedTimeSeriesCol.SNAPSHOT,
-)
-
-
 def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
     """A value for each object and pattern, spread over the snapshots each pattern covers.
 
@@ -413,7 +405,9 @@ def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
     text = csv.scan.with_columns(pl.col(PATTERN_COLUMN).cast(pl.String))
     patterns = text.select(PATTERN_COLUMN).unique().collect()[PATTERN_COLUMN].to_list()
     stamped = text.join(
-        csv.calendar.build_assignment(patterns, csv.relative).lazy(), on=PATTERN_COLUMN
+        csv.calendar.build_assignment(patterns, csv.relative).lazy(),
+        on=PATTERN_COLUMN,
+        maintain_order="left",
     )
     if _CSV_YEAR in csv.columns:
         stamped = stamped.filter(
@@ -421,14 +415,15 @@ def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
         )
     value_columns = [c for c in csv.columns if c not in {_CSV_NAME, PATTERN_COLUMN, _CSV_YEAR}]
     if _CSV_NAME in csv.columns:
-        named = _select_pattern_rows_by_name(stamped, value_columns, csv.sample_scope)
-    else:
-        named = _select_series(stamped, value_columns, csv.sample_scope, csv.owner_names)
-    if named is None:
-        return None
-    present = named.collect_schema().names()
-    keys = [key for key in _SERIES_KEYS if key in present]
-    return named.unique(subset=keys, keep="first", maintain_order=True)
+        first = _drop_later_patterns(stamped, [_CSV_NAME, StagedTimeSeriesCol.SNAPSHOT])
+        return _select_pattern_rows_by_name(first, value_columns, csv.sample_scope)
+    first = _drop_later_patterns(stamped, [StagedTimeSeriesCol.SNAPSHOT])
+    return _select_series(first, value_columns, csv.sample_scope, csv.owner_names)
+
+
+def _drop_later_patterns(stamped: pl.LazyFrame, keys: list[str]) -> pl.LazyFrame:
+    """Keep the first row of the file for each key, before an unpivot can reorder the rows."""
+    return stamped.unique(subset=keys, keep="first", maintain_order=True)
 
 
 def _select_pattern_rows_by_name(
