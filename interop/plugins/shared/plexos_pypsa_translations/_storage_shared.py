@@ -8,8 +8,10 @@ recorded as skipped rather than written half-formed.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from math import sqrt
+from typing import NamedTuple
 
 import polars as pl
 
@@ -47,7 +49,6 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     collapse_units_by_object,
     read_file_backed_properties,
     relate_child,
-    relate_children,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_STATE_OF_CHARGE_INITIAL,
@@ -196,6 +197,13 @@ class ClassLookups:
     lifespans: dict[str, Lifespan]
 
 
+class Route(NamedTuple):
+    """The Storage a Waterway leaves and the Storage it reaches, where it names one."""
+
+    leaves: str | None
+    reaches: str | None
+
+
 @dataclass(frozen=True)
 class StorageLookups:
     """The per-object properties and memberships the three storage paths read.
@@ -210,8 +218,13 @@ class StorageLookups:
     head_by_generator: dict[str, str]
     tail_by_generator: dict[str, str]
     storages_with_inflow_profile: set[str]
-    # The Storages a Waterway leaves, whose water a cascade carries on downstream.
-    waterway_sources: set[str]
+    # Each Waterway, by name, and the two Storages it joins.
+    routes: dict[str, Route]
+
+    @property
+    def waterway_sources(self) -> set[str]:
+        """The Storages a Waterway leaves, whose water a cascade carries on downstream."""
+        return {route.leaves for route in self.routes.values() if route.leaves is not None}
 
     def read_properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
         return self.by_class[plexos_class].properties
@@ -243,6 +256,18 @@ class StorageLookups:
     def turbine_fed_storages(self) -> set[str]:
         """The Storages some Generator names as its head or its tail."""
         return set(self.head_by_generator.values()) | set(self.tail_by_generator.values())
+
+    def build_storages_of(self, generators: Iterable[str]) -> frozenset[str]:
+        """The head and the tail Storage of each of these Generators."""
+        return frozenset(
+            storage
+            for generator in generators
+            for storage in (
+                self.head_by_generator.get(generator),
+                self.tail_by_generator.get(generator),
+            )
+            if storage is not None
+        )
 
     def head_of(self, generator: str) -> HeadReservoir | None:
         storage = self.head_by_generator.get(generator)
@@ -316,14 +341,16 @@ def build_lookups(state: State) -> StorageLookups:
             memberships, PlexosClass.GENERATOR, PlexosCollection.TAIL_STORAGE
         ),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
-        waterway_sources={
-            storage
-            for storages in relate_children(
-                memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM
-            ).values()
-            for storage in storages
-        },
+        routes=_read_routes(state, memberships),
     )
+
+
+def _read_routes(state: State, memberships: pl.LazyFrame) -> dict[str, Route]:
+    """Each Waterway, and the Storage it leaves and the Storage it reaches, where it names one."""
+    leaves = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM)
+    reaches = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_TO)
+    names = read_object_names(state, PlexosClass.WATERWAY)
+    return {name: Route(leaves.get(name), reaches.get(name)) for name in names}
 
 
 def _read_class(
@@ -345,6 +372,85 @@ def _storages_with_inflow_profile(state: State) -> set[str]:
     """The Storages whose Natural Inflow arrives as a staged time series."""
     frame = state.source_time_series.get((PlexosClass.STORAGE, PlexosProperty.NATURAL_INFLOW))
     return set() if frame is None else set(series_components(frame))
+
+
+# --- the hydro cascade ---------------------------------------------------------
+
+
+class Turbine(NamedTuple):
+    """One turbine the system writes, and its id."""
+
+    name: str
+    turbine_id: int
+
+
+@dataclass(frozen=True)
+class Cascade:
+    """The Storages that the turbines and the Waterways join to each other.
+
+    ``storages`` leaves out each Storage in ``held_by_storage_units``, because a
+    pumped-storage unit holds that water itself.
+    """
+
+    turbines_by_storage: dict[str, list[Turbine]]
+    tail_turbines_by_storage: dict[str, list[Turbine]]
+    routes: dict[str, Route]
+    held_by_storage_units: frozenset[str]
+    storages: list[str]
+
+    def list_routes_to_storage_units(self) -> list[str]:
+        """Each Waterway that joins a Storage of the cascade to one a pumped-storage unit holds."""
+        cascade = set(self.storages)
+        held = self.held_by_storage_units
+        return sorted(
+            waterway
+            for waterway, route in self.routes.items()
+            if (route.leaves in cascade and route.reaches in held)
+            or (route.reaches in cascade and route.leaves in held)
+        )
+
+
+def build_cascade(
+    lookups: StorageLookups, turbines: dict[str, int], storage_units: Iterable[str]
+) -> Cascade:
+    """The cascade of these turbines, which leaves out the Storages these storage units hold."""
+    held = lookups.build_storages_of(storage_units)
+    heads = _group_turbines(turbines, lookups.head_by_generator)
+    tails = _group_turbines(turbines, lookups.tail_by_generator)
+    start = (set(heads) | set(tails)) - held
+    return Cascade(heads, tails, lookups.routes, held, _list_joined(start, lookups.routes, held))
+
+
+def _group_turbines(
+    turbines: dict[str, int], storage_by_turbine: dict[str, str]
+) -> dict[str, list[Turbine]]:
+    """The turbines that name each Storage in one collection, with their ids."""
+    by_storage: dict[str, list[Turbine]] = {}
+    for turbine, turbine_id in sorted(turbines.items()):
+        storage = storage_by_turbine.get(turbine)
+        if storage is not None:
+            by_storage.setdefault(storage, []).append(Turbine(turbine, turbine_id))
+    return by_storage
+
+
+def _list_joined(start: set[str], routes: dict[str, Route], held: Collection[str]) -> list[str]:
+    """Each Storage in ``start``, and each Storage a Waterway joins to one of them, step by step.
+
+    A Storage in ``held`` never joins.
+    """
+    found = set(start)
+    is_growing = True
+    while is_growing:
+        joined = {
+            end
+            for route in routes.values()
+            if route.leaves in found or route.reaches in found
+            for end in route
+            if end is not None and end not in held
+        }
+        is_growing = not joined <= found
+        found |= joined
+    return sorted(found)
 
 
 def orphan_storage_skips(names: list[str], lookups: StorageLookups) -> list[SkippedComponent]:

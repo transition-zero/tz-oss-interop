@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any, ClassVar, NamedTuple
+from typing import IO, Any, ClassVar
 
 import polars as pl
 from infrastore import OwnerCategory, SingleTimeSeries, Store
@@ -30,7 +30,6 @@ from interop.plugins.shared.sienna_time_series import (
     POWER_LABELS,
     SeriesLabels,
     build_capacity_by_owner,
-    build_labels_by_owner,
     has_series_capacity,
 )
 from interop.plugins.shared.staged_samples import filter_to_sample, list_staged_samples
@@ -87,7 +86,7 @@ class EmitSiennaH5Sidecar(Sink):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / InfraStoreSidecar.SCRATCH_FILENAME
             association_rows = _association_rows(associations)
-            owners = _read_owners(state, association_rows)
+            capacity = _read_capacity(state, association_rows)
             with Store.create(str(path), catalog="memory") as store:
                 with store.transaction():
                     for source_key, rows in _rows_by_source_key(association_rows).items():
@@ -96,7 +95,7 @@ class EmitSiennaH5Sidecar(Sink):
                             rows,
                             _staged_series(state, source_key),
                             sample,
-                            owners,
+                            capacity,
                         )
                 exported = json.loads(store.export_time_series_associations_openapi())
             with path.open("rb") as written:
@@ -109,7 +108,7 @@ def _write_source_key(
     rows: list[dict[str, Any]],
     frame: pl.LazyFrame,
     sample: str | None,
-    owners: _Owners,
+    capacity: _Capacity,
 ) -> None:
     """Write one staged series a batch of components at a time, so no batch outlives its write."""
     _reject_unsampled_ensemble(frame, sample)
@@ -118,9 +117,9 @@ def _write_source_key(
     for batch in list_component_batches(sampled):
         by_component = read_batch_by_component(sampled, batch)
         batch_rows = [row for name in batch for row in pending.pop(name, [])]
-        _add_series(store, batch_rows, by_component, owners)
+        _add_series(store, batch_rows, by_component, capacity)
     unmatched = [row for remaining in pending.values() for row in remaining]
-    _add_series(store, unmatched, {}, owners)
+    _add_series(store, unmatched, {}, capacity)
 
 
 def _rows_by_component_name(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -153,23 +152,12 @@ def _association_rows(associations: pl.DataFrame | None) -> list[dict[str, Any]]
     return list(stored.iter_rows(named=True))
 
 
-class _Owners(NamedTuple):
-    """What each owner of a series states about it: the capacity it scales by, and its labels."""
-
-    capacity: dict[tuple[str, int], float]
-    labels: dict[tuple[str, int], SeriesLabels]
+# The megawatts one per-unit value of each owner's series stands for, by ``(type, id)``.
+_Capacity = dict[tuple[str, int], float]
 
 
-class _StoredBasis(NamedTuple):
-    """The unit system a stored series takes, and its labels."""
-
-    unit_system: SiennaUnitSystem
-    labels: SeriesLabels
-
-
-def _read_owners(state: State, association_rows: list[dict[str, Any]]) -> _Owners:
-    """The capacity that turns each owner's per-unit series into its stored values, and the
-    labels a series takes where it is not power.
+def _read_capacity(state: State, association_rows: list[dict[str, Any]]) -> _Capacity:
+    """The capacity that turns each owner's per-unit series into its stored values.
 
     An owner type with no capacity rule, such as a portfolio technology, is left out.
     """
@@ -185,17 +173,14 @@ def _read_owners(state: State, association_rows: list[dict[str, Any]]) -> _Owner
         )
         for owner_type in {owner_type for owner_type, _ in owners}
     }
-    return _Owners(
-        build_capacity_by_owner(owners, components_by_type),
-        build_labels_by_owner(owners, components_by_type),
-    )
+    return build_capacity_by_owner(owners, components_by_type)
 
 
 def _add_series(
     store: Store,
     rows: list[dict[str, Any]],
     by_component: dict[str, FloatArray],
-    owners: _Owners,
+    capacity: _Capacity,
 ) -> None:
     """Add one stored series for each row, with the features the row states.
 
@@ -209,44 +194,52 @@ def _add_series(
             row[col.OWNER_ID],
             row[col.OWNER_TYPE],
             OwnerCategory.Component,
-            _build_series(row, values, owners),
+            _build_series(row, values, capacity),
             features=_parse_features(row),
         )
 
 
-def _build_series(row: dict[str, Any], values: FloatArray, owners: _Owners) -> SingleTimeSeries:
+def _build_series(row: dict[str, Any], values: FloatArray, capacity: _Capacity) -> SingleTimeSeries:
     """Natural units where the owner has a capacity, else the values on the basis the row states.
 
     Natural units are the per-unit shape times the owner's capacity. The row supplies the
     divisor that reaches the per-unit shape.
     """
     col = SiennaTimeSeriesAssociationCol
-    owner = (row[col.OWNER_TYPE], row[col.OWNER_ID])
-    labels = owners.labels.get(owner, POWER_LABELS)
-    capacity = owners.capacity.get(owner)
+    owner_capacity = capacity.get((row[col.OWNER_TYPE], row[col.OWNER_ID]))
     scaling_factor = row[col.SCALING_FACTOR]
-    if capacity is not None:
-        natural = _StoredBasis(SiennaUnitSystem.NATURAL_UNITS, labels)
-        return _build_single_series(row, values * (capacity / scaling_factor), natural)
+    if owner_capacity is not None:
+        natural = values * (owner_capacity / scaling_factor)
+        return _build_single_series(row, natural, SiennaUnitSystem.NATURAL_UNITS)
     stated = row.get(col.UNIT_SYSTEM) or SiennaUnitSystem.COMPONENT_BASE
-    basis = _StoredBasis(SiennaUnitSystem(stated), labels)
-    return _build_single_series(row, values / scaling_factor, basis)
+    return _build_single_series(row, values / scaling_factor, SiennaUnitSystem(stated))
 
 
 def _build_single_series(
-    row: dict[str, Any], values: FloatArray, basis: _StoredBasis
+    row: dict[str, Any], values: FloatArray, unit_system: SiennaUnitSystem
 ) -> SingleTimeSeries:
     col = SiennaTimeSeriesAssociationCol
-    is_natural = basis.unit_system is SiennaUnitSystem.NATURAL_UNITS
+    labels = _read_labels(row)
+    is_natural = unit_system is SiennaUnitSystem.NATURAL_UNITS
     return SingleTimeSeries(
         datetime.fromisoformat(row[col.INITIAL_TIMESTAMP]),
         row[col.RESOLUTION],
         values,
         row[col.NAME],
-        units=basis.labels.units if is_natural else None,
-        quantity_kind=basis.labels.quantity_kind,
-        unit_system=_STORE_UNIT_SYSTEM[basis.unit_system],
+        units=labels.units if is_natural else None,
+        quantity_kind=labels.quantity_kind,
+        unit_system=_STORE_UNIT_SYSTEM[unit_system],
     )
+
+
+def _read_labels(row: dict[str, Any]) -> SeriesLabels:
+    """The unit and the quantity the row states for its series, or those of active power."""
+    col = SiennaTimeSeriesAssociationCol
+    units = row.get(col.UNITS)
+    quantity_kind = row.get(col.QUANTITY_KIND)
+    if units is None or quantity_kind is None:
+        return POWER_LABELS
+    return SeriesLabels(units, quantity_kind)
 
 
 def _parse_features(row: dict[str, Any]) -> dict[str, Any] | None:

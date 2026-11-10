@@ -102,6 +102,7 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.BATTERIES, PlexosProperty.ECONOMIC_LIFE): UNIT_YEARS,
     (PlexosCollection.BATTERIES, PlexosProperty.TECHNICAL_LIFE): UNIT_YEARS,
     (PlexosCollection.STORAGES, PlexosProperty.MAX_VOLUME): UNIT_MWH,
+    (PlexosCollection.STORAGES, PlexosProperty.MIN_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.INITIAL_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.NATURAL_INFLOW): UNIT_MW,
 }

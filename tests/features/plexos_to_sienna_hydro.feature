@@ -41,6 +41,25 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_1" having "storage_level_limits.min" set to 100.0
 
+  Scenario: a Min Volume in GWh sets the floor of the reservoir in MWh
+    A Storage in GWh with a Max Volume of 2 and a Min Volume of 0.5 holds 2000 MWh and
+    keeps 500 MWh in it.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model states "Max Volume" in "GWh"
+    And the model states "Min Volume" in "GWh"
+    And the model states "Initial Volume" in "GWh"
+    And the model contains reservoir hydro "hydro_1" on node "North_Node" with max_capacity 200 head "res_1" max_volume 2 initial_volume 1
+    And storage "res_1" has property "Min Volume" 0.5
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_1" having "storage_level_limits.max" set to 2000.0
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_1" having "storage_level_limits.min" set to 500.0
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_1" having "initial_level" set to 1000.0
+
   Scenario: a Waterway between two reservoirs makes the lower one name the upper one
     Water leaves the upper reservoir down the Waterway and reaches the lower one, so the
     lower reservoir names the upper one as a reservoir above it. Sienna states no route
@@ -289,12 +308,15 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Middle" listing HydroTurbine "Upper_U" in "upstream_turbines"
     And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Lower" listing HydroReservoir "Middle" in "upstream_reservoirs"
     And the written Sienna system is a valid SiennaSchemas 0.2 document
+    And the file "decisions.md" contains "| `plexos.Storage.Middle.Max Volume` = 300.0 MWh | `sienna.HydroReservoir.Middle.storage_level_limits.max` = 300.0 MWh |"
+    And the file "decisions.md" does not contain "absorbed into the head"
 
   Scenario: a Storage that no turbine names but a cascade route reaches is a reservoir, not a drop
     Given a Plexos model
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
     And the model contains storage "Intake" with max_volume 50 initial_volume 20
+    And storage "Intake" has property "Natural Inflow" 5
     And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
     And the model contains waterway "Intake_Out" from storage "Intake" to storage "Dam"
     And the model is saved as "inputs/model.xml"
@@ -302,7 +324,9 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
       | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Dam" listing HydroReservoir "Intake" in "upstream_reservoirs"
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Intake" having "inflow" set to 5.0
     And the file "decisions.md" does not contain "no Generator names this Storage as a head or tail"
+    And the file "decisions.md" does not contain "no turbine draws from this reservoir"
 
   Scenario: a turbine's Efficiency Incr sets the energy each cubic metre of water gives
     Efficiency Incr is the MW that one cubic metre a second gives. One cubic metre then gives
@@ -320,3 +344,61 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
     Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 5e-06
     And the file "decisions.md" contains "Efficiency Incr / 3600 / base_power"
+
+  Scenario: an Efficiency Incr in a unit that is not MW per m3/s keeps the default conversion factor
+    A conversion factor turns a volume of water into energy, so it needs MW for each cubic
+    metre a second. An Efficiency Incr in any other unit gives no conversion factor.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And the model states "Max Volume" in "CMD"
+    And the model states "Initial Volume" in "CMD"
+    And the model states "Efficiency Incr" in "MW/MW"
+    And generator "Dam_U" has property "Efficiency Incr" 1.8
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 1.0
+    And the file "decisions.md" contains "`plexos.Generator.Dam_U.Efficiency Incr` = 1.8 MW/MW"
+    And the file "decisions.md" contains "the turbine states Efficiency Incr in a unit that is not MW per m3/s"
+    And the log contains "1 Generator(s) state Efficiency Incr in a unit that is not MW per m3/s"
+
+  Scenario: a Waterway into the head of a pumped-storage unit does not join it to the cascade
+    A pumped-storage unit and its two Storages become one EnergyReservoirStorage. A Waterway
+    from a reservoir of the cascade into its head would put that water in the system twice,
+    so the head is not a reservoir and the Waterway is not mapped.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And the model contains pumped storage "PHS_1" on node "North_Node" with max_capacity 50 pump_efficiency 75 head "PHS_Up" tail "PHS_Down" max_volume 400 initial_volume 200
+    And the model contains waterway "Dam_Spill" from storage "Dam" to storage "PHS_Up"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "HydroReservoir"
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Dam" having "upstream_reservoirs" set to []
+    And the file "outputs/system.json" parses as JSON with 1 component of type "EnergyReservoirStorage"
+    And the file "decisions.md" contains "`plexos.Waterway.Dam_Spill`"
+    And the file "decisions.md" contains "this Waterway joins a reservoir to a Storage that a pumped-storage unit holds"
+    And the log contains "1 Waterway(s) join a reservoir to a Storage that a pumped-storage unit holds"
+
+  Scenario: a turbine that names a Fuel but states no heat rate burns no fuel, so it stays a turbine
+    A unit burns a fuel when it names a Fuel and states a heat rate. Both legs read that one
+    rule, so a unit with a Head Storage and a Fuel, but no heat rate, is a HydroTurbine.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains generator "Dam_U" with "node=North_Node, category=Hydro Units, fuel=Water, Max Capacity=100"
+    And generator "Dam_U" names head storage "Dam" with Max Volume 600
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Water       | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "HydroTurbine"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "ThermalStandard"
+    And the file "outputs/system.json" parses as JSON with 1 component of type "HydroReservoir"

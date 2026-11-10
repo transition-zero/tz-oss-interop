@@ -9,6 +9,7 @@ burns a fuel, and also when it holds a minimum output.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, auto
 from functools import cached_property
@@ -239,7 +240,7 @@ def has_infeasible_dispatch_range(mapping: GeneratorMapping) -> bool:
 def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> GeneratorMapping:
     candidate = source.candidate
     fuels = lookups.gen_fuels.get(source.name, [])
-    fuel = _fuel_use(source, fuels[0] if fuels else None, lookups)
+    fuel = _fuel_use(source, find_burned_fuel(fuels, source.props), lookups)
     availability = _availability(source, lookups.availability_profiles.get(source.name))
     minimum = _floor_negligible(
         _cap_at_availability(_minimum_generation(source), availability, source, lookups)
@@ -248,7 +249,7 @@ def derive_generator(source: SourceGenerator, node: str, lookups: Lookups) -> Ge
         name=source.name,
         bus_name=node,
         category=source.category,
-        carrier=_classify(fuel, source),
+        carrier=build_carrier(fuels, source.props, source.category),
         fuel=fuel,
         discarded_fuels=tuple(fuels[1:]),
         units=source.units,
@@ -364,13 +365,22 @@ def _priced_emission(fuel_name: str, lookups: Lookups) -> PricedEmission | None:
     return PricedEmission(name=emission_name, price=price)
 
 
-def _classify(fuel: FuelUse | None, source: SourceGenerator) -> str:
-    """The PyPSA carrier, as the model words it: its fuel, or its category where it burns none.
+def build_carrier(fuels: Sequence[str], props: dict[str, float], category: str) -> str:
+    """The carrier, as the model words it: the Fuel it burns, or its category where it burns none.
 
     PyPSA's carrier is free text, so the model's own word for the technology is carried
-    across rather than classified onto a vocabulary of ours.
+    across rather than classified onto a vocabulary of ours. The Sienna leg reads the same
+    rule, so a unit is thermal on both legs or on neither.
     """
-    return fuel.name if fuel is not None else source.category
+    burned = find_burned_fuel(fuels, props)
+    return burned if burned is not None else category
+
+
+def find_burned_fuel(fuels: Sequence[str], props: dict[str, float]) -> str | None:
+    """The first Fuel a generator names, where it states a heat rate to burn it at."""
+    if not fuels or _read_heat_rate(props) is None:
+        return None
+    return fuels[0]
 
 
 @dataclass(frozen=True)

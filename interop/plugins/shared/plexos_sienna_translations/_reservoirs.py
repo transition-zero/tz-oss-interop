@@ -37,12 +37,8 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     collapse_properties_by_object,
     collapse_units_by_object,
     read_file_backed_properties,
-    relate_child,
 )
-from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
-    StorageLookups,
-    read_object_names,
-)
+from interop.plugins.shared.plexos_pypsa_translations._storage_shared import Cascade
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     MappedColumns,
@@ -51,9 +47,10 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     warn_about_groups,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
-from interop.plugins.shared.plexos_units import conversion_factor
+from interop.plugins.shared.plexos_units import choose_canonical_unit, conversion_factor
 from interop.plugins.shared.sienna_constants import (
     TIME_SERIES_ASSOCIATION_SCHEMA,
+    InfraStoreSeriesLabel,
     SiennaComponent,
     SiennaCostType,
     SiennaFunctionType,
@@ -61,8 +58,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaLevelDataType,
     SiennaSeriesName,
     SiennaStructField,
+    SiennaTimeSeriesAssociationCol,
+    SiennaUnitSystem,
 )
 from interop.plugins.shared.sienna_time_series import (
+    SeriesLabels,
     TimeSeriesInfo,
     build_ts_info,
     build_ts_info_by_component,
@@ -122,6 +122,10 @@ _NO_MAX_VOLUME_NOTE = (
 _LOOSE_WATERWAY_NOTE = (
     "this Waterway joins no two reservoirs that the system holds, so no reservoir names it"
 )
+_STORAGE_UNIT_WATERWAY_NOTE = (
+    "this Waterway joins a reservoir to a Storage that a pumped-storage unit holds, and the "
+    "EnergyReservoirStorage of that unit holds its water, so no reservoir names it"
+)
 _ROUTE_NOTE = (
     "Sienna states no route between two reservoirs, so the Waterway's {property} has no field"
 )
@@ -140,20 +144,36 @@ _NO_MAX_VOLUME_GROUP = SkipGroup(
 _LOOSE_WATERWAY_GROUP = SkipGroup(
     "Waterway(s)", "join no two reservoirs that the system holds", "so no reservoir names them"
 )
+_STORAGE_UNIT_WATERWAY_GROUP = SkipGroup(
+    "Waterway(s)",
+    "join a reservoir to a Storage that a pumped-storage unit holds",
+    "so no reservoir names them",
+)
 
 
 @dataclass(frozen=True)
 class _LevelScale:
-    """What one reservoir's levels measure, and the units its levels and its inflow take."""
+    """What one reservoir's levels measure, the units its levels and its inflow take, and the
+    labels its stored inflow series takes.
+    """
 
     level_data_type: SiennaLevelDataType
     volume_unit: str
     flow_unit: str
+    inflow_labels: SeriesLabels
 
 
-_ENERGY = _LevelScale(SiennaLevelDataType.ENERGY, UNIT_MWH, UNIT_MW)
+_ENERGY = _LevelScale(
+    SiennaLevelDataType.ENERGY,
+    UNIT_MWH,
+    UNIT_MW,
+    SeriesLabels(InfraStoreSeriesLabel.UNITS_POWER, InfraStoreSeriesLabel.QUANTITY_INFLOW),
+)
 _WATER = _LevelScale(
-    SiennaLevelDataType.USABLE_VOLUME, UNIT_CUBIC_METRES, UNIT_CUBIC_METRES_PER_SECOND
+    SiennaLevelDataType.USABLE_VOLUME,
+    UNIT_CUBIC_METRES,
+    UNIT_CUBIC_METRES_PER_SECOND,
+    SeriesLabels(InfraStoreSeriesLabel.UNITS_FLOW, InfraStoreSeriesLabel.QUANTITY_INFLOW),
 )
 
 
@@ -196,93 +216,27 @@ class TranslatedReservoirs:
     )
 
 
-class _Turbine(NamedTuple):
-    name: str
-    turbine_id: int
+class _Built(NamedTuple):
+    """The Storages the system holds as reservoirs, and each Storage it leaves out, and why."""
 
-
-class _Route(NamedTuple):
-    """The Storage a Waterway leaves and the Storage it reaches, where it names one."""
-
-    leaves: str | None
-    reaches: str | None
-
-
-@dataclass(frozen=True)
-class _Cascade:
-    """The turbines and Waterways that join the reservoirs to each other."""
-
-    turbines_by_storage: dict[str, list[_Turbine]]
-    waterways: dict[str, _Route]
-    # The turbines that release their water into each Storage, as its tail.
-    tail_turbines_by_storage: dict[str, list[_Turbine]] = field(default_factory=dict)
-
-    def list_storages(self) -> list[str]:
-        """Every Storage of the cascade: each turbine's head and tail, and each Storage a
-        Waterway joins to one of them, step by step.
-        """
-        found = set(self.turbines_by_storage) | set(self.tail_turbines_by_storage)
-        is_growing = True
-        while is_growing:
-            joined = {
-                end
-                for route in self.waterways.values()
-                if route.leaves in found or route.reaches in found
-                for end in route
-                if end is not None
-            }
-            is_growing = not joined <= found
-            found |= joined
-        return sorted(found)
+    reservoirs: dict[str, _Reservoir]
+    skipped: list[tuple[_SkipReason, str]]
 
 
 def map_reservoirs(
-    state: State,
-    recorder: ScopedRecorder,
-    lookups: StorageLookups,
-    turbines: dict[str, int],
-    first_id: int,
+    state: State, recorder: ScopedRecorder, cascade: Cascade, first_id: int
 ) -> TranslatedReservoirs:
-    """One HydroReservoir for each Storage that a written HydroTurbine draws on."""
+    """One HydroReservoir for each Storage of the cascade whose size the system can state."""
     reporter = SiennaComponentReporter(recorder, SiennaComponent.HYDRO_RESERVOIR)
-    cascade = _read_cascade(state, lookups, turbines)
-    readings = _read_storages(state, cascade.list_storages())
-    reservoirs = _choose_reservoirs(readings, reporter, first_id)
+    built = _build_reservoirs(_read_storages(state, cascade.storages), first_id)
+    _report_skipped_storages(built.skipped, reporter)
+    reservoirs = built.reservoirs
     rows = [_build_row(one, reservoirs, cascade, reporter) for one in reservoirs.values()]
     _record_waterways(state, cascade, reservoirs, reporter)
     return TranslatedReservoirs(rows, _build_associations(state, reservoirs))
 
 
-# --- reading the cascade -------------------------------------------------------
-
-
-def _read_cascade(state: State, lookups: StorageLookups, turbines: dict[str, int]) -> _Cascade:
-    return _Cascade(
-        _group_turbines(turbines, lookups.head_by_generator),
-        _read_waterways(state),
-        _group_turbines(turbines, lookups.tail_by_generator),
-    )
-
-
-def _group_turbines(
-    turbines: dict[str, int], storage_by_turbine: dict[str, str]
-) -> dict[str, list[_Turbine]]:
-    """The turbines that name each Storage in one collection, with their ids."""
-    by_storage: dict[str, list[_Turbine]] = {}
-    for turbine, turbine_id in sorted(turbines.items()):
-        storage = storage_by_turbine.get(turbine)
-        if storage is not None:
-            by_storage.setdefault(storage, []).append(_Turbine(turbine, turbine_id))
-    return by_storage
-
-
-def _read_waterways(state: State) -> dict[str, _Route]:
-    """Each Waterway, and the Storage it leaves and the Storage it reaches, where it names one."""
-    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
-    leaves = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM)
-    reaches = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_TO)
-    names = read_object_names(state, PlexosClass.WATERWAY)
-    return {name: _Route(leaves.get(name), reaches.get(name)) for name in names}
+# --- the Storages ----------------------------------------------------------------
 
 
 def _read_storages(state: State, names: list[str]) -> list[_StorageReading]:
@@ -316,26 +270,26 @@ def _read_inflow_peaks(state: State) -> dict[str, float]:
     return dict(peaks.iter_rows())
 
 
-# --- choosing which Storages the system can hold ---------------------------------
-
-
-def _choose_reservoirs(
-    readings: list[_StorageReading], reporter: SiennaComponentReporter, first_id: int
-) -> dict[str, _Reservoir]:
+def _build_reservoirs(readings: list[_StorageReading], first_id: int) -> _Built:
     """The Storages whose size the system can state, each with its id and its scale."""
     chosen: dict[str, _Reservoir] = {}
-    skipped: list[tuple[SkipGroup, str]] = []
+    skipped: list[tuple[_SkipReason, str]] = []
     for reading in readings:
         scale = _choose_scale(reading)
         reason = _find_skip_reason(reading, scale)
         if reason is None and scale is not None:
             chosen[reading.name] = _Reservoir(first_id + len(chosen), reading, scale)
-            continue
-        group, note = reason if reason is not None else (_UNKNOWN_UNIT_GROUP, _UNKNOWN_UNIT_NOTE)
-        reporter.record_skipped(SourceValue(PlexosClass.STORAGE, reading.name, None, None), note)
-        skipped.append((group, reading.name))
-    warn_about_groups(skipped)
-    return chosen
+        else:
+            skipped.append((reason or _UNKNOWN_UNIT_REASON, reading.name))
+    return _Built(chosen, skipped)
+
+
+def _report_skipped_storages(
+    skipped: list[tuple[_SkipReason, str]], reporter: SiennaComponentReporter
+) -> None:
+    for reason, name in skipped:
+        reporter.record_skipped(SourceValue(PlexosClass.STORAGE, name, None, None), reason.note)
+    warn_about_groups((reason.group, name) for reason, name in skipped)
 
 
 def _choose_scale(reading: _StorageReading) -> _LevelScale | None:
@@ -348,15 +302,29 @@ def _choose_scale(reading: _StorageReading) -> _LevelScale | None:
     return None
 
 
-def _find_skip_reason(
-    reading: _StorageReading, scale: _LevelScale | None
-) -> tuple[SkipGroup, str] | None:
+class _SkipReason(NamedTuple):
+    """Why a Storage is left out: the group its warning counts it in, and its note."""
+
+    group: SkipGroup
+    note: str
+
+
+_UNKNOWN_UNIT_REASON = _SkipReason(_UNKNOWN_UNIT_GROUP, _UNKNOWN_UNIT_NOTE)
+_FILE_BACKED_REASON = _SkipReason(_FILE_BACKED_GROUP, _FILE_BACKED_NOTE)
+_NO_MAX_VOLUME_REASON = _SkipReason(_NO_MAX_VOLUME_GROUP, _NO_MAX_VOLUME_NOTE)
+_LOOSE_WATERWAY_REASON = _SkipReason(_LOOSE_WATERWAY_GROUP, _LOOSE_WATERWAY_NOTE)
+_STORAGE_UNIT_WATERWAY_REASON = _SkipReason(
+    _STORAGE_UNIT_WATERWAY_GROUP, _STORAGE_UNIT_WATERWAY_NOTE
+)
+
+
+def _find_skip_reason(reading: _StorageReading, scale: _LevelScale | None) -> _SkipReason | None:
     if scale is None:
-        return _UNKNOWN_UNIT_GROUP, _UNKNOWN_UNIT_NOTE
+        return _UNKNOWN_UNIT_REASON
     if PlexosProperty.MAX_VOLUME in reading.file_backed:
-        return _FILE_BACKED_GROUP, _FILE_BACKED_NOTE
+        return _FILE_BACKED_REASON
     if PlexosProperty.MAX_VOLUME not in reading.values:
-        return _NO_MAX_VOLUME_GROUP, _NO_MAX_VOLUME_NOTE
+        return _NO_MAX_VOLUME_REASON
     return None
 
 
@@ -366,7 +334,7 @@ def _find_skip_reason(
 def _build_row(
     reservoir: _Reservoir,
     reservoirs: dict[str, _Reservoir],
-    cascade: _Cascade,
+    cascade: Cascade,
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
     name = reservoir.reading.name
@@ -407,44 +375,60 @@ def _derive_identity(reservoir: _Reservoir) -> list[_Field]:
 def _derive_levels(reservoir: _Reservoir) -> list[_Field]:
     """The floor, the ceiling and the starting level, each in the reservoir's own unit."""
     unit = reservoir.scale.volume_unit
-    ceiling = _read_volume(reservoir, PlexosProperty.MAX_VOLUME) or Decision.default(
+    ceiling = _derive_volume(reservoir, PlexosProperty.MAX_VOLUME) or Decision.default(
         _EMPTY, _NO_MAX_VOLUME_NOTE
     )
-    floor = _read_volume(reservoir, PlexosProperty.MIN_VOLUME) or Decision.default(
+    floor = _derive_volume(reservoir, PlexosProperty.MIN_VOLUME) or Decision.default(
         _EMPTY, _NO_MIN_VOLUME_NOTE
     )
     start = _derive_start_level(
-        _read_volume(reservoir, PlexosProperty.INITIAL_VOLUME), floor, ceiling
+        _derive_volume(reservoir, PlexosProperty.INITIAL_VOLUME), floor, ceiling
     )
     return [
-        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.max", ceiling, unit),
-        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.min", floor, unit),
+        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.{SiennaStructField.MAX}", ceiling, unit),
+        _Field(f"{ReservoirCol.STORAGE_LEVEL_LIMITS}.{SiennaStructField.MIN}", floor, unit),
         _Field(ReservoirCol.INITIAL_LEVEL, start, unit),
     ]
 
 
-def _read_volume(reservoir: _Reservoir, property_name: str) -> Decision | None:
-    """One volume property in the reservoir's unit, or None where the Storage states none."""
+def _derive_volume(reservoir: _Reservoir, property_name: str) -> Decision | None:
+    """One volume property in the reservoir's unit, or None where the Storage states none that
+    converts into it.
+    """
     reading = reservoir.reading
     value = reading.values.get(property_name)
-    if value is None:
+    wanted = reservoir.scale.volume_unit
+    staged = _find_staged_unit(reading, property_name)
+    factor = _find_factor(staged, wanted)
+    if value is None or factor is None:
         return None
-    stated = reading.units.get(property_name)
-    factor = _find_volume_factor(stated, reservoir.scale)
-    source_unit = reservoir.scale.volume_unit if reservoir.scale is _ENERGY else stated
-    source = SourceValue(PlexosClass.STORAGE, reading.name, property_name, value, source_unit)
+    source = SourceValue(PlexosClass.STORAGE, reading.name, property_name, value, staged or wanted)
     return Decision.derived(
-        value * factor,
-        [source],
-        _build_explanation(property_name, factor, f"{stated} to {UNIT_CUBIC_METRES}"),
+        value * factor, [source], _build_explanation(property_name, factor, f"{staged} to {wanted}")
     )
 
 
-def _find_volume_factor(stated: str | None, scale: _LevelScale) -> float:
-    """An energy volume already staged in MWh. A water volume converts here into cubic metres."""
-    if scale is _ENERGY or stated is None:
+def _find_staged_unit(reading: _StorageReading, property_name: str) -> str | None:
+    """The unit a stated value staged in, or None where the model states no unit.
+
+    Staging converts a value into the canonical unit of its property where the stated unit
+    converts into it, and leaves every other value as the model wrote it.
+    """
+    stated = reading.units.get(property_name)
+    canonical = choose_canonical_unit(PlexosCollection.STORAGES, property_name)
+    if stated is None or canonical is None or conversion_factor(stated, canonical) is None:
+        return stated
+    return canonical
+
+
+def _find_factor(staged: str | None, wanted: str) -> float | None:
+    """What one staged unit is worth in ``wanted``, or None where it does not convert into it.
+
+    A model that names no unit is taken at its word.
+    """
+    if staged is None:
         return 1.0
-    return conversion_factor(stated, UNIT_CUBIC_METRES) or 1.0
+    return conversion_factor(staged, wanted)
 
 
 def _build_explanation(label: str, factor: float, conversion: str) -> str:
@@ -467,15 +451,13 @@ def _derive_inflow(reservoir: _Reservoir) -> _Field:
     """What refills the reservoir, in its flow unit, or nothing where the units disagree."""
     reading = reservoir.reading
     unit = reservoir.scale.flow_unit
-    inflow = _read_inflow(reservoir)
+    inflow = _find_inflow(reservoir)
     if inflow is None:
         return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _NO_INFLOW_NOTE), unit)
     if inflow.factor is None:
         return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _INFLOW_UNIT_NOTE), unit)
-    stated = reading.units.get(PlexosProperty.NATURAL_INFLOW)
-    source_unit = unit if reservoir.scale is _ENERGY else stated
-    source = _build_inflow_source(reading, inflow.value, source_unit)
-    explanation = _build_explanation(inflow.label, inflow.factor, f"{stated} to {unit}")
+    source = _build_inflow_source(reading, inflow.value, inflow.staged or unit)
+    explanation = _build_explanation(inflow.label, inflow.factor, f"{inflow.staged} to {unit}")
     return _Field(
         ReservoirCol.INFLOW,
         Decision.derived(inflow.value * inflow.factor, [source], explanation),
@@ -484,49 +466,41 @@ def _derive_inflow(reservoir: _Reservoir) -> _Field:
 
 
 class _Inflow(NamedTuple):
-    """The Natural Inflow a Storage states, where it comes from, and its factor to the flow unit.
+    """The Natural Inflow a Storage states, where it comes from, the unit it staged in, and its
+    factor to the flow unit.
 
-    The factor is None where the stated unit does not match the reservoir.
+    The factor is None where the staged unit does not match the reservoir.
     """
 
     value: float
     label: str
+    staged: str | None
     factor: float | None
 
 
-def _read_inflow(reservoir: _Reservoir) -> _Inflow | None:
-    """The peak of the Natural Inflow profile, else the static Natural Inflow, else None."""
+def _find_inflow(reservoir: _Reservoir) -> _Inflow | None:
+    """The peak of the Natural Inflow profile, else the static Natural Inflow, else None.
+
+    Staging converts no profile, so a profile stays in the unit the model states.
+    """
     reading = reservoir.reading
+    wanted = reservoir.scale.flow_unit
     if reading.inflow_peak is not None:
-        return _Inflow(reading.inflow_peak, _PROFILE_DERIVATION, _find_profile_factor(reservoir))
+        stated = reading.units.get(PlexosProperty.NATURAL_INFLOW)
+        return _Inflow(
+            reading.inflow_peak, _PROFILE_DERIVATION, stated, _find_factor(stated, wanted)
+        )
     value = reading.values.get(PlexosProperty.NATURAL_INFLOW)
     if value is None:
         return None
-    stated = reading.units.get(PlexosProperty.NATURAL_INFLOW)
-    return _Inflow(value, PlexosProperty.NATURAL_INFLOW, _find_flow_factor(stated, reservoir.scale))
+    staged = _find_staged_unit(reading, PlexosProperty.NATURAL_INFLOW)
+    return _Inflow(value, PlexosProperty.NATURAL_INFLOW, staged, _find_factor(staged, wanted))
 
 
-def _find_profile_factor(reservoir: _Reservoir) -> float | None:
-    """A profile is staged in the unit it states, so it converts into the flow unit here."""
-    stated = reservoir.reading.units.get(PlexosProperty.NATURAL_INFLOW)
-    if stated is None:
-        return 1.0
-    return conversion_factor(stated, reservoir.scale.flow_unit)
-
-
-def _build_inflow_source(reading: _StorageReading, value: float, stated: str | None) -> SourceValue:
+def _build_inflow_source(reading: _StorageReading, value: float, unit: str) -> SourceValue:
     return SourceValue(
-        PlexosClass.STORAGE, reading.name, PlexosProperty.NATURAL_INFLOW, value, stated
+        PlexosClass.STORAGE, reading.name, PlexosProperty.NATURAL_INFLOW, value, unit
     )
-
-
-def _find_flow_factor(stated: str | None, scale: _LevelScale) -> float | None:
-    """An inflow in power staged in MW already. One in water converts into m3/s here."""
-    if stated is None:
-        return 1.0
-    if scale is _ENERGY:
-        return 1.0 if conversion_factor(stated, UNIT_MW) is not None else None
-    return conversion_factor(stated, UNIT_CUBIC_METRES_PER_SECOND)
 
 
 def _derive_defaults() -> list[_Field]:
@@ -564,7 +538,7 @@ def _derive_defaults() -> list[_Field]:
 
 
 def _derive_links(
-    reservoir: _Reservoir, reservoirs: dict[str, _Reservoir], cascade: _Cascade
+    reservoir: _Reservoir, reservoirs: dict[str, _Reservoir], cascade: Cascade
 ) -> list[_Field]:
     name = reservoir.reading.name
     turbines = cascade.turbines_by_storage.get(name, [])
@@ -583,7 +557,7 @@ def _derive_links(
     ]
 
 
-def _derive_upstream_turbines(name: str, cascade: _Cascade) -> Decision:
+def _derive_upstream_turbines(name: str, cascade: Cascade) -> Decision:
     """The turbines whose tail is this Storage, which release their water into it."""
     turbines = cascade.tail_turbines_by_storage.get(name, [])
     if not turbines:
@@ -597,10 +571,10 @@ def _derive_upstream_turbines(name: str, cascade: _Cascade) -> Decision:
     )
 
 
-def _derive_upstream(name: str, reservoirs: dict[str, _Reservoir], cascade: _Cascade) -> Decision:
+def _derive_upstream(name: str, reservoirs: dict[str, _Reservoir], cascade: Cascade) -> Decision:
     routes = [
         (waterway, route.leaves)
-        for waterway, route in sorted(cascade.waterways.items())
+        for waterway, route in sorted(cascade.routes.items())
         if route.reaches == name and route.leaves in reservoirs
     ]
     if not routes:
@@ -631,23 +605,35 @@ def _set_nested(row: dict[str, Any], column: str, value: Any) -> None:
 
 def _record_waterways(
     state: State,
-    cascade: _Cascade,
+    cascade: Cascade,
     reservoirs: dict[str, _Reservoir],
     reporter: SiennaComponentReporter,
 ) -> None:
     """A Waterway outside the cascade, and every value a Waterway states, which Sienna has no
     field for."""
+    to_storage_units = cascade.list_routes_to_storage_units()
     loose = [
         waterway
-        for waterway, route in sorted(cascade.waterways.items())
-        if route.leaves not in reservoirs or route.reaches not in reservoirs
+        for waterway, route in sorted(cascade.routes.items())
+        if (route.leaves not in reservoirs or route.reaches not in reservoirs)
+        and waterway not in to_storage_units
     ]
-    for waterway in loose:
-        reporter.record_dropped(
-            SourceValue(PlexosClass.WATERWAY, waterway, None, None), _LOOSE_WATERWAY_NOTE
-        )
-    warn_about_groups((_LOOSE_WATERWAY_GROUP, waterway) for waterway in loose)
+    groups = [
+        *_record_dropped_waterways(to_storage_units, _STORAGE_UNIT_WATERWAY_REASON, reporter),
+        *_record_dropped_waterways(loose, _LOOSE_WATERWAY_REASON, reporter),
+    ]
+    warn_about_groups(groups)
     _record_route_values(state, reporter)
+
+
+def _record_dropped_waterways(
+    waterways: list[str], reason: _SkipReason, reporter: SiennaComponentReporter
+) -> list[tuple[SkipGroup, str]]:
+    for waterway in waterways:
+        reporter.record_dropped(
+            SourceValue(PlexosClass.WATERWAY, waterway, None, None), reason.note
+        )
+    return [(reason.group, waterway) for waterway in waterways]
 
 
 def _record_route_values(state: State, reporter: SiennaComponentReporter) -> None:
@@ -677,9 +663,11 @@ def _build_associations(state: State, reservoirs: dict[str, _Reservoir]) -> pl.D
     """One series row for each reservoir whose Natural Inflow is a profile, in its own unit."""
     frame = state.source_time_series.get((PlexosClass.STORAGE, PlexosProperty.NATURAL_INFLOW))
     profiled = [
-        _ProfiledReservoir(one, factor)
+        _ProfiledReservoir(one, inflow.factor)
         for one in reservoirs.values()
-        if one.reading.inflow_peak is not None and (factor := _find_profile_factor(one)) is not None
+        if one.reading.inflow_peak is not None
+        and (inflow := _find_inflow(one)) is not None
+        and inflow.factor is not None
     ]
     if frame is None or not profiled:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
@@ -700,15 +688,23 @@ class _ProfiledReservoir(NamedTuple):
 
 
 def _build_association_row(profiled: _ProfiledReservoir, info: TimeSeriesInfo) -> dict[str, Any]:
+    """The inflow series of one reservoir, stored as the model states it, in its flow unit."""
     reservoir = profiled.reservoir
-    return ts_association_row(
-        owner_type=SiennaComponent.HYDRO_RESERVOIR,
-        owner_id=reservoir.reservoir_id,
-        component_name=reservoir.reading.name,
-        series_name=SiennaSeriesName.INFLOW,
-        ts_info=info,
-        source_table=PlexosClass.STORAGE,
-        source_attribute=PlexosProperty.NATURAL_INFLOW,
-        # The sink divides each value by the scaling factor.
-        scaling_factor=1.0 / profiled.factor,
-    )
+    labels = reservoir.scale.inflow_labels
+    col = SiennaTimeSeriesAssociationCol
+    return {
+        **ts_association_row(
+            owner_type=SiennaComponent.HYDRO_RESERVOIR,
+            owner_id=reservoir.reservoir_id,
+            component_name=reservoir.reading.name,
+            series_name=SiennaSeriesName.INFLOW,
+            ts_info=info,
+            source_table=PlexosClass.STORAGE,
+            source_attribute=PlexosProperty.NATURAL_INFLOW,
+            # The sink divides each value by the scaling factor.
+            scaling_factor=1.0 / profiled.factor,
+        ),
+        col.UNIT_SYSTEM: SiennaUnitSystem.NATURAL_UNITS,
+        col.UNITS: labels.units,
+        col.QUANTITY_KIND: labels.quantity_kind,
+    }

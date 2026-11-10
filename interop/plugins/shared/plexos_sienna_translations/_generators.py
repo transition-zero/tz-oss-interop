@@ -92,7 +92,7 @@ from interop.plugins.shared.plexos_sienna_translations._availability import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
-    list_thermal_store_users,
+    build_thermal_store_users,
 )
 from interop.plugins.shared.plexos_sienna_translations._fuel_prices import (
     build_fuel_price_series,
@@ -307,7 +307,7 @@ def map_generators(
     bus_names = _bus_names(state)
     with_a_series = _generators_with_a_series(state, lookups)
     # A turbine drawing on a Storage becomes a storage unit, never also a generator.
-    turbines = storage_turbine_names(state) - list_thermal_store_users(state, targets)
+    turbines = storage_turbine_names(state) - build_thermal_store_users(state, targets)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
