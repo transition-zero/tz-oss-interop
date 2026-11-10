@@ -9,18 +9,17 @@ from interop.core.pipeline import Sink, State
 from interop.plugins.shared.sienna_constants import (
     SIENNA_ID_COLUMN,
     SIENNA_NAME_COLUMN,
+    SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE,
+    SYSTEM_ATTRIBUTES_TABLE,
     SiennaACBusCol,
     SiennaArcCol,
-    SiennaAttributeAssociationCol,
     SiennaComponent,
     SiennaEnergyReservoirStorageCol,
-    SiennaForcedOutageCol,
     SiennaHydroGeneratorCol,
     SiennaLineCol,
     SiennaLoadCol,
     SiennaRenewableGeneratorCol,
     SiennaSchemasSystem,
-    SiennaSupplementalAttribute,
     SiennaThermalGeneratorCol,
 )
 from interop.plugins.sinks._sienna_files import (
@@ -63,40 +62,6 @@ class _BusReferences(NamedTuple):
             self.load_zone_ids[load_zone_name] if load_zone_name else None
         )
         return component
-
-
-def build_forced_outage_attributes(
-    table: pl.DataFrame | None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Each forced outage as a supplemental attribute, and the row that joins it to its unit."""
-    if table is None:
-        return [], []
-    rows = list(table.iter_rows(named=True))
-    attributes = [
-        {column: row[column] for column in _FORCED_OUTAGE_ATTRIBUTE_COLUMNS} for row in rows
-    ]
-    associations = [
-        {
-            SiennaAttributeAssociationCol.COMPONENT_ID: row[SiennaForcedOutageCol.COMPONENT_ID],
-            SiennaAttributeAssociationCol.COMPONENT_TYPE: row[SiennaForcedOutageCol.COMPONENT_TYPE],
-            SiennaAttributeAssociationCol.ATTRIBUTE_ID: row[SiennaForcedOutageCol.ID],
-            SiennaAttributeAssociationCol.ATTRIBUTE_TYPE: (
-                SiennaSupplementalAttribute.GEOMETRIC_DISTRIBUTION_FORCED_OUTAGE.value
-            ),
-        }
-        for row in rows
-    ]
-    return attributes, associations
-
-
-# The columns a forced outage attribute states; the rest name the unit it describes.
-_FORCED_OUTAGE_ATTRIBUTE_COLUMNS = (
-    SiennaForcedOutageCol.ID,
-    SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY,
-    SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY,
-    SiennaForcedOutageCol.MONITORED_COMPONENTS,
-    SiennaForcedOutageCol.IDENTIFIER,
-)
 
 
 class EmitSiennaSystemJsonParams(BaseModel):
@@ -240,19 +205,17 @@ class EmitSiennaSystemJson(Sink):
             service_components = _list_rows(state.destination_tables.get(service_type))
             if service_components:
                 components[service_type] = service_components
-
-        attributes, associations = build_forced_outage_attributes(
-            state.destination_tables.get(
-                SiennaSupplementalAttribute.GEOMETRIC_DISTRIBUTION_FORCED_OUTAGE
-            )
-        )
         return {
             SiennaSchemasSystem.COMPONENTS: components,
             SiennaSchemasSystem.SERVICE_ASSOCIATIONS: _list_rows(
                 state.destination_tables.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS)
             ),
-            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: attributes,
-            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: associations,
+            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: _list_rows(
+                state.destination_tables.get(SYSTEM_ATTRIBUTES_TABLE)
+            ),
+            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: _list_rows(
+                state.destination_tables.get(SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE)
+            ),
         }
 
     @staticmethod

@@ -197,19 +197,13 @@ class SiennaSupplementalAttribute(StrEnum):
 
 
 class SiennaForcedOutageCol:
-    """Columns of a GeometricDistributionForcedOutage attribute table.
-
-    ``component_type`` and ``component_id`` name the component the attribute describes, which
-    the sink writes as an association row rather than on the attribute.
-    """
+    """Columns of a GeometricDistributionForcedOutage attribute table."""
 
     ID = "id"
     MEAN_TIME_TO_RECOVERY = "mean_time_to_recovery"
     OUTAGE_TRANSITION_PROBABILITY = "outage_transition_probability"
     MONITORED_COMPONENTS = "monitored_components"
     IDENTIFIER = "identifier"
-    COMPONENT_TYPE = "component_type"
-    COMPONENT_ID = "component_id"
 
 
 class SiennaAttributeAssociationCol:
@@ -936,9 +930,18 @@ FORCED_OUTAGES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY: pl.Float64,
     SiennaForcedOutageCol.MONITORED_COMPONENTS: pl.List(pl.Int64),
     SiennaForcedOutageCol.IDENTIFIER: pl.Utf8,
-    SiennaForcedOutageCol.COMPONENT_TYPE: pl.Utf8,
-    SiennaForcedOutageCol.COMPONENT_ID: pl.Int64,
 }
+
+ATTRIBUTE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaAttributeAssociationCol.COMPONENT_ID: pl.Int64,
+    SiennaAttributeAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaAttributeAssociationCol.ATTRIBUTE_ID: pl.Int64,
+    SiennaAttributeAssociationCol.ATTRIBUTE_TYPE: pl.Utf8,
+}
+
+# The portfolio keeps its own association table, so the system lists take keys of their own.
+SYSTEM_ATTRIBUTES_TABLE = "system_supplemental_attributes"
+SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE = "system_supplemental_attribute_associations"
 
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLoadCol.ID: pl.Int64,
