@@ -72,9 +72,10 @@ from interop.plugins.sources.plexos_dated_files import DatedFiles, build_rows_fr
 from interop.plugins.sources.plexos_dated_properties import (
     DatedRow,
     apply_window,
+    build_stepped_series,
     date_bands,
+    drop_file_components,
     read_dated_rows,
-    stepped_series_parts,
 )
 from interop.plugins.sources.plexos_escalators import build_escalated_series
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
@@ -137,6 +138,7 @@ _BAND_TABLE = "t_band"
 _BAND_ID = "band_id"
 
 _TIME_SERIES_SUBDIR = "time_series"
+_STEPPED_SUBDIR = "stepped"
 _CSV_SUBDIR = "csv"
 _ESCALATED_SUBDIR = "escalated"
 
@@ -231,8 +233,10 @@ class StagePlexosXml(StagedSource):
             _build_pattern_calendar(resolved.properties, package, chronology),
         )
         series = self._stage_time_series(resolved, package.spool, staging_dir, context, chronology)
-        for key, frames in stepped_series_parts(resolved.stepped_properties, series).items():
-            series[key] = self._sink_series(key, frames, staging_dir, chronology.index)
+        for key, steps in build_stepped_series(resolved.stepped_properties).items():
+            series[key] = self._stage_steps(
+                key, steps, series.get(key), staging_dir, chronology.index
+            )
         return build_escalated_series(
             series, resolved.properties, staging_dir / _ESCALATED_SUBDIR, chronology.index
         )
@@ -324,19 +328,38 @@ class StagePlexosXml(StagedSource):
                 parts.setdefault(key, []).append(drop_undated_rows(frame))
         _warn_missing_data_files(missing)
         staged = {
-            key: self._sink_series(key, frames, staging_dir, chronology.index)
+            key: self._sink_series(key, frames, staging_dir / _TIME_SERIES_SUBDIR, chronology.index)
             for key, frames in parts.items()
         }
         return _drop_empty_series(staged, rows_by_file)
+
+    def _stage_steps(
+        self,
+        key: tuple[str, str],
+        steps: pl.LazyFrame,
+        file_series: pl.LazyFrame | None,
+        staging_dir: Path,
+        index: pl.DataFrame | None,
+    ) -> pl.LazyFrame:
+        """The steps of one property, in the same series as the Data File values of it.
+
+        A component that reads a Data File keeps the file's values. Every other component
+        keeps its own steps. The two parts stay in two files, and one lazy frame reads both.
+        """
+        if file_series is None:
+            return self._sink_series(key, [steps], staging_dir / _TIME_SERIES_SUBDIR, index)
+        kept = drop_file_components(steps, file_series)
+        stepped = self._sink_series(key, [kept], staging_dir / _STEPPED_SUBDIR, index)
+        return pl.concat([file_series, stepped], how="diagonal_relaxed")
 
     def _sink_series(
         self,
         key: tuple[str, str],
         frames: list[pl.LazyFrame],
-        staging_dir: Path,
+        series_dir: Path,
         index: pl.DataFrame | None,
     ) -> pl.LazyFrame:
-        out = staging_dir / _TIME_SERIES_SUBDIR / key[0]
+        out = series_dir / key[0]
         out.mkdir(parents=True, exist_ok=True)
         combined = pl.concat(frames)
         if index is None:

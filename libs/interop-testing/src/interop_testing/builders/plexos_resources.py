@@ -442,6 +442,21 @@ class ResourceBuilder(PlexosTables):
             GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, 0, data_file=data_file
         )
 
+    def add_escalated_generator_property_from_data_file(
+        self, name: str, property_name: str, data_file: str, variable: str
+    ) -> None:
+        """A Generator property that a Data File holds and that a Variable's profile escalates."""
+        self._check_not_saved(f"escalated property {property_name!r} of generator {name!r}")
+        self._add_system_property(
+            GENERATOR_CLASS,
+            name,
+            GENERATORS_COLLECTION,
+            property_name,
+            0,
+            data_file=data_file,
+            variable=variable,
+        )
+
     def add_reserve_generator_property_from_data_file(
         self, reserve: str, generator: str, property_name: str, data_file: str
     ) -> None:
@@ -459,12 +474,18 @@ class ResourceBuilder(PlexosTables):
         )
 
     def date_generator_property(
-        self, name: str, property_name: str, value: float, dates: DateBand
+        self, name: str, property_name: str, value: float, dates: DateBand, band: int | None = None
     ) -> None:
         """State a Generator property for one span of dates rather than for all of time."""
         self._check_not_saved(f"dated property {property_name!r} of generator {name!r}")
         self._add_system_property(
-            GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, value, dates=dates
+            GENERATOR_CLASS,
+            name,
+            GENERATORS_COLLECTION,
+            property_name,
+            value,
+            band=band,
+            dates=dates,
         )
 
     def _add_line_property(
