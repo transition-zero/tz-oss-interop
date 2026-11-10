@@ -444,6 +444,9 @@ class SiennaTimeSeriesAssociationCol:
     FEATURES = "features"
     # Optional: the basis of a series whose owner has no capacity rule. COMPONENT_BASE if absent.
     UNIT_SYSTEM = "unit_system"
+    # Optional: the unit and the quantity a series states, where it is not active power.
+    UNITS = "units"
+    QUANTITY_KIND = "quantity_kind"
 
 
 SiennaTimeSeriesMetadataCol = SiennaTimeSeriesAssociationCol  # backwards-compat alias
@@ -967,6 +970,9 @@ TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaTimeSeriesAssociationCol.SOURCE_TABLE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SCALING_FACTOR: pl.Float64,
+    SiennaTimeSeriesAssociationCol.UNIT_SYSTEM: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.UNITS: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.QUANTITY_KIND: pl.Utf8,
 }
 
 TIME_SERIES_METADATA_SCHEMA = TIME_SERIES_ASSOCIATION_SCHEMA  # backwards-compat alias

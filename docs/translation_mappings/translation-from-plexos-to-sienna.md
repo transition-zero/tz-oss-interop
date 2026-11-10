@@ -386,7 +386,11 @@ A `HydroTurbine` and a `HydroDispatch` take the same fields from your model.
 A `HydroTurbine` also states `conversion_factor`, the energy that one cubic metre of water
 gives. Your `Efficiency Incr`, in MW for each m³/s, gives it as
 `Efficiency Incr / 3600 / base_power`. A turbine that states no `Efficiency Incr` keeps
-the Sienna default of 1.0.
+the Sienna default of 1.0. An `Efficiency Incr` with no unit is read as MW for each m³/s.
+
+An `Efficiency Incr` in a unit that is not MW for each m³/s gives no energy for a volume
+of water. The turbine then keeps the default of 1.0, the `Efficiency Incr` is `dropped`, and
+`decisions.md` and the log name the turbine.
 
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
@@ -399,21 +403,23 @@ the Sienna default of 1.0.
 | `active_power_limits` | MW | `(0, the available capacity)` | `derived` |
 | `operation_cost.variable_operation_cost` | $/MWh | `VO&M Charge`, or `0.0` | `derived` |
 | `ramp_limits`, `time_limits`, `status`, `time_at_status` | | The type carries them, and the chain supplies none. | `dropped` |
-| `conversion_factor` | | `Efficiency Incr / 3600 / base_power`, or `1.0` where the turbine states no `Efficiency Incr` | `derived` |
+| `conversion_factor` | | `Efficiency Incr / 3600 / base_power`, or `1.0` where the turbine states no `Efficiency Incr` in MW for each m³/s | `derived` |
 | `efficiency`, `outflow_limits`, `turbine_type`, `travel_time` | | Not written, so a reader takes the SiennaSchemas default. The translator reads no PLEXOS property for them. | `default` |
 
 ### The reservoir
 
 Each `Storage` of a cascade becomes one `HydroReservoir`, named for the `Storage`. A
 cascade holds the head and the tail `Storage` of each `HydroTurbine`, and each `Storage`
-that a `Waterway` joins to one of them. A reservoir names the turbines whose head it is in
+that a `Waterway` joins to one of them. A cascade never holds a `Storage` of a pumped-storage
+unit, because the `EnergyReservoirStorage` of that unit holds its water. A reservoir names
+the turbines whose head it is in
 `downstream_turbines`, and the turbines whose tail it is in `upstream_turbines`. The unit
 that the `Storage` states its volumes in sets `level_data_type`, and so the unit of every
 level and of the inflow.
 
 | Your volumes are stated in | `level_data_type` | Levels | Inflow |
 | --- | --- | --- | --- |
-| `MWh`, `GWh`, or no unit | `ENERGY` | MWh | MW |
+| `MWh`, `GWh`, or no unit | `ENERGY` | MWh, converted from the unit of each volume, `Min Volume` included | MW |
 | `CMD` (one m³/s for one day, 86,400 m³) or `m3` | `USABLE_VOLUME` | m³ | m³/s, from `cumec` or `m3/s` |
 
 | Sienna field | Unit | From | Mapping |
@@ -454,6 +460,10 @@ A `Waterway` makes its `Storage To` name its `Storage From` among its
 `upstream_reservoirs`. Sienna states no route between two reservoirs, so every property of a
 `Waterway`, such as `Max Flow` and `Min Flow`, is `dropped`. A `Waterway` that does not join
 two reservoirs of the system is also `dropped`.
+
+A `Waterway` that joins a reservoir of the cascade to a `Storage` of a pumped-storage unit
+is `dropped`, and the log names up to three of them. That `Storage` does not become a
+`HydroReservoir`, so its water is in the system once, in the `EnergyReservoirStorage`.
 
 ### In a solve
 

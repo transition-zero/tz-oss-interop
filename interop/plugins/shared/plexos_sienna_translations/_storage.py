@@ -12,8 +12,9 @@ it, where PLEXOS states both in megawatt hours.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
@@ -21,6 +22,8 @@ from interop.core.extensions import ExtensionKind, StorageExtension, companion_f
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    SECONDS_PER_HOUR,
+    UNIT_CUBIC_METRES_PER_SECOND,
     UNIT_DOLLARS_PER_MWH,
     UNIT_HOURS,
     UNIT_MVA,
@@ -30,34 +33,39 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosProperty,
-    PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     record_expansion_notes,
     warn_about_dropped_builds,
 )
-from interop.plugins.shared.plexos_pypsa_translations._shared import (
-    collapse_properties_by_object,
-)
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
+    StagedObject,
     StorageUnitMapping,
-    build_lookups,
+    build_cascade,
 )
-from interop.plugins.shared.plexos_pypsa_translations._storage_units import derive_storage_units
+from interop.plugins.shared.plexos_pypsa_translations._storage_units import (
+    DerivedStorageUnits,
+    DroppedValue,
+    StorageSkips,
+    build_storage_skips,
+    derive_storage_units,
+)
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
+    SkipGroup,
     SourceValue,
     declares,
     destination_row,
     maps_to,
+    warn_about_groups,
     warn_about_skips,
 )
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
-    list_thermal_store_users,
+    build_thermal_store_users,
 )
 from interop.plugins.shared.plexos_sienna_translations._reservoirs import (
     TranslatedReservoirs,
@@ -68,6 +76,7 @@ from interop.plugins.shared.plexos_sienna_translations._storage_series import (
     StorageSeries,
     build_storage_series,
 )
+from interop.plugins.shared.plexos_units import conversion_factor
 from interop.plugins.shared.sienna_constants import (
     CYCLIC_ENERGY_PENALTY,
     DEFAULT_CYCLE_LIMITS,
@@ -76,7 +85,6 @@ from interop.plugins.shared.sienna_constants import (
     SiennaCostType,
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
-    SiennaHydroReservoirCol,
     SiennaHydroTurbineCol,
     SiennaStorageTech,
     SiennaStructField,
@@ -140,10 +148,27 @@ _TECHNOLOGY_NOTE = (
     "is the closest fit"
 )
 _CONVERSION_NOTE = "PLEXOS states no conversion factor; it defaults to 1.0"
+_NO_INCREMENT_NOTE = "the turbine states no Efficiency Incr, so conversion_factor defaults to 1.0"
 _CONVERSION_DERIVATION = "Efficiency Incr / 3600 / base_power"
-_CONVERSION_COLUMN = MappedColumns((SiennaHydroTurbineCol.CONVERSION_FACTOR,))
-_SECONDS_PER_HOUR = 3600.0
-_MW_PER_CUMEC = "MW/m³/s"
+_INCREMENT_UNIT_NOTE = (
+    "the turbine states Efficiency Incr in a unit that is not MW per m3/s, so it gives no "
+    "energy for a volume of water, and conversion_factor defaults to 1.0"
+)
+_INCREMENT_UNIT_GROUP = SkipGroup(
+    "Generator(s)",
+    "state Efficiency Incr in a unit that is not MW per m3/s",
+    "so each HydroTurbine keeps a conversion_factor of 1.0",
+)
+_NO_BASE_POWER_NOTE = (
+    "the turbine has no base power to state Efficiency Incr against, so conversion_factor "
+    "defaults to 1.0"
+)
+_NO_BASE_POWER_GROUP = SkipGroup(
+    "Generator(s)",
+    "state Efficiency Incr but have no base power",
+    "so each HydroTurbine keeps a conversion_factor of 1.0",
+)
+_UNIT_SEPARATOR = "/"
 _CYCLE_LIMITS_NOTE = "storage_target holds the cyclic boundary, so cycle_limits is unused"
 _BASE_POWER_DERIVATION = "the rated power of the unit"
 _CAPACITY_DERIVATION = "the reservoir in hours of rated power"
@@ -209,6 +234,27 @@ class _HydroMapping:
     initial_level: Decision = declares(_CARRIED_LEVEL_COLUMN)
 
 
+@dataclass(frozen=True)
+class _TurbineMapping(_HydroMapping):
+    """One Sienna HydroTurbine: a HydroDispatch, and the energy that one cubic metre gives."""
+
+    conversion_factor: Decision = maps_to(SiennaHydroTurbineCol.CONVERSION_FACTOR)
+
+
+class _Unread(NamedTuple):
+    """An Efficiency Incr that gives no conversion factor, and the warning that counts it."""
+
+    dropped: DroppedValue
+    group: SkipGroup
+
+
+class _Conversion(NamedTuple):
+    """The conversion_factor a turbine takes, and the Efficiency Incr it cannot read, if any."""
+
+    factor: Decision
+    unread: _Unread | None = None
+
+
 @dataclass
 class TranslatedStorage:
     """The rows each Sienna storage type takes, and the records the sidecar carries.
@@ -227,22 +273,20 @@ def map_storage(
     state: State, recorder: ScopedRecorder, targets: CarrierTargets
 ) -> TranslatedStorage:
     """Translate every PLEXOS Battery, pumped-storage plant and reservoir hydro."""
-    derived = derive_storage_units(state, list_thermal_store_users(state, targets))
-    series = build_storage_series(state, derived.mappings)
+    units = derive_storage_units(state, build_thermal_store_users(state, targets))
+    series = build_storage_series(state, units.mappings)
     translated = TranslatedStorage(series=series.frame)
     first_id = build_first_free_id(state)
-    turbines: dict[str, int] = {}
-    generator_values = collapse_properties_by_object(
-        state.source_topology[PlexosResolvedTable.PROPERTIES], PlexosClass.GENERATOR
-    )
-    for mapping in derived.mappings:
+    conversions = _derive_conversions(units, targets)
+    _report_unread_increments(conversions.values(), recorder)
+    for mapping in units.mappings:
         target = targets.find(str(mapping.carrier.value))
         if target is None:
             continue
         sienna_type = str(target.sienna_type)
         reporter = SiennaComponentReporter(recorder, sienna_type)
         rows = translated.rows_by_type.setdefault(sienna_type, [])
-        row = _row_for(sienna_type, mapping, target, reporter)
+        row = _row_for(sienna_type, mapping, target, conversions.get(mapping.name), reporter)
         written = sum(len(table_rows) for table_rows in translated.rows_by_type.values())
         row[SiennaEnergyReservoirStorageCol.ID] = first_id + written
         reporter.record_id(
@@ -252,70 +296,114 @@ def map_storage(
             _ID_NOTE,
         )
         rows.append(row)
-        if sienna_type == SiennaComponent.HYDRO_TURBINE:
-            turbines[mapping.name] = row[SiennaEnergyReservoirStorageCol.ID]
-            row[SiennaHydroTurbineCol.CONVERSION_FACTOR] = _record_conversion_factor(
-                mapping, generator_values.get(mapping.name, {}), reporter
-            )
         translated.extensions.append(_extension_for(mapping, reporter, series))
         record_expansion_notes(reporter, mapping.name, mapping.expansion)
         _record_expansion(reporter, mapping)
-    warn_about_dropped_builds(mapping.expansion for mapping in derived.mappings)
+    warn_about_dropped_builds(mapping.expansion for mapping in units.mappings)
     written = sum(len(table_rows) for table_rows in translated.rows_by_type.values())
-    translated.reservoirs = map_reservoirs(
-        state, recorder, build_lookups(state), turbines, first_id + written
+    cascade = build_cascade(
+        units.lookups,
+        _list_ids(translated, SiennaComponent.HYDRO_TURBINE),
+        _list_ids(translated, SiennaComponent.ENERGY_RESERVOIR_STORAGE),
     )
-    _record_skips(_drop_written_reservoirs(derived, translated.reservoirs), recorder)
+    translated.reservoirs = map_reservoirs(state, recorder, cascade, first_id + written)
+    _report_skips(units, build_storage_skips(state, units, cascade.storages), recorder)
     return translated
 
 
-def _record_conversion_factor(
-    mapping: StorageUnitMapping, values: dict[str, Any], reporter: SiennaComponentReporter
-) -> float:
+def _list_ids(translated: TranslatedStorage, sienna_type: SiennaComponent) -> dict[str, int]:
+    """The id of each unit written as this Sienna type, by name."""
+    return {
+        row[SiennaEnergyReservoirStorageCol.NAME]: row[SiennaEnergyReservoirStorageCol.ID]
+        for row in translated.rows_by_type.get(sienna_type, [])
+    }
+
+
+def _derive_conversions(
+    units: DerivedStorageUnits, targets: CarrierTargets
+) -> dict[str, _Conversion]:
+    """The conversion_factor of each unit that becomes a HydroTurbine, by name."""
+    return {
+        mapping.name: _derive_conversion(
+            mapping, units.lookups.read_staged(PlexosClass.GENERATOR, mapping.name)
+        )
+        for mapping in units.mappings
+        if _is_turbine(targets.find(str(mapping.carrier.value)))
+    }
+
+
+def _is_turbine(target: CarrierTarget | None) -> bool:
+    return target is not None and target.sienna_type == SiennaComponent.HYDRO_TURBINE
+
+
+def _derive_conversion(mapping: StorageUnitMapping, staged: StagedObject) -> _Conversion:
     """The energy one cubic metre gives, per unit of base power, from Efficiency Incr in MW per
     cubic metre a second. A turbine that states none keeps the Sienna default.
     """
-    increment = values.get(PlexosProperty.EFFICIENCY_INCR)
+    increment = staged.properties.get(PlexosProperty.EFFICIENCY_INCR)
+    if increment is None:
+        return _Conversion(Decision.default(CONVERSION_FACTOR, _NO_INCREMENT_NOTE))
+    stated = staged.stated_units.get(PlexosProperty.EFFICIENCY_INCR)
+    source = _source(mapping, PlexosProperty.EFFICIENCY_INCR, increment, stated)
+    per_flow = _find_flow_factor(stated)
     base_power = float(mapping.p_nom.value)
-    if increment is None or not base_power:
-        decision = Decision.default(CONVERSION_FACTOR, _CONVERSION_NOTE)
-    else:
-        source = _source(mapping, PlexosProperty.EFFICIENCY_INCR, increment, _MW_PER_CUMEC)
-        factor = float(increment) / _SECONDS_PER_HOUR / base_power
-        decision = Decision.derived(factor, [source], _CONVERSION_DERIVATION)
-    reporter.record(mapping.name, _CONVERSION_COLUMN, decision)
-    return float(decision.value)
+    if per_flow is None:
+        return _build_unread(source, _INCREMENT_UNIT_NOTE, _INCREMENT_UNIT_GROUP)
+    if not base_power:
+        return _build_unread(source, _NO_BASE_POWER_NOTE, _NO_BASE_POWER_GROUP)
+    factor = float(increment) / per_flow / SECONDS_PER_HOUR / base_power
+    return _Conversion(Decision.derived(factor, [source], _CONVERSION_DERIVATION))
 
 
-def _drop_written_reservoirs(derived: Any, reservoirs: TranslatedReservoirs) -> Any:
-    """The derived units, without the skips of each Storage a cascade wrote as a reservoir."""
-    written = {row[SiennaHydroReservoirCol.NAME] for row in reservoirs.rows}
-    kept = [
-        one
-        for one in derived.skipped
-        if not (one.source.component == PlexosClass.STORAGE and one.source.name in written)
-    ]
-    return replace(derived, skipped=kept)
+def _find_flow_factor(stated: str | None) -> float | None:
+    """The m3/s that one flow unit of a ``MW/<flow unit>`` is worth, or None where the unit is
+    not one. A model that names no unit is taken at its word.
+    """
+    if stated is None:
+        return 1.0
+    power, _, flow = stated.partition(_UNIT_SEPARATOR)
+    if power != UNIT_MW or not flow:
+        return None
+    return conversion_factor(flow, UNIT_CUBIC_METRES_PER_SECOND)
 
 
-def _record_skips(derived: Any, recorder: ScopedRecorder) -> None:
+def _build_unread(source: SourceValue, note: str, group: SkipGroup) -> _Conversion:
+    unread = _Unread(DroppedValue(source, note), group)
+    return _Conversion(Decision.default(CONVERSION_FACTOR, note), unread)
+
+
+def _report_unread_increments(conversions: Iterable[_Conversion], recorder: ScopedRecorder) -> None:
+    """Record each Efficiency Incr that gives no conversion factor, and warn once per reason."""
+    reporter = SiennaComponentReporter(recorder, SiennaComponent.HYDRO_TURBINE)
+    unread = [one.unread for one in conversions if one.unread is not None]
+    for one in unread:
+        reporter.record_dropped(one.dropped.source, one.dropped.note)
+    warn_about_groups((one.group, one.dropped.source.name) for one in unread)
+
+
+def _report_skips(
+    units: DerivedStorageUnits, skips: StorageSkips, recorder: ScopedRecorder
+) -> None:
+    """Record each unit and Storage the mapping leaves out and each value it drops, and warn."""
     reporter = SiennaComponentReporter(recorder, SiennaComponent.ENERGY_RESERVOIR_STORAGE)
-    for one in derived.skipped:
+    skipped = [*units.skipped, *skips.skipped]
+    for one in skipped:
         reporter.record_skipped(one.source, one.note)
-    for one in derived.dropped:
-        reporter.record_dropped(one.source, one.note)
-    warn_about_skips(derived.skipped)
+    for dropped in skips.dropped:
+        reporter.record_dropped(dropped.source, dropped.note)
+    warn_about_skips(skipped)
 
 
 def _row_for(
     sienna_type: str,
     mapping: StorageUnitMapping,
     target: CarrierTarget,
+    conversion: _Conversion | None,
     reporter: SiennaComponentReporter,
 ) -> dict[str, Any]:
     rated_power = float(mapping.p_nom.value)
     if sienna_type in _HYDRO_TURBINE_TYPES:
-        hydro = _derive_hydro(mapping, target)
+        hydro = _derive_hydro(mapping, target, conversion)
         reporter.record_mapping(mapping.name, hydro)
         row = destination_row(hydro, SiennaHydroGeneratorCol.NAME, mapping.name)
         row[SiennaHydroGeneratorCol.ACTIVE_POWER_LIMITS] = {
@@ -381,25 +469,30 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
     )
 
 
-def _derive_hydro(mapping: StorageUnitMapping, target: CarrierTarget) -> _HydroMapping:
+def _derive_hydro(
+    mapping: StorageUnitMapping, target: CarrierTarget, conversion: _Conversion | None
+) -> _HydroMapping:
+    """A HydroDispatch, or a HydroTurbine where the unit has a conversion factor."""
     rated_power = float(mapping.p_nom.value)
-    return _HydroMapping(
-        name=mapping.name,
-        available=Decision.default(True, _AVAILABLE_NOTE),
-        bus_name=Decision.default(mapping.bus.value, _AVAILABLE_NOTE),
-        active_power=Decision.default(NO_ACTIVE_POWER, _ACTIVE_POWER_NOTE),
-        reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
-        rating=Decision.default(FULL_RATING * rated_power, _RATING_NOTE),
-        power_units=Decision.default(SiennaUnitSystem.NATURAL_UNITS, _NATURAL_UNITS_NOTE),
-        prime_mover_type=_prime_mover(mapping, target),
-        active_power_limits=replace(
+    decisions: dict[str, Any] = {
+        "available": Decision.default(True, _AVAILABLE_NOTE),
+        "bus_name": Decision.default(mapping.bus.value, _AVAILABLE_NOTE),
+        "active_power": Decision.default(NO_ACTIVE_POWER, _ACTIVE_POWER_NOTE),
+        "reactive_power": Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
+        "rating": Decision.default(FULL_RATING * rated_power, _RATING_NOTE),
+        "power_units": Decision.default(SiennaUnitSystem.NATURAL_UNITS, _NATURAL_UNITS_NOTE),
+        "prime_mover_type": _prime_mover(mapping, target),
+        "active_power_limits": replace(
             mapping.p_min_pu, value=float(mapping.p_min_pu.value) * rated_power
         ),
-        base_power=mapping.p_nom,
-        operation_cost=mapping.marginal_cost,
-        storage_capacity=mapping.max_hours,
-        initial_level=mapping.state_of_charge_initial,
-    )
+        "base_power": mapping.p_nom,
+        "operation_cost": mapping.marginal_cost,
+        "storage_capacity": mapping.max_hours,
+        "initial_level": mapping.state_of_charge_initial,
+    }
+    if conversion is None:
+        return _HydroMapping(name=mapping.name, **decisions)
+    return _TurbineMapping(name=mapping.name, conversion_factor=conversion.factor, **decisions)
 
 
 def _source(
