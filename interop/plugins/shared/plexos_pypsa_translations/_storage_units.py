@@ -6,7 +6,7 @@ staged tables once, runs all three, and records what each decided, skipped or dr
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -54,6 +54,7 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     read_object_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
+    can_pump,
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -62,10 +63,12 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_groups,
     warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
+    PyPSACarrier,
     PyPSAComponent,
     PyPSADestinationTable,
     PyPSAStorageUnitCol,
@@ -148,7 +151,10 @@ def build_storage_skips(
             *orphan_storage_skips(storages, units.lookups),
             *_list_fuel_store_skips(state, units, storages),
         ],
-        dropped=_dropped_values(state, units.lookups, held_storages),
+        dropped=[
+            *_dropped_values(state, units.lookups, held_storages),
+            *_list_unused_pumps(units),
+        ],
     )
 
 
@@ -193,10 +199,21 @@ def _map_each(
 
 @dataclass(frozen=True)
 class DroppedValue:
-    """A PLEXOS value the mapping read nothing from, recorded so the gap is not silent."""
+    """A PLEXOS value the mapping read nothing from, recorded so the gap is not silent.
+
+    ``warn_with`` is set where one warning names each object that drops a value this way.
+    """
 
     source: SourceValue
     note: str
+    warn_with: SkipGroup | None = None
+
+
+def warn_about_dropped(dropped: Iterable[DroppedValue]) -> None:
+    """One warning for each reason that warns, which names each object once."""
+    warn_about_groups(
+        {(one.warn_with, one.source.name) for one in dropped if one.warn_with is not None}
+    )
 
 
 @dataclass(frozen=True)
@@ -240,6 +257,56 @@ _TAIL_DROPPED: dict[str, _DroppedProperty] = {
     PlexosProperty.MAX_VOLUME: _DroppedProperty(_TAIL_ABSORBED, UNIT_MWH),
     PlexosProperty.INITIAL_VOLUME: _DroppedProperty(_TAIL_ABSORBED, UNIT_MWH),
 }
+
+
+class _UnusedPump(NamedTuple):
+    """Why a turbine on a head Storage does not pump, and the pump properties it drops."""
+
+    units_by_property: dict[str, str]
+    note: str
+    group: SkipGroup
+
+
+_GENERATES_ONLY = "so each one generates and does not pump"
+
+_NO_PUMP_LOAD = _UnusedPump(
+    {PlexosProperty.PUMP_EFFICIENCY: UNIT_PERCENT},
+    "this Generator states no Pump Load above 0 MW, so it does not pump, and its "
+    "{property} is dropped",
+    SkipGroup("Generator(s)", "state a Pump Efficiency but no Pump Load", _GENERATES_ONLY),
+)
+
+_NO_TAIL = _UnusedPump(
+    {PlexosProperty.PUMP_LOAD: UNIT_MW, PlexosProperty.PUMP_EFFICIENCY: UNIT_PERCENT},
+    "this Generator has no Tail Storage to pump from, so it does not pump, and its "
+    "{property} is dropped",
+    SkipGroup("Generator(s)", "state a Pump Load but have no Tail Storage", _GENERATES_ONLY),
+)
+
+
+def _list_unused_pumps(units: DerivedStorageUnits) -> list[DroppedValue]:
+    """Each pump property of a turbine that the mapping makes reservoir hydro."""
+    properties = units.lookups.read_properties_of(PlexosClass.GENERATOR)
+    return [
+        dropped
+        for mapping in units.mappings
+        if mapping.carrier.value is PyPSACarrier.HYDRO
+        for dropped in _drop_pump_properties(mapping.name, properties.get(mapping.name, {}))
+    ]
+
+
+def _drop_pump_properties(name: str, stated: dict[str, float]) -> list[DroppedValue]:
+    """A reservoir-hydro turbine that can pump has no tail, so that is why it does not pump."""
+    reason = _NO_TAIL if can_pump(stated) else _NO_PUMP_LOAD
+    return [
+        DroppedValue(
+            SourceValue(PlexosClass.GENERATOR, name, property_name, stated[property_name], unit),
+            reason.note.format(property=property_name),
+            reason.group,
+        )
+        for property_name, unit in reason.units_by_property.items()
+        if property_name in stated
+    ]
 
 
 def _dropped_values(
@@ -313,6 +380,7 @@ def _record(
     warn_about_skips(skipped)
     for dropped in skips.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
+    warn_about_dropped(skips.dropped)
 
 
 def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> None:

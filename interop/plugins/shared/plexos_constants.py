@@ -210,6 +210,7 @@ class PlexosProperty(StrEnum):
     MIN_UP_TIME = "Min Up Time"
     MIN_DOWN_TIME = "Min Down Time"
     PUMP_EFFICIENCY = "Pump Efficiency"
+    PUMP_LOAD = "Pump Load"
     # Expansion, which a Generator and a Battery state alike
     BUILD_COST = "Build Cost"
     MAX_UNITS_BUILT = "Max Units Built"

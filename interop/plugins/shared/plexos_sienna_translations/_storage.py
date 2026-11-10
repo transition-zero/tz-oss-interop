@@ -39,6 +39,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
     warn_about_dropped_builds,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
+    PUMP_LIMIT_DERIVATION,
     StagedObject,
     StorageLookups,
     StorageUnitMapping,
@@ -50,6 +51,7 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_units import (
     StorageSkips,
     build_storage_skips,
     derive_storage_units,
+    warn_about_dropped,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
@@ -184,8 +186,6 @@ _BASE_POWER_DERIVATION = "the rated power of the unit"
 _CAPACITY_DERIVATION = "the reservoir in hours of rated power"
 _LEVEL_DERIVATION = "the starting volume as a fraction of the reservoir"
 _EFFICIENCY_DERIVATION = "the round-trip efficiency, split symmetrically"
-_INPUT_LIMITS_DERIVATION = "what the unit may draw, per unit of its rated power"
-_OUTPUT_LIMITS_DERIVATION = "what the unit may give, per unit of its rated power"
 _COST_DERIVATION = "the marginal cost, as the discharge variable cost curve"
 _TARGET_DERIVATION = "a cyclic unit ends the horizon where it started"
 _PRIME_MOVER_DERIVATION = "the user mappings file names the carrier's prime mover"
@@ -417,6 +417,7 @@ def _report_skips(
     for dropped in skips.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
     warn_about_skips(skipped)
+    warn_about_dropped(skips.dropped)
 
 
 def _row_for(
@@ -452,7 +453,7 @@ def _row_for(
     }
     row[SiennaEnergyReservoirStorageCol.INPUT_ACTIVE_POWER_LIMITS] = {
         "min": 0.0,
-        "max": max(-float(mapping.p_min_pu.value), 0.0),
+        "max": float(storage.input_active_power_limits.value),
     }
     row[SiennaEnergyReservoirStorageCol.OUTPUT_ACTIVE_POWER_LIMITS] = {
         "min": 0.0,
@@ -481,7 +482,7 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
         initial_storage_capacity_level=_initial_level(mapping, rated_power, hours),
         rating=Decision.default(FULL_RATING, _RATING_NOTE),
         active_power=Decision.default(NO_ACTIVE_POWER, _ACTIVE_POWER_NOTE),
-        input_active_power_limits=mapping.p_min_pu,
+        input_active_power_limits=_derive_input_limit(mapping.p_min_pu),
         output_active_power_limits=mapping.p_max_pu,
         efficiency=mapping.efficiency,
         reactive_power=Decision.default(NO_REACTIVE_POWER, _REACTIVE_POWER_NOTE),
@@ -492,6 +493,17 @@ def _derive_storage(mapping: StorageUnitMapping, target: CarrierTarget) -> _Stor
         cycle_limits=Decision.default(DEFAULT_CYCLE_LIMITS, _CYCLE_LIMITS_NOTE),
         power_units=Decision.default(SiennaUnitSystem.COMPONENT_BASE, STORAGE_UNITS_NOTE),
     )
+
+
+def _derive_input_limit(p_min_pu: Decision) -> Decision:
+    """What the unit may draw, per unit of its base power, which is ``p_min_pu`` made positive.
+
+    Only a Pump Load derives ``p_min_pu``, so a derived limit names the Pump Load it came from.
+    """
+    drawn = max(-float(p_min_pu.value), 0.0)
+    if p_min_pu.kind is DecisionKind.DERIVED:
+        return Decision.derived(drawn, p_min_pu.sources, PUMP_LIMIT_DERIVATION)
+    return replace(p_min_pu, value=drawn)
 
 
 def _derive_hydro(

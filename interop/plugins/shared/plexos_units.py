@@ -79,6 +79,7 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.FUELS, PlexosProperty.PRODUCTION_RATE): UNIT_KG_PER_GJ,
     (PlexosCollection.EMISSIONS, PlexosProperty.PRICE): UNIT_DOLLARS_PER_TONNE,
     (PlexosCollection.GENERATORS, PlexosProperty.MIN_PUMP_LOAD): UNIT_MW,
+    (PlexosCollection.GENERATORS, PlexosProperty.PUMP_LOAD): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.LOAD_POINT): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.START_COST): UNIT_DOLLARS,
     (PlexosCollection.GENERATORS, PlexosProperty.BUILD_COST): UNIT_DOLLARS_PER_MW,
