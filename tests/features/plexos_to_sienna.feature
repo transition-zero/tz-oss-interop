@@ -328,6 +328,26 @@ Feature: PLEXOS to Sienna, in one hop
     And every time series association in the written Sienna system is valid SiennaSchemas 0.2
     And the file "decisions.md" contains "file-backed Load profile -> a max_active_power time series"
 
+  Scenario: a Load object profile keeps its own start when a Node load profile starts on another day
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "NodeProfile" at "profiles/node.csv" with hourly values "10, 20, 30"
+    And the model contains load "North_Node" with peak 30 from data file "NodeProfile"
+    And the model contains data file "HomesProfile" at "profiles/homes.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 2   | 1      | 100   |
+      | 2026 | 1     | 2   | 2      | 200   |
+      | 2026 | 1     | 2   | 3      | 300   |
+    And the model contains a Load object "North_Homes" on node "North_Node" with peak 300 from data file "HomesProfile"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 2 starts at "2026-01-01T00:00:00Z"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 3 starts at "2026-01-02T00:00:00Z"
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
+
   Scenario: a Load object that joins no Node is left out, and the warning names a few
     A Sienna load sits on a bus. A Load object that joins no Node gives its demand no bus, so
     each one is left out and the report says why. The warning names three and counts the rest.

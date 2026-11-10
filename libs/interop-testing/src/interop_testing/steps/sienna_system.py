@@ -975,6 +975,21 @@ def assert_ts_association_resolution(
 @then(
     parsers.parse(
         'the file "{path}" parses as JSON where TimeSeriesAssociation for component'
+        ' "{owner_type}" owner id {owner_id:d} starts at "{expected_start}"'
+    )
+)
+def assert_ts_association_initial_timestamp(
+    path: str, owner_type: str, owner_id: int, expected_start: str
+) -> None:
+    actual = _find_ts_association(path, owner_type, owner_id).get("initial_timestamp")
+    assert actual == expected_start, (
+        f"expected initial_timestamp {expected_start!r}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the file "{path}" parses as JSON where TimeSeriesAssociation for component'
         ' "{owner_type}" owner id {owner_id:d} has unit_system "{expected_unit_system}"'
     )
 )
