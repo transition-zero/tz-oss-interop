@@ -82,13 +82,13 @@ class SkipGroup(NamedTuple):
 class SkippedComponent:
     """A PLEXOS object the mapping deliberately did not translate, and why.
 
-    ``warn_with`` is set where one warning speaks for every object a reading left out, and
-    left unset where the object gets a line of its own.
+    ``note`` goes in the report for this one object. ``warn_with`` is the warning that
+    speaks for every object that the same reading left out.
     """
 
     source: SourceValue
     note: str
-    warn_with: SkipGroup | None = None
+    warn_with: SkipGroup
 
 
 class DroppedValueRecorder(Protocol):
@@ -136,25 +136,7 @@ def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
 
 
 def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
-    _warn_about_notes(one for one in skipped if one.warn_with is None)
-    warn_about_groups(
-        (one.warn_with, one.source.name) for one in skipped if one.warn_with is not None
-    )
-
-
-def _warn_about_notes(skipped: Iterable[SkippedComponent]) -> None:
-    """One warning for each component class and note, naming a few of the components."""
-    grouped: dict[tuple[str, str], list[str]] = {}
-    for one in skipped:
-        grouped.setdefault((one.source.component, one.note), []).append(one.source.name)
-    for (component, note), names in sorted(grouped.items()):
-        log.warning(
-            "plexos: dropping %d %s(s): %s. Each one: %s",
-            len(names),
-            component,
-            note,
-            name_a_few(sorted(names)),
-        )
+    warn_about_groups((one.warn_with, one.source.name) for one in skipped)
 
 
 class DecisionKind(Enum):

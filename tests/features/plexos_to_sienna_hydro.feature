@@ -268,7 +268,7 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "outputs/system.json" parses as JSON with 0 components of type "HydroTurbine"
     And the file "outputs/system.json" parses as JSON with 0 components of type "HydroReservoir"
     And the file "decisions.md" contains "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
-    And the log contains "1 Storage(s): only thermal units draw on this Storage"
+    And the log contains "1 Storage(s) hold fuel that only thermal units draw on, and Sienna states no fuel store, so each is left out. Each one: LNG_Tank"
 
   Scenario: a turbine between two reservoirs of a cascade is a hydro turbine, not pumped storage
     A unit of a cascade releases water from its head Storage into its tail Storage, and a
