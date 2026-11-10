@@ -23,7 +23,7 @@ from interop.plugins.shared.sienna_constants import (
     LOADS_DESTINATION_SCHEMA,
     SiennaComponent,
 )
-from interop.plugins.shared.sienna_time_series import collect_ts_info
+from interop.plugins.shared.sienna_time_series import build_ts_info_by_component
 from interop.plugins.shared.translation_runner import (
     apply_translations,
     enrich_first_id,
@@ -74,11 +74,11 @@ class PlexosToSiennaMapLoads(TranslationStep):
 def _build_associations_by_owner_class(
     state: State, source: pl.DataFrame, loads: pl.DataFrame
 ) -> list[pl.DataFrame]:
-    """Each owner class takes its timing from its own frame, since the files can differ."""
+    """Each load takes its timing from its own series, since two files can start apart."""
     parts: list[pl.DataFrame] = []
     for key in LOAD_SERIES_KEYS:
         owned = source.filter(pl.col(LOAD_OWNER_CLASS) == key[0])
         if owned.height:
-            ts_info = collect_ts_info(state.source_time_series.get(key))
-            parts.append(build_load_ts_associations(owned, loads, ts_info))
+            ts_info_by_owner = build_ts_info_by_component(state.source_time_series.get(key))
+            parts.append(build_load_ts_associations(owned, loads, ts_info_by_owner))
     return parts

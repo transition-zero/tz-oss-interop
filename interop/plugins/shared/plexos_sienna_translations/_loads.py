@@ -15,6 +15,7 @@ megawatts would give a network with one megawatt of demand.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -63,6 +64,7 @@ from interop.plugins.shared.sienna_events import (
 from interop.plugins.shared.sienna_time_series import (
     UNSCALABLE_LOAD_SERIES_NOTE,
     TimeSeriesInfo,
+    build_ts_info,
     is_unscalable_load_series,
     warn_unscalable_load_series,
 )
@@ -586,14 +588,15 @@ def _record_busless_node(recorder: ScopedRecorder, node: str, demand: float | No
 
 
 def build_load_ts_associations(
-    source: pl.DataFrame, destination: pl.DataFrame, ts_info: TimeSeriesInfo
+    source: pl.DataFrame, destination: pl.DataFrame, ts_info_by_owner: Mapping[str, TimeSeriesInfo]
 ) -> pl.DataFrame:
     """One association row per load whose Load is file-backed.
 
     The sink streams straight from the PLEXOS frame, so the row names the PLEXOS owner
     class and the PLEXOS property rather than anything Sienna states. The absolute MW
     profile is stored as a per-unit shape: ``scaling_factor`` carries the peak the sink
-    divides by, and ``get_max_active_power`` reverses it on read.
+    divides by, and ``get_max_active_power`` reverses it on read. Each row takes the start,
+    step and length of its own owner's series, since two data files can start on different days.
     """
     with_series = [
         row
@@ -609,28 +612,35 @@ def build_load_ts_associations(
             strict=True,
         )
     )
-    col = SiennaTimeSeriesAssociationCol
+    no_series = build_ts_info(0, None, None)
     rows = [
-        {
-            col.INITIAL_TIMESTAMP: (
-                ts_info.initial_timestamp.isoformat()
-                if ts_info.initial_timestamp is not None
-                else None
-            ),
-            col.RESOLUTION: ts_info.resolution,
-            col.LENGTH: ts_info.length,
-            col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
-            col.OWNER_ID: id_by_name[row[LOAD_NAME]],
-            col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
-            col.COMPONENT_NAME: row[LOAD_OWNER],
-            col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
-            col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,
-            # An all-zero profile has peak 0.0; divide by 1.0 to keep the stored zeros.
-            col.SCALING_FACTOR: row[LOAD_PEAK] or 1.0,
-        }
+        _build_load_association(
+            row, id_by_name[row[LOAD_NAME]], ts_info_by_owner.get(row[LOAD_OWNER], no_series)
+        )
         for row in with_series
     ]
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
+
+
+def _build_load_association(
+    row: dict[str, Any], owner_id: int, ts_info: TimeSeriesInfo
+) -> dict[str, Any]:
+    col = SiennaTimeSeriesAssociationCol
+    return {
+        col.INITIAL_TIMESTAMP: (
+            ts_info.initial_timestamp.isoformat() if ts_info.initial_timestamp is not None else None
+        ),
+        col.RESOLUTION: ts_info.resolution,
+        col.LENGTH: ts_info.length,
+        col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
+        col.OWNER_ID: owner_id,
+        col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
+        col.COMPONENT_NAME: row[LOAD_OWNER],
+        col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
+        col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,
+        # An all-zero profile has peak 0.0; divide by 1.0 to keep the stored zeros.
+        col.SCALING_FACTOR: row[LOAD_PEAK] or 1.0,
+    }
 
 
 # --- Translation constants ---

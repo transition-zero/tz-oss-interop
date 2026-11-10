@@ -348,6 +348,31 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 3 starts at "2026-01-02T00:00:00Z"
     And every time series association in the written Sienna system is valid SiennaSchemas 0.2
 
+  Scenario: two Load object profiles that start on different days each keep their own start
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "HomesProfile" at "profiles/homes.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 1   | 1      | 10    |
+      | 2026 | 1     | 1   | 2      | 20    |
+      | 2026 | 1     | 1   | 3      | 30    |
+    And the model contains a Load object "North_Homes" on node "North_Node" with peak 30 from data file "HomesProfile"
+    And the model contains data file "ShopsProfile" at "profiles/shops.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 2   | 1      | 100   |
+      | 2026 | 1     | 2   | 2      | 200   |
+      | 2026 | 1     | 2   | 3      | 300   |
+    And the model contains a Load object "North_Shops" on node "North_Node" with peak 300 from data file "ShopsProfile"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 2 starts at "2026-01-01T00:00:00Z"
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "PowerLoad" owner id 3 starts at "2026-01-02T00:00:00Z"
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "PowerLoad" named "North_Shops" attribute "max_active_power" with values 100 200 300
+    And every time series association in the written Sienna system is valid SiennaSchemas 0.2
+
   Scenario: a Load object that joins no Node is left out, and the warning names a few
     A Sienna load sits on a bus. A Load object that joins no Node gives its demand no bus, so
     each one is left out and the report says why. The warning names three and counts the rest.
