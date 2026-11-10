@@ -48,10 +48,10 @@ from interop.plugins.shared.sienna_hvdc_flow import (
     FLOW_BOUNDS_DERIVATION,
     build_hvdc_flow_bounds,
 )
+from interop.plugins.shared.sienna_hydro_turbine import UnreadTurbineField
 from interop.plugins.shared.warning_text import name_a_few
 from interop.plugins.steps.sienna_to_powersimulations._cost_events import build_operation_cost
 from interop.plugins.steps.sienna_to_powersimulations._hydro import (
-    UnreadTurbineField,
     drop_turbine_only_fields,
     record_turbine_as_dispatch,
     report_unread_turbine_fields,

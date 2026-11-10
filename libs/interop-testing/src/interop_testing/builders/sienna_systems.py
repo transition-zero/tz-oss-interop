@@ -330,6 +330,11 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"ramp_limits for ThermalStandard {name!r}")
         self._generator_by_name(name)["ramp_limits"] = {"up": up, "down": down}
 
+    def set_turbine_field(self, name: str, field: str, value: Any) -> None:
+        """Set one field of a HydroTurbine that a HydroDispatch does not state."""
+        self._check_not_saved(f"{field} for HydroTurbine {name!r}")
+        self._generator_by_name(name)[field] = value
+
     def set_generator_power_units(self, name: str, power_units: str) -> None:
         self._check_not_saved(f"power_units for generator {name!r}")
         self._generator_by_name(name)["power_units"] = power_units
