@@ -40,6 +40,7 @@ from interop.plugins.shared.plexos_pypsa_translations._expansion import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     StagedObject,
+    StorageLookups,
     StorageUnitMapping,
     build_cascade,
 )
@@ -69,6 +70,7 @@ from interop.plugins.shared.plexos_sienna_translations._carriers import (
 )
 from interop.plugins.shared.plexos_sienna_translations._reservoirs import (
     TranslatedReservoirs,
+    has_energy_volumes,
     map_reservoirs,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
@@ -156,6 +158,15 @@ _INCREMENT_UNIT_NOTE = (
 _INCREMENT_UNIT_GROUP = SkipGroup(
     "Generator(s)",
     "state Efficiency Incr in a unit that is not MW per m3/s",
+    "so each HydroTurbine keeps a conversion_factor of 1.0",
+)
+_ENERGY_HEAD_NOTE = (
+    "the head Storage states its volumes in energy, so no volume of water reaches the turbine, "
+    "and conversion_factor defaults to 1.0"
+)
+_ENERGY_HEAD_GROUP = SkipGroup(
+    "Generator(s)",
+    "draw on a head Storage stated in energy",
     "so each HydroTurbine keeps a conversion_factor of 1.0",
 )
 _NO_BASE_POWER_NOTE = (
@@ -323,18 +334,32 @@ def _derive_conversions(
     """The conversion_factor of each unit that becomes a HydroTurbine, by name."""
     return {
         mapping.name: _derive_conversion(
-            mapping, units.lookups.read_staged(PlexosClass.GENERATOR, mapping.name)
+            mapping,
+            units.lookups.read_staged(PlexosClass.GENERATOR, mapping.name),
+            _has_energy_head(units.lookups, mapping.name),
         )
         for mapping in units.mappings
         if _is_turbine(targets.find(str(mapping.carrier.value)))
     }
 
 
+def _has_energy_head(lookups: StorageLookups, turbine: str) -> bool:
+    """Whether the head Storage of a turbine states its volumes in energy."""
+    head = lookups.head_by_generator.get(turbine)
+    if head is None:
+        return False
+    return has_energy_volumes(
+        lookups.storage_properties.get(head, {}), lookups.storage_units.get(head, {})
+    )
+
+
 def _is_turbine(target: CarrierTarget | None) -> bool:
     return target is not None and target.sienna_type == SiennaComponent.HYDRO_TURBINE
 
 
-def _derive_conversion(mapping: StorageUnitMapping, staged: StagedObject) -> _Conversion:
+def _derive_conversion(
+    mapping: StorageUnitMapping, staged: StagedObject, has_energy_head: bool
+) -> _Conversion:
     """The energy one cubic metre gives, per unit of base power, from Efficiency Incr in MW per
     cubic metre a second. A turbine that states none keeps the Sienna default.
     """
@@ -347,6 +372,8 @@ def _derive_conversion(mapping: StorageUnitMapping, staged: StagedObject) -> _Co
     base_power = float(mapping.p_nom.value)
     if per_flow is None:
         return _build_unread(source, _INCREMENT_UNIT_NOTE, _INCREMENT_UNIT_GROUP)
+    if has_energy_head:
+        return _build_unread(source, _ENERGY_HEAD_NOTE, _ENERGY_HEAD_GROUP)
     if not base_power:
         return _build_unread(source, _NO_BASE_POWER_NOTE, _NO_BASE_POWER_GROUP)
     factor = float(increment) / per_flow / SECONDS_PER_HOUR / base_power

@@ -365,6 +365,24 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "decisions.md" contains "the turbine states Efficiency Incr in a unit that is not MW per m3/s"
     And the log contains "1 Generator(s) state Efficiency Incr in a unit that is not MW per m3/s"
 
+  Scenario: a turbine on a head Storage stated in energy keeps the default conversion factor
+    A head Storage that states its volumes in energy gives a reservoir in MWh, so no volume of
+    water reaches the turbine, and Efficiency Incr has no level to convert.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
+    And generator "Dam_U" has property "Efficiency Incr" 1.8
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Dam_U" having "conversion_factor" set to 1.0
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Dam" having "level_data_type" set to "ENERGY"
+    And the file "decisions.md" contains "`plexos.Generator.Dam_U.Efficiency Incr` = 1.8"
+    And the file "decisions.md" contains "the head Storage states its volumes in energy, so no volume of water reaches the turbine"
+    And the log contains "1 Generator(s) draw on a head Storage stated in energy"
+
   Scenario: a Waterway into the head of a pumped-storage unit does not join it to the cascade
     A pumped-storage unit and its two Storages become one EnergyReservoirStorage. A Waterway
     from a reservoir of the cascade into its head would put that water in the system twice,

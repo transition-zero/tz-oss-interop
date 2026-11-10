@@ -12,6 +12,7 @@ metres with an inflow in cubic metres per second.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple
 
@@ -291,11 +292,17 @@ def _report_skipped_storages(
     warn_about_groups((reason.group, name) for reason, name in skipped)
 
 
+def has_energy_volumes(values: Mapping[str, float], units: Mapping[str, str | None]) -> bool:
+    """Whether every volume a Storage states is energy, so its reservoir levels are MWh."""
+    stated = [units.get(name) for name in _VOLUME_PROPERTIES if name in values]
+    return all(unit is None or conversion_factor(unit, UNIT_MWH) is not None for unit in stated)
+
+
 def _choose_scale(reading: _StorageReading) -> _LevelScale | None:
     """ENERGY where every stated volume is energy, USABLE_VOLUME where every one is water."""
-    stated = [reading.units.get(name) for name in _VOLUME_PROPERTIES if name in reading.values]
-    if all(unit is None or conversion_factor(unit, UNIT_MWH) is not None for unit in stated):
+    if has_energy_volumes(reading.values, reading.units):
         return _ENERGY
+    stated = [reading.units.get(name) for name in _VOLUME_PROPERTIES if name in reading.values]
     if all(unit is not None and conversion_factor(unit, UNIT_CUBIC_METRES) for unit in stated):
         return _WATER
     return None

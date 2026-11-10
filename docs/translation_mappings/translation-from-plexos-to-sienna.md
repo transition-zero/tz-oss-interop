@@ -392,6 +392,10 @@ An `Efficiency Incr` in a unit that is not MW for each m³/s gives no energy for
 of water. The turbine then keeps the default of 1.0, the `Efficiency Incr` is `dropped`, and
 `decisions.md` and the log name the turbine.
 
+A head `Storage` that states its volumes in energy gives a `HydroReservoir` in MWh. No
+volume of water then reaches the turbine. The turbine keeps the default of 1.0, and its
+`Efficiency Incr` is `dropped` in the same way.
+
 | Sienna field | Unit | From | Mapping |
 | --- | --- | --- | --- |
 | `name` | | The `Generator.name` of the turbine | `direct` |
