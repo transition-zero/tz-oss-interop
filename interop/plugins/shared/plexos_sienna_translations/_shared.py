@@ -8,8 +8,9 @@ a component module states only what it reads and what it writes.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
+from interop.core.pipeline import State
 from interop.core.reporting import EventRecorder, ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.framework_reporting import DestinationReporter
@@ -20,11 +21,45 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceValue,
     mapped_fields,
 )
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
+    SiennaComponent,
+)
 from interop.ports.outbound.reporting import (
     EventKind,
     SourceField,
     TranslationEvent,
 )
+
+# The Sienna types that a PLEXOS unit can become, in the order a lookup by name tries them.
+UNIT_TYPES: tuple[SiennaComponent, ...] = (
+    SiennaComponent.THERMAL_STANDARD,
+    SiennaComponent.RENEWABLE_DISPATCH,
+    SiennaComponent.RENEWABLE_NON_DISPATCH,
+    SiennaComponent.HYDRO_DISPATCH,
+    SiennaComponent.HYDRO_TURBINE,
+    SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+)
+
+
+class TranslatedUnit(NamedTuple):
+    """One Sienna component that a PLEXOS unit became: its type and its id."""
+
+    sienna_type: SiennaComponent
+    sienna_id: int
+
+
+def build_translated_units(state: State) -> dict[str, list[TranslatedUnit]]:
+    """Each Sienna component of a unit type, by name, in the order of ``UNIT_TYPES``."""
+    units: dict[str, list[TranslatedUnit]] = {}
+    for sienna_type in UNIT_TYPES:
+        table = state.destination_tables.get(sienna_type)
+        if table is None:
+            continue
+        for name, sienna_id in table.select(SIENNA_NAME_COLUMN, SIENNA_ID_COLUMN).iter_rows():
+            units.setdefault(name, []).append(TranslatedUnit(sienna_type, sienna_id))
+    return units
 
 
 def plexos_field(
