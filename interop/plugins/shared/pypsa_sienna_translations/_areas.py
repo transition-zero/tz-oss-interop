@@ -1,16 +1,16 @@
-"""Translation objects and helpers for Sienna Area derivation.
+"""Translation objects for the Sienna Area table, derived from the mapped buses.
 
-Areas are derived from the already-translated buses destination table, not from
-the PyPSA source topology. ``build_areas_source`` aggregates the buses table to
-one row per distinct area name, keeping a representative bus name as enrichment
-context for the area_creation event. ``finalise`` drops the enrichment column.
+``build_bus_group_source_table`` gives one row per distinct area that a bus names.
 """
 
 from __future__ import annotations
 
-import polars as pl
+from functools import partial
 
 from interop.plugins.shared.constants import Framework
+from interop.plugins.shared.pypsa_sienna_translations._bus_groups import (
+    build_bus_group_name_translation,
+)
 from interop.plugins.shared.pypsa_sienna_translations._units import AREA_UNIT_TRANSLATIONS
 from interop.plugins.shared.sienna_constants import (
     SIENNA_TYPE_ATTRIBUTE,
@@ -18,7 +18,11 @@ from interop.plugins.shared.sienna_constants import (
     SiennaAreaCol,
     SiennaComponent,
 )
-from interop.plugins.shared.translation_runner import Translation, express_document_id
+from interop.plugins.shared.sienna_events import build_sienna_field
+from interop.plugins.shared.translation_runner import (
+    Translation,
+    build_document_id_translation,
+)
 from interop.ports.outbound.reporting import (
     DestinationField,
     EventKind,
@@ -26,69 +30,15 @@ from interop.ports.outbound.reporting import (
     TranslationEvent,
 )
 
-# Enrichment column: representative bus name for the area_creation event.
-_REP_BUS_NAME = "rep_bus_name"
-
-
-def build_areas_source_table(sienna_buses: pl.DataFrame) -> pl.DataFrame:
-    """Aggregate the mapped Sienna buses into one row per distinct non-null area.
-
-    Returns a DataFrame with columns ``name`` (area name) and ``rep_bus_name``
-    (name of an arbitrary bus in that area, used for translation event attribution).
-    Empty if no buses have a location.
-    """
-    return (
-        sienna_buses.filter(pl.col(SiennaACBusCol.AREA).is_not_null())
-        .group_by(SiennaACBusCol.AREA)
-        .agg(pl.col(SiennaACBusCol.NAME).first().alias(_REP_BUS_NAME))
-        .sort(SiennaACBusCol.AREA)
-        .rename({SiennaACBusCol.AREA: SiennaAreaCol.NAME})
-    )
-
-
-AREA_ID = Translation(
-    exprs=[express_document_id().alias(SiennaAreaCol.ID)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[
-                DestinationField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.AREA,
-                    name=new[SiennaAreaCol.NAME],
-                    attribute=SiennaAreaCol.ID,
-                    value=new[SiennaAreaCol.ID],
-                )
-            ],
-            note="assigned by row position in areas DataFrame, after the ids of earlier components",
-        )
-    ],
+AREA_ID = build_document_id_translation(
+    partial(build_sienna_field, SiennaComponent.AREA),
+    dest_name_col=SiennaAreaCol.NAME,
+    id_col=SiennaAreaCol.ID,
+    note="assigned by row position in the Area table, after the ids of earlier components",
 )
 
-AREA_NAME = Translation(
-    exprs=[pl.col(SiennaAreaCol.NAME)],  # identity — column already named correctly
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                SourceField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.AC_BUS,
-                    name=old[_REP_BUS_NAME],
-                    attribute=SiennaACBusCol.AREA,
-                    value=old[SiennaAreaCol.NAME],
-                )
-            ],
-            destinations=[
-                DestinationField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.AREA,
-                    name=new[SiennaAreaCol.NAME],
-                )
-            ],
-            derivation="one Area per distinct location",
-        )
-    ],
+AREA_NAME = build_bus_group_name_translation(
+    SiennaComponent.AREA, SiennaACBusCol.AREA, "one Area per distinct location"
 )
 
 AREA_SIENNA_TYPE = Translation(

@@ -1,8 +1,6 @@
 """Translation objects for the Sienna LoadZone table, derived from the mapped buses.
 
-A bus names the load zone it sits in by name. ``build_load_zones_source_table`` gives one
-row per distinct name, with a representative bus for the event that creates the zone.
-``finalise`` drops that column.
+``build_bus_group_source_table`` gives one row per distinct load zone that a bus names.
 """
 
 from __future__ import annotations
@@ -11,7 +9,10 @@ from functools import partial
 
 import polars as pl
 
-from interop.plugins.shared.constants import UNIT_MVA, UNIT_MVAR, UNIT_MW, Framework
+from interop.plugins.shared.constants import UNIT_MVA, UNIT_MVAR, UNIT_MW
+from interop.plugins.shared.pypsa_sienna_translations._bus_groups import (
+    build_bus_group_name_translation,
+)
 from interop.plugins.shared.pypsa_sienna_translations._units import (
     build_power_units_translation,
 )
@@ -25,17 +26,10 @@ from interop.plugins.shared.sienna_constants import (
 from interop.plugins.shared.sienna_events import build_sienna_field
 from interop.plugins.shared.translation_runner import (
     Translation,
+    build_document_id_translation,
     default_translation,
-    express_document_id,
-)
-from interop.ports.outbound.reporting import (
-    DestinationField,
-    EventKind,
-    SourceField,
-    TranslationEvent,
 )
 
-_REP_BUS_NAME = "rep_bus_name"
 # A load zone states no peak of its own in any source the translator reads.
 _NO_PEAK = 0.0
 
@@ -46,57 +40,17 @@ _PEAK_NOTE = "the source states no peak for a load zone; the peak is 0"
 
 _load_zone_field = partial(build_sienna_field, SiennaComponent.LOAD_ZONE)
 
-
-def build_load_zones_source_table(sienna_buses: pl.DataFrame) -> pl.DataFrame:
-    """One row per distinct load zone the buses name, with one bus that names it."""
-    return (
-        sienna_buses.filter(pl.col(SiennaACBusCol.LOAD_ZONE).is_not_null())
-        .group_by(SiennaACBusCol.LOAD_ZONE)
-        .agg(pl.col(SiennaACBusCol.NAME).first().alias(_REP_BUS_NAME))
-        .sort(SiennaACBusCol.LOAD_ZONE)
-        .rename({SiennaACBusCol.LOAD_ZONE: SiennaLoadZoneCol.NAME})
-    )
-
-
-LOAD_ZONE_ID = Translation(
-    exprs=[express_document_id().alias(SiennaLoadZoneCol.ID)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.TRANSLATOR_DEFAULT_APPLIED,
-            destinations=[
-                _load_zone_field(
-                    new[SiennaLoadZoneCol.NAME], SiennaLoadZoneCol.ID, new[SiennaLoadZoneCol.ID]
-                )
-            ],
-            note=_ID_NOTE,
-        )
-    ],
+LOAD_ZONE_ID = build_document_id_translation(
+    _load_zone_field,
+    dest_name_col=SiennaLoadZoneCol.NAME,
+    id_col=SiennaLoadZoneCol.ID,
+    note=_ID_NOTE,
 )
 
-LOAD_ZONE_NAME = Translation(
-    exprs=[pl.col(SiennaLoadZoneCol.NAME)],
-    make_events=lambda old, new: [
-        TranslationEvent(
-            kind=EventKind.VALUE_DERIVED,
-            sources=[
-                SourceField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.AC_BUS,
-                    name=old[_REP_BUS_NAME],
-                    attribute=SiennaACBusCol.LOAD_ZONE,
-                    value=old[SiennaLoadZoneCol.NAME],
-                )
-            ],
-            destinations=[
-                DestinationField(
-                    framework=Framework.SIENNA,
-                    component=SiennaComponent.LOAD_ZONE,
-                    name=new[SiennaLoadZoneCol.NAME],
-                )
-            ],
-            derivation="one LoadZone per distinct load zone a bus names",
-        )
-    ],
+LOAD_ZONE_NAME = build_bus_group_name_translation(
+    SiennaComponent.LOAD_ZONE,
+    SiennaACBusCol.LOAD_ZONE,
+    "one LoadZone per distinct load zone a bus names",
 )
 
 
