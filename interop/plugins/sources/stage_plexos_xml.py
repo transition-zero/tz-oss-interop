@@ -21,14 +21,15 @@ A row pointing at an id no other table defines is dropped and recorded as a
 validation error, so a partial export stages the records it can resolve.
 
 Each staging concern with a life of its own sits in a sibling module: the chronology in
-``plexos_horizon``, the dated-property windowing in ``plexos_dated_properties``, the CSV
-layouts in ``plexos_csv_layouts``, and the units a property is stated in with the rest of
-the unit vocabulary in ``plexos_units``.
+``plexos_horizon``, the Scenario overlay in ``plexos_scenarios``, the data file a value
+reads in ``plexos_profiles``, the dated-property windowing in ``plexos_dated_properties``,
+the files of dated values in ``plexos_dated_files``, the CSV layouts in
+``plexos_csv_layouts``, and the units a property is stated in with the rest of the unit
+vocabulary in ``plexos_units``.
 """
 
 from __future__ import annotations
 
-import itertools
 import logging
 import shutil
 import xml.etree.ElementTree as ET
@@ -43,7 +44,6 @@ from pydantic import BaseModel, Field
 
 from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.plexos_constants import (
-    PlexosClass,
     PlexosMembershipCol,
     PlexosObjectCol,
     PlexosPropertyCol,
@@ -68,7 +68,7 @@ from interop.plugins.sources.plexos_csv_layouts import (
     warn_undated_rows,
     warn_unstageable_layout,
 )
-from interop.plugins.sources.plexos_dated_files import DatedFiles, DatedValue
+from interop.plugins.sources.plexos_dated_files import DatedFiles, build_rows_from_dated_files
 from interop.plugins.sources.plexos_dated_properties import (
     DatedRow,
     apply_window,
@@ -76,30 +76,49 @@ from interop.plugins.sources.plexos_dated_properties import (
     read_dated_rows,
     stepped_series_parts,
 )
-from interop.plugins.sources.plexos_escalators import apply_escalators
+from interop.plugins.sources.plexos_escalators import build_escalated_series
 from interop.plugins.sources.plexos_horizon import Chronology, Window, reindex_onto
-from interop.plugins.sources.plexos_patterns import (
-    PatternCalendar,
-    build_calendar,
-    is_timeslice_include,
+from interop.plugins.sources.plexos_patterns import PatternCalendar, build_calendar
+from interop.plugins.sources.plexos_profiles import (
+    ProfileRef,
+    build_profile_refs,
+    build_row_name,
+    build_scaling,
 )
-from interop.plugins.sources.plexos_tables import class_id_of, objects_of_class
+from interop.plugins.sources.plexos_scenarios import (
+    Priority,
+    ScenarioOverlay,
+    build_scenario_overlay,
+)
+from interop.plugins.sources.plexos_tables import (
+    CLASS_ID,
+    CLASS_TABLE,
+    DATA_ID,
+    DATA_TABLE,
+    MEMBERSHIP_ID,
+    MEMBERSHIP_TABLE,
+    OBJECT_ID,
+    OBJECT_TABLE,
+    PROPERTY_ID,
+    PROPERTY_TABLE,
+    VALUE,
+    DroppedRecords,
+    Lookup,
+    Reference,
+    RowsByTable,
+    build_data_reference,
+    build_name_lookup,
+)
+from interop.plugins.sources.plexos_timeslices import TimesliceSource, is_timeslice_include
 from interop.ports.outbound.filesystem import FilesystemPort, Location
-from interop.ports.outbound.validation import EnergyModelValidationError, ValidationSeverity
 
 log = logging.getLogger(__name__)
 
 _TOPOLOGY_SUBDIR = "topology"
-_OBJECT_TABLE = "t_object"
-_CLASS_TABLE = "t_class"
 _CATEGORY_TABLE = "t_category"
-_MEMBERSHIP_TABLE = "t_membership"
 _COLLECTION_TABLE = "t_collection"
-_CLASS_ID = "class_id"
-_OBJECT_ID = "object_id"
 _CATEGORY_ID = "category_id"
 _COLLECTION_ID = "collection_id"
-_NAME = "name"
 
 _MEMBERSHIP_NAME_COLUMNS = (
     PlexosMembershipCol.PARENT_CLASS,
@@ -108,61 +127,21 @@ _MEMBERSHIP_NAME_COLUMNS = (
     PlexosMembershipCol.CHILD_CLASS,
     PlexosMembershipCol.CHILD_OBJECT,
 )
-# t_membership's own id, and its foreign-key columns.
-_MEMBERSHIP_ID = "membership_id"
+# The foreign-key columns of t_membership.
 _PARENT_CLASS_ID = "parent_class_id"
 _PARENT_OBJECT_ID = "parent_object_id"
 _CHILD_CLASS_ID = "child_class_id"
 _CHILD_OBJECT_ID = "child_object_id"
 
-_DATA_TABLE = "t_data"
-_PROPERTY_TABLE = "t_property"
-_PROPERTY_ID = "property_id"
-# The raw payload column t_data, t_text and t_attribute_data each carry.
-_VALUE = "value"
-
-# Scenario overlay resolution. A t_data row tagged (t_tag) to a Scenario is an
-# override; its priority is the Scenario's "Read Order" attribute. Untagged
-# rows are the base value, and lose to any active override.
-_TAG_TABLE = "t_tag"
 _BAND_TABLE = "t_band"
-_ATTRIBUTE_TABLE = "t_attribute"
-_ATTRIBUTE_DATA_TABLE = "t_attribute_data"
-_DATA_ID = "data_id"
 _BAND_ID = "band_id"
-_ATTRIBUTE_ID = "attribute_id"
-_READ_ORDER_ATTRIBUTE = "Read Order"
 
-# A candidate's priority ranks the override above the base value first, and only
-# then by Read Order, so an active Scenario carrying no Read Order still wins.
-_BASE_RANK = 0
-_OVERRIDE_RANK = 1
-_UNRANKED_READ_ORDER = 0.0
-_Priority = tuple[int, float]
-_BASE_PRIORITY: _Priority = (_BASE_RANK, _UNRANKED_READ_ORDER)
-
-# Data File references: a property value tagged to a Data File object reads from
-# an external CSV, whose path is that object's Filename (a t_text value).
-_TEXT_TABLE = "t_text"
-_FILENAME_PROPERTY = "Filename"
-# A property value can read a CSV indirectly: tagged to a Variable whose Profile names it,
-# either as its own text or through a Data File object the Profile is tagged to. Such a value
-# is the object's share of that shared profile, so the staged series is scaled by it.
-_VARIABLE_CLASS = "Variable"
-# The class of the one object every top-level membership hangs from.
-_SYSTEM_CLASS = "System"
-_PROFILE_PROPERTY = "Profile"
-_NO_SCALING = 1.0
-_PERCENT = 100.0
 _TIME_SERIES_SUBDIR = "time_series"
 _CSV_SUBDIR = "csv"
-_DATED_CSV_SUBDIR = "dated_csv"
-_TIMESLICE_CSV_SUBDIR = "timeslice_csv"
 _ESCALATED_SUBDIR = "escalated"
 
 
 _Rows = list[dict[str, Any]]
-_RowsByTable = dict[str, _Rows]
 _RowsByClass = dict[str, _Rows]
 
 
@@ -183,7 +162,7 @@ class _Candidate(NamedTuple):
     """One t_data row in the running, with what it competes for and how strongly."""
 
     key: _WinnerKey
-    priority: _Priority
+    priority: Priority
     data: dict[str, Any]
 
 
@@ -223,14 +202,14 @@ class StagePlexosXml(StagedSource):
 
     def load_into_state(self, params: BaseModel | None, staging_dir: Path) -> State:
         plexos_params = self._require_params(params)
-        dropped = _DroppedRecords()
+        dropped = DroppedRecords(StagePlexosXml.name)
         tables = self._parse_tables(plexos_params.path)
         chronology = Chronology.of(tables, plexos_params.model, plexos_params.horizon_year)
-        dated_files = self._build_dated_files(plexos_params.path, staging_dir)
-        package = _Package(plexos_params.path, tables, dated_files)
-        resolved = _resolve_dataset(
-            tables, _Selection(plexos_params.model, chronology.window), dropped, dated_files
-        )
+        overlay = build_scenario_overlay(tables, plexos_params.model)
+        spool = _Spool(self._fs, plexos_params.path, staging_dir / _CSV_SUBDIR)
+        selection = _Selection(overlay, chronology.window)
+        resolved = _resolve_dataset(tables, selection, dropped, DatedFiles(spool.find_scan))
+        package = _Package(tables, overlay, spool)
         return State(
             staging_dir=staging_dir,
             source_topology=self._stage_topology(resolved, staging_dir),
@@ -249,48 +228,14 @@ class StagePlexosXml(StagedSource):
         context = LayoutContext(
             chronology.profile_year,
             self.sample_scope,
-            self._build_pattern_calendar(resolved.properties, package, staging_dir, chronology),
+            _build_pattern_calendar(resolved.properties, package, chronology),
         )
-        series = self._stage_time_series(
-            resolved.properties, package, staging_dir, context, chronology.index
-        )
+        series = self._stage_time_series(resolved, package.spool, staging_dir, context, chronology)
         for key, frames in stepped_series_parts(resolved.stepped_properties, series).items():
             series[key] = self._sink_series(key, frames, staging_dir, chronology.index)
-        return apply_escalators(
+        return build_escalated_series(
             series, resolved.properties, staging_dir / _ESCALATED_SUBDIR, chronology.index
         )
-
-    def _build_pattern_calendar(
-        self, properties: _Rows, package: _Package, staging_dir: Path, chronology: Chronology
-    ) -> PatternCalendar | None:
-        """What a value by pattern expands onto, or None where the Horizon sets no snapshots."""
-        if chronology.index is None:
-            return None
-        spooled_count = itertools.count()
-
-        def scan_file(relative: str) -> pl.LazyFrame | None:
-            target = staging_dir / _TIMESLICE_CSV_SUBDIR / f"{next(spooled_count)}.csv"
-            return self._spool_csv_to(package.xml_path, relative, target)
-
-        return build_calendar(chronology.index, package.tables, properties, scan_file)
-
-    def _build_dated_files(self, xml_path: Location, staging_dir: Path) -> DatedFiles:
-        """The reader of the data files that date one value per object, beside this XML."""
-        spooled_count = itertools.count()
-
-        def scan_file(relative: str) -> pl.LazyFrame | None:
-            target = staging_dir / _DATED_CSV_SUBDIR / f"{next(spooled_count)}.csv"
-            return self._spool_csv_to(xml_path, relative, target)
-
-        return DatedFiles(lambda relative: self._read_first_line(xml_path, relative), scan_file)
-
-    def _read_first_line(self, xml_path: Location, relative: str) -> str | None:
-        """A data file's header line, or None where the package omits the file."""
-        try:
-            with self._fs.open_read(self._fs.resolve(xml_path, relative)) as source:
-                return source.readline().decode("utf-8-sig", errors="replace")
-        except OSError:
-            return None
 
     def _require_params(self, params: BaseModel | None) -> StagePlexosXmlParams:
         if not isinstance(params, StagePlexosXmlParams):
@@ -300,10 +245,10 @@ class StagePlexosXml(StagedSource):
             )
         return params
 
-    def _parse_tables(self, path: Location) -> _RowsByTable:
+    def _parse_tables(self, path: Location) -> RowsByTable:
         with self._fs.open_read(path) as xml_file:
             root = ET.parse(xml_file).getroot()
-        tables: _RowsByTable = {}
+        tables: RowsByTable = {}
         for element in root:
             tables.setdefault(_local_name(element.tag), []).append(_element_record(element))
         return tables
@@ -336,11 +281,11 @@ class StagePlexosXml(StagedSource):
 
     def _stage_time_series(
         self,
-        properties: _Rows,
-        package: _Package,
+        resolved: _ResolvedDataset,
+        spool: _Spool,
         staging_dir: Path,
         context: LayoutContext,
-        index: pl.DataFrame | None,
+        chronology: Chronology,
     ) -> dict[tuple[str, str], pl.LazyFrame]:
         """Read the CSV behind each file-backed property once, reshaping it for every object.
 
@@ -351,29 +296,22 @@ class StagePlexosXml(StagedSource):
         or one column per replication, carries no object identity, so its rows are joined
         against the objects that reference it and each gets its own share. A layout the
         reshaper does not handle (a timeslice Pattern or a scalar by-name file) is deferred
-        once with a warning. Each series is reconciled onto the Horizon ``index`` when one
-        is known, so mixed-resolution files share one snapshot window. One frame per
-        (owner class, property); each row is (snapshot, component, sample, value).
+        once with a warning. A file the source read as dated values by object stages no
+        series. Each series is reconciled onto the Horizon ``index`` when one is known, so
+        mixed-resolution files share one snapshot window. One frame per (owner class,
+        property); each row is (snapshot, component, sample, value).
         """
-        rows_by_file: dict[str, _Rows] = {}
-        for row in properties:
-            relative = row[PlexosPropertyCol.DATA_FILE]
-            if relative is not None and not is_timeslice_include(row):
-                rows_by_file.setdefault(relative, []).append(row)
-
+        rows_by_file = _group_by_data_file(resolved.properties)
         parts: dict[tuple[str, str], list[pl.LazyFrame]] = {}
         missing: list[str] = []
-        for file_index, (relative, rows) in enumerate(rows_by_file.items()):
-            if package.dated_files.has_read(relative):
+        for relative, rows in rows_by_file.items():
+            if relative in resolved.dated_file_paths:
                 _warn_objects_without_a_row(relative, rows)
                 continue
-            spooled = self._spool_csv_if_present(
-                package.xml_path, relative, file_index, staging_dir
-            )
-            if spooled is None:
+            scan = spool.find_scan(relative)
+            if scan is None:
                 missing.append(relative)
                 continue
-            scan = spooled
             if not is_supported_layout(scan, context):
                 warn_unstageable_layout(scan, relative, context)
                 continue
@@ -386,34 +324,10 @@ class StagePlexosXml(StagedSource):
                 parts.setdefault(key, []).append(drop_undated_rows(frame))
         _warn_missing_data_files(missing)
         staged = {
-            key: self._sink_series(key, frames, staging_dir, index) for key, frames in parts.items()
+            key: self._sink_series(key, frames, staging_dir, chronology.index)
+            for key, frames in parts.items()
         }
         return _drop_empty_series(staged, rows_by_file)
-
-    def _spool_csv_if_present(
-        self, xml_path: Location, relative: str, index: int, staging_dir: Path
-    ) -> pl.LazyFrame | None:
-        """Copy the CSV to local scratch in blocks and scan it, or None if it is not there.
-
-        A published model routinely ships its traces as separate downloads, so a Data
-        File the export names but the package omits leaves out that one profile rather
-        than stopping the translation.
-        """
-        return self._spool_csv_to(xml_path, relative, staging_dir / _CSV_SUBDIR / f"{index}.csv")
-
-    def _spool_csv_to(self, xml_path: Location, relative: str, temp: Path) -> pl.LazyFrame | None:
-        temp.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with (
-                self._fs.open_read(self._fs.resolve(xml_path, relative)) as source,
-                open(temp, "wb") as scratch,
-            ):
-                shutil.copyfileobj(source, scratch)
-        except OSError:
-            return None
-        # Infer from the whole file: a profile column often looks integer for its first
-        # rows and turns fractional later, which a bounded inference window mistypes.
-        return normalise_header(pl.scan_csv(temp, infer_schema_length=None))
 
     def _sink_series(
         self,
@@ -444,6 +358,58 @@ class StagePlexosXmlEnsemble(StagePlexosXml):
     sample_scope: ClassVar[SampleScope] = SampleScope.ALL
 
 
+class _Spool:
+    """Each data file beside the XML, copied to local scratch once and scanned from there.
+
+    A published model routinely ships its traces as separate downloads, so a Data File the
+    export names but the package omits leaves out that one profile rather than stopping the
+    translation.
+    """
+
+    def __init__(self, fs: FilesystemPort, xml_path: Location, scratch_dir: Path) -> None:
+        self._fs = fs
+        self._xml_path = xml_path
+        self._scratch_dir = scratch_dir
+        self._scans: dict[str, pl.LazyFrame | None] = {}
+
+    def find_scan(self, relative: str) -> pl.LazyFrame | None:
+        """The scanned data file, or None where the package omits it. The first call copies it."""
+        if relative not in self._scans:
+            target = self._scratch_dir / f"{len(self._scans)}.csv"
+            try:
+                self._copy_csv(relative, target)
+            except OSError:
+                self._scans[relative] = None
+            else:
+                self._scans[relative] = _scan_csv(target)
+        return self._scans[relative]
+
+    def _copy_csv(self, relative: str, target: Path) -> None:
+        """Copy the data file to scratch in blocks. Raises ``OSError`` where it is absent."""
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with (
+            self._fs.open_read(self._fs.resolve(self._xml_path, relative)) as source,
+            open(target, "wb") as scratch,
+        ):
+            shutil.copyfileobj(source, scratch)
+
+
+def _scan_csv(path: Path) -> pl.LazyFrame:
+    # Infer from the whole file: a profile column often looks integer for its first
+    # rows and turns fractional later, which a bounded inference window mistypes.
+    return normalise_header(pl.scan_csv(path, infer_schema_length=None))
+
+
+def _build_pattern_calendar(
+    properties: _Rows, package: _Package, chronology: Chronology
+) -> PatternCalendar | None:
+    """What a value by pattern expands onto, or None where the Horizon sets no snapshots."""
+    if chronology.index is None:
+        return None
+    source = TimesliceSource(package.tables, package.overlay, properties)
+    return build_calendar(chronology.index, source, package.spool.find_scan)
+
+
 @dataclass(frozen=True)
 class _ResolvedDataset:
     """The staged topology tables, resolved from the raw ``t_*`` tables.
@@ -452,7 +418,8 @@ class _ResolvedDataset:
     ``stepped_properties`` holds every value a property takes within the window, and only
     for the properties that take more than one, so a consumer can read the shape.
     ``dated_properties`` holds every row of a property the model dates, with the dates it
-    applies between, narrowed to no window at all.
+    applies between, narrowed to no window at all. ``dated_file_paths`` names each data
+    file that the source read as dated values by object, which stages no series.
     """
 
     objects_by_class: _RowsByClass
@@ -460,93 +427,41 @@ class _ResolvedDataset:
     properties: _Rows
     stepped_properties: _Rows
     dated_properties: _Rows
+    dated_file_paths: set[str]
 
 
 class _Package(NamedTuple):
-    """The XML a model is read from, its parsed tables, and its data files of dated values."""
+    """The parsed tables of a model, the Scenario overlay it reads, and its data files."""
 
-    xml_path: Location
-    tables: _RowsByTable
-    dated_files: DatedFiles
+    tables: RowsByTable
+    overlay: ScenarioOverlay
+    spool: _Spool
 
 
 class _Selection(NamedTuple):
-    """What the user asked to translate: one Model, over one window of time."""
+    """What the user asked to translate: the overlay of one Model, over one window of time."""
 
-    model: str | None
+    overlay: ScenarioOverlay
     window: Window
 
 
 def _resolve_dataset(
-    tables: _RowsByTable, selection: _Selection, dropped: _DroppedRecords, dated_files: DatedFiles
+    tables: RowsByTable, selection: _Selection, dropped: DroppedRecords, dated_files: DatedFiles
 ) -> _ResolvedDataset:
     memberships = _resolve_memberships(tables, dropped)
-    resolved = _resolve_properties(tables, memberships, selection.model, dropped, dated_files)
-    in_force, stepped = apply_window(resolved, selection.window)
+    units = UnitConversions(stated_units(tables))
+    resolved = _resolve_properties(tables, memberships, selection.overlay, dropped, units)
+    from_files = build_rows_from_dated_files(resolved, dated_files, units)
+    units.warn()
+    in_force, stepped = apply_window(from_files.rows, selection.window)
     return _ResolvedDataset(
         objects_by_class=_resolve_object_classes(tables, dropped),
         memberships=memberships,
         properties=in_force,
         stepped_properties=stepped,
-        dated_properties=read_dated_rows(resolved),
+        dated_properties=read_dated_rows(from_files.rows),
+        dated_file_paths=from_files.dated_file_paths,
     )
-
-
-@dataclass(frozen=True)
-class _Lookup:
-    """One table's values by id, and the table's name for reporting."""
-
-    table: str
-    by_id: dict[Any, Any]
-
-
-@dataclass(frozen=True)
-class _Reference:
-    """One row's pointer at another table: where it came from and the id it points at."""
-
-    table: str
-    row_id: Any
-    column: str
-    value: Any
-
-
-class _DroppedRecords:
-    """Records the rows dropped for pointing at an id nothing defines.
-
-    A PLEXOS export can be filtered or hand-edited into referring to rows it no longer
-    carries. Such a row cannot be resolved, so it is left out of the staged tables and
-    recorded as a validation error rather than raised: the rest of the model still stages.
-    """
-
-    def __init__(self) -> None:
-        self._errors: list[EnergyModelValidationError] = []
-
-    @property
-    def errors(self) -> list[EnergyModelValidationError]:
-        return list(self._errors)
-
-    def resolve(self, lookup: _Lookup, reference: _Reference) -> Any | None:
-        """The value the reference points at, or None once the dangling id is recorded."""
-        if reference.value in lookup.by_id:
-            return lookup.by_id[reference.value]
-        self._record(lookup, reference)
-        return None
-
-    def _record(self, lookup: _Lookup, reference: _Reference) -> None:
-        self._errors.append(
-            EnergyModelValidationError(
-                validator=StagePlexosXml.name,
-                severity=ValidationSeverity.WARNING,
-                component=reference.table,
-                name=str(reference.row_id),
-                message=(
-                    f"{reference.column} {reference.value!r} is not defined "
-                    f"in {lookup.table}; the row is dropped"
-                ),
-                attribute=reference.column,
-                value=reference.value,
-            )
-        )
 
 
 @dataclass(frozen=True)
@@ -554,21 +469,21 @@ class _ResolvedColumn:
     """An id column, the table its ids resolve in, and the column the name is written to."""
 
     id_column: str
-    lookup: _Lookup
+    lookup: Lookup
     name_column: str
 
 
-def _resolve_memberships(tables: _RowsByTable, dropped: _DroppedRecords) -> _Rows:
+def _resolve_memberships(tables: RowsByTable, dropped: DroppedRecords) -> _Rows:
     """Resolve each ``t_membership`` row's class, object, and collection ids to names."""
     columns = _membership_id_columns(tables)
-    rows = (_membership_row(row, columns, dropped) for row in tables.get(_MEMBERSHIP_TABLE, []))
+    rows = (_membership_row(row, columns, dropped) for row in tables.get(MEMBERSHIP_TABLE, []))
     return [row for row in rows if row is not None]
 
 
-def _membership_id_columns(tables: _RowsByTable) -> tuple[_ResolvedColumn, ...]:
-    classes = _name_lookup(tables, _CLASS_TABLE, _CLASS_ID)
-    objects = _name_lookup(tables, _OBJECT_TABLE, _OBJECT_ID)
-    collections = _name_lookup(tables, _COLLECTION_TABLE, _COLLECTION_ID)
+def _membership_id_columns(tables: RowsByTable) -> tuple[_ResolvedColumn, ...]:
+    classes = build_name_lookup(tables, CLASS_TABLE, CLASS_ID)
+    objects = build_name_lookup(tables, OBJECT_TABLE, OBJECT_ID)
+    collections = build_name_lookup(tables, _COLLECTION_TABLE, _COLLECTION_ID)
     return (
         _ResolvedColumn(_PARENT_CLASS_ID, classes, PlexosMembershipCol.PARENT_CLASS),
         _ResolvedColumn(_PARENT_OBJECT_ID, objects, PlexosMembershipCol.PARENT_OBJECT),
@@ -579,14 +494,14 @@ def _membership_id_columns(tables: _RowsByTable) -> tuple[_ResolvedColumn, ...]:
 
 
 def _membership_row(
-    row: dict[str, Any], columns: tuple[_ResolvedColumn, ...], dropped: _DroppedRecords
+    row: dict[str, Any], columns: tuple[_ResolvedColumn, ...], dropped: DroppedRecords
 ) -> dict[str, Any] | None:
     """One membership with its ids resolved, or None if any of them dangles."""
-    membership_id = row[_MEMBERSHIP_ID]
+    membership_id = row[MEMBERSHIP_ID]
     resolved: dict[str, Any] = {PlexosMembershipCol.MEMBERSHIP_ID: membership_id}
     for column in columns:
-        reference = _Reference(
-            _MEMBERSHIP_TABLE, membership_id, column.id_column, row[column.id_column]
+        reference = Reference(
+            MEMBERSHIP_TABLE, membership_id, column.id_column, row[column.id_column]
         )
         name = dropped.resolve(column.lookup, reference)
         if name is None:
@@ -599,73 +514,67 @@ def _membership_row(
 class _PropertyLookups:
     """The three tables a ``t_data`` row is resolved against."""
 
-    memberships: _Lookup
-    property_names: _Lookup
-    profiles: dict[str, _ProfileRef]
-    dated_files: DatedFiles
+    memberships: Lookup
+    property_names: Lookup
+    profiles: dict[str, ProfileRef]
 
 
 def _resolve_properties(
-    tables: _RowsByTable,
+    tables: RowsByTable,
     memberships: _Rows,
-    model: str | None,
-    dropped: _DroppedRecords,
-    dated_files: DatedFiles,
+    overlay: ScenarioOverlay,
+    dropped: DroppedRecords,
+    units: UnitConversions,
 ) -> list[DatedRow]:
     """Resolve each property to its winning ``t_data`` value under the model's Scenario overlays.
 
     Among the rows for one (membership, property, band, date) the winner is the highest
     Read Order override active for the selected model, or the base value if none. A dated
     property keeps one row per date here; narrowing those to a window is ``apply_window``.
+    The function reads only the tables, and no data file.
     """
-    overlay = _read_scenario_overlay(tables, model)
-    property_names = _name_lookup(tables, _PROPERTY_TABLE, _PROPERTY_ID)
+    property_names = build_name_lookup(tables, PROPERTY_TABLE, PROPERTY_ID)
     lookups = _PropertyLookups(
-        memberships=_Lookup(
-            _MEMBERSHIP_TABLE,
+        memberships=Lookup(
+            MEMBERSHIP_TABLE,
             {row[PlexosMembershipCol.MEMBERSHIP_ID]: row for row in memberships},
         ),
         property_names=property_names,
-        profiles=_profile_ref_by_data(tables, property_names, overlay, dropped),
-        dated_files=dated_files,
+        profiles=build_profile_refs(tables, property_names, overlay, dropped),
     )
-    units = UnitConversions(stated_units(tables))
-    resolved = [
+    return [
         row
-        for winner in _winning_data_rows(tables, model)
+        for winner in _winning_data_rows(tables, overlay)
         for row in _build_property_rows(winner, lookups, dropped, units)
     ]
-    units.warn()
-    return resolved
 
 
-def _winning_data_rows(tables: _RowsByTable, model: str | None) -> list[_WinningRow]:
+def _winning_data_rows(tables: RowsByTable, overlay: ScenarioOverlay) -> list[_WinningRow]:
     """The ``t_data`` row that wins each (membership, property, band, date) for the model."""
     dates = date_bands(tables)
-    winners: dict[_WinnerKey, tuple[_Priority, dict[str, Any]]] = {}
-    for key, priority, data in _property_candidates(tables, model, dates):
+    winners: dict[_WinnerKey, tuple[Priority, dict[str, Any]]] = {}
+    for key, priority, data in _property_candidates(tables, overlay, dates):
         if key not in winners or priority >= winners[key][0]:
             winners[key] = (priority, data)
     return [
-        _WinningRow(key.band, dates.get(data[_DATA_ID], UNDATED), data)
+        _WinningRow(key.band, dates.get(data[DATA_ID], UNDATED), data)
         for key, (_, data) in winners.items()
     ]
 
 
 def _property_candidates(
-    tables: _RowsByTable, model: str | None, dates: dict[str, DateBand]
+    tables: RowsByTable, overlay: ScenarioOverlay, dates: dict[str, DateBand]
 ) -> Iterator[_Candidate]:
     """Every ``t_data`` row the model reads, with its (membership, property, band, date) key."""
-    overlay = _read_scenario_overlay(tables, model)
-    band_by_data = {row[_DATA_ID]: row[_BAND_ID] for row in tables.get(_BAND_TABLE, [])}
-    for data in tables.get(_DATA_TABLE, []):
-        priority = overlay.priority_of(data[_DATA_ID])
+    band_by_data = {row[DATA_ID]: row[_BAND_ID] for row in tables.get(_BAND_TABLE, [])}
+    for data in tables.get(DATA_TABLE, []):
+        priority = overlay.find_priority(data[DATA_ID])
         if priority is not None:
             key = _WinnerKey(
-                data[_MEMBERSHIP_ID],
-                data[_PROPERTY_ID],
-                band_by_data.get(data[_DATA_ID]),
-                dates.get(data[_DATA_ID], UNDATED).date_from,
+                data[MEMBERSHIP_ID],
+                data[PROPERTY_ID],
+                band_by_data.get(data[DATA_ID]),
+                dates.get(data[DATA_ID], UNDATED).date_from,
             )
             yield _Candidate(key, priority, data)
 
@@ -673,286 +582,53 @@ def _property_candidates(
 def _build_property_rows(
     winner: _WinningRow,
     lookups: _PropertyLookups,
-    dropped: _DroppedRecords,
+    dropped: DroppedRecords,
     units: UnitConversions,
 ) -> list[DatedRow]:
-    """The resolved rows of one ``t_data`` row, none where its references dangle.
-
-    A value a data file dates by object gives one row for each date the file names.
-    """
+    """The resolved row of one ``t_data`` row, and none where its references dangle."""
     data = winner.data
-    membership = dropped.resolve(lookups.memberships, _data_reference(data, _MEMBERSHIP_ID))
-    property_name = dropped.resolve(lookups.property_names, _data_reference(data, _PROPERTY_ID))
+    membership = dropped.resolve(lookups.memberships, build_data_reference(data, MEMBERSHIP_ID))
+    property_name = dropped.resolve(lookups.property_names, build_data_reference(data, PROPERTY_ID))
     if membership is None or property_name is None:
         return []
     stated = StatedValue(
-        value=_to_float(data[_VALUE]),
-        unit=units.unit_of(data[_PROPERTY_ID]),
+        value=_to_float(data[VALUE]),
+        unit=units.unit_of(data[PROPERTY_ID]),
         collection=membership[PlexosMembershipCol.COLLECTION],
         property_name=property_name,
     )
-    profile = lookups.profiles.get(data[_DATA_ID])
+    profile = lookups.profiles.get(data[DATA_ID])
     naming = {
         **{column: membership[column] for column in _MEMBERSHIP_NAME_COLUMNS},
         PlexosPropertyCol.PROPERTY: property_name,
         PlexosPropertyCol.BAND: winner.band,
-        PlexosPropertyCol.ROW_NAME: _build_row_name(profile, membership),
+        PlexosPropertyCol.ROW_NAME: build_row_name(profile, membership),
     }
-    dated = _find_dated_values(profile, naming, lookups.dated_files)
-    if dated is None:
-        return [DatedRow(winner.dates, {**naming, **_build_value_columns(stated, profile, units)})]
-    return [
-        DatedRow(one.dates, {**naming, **_build_dated_value_columns(stated, one, profile, units)})
-        for one in dated
-    ]
-
-
-def _build_row_name(profile: _ProfileRef | None, membership: dict[str, Any]) -> str:
-    """The name a data file gives this value's rows."""
-    if profile is not None and profile.variable is not None:
-        return profile.variable
-    return str(membership[PlexosMembershipCol.CHILD_OBJECT])
-
-
-def _find_dated_values(
-    profile: _ProfileRef | None, naming: dict[str, Any], dated_files: DatedFiles
-) -> list[DatedValue] | None:
-    if profile is None:
-        return None
-    for name in _list_row_names(naming):
-        found = dated_files.find_values(profile.path, name)
-        if found is not None:
-            return found
-    return None
-
-
-def _list_row_names(naming: dict[str, Any]) -> list[str]:
-    """The names a data file can give this value's row.
-
-    A property of a membership between two objects takes a row named after both of them, and
-    a model can write them in either order.
-    """
-    row_name = str(naming[PlexosPropertyCol.ROW_NAME])
-    parent = str(naming[PlexosMembershipCol.PARENT_OBJECT])
-    if naming[PlexosMembershipCol.PARENT_CLASS] == _SYSTEM_CLASS:
-        return [row_name]
-    return [row_name, parent + row_name, row_name + parent]
-
-
-def _build_dated_value_columns(
-    stated: StatedValue, dated: DatedValue, profile: _ProfileRef | None, units: UnitConversions
-) -> dict[str, Any]:
-    """The value a data file dates, scaled by the object's share and in the unit interop reads."""
-    share = _profile_scaling(profile, units.convert(stated), is_percent(stated.unit))
-    from_file = stated._replace(value=dated.value * share)
-    return {
-        PlexosPropertyCol.VALUE: units.convert(from_file),
-        PlexosPropertyCol.UNIT: stated.unit,
-        PlexosPropertyCol.DATA_FILE: None,
-        PlexosPropertyCol.SCALING: _NO_SCALING,
-        PlexosPropertyCol.ESCALATOR: None,
-    }
+    return [DatedRow(winner.dates, {**naming, **_build_value_columns(stated, profile, units)})]
 
 
 def _build_value_columns(
-    stated: StatedValue, profile: _ProfileRef | None, units: UnitConversions
+    stated: StatedValue, profile: ProfileRef | None, units: UnitConversions
 ) -> dict[str, Any]:
     """The value in the unit interop reads it in, the unit the model stated, and the CSV."""
-    if profile is not None:
-        units.note_profile(stated)
     value = units.convert(stated)
     return {
         PlexosPropertyCol.VALUE: value,
         PlexosPropertyCol.UNIT: stated.unit,
         PlexosPropertyCol.DATA_FILE: profile.path if profile is not None else None,
-        PlexosPropertyCol.SCALING: _profile_scaling(profile, value, is_percent(stated.unit)),
+        PlexosPropertyCol.SCALING: build_scaling(profile, value, is_percent(stated.unit)),
         PlexosPropertyCol.ESCALATOR: profile.escalator if profile is not None else None,
     }
 
 
-def _data_reference(data: dict[str, Any], column: str) -> _Reference:
-    return _Reference(_DATA_TABLE, data[_DATA_ID], column, data[column])
-
-
-class _CsvSource(NamedTuple):
-    """The class whose objects name a CSV, and the text property holding that path."""
-
-    class_name: str
-    text_property: str
-
-
-_DATA_FILE_SOURCE = _CsvSource(PlexosClass.DATA_FILE, _FILENAME_PROPERTY)
-_VARIABLE_SOURCE = _CsvSource(_VARIABLE_CLASS, _PROFILE_PROPERTY)
-
-
-class _ProfileRef(NamedTuple):
-    """The CSV a value reads from, whether the value is a share of it rather than all of it, and
-    the Variable it reads through, whose name the file's rows carry.
-    """
-
-    path: str
-    is_share: bool
-    variable: str | None
-    escalator: str | None = None
-
-
-def _profile_scaling(
-    profile: _ProfileRef | None, value: float | None, is_share_percent: bool
-) -> float:
-    """A share written as a percentage is a multiplier of 100, so it divides down to one. A
-    zero share is PLEXOS's placeholder for a value the profile supplies outright, not a
-    multiplier that would erase it.
-    """
-    if profile is None or not profile.is_share or not value:
-        return _NO_SCALING
-    return value / _PERCENT if is_share_percent else value
-
-
-def _profile_ref_by_data(
-    tables: _RowsByTable,
-    property_names: _Lookup,
-    overlay: _ScenarioOverlay,
-    dropped: _DroppedRecords,
-) -> dict[str, _ProfileRef]:
-    """Map each t_data id to the CSV it reads from, whether tagged directly or via a Variable.
-
-    A value tagged straight to a Data File reads that file's Filename; a value tagged to a
-    Variable reads the CSV named by that Variable's Profile, with the value as a scaling
-    factor the mapping applies. A direct Data File wins if a value carries both.
-    """
-    data_files = _object_csv_paths(tables, property_names, overlay, dropped, _DATA_FILE_SOURCE)
-    variables = _variable_csv_paths(tables, property_names, overlay, data_files)
-    by_variable = _variable_refs_by_data(tables, variables)
-    by_data_file = _data_file_refs_by_data(tables, data_files)
-    escalated = {
-        data_id: ref._replace(escalator=by_variable[data_id].variable)
-        for data_id, ref in by_data_file.items()
-        if data_id in by_variable
-    }
-    return {**by_variable, **by_data_file, **escalated}
-
-
-def _variable_refs_by_data(tables: _RowsByTable, paths: dict[str, str]) -> dict[str, _ProfileRef]:
-    """Map each t_data id tagged to a Variable to that Variable's CSV, as a share of it."""
-    names = _name_lookup(tables, _OBJECT_TABLE, _OBJECT_ID).by_id
-    tags = _tag_by_data(tables, _VARIABLE_CLASS)
-    return {
-        data_id: _ProfileRef(paths[obj], True, names.get(obj))
-        for data_id, obj in tags.items()
-        if obj in paths
-    }
-
-
-def _data_file_refs_by_data(tables: _RowsByTable, paths: dict[str, str]) -> dict[str, _ProfileRef]:
-    """Map each t_data id tagged to a Data File to that file, as the whole of the value."""
-    tags = _tag_by_data(tables, PlexosClass.DATA_FILE)
-    return {
-        data_id: _ProfileRef(paths[obj], False, None)
-        for data_id, obj in tags.items()
-        if obj in paths
-    }
-
-
-def _variable_csv_paths(
-    tables: _RowsByTable,
-    property_names: _Lookup,
-    overlay: _ScenarioOverlay,
-    data_file_paths: dict[str, str],
-) -> dict[str, str]:
-    """Each Variable's profile CSV, named by its Profile's own text or by a Data File it tags.
-
-    A Profile carrying a timeslice pattern or a plain number names no file, so that Variable
-    contributes no path; it is a value, not a broken reference.
-    """
-    texts = _data_file_text_lookup(tables)
-    tagged_files = _tag_by_data(tables, PlexosClass.DATA_FILE)
-    paths: dict[str, str] = {}
-    for owner, data in _object_csv_data(tables, property_names, overlay, _VARIABLE_SOURCE).items():
-        data_id = data[_DATA_ID]
-        path = texts.by_id.get(data_id) or data_file_paths.get(tagged_files.get(data_id, ""))
-        if path is not None:
-            paths[owner] = path
-    return paths
-
-
-def _object_csv_paths(
-    tables: _RowsByTable,
-    property_names: _Lookup,
-    overlay: _ScenarioOverlay,
-    dropped: _DroppedRecords,
-    source: _CsvSource,
-) -> dict[str, str]:
-    """Map each object of a class to the CSV path in its text-valued property."""
-    texts = _data_file_text_lookup(tables)
-    paths: dict[str, str] = {}
-    for owner, data in _object_csv_data(tables, property_names, overlay, source).items():
-        path = dropped.resolve(texts, _data_reference(data, _DATA_ID))
-        if path is not None:
-            paths[owner] = path
-    return paths
-
-
-def _object_csv_data(
-    tables: _RowsByTable, property_names: _Lookup, overlay: _ScenarioOverlay, source: _CsvSource
-) -> dict[str, dict[str, Any]]:
-    """Map each object of a class to the winning ``t_data`` row of its Filename/Profile property.
-
-    A Data File that names one CSV per month carries a row per Scenario, so a row belonging
-    to a scenario the selected Model does not activate is skipped rather than overwriting.
-    """
-    object_ids = objects_of_class(tables, source.class_name)
-    children = _child_object_lookup(tables)
-    found: dict[str, dict[str, Any]] = {}
-    for data in _text_property_rows(tables, property_names, source.text_property):
-        owner = children.by_id.get(data[_MEMBERSHIP_ID])
-        if owner in object_ids and overlay.priority_of(data[_DATA_ID]) is not None:
-            found[owner] = data
-    return found
-
-
-def _data_file_text_lookup(tables: _RowsByTable) -> _Lookup:
-    """The t_text values that name a file.
-
-    t_text holds every text value in the export and tells them apart only by class_id:
-    a Data File name is a path, a Timeslice is a banding pattern that names no file.
-    """
-    data_file_class = class_id_of(tables, PlexosClass.DATA_FILE)
-    if data_file_class is None:
-        return _Lookup(_TEXT_TABLE, {})
-    return _Lookup(
-        _TEXT_TABLE,
-        {
-            row[_DATA_ID]: row[_VALUE]
-            for row in tables.get(_TEXT_TABLE, [])
-            if row.get(_CLASS_ID) == data_file_class
-        },
-    )
-
-
-def _child_object_lookup(tables: _RowsByTable) -> _Lookup:
-    return _Lookup(
-        _MEMBERSHIP_TABLE,
-        {row[_MEMBERSHIP_ID]: row[_CHILD_OBJECT_ID] for row in tables.get(_MEMBERSHIP_TABLE, [])},
-    )
-
-
-def _text_property_rows(
-    tables: _RowsByTable, property_names: _Lookup, text_property: str
-) -> Iterator[dict[str, Any]]:
-    """The ``t_data`` rows holding an object's text-valued property (a Filename or Profile)."""
-    for data in tables.get(_DATA_TABLE, []):
-        if property_names.by_id.get(data[_PROPERTY_ID]) == text_property:
-            yield data
-
-
-def _tag_by_data(tables: _RowsByTable, class_name: str) -> dict[str, str]:
-    """Map each tagged t_data id to the object of the given class it reads from."""
-    object_ids = objects_of_class(tables, class_name)
-    return {
-        row[_DATA_ID]: row[_OBJECT_ID]
-        for row in tables.get(_TAG_TABLE, [])
-        if row[_OBJECT_ID] in object_ids
-    }
+def _group_by_data_file(properties: _Rows) -> dict[str, _Rows]:
+    """The property rows that read each data file, other than a Timeslice's Include."""
+    rows_by_file: dict[str, _Rows] = {}
+    for row in properties:
+        relative = row[PlexosPropertyCol.DATA_FILE]
+        if relative is not None and not is_timeslice_include(row):
+            rows_by_file.setdefault(relative, []).append(row)
+    return rows_by_file
 
 
 def _group_by_series_key(rows: _Rows) -> dict[tuple[str, str], _Rows]:
@@ -1014,82 +690,6 @@ def _warn_missing_data_files(missing: list[str]) -> None:
     )
 
 
-@dataclass(frozen=True)
-class _ScenarioOverlay:
-    """The Scenario overrides one Model reads, and how they rank against each other."""
-
-    scenario_tags: dict[str, list[str]]
-    active: set[str]
-    read_orders: dict[str, float]
-
-    def priority_of(self, data_id: str) -> _Priority | None:
-        """A t_data row's priority: base if untagged, else its highest active Read Order.
-
-        A row tagged only to Scenarios the model does not read is no candidate at all
-        (None). A row carrying several tags counts as active when any one of them is.
-        """
-        tags = self.scenario_tags.get(data_id)
-        if tags is None:
-            return _BASE_PRIORITY
-        active_tags = [tag for tag in tags if tag in self.active]
-        if not active_tags:
-            return None
-        return (_OVERRIDE_RANK, max(self._read_order_of(tag) for tag in active_tags))
-
-    def _read_order_of(self, scenario: str) -> float:
-        return self.read_orders.get(scenario, _UNRANKED_READ_ORDER)
-
-
-def _read_scenario_overlay(tables: _RowsByTable, model: str | None) -> _ScenarioOverlay:
-    return _ScenarioOverlay(
-        scenario_tags=_scenario_tags_by_data(tables),
-        active=_active_scenarios(tables, model),
-        read_orders=_read_orders(tables),
-    )
-
-
-def _active_scenarios(tables: _RowsByTable, model: str | None) -> set[str]:
-    """Scenario object ids that the selected model reads, via its Model->Scenario memberships."""
-    if model is None:
-        return set()
-    model_class = class_id_of(tables, PlexosClass.MODEL)
-    scenario_class = class_id_of(tables, PlexosClass.SCENARIO)
-    model_ids = {
-        row[_OBJECT_ID]
-        for row in tables.get(_OBJECT_TABLE, [])
-        if row[_CLASS_ID] == model_class and row[_NAME] == model
-    }
-    return {
-        row[_CHILD_OBJECT_ID]
-        for row in tables.get(_MEMBERSHIP_TABLE, [])
-        if row[_PARENT_OBJECT_ID] in model_ids and row[_CHILD_CLASS_ID] == scenario_class
-    }
-
-
-def _read_orders(tables: _RowsByTable) -> dict[str, float]:
-    """Map each Scenario object id to its Read Order attribute value (higher reads later)."""
-    attribute_ids = {
-        row[_ATTRIBUTE_ID]
-        for row in tables.get(_ATTRIBUTE_TABLE, [])
-        if row[_NAME] == _READ_ORDER_ATTRIBUTE
-    }
-    return {
-        row[_OBJECT_ID]: float(row[_VALUE])
-        for row in tables.get(_ATTRIBUTE_DATA_TABLE, [])
-        if row[_ATTRIBUTE_ID] in attribute_ids
-    }
-
-
-def _scenario_tags_by_data(tables: _RowsByTable) -> dict[str, list[str]]:
-    """Map each tagged t_data id to the Scenarios it overrides, ignoring non-scenario tags."""
-    scenario_ids = objects_of_class(tables, PlexosClass.SCENARIO)
-    tags: dict[str, list[str]] = {}
-    for row in tables.get(_TAG_TABLE, []):
-        if row[_OBJECT_ID] in scenario_ids:
-            tags.setdefault(row[_DATA_ID], []).append(row[_OBJECT_ID])
-    return tags
-
-
 def _to_float(value: str) -> float | None:
     """PLEXOS scalar values are numeric text; file-backed rows carry no scalar."""
     try:
@@ -1098,18 +698,18 @@ def _to_float(value: str) -> float | None:
         return None
 
 
-def _resolve_object_classes(tables: _RowsByTable, dropped: _DroppedRecords) -> _RowsByClass:
+def _resolve_object_classes(tables: RowsByTable, dropped: DroppedRecords) -> _RowsByClass:
     """Group the object rows by their resolved PLEXOS class name.
 
     Each row gains a ``category`` column, its ``category_id`` resolved to the
     ``t_category`` name, so a mapping reads the free-text grouping (the carrier hint
     and, for demand response, the resource kind) without re-resolving the id itself.
     """
-    classes = _name_lookup(tables, _CLASS_TABLE, _CLASS_ID)
-    categories = _name_lookup(tables, _CATEGORY_TABLE, _CATEGORY_ID)
+    classes = build_name_lookup(tables, CLASS_TABLE, CLASS_ID)
+    categories = build_name_lookup(tables, _CATEGORY_TABLE, _CATEGORY_ID)
     objects_by_class: _RowsByClass = {}
-    for row in tables.get(_OBJECT_TABLE, []):
-        reference = _Reference(_OBJECT_TABLE, row[_OBJECT_ID], _CLASS_ID, row[_CLASS_ID])
+    for row in tables.get(OBJECT_TABLE, []):
+        reference = Reference(OBJECT_TABLE, row[OBJECT_ID], CLASS_ID, row[CLASS_ID])
         class_name = dropped.resolve(classes, reference)
         if class_name is not None:
             resolved = {
@@ -1118,11 +718,6 @@ def _resolve_object_classes(tables: _RowsByTable, dropped: _DroppedRecords) -> _
             }
             objects_by_class.setdefault(class_name, []).append(resolved)
     return objects_by_class
-
-
-def _name_lookup(tables: _RowsByTable, table: str, id_column: str) -> _Lookup:
-    """One table's ``name`` column by id, for resolving references into it."""
-    return _Lookup(table, {row[id_column]: row[_NAME] for row in tables.get(table, [])})
 
 
 def _element_record(element: ET.Element) -> dict[str, Any]:

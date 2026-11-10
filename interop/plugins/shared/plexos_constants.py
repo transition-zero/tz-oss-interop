@@ -39,6 +39,9 @@ class PlexosClass(StrEnum):
     TIMESLICE = "Timeslice"
     MODEL = "Model"
     SCENARIO = "Scenario"
+    VARIABLE = "Variable"
+    # The class of the one object that every top-level membership hangs from.
+    SYSTEM = "System"
 
 
 class PlexosResolvedTable:
@@ -113,6 +116,23 @@ class PlexosDatedPropertyCol(PlexosPropertyCol):
 
     DATE_FROM = "date_from"
     DATE_TO = "date_to"
+
+
+class PlexosCsvCol:
+    """Headers of a PLEXOS data file, in the spelling that the source reads them in.
+
+    PLEXOS reads a header without letter case, so the source normalises each header that it
+    knows to this spelling before it reads the file.
+    """
+
+    NAME = "Name"
+    YEAR = "Year"
+    MONTH = "Month"
+    DAY = "Day"
+    PERIOD = "Period"
+    VALUE = "Value"
+    DATETIME = "DateTime"
+    PATTERN = "Pattern"
 
 
 class PlexosCollection(StrEnum):
@@ -241,6 +261,9 @@ class PlexosProperty(StrEnum):
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
     INCLUDE = "Include"
+    # Data File, Variable
+    FILENAME = "Filename"
+    PROFILE = "Profile"
     EFFICIENCY_INCR = "Efficiency Incr"
     INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 

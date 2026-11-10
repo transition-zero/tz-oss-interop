@@ -149,10 +149,10 @@ def _horizon_from(attributes: dict[str, str | None]) -> Horizon | None:
     per_day = _to_periods_per_day(attributes.get(_ATTR_PERIODS_PER_DAY))
     if date_from is None or step_count is None or per_day is None:
         return None
-    return _horizon_of(date_from, int(step_count) * days_per_step, per_day)
+    return _build_horizon(date_from, int(step_count) * days_per_step, per_day)
 
 
-def _horizon_of(date_from: float, day_count: int, per_day: int) -> Horizon | None:
+def _build_horizon(date_from: float, day_count: int, per_day: int) -> Horizon | None:
     """The window itself, or None where the stated serial date is not a date at all."""
     try:
         return Horizon(
