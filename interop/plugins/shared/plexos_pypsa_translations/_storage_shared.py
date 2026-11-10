@@ -59,6 +59,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     holds,
@@ -89,6 +90,9 @@ CARRIER_NOTE = "PLEXOS carries no carrier; the object's class names it"
 _SOC_NOTE = "PLEXOS states no initial level; state_of_charge_initial defaults to empty"
 _ORPHAN_STORAGE_NOTE = "no Generator names this Storage as a head or tail, so it cannot dispatch"
 _NO_NODE_NOTE = "this object is on no Node, so it has no bus to connect to"
+_ORPHAN_STORAGE_GROUP = SkipGroup(
+    "Storage(s)", "are the head or tail of no Generator", "so each cannot dispatch and is left out"
+)
 
 # Stands in for the value of a file-backed property, which PLEXOS states as a path.
 _DATA_FILE = "data file"
@@ -456,7 +460,11 @@ def _list_joined(start: set[str], routes: dict[str, Route], held: Collection[str
 def orphan_storage_skips(names: list[str], lookups: StorageLookups) -> list[SkippedComponent]:
     turbine_fed = lookups.turbine_fed_storages()
     return [
-        SkippedComponent(SourceValue(PlexosClass.STORAGE, name, None, None), _ORPHAN_STORAGE_NOTE)
+        SkippedComponent(
+            SourceValue(PlexosClass.STORAGE, name, None, None),
+            _ORPHAN_STORAGE_NOTE,
+            _ORPHAN_STORAGE_GROUP,
+        )
         for name in names
         if name not in turbine_fed
     ]
@@ -517,7 +525,7 @@ class RatedObject:
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
     """The object with its rated power, or the recorded reason it cannot become a unit."""
     if staged.node is None:
-        return skip_object(rating.plexos_class, staged.name, PlexosCollection.NODES, _NO_NODE_NOTE)
+        return _skipped_off_node(rating, staged.name)
     if rating.capacity_property in staged.file_backed:
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
@@ -538,10 +546,12 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
     return RatedObject(staged.node, p_nom, candidate, staged.lifespan)
 
 
-def skip_object(
-    plexos_class: PlexosClass, name: str, attribute: str | None, note: str
-) -> SkippedComponent:
-    return SkippedComponent(SourceValue(plexos_class, name, attribute, None), note)
+def _skipped_off_node(rating: RatedPower, name: str) -> SkippedComponent:
+    source = SourceValue(rating.plexos_class, name, PlexosCollection.NODES, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)", "sit on no Node", "so each has no bus and is left out"
+    )
+    return SkippedComponent(source, _NO_NODE_NOTE, group)
 
 
 def _skipped_file_backed(rating: RatedPower, name: str) -> SkippedComponent:
@@ -550,7 +560,10 @@ def _skipped_file_backed(rating: RatedPower, name: str) -> SkippedComponent:
         "unit has no rated power to size it"
     )
     source = SourceValue(rating.plexos_class, name, rating.capacity_property, _DATA_FILE, UNIT_MW)
-    return SkippedComponent(source, note)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)", f"read {rating.capacity_property} from a data file"
+    )
+    return SkippedComponent(source, note, group)
 
 
 def _skipped_without_capacity(rating: RatedPower, name: str) -> SkippedComponent:
@@ -558,13 +571,25 @@ def _skipped_without_capacity(rating: RatedPower, name: str) -> SkippedComponent
         f"PLEXOS states no {rating.capacity_property}, so the object states no rated "
         "power, which the storage mapping cannot default"
     )
-    return skip_object(rating.plexos_class, name, rating.capacity_property, note)
+    source = SourceValue(rating.plexos_class, name, rating.capacity_property, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)",
+        f"state no {rating.capacity_property}",
+        "so each has no rated power and is left out",
+    )
+    return SkippedComponent(source, note, group)
 
 
 def _skipped_zero_p_nom(rating: RatedPower, name: str, p_nom: float) -> SkippedComponent:
     """The rated power goes in the note, not on the capacity property, which may be positive."""
     note = f"rated power works out to {p_nom} MW, so this unit cannot dispatch"
-    return skip_object(rating.plexos_class, name, None, note)
+    source = SourceValue(rating.plexos_class, name, None, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)",
+        "have a rated power of 0 MW or less",
+        "so each cannot dispatch and is left out",
+    )
+    return SkippedComponent(source, note, group)
 
 
 # --- shared across every variant ---------------------------------------------

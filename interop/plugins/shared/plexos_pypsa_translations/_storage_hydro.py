@@ -46,7 +46,6 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     derive_round_trip_efficiency,
     derive_state_of_charge_initial,
     rate_object,
-    skip_object,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_INFLOW,
@@ -60,6 +59,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
 )
@@ -111,6 +111,11 @@ _GENERATE_ONLY_NOTE = "conventional hydro generates but does not pump"
 _HEADLESS_TURBINE_NOTE = (
     "this Generator has a Tail Storage but no Head Storage and no Pump Efficiency, "
     "so it has no reservoir to draw from"
+)
+_HEADLESS_TURBINE_GROUP = SkipGroup(
+    "Generator(s)",
+    "state a Tail Storage but no Head Storage and no Pump Efficiency",
+    "so each has no reservoir to draw from and is left out",
 )
 _HYDRO_CYCLIC_NOTE = "hydro follows inflow, so the level need not cycle"
 _HYDRO_EFFICIENCY_NOTE = "conventional hydro has no charge side; efficiency is unity"
@@ -172,8 +177,10 @@ def map_turbine(name: str, lookups: StorageLookups) -> MappedOrSkipped:
     staged = lookups.read_staged(PlexosClass.GENERATOR, name)
     variant = _classify_turbine(staged, lookups)
     if variant is None:
-        return skip_object(
-            PlexosClass.GENERATOR, name, PlexosCollection.HEAD_STORAGE, _HEADLESS_TURBINE_NOTE
+        return SkippedComponent(
+            SourceValue(PlexosClass.GENERATOR, name, PlexosCollection.HEAD_STORAGE, None),
+            _HEADLESS_TURBINE_NOTE,
+            _HEADLESS_TURBINE_GROUP,
         )
     rated = rate_object(staged, _GENERATOR_POWER)
     if isinstance(rated, SkippedComponent):

@@ -62,6 +62,11 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     build_lookups,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generators import (
+    FILE_BACKED_GROUP,
+    INFEASIBLE_GROUP,
+    NO_CAPACITY_GROUP,
+    NO_NODE_GROUP,
+    RETIRED_GROUP,
     ProfileOwner,
     report_profile_not_staged,
 )
@@ -183,11 +188,9 @@ _INFEASIBLE_NOTE = (
     "generator is dropped"
 )
 _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispatch"
-# Each note states the unit's own numbers, so one warning per reason names the units instead.
-_INFEASIBLE_GROUP = SkipGroup(
-    "Generator(s)",
-    "state a minimum output above the most they can reach",
-    "so no dispatch meets it and each is left out",
+_BUSLESS_GROUP = SkipGroup("Generator(s)", "sit on a Node that did not become a bus")
+_UNMAPPED_CARRIER_GROUP = SkipGroup(
+    "Generator(s)", "have a carrier the user mappings file does not name"
 )
 
 # The Sienna types a generator may become. Every other target names a storage unit, which a
@@ -512,25 +515,35 @@ def _unreadable(
     """Why the model leaves this generator with nothing to translate, or None where it does not."""
     node = lookups.gen_to_node.get(name)
     if node is None:
-        return _skip(name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
+        return SkippedComponent(
+            _build_source(name, PlexosCollection.NODES, None), _NO_NODE_NOTE, NO_NODE_GROUP
+        )
     if node not in bus_names:
-        return _skip(name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
+        return SkippedComponent(
+            _build_source(name, PlexosCollection.NODES, node), _BUSLESS_NOTE, _BUSLESS_GROUP
+        )
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
-        return _skip(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW)
+        return SkippedComponent(
+            _build_source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW),
+            _FILE_BACKED_NOTE,
+            FILE_BACKED_GROUP,
+        )
     return _unrated(read_source(generator, name, lookups))
 
 
 def _unrated(source: SourceGenerator) -> SkippedComponent | None:
     """Why the object has no capacity to dispatch, or None where it has one."""
     if source.units == 0.0 and not source.is_candidate:
-        return _skip(source.name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
+        return SkippedComponent(
+            _build_source(source.name, PlexosProperty.UNITS, source.units),
+            _RETIRED_NOTE,
+            RETIRED_GROUP,
+        )
     if source.p_nom <= 0.0:
-        return _skip(
-            source.name,
-            PlexosProperty.MAX_CAPACITY,
-            None,
+        return SkippedComponent(
+            _build_source(source.name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             _NO_CAPACITY_NOTE.format(capacity=source.p_nom),
-            UNIT_MW,
+            NO_CAPACITY_GROUP,
         )
     return find_blocked_candidate(source.candidate)
 
@@ -539,6 +552,7 @@ def _no_such_carrier(mapping: GeneratorMapping) -> SkippedComponent:
     return SkippedComponent(
         SourceValue(PlexosClass.GENERATOR, mapping.name, None, None),
         _carrier_note(mapping.carrier, mapping.fuel is not None),
+        _UNMAPPED_CARRIER_GROUP,
     )
 
 
@@ -555,15 +569,13 @@ def _infeasible(mapping: GeneratorMapping) -> SkippedComponent:
             minimum=mapping.minimum.p_min_pu,
             ceiling=mapping.availability.static_p_max_pu,
         ),
-        warn_with=_INFEASIBLE_GROUP,
+        warn_with=INFEASIBLE_GROUP,
     )
 
 
-def _skip(
-    name: str, attribute: str, value: Any, note: str, unit: str | None = None
-) -> SkippedComponent:
-    """One generator left out, and the reading that left it out."""
-    return SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
+def _build_source(name: str, attribute: str, value: Any, unit: str | None = None) -> SourceValue:
+    """The reading of one generator that left it out."""
+    return SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit)
 
 
 def _stage_availability(

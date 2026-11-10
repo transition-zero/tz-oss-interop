@@ -52,13 +52,13 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     build_lookups,
     orphan_storage_skips,
     read_object_names,
-    skip_object,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     destination_row,
@@ -109,6 +109,9 @@ class StorageSkips:
 FUEL_STORE_NOTE = (
     "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
 )
+_FUEL_STORE_GROUP = SkipGroup(
+    "Storage(s)", "hold fuel that only thermal units draw on, and Sienna states no fuel store"
+)
 
 
 def derive_storage_units(
@@ -158,7 +161,11 @@ def _list_fuel_store_skips(
     fuel_stores = {store for name in units.thermal_store_users for store in heads.get(name, [])}
     water_stores = {store for name in units.turbines for store in heads.get(name, [])}
     return [
-        skip_object(PlexosClass.STORAGE, store, PlexosCollection.HEAD_STORAGE, FUEL_STORE_NOTE)
+        SkippedComponent(
+            SourceValue(PlexosClass.STORAGE, store, PlexosCollection.HEAD_STORAGE, None),
+            FUEL_STORE_NOTE,
+            _FUEL_STORE_GROUP,
+        )
         for store in sorted(fuel_stores - water_stores)
         if store in storages
     ]
