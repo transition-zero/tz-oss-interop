@@ -26,8 +26,8 @@ from interop.plugins.shared.constants import (
 from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._transmission import (
     StagedLine,
-    build_unstaged_by_line,
     read_transmission,
+    report_unstaged_lines,
 )
 from interop.plugins.shared.plexos_pypsa_translations.constants import UNSTAGED_PLACEHOLDER_NOTE
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
@@ -38,7 +38,6 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     declares,
     destination_row,
     maps_to,
-    report_unstaged_placeholders,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
 from interop.plugins.shared.pypsa_constants import PyPSACarrier
@@ -159,6 +158,7 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
         )
     translated = TranslatedTransmission([], [], [], [])
     first_id = build_first_free_id(state)
+    mapped: list[StagedLine] = []
     for line in source.lines:
         if not _endpoints_are_buses(line, voltages):
             reporter = line_reporter if line.is_electrical else link_reporter
@@ -166,25 +166,13 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
                 SourceValue(PlexosClass.LINE, line.name, None, None), _BUSLESS_NOTE
             )
             continue
+        mapped.append(line)
         if line.is_electrical:
             _add_line(translated, line, voltages, line_reporter, first_id)
         else:
             _add_link(translated, line, link_reporter, first_id)
-    mapped = [line for line in source.lines if _endpoints_are_buses(line, voltages)]
-    _report_placeholders(mapped, line_reporter, link_reporter)
+    report_unstaged_lines(line_reporter, link_reporter, mapped)
     return translated
-
-
-def _report_placeholders(
-    lines: list[StagedLine],
-    line_reporter: SiennaComponentReporter,
-    link_reporter: SiennaComponentReporter,
-) -> None:
-    """Record and warn about each line value whose data file did not stage."""
-    electrical = build_unstaged_by_line([line for line in lines if line.is_electrical])
-    transport = build_unstaged_by_line([line for line in lines if not line.is_electrical])
-    report_unstaged_placeholders(line_reporter, PlexosClass.LINE, electrical)
-    report_unstaged_placeholders(link_reporter, PlexosClass.LINE, transport)
 
 
 def _voltage_by_bus(state: State) -> dict[str, float]:
