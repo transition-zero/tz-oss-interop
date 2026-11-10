@@ -288,6 +288,59 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     Then the file "outputs/system.json" parses as JSON with component "HydroTurbine" named "Cascade_U" having "active_power_limits.max" set to 150.0
     And the file "outputs/system.json" parses as JSON with 0 components of type "EnergyReservoirStorage"
 
+  Scenario: a turbine whose tail is the head of the next turbine is a hydro turbine, not pumped storage
+    A unit pumps only when it states a Pump Load. A unit of a cascade states none, so it
+    releases water from its head Storage into its tail Storage, and that tail is the head of
+    the turbine below it. No Waterway joins them, and each Storage is a reservoir.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains turbine "Upper_U" on node "North_Node" with max_capacity 150 head "Upper" tail "Middle"
+    And storage "Upper" has property "Max Volume" 900
+    And the model contains reservoir hydro "Lower_U" on node "North_Node" with max_capacity 100 head "Middle" max_volume 300 initial_volume 150
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 2 components of type "HydroTurbine"
+    And the file "outputs/system.json" parses as JSON with 2 components of type "HydroReservoir"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "EnergyReservoirStorage"
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Middle" listing HydroTurbine "Upper_U" in "upstream_turbines"
+    And the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "Middle" listing HydroTurbine "Lower_U" in "downstream_turbines"
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+
+  Scenario: a pumped-storage plant draws no more than its Pump Load
+    PLEXOS states the most that one unit draws in pump mode as its Pump Load. Sienna states
+    what a storage draws per unit of its base power, so a Pump Load of 200 MW beside a
+    300 MW turbine is 200 / 300.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains pumped storage "PHS_1" on node "North_Node" with max_capacity 300 pump_load 200 pump_efficiency 75 head "PHS_Up" tail "PHS_Down" max_volume 400 initial_volume 200
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "PHS_1" having "base_power" set to 300.0
+    And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "PHS_1" having "input_active_power_limits.max" close to 0.666667
+    And the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "PHS_1" having "output_active_power_limits.max" set to 1.0
+    And the file "decisions.md" contains "`plexos.Generator.PHS_1.Pump Load` = 200.0 MW"
+    And the file "decisions.md" contains "Pump Load / Max Capacity"
+
+  Scenario: a Pump Load above the power of the turbine is kept as the model states it
+    A pump can draw more than its turbine gives. The translation keeps the Pump Load and
+    does not stop.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains pumped storage "PHS_1" on node "North_Node" with max_capacity 300 pump_load 450 pump_efficiency 75 head "PHS_Up" tail "PHS_Down" max_volume 400 initial_volume 200
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "EnergyReservoirStorage" named "PHS_1" having "input_active_power_limits.max" close to 1.5
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+
   Scenario: every Storage of a cascade becomes a reservoir, joined by its turbines and routes
     A cascade turbine releases water into its tail Storage, and a Waterway carries it on to
     the head of the next turbine. Each Storage on that path is a reservoir, so the tail names
@@ -391,7 +444,7 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the model contains region "North"
     And the model contains node "North_Node" in region "North"
     And the model contains reservoir hydro "Dam_U" on node "North_Node" with max_capacity 100 head "Dam" max_volume 600 initial_volume 300
-    And the model contains pumped storage "PHS_1" on node "North_Node" with max_capacity 50 pump_efficiency 75 head "PHS_Up" tail "PHS_Down" max_volume 400 initial_volume 200
+    And the model contains pumped storage "PHS_1" on node "North_Node" with max_capacity 50 pump_load 50 pump_efficiency 75 head "PHS_Up" tail "PHS_Down" max_volume 400 initial_volume 200
     And the model contains waterway "Dam_Spill" from storage "Dam" to storage "PHS_Up"
     And the model is saved as "inputs/model.xml"
     And a PLEXOS mappings file:

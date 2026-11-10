@@ -370,12 +370,18 @@ not have. A `VO&M Charge` on such a generator is `dropped`.
 
 ## Hydro → `HydroTurbine` and `HydroReservoir`
 
+PLEXOS has no pumped-storage class. A unit pumps only when it states a `Pump Load` above
+0 MW. `Pump Load` is the most MW that one unit draws in pump mode.
+
 | Your unit | Becomes |
 | --- | --- |
-| It has a `Head Storage` membership | `HydroTurbine`, and its head `Storage` becomes a `HydroReservoir` |
+| It has a `Head Storage` membership and states no `Pump Load` | `HydroTurbine`, and its head `Storage` becomes a `HydroReservoir` |
 | Your mappings file names `HydroDispatch` for `reservoir_hydro` | `HydroDispatch`, with no `HydroReservoir` |
-| It has a `Head Storage` and a `Tail Storage`, states no pump, and a `Waterway` leaves the tail | `HydroTurbine`, because it releases water down a cascade and cannot lift it back |
-| It has a `Tail Storage` and no `Head Storage` | Not translated |
+| It has a `Head Storage` and a `Tail Storage`, and states no `Pump Load` | `HydroTurbine`, because it releases water into its tail and cannot lift it back. The tail becomes a `HydroReservoir` too. A `Waterway` out of the tail is not necessary. |
+| It has a `Head Storage` and a `Tail Storage`, and states a `Pump Load` | [Pumped storage](#pumped-storage--energyreservoirstorage) |
+| It states a `Pump Load` and has a `Head Storage` but no `Tail Storage` | `HydroTurbine`. It has no tail to pump from, so its `Pump Load` and its `Pump Efficiency` are `dropped`, and `decisions.md` and the log name the unit. |
+| It states a `Pump Efficiency` and no `Pump Load` | `HydroTurbine`. Its `Pump Efficiency` is `dropped`, and `decisions.md` and the log name the unit. |
+| It has no `Head Storage`, and it has a `Tail Storage` or states a `Pump Load` | Not translated. `decisions.md` names the unit. |
 | It has no storage at all | An ordinary generator, from the `category` or `fuel` row its carrier names |
 | It has a `Head Storage`, and your mappings file names its carrier as `ThermalStandard` | A `ThermalStandard`. Its `Storage` holds fuel, and Sienna states no fuel store, so the `Storage` is left out and `decisions.md` says why. |
 
@@ -478,7 +484,8 @@ leaves each `HydroReservoir` out. `decisions.md` names both.
 
 ## Pumped storage → `EnergyReservoirStorage`
 
-The turbine, its head reservoir and its tail reservoir become **one**
+A unit with a `Head Storage`, a `Tail Storage` and a `Pump Load` above 0 MW is pumped
+storage. The turbine, its head reservoir and its tail reservoir become **one**
 `EnergyReservoirStorage`, named for the turbine.
 
 | Sienna field | Unit | From | Mapping |
@@ -492,7 +499,7 @@ The turbine, its head reservoir and its tail reservoir become **one**
 | `storage_capacity` | MWh | The `Max Volume` of the head reservoir, where the model gives it in MWh | `derived` |
 | `storage_level_limits` | pu | `(0.0, 1.0)`, so the whole capacity is usable | `default` |
 | `initial_storage_capacity_level` | pu | The `Initial Volume` of the head reservoir ÷ the energy capacity, held between 0 and 1 | `derived` |
-| `input_active_power_limits` | pu | `(0.0, the pump capacity)` | `derived` |
+| `input_active_power_limits` | pu | `(0.0, Pump Load ÷ Max Capacity)`. This is `(Pump Load × Units) ÷ base_power`. The translator keeps a `Pump Load` above `Max Capacity` as the model states it. | `derived` |
 | `output_active_power_limits` | pu | `(0.0, the turbine capacity)` | `derived` |
 | `efficiency` | | `√(Pump Efficiency)` for the charge and for the discharge | `derived` |
 | `cycle_limits` | | `10000`, so the cycling limit never binds and the storage target does the work | `default` |

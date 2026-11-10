@@ -99,8 +99,10 @@ and not of the CEN model.
 - **A unit whose carrier the mappings file names as `ThermalStandard` stays thermal,** even
   where it names a head `Storage`. A `Storage` that only such units draw on is a fuel store,
   which Sienna has no home for.
-- **A unit with a head and a tail `Storage`, no pump, and a `Waterway` out of the tail is a
-  cascade turbine.** A closed pair stays pumped storage.
+- **A unit pumps only when it states a `Pump Load` above 0 MW and has a head and a tail
+  `Storage`.** A unit with a head and a tail and no `Pump Load` is a cascade turbine, with
+  or without a `Waterway` out of the tail. The pump limit is `Pump Load × Units`, not the
+  power of the turbine. A `Pump Efficiency` on a unit that does not pump is `dropped`.
 - **Every `Storage` of a cascade is a `HydroReservoir`:** each head and tail of a turbine,
   and each `Storage` that a `Waterway` joins to one.
 - **`Efficiency Incr` gives a `HydroTurbine` its `conversion_factor`,** as

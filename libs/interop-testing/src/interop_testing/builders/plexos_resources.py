@@ -7,6 +7,8 @@ apart keeps the topology and the resources readable on their own.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from interop_testing.builders.plexos_generator_specs import GeneratorSpec
 from interop_testing.builders.plexos_tables import (
     ConstraintTerm,
@@ -50,6 +52,7 @@ from interop_testing.builders.plexos_vocabulary import (
     NODES_COLLECTION,
     OFFTAKE_AT_START_PROPERTY,
     PUMP_EFFICIENCY_PROPERTY,
+    PUMP_LOAD_PROPERTY,
     REACTANCE_PROPERTY,
     RESERVE_CLASS,
     RESERVE_TYPE_PROPERTY,
@@ -65,6 +68,13 @@ from interop_testing.builders.plexos_vocabulary import (
     WATERWAY_CLASS,
     WATERWAYS_COLLECTION,
 )
+
+
+class PumpSpec(NamedTuple):
+    """The most MW one pumped-storage unit draws in pump mode, and its round-trip percentage."""
+
+    load: float
+    efficiency: float
 
 
 class ResourceBuilder(PlexosTables):
@@ -286,7 +296,7 @@ class ResourceBuilder(PlexosTables):
         name: str,
         node: str,
         max_capacity: float,
-        pump_efficiency: float,
+        pump: PumpSpec,
         head: str,
         tail: str,
         max_volume: float,
@@ -296,7 +306,8 @@ class ResourceBuilder(PlexosTables):
         self._add_reservoir_generator(name, node, max_capacity, head, max_volume, initial_volume)
         self._add_storage(tail)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, tail, TAIL_STORAGE_COLLECTION)
-        self.add_generator_property(name, PUMP_EFFICIENCY_PROPERTY, pump_efficiency)
+        self.add_generator_property(name, PUMP_LOAD_PROPERTY, pump.load)
+        self.add_generator_property(name, PUMP_EFFICIENCY_PROPERTY, pump.efficiency)
 
     def add_generator_property(
         self, name: str, property_name: str, value: float, variable: str | None = None
@@ -328,10 +339,10 @@ class ResourceBuilder(PlexosTables):
         self._add_storage(head)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, head, HEAD_STORAGE_COLLECTION)
 
-    def add_bare_pumped_storage(
+    def add_bare_turbine_with_tail(
         self, name: str, node: str, max_capacity: float, head: str, tail: str
     ) -> None:
-        """A turbine with both reservoirs and no Pump Efficiency, so membership alone classifies."""
+        """A turbine with both reservoirs and no pump property, so it states no Pump Load."""
         self.add_bare_turbine(name, node, head, max_capacity)
         self._add_storage(tail)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, tail, TAIL_STORAGE_COLLECTION)

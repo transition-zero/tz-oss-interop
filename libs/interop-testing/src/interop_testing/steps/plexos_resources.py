@@ -17,6 +17,7 @@ from interop_testing.builders.plexos_generator_specs import (
     parse_generator_spec,
 )
 from interop_testing.builders.plexos_models import PlexosModelBuilder
+from interop_testing.builders.plexos_resources import PumpSpec
 from interop_testing.builders.plexos_tables import DateBand, LineEndpoints
 
 # The generators table's header cell naming the generator itself, not one of its fields.
@@ -51,8 +52,9 @@ def given_model_contains_battery(
 @given(
     parsers.parse(
         'the model contains pumped storage "{name}" on node "{node}" with '
-        'max_capacity {max_capacity:g} pump_efficiency {pump_efficiency:g} head "{head}" '
-        'tail "{tail}" max_volume {max_volume:g} initial_volume {initial_volume:g}'
+        "max_capacity {max_capacity:g} pump_load {pump_load:g} "
+        'pump_efficiency {pump_efficiency:g} head "{head}" tail "{tail}" '
+        "max_volume {max_volume:g} initial_volume {initial_volume:g}"
     )
 )
 def given_model_contains_pumped_storage(
@@ -60,6 +62,7 @@ def given_model_contains_pumped_storage(
     name: str,
     node: str,
     max_capacity: float,
+    pump_load: float,
     pump_efficiency: float,
     head: str,
     tail: str,
@@ -70,7 +73,7 @@ def given_model_contains_pumped_storage(
         name=name,
         node=node,
         max_capacity=max_capacity,
-        pump_efficiency=pump_efficiency,
+        pump=PumpSpec(load=pump_load, efficiency=pump_efficiency),
         head=head,
         tail=tail,
         max_volume=max_volume,
@@ -172,7 +175,7 @@ def given_model_contains_turbine_without_capacity(
         'max_capacity {max_capacity:g} head "{head}" tail "{tail}"'
     )
 )
-def given_model_contains_bare_pumped_storage(
+def given_model_contains_turbine_with_head_and_tail(
     plexos_model_builder: PlexosModelBuilder,
     name: str,
     node: str,
@@ -180,7 +183,7 @@ def given_model_contains_bare_pumped_storage(
     head: str,
     tail: str,
 ) -> None:
-    plexos_model_builder.add_bare_pumped_storage(name, node, max_capacity, head, tail)
+    plexos_model_builder.add_bare_turbine_with_tail(name, node, max_capacity, head, tail)
 
 
 @given(

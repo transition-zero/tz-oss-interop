@@ -86,6 +86,8 @@ CHARGE_NOTE = "full rated power available for charging (negative dispatch is cha
 
 CARRIER_NOTE = "PLEXOS carries no carrier; the object's class names it"
 
+PUMP_LIMIT_DERIVATION = "Pump Load / Max Capacity"
+
 _SOC_NOTE = "PLEXOS states no initial level; state_of_charge_initial defaults to empty"
 _ORPHAN_STORAGE_NOTE = "no Generator names this Storage as a head or tail, so it cannot dispatch"
 _NO_NODE_NOTE = "this object is on no Node, so it has no bus to connect to"
@@ -221,11 +223,6 @@ class StorageLookups:
     # Each Waterway, by name, and the two Storages it joins.
     routes: dict[str, Route]
 
-    @property
-    def waterway_sources(self) -> set[str]:
-        """The Storages a Waterway leaves, whose water a cascade carries on downstream."""
-        return {route.leaves for route in self.routes.values() if route.leaves is not None}
-
     def read_properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
         return self.by_class[plexos_class].properties
 
@@ -240,18 +237,11 @@ class StorageLookups:
             lifespan=one.lifespans.get(name, NO_LIFESPAN),
         )
 
-    def has_head_and_tail(self, generator: str) -> bool:
-        return self.has_head(generator) and self.has_tail(generator)
-
     def has_head(self, generator: str) -> bool:
         return generator in self.head_by_generator
 
     def has_tail(self, generator: str) -> bool:
         return generator in self.tail_by_generator
-
-    def has_tail_that_flows_on(self, generator: str) -> bool:
-        """Whether a Waterway carries the water of this turbine's tail Storage downstream."""
-        return self.tail_by_generator.get(generator) in self.waterway_sources
 
     def turbine_fed_storages(self) -> set[str]:
         """The Storages some Generator names as its head or its tail."""
