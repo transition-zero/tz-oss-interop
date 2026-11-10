@@ -21,6 +21,11 @@ class SiennaTable:
     LINES = "lines"
     LINKS = "links"
     RESERVOIRS = "reservoirs"
+    # Each component of a type that no table above holds, by type and name.
+    OTHER_COMPONENTS = "other_components"
+    # Each service association and each supplemental attribute association, by name.
+    SERVICE_MEMBERS = "service_members"
+    ATTRIBUTE_OWNERS = "attribute_owners"
 
 
 class SiennaSchemasSystem:
@@ -177,6 +182,16 @@ class SiennaServiceAssociationCol:
 
     SERVICE_ID = "service_id"
     ENTITY_ID = "entity_id"
+
+
+class SiennaStagedAssociationCol:
+    """Columns of a staged table that joins a service or an attribute to a component by name."""
+
+    SERVICE_TYPE = "service_type"
+    SERVICE_NAME = "service_name"
+    ATTRIBUTE_TYPE = "attribute_type"
+    COMPONENT_TYPE = "component_type"
+    COMPONENT_NAME = "component_name"
 
 
 class SiennaLoadZoneCol:
@@ -1223,3 +1238,25 @@ SIENNA_SOURCE_AREAS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.NAME: pl.Utf8,
 }
 """An Area as a reverse pipeline stages it: the id a portfolio names it by, and its name."""
+
+SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaGeneratorCol.SIENNA_TYPE: pl.Utf8,
+    SIENNA_ID_COLUMN: pl.Int64,
+    SIENNA_NAME_COLUMN: pl.Utf8,
+}
+"""A component of a type that no other reverse table holds: its type, its id and its name."""
+
+SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaStagedAssociationCol.SERVICE_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.SERVICE_NAME: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_NAME: pl.Utf8,
+}
+"""A service association as a reverse pipeline stages it: the service and its member, by name."""
+
+SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaStagedAssociationCol.ATTRIBUTE_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_NAME: pl.Utf8,
+}
+"""A supplemental attribute association as a reverse pipeline stages it, by component name."""

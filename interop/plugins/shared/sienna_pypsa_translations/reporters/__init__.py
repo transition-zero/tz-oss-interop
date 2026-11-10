@@ -28,6 +28,7 @@ from interop.plugins.shared.sienna_pypsa_translations.reporters.sidecar import (
 from interop.plugins.shared.sienna_pypsa_translations.reporters.storage_units import (
     StorageUnitReporter,
 )
+from interop.plugins.shared.sienna_pypsa_translations.reporters.unheld import UnheldReporter
 
 __all__ = [
     "RELAYED_BY_YEAR_DERIVATION",
@@ -44,4 +45,5 @@ __all__ = [
     "ProfileReporter",
     "StorageUnitReporter",
     "ThermalLimit",
+    "UnheldReporter",
 ]

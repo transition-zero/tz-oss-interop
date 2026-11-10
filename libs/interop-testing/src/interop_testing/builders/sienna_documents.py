@@ -42,6 +42,9 @@ _LOADS = "loads"
 _ARCS = "arcs"
 _LINES = "lines"
 _LINKS = "links"
+_SERVICES = "services"
+_SERVICE_MEMBERS = "service_members"
+_RESERVOIRS = "reservoirs"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
 _UNKNOWN = "unknown"
@@ -63,7 +66,7 @@ def write_sienna_system(
     storage_file = sienna_h5_filename(path)
     write_system_document(
         path,
-        _build_payload(components, sections.get(_FORCED_OUTAGES, []), id_by_owner),
+        _build_payload(components, sections, id_by_owner),
         _build_associations(
             sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
         ),
@@ -78,12 +81,20 @@ def write_sienna_system(
 
 def _build_payload(
     components: dict[str, Any],
-    forced_outages: list[dict[str, Any]],
+    sections: dict[str, list[dict[str, Any]]],
     id_by_owner: dict[tuple[str, str], int],
 ) -> dict[str, Any]:
-    """The components, and each forced outage with the association that joins it to its owner."""
+    """The components, each forced outage and its association, and each service association."""
+    forced_outages = sections.get(_FORCED_OUTAGES, [])
     return {
         SiennaSchemasSystem.COMPONENTS: components,
+        SiennaSchemasSystem.SERVICE_ASSOCIATIONS: [
+            {
+                "service_id": id_by_owner[(row["service_type"], row["service_name"])],
+                "entity_id": id_by_owner[(row["owner_type"], row["owner_name"])],
+            }
+            for row in sections.get(_SERVICE_MEMBERS, [])
+        ],
         SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: [row["attribute"] for row in forced_outages],
         SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: [
             {
@@ -189,7 +200,16 @@ def _build_container(
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
+    for section in (
+        _GENERATORS,
+        _STORAGE,
+        _RESERVOIRS,
+        _LOADS,
+        _LINES,
+        _LINKS,
+        _SERVICES,
+        _UNKNOWN,
+    ):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]

@@ -22,7 +22,11 @@ from interop_testing.builders.sienna_documents import (
     read_stored_series,
     sienna_components_of_type,
 )
-from interop_testing.builders.sienna_systems import HydroLimits, SiennaSystemBuilder
+from interop_testing.builders.sienna_systems import (
+    HydroLimits,
+    ReservoirLevels,
+    SiennaSystemBuilder,
+)
 from interop_testing.files import navigate_json, read_json
 from interop_testing.steps.sienna_schema import (
     SYSTEM_PATH,
@@ -75,6 +79,47 @@ def given_component_has_forced_outage(
     probability: float,
 ) -> None:
     sienna_system_builder.add_forced_outage(sienna_type, name, minutes, probability)
+
+
+@given(parsers.parse('the system contains an OnlineReserve "{name}" in direction {direction}'))
+def given_system_contains_online_reserve(
+    sienna_system_builder: SiennaSystemBuilder, name: str, direction: str
+) -> None:
+    sienna_system_builder.add_online_reserve(name, direction)
+
+
+@given(parsers.parse('the {sienna_type} "{name}" contributes to the OnlineReserve "{reserve}"'))
+def given_component_contributes_to_reserve(
+    sienna_system_builder: SiennaSystemBuilder, sienna_type: str, name: str, reserve: str
+) -> None:
+    sienna_system_builder.add_service_member("OnlineReserve", reserve, sienna_type, name)
+
+
+@given(
+    parsers.parse(
+        'the system contains a HydroReservoir "{name}" with max_level {max_level:g} '
+        "initial_level {initial_level:g} inflow {inflow:g}"
+    )
+)
+def given_system_contains_hydro_reservoir(
+    sienna_system_builder: SiennaSystemBuilder,
+    name: str,
+    max_level: float,
+    initial_level: float,
+    inflow: float,
+) -> None:
+    sienna_system_builder.add_hydro_reservoir(
+        name, ReservoirLevels(max_level, initial_level, inflow)
+    )
+
+
+@given(parsers.parse('the HydroReservoir "{name}" has a per-unit {series} series {values}'))
+def given_hydro_reservoir_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series: str, values: str
+) -> None:
+    sienna_system_builder.add_reservoir_time_series(
+        name, series, [float(value) for value in values.split()]
+    )
 
 
 @given(parsers.parse('the system contains a bus "{name}" in area "{area}"'))

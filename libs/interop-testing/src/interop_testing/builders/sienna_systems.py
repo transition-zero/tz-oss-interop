@@ -39,6 +39,14 @@ class HydroLimits(NamedTuple):
     marginal_cost: float
 
 
+class ReservoirLevels(NamedTuple):
+    """The levels and the inflow a HydroReservoir states."""
+
+    max_level: float
+    initial_level: float
+    inflow: float
+
+
 class SiennaSystemBuilder:
     """Incrementally builds a Sienna system and serialises it once.
 
@@ -70,6 +78,9 @@ class SiennaSystemBuilder:
         self._next_bus_id: int = 1
         self._next_component_id: int = 1
         self._unknown: list[dict[str, Any]] = []
+        self._services: list[dict[str, Any]] = []
+        self._service_members: list[dict[str, Any]] = []
+        self._reservoirs: list[dict[str, Any]] = []
         self._schema_version: str | None = None
         self._saved: bool = False
 
@@ -495,6 +506,62 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"removal of {field!r} from {name!r}")
         del self._generator_by_name(name)[field]
 
+    def add_online_reserve(self, name: str, direction: str) -> None:
+        """An OnlineReserve that states only the fields SiennaSchemas requires."""
+        self._check_not_saved(f"OnlineReserve {name!r}")
+        self._services.append(
+            {
+                "sienna_type": "OnlineReserve",
+                "id": self._next_id(),
+                "name": name,
+                "available": True,
+                "time_frame": 0.0,
+                "reserve_direction": direction,
+            }
+        )
+
+    def add_service_member(
+        self, service_type: str, service_name: str, owner_type: str, owner_name: str
+    ) -> None:
+        """A service association that names one component as a contributor to a service."""
+        self._check_not_saved(f"member {owner_name!r} of {service_name!r}")
+        self._service_members.append(
+            {
+                "service_type": service_type,
+                "service_name": service_name,
+                "owner_type": owner_type,
+                "owner_name": owner_name,
+            }
+        )
+
+    def add_hydro_reservoir(self, name: str, levels: ReservoirLevels) -> None:
+        """A HydroReservoir that states its levels, its inflow and no cost."""
+        self._check_not_saved(f"HydroReservoir {name!r}")
+        self._reservoirs.append(
+            {
+                "sienna_type": "HydroReservoir",
+                "id": self._next_id(),
+                "name": name,
+                "available": True,
+                "storage_level_limits": {"min": 0.0, "max": levels.max_level},
+                "initial_level": levels.initial_level,
+                "inflow": levels.inflow,
+                "outflow": 0.0,
+                "intake_elevation": 0.0,
+                "head_to_volume_factor": {
+                    "function_type": "LINEAR",
+                    "proportional_term": 1.0,
+                    "constant_term": 0.0,
+                },
+                "operation_cost": {
+                    "cost_type": "HYDRO_RES",
+                    "level_shortage_cost": 0.0,
+                    "level_surplus_cost": 0.0,
+                    "spillage_cost": 0.0,
+                },
+            }
+        )
+
     def add_unknown_component(self, type_name: str, name: str) -> None:
         """Add a row under a type name that SiennaSchemas does not define."""
         self._check_not_saved(f"{type_name} {name!r}")
@@ -565,6 +632,12 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"time series {name!r} for the Arc of {line!r}")
         arc_id = self._line_by_name(line)["arc"]
         self._time_series.append(per_unit_time_series("Arc", arc_id, name, values))
+
+    def add_reservoir_time_series(self, reservoir: str, name: str, values: list[float]) -> None:
+        """Add a per-unit series that a HydroReservoir owns."""
+        self._check_not_saved(f"time series {name!r} for HydroReservoir {reservoir!r}")
+        reservoir_id = next(row["id"] for row in self._reservoirs if row["name"] == reservoir)
+        self._time_series.append(per_unit_time_series("HydroReservoir", reservoir_id, name, values))
 
     def add_ext(self, owner_type: str, owner_name: str, ext: dict[str, Any]) -> None:
         """Add (and merge) extensions.json fields for one component, keyed by owner."""
@@ -638,6 +711,12 @@ class SiennaSystemBuilder:
             sections["links"] = self._links
         if self._unknown:
             sections["unknown"] = self._unknown
+        if self._services:
+            sections["services"] = self._services
+        if self._service_members:
+            sections["service_members"] = self._service_members
+        if self._reservoirs:
+            sections["reservoirs"] = self._reservoirs
         if self._time_series:
             sections["time_series"] = self._time_series
         if self._ext or self._kind_records:

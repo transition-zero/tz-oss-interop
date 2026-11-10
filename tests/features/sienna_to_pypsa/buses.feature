@@ -140,9 +140,9 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     And the PyPSA network "outputs/network.nc" has 1 line
     And the PyPSA network "outputs/network.nc" generator "good_1" has a p_max_pu time series 0.4 0.8
 
-  Scenario: a bus in a load zone, beside a generator with a forced outage, still translates
-    PyPSA has no load zone and no forced outage, so the reader passes over both and keeps
-    the bus and the generator.
+  Scenario: a load zone and a forced outage are left out, and the report says so
+    PyPSA has no load zone and no forced outage, so the hop leaves both out, records each,
+    and warns once for each type. The bus and the generator still translate.
     Given a Sienna system
     And the system contains a load zone "Coast"
     And the system contains a bus "node_a" in load zone "Coast"
@@ -152,6 +152,42 @@ Feature: Sienna to PyPSA Pipeline translates ACBus rows to PyPSA Bus
     When I run translate against Sienna system "inputs/zoned.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 bus
     And the PyPSA network "outputs/network.nc" generator "coal_1" has bus "node_a"
+    And the file "decisions.md" contains "| `sienna.LoadZone.Coast` |  |  | PyPSA has no component of the type LoadZone, so the network leaves it out | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.GeometricDistributionForcedOutage` |  |  | PyPSA has no attribute of the type GeometricDistributionForcedOutage, so the network leaves it out | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the log contains "sienna-to-pypsa: 1 LoadZone(s) have no PyPSA counterpart, so each is left out: Coast"
+    And the log contains "sienna-to-pypsa: 1 component(s) state an attribute of the type GeometricDistributionForcedOutage, which PyPSA does not have, so each is left out: coal_1"
+
+  Scenario: a reserve and the units that contribute to it are left out, and the report says so
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a ThermalStandard "coal_1" on bus "node_a" with base_power 500.0 rating 500 active_power_min 100.0 active_power_max 500.0 marginal_cost 25.0 prime_mover "ST" fuel "COAL"
+    And the system contains an OnlineReserve "spin_up" in direction UP
+    And the ThermalStandard "coal_1" contributes to the OnlineReserve "spin_up"
+    And the system is saved as "inputs/reserve.json"
+    When I run translate against Sienna system "inputs/reserve.json" pipeline "sienna-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 generator
+    And the file "decisions.md" contains "| `sienna.OnlineReserve.spin_up` |  |  | PyPSA has no component of the type OnlineReserve, so the network leaves it out | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the file "decisions.md" contains "| `sienna.ThermalStandard.coal_1.OnlineReserve` = spin_up |  |  | PyPSA has no service of the type OnlineReserve, so the contribution to spin_up is left out | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the log contains "sienna-to-pypsa: 1 OnlineReserve(s) have no PyPSA counterpart, so each is left out: spin_up"
+    And the log contains "sienna-to-pypsa: 1 component(s) contribute to a service of the type OnlineReserve, which PyPSA does not have, so each contribution is left out: coal_1"
+
+  Scenario: a reservoir with no sidecar is left out with its levels and its inflow, and the report says so
+    A system with no extensions.json gives a hydro StorageUnit no reservoir, and PyPSA has no
+    HydroReservoir, so the levels and the inflow of the reservoir reach no StorageUnit.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the system contains a HydroReservoir "res_1" with max_level 800 initial_level 400 inflow 5
+    And the HydroReservoir "res_1" has a per-unit inflow series 4.0 6.0
+    And the system is saved as "inputs/reservoir.json"
+    When I run translate against "inputs/reservoir.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 storage unit
+    And the file "decisions.md" contains "| `sienna.HydroReservoir.res_1` |  |  | PyPSA holds a reservoir only on a StorageUnit, so the HydroReservoir is left out; a hydro StorageUnit reads its reservoir from the storage record of extensions.json, where one exists | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the file "decisions.md" contains "| `sienna.HydroReservoir.res_1.initial_level` = 400.0 |  |  | the HydroReservoir is left out, so no StorageUnit reads its initial_level | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the file "decisions.md" contains "| `sienna.HydroReservoir.res_1.inflow` = 5.0 |  |  | the HydroReservoir is left out, so no StorageUnit reads its inflow | sienna-to-pypsa | sienna_to_pypsa_report_unheld |"
+    And the file "decisions.md" contains "`sienna.HydroReservoir.res_1.storage_level_limits`"
+    And the file "decisions.md" contains "| `sienna.HydroReservoir.res_1.inflow` = profile |"
+    And the log contains "sienna-to-pypsa: 1 HydroReservoir(s) have no PyPSA counterpart, so each is left out with its levels and its inflow: res_1"
 
   Scenario: A fuel bus of the sidecar becomes a PyPSA bus when the system holds no ACBus
     Given a Sienna system

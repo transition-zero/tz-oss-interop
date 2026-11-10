@@ -20,15 +20,21 @@ from interop.plugins.shared.sienna_constants import (
     SIENNA_ID_COLUMN,
     SIENNA_NAME_COLUMN,
     SIENNA_SOURCE_AREAS_SCHEMA,
+    SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
+    SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA,
+    SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA,
     InfraStoreSidecar,
     SiennaACBusCol,
     SiennaArcCol,
     SiennaAreaCol,
+    SiennaAttributeAssociationCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
     SiennaSchemasSystem,
+    SiennaServiceAssociationCol,
+    SiennaStagedAssociationCol,
     SiennaTable,
     SiennaUnitSystem,
     TimeSeriesAssociationCol,
@@ -59,6 +65,20 @@ _LOAD_TYPES = (SiennaComponent.POWER_LOAD, SiennaComponent.INTERRUPTIBLE_POWER_L
 _LINE_TYPES = (SiennaComponent.LINE, SiennaComponent.MONITORED_LINE)
 _LINK_TYPES = (SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,)
 _RESERVOIR_TYPES = (SiennaComponent.HYDRO_RESERVOIR,)
+# The types that a table above holds, or that staging folds into another row.
+_HELD_TYPES = frozenset(
+    {
+        SiennaComponent.AREA,
+        SiennaComponent.AC_BUS,
+        SiennaComponent.ARC,
+        *_GENERATOR_TYPES,
+        *_STORAGE_TYPES,
+        *_LOAD_TYPES,
+        *_LINE_TYPES,
+        *_LINK_TYPES,
+        *_RESERVOIR_TYPES,
+    }
+)
 
 
 class StageSiennaSystemJsonParams(BaseModel):
@@ -187,7 +207,91 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
         for c in components.get(sienna_type, [])
     ]
     _stage_table(reservoir_rows, None, SiennaTable.RESERVOIRS, staging_dir, frames)
+    _stage_unheld(system, staging_dir, frames)
     return frames
+
+
+def _stage_unheld(
+    system: dict[str, Any], staging_dir: Path, frames: dict[str, pl.LazyFrame]
+) -> None:
+    """Stage by name each component, service member and attribute that no table above holds."""
+    components = system.get(SiennaSchemasSystem.COMPONENTS, {})
+    owner_by_id = {
+        component[SIENNA_ID_COLUMN]: (sienna_type, component.get(SIENNA_NAME_COLUMN))
+        for sienna_type, rows in components.items()
+        for component in rows
+    }
+    other_rows = [
+        {
+            SiennaGeneratorCol.SIENNA_TYPE: sienna_type,
+            SIENNA_ID_COLUMN: component[SIENNA_ID_COLUMN],
+            SIENNA_NAME_COLUMN: component.get(SIENNA_NAME_COLUMN),
+        }
+        for sienna_type, rows in components.items()
+        if sienna_type not in _HELD_TYPES
+        for component in rows
+    ]
+    _stage_table(
+        other_rows,
+        SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA,
+        SiennaTable.OTHER_COMPONENTS,
+        staging_dir,
+        frames,
+    )
+    _stage_table(
+        _build_service_member_rows(system, owner_by_id),
+        SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA,
+        SiennaTable.SERVICE_MEMBERS,
+        staging_dir,
+        frames,
+    )
+    _stage_table(
+        _build_attribute_owner_rows(system, owner_by_id),
+        SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA,
+        SiennaTable.ATTRIBUTE_OWNERS,
+        staging_dir,
+        frames,
+    )
+
+
+def _build_service_member_rows(
+    system: dict[str, Any], owner_by_id: dict[int, tuple[str, str | None]]
+) -> list[dict[str, Any]]:
+    """Each service association whose service and member are both kept, by type and name."""
+    rows: list[dict[str, Any]] = []
+    for association in system.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS, []):
+        service = owner_by_id.get(association[SiennaServiceAssociationCol.SERVICE_ID])
+        member = owner_by_id.get(association[SiennaServiceAssociationCol.ENTITY_ID])
+        if service is not None and member is not None:
+            rows.append(
+                {
+                    SiennaStagedAssociationCol.SERVICE_TYPE: service[0],
+                    SiennaStagedAssociationCol.SERVICE_NAME: service[1],
+                    SiennaStagedAssociationCol.COMPONENT_TYPE: member[0],
+                    SiennaStagedAssociationCol.COMPONENT_NAME: member[1],
+                }
+            )
+    return rows
+
+
+def _build_attribute_owner_rows(
+    system: dict[str, Any], owner_by_id: dict[int, tuple[str, str | None]]
+) -> list[dict[str, Any]]:
+    """Each supplemental attribute association whose component is kept, by component name."""
+    rows: list[dict[str, Any]] = []
+    for association in system.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS, []):
+        owner = owner_by_id.get(association[SiennaAttributeAssociationCol.COMPONENT_ID])
+        if owner is not None:
+            rows.append(
+                {
+                    SiennaStagedAssociationCol.ATTRIBUTE_TYPE: association[
+                        SiennaAttributeAssociationCol.ATTRIBUTE_TYPE
+                    ],
+                    SiennaStagedAssociationCol.COMPONENT_TYPE: owner[0],
+                    SiennaStagedAssociationCol.COMPONENT_NAME: owner[1],
+                }
+            )
+    return rows
 
 
 def _line_row(

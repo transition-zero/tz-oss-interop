@@ -92,7 +92,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     When I run translate against "inputs/hydro_turbine.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
     And the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "p_nom" is 100.0
-    And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.max_hours` = 1.0 |  | HydroTurbine carries no storage capacity; max_hours uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.max_hours` = 1.0 |  | a HydroTurbine keeps its reservoir on a HydroReservoir, which this hop does not read, and the storage record states no max_hours; max_hours uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "`sienna.HydroTurbine.turbine_1.base_power` = 100.0 MVA | `pypsa.StorageUnit.turbine_1.p_nom` = 100.0 MW"
 
   Scenario: an EnergyReservoirStorage without ext p_nom_extendable records a translator default
