@@ -163,12 +163,13 @@ def append_metadata(state: State, rows: list[dict[str, Any]]) -> None:
 
 
 class OffWindowProfile(NamedTuple):
-    """A mapped profile whose value count does not match the network's snapshot window."""
+    """A mapped profile whose value count or first snapshot does not match the window."""
 
     owner_type: str
     series: str
     component: str
     held: int
+    first: datetime | None = None
 
 
 class OffWindowProfiles(NamedTuple):
@@ -176,9 +177,15 @@ class OffWindowProfiles(NamedTuple):
 
     snapshots: int
     profiles: list[OffWindowProfile]
+    first: datetime | None = None
 
     def note(self, profile: OffWindowProfile) -> str:
         """Why one profile was left off, in the same words whatever the source."""
+        if profile.held == self.snapshots:
+            return (
+                f"the profile starts at {profile.first} but the snapshot window starts at "
+                f"{self.first}, so the component keeps its static value instead"
+            )
         return (
             f"the profile carries {profile.held} values but the snapshot window holds "
             f"{self.snapshots}, so the component keeps its static value instead"
@@ -197,24 +204,27 @@ def drop_profiles_off_the_window(state: State, advice: str) -> OffWindowProfiles
     own vocabulary.
     """
     metadata = state.destination_tables.get(PyPSADestinationTable.TIME_SERIES_METADATA)
-    if metadata is None or metadata.height == 0:
+    window = find_snapshot_window(state)
+    if metadata is None or window is None:
         return OffWindowProfiles(0, [])
-    snapshots = metadata[ReverseTimeSeriesMetadataCol.LENGTH][0]
-    off_window = _profiles_off_the_window(state, metadata, snapshots)
+    off_window = _profiles_off_the_window(state, metadata, window)
     if not off_window:
-        return OffWindowProfiles(snapshots, [])
-    _warn_off_the_window(off_window, snapshots, advice)
+        return OffWindowProfiles(window.length, [], window.first)
+    _warn_off_the_window(off_window, window, advice)
     state.destination_tables[PyPSADestinationTable.TIME_SERIES_METADATA] = _without_profiles(
         metadata, off_window
     )
-    return OffWindowProfiles(snapshots, off_window)
+    return OffWindowProfiles(window.length, off_window, window.first)
 
 
-def _warn_off_the_window(off_window: list[OffWindowProfile], snapshots: int, advice: str) -> None:
+def _warn_off_the_window(
+    off_window: list[OffWindowProfile], window: SnapshotWindow, advice: str
+) -> None:
     log.warning(
-        "the snapshot window holds %s steps but %s mapped profiles carry a different "
-        "number, so they are left off the network: %s. %s",
-        snapshots,
+        "the snapshot window holds %s steps from %s but %s mapped profiles carry a different "
+        "number or start elsewhere, so they are left off the network: %s. %s",
+        window.length,
+        window.first,
         len(off_window),
         summarise_off_window(off_window),
         advice,
@@ -240,15 +250,16 @@ def _without_profiles(metadata: pl.DataFrame, dropped: list[OffWindowProfile]) -
 
 
 def _profiles_off_the_window(
-    state: State, metadata: pl.DataFrame, snapshots: int
+    state: State, metadata: pl.DataFrame, window: SnapshotWindow
 ) -> list[OffWindowProfile]:
-    """Each mapped profile whose value count differs from the window, fewest values first.
+    """Each mapped profile whose value count or first snapshot differs from the window.
 
     A component with no rows at all in its series counts as zero: the sink would write an
-    empty column against the window just as surely as a short one.
+    empty column against the window just as surely as a short one. A profile of the right
+    length that starts elsewhere would reach the sink on the window's dates, not its own.
     """
-    counts = {
-        key: _rows_by_component(state.source_time_series[key])
+    held_by_key = {
+        key: _list_held_series(state.source_time_series[key])
         for key in _mapped_series_keys(metadata)
         if key in state.source_time_series
     }
@@ -257,10 +268,23 @@ def _profiles_off_the_window(
         owner = row[ReverseTimeSeriesMetadataCol.SOURCE_OWNER_TYPE]
         series = row[ReverseTimeSeriesMetadataCol.SOURCE_SERIES_NAME]
         component = row[ReverseTimeSeriesMetadataCol.SOURCE_COMPONENT_NAME]
-        held = counts.get((owner, series), {}).get(component, 0)
-        if held != snapshots:
-            off_window.add(OffWindowProfile(owner, series, component, held))
+        held = held_by_key.get((owner, series), {}).get(component, _NO_VALUES)
+        if not held.fits(window):
+            off_window.add(OffWindowProfile(owner, series, component, held.held, held.first))
     return sorted(off_window, key=lambda profile: (profile.held, profile.series, profile.component))
+
+
+class _HeldSeries(NamedTuple):
+    """How many values one component's series holds, and its first snapshot."""
+
+    held: int
+    first: datetime | None
+
+    def fits(self, window: SnapshotWindow) -> bool:
+        return self.held == window.length and self.first in (None, window.first)
+
+
+_NO_VALUES = _HeldSeries(0, None)
 
 
 def _mapped_series_keys(metadata: pl.DataFrame) -> set[tuple[str, str]]:
@@ -271,11 +295,15 @@ def _mapped_series_keys(metadata: pl.DataFrame) -> set[tuple[str, str]]:
     return {(owner, series) for owner, series in keyed.iter_rows()}
 
 
-def _rows_by_component(frame: pl.LazyFrame) -> dict[str, int]:
-    """How many values the reference sample holds for each component of one staged series."""
+def _list_held_series(frame: pl.LazyFrame) -> dict[str, _HeldSeries]:
+    """What the reference sample holds for each component of one staged series."""
     sampled = filter_to_sample(frame, choose_reference_sample(frame))
-    counted = sampled.group_by(StagedTimeSeriesCol.COMPONENT).len().collect(engine="streaming")
-    return dict(counted.iter_rows())
+    held = (
+        sampled.group_by(StagedTimeSeriesCol.COMPONENT)
+        .agg(pl.len(), pl.col(StagedTimeSeriesCol.SNAPSHOT).min())
+        .collect(engine="streaming")
+    )
+    return {component: _HeldSeries(count, first) for component, count, first in held.iter_rows()}
 
 
 def summarise_off_window(off_window: list[OffWindowProfile]) -> str:

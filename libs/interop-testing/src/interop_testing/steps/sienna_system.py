@@ -449,6 +449,18 @@ def given_power_load_max_active_power_series(
     sienna_system_builder.add_time_series("PowerLoad", name, "max_active_power", values)
 
 
+@given(
+    parsers.parse(
+        'the PowerLoad "{name}" states a max_active_power series from "{start}" of {series}'
+    )
+)
+def given_power_load_max_active_power_series_from(
+    sienna_system_builder: SiennaSystemBuilder, name: str, start: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_time_series_from("PowerLoad", name, "max_active_power", values, start)
+
+
 @given(parsers.parse('the EnergyReservoirStorage "{name}" has a {series_name} series {series}'))
 def given_energy_reservoir_storage_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series_name: str, series: str

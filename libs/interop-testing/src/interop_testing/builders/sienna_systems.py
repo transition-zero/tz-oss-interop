@@ -553,6 +553,13 @@ class SiennaSystemBuilder:
         self._check_not_saved(f"time series {name!r} for {owner_name!r}")
         self._time_series.append(single_time_series(owner_type, owner_name, name, values))
 
+    def add_time_series_from(
+        self, owner_type: str, owner_name: str, name: str, values: list[float], start: str
+    ) -> None:
+        """Add a series whose first value falls at ``start``, not at the default start."""
+        self._check_not_saved(f"time series {name!r} for {owner_name!r}")
+        self._time_series.append(single_time_series(owner_type, owner_name, name, values, start))
+
     def add_arc_time_series(self, line: str, name: str, values: list[float]) -> None:
         """Add a per-unit series that the Arc of a Line owns, which has no name."""
         self._check_not_saved(f"time series {name!r} for the Arc of {line!r}")

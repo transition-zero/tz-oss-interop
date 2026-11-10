@@ -360,14 +360,18 @@ def storage_cost(discharge_marginal_cost: float, *, cyclic: bool) -> dict[str, A
 
 
 def single_time_series(
-    owner_type: str, owner_name: str, name: str, values: list[float]
+    owner_type: str,
+    owner_name: str,
+    name: str,
+    values: list[float],
+    initial_time: str = TIME_SERIES_INITIAL_TIME,
 ) -> dict[str, Any]:
     return {
         "owner_type": owner_type,
         "owner_name": owner_name,
         "name": name,
         "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
-        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "initial_time": initial_time,
         "values": values,
     }
 

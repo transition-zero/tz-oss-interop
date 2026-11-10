@@ -154,6 +154,47 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 0
     And the file "decisions.md" contains "the Storage states its Natural Inflow in a unit that does not match its volumes"
 
+  Scenario: a Natural Inflow profile in GW on a reservoir measured in energy becomes a series in MW
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "inflow_trace" at "csv/inflow.csv" with hourly values "1, 2, 3, 4"
+    And the model states "Natural Inflow" in "GW"
+    And the model contains reservoir hydro "hydro_p" on node "North_Node" with max_capacity 200 head "res_p" max_volume 800 initial_volume 400
+    And storage "res_p" has property "Natural Inflow" from data file "inflow_trace"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_p" having "inflow" set to 4000.0
+    And the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroReservoir" named "res_p" attribute "inflow" with values 1000 2000 3000 4000
+
+  Scenario: two Natural Inflow profiles that start on different days each keep their own start
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "inflow_a" at "csv/inflow_a.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 1   | 1      | 10    |
+      | 2026 | 1     | 1   | 2      | 20    |
+    And the model contains data file "inflow_b" at "csv/inflow_b.csv" with rows:
+      | Year | Month | Day | Period | Value |
+      | 2026 | 1     | 2   | 1      | 30    |
+      | 2026 | 1     | 2   | 2      | 40    |
+    And the model states "Natural Inflow" in "MW"
+    And the model contains reservoir hydro "hydro_a" on node "North_Node" with max_capacity 200 head "res_a" max_volume 800 initial_volume 400
+    And the model contains reservoir hydro "hydro_b" on node "North_Node" with max_capacity 200 head "res_b" max_volume 800 initial_volume 400
+    And storage "res_a" has property "Natural Inflow" from data file "inflow_a"
+    And storage "res_b" has property "Natural Inflow" from data file "inflow_b"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroReservoir" named "res_b" attribute "inflow" with values 30 40
+    And the file "outputs/system.json" parses as JSON where TimeSeriesAssociation for component "HydroReservoir" owner id 5 starts at "2026-01-02T00:00:00Z"
+
   Scenario: a mappings file that names HydroDispatch keeps a reservoir-hydro unit without its reservoir
     Given a Plexos model
     And the model contains region "North"

@@ -62,7 +62,12 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSeriesName,
     SiennaStructField,
 )
-from interop.plugins.shared.sienna_time_series import collect_ts_info, ts_association_row
+from interop.plugins.shared.sienna_time_series import (
+    TimeSeriesInfo,
+    build_ts_info,
+    build_ts_info_by_component,
+    ts_association_row,
+)
 
 ReservoirCol = SiennaHydroReservoirCol
 
@@ -429,7 +434,9 @@ def _read_volume(reservoir: _Reservoir, property_name: str) -> Decision | None:
     source_unit = reservoir.scale.volume_unit if reservoir.scale is _ENERGY else stated
     source = SourceValue(PlexosClass.STORAGE, reading.name, property_name, value, source_unit)
     return Decision.derived(
-        value * factor, [source], _build_explanation(property_name, factor, stated)
+        value * factor,
+        [source],
+        _build_explanation(property_name, factor, f"{stated} to {UNIT_CUBIC_METRES}"),
     )
 
 
@@ -440,10 +447,10 @@ def _find_volume_factor(stated: str | None, scale: _LevelScale) -> float:
     return conversion_factor(stated, UNIT_CUBIC_METRES) or 1.0
 
 
-def _build_explanation(property_name: str, factor: float, stated: str | None) -> str:
+def _build_explanation(label: str, factor: float, conversion: str) -> str:
     if factor == 1.0:
-        return property_name
-    return f"{property_name} x {factor:g} ({stated} to {UNIT_CUBIC_METRES})"
+        return label
+    return f"{label} x {factor:g} ({conversion})"
 
 
 def _derive_start_level(start: Decision | None, floor: Decision, ceiling: Decision) -> Decision:
@@ -460,39 +467,51 @@ def _derive_inflow(reservoir: _Reservoir) -> _Field:
     """What refills the reservoir, in its flow unit, or nothing where the units disagree."""
     reading = reservoir.reading
     unit = reservoir.scale.flow_unit
-    inflow = _read_inflow(reading)
+    inflow = _read_inflow(reservoir)
     if inflow is None:
         return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _NO_INFLOW_NOTE), unit)
-    factor = _find_inflow_factor(reservoir)
-    if factor is None:
+    if inflow.factor is None:
         return _Field(ReservoirCol.INFLOW, Decision.default(_NO_INFLOW, _INFLOW_UNIT_NOTE), unit)
     stated = reading.units.get(PlexosProperty.NATURAL_INFLOW)
     source_unit = unit if reservoir.scale is _ENERGY else stated
     source = _build_inflow_source(reading, inflow.value, source_unit)
-    explanation = _build_explanation(inflow.label, factor, stated)
+    explanation = _build_explanation(inflow.label, inflow.factor, f"{stated} to {unit}")
     return _Field(
-        ReservoirCol.INFLOW, Decision.derived(inflow.value * factor, [source], explanation), unit
+        ReservoirCol.INFLOW,
+        Decision.derived(inflow.value * inflow.factor, [source], explanation),
+        unit,
     )
 
 
 class _Inflow(NamedTuple):
-    """The Natural Inflow a Storage states, and the words that say where the value comes from."""
+    """The Natural Inflow a Storage states, where it comes from, and its factor to the flow unit.
+
+    The factor is None where the stated unit does not match the reservoir.
+    """
 
     value: float
     label: str
+    factor: float | None
 
 
-def _read_inflow(reading: _StorageReading) -> _Inflow | None:
+def _read_inflow(reservoir: _Reservoir) -> _Inflow | None:
     """The peak of the Natural Inflow profile, else the static Natural Inflow, else None."""
+    reading = reservoir.reading
     if reading.inflow_peak is not None:
-        return _Inflow(reading.inflow_peak, _PROFILE_DERIVATION)
+        return _Inflow(reading.inflow_peak, _PROFILE_DERIVATION, _find_profile_factor(reservoir))
     value = reading.values.get(PlexosProperty.NATURAL_INFLOW)
-    return None if value is None else _Inflow(value, PlexosProperty.NATURAL_INFLOW)
+    if value is None:
+        return None
+    stated = reading.units.get(PlexosProperty.NATURAL_INFLOW)
+    return _Inflow(value, PlexosProperty.NATURAL_INFLOW, _find_flow_factor(stated, reservoir.scale))
 
 
-def _find_inflow_factor(reservoir: _Reservoir) -> float | None:
+def _find_profile_factor(reservoir: _Reservoir) -> float | None:
+    """A profile is staged in the unit it states, so it converts into the flow unit here."""
     stated = reservoir.reading.units.get(PlexosProperty.NATURAL_INFLOW)
-    return _find_flow_factor(stated, reservoir.scale)
+    if stated is None:
+        return 1.0
+    return conversion_factor(stated, reservoir.scale.flow_unit)
 
 
 def _build_inflow_source(reading: _StorageReading, value: float, stated: str | None) -> SourceValue:
@@ -660,12 +679,16 @@ def _build_associations(state: State, reservoirs: dict[str, _Reservoir]) -> pl.D
     profiled = [
         _ProfiledReservoir(one, factor)
         for one in reservoirs.values()
-        if one.reading.inflow_peak is not None and (factor := _find_inflow_factor(one)) is not None
+        if one.reading.inflow_peak is not None and (factor := _find_profile_factor(one)) is not None
     ]
     if frame is None or not profiled:
         return pl.DataFrame(schema=TIME_SERIES_ASSOCIATION_SCHEMA)
-    info = collect_ts_info(frame)
-    rows = [_build_association_row(one, info) for one in profiled]
+    info_by_name = build_ts_info_by_component(frame)
+    no_series = build_ts_info(0, None, None)
+    rows = [
+        _build_association_row(one, info_by_name.get(one.reservoir.reading.name, no_series))
+        for one in profiled
+    ]
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
 
 
@@ -676,7 +699,7 @@ class _ProfiledReservoir(NamedTuple):
     factor: float
 
 
-def _build_association_row(profiled: _ProfiledReservoir, info: Any) -> dict[str, Any]:
+def _build_association_row(profiled: _ProfiledReservoir, info: TimeSeriesInfo) -> dict[str, Any]:
     reservoir = profiled.reservoir
     return ts_association_row(
         owner_type=SiennaComponent.HYDRO_RESERVOIR,
