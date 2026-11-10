@@ -137,6 +137,23 @@ Feature: A PLEXOS hydro cascade becomes Sienna reservoirs and turbines
     Then the h5 file "outputs/system_time_series_storage.h5" has a time series for component "HydroReservoir" named "res_p" attribute "inflow" with values 10 20 30 40
     And every time series association in the written Sienna system is valid SiennaSchemas 0.2
 
+  Scenario: a Natural Inflow profile in a water unit on a reservoir measured in energy does not refill it
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "inflow_trace" at "csv/inflow.csv" with hourly values "10, 20, 30, 40"
+    And the model states "Natural Inflow" in "cumec"
+    And the model contains reservoir hydro "hydro_p" on node "North_Node" with max_capacity 200 head "res_p" max_volume 800 initial_volume 400
+    And storage "res_p" has property "Natural Inflow" from data file "inflow_trace"
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with component "HydroReservoir" named "res_p" having "inflow" set to 0.0
+    And the file "outputs/system.json" parses as JSON where array "time_series_associations" has length 0
+    And the file "decisions.md" contains "the Storage states its Natural Inflow in a unit that does not match its volumes"
+
   Scenario: a mappings file that names HydroDispatch keeps a reservoir-hydro unit without its reservoir
     Given a Plexos model
     And the model contains region "North"
