@@ -177,6 +177,24 @@ class _HttpReader(StagedSource):
 """
 
 
+_HTTP_STREAM_READER_SOURCE_PY = _HTTP_READER_SOURCE_PY.replace(
+    "http_reader", "http_stream_reader"
+).replace(
+    "data = self._fs.read_bytes(params.path)",
+    "with self._fs.open_read(params.path) as stream:\n            data = stream.read()",
+)
+
+
+_HTTP_SIBLING_READER_SOURCE_PY = (
+    _HTTP_READER_SOURCE_PY.replace("http_reader", "http_sibling_reader")
+    .replace("    path: Location\n", "    path: Location\n    sibling: str\n")
+    .replace(
+        "data = self._fs.read_bytes(params.path)",
+        "data = self._fs.read_bytes(self._fs.resolve(params.path, params.sibling))",
+    )
+)
+
+
 _HTTP_WRITER_SINK_PY = """\
 from pathlib import Path
 from typing import ClassVar
@@ -240,6 +258,43 @@ def given_http_roundtrip_pipeline(pipeline_name: str, input_url: str, output_url
     write_pipeline(
         pipeline_name,
         _HTTP_ROUNDTRIP_PIPELINE_TEMPLATE.format(input_url=input_url, output_url=output_url),
+    )
+
+
+@given(
+    parsers.parse(
+        'an http streaming round-trip pipeline "{pipeline_name}" copying "{input_url}" '
+        'to "{output_url}"'
+    )
+)
+def given_http_streaming_roundtrip_pipeline(
+    pipeline_name: str, input_url: str, output_url: str
+) -> None:
+    write_project_plugin("sources", "http_stream_reader", _HTTP_STREAM_READER_SOURCE_PY)
+    write_project_plugin("sinks", "http_writer", _HTTP_WRITER_SINK_PY)
+    template = _HTTP_ROUNDTRIP_PIPELINE_TEMPLATE.replace(
+        "name: http_reader", "name: http_stream_reader"
+    )
+    write_pipeline(pipeline_name, template.format(input_url=input_url, output_url=output_url))
+
+
+@given(
+    parsers.parse(
+        'an http sibling round-trip pipeline "{pipeline_name}" reading "{sibling}" beside '
+        '"{input_url}" to "{output_url}"'
+    )
+)
+def given_http_sibling_roundtrip_pipeline(
+    pipeline_name: str, sibling: str, input_url: str, output_url: str
+) -> None:
+    write_project_plugin("sources", "http_sibling_reader", _HTTP_SIBLING_READER_SOURCE_PY)
+    write_project_plugin("sinks", "http_writer", _HTTP_WRITER_SINK_PY)
+    template = _HTTP_ROUNDTRIP_PIPELINE_TEMPLATE.replace(
+        "name: http_reader", "name: http_sibling_reader"
+    ).replace("    path: {input_url}\n", "    path: {input_url}\n    sibling: '{sibling}'\n", 1)
+    write_pipeline(
+        pipeline_name,
+        template.format(input_url=input_url, sibling=sibling, output_url=output_url),
     )
 
 

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import IO, Annotated, ClassVar, Protocol, runtime_checkable
+from urllib.parse import urlsplit
 
 from pydantic import BeforeValidator
 
@@ -27,7 +28,7 @@ Location = Annotated[Path | str, BeforeValidator(to_location)]
 # a bare filename from a Location, same reasoning as `to_location` above.
 def location_name(loc: Location) -> str:
     if isinstance(loc, str):
-        return loc.rsplit("/", 1)[-1]
+        return PurePosixPath(urlsplit(loc).path).name
     return loc.name
 
 
