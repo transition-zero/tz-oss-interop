@@ -20,10 +20,6 @@ from interop.plugins.shared.sienna_constants import (
 
 SIENNA_TO_PYPSA = "sienna-to-pypsa"
 
-ASSUMED_HYDRO_EFFICIENCY_DISPATCH: float = 1.0
-"""HydroDispatch carries no turbine efficiency (it is folded into hydro_budget and
-lost), so the reverse inflow reconstruction assumes unity. Recorded as lossy."""
-
 DEFAULT_HYDRO_MAX_HOURS: float = 1.0
 """HydroDispatch carries no reservoir capacity, so the PyPSA StorageUnit max_hours is
 not recoverable. Falls back to the PyPSA default. Recorded as lossy."""

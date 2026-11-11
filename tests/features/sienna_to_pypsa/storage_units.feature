@@ -6,7 +6,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
   p_max_pu, and (for PHS) storage_capacity -> max_hours, output limit ->
   p_max_pu, negated input limit -> p_min_pu, efficiency.in/out ->
   efficiency_store/dispatch. The hydro_budget series is inverted to an inflow
-  series (efficiency_dispatch is not carried and is assumed 1.0).
+  series. A HydroTurbine divides it by its efficiency, and a HydroDispatch states none.
 
   Scenario: a HydroDispatch becomes a PyPSA StorageUnit with carrier hydro and an inflow series
     Given a Sienna system
@@ -111,6 +111,18 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     And the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "efficiency_store" is 1.0
     And the file "decisions.md" contains "| `sienna.HydroTurbine.turbine_1.efficiency` = 0.9 | `pypsa.StorageUnit.turbine_1.efficiency_dispatch` = 0.9 | efficiency -> efficiency_dispatch |  | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.efficiency_store` = 1.0 |  | a HydroTurbine does not pump, so efficiency_store uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
+  Scenario: a HydroTurbine hydro_budget becomes an inflow that its efficiency covers
+    PyPSA multiplies what leaves the store by efficiency_dispatch, so the inflow is the
+    budget in MW divided by the turbine efficiency.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroTurbine "turbine_1" states "efficiency" set to 0.9
+    And the HydroTurbine "turbine_1" has a hydro_budget series 0.18 0.36 0.27
+    And the system is saved as "inputs/turbine_budget.json"
+    When I run translate against "inputs/turbine_budget.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "turbine_1" has an inflow time series 20.0 40.0 30.0
 
   Scenario: a HydroTurbine after a hundred other hydro units keeps its efficiency
     The source reads the fields of every generator row, so a field that only the last

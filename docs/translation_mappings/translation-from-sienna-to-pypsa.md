@@ -296,6 +296,7 @@ as the table above gives. The fields below are the ones that only a `HydroTurbin
 | `HydroTurbine` field | PyPSA field | Mapping |
 | --- | --- | --- |
 | `efficiency` | `efficiency_dispatch` | `derived`. If absent, `1.0` (`default`). |
+| `hydro_budget` series | `inflow` | `hydro_budget` × `base_power` ÷ `efficiency`, because PyPSA multiplies what leaves the store by `efficiency_dispatch` |
 | No field | `efficiency_store` | `1.0` (`default`), because a turbine does not pump |
 | `commitment_mode`, `conversion_factor`, `outflow_limits`, `powerhouse_elevation`, `travel_time`, `turbine_type` | No field | `NOT_MAPPED` |
 
@@ -687,6 +688,7 @@ its values in the time-series sidecar. The translator reads five series and leav
 | `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
 | `ThermalStandard` `max_active_power` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
+| `HydroTurbine` `hydro_budget` | `storage_units.inflow` | `base_power` ÷ `efficiency` |
 
 A companion parquet beside `extensions.json` can hold a series too:
 

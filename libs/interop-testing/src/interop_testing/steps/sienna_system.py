@@ -570,6 +570,14 @@ def given_system_contains_hydro_dispatch_units(
         sienna_system_builder.add_hydro_dispatch(f"hydro_{number}", bus, *limits)
 
 
+@given(parsers.parse('the HydroTurbine "{name}" has a hydro_budget series {series}'))
+def given_hydro_turbine_budget_series(
+    sienna_system_builder: SiennaSystemBuilder, name: str, series: str
+) -> None:
+    values = [float(v) for v in series.split()]
+    sienna_system_builder.add_time_series("HydroTurbine", name, "hydro_budget", values)
+
+
 @given(parsers.parse('the HydroDispatch "{name}" has a hydro_budget series {series}'))
 def given_hydro_dispatch_budget_series(
     sienna_system_builder: SiennaSystemBuilder, name: str, series: str
