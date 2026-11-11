@@ -15,34 +15,48 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
-from interop.plugins.shared.plexos_constants import PlexosPropertyCol
+from interop.plugins.shared.plexos_constants import PlexosCsvCol, PlexosPropertyCol
+from interop.plugins.sources.plexos_patterns import PatternCalendar
+from interop.plugins.sources.plexos_repeated_rows import (
+    RepeatedRows,
+    build_repeated_rows,
+    drop_repeated_rows,
+)
 
 log = logging.getLogger(__name__)
 
-# A PLEXOS CSV names its date parts and its value column in the source's own vocabulary.
-_CSV_YEAR = "Year"
-_CSV_MONTH = "Month"
-_CSV_DAY = "Day"
-_CSV_PERIOD = "Period"
-_CSV_VALUE = "Value"
-_CSV_DATETIME = "DateTime"
-_CSV_NAME = "Name"
 _CSV_MONTH_VAR = "month_column"
 _SAMPLE_COLUMN_VAR = "sample_column"
 # The scaling each owner applies to the shared trace it reads.
 _OWNER_SCALING_COL = "owner_scaling"
-_PERIOD_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY, _CSV_PERIOD)
-_PERIOD_KEY_NO_YEAR = (_CSV_MONTH, _CSV_DAY, _CSV_PERIOD)
-_DAY_KEY = (_CSV_YEAR, _CSV_MONTH, _CSV_DAY)
+# The name a self-naming file gives an owner's rows, without letter case, as PLEXOS reads it.
+_ROW_KEY_COL = "row_key"
+_PERIOD_KEY = (PlexosCsvCol.YEAR, PlexosCsvCol.MONTH, PlexosCsvCol.DAY, PlexosCsvCol.PERIOD)
+_PERIOD_KEY_NO_YEAR = (PlexosCsvCol.MONTH, PlexosCsvCol.DAY, PlexosCsvCol.PERIOD)
+_DAY_KEY = (PlexosCsvCol.YEAR, PlexosCsvCol.MONTH, PlexosCsvCol.DAY)
 _PERIOD_COLUMN_VAR = "period_column"
 _MINUTES_PER_DAY = 24 * 60
 _MONTH_COLUMNS = tuple(f"M{month:02d}" for month in range(1, 13))
 _BOM = "\ufeff"
+_CANONICAL_BY_FOLDED = {
+    name.casefold(): name
+    for name in (
+        PlexosCsvCol.YEAR,
+        PlexosCsvCol.MONTH,
+        PlexosCsvCol.DAY,
+        PlexosCsvCol.PERIOD,
+        PlexosCsvCol.VALUE,
+        PlexosCsvCol.DATETIME,
+        PlexosCsvCol.NAME,
+        PlexosCsvCol.PATTERN,
+        *_MONTH_COLUMNS,
+    )
+}
 
 # A CSV's owners are the rows of the resolved property table that read it.
 Rows = list[dict[str, Any]]
@@ -90,11 +104,34 @@ def drop_undated_rows(frame: pl.LazyFrame) -> pl.LazyFrame:
     return frame.filter(pl.col(StagedTimeSeriesCol.SNAPSHOT).is_not_null())
 
 
-def strip_bom(scan: pl.LazyFrame) -> pl.LazyFrame:
-    """Drop the UTF-8 BOM some PLEXOS CSVs prepend to their first header name."""
-    renames = {name: name.lstrip(_BOM) for name in scan.collect_schema().names()}
+def normalise_header(scan: pl.LazyFrame) -> pl.LazyFrame:
+    """The CSV with each header the reshaper knows in its canonical spelling.
+
+    PLEXOS reads a header without letter case, and some CSVs prepend a UTF-8 BOM to the
+    first name. A header that names an object or a sample keeps its own spelling.
+    """
+    renames = {name: normalise_column_name(name) for name in scan.collect_schema().names()}
     renames = {old: new for old, new in renames.items() if old != new}
     return scan.rename(renames) if renames else scan
+
+
+def normalise_column_name(name: str) -> str:
+    """A header the reshaper knows in its canonical spelling, else the header as written."""
+    stripped = name.lstrip(_BOM)
+    return _CANONICAL_BY_FOLDED.get(stripped.casefold(), stripped)
+
+
+@dataclass(frozen=True)
+class LayoutContext:
+    """What a run settles that a layout can need: the year, the samples, and the snapshots.
+
+    ``calendar`` is None where the Horizon sets no snapshots, so a value by pattern has
+    nothing to expand onto.
+    """
+
+    horizon_year: int | None
+    sample_scope: SampleScope
+    calendar: PatternCalendar | None
 
 
 @dataclass(frozen=True)
@@ -102,10 +139,22 @@ class _CsvToReshape:
     """One Data File CSV, and everything a reshaper needs to read it."""
 
     scan: pl.LazyFrame
+    relative: str
     columns: list[str]
     owner_names: set[str]
-    sample_scope: SampleScope
-    horizon_year: int | None
+    context: LayoutContext
+
+    @property
+    def sample_scope(self) -> SampleScope:
+        return self.context.sample_scope
+
+    @property
+    def horizon_year(self) -> int | None:
+        return self.context.horizon_year
+
+    @property
+    def calendar(self) -> PatternCalendar | None:
+        return self.context.calendar
 
 
 @dataclass(frozen=True)
@@ -119,17 +168,24 @@ class _CsvShape:
     matches: Callable[[set[str]], bool]
     reshape: Callable[[_CsvToReshape], pl.LazyFrame | None]
     needs_a_year: bool = False
+    needs_snapshots: bool = False
+
+    def can_read(self, context: LayoutContext) -> bool:
+        """Whether this run settles what the layout needs to date its rows."""
+        has_year = context.horizon_year is not None or not self.needs_a_year
+        has_snapshots = context.calendar is not None or not self.needs_snapshots
+        return has_year and has_snapshots
 
 
-def is_supported_layout(scan: pl.LazyFrame, horizon_year: int | None) -> bool:
+def is_supported_layout(scan: pl.LazyFrame, context: LayoutContext) -> bool:
     """Whether the reshaper can turn this CSV's header into a time series."""
-    return _choose_shape(set(scan.collect_schema().names()), horizon_year) is not None
+    return _choose_shape(set(scan.collect_schema().names()), context) is not None
 
 
-def _choose_shape(header: set[str], horizon_year: int | None) -> _CsvShape | None:
+def _choose_shape(header: set[str], context: LayoutContext) -> _CsvShape | None:
     """The first layout this header matches and this run can read, or None where there is none."""
     for shape in _CSV_SHAPES:
-        if shape.matches(header) and (horizon_year is not None or not shape.needs_a_year):
+        if shape.matches(header) and shape.can_read(context):
             return shape
     return None
 
@@ -139,8 +195,21 @@ def _wants_a_year(header: set[str]) -> bool:
     return any(shape.needs_a_year and shape.matches(header) for shape in _CSV_SHAPES)
 
 
-def warn_unstageable_layout(scan: pl.LazyFrame, relative: str, horizon_year: int | None) -> None:
-    if horizon_year is None and _wants_a_year(set(scan.collect_schema().names())):
+def _wants_snapshots(header: set[str]) -> bool:
+    """Whether this layout gives its values by pattern, which only snapshots can date."""
+    return any(shape.needs_snapshots and shape.matches(header) for shape in _CSV_SHAPES)
+
+
+def warn_unstageable_layout(scan: pl.LazyFrame, relative: str, context: LayoutContext) -> None:
+    header = set(scan.collect_schema().names())
+    if context.calendar is None and _wants_snapshots(header):
+        log.warning(
+            "plexos: deferring Data File %s: it gives its values by pattern, and the model's "
+            "Horizon sets no snapshots to expand them onto",
+            relative,
+        )
+        return
+    if context.horizon_year is None and _wants_a_year(header):
         log.warning(
             "plexos: deferring Data File %s: its rows carry no year, and neither the "
             "selected Model's Horizon nor the source's 'horizon_year' parameter names one "
@@ -159,28 +228,46 @@ def _has_period_columns(header: set[str]) -> bool:
     return bool(remaining) and all(name.isdigit() for name in remaining)
 
 
-def _has_one_value_per_day(header: set[str]) -> bool:
-    """A dated row carrying a single value column, which the file names itself."""
-    return set(_DAY_KEY) <= header and len(header - set(_DAY_KEY)) == 1
+def _has_values_by_day(header: set[str]) -> bool:
+    """A row a day, with one value column or one column for each object that reads it.
+
+    A Name or a Pattern column belongs to a layout of its own.
+    """
+    if not set(_DAY_KEY) <= header or header & {PlexosCsvCol.NAME, PlexosCsvCol.PATTERN}:
+        return False
+    return bool(header - set(_DAY_KEY))
+
+
+class ReshapedFile(NamedTuple):
+    """The series of one Data File for its owners, and the keys that the file states twice."""
+
+    frame: pl.LazyFrame
+    repeated: RepeatedRows
 
 
 def reshape_for_file(
-    scan: pl.LazyFrame, owners: Rows, horizon_year: int | None, sample_scope: SampleScope
-) -> pl.LazyFrame | None:
+    scan: pl.LazyFrame, relative: str, owners: Rows, context: LayoutContext
+) -> ReshapedFile | None:
     """Reshape one Data File CSV once, whatever its PLEXOS layout, then scale and restrict it
-    to the objects in ``owners`` that read it.
+    to the objects in ``owners`` that read it. A key that the file states twice keeps its
+    first row, and the result says which keys repeat.
 
     Returns None when no layout recognises the header (the layout-support check already
     filtered most of these), and when the matching layout cannot read this file's value
     columns, e.g. neither a lone Value column nor sample-numbered ones.
     """
     columns = scan.collect_schema().names()
-    shape = _choose_shape(set(columns), horizon_year)
+    shape = _choose_shape(set(columns), context)
     if shape is None:
         return None
     owner_names = {row[PlexosPropertyCol.CHILD_OBJECT] for row in owners}
-    frame = shape.reshape(_CsvToReshape(scan, columns, owner_names, sample_scope, horizon_year))
-    return None if frame is None else _attach_owners(frame, _owner_table(owners))
+    frame = shape.reshape(_CsvToReshape(scan, relative, columns, owner_names, context))
+    if frame is None:
+        return None
+    return ReshapedFile(
+        _attach_owners(drop_repeated_rows(frame), _owner_table(owners)),
+        build_repeated_rows(frame, {_build_row_key(row) for row in owners}),
+    )
 
 
 def _generic_value_columns(
@@ -195,8 +282,8 @@ def _generic_value_columns(
     even alongside a column neither a sample nor an object names (e.g. a text note PLEXOS
     exports but nothing reads); that extra column is simply not among the ones unpivoted.
     """
-    if _CSV_VALUE in value_columns:
-        return {None: _CSV_VALUE}
+    if PlexosCsvCol.VALUE in value_columns:
+        return {None: PlexosCsvCol.VALUE}
     if value_columns and all(name.isdigit() for name in value_columns):
         if sample_scope is SampleScope.FIRST:
             lowest = min(value_columns, key=int)
@@ -212,12 +299,14 @@ def _reshape_period(
     sample_scope: SampleScope,
     owner_names: set[str],
 ) -> pl.LazyFrame | None:
-    key = set(_PERIOD_KEY) | set(_PERIOD_KEY_NO_YEAR) | {_CSV_NAME}
+    key = set(_PERIOD_KEY) | set(_PERIOD_KEY_NO_YEAR) | {PlexosCsvCol.NAME}
     value_columns = [c for c in columns if c not in key]
-    dated = scan.filter(_is_real_date(year, pl.col(_CSV_MONTH), pl.col(_CSV_DAY)))
-    snapshot = pl.datetime(year, pl.col(_CSV_MONTH), pl.col(_CSV_DAY), pl.col(_CSV_PERIOD) - 1)
+    dated = scan.filter(_is_real_date(year, pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY)))
+    snapshot = pl.datetime(
+        year, pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY), pl.col(PlexosCsvCol.PERIOD) - 1
+    )
     stamped = dated.with_columns(snapshot.alias(StagedTimeSeriesCol.SNAPSHOT))
-    if _CSV_NAME in columns:
+    if PlexosCsvCol.NAME in columns:
         # A file holding one row per object per period keys its rows by name, not its columns.
         return _select_named(stamped, value_columns, sample_scope)
     return _select_series(stamped, value_columns, sample_scope, owner_names)
@@ -238,14 +327,20 @@ def _reshape_period_columns(scan: pl.LazyFrame, columns: list[str]) -> pl.LazyFr
     """
     period_columns = [name for name in columns if name not in set(_DAY_KEY)]
     minutes_per_period = _MINUTES_PER_DAY // len(period_columns)
-    dated = scan.filter(_is_real_date(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY)))
+    dated = scan.filter(
+        _is_real_date(
+            pl.col(PlexosCsvCol.YEAR), pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY)
+        )
+    )
     melted = dated.unpivot(
         index=list(_DAY_KEY),
         on=period_columns,
         variable_name=_PERIOD_COLUMN_VAR,
         value_name=StagedTimeSeriesCol.VALUE,
     )
-    start_of_day = pl.datetime(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY))
+    start_of_day = pl.datetime(
+        pl.col(PlexosCsvCol.YEAR), pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY)
+    )
     into_day = pl.duration(
         minutes=(pl.col(_PERIOD_COLUMN_VAR).cast(pl.Int32) - 1) * minutes_per_period
     )
@@ -261,24 +356,34 @@ def _reshape_daily(
 ) -> pl.LazyFrame | None:
     """One row per day, the value in the single column left over after the date."""
     value_columns = [name for name in columns if name not in set(_DAY_KEY)]
-    dated = scan.filter(_is_real_date(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY)))
-    snapshot = pl.datetime(pl.col(_CSV_YEAR), pl.col(_CSV_MONTH), pl.col(_CSV_DAY))
+    dated = scan.filter(
+        _is_real_date(
+            pl.col(PlexosCsvCol.YEAR), pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY)
+        )
+    )
+    snapshot = pl.datetime(
+        pl.col(PlexosCsvCol.YEAR), pl.col(PlexosCsvCol.MONTH), pl.col(PlexosCsvCol.DAY)
+    )
     stamped = dated.with_columns(snapshot.alias(StagedTimeSeriesCol.SNAPSHOT))
     sole_column = value_columns[0]
-    names_a_quantity = sole_column not in owner_names and sole_column != _CSV_VALUE
+    names_a_quantity = (
+        len(value_columns) == 1
+        and sole_column not in owner_names
+        and sole_column != PlexosCsvCol.VALUE
+    )
     if names_a_quantity:
         # The column labels what the number is (PLEXOS writes "Inflows"), not which object
         # it belongs to, so it is the shared series rather than one object's column.
-        stamped = stamped.rename({sole_column: _CSV_VALUE})
-        value_columns = [_CSV_VALUE]
+        stamped = stamped.rename({sole_column: PlexosCsvCol.VALUE})
+        value_columns = [PlexosCsvCol.VALUE]
     return _select_series(stamped, value_columns, sample_scope, owner_names)
 
 
 def _reshape_datetime(
     scan: pl.LazyFrame, columns: list[str], sample_scope: SampleScope, owner_names: set[str]
 ) -> pl.LazyFrame | None:
-    value_columns = [c for c in columns if c != _CSV_DATETIME]
-    snapshot = pl.col(_CSV_DATETIME).str.to_datetime(strict=False)
+    value_columns = [c for c in columns if c != PlexosCsvCol.DATETIME]
+    snapshot = pl.col(PlexosCsvCol.DATETIME).str.to_datetime(strict=False)
     stamped = scan.with_columns(snapshot.alias(StagedTimeSeriesCol.SNAPSHOT))
     return _select_series(stamped, value_columns, sample_scope, owner_names)
 
@@ -286,7 +391,7 @@ def _reshape_datetime(
 def _reshape_monthly_by_name(scan: pl.LazyFrame, horizon_year: int) -> pl.LazyFrame:
     """Every object's twelve calendar-month values in one pass; the Name column self-identifies."""
     melted = scan.unpivot(
-        index=_CSV_NAME,
+        index=PlexosCsvCol.NAME,
         on=list(_MONTH_COLUMNS),
         variable_name=_CSV_MONTH_VAR,
         value_name=StagedTimeSeriesCol.VALUE,
@@ -294,7 +399,7 @@ def _reshape_monthly_by_name(scan: pl.LazyFrame, horizon_year: int) -> pl.LazyFr
     month = pl.col(_CSV_MONTH_VAR).str.slice(1).cast(pl.Int32)
     snapshot = pl.datetime(pl.lit(horizon_year), month, pl.lit(1))
     stamped = melted.with_columns(snapshot.alias(StagedTimeSeriesCol.SNAPSHOT))
-    return stamped.rename({_CSV_NAME: StagedTimeSeriesCol.COMPONENT}).with_columns(
+    return stamped.rename({PlexosCsvCol.NAME: StagedTimeSeriesCol.COMPONENT}).with_columns(
         pl.lit(None, dtype=pl.Utf8).alias(StagedTimeSeriesCol.SAMPLE)
     )
 
@@ -314,13 +419,63 @@ def _reshape_monthly_in_year(csv: _CsvToReshape) -> pl.LazyFrame | None:
     return _reshape_monthly_by_name(csv.scan, csv.horizon_year)
 
 
+def _reshape_by_pattern(csv: _CsvToReshape) -> pl.LazyFrame | None:
+    """A value for each object and pattern, spread over the snapshots each pattern covers.
+
+    The file names each object in a Name column, or gives each object a column of its own. A
+    Year column keeps a row to the snapshots of its own year. A snapshot two patterns cover
+    takes the first. The patterns are a column subset, so they are safe to collect. A row
+    with a blank Pattern cell matches no pattern, so the join leaves it out.
+    """
+    if csv.calendar is None:
+        return None
+    pattern = PlexosCsvCol.PATTERN
+    text = csv.scan.with_columns(pl.col(pattern).cast(pl.String))
+    patterns = text.select(pattern).unique().collect()[pattern].to_list()
+    stamped = text.join(
+        csv.calendar.build_assignment(patterns, csv.relative).lazy(),
+        on=PlexosCsvCol.PATTERN,
+        maintain_order="left",
+    )
+    if PlexosCsvCol.YEAR in csv.columns:
+        stamped = stamped.filter(
+            pl.col(PlexosCsvCol.YEAR) == pl.col(StagedTimeSeriesCol.SNAPSHOT).dt.year()
+        )
+    value_columns = [
+        c
+        for c in csv.columns
+        if c not in {PlexosCsvCol.NAME, PlexosCsvCol.PATTERN, PlexosCsvCol.YEAR}
+    ]
+    if PlexosCsvCol.NAME in csv.columns:
+        first = _drop_later_patterns(stamped, [PlexosCsvCol.NAME, StagedTimeSeriesCol.SNAPSHOT])
+        return _select_pattern_rows_by_name(first, value_columns, csv.sample_scope)
+    first = _drop_later_patterns(stamped, [StagedTimeSeriesCol.SNAPSHOT])
+    return _select_series(first, value_columns, csv.sample_scope, csv.owner_names)
+
+
+def _drop_later_patterns(stamped: pl.LazyFrame, keys: list[str]) -> pl.LazyFrame:
+    """Keep the first row of the file for each key, before an unpivot can reorder the rows."""
+    return stamped.unique(subset=keys, keep="first", maintain_order=True)
+
+
+def _select_pattern_rows_by_name(
+    stamped: pl.LazyFrame, value_columns: list[str], sample_scope: SampleScope
+) -> pl.LazyFrame | None:
+    chosen = _generic_value_columns(value_columns, sample_scope)
+    if chosen is None:
+        return None
+    text = stamped.with_columns(pl.col(PlexosCsvCol.NAME).cast(pl.String))
+    melted = _unpivot_samples(text, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, PlexosCsvCol.NAME])
+    return melted.rename({PlexosCsvCol.NAME: StagedTimeSeriesCol.COMPONENT})
+
+
 # In order: the first layout a header matches is the one that reads it. No two overlap
 # today, so the order records intent rather than resolving a clash.
 _CSV_SHAPES: tuple[_CsvShape, ...] = (
     _CsvShape(
         lambda header: set(_PERIOD_KEY) <= header,
         lambda csv: _reshape_period(
-            csv.scan, csv.columns, pl.col(_CSV_YEAR), csv.sample_scope, csv.owner_names
+            csv.scan, csv.columns, pl.col(PlexosCsvCol.YEAR), csv.sample_scope, csv.owner_names
         ),
     ),
     _CsvShape(
@@ -329,7 +484,7 @@ _CSV_SHAPES: tuple[_CsvShape, ...] = (
         needs_a_year=True,
     ),
     _CsvShape(
-        lambda header: _CSV_DATETIME in header,
+        lambda header: PlexosCsvCol.DATETIME in header,
         lambda csv: _reshape_datetime(csv.scan, csv.columns, csv.sample_scope, csv.owner_names),
     ),
     _CsvShape(
@@ -337,13 +492,18 @@ _CSV_SHAPES: tuple[_CsvShape, ...] = (
         lambda csv: _reshape_period_columns(csv.scan, csv.columns),
     ),
     _CsvShape(
-        _has_one_value_per_day,
+        _has_values_by_day,
         lambda csv: _reshape_daily(csv.scan, csv.columns, csv.sample_scope, csv.owner_names),
     ),
     _CsvShape(
-        lambda header: _CSV_NAME in header and set(_MONTH_COLUMNS) <= header,
+        lambda header: PlexosCsvCol.NAME in header and set(_MONTH_COLUMNS) <= header,
         _reshape_monthly_in_year,
         needs_a_year=True,
+    ),
+    _CsvShape(
+        lambda header: PlexosCsvCol.PATTERN in header,
+        _reshape_by_pattern,
+        needs_snapshots=True,
     ),
 )
 
@@ -355,8 +515,10 @@ def _select_named(
     chosen = _generic_value_columns(value_columns, sample_scope)
     if chosen is None:
         return None
-    melted = _unpivot_samples(stamped, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, _CSV_NAME])
-    return melted.rename({_CSV_NAME: StagedTimeSeriesCol.COMPONENT})
+    melted = _unpivot_samples(
+        stamped, chosen, index=[StagedTimeSeriesCol.SNAPSHOT, PlexosCsvCol.NAME]
+    )
+    return melted.rename({PlexosCsvCol.NAME: StagedTimeSeriesCol.COMPONENT})
 
 
 def _select_series(
@@ -427,8 +589,14 @@ def _owner_table(owners: Rows) -> pl.LazyFrame:
         {
             StagedTimeSeriesCol.COMPONENT: [row[PlexosPropertyCol.CHILD_OBJECT] for row in owners],
             _OWNER_SCALING_COL: [row[PlexosPropertyCol.SCALING] for row in owners],
+            _ROW_KEY_COL: [_build_row_key(row) for row in owners],
         }
     )
+
+
+def _build_row_key(row: dict[str, Any]) -> str:
+    """The owner's row name in a self-naming file, folded to lower case."""
+    return str(row.get(PlexosPropertyCol.ROW_NAME) or row[PlexosPropertyCol.CHILD_OBJECT]).lower()
 
 
 def _attach_owners(frame: pl.LazyFrame, owners: pl.LazyFrame) -> pl.LazyFrame:
@@ -442,7 +610,11 @@ def _attach_owners(frame: pl.LazyFrame, owners: pl.LazyFrame) -> pl.LazyFrame:
     """
     is_self_named = StagedTimeSeriesCol.COMPONENT in frame.collect_schema().names()
     joined = (
-        frame.join(owners, on=StagedTimeSeriesCol.COMPONENT, how="inner")
+        frame.with_columns(
+            pl.col(StagedTimeSeriesCol.COMPONENT).str.to_lowercase().alias(_ROW_KEY_COL)
+        )
+        .drop(StagedTimeSeriesCol.COMPONENT)
+        .join(owners, on=_ROW_KEY_COL, how="inner")
         if is_self_named
         else frame.join(owners, how="cross")
     )

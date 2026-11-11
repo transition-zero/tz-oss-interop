@@ -27,7 +27,9 @@ from interop.plugins.shared.plexos_constants import PlexosClass, PlexosProperty
 from interop.plugins.shared.plexos_pypsa_translations._transmission import (
     StagedLine,
     read_transmission,
+    report_unstaged_lines,
 )
+from interop.plugins.shared.plexos_pypsa_translations.constants import UNSTAGED_PLACEHOLDER_NOTE
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     MappedColumns,
@@ -62,7 +64,6 @@ SINGLE_CIRCUIT: float = 1.0
 ZERO_LENGTH: float = 0.0
 NO_REACTIVE_LIMIT: float = 0.0
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS Line states no availability; every line is available"
 _BASE_POWER_NOTE = "PLEXOS states no network power base; the system base of 100 MVA applies"
 _FLOW_NOTE = "PLEXOS states no starting flow; the flow columns default to 0.0"
@@ -156,6 +157,7 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
         )
     translated = TranslatedTransmission([], [], [], [])
     first_id = build_first_free_id(state)
+    mapped: list[StagedLine] = []
     for line in source.lines:
         if not _endpoints_are_buses(line, voltages):
             reporter = line_reporter if line.is_electrical else link_reporter
@@ -163,10 +165,12 @@ def map_transmission(state: State, recorder: ScopedRecorder) -> TranslatedTransm
                 SourceValue(PlexosClass.LINE, line.name, None, None), _BUSLESS_NOTE
             )
             continue
+        mapped.append(line)
         if line.is_electrical:
             _add_line(translated, line, voltages, line_reporter, first_id)
         else:
             _add_link(translated, line, link_reporter, first_id)
+    report_unstaged_lines(line_reporter, link_reporter, mapped)
     return translated
 
 
@@ -199,7 +203,7 @@ def _add_line(
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLineCol.NAME, line.name)
     row[SiennaLineCol.ID] = first_id + len(translated.lines) + len(translated.links)
-    reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID], _ID_NOTE)
+    reporter.record_id(line.name, SiennaLineCol.ID, row[SiennaLineCol.ID])
     translated.lines.append(row)
     _record_dropped(reporter, line, _DROPPED_LINE_PROPERTIES)
     translated.line_extensions.append(
@@ -223,7 +227,7 @@ def _add_link(
     reporter.record_mapping(line.name, mapping)
     row = destination_row(mapping, SiennaLinkCol.NAME, line.name)
     row[SiennaLinkCol.ID] = first_id + len(translated.lines) + len(translated.links)
-    reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID], _ID_NOTE)
+    reporter.record_id(line.name, SiennaLinkCol.ID, row[SiennaLinkCol.ID])
     translated.links.append(row)
     _record_dropped(reporter, line, _DROPPED_LINK_PROPERTIES)
     translated.link_extensions.append(
@@ -317,6 +321,8 @@ def _endpoints(line: StagedLine) -> Decision:
 
 
 def _impedance(line: StagedLine, plexos_property: str, voltage: float) -> Decision:
+    if plexos_property in line.unstaged:
+        return Decision.default(0.0, UNSTAGED_PLACEHOLDER_NOTE.format(property=plexos_property))
     ohms = line.properties.get(plexos_property, 0.0)
     per_unit = ohms * SYSTEM_BASE_MVA / voltage**2 if voltage else 0.0
     source = SourceValue(PlexosClass.LINE, line.name, plexos_property, ohms, UNIT_OHM)
@@ -332,7 +338,7 @@ def _rating(line: StagedLine) -> Decision:
         stated = line.properties.get(PlexosProperty.MAX_FLOW)
         plexos_property = PlexosProperty.MAX_FLOW
     if stated is None:
-        return Decision.default(0.0, _RATING_NOTE)
+        return Decision.default(0.0, _build_unrated_note(line, _RATING_NOTE))
     source = SourceValue(PlexosClass.LINE, line.name, plexos_property, stated, UNIT_MVA)
     return Decision.derived(stated / SYSTEM_BASE_MVA, [source], _RATING_DERIVATION)
 
@@ -354,13 +360,21 @@ def _ratings(line: StagedLine) -> Decision:
     min_flow = line.properties.get(PlexosProperty.MIN_FLOW, 0.0)
     if not max_flow:
         note = _unrated_min_flow_note(min_flow) if min_flow else _LIMITS_NOTE
-        return Decision.default(_build_ratings(0.0, 0.0), note)
+        return Decision.default(_build_ratings(0.0, 0.0), _build_unrated_note(line, note))
     reverse_max = -min_flow if min_flow < 0.0 else 0.0
     sources = [
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MAX_FLOW, max_flow, UNIT_MW),
         SourceValue(PlexosClass.LINE, line.name, PlexosProperty.MIN_FLOW, min_flow, UNIT_MW),
     ]
     return Decision.derived(_build_ratings(max_flow, reverse_max), sources, _LIMITS_DERIVATION)
+
+
+def _build_unrated_note(line: StagedLine, stated_nothing_note: str) -> str:
+    """Why a line has no rating: a rating in a data file that did not stage, or none at all."""
+    for plexos_property in (PlexosProperty.MAX_RATING, PlexosProperty.MAX_FLOW):
+        if plexos_property in line.unstaged:
+            return UNSTAGED_PLACEHOLDER_NOTE.format(property=plexos_property)
+    return stated_nothing_note
 
 
 def _build_ratings(forward_max: float, reverse_max: float) -> PerColumn:

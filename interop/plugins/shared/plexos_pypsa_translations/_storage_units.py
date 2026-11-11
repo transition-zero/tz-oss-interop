@@ -6,9 +6,9 @@ staged tables once, runs all three, and records what each decided, skipped or dr
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Iterable
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
+from typing import NamedTuple
 
 from interop.core.extensions import ExtensionKind, StorageExtension, append_extensions
 from interop.core.pipeline import State
@@ -20,7 +20,9 @@ from interop.plugins.shared.constants import (
 )
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
+    PlexosCollection,
     PlexosProperty,
+    PlexosResolvedTable,
 )
 from interop.plugins.shared.plexos_pypsa_translations._batteries import (
     map_battery,
@@ -37,6 +39,7 @@ from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._shared import (
     ObjectProperties,
+    relate_children,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_hydro import (
     map_turbine,
@@ -51,17 +54,21 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     read_object_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
+    can_pump,
     storage_turbine_names,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     destination_row,
+    warn_about_groups,
     warn_about_skips,
 )
 from interop.plugins.shared.pypsa_constants import (
     STORAGE_UNITS_DESTINATION_SCHEMA,
+    PyPSACarrier,
     PyPSAComponent,
     PyPSADestinationTable,
     PyPSAStorageUnitCol,
@@ -82,40 +89,106 @@ def write_storage_units(state: State, mappings: list[StorageUnitMapping]) -> Non
 
 
 @dataclass(frozen=True)
-class _DerivedStorageUnits:
+class DerivedStorageUnits:
+    """Every storage unit, each unit the mapping skips, and what the mapping read."""
+
     mappings: list[StorageUnitMapping]
     skipped: list[SkippedComponent]
-    dropped: list[_DroppedValue] = dataclass_field(default_factory=list)
+    lookups: StorageLookups
+    # The Generators the storage mapping claims, and the units it leaves to the generators.
+    turbines: frozenset[str]
+    thermal_store_users: frozenset[str]
 
 
-def derive_storage_units(state: State) -> _DerivedStorageUnits:
+@dataclass(frozen=True)
+class StorageSkips:
+    """What the mapping leaves out of the Storages: a whole Storage, or one value it states."""
+
+    skipped: list[SkippedComponent]
+    dropped: list[DroppedValue]
+
+
+# A Storage that only thermal units draw on holds their fuel, not water.
+FUEL_STORE_NOTE = (
+    "only thermal units draw on this Storage, so it holds fuel, and Sienna states no fuel store"
+)
+_FUEL_STORE_GROUP = SkipGroup(
+    "Storage(s)", "hold fuel that only thermal units draw on, and Sienna states no fuel store"
+)
+
+
+def derive_storage_units(
+    state: State, thermal_store_users: frozenset[str] = frozenset()
+) -> DerivedStorageUnits:
+    """Every storage unit, leaving to the generator mapping each thermal unit that draws on a
+    Storage of fuel.
+    """
     lookups = build_lookups(state)
-    claimed = storage_turbine_names(state)
+    claimed = storage_turbine_names(state) - thermal_store_users
     turbines = [name for name in read_object_names(state, PlexosClass.GENERATOR) if name in claimed]
-    storages = read_object_names(state, PlexosClass.STORAGE)
-    return _merge(
-        _map_each(read_object_names(state, PlexosClass.BATTERY), map_battery, lookups),
-        _map_each(turbines, map_turbine, lookups),
-        _DerivedStorageUnits([], orphan_storage_skips(storages, lookups)),
-        _DerivedStorageUnits([], [], _dropped_values(state, lookups)),
+    batteries = _map_each(read_object_names(state, PlexosClass.BATTERY), map_battery, lookups)
+    turbine_units = _map_each(turbines, map_turbine, lookups)
+    return DerivedStorageUnits(
+        mappings=[*batteries.mappings, *turbine_units.mappings],
+        skipped=[*batteries.skipped, *turbine_units.skipped],
+        lookups=lookups,
+        turbines=claimed,
+        thermal_store_users=thermal_store_users,
     )
 
 
-def _merge(*parts: _DerivedStorageUnits) -> _DerivedStorageUnits:
-    return _DerivedStorageUnits(
-        mappings=[mapping for part in parts for mapping in part.mappings],
-        skipped=[skipped for part in parts for skipped in part.skipped],
-        dropped=[dropped for part in parts for dropped in part.dropped],
+def build_storage_skips(
+    state: State, units: DerivedStorageUnits, held_storages: Collection[str] = frozenset()
+) -> StorageSkips:
+    """What the mapping leaves out of each Storage, except a Storage that another component
+    holds and reports itself.
+    """
+    storages = [
+        name for name in read_object_names(state, PlexosClass.STORAGE) if name not in held_storages
+    ]
+    return StorageSkips(
+        skipped=[
+            *orphan_storage_skips(storages, units.lookups),
+            *_list_fuel_store_skips(state, units, storages),
+        ],
+        dropped=[
+            *_dropped_values(state, units.lookups, held_storages),
+            *_list_unused_pumps(units),
+        ],
     )
+
+
+def _list_fuel_store_skips(
+    state: State, units: DerivedStorageUnits, storages: list[str]
+) -> list[SkippedComponent]:
+    """Each Storage that only thermal units draw on, so it holds fuel that Sienna cannot store."""
+    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    heads = relate_children(memberships, PlexosClass.GENERATOR, PlexosCollection.HEAD_STORAGE)
+    fuel_stores = {store for name in units.thermal_store_users for store in heads.get(name, [])}
+    water_stores = {store for name in units.turbines for store in heads.get(name, [])}
+    return [
+        SkippedComponent(
+            SourceValue(PlexosClass.STORAGE, store, PlexosCollection.HEAD_STORAGE, None),
+            FUEL_STORE_NOTE,
+            _FUEL_STORE_GROUP,
+        )
+        for store in sorted(fuel_stores - water_stores)
+        if store in storages
+    ]
+
+
+class _MappedUnits(NamedTuple):
+    mappings: list[StorageUnitMapping]
+    skipped: list[SkippedComponent]
 
 
 def _map_each(
     names: list[str],
     map_one: Callable[[str, StorageLookups], MappedOrSkipped],
     lookups: StorageLookups,
-) -> _DerivedStorageUnits:
+) -> _MappedUnits:
     outcomes = [map_one(name, lookups) for name in names]
-    return _DerivedStorageUnits(
+    return _MappedUnits(
         mappings=[out for out in outcomes if isinstance(out, StorageUnitMapping)],
         skipped=[out for out in outcomes if isinstance(out, SkippedComponent)],
     )
@@ -125,11 +198,22 @@ def _map_each(
 
 
 @dataclass(frozen=True)
-class _DroppedValue:
-    """A PLEXOS value the mapping read nothing from, recorded so the gap is not silent."""
+class DroppedValue:
+    """A PLEXOS value the mapping read nothing from, recorded so the gap is not silent.
+
+    ``warn_with`` is set where one warning names each object that drops a value this way.
+    """
 
     source: SourceValue
     note: str
+    warn_with: SkipGroup | None = None
+
+
+def warn_about_dropped(dropped: Iterable[DroppedValue]) -> None:
+    """One warning for each reason that warns, which names each object once."""
+    warn_about_groups(
+        {(one.warn_with, one.source.name) for one in dropped if one.warn_with is not None}
+    )
 
 
 @dataclass(frozen=True)
@@ -175,10 +259,67 @@ _TAIL_DROPPED: dict[str, _DroppedProperty] = {
 }
 
 
-def _dropped_values(state: State, lookups: StorageLookups) -> list[_DroppedValue]:
-    """Every stated property the mapping reads nothing from, whatever became of its object."""
-    tails = sorted(set(lookups.tail_by_generator.values()))
+class _UnusedPump(NamedTuple):
+    """Why a turbine on a head Storage does not pump, and the pump properties it drops."""
+
+    units_by_property: dict[str, str]
+    note: str
+    group: SkipGroup
+
+
+_GENERATES_ONLY = "so each one generates and does not pump"
+
+_NO_PUMP_LOAD = _UnusedPump(
+    {PlexosProperty.PUMP_EFFICIENCY: UNIT_PERCENT},
+    "this Generator states no Pump Load above 0 MW, so it does not pump, and its "
+    "{property} is dropped",
+    SkipGroup("Generator(s)", "state a Pump Efficiency but no Pump Load", _GENERATES_ONLY),
+)
+
+_NO_TAIL = _UnusedPump(
+    {PlexosProperty.PUMP_LOAD: UNIT_MW, PlexosProperty.PUMP_EFFICIENCY: UNIT_PERCENT},
+    "this Generator has no Tail Storage to pump from, so it does not pump, and its "
+    "{property} is dropped",
+    SkipGroup("Generator(s)", "state a Pump Load but have no Tail Storage", _GENERATES_ONLY),
+)
+
+
+def _list_unused_pumps(units: DerivedStorageUnits) -> list[DroppedValue]:
+    """Each pump property of a turbine that the mapping makes reservoir hydro."""
+    properties = units.lookups.read_properties_of(PlexosClass.GENERATOR)
+    return [
+        dropped
+        for mapping in units.mappings
+        if mapping.carrier.value is PyPSACarrier.HYDRO
+        for dropped in _drop_pump_properties(mapping.name, properties.get(mapping.name, {}))
+    ]
+
+
+def _drop_pump_properties(name: str, stated: dict[str, float]) -> list[DroppedValue]:
+    """A reservoir-hydro turbine that can pump has no tail, so that is why it does not pump."""
+    reason = _NO_TAIL if can_pump(stated) else _NO_PUMP_LOAD
+    return [
+        DroppedValue(
+            SourceValue(PlexosClass.GENERATOR, name, property_name, stated[property_name], unit),
+            reason.note.format(property=property_name),
+            reason.group,
+        )
+        for property_name, unit in reason.units_by_property.items()
+        if property_name in stated
+    ]
+
+
+def _dropped_values(
+    state: State, lookups: StorageLookups, held_storages: Collection[str]
+) -> list[DroppedValue]:
+    """Every stated property the mapping reads nothing from, whatever became of its object.
+
+    A Storage in ``held_storages`` keeps its volumes and its inflow, so only the properties
+    that no component reads are dropped from it.
+    """
     heads = set(lookups.head_by_generator.values())
+    # A tail that is also a head stays the head reservoir of the turbine below it.
+    tails = sorted(set(lookups.tail_by_generator.values()) - set(held_storages) - heads)
     storages = read_object_names(state, PlexosClass.STORAGE)
     return [
         *_dropped_from(
@@ -189,7 +330,7 @@ def _dropped_values(state: State, lookups: StorageLookups) -> list[_DroppedValue
         ),
         *_dropped_from(storages, PlexosClass.STORAGE, lookups.storage_properties, _STORAGE_DROPPED),
         *_dropped_from(
-            [name for name in storages if name not in heads],
+            [name for name in storages if name not in heads and name not in held_storages],
             PlexosClass.STORAGE,
             lookups.storage_properties,
             _HEADLESS_STORAGE_DROPPED,
@@ -203,9 +344,9 @@ def _dropped_from(
     plexos_class: PlexosClass,
     properties: ObjectProperties,
     dropped: dict[str, _DroppedProperty],
-) -> list[_DroppedValue]:
+) -> list[DroppedValue]:
     return [
-        _DroppedValue(
+        DroppedValue(
             SourceValue(plexos_class, name, property_name, value, dropped[property_name].unit),
             dropped[property_name].note.format(property=property_name),
         )
@@ -218,25 +359,29 @@ def _dropped_from(
 def map_storage_units(state: State, recorder: ScopedRecorder) -> None:
     """Translate every PLEXOS battery, pumped-storage and reservoir-hydro object at once."""
     storage_units = derive_storage_units(state)
-    _record(storage_units, recorder)
+    _record(storage_units, build_storage_skips(state, storage_units), recorder)
     write_storage_units(state, storage_units.mappings)
     _carry_to_extensions(state, storage_units.mappings)
     record_battery_outages(state, storage_units.mappings)
     record_reservoir_inflows(state, storage_units.mappings)
 
 
-def _record(storage_units: _DerivedStorageUnits, recorder: ScopedRecorder) -> None:
+def _record(
+    storage_units: DerivedStorageUnits, skips: StorageSkips, recorder: ScopedRecorder
+) -> None:
     reporter = ComponentReporter(recorder, PyPSAComponent.STORAGE_UNIT)
     for mapping in storage_units.mappings:
         reporter.record_mapping(mapping.name, mapping)
         record_expansion(mapping.name, mapping.expansion, reporter)
         record_lifespan(mapping.name, mapping.lifespan, reporter)
     warn_about_dropped_builds(mapping.expansion for mapping in storage_units.mappings)
-    for skipped in storage_units.skipped:
-        reporter.record_skipped(skipped.source, skipped.note)
-    warn_about_skips(storage_units.skipped)
-    for dropped in storage_units.dropped:
+    skipped = [*storage_units.skipped, *skips.skipped]
+    for one in skipped:
+        reporter.record_skipped(one.source, one.note)
+    warn_about_skips(skipped)
+    for dropped in skips.dropped:
         reporter.record_dropped(dropped.source, dropped.note)
+    warn_about_dropped(skips.dropped)
 
 
 def _carry_to_extensions(state: State, mappings: list[StorageUnitMapping]) -> None:

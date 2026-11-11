@@ -32,6 +32,7 @@ direction.
 | [`RenewableDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`RenewableNonDispatch`](#renewabledispatch-and-renewablenondispatch--generator) | `Generator` |
 | [`HydroDispatch`](#hydrodispatch--storageunit) | `StorageUnit` with the carrier `hydro` |
+| [`HydroTurbine`](#hydroturbine--storageunit) | `StorageUnit` with the carrier `hydro`, the same as a `HydroDispatch` |
 | [`EnergyReservoirStorage`](#energyreservoirstorage--storageunit) | `StorageUnit` with the carrier of its `storage` record, else the carrier of its prime mover |
 | [`Line`](#line-and-monitoredline--line) | `Line` |
 | [`MonitoredLine`](#line-and-monitoredline--line) | `Line`, the same as a `Line` |
@@ -286,6 +287,29 @@ The `storage` record of the same name can give `max_hours`, `state_of_charge_ini
 `inflow`. The translator maps no other field of a sidecar record for a `HydroDispatch`.
 `p_nom_extendable` is always `False`. Each other field of the `storage` record, and each
 field of a `generator` record of the same name, travels on to the PyPSA sidecar.
+
+### `HydroTurbine` → `StorageUnit`
+
+A `HydroTurbine` states every field of a `HydroDispatch`, and the translator maps those fields
+as the table above gives. The fields below are the ones that only a `HydroTurbine` states.
+
+| `HydroTurbine` field | PyPSA field | Mapping |
+| --- | --- | --- |
+| `efficiency` | `efficiency_dispatch` | `derived`. If absent, `1.0` (`default`). |
+| `hydro_budget` series | `inflow` | `hydro_budget` × `base_power` ÷ `efficiency`, because PyPSA multiplies what leaves the store by `efficiency_dispatch` |
+| No field | `efficiency_store` | `1.0` (`default`), because a turbine does not pump |
+| `commitment_mode`, `conversion_factor`, `outflow_limits`, `powerhouse_elevation`, `travel_time`, `turbine_type` | No field | `NOT_MAPPED` |
+
+The translator writes one `NOT_MAPPED` row for each of these six fields that a turbine states.
+It also writes one warning for each field. The warning names three turbines.
+
+No sidecar record states an efficiency for a hydro unit. A `storage` record has no efficiency
+field. The translator does not apply the `efficiency` of a `generator` record to a hydro unit,
+and that field travels on to the PyPSA sidecar. Thus the `efficiency` of the turbine is the one
+source of `efficiency_dispatch`.
+
+The translator does not read the `HydroReservoir` of a turbine. Refer to
+[Parts that the report names](#parts-that-the-report-names).
 
 ## `EnergyReservoirStorage` → `StorageUnit`
 
@@ -664,6 +688,7 @@ its values in the time-series sidecar. The translator reads five series and leav
 | `RenewableNonDispatch` `max_active_power` | `generators.p_max_pu` | `rating` ÷ `base_power` |
 | `ThermalStandard` `max_active_power` | `generators.p_max_pu` | `active_power_limits.max` ÷ `base_power` |
 | `HydroDispatch` `hydro_budget` | `storage_units.inflow` | `base_power` |
+| `HydroTurbine` `hydro_budget` | `storage_units.inflow` | `base_power` ÷ `efficiency` |
 
 A companion parquet beside `extensions.json` can hold a series too:
 
@@ -775,7 +800,8 @@ number back as `up_time_before = 0`. A real prior on-time of exactly 10000 hours
 `efficiency_dispatch`, `state_of_charge_initial`, `cyclic_state_of_charge` and
 `p_nom_extendable` have no `HydroDispatch` field. A PyPSA storage unit with six hours of
 storage and 90% efficiency comes back as a one-hour unit with 100% efficiency. The report
-gives a row for each of the six.
+gives a row for each of the six. A `HydroTurbine` keeps its `efficiency` as
+`efficiency_dispatch`, but its `efficiency_store` is always `1.0`.
 
 **The carriers that share a prime mover.** Several PyPSA carriers map to one Sienna pair.
 `coal` and `lignite` are both `ST` and `COAL`. `offwind-ac` and `offwind-dc` are both `WS`.
@@ -826,7 +852,6 @@ name one.
 | --- | --- |
 | `ACBus.number`, `.angle`, `.magnitude`, `.voltage_limits` | The bus keeps PyPSA's own defaults for the voltage state. |
 | `ACBus.available` | Every bus goes into the network. A bus stays there even where your system marks it unavailable. |
-| `ACBus.load_zone` | The zonal group is lost. The `Area` group still goes to the bus `location`. |
 | `PowerLoad.available`, `.active_power`, `.reactive_power`, `.base_power`, `.max_reactive_power`, `.conformity` | This pipeline holds no reactive demand on a load. |
 | `operation_cost.vom_cost` and `operation_cost.fixed` on a generator | Only the proportional term of the variable cost reaches `marginal_cost`. |
 | The `constant_term` and the `input_at_zero` of any cost curve | PyPSA holds one linear cost. The other terms of the curve are lost. |
@@ -836,8 +861,19 @@ name one.
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
 | A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
-| A reserve of any type | PyPSA has no reserve component. A reserve record in the sidecar travels on to the PyPSA sidecar. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
+
+### Parts that the report names
+
+PyPSA cannot hold the parts below. The translator leaves each one out. It writes one
+`decisions.md` row for each, and one warning for each type. The warning names three.
+
+| Sienna | Row kind | Effect |
+| --- | --- | --- |
+| A component of a type that no table above reads, such as `LoadZone`, `OnlineReserve` or `OfflineReserve` | `COMPONENT_SKIPPED` | The component is lost. The `load_zone` of each bus is lost with its `LoadZone`, and the `Area` still goes to the bus `location`. A reserve record in the sidecar travels on to the PyPSA sidecar. |
+| `HydroReservoir` | `COMPONENT_SKIPPED`, and `NOT_MAPPED` for `storage_level_limits`, `initial_level`, `inflow`, `outflow` and each series it owns | A hydro `StorageUnit` reads its reservoir from the `storage` record of the sidecar only. With no sidecar, it takes the PyPSA defaults. |
+| A row of `service_associations` | `NOT_MAPPED`, against the component that contributes | The contribution to the service is lost. |
+| A supplemental attribute, such as a `GeometricDistributionForcedOutage` | `NOT_MAPPED`, against the component it describes | The attribute is lost. |
 
 ## What the report tells you
 
@@ -848,9 +884,9 @@ appear.
 | --- | --- |
 | `VALUE_DERIVED` | The translator wrote the value from your data. The row gives the formula. A field of the sidecar that travels on to the PyPSA sidecar gets this kind too. |
 | `TRANSLATOR_DEFAULT_APPLIED` | Sienna held no such value. The row gives the default and says why. |
-| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, an annual energy bound that does not apply, a sidecar record that no mapping read, and a sidecar field that no mapping maps or relays. |
+| `NOT_MAPPED` | The value did not reach the network. This covers a profile that does not fit the snapshot window, an annual energy bound that does not apply, a sidecar record that no mapping read, a sidecar field that no mapping maps or relays, and the parts that [Parts that the report names](#parts-that-the-report-names) lists. |
 
-`COMPONENT_SKIPPED` appears only for a representative period that cannot weight its
-snapshots. The translator leaves out no component.
-A value that it cannot use stops the run instead.
+`COMPONENT_SKIPPED` appears for a representative period that cannot weight its snapshots,
+and for each component that [Parts that the report names](#parts-that-the-report-names)
+lists. A value that the translator cannot use stops the run instead.
 [Across all components](#across-all-components) names each such value.

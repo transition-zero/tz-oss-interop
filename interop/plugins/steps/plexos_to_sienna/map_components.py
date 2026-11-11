@@ -22,6 +22,7 @@ from interop.plugins.steps.plexos_to_sienna.map_generators import (
     PlexosToSiennaMapGenerators,
 )
 from interop.plugins.steps.plexos_to_sienna.map_loads import PlexosToSiennaMapLoads
+from interop.plugins.steps.plexos_to_sienna.map_outages import PlexosToSiennaMapOutages
 from interop.plugins.steps.plexos_to_sienna.map_reserves import PlexosToSiennaMapReserves
 from interop.plugins.steps.plexos_to_sienna.map_storage import PlexosToSiennaMapStorage
 from interop.plugins.steps.plexos_to_sienna.map_transmission import (
@@ -42,7 +43,8 @@ class PlexosToSiennaMapComponents(TranslationStep):
     here inside its own ``ScopedRecorder`` so its decisions attribute to that sub-step
     rather than to this composite.
 
-    Sub-steps run in dependency order: buses first, then everything that names a bus.
+    Sub-steps run in dependency order: buses first, then everything that names a bus, then
+    the reserves, which name the units.
 
     The step reads the user's PLEXOS mappings file itself. Declaring the schema on
     ``__init__`` is what makes ``UserMappingsLoader`` ask for the file in PLEXOS words.
@@ -65,8 +67,9 @@ class PlexosToSiennaMapComponents(TranslationStep):
                 _scoped(recorder, PlexosToSiennaMapGenerators.name), targets
             ),
             PlexosToSiennaMapTransmission(_scoped(recorder, PlexosToSiennaMapTransmission.name)),
-            PlexosToSiennaMapReserves(_scoped(recorder, PlexosToSiennaMapReserves.name)),
             PlexosToSiennaMapStorage(_scoped(recorder, PlexosToSiennaMapStorage.name), targets),
+            PlexosToSiennaMapReserves(_scoped(recorder, PlexosToSiennaMapReserves.name)),
+            PlexosToSiennaMapOutages(_scoped(recorder, PlexosToSiennaMapOutages.name)),
             PlexosToSiennaMapConstraints(_scoped(recorder, PlexosToSiennaMapConstraints.name)),
         )
 

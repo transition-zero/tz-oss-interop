@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel
@@ -10,16 +10,20 @@ from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.pypsa_sienna_translations import (
     ARC_TRANSLATIONS,
     AREA_TRANSLATIONS,
+    LOAD_ZONE_TRANSLATIONS,
     build_arcs_source_table,
-    build_areas_source_table,
+    build_bus_group_source_table,
 )
 from interop.plugins.shared.sienna_constants import (
     ARCS_DESTINATION_SCHEMA,
     AREAS_DESTINATION_SCHEMA,
+    LOAD_ZONES_DESTINATION_SCHEMA,
+    SiennaACBusCol,
     SiennaComponent,
     SiennaLineCol,
 )
 from interop.plugins.shared.translation_runner import (
+    Translation,
     apply_translations,
     enrich_first_id,
     finalise,
@@ -32,8 +36,31 @@ _BRANCH_COMPONENTS: tuple[str, ...] = (
 )
 
 
+class _BusGroup(NamedTuple):
+    """A component that buses name, and how its table is built."""
+
+    component: SiennaComponent
+    bus_column: str
+    translations: list[Translation]
+    schema: dict[str, pl.DataType | type[pl.DataType]]
+
+
+# Each group takes its ids after the groups before it.
+_BUS_GROUPS: tuple[_BusGroup, ...] = (
+    _BusGroup(
+        SiennaComponent.AREA, SiennaACBusCol.AREA, AREA_TRANSLATIONS, AREAS_DESTINATION_SCHEMA
+    ),
+    _BusGroup(
+        SiennaComponent.LOAD_ZONE,
+        SiennaACBusCol.LOAD_ZONE,
+        LOAD_ZONE_TRANSLATIONS,
+        LOAD_ZONES_DESTINATION_SCHEMA,
+    ),
+)
+
+
 class SiennaRelateComponents(TranslationStep):
-    """Derive the Area and the Arc tables from the Sienna tables an earlier step wrote.
+    """Derive the Area, LoadZone and Arc tables from the Sienna tables an earlier step wrote.
 
     Every source framework reaches this step, so its name states Sienna alone.
     """
@@ -49,16 +76,19 @@ class SiennaRelateComponents(TranslationStep):
             return state
 
         buses = state.destination_tables[SiennaComponent.AC_BUS]
-        areas_src = enrich_first_id(build_areas_source_table(buses), state)
-        dst = apply_translations(areas_src, AREA_TRANSLATIONS, self._recorder)
-        state.destination_tables[SiennaComponent.AREA] = finalise(
-            dst,
-            AREAS_DESTINATION_SCHEMA,
-            self._recorder,
-            SiennaComponent.AREA,
-        )
+        for group in _BUS_GROUPS:
+            self._build_bus_group(state, buses, group)
         state = self._build_arcs(state, buses)
         return state
+
+    def _build_bus_group(self, state: State, buses: pl.DataFrame, group: _BusGroup) -> None:
+        source = build_bus_group_source_table(buses, group.bus_column)
+        if source.is_empty():
+            return
+        dst = apply_translations(enrich_first_id(source, state), group.translations, self._recorder)
+        state.destination_tables[group.component] = finalise(
+            dst, group.schema, self._recorder, group.component
+        )
 
     def _build_arcs(self, state: State, buses: pl.DataFrame) -> State:
         endpoint_tables = [

@@ -22,6 +22,7 @@ from interop.core.extensions import ExtensionKind, GeneratorExtension, companion
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import (
+    MINUTES_PER_HOUR,
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_MW,
     UNIT_DOLLARS_PER_MW_YEAR,
@@ -61,6 +62,11 @@ from interop.plugins.shared.plexos_pypsa_translations._generator_lookups import 
     build_lookups,
 )
 from interop.plugins.shared.plexos_pypsa_translations._generators import (
+    FILE_BACKED_GROUP,
+    INFEASIBLE_GROUP,
+    NO_CAPACITY_GROUP,
+    NO_NODE_GROUP,
+    RETIRED_GROUP,
     ProfileOwner,
     report_profile_not_staged,
 )
@@ -76,6 +82,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
     DecisionKind,
     MappedColumns,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     declares,
@@ -91,11 +98,15 @@ from interop.plugins.shared.plexos_sienna_translations._availability import (
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
     CarrierTargets,
+    build_thermal_store_users,
 )
 from interop.plugins.shared.plexos_sienna_translations._fuel_prices import (
     build_fuel_price_series,
 )
-from interop.plugins.shared.plexos_sienna_translations._shared import SiennaComponentReporter
+from interop.plugins.shared.plexos_sienna_translations._shared import (
+    ID_NOTE,
+    SiennaComponentReporter,
+)
 from interop.plugins.shared.pypsa_time_series import series_components
 from interop.plugins.shared.sienna_constants import (
     RENEWABLE_DISPATCH_DESTINATION_SCHEMA,
@@ -124,9 +135,7 @@ NO_REACTIVE_POWER: float = 0.0
 UNITY_POWER_FACTOR: float = 1.0
 NO_COST: float = 0.0
 
-_MINUTES_PER_HOUR = 60.0
 
-_ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no generator availability; every generator is available"
 _STATUS_NOTE = "PLEXOS states no starting commitment; status defaults to on"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive output; reactive_power defaults to 0.0"
@@ -179,6 +188,10 @@ _INFEASIBLE_NOTE = (
     "generator is dropped"
 )
 _NO_CAPACITY_NOTE = "the rated capacity is {capacity} MW, so it can never dispatch"
+_BUSLESS_GROUP = SkipGroup("Generator(s)", "sit on a Node that did not become a bus")
+_UNMAPPED_CARRIER_GROUP = SkipGroup(
+    "Generator(s)", "have a carrier the user mappings file does not name"
+)
 
 # The Sienna types a generator may become. Every other target names a storage unit, which a
 # different sub-step writes.
@@ -299,7 +312,7 @@ def map_generators(
     bus_names = _bus_names(state)
     with_a_series = _generators_with_a_series(state, lookups)
     # A turbine drawing on a Storage becomes a storage unit, never also a generator.
-    turbines = storage_turbine_names(state)
+    turbines = storage_turbine_names(state) - build_thermal_store_users(state, targets)
     rows_by_type: dict[str, list[dict[str, Any]]] = {}
     extensions: list[GeneratorExtension] = []
     availability: dict[str, _Availability] = {}
@@ -323,7 +336,7 @@ def map_generators(
         reporter.record(
             target.mapping.name,
             MappedColumns((SiennaThermalGeneratorCol.ID,)),
-            Decision.default(row[SiennaThermalGeneratorCol.ID], _ID_NOTE),
+            Decision.default(row[SiennaThermalGeneratorCol.ID], ID_NOTE),
         )
         rows.append(row)
         _record_category(reporter, target.mapping)
@@ -502,25 +515,35 @@ def _unreadable(
     """Why the model leaves this generator with nothing to translate, or None where it does not."""
     node = lookups.gen_to_node.get(name)
     if node is None:
-        return _skip(name, PlexosCollection.NODES, None, _NO_NODE_NOTE)
+        return SkippedComponent(
+            _build_source(name, PlexosCollection.NODES, None), _NO_NODE_NOTE, NO_NODE_GROUP
+        )
     if node not in bus_names:
-        return _skip(name, PlexosCollection.NODES, node, _BUSLESS_NOTE)
+        return SkippedComponent(
+            _build_source(name, PlexosCollection.NODES, node), _BUSLESS_NOTE, _BUSLESS_GROUP
+        )
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
-        return _skip(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, _FILE_BACKED_NOTE, UNIT_MW)
+        return SkippedComponent(
+            _build_source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW),
+            _FILE_BACKED_NOTE,
+            FILE_BACKED_GROUP,
+        )
     return _unrated(read_source(generator, name, lookups))
 
 
 def _unrated(source: SourceGenerator) -> SkippedComponent | None:
     """Why the object has no capacity to dispatch, or None where it has one."""
     if source.units == 0.0 and not source.is_candidate:
-        return _skip(source.name, PlexosProperty.UNITS, source.units, _RETIRED_NOTE)
+        return SkippedComponent(
+            _build_source(source.name, PlexosProperty.UNITS, source.units),
+            _RETIRED_NOTE,
+            RETIRED_GROUP,
+        )
     if source.p_nom <= 0.0:
-        return _skip(
-            source.name,
-            PlexosProperty.MAX_CAPACITY,
-            None,
+        return SkippedComponent(
+            _build_source(source.name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             _NO_CAPACITY_NOTE.format(capacity=source.p_nom),
-            UNIT_MW,
+            NO_CAPACITY_GROUP,
         )
     return find_blocked_candidate(source.candidate)
 
@@ -529,6 +552,7 @@ def _no_such_carrier(mapping: GeneratorMapping) -> SkippedComponent:
     return SkippedComponent(
         SourceValue(PlexosClass.GENERATOR, mapping.name, None, None),
         _carrier_note(mapping.carrier, mapping.fuel is not None),
+        _UNMAPPED_CARRIER_GROUP,
     )
 
 
@@ -545,14 +569,13 @@ def _infeasible(mapping: GeneratorMapping) -> SkippedComponent:
             minimum=mapping.minimum.p_min_pu,
             ceiling=mapping.availability.static_p_max_pu,
         ),
+        warn_with=INFEASIBLE_GROUP,
     )
 
 
-def _skip(
-    name: str, attribute: str, value: Any, note: str, unit: str | None = None
-) -> SkippedComponent:
-    """One generator left out, and the reading that left it out."""
-    return SkippedComponent(SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit), note)
+def _build_source(name: str, attribute: str, value: Any, unit: str | None = None) -> SourceValue:
+    """The reading of one generator that left it out."""
+    return SourceValue(PlexosClass.GENERATOR, name, attribute, value, unit)
 
 
 def _stage_availability(
@@ -821,10 +844,10 @@ def _time_struct(translated: _Translated) -> dict[str, float] | None:
     if commitment is None or commitment.min_up_time is None:
         return None
     return {
-        "up": (commitment.min_up_time or 0.0) * translated.minutes_per_snapshot / _MINUTES_PER_HOUR,
+        "up": (commitment.min_up_time or 0.0) * translated.minutes_per_snapshot / MINUTES_PER_HOUR,
         "down": (commitment.min_down_time or 0.0)
         * translated.minutes_per_snapshot
-        / _MINUTES_PER_HOUR,
+        / MINUTES_PER_HOUR,
     }
 
 

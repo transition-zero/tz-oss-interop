@@ -12,6 +12,7 @@ it.
 | `sem-2024-2032/` | [SEM 2024-2032 Validation](../docs/case_studies/sem-2024-2032.md) |
 | `aemo-isp-2024/` | [AEMO 2024 ISP](../docs/case_studies/aemo-isp-2024.md) |
 | `aetos/` | [AETOS](../docs/case_studies/aetos.md) |
+| `cen-po12meses-2026-09/` | [CEN 12-month operation programme, September 2026](../docs/case_studies/cen-po12meses-2026-09.md) |
 
 A case study can also ask for reference data: the numbers the publisher states in its
 report, which you write out as CSV files and put beside the model. The case study page

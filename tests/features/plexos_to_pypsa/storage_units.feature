@@ -1,7 +1,8 @@
 @slow @fork_unsafe
 Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydro to StorageUnit rows
   A PLEXOS Battery, a pumped-storage plant (a turbine Generator linked to a head and a
-  tail Storage), and a reservoir-hydro Generator each collapse into one PyPSA StorageUnit.
+  tail Storage, which states a Pump Load), and a reservoir-hydro Generator each collapse
+  into one PyPSA StorageUnit.
   Scalar fields are mapped per the translation doc. A reservoir refills at its Natural
   Inflow, as a value or as a profile, where the model states that inflow in a unit that
   converts to megawatts.
@@ -54,14 +55,14 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/battery_stored.xml"
     When I run translate against "inputs/battery_stored.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the log contains "dropping Battery 'bat_stored'"
+    And the log contains "1 Battery(s) have a rated power of 0 MW or less, so each cannot dispatch and is left out. Each one: bat_stored"
     And the file "decisions.md" contains "rated power works out to 0.0 MW, so this unit cannot dispatch"
 
   Scenario: a pumped-storage plant becomes a cyclic PyPSA PHS StorageUnit
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_b" in region "West"
-    And the model contains pumped storage "phs_1" on node "node_b" with max_capacity 500 pump_efficiency 64 head "phs_head" tail "phs_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_1" on node "node_b" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_head" tail "phs_tail" max_volume 3000 initial_volume 1500
     And the model is saved as "inputs/phs.xml"
     When I run translate against "inputs/phs.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
@@ -84,7 +85,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_u" in region "West"
-    And the model contains pumped storage "phs_plain" on node "node_u" with max_capacity 500 pump_efficiency 64 head "plain_head" tail "plain_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_plain" on node "node_u" with max_capacity 500 pump_load 500 pump_efficiency 64 head "plain_head" tail "plain_tail" max_volume 3000 initial_volume 1500
     And the model is saved as "inputs/plain.xml"
     When I run translate against "inputs/plain.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_plain" attribute "max_hours" is 6.0
@@ -98,7 +99,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains node "node_d" in region "West"
     And the model states "Max Volume" in "-"
     And the model states "Initial Volume" in "-"
-    And the model contains pumped storage "phs_dash" on node "node_d" with max_capacity 500 pump_efficiency 64 head "dash_head" tail "dash_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_dash" on node "node_d" with max_capacity 500 pump_load 500 pump_efficiency 64 head "dash_head" tail "dash_tail" max_volume 3000 initial_volume 1500
     And the model is saved as "inputs/dash.xml"
     When I run translate against "inputs/dash.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_dash" attribute "max_hours" is 6.0
@@ -112,7 +113,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains node "node_g" in region "West"
     And the model states "Max Volume" in "GWh"
     And the model states "Initial Volume" in "GWh"
-    And the model contains pumped storage "phs_gwh" on node "node_g" with max_capacity 500 pump_efficiency 64 head "gwh_head" tail "gwh_tail" max_volume 3 initial_volume 1.5
+    And the model contains pumped storage "phs_gwh" on node "node_g" with max_capacity 500 pump_load 500 pump_efficiency 64 head "gwh_head" tail "gwh_tail" max_volume 3 initial_volume 1.5
     And the model is saved as "inputs/gwh.xml"
     When I run translate against "inputs/gwh.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_gwh" attribute "max_hours" is 6.0
@@ -127,7 +128,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains node "node_w" in region "West"
     And the model states "Max Volume" in "CMD"
     And the model states "Initial Volume" in "CMD"
-    And the model contains pumped storage "phs_water" on node "node_w" with max_capacity 500 pump_efficiency 64 head "water_head" tail "water_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_water" on node "node_w" with max_capacity 500 pump_load 500 pump_efficiency 64 head "water_head" tail "water_tail" max_volume 3000 initial_volume 1500
     And the model is saved as "inputs/water.xml"
     When I run translate against "inputs/water.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_water" attribute "max_hours" is 1.0
@@ -141,7 +142,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains region "West"
     And the model contains node "node_i" in region "West"
     And the model states "Natural Inflow" in "MW"
-    And the model contains pumped storage "phs_inflow" on node "node_i" with max_capacity 500 pump_efficiency 64 head "inflow_head" tail "inflow_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_inflow" on node "node_i" with max_capacity 500 pump_load 500 pump_efficiency 64 head "inflow_head" tail "inflow_tail" max_volume 3000 initial_volume 1500
     And storage "inflow_head" has property "Natural Inflow" 120
     And the model is saved as "inputs/inflow.xml"
     When I run translate against "inputs/inflow.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -154,7 +155,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains region "West"
     And the model contains node "node_gw" in region "West"
     And the model states "Natural Inflow" in "GW"
-    And the model contains pumped storage "phs_gw" on node "node_gw" with max_capacity 500 pump_efficiency 64 head "gw_head" tail "gw_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_gw" on node "node_gw" with max_capacity 500 pump_load 500 pump_efficiency 64 head "gw_head" tail "gw_tail" max_volume 3000 initial_volume 1500
     And storage "gw_head" has property "Natural Inflow" 0.12
     And the model is saved as "inputs/inflow_gw.xml"
     When I run translate against "inputs/inflow_gw.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -169,7 +170,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains region "West"
     And the model contains node "node_cu" in region "West"
     And the model states "Natural Inflow" in "cumec"
-    And the model contains pumped storage "phs_cumec" on node "node_cu" with max_capacity 500 pump_efficiency 64 head "cumec_head" tail "cumec_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_cumec" on node "node_cu" with max_capacity 500 pump_load 500 pump_efficiency 64 head "cumec_head" tail "cumec_tail" max_volume 3000 initial_volume 1500
     And storage "cumec_head" has property "Natural Inflow" 120
     And the model is saved as "inputs/inflow_cumec.xml"
     When I run translate against "inputs/inflow_cumec.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -184,7 +185,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains node "node_p" in region "West"
     And the model contains data file "inflow_trace" at "csv/inflow.csv" with hourly values "10, 20, 30, 40"
     And the model states "Natural Inflow" in "MW"
-    And the model contains pumped storage "phs_profile" on node "node_p" with max_capacity 500 pump_efficiency 64 head "profile_head" tail "profile_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_profile" on node "node_p" with max_capacity 500 pump_load 500 pump_efficiency 64 head "profile_head" tail "profile_tail" max_volume 3000 initial_volume 1500
     And storage "profile_head" has property "Natural Inflow" from data file "inflow_trace"
     And the model is saved as "inputs/inflow_profile.xml"
     When I run translate against "inputs/inflow_profile.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -206,7 +207,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_e" in region "West"
-    And the model contains pumped storage "phs_full" on node "node_e" with max_capacity 500 pump_efficiency 64 head "phs_full_head" tail "phs_full_tail" max_volume 3000 initial_volume 4000
+    And the model contains pumped storage "phs_full" on node "node_e" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_full_head" tail "phs_full_tail" max_volume 3000 initial_volume 4000
     And the model is saved as "inputs/phs_full.xml"
     When I run translate against "inputs/phs_full.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" storage unit "phs_full" attribute "state_of_charge_initial" is 3000.0
@@ -229,9 +230,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "efficiency_store" is 1.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" attribute "state_of_charge_initial" is 400.0
     And the PyPSA network "outputs/network.nc" storage unit "hydro_1" is not cyclic
-    And the decisions report contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | Max Capacity * Units |  | $source_leg$ | $source_storage_step$ |"
-    And the decisions report contains "| `sienna.HydroDispatch.hydro_1.base_power` = 200.0 MVA | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
-    And the decisions report contains "|  | `sienna.HydroDispatch.hydro_1.active_power_limits.min` = 0.0 MW |  | conventional hydro generates but does not pump | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Generator.hydro_1.Max Capacity` = 200.0 MW<br>`plexos.Generator.hydro_1.Units` = 1.0 | `sienna.HydroTurbine.hydro_1.base_power` = 200.0 MVA | Max Capacity * Units |  | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `sienna.HydroTurbine.hydro_1.base_power` = 200.0 MVA | `pypsa.StorageUnit.hydro_1.p_nom` = 200.0 MW | direct |  | $destination_leg$ | $destination_storage_step$ |"
+    And the decisions report contains "|  | `sienna.HydroTurbine.hydro_1.active_power_limits.min` = 0.0 MW |  | conventional hydro generates but does not pump | $source_leg$ | $source_storage_step$ |"
 
   Scenario: a Storage with no turbine is skipped, not mapped
     Given a Plexos model
@@ -248,7 +249,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_k" in region "West"
-    And the model contains pumped storage "phs_both" on node "node_k" with max_capacity 500 pump_efficiency 64 head "phs_both_head" tail "phs_both_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_both" on node "node_k" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_both_head" tail "phs_both_tail" max_volume 3000 initial_volume 1500
     And the model contains reservoir hydro "hydro_both" on node "node_k" with max_capacity 200 head "hydro_both_res" max_volume 800 initial_volume 400
     And the model contains generator "ThermalPlant" with "node=node_k, fuel=Coal, Max Capacity=300, Heat Rate=9"
     And the model is saved as "inputs/both.xml"
@@ -262,7 +263,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_j" in region "West"
-    And the model contains pumped storage "alpha" on node "node_j" with max_capacity 500 pump_efficiency 64 head "zzz_unrelated" tail "qqq_other" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "alpha" on node "node_j" with max_capacity 500 pump_load 500 pump_efficiency 64 head "zzz_unrelated" tail "qqq_other" max_volume 3000 initial_volume 1500
     And the model is saved as "inputs/unrelated_names.xml"
     When I run translate against "inputs/unrelated_names.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 1 storage unit
@@ -290,7 +291,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_g" in region "West"
-    And the model contains pumped storage "phs_off" on node "node_g" with max_capacity 500 pump_efficiency 64 head "phs_off_head" tail "phs_off_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_off" on node "node_g" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_off_head" tail "phs_off_tail" max_volume 3000 initial_volume 1500
     And generator "phs_off" has property "Units" 0
     And the model is saved as "inputs/phs_off.xml"
     When I run translate against "inputs/phs_off.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -306,7 +307,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/powerless.xml"
     When I run translate against "inputs/powerless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the log contains "dropping Battery 'powerless'"
+    And the log contains "1 Battery(s) state no Max Power, so each has no rated power and is left out. Each one: powerless"
     And the file "decisions.md" contains "the object states no rated power, which the storage mapping cannot default"
 
   Scenario: a turbine with a tail but no head is skipped, naming what it lacks
@@ -317,7 +318,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model is saved as "inputs/headless.xml"
     When I run translate against "inputs/headless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
-    And the file "decisions.md" contains "this Generator has a Tail Storage but no Head Storage and no Pump Efficiency, so it has no reservoir to draw from"
+    And the file "decisions.md" contains "this Generator has no Head Storage, so it has no reservoir to draw from"
 
   Scenario: a reservoir with no Max Volume is clamped to the capacity PyPSA enforces
     Given a Plexos model
@@ -335,7 +336,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_d" in region "West"
-    And the model contains pumped storage "phs_vom" on node "node_d" with max_capacity 500 pump_efficiency 64 head "phs_vom_head" tail "phs_vom_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_vom" on node "node_d" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_vom_head" tail "phs_vom_tail" max_volume 3000 initial_volume 1500
     And generator "phs_vom" has property "VO&M Charge" 3.5
     And the model is saved as "inputs/phs_vom.xml"
     When I run translate against "inputs/phs_vom.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -384,7 +385,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_m" in region "West"
-    And the model contains generator "ghost" with "Max Capacity=100, Pump Efficiency=70"
+    And the model contains generator "ghost" with "Max Capacity=100, Pump Load=100, Pump Efficiency=70"
     And the model is saved as "inputs/ghost.xml"
     When I run translate against "inputs/ghost.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
@@ -441,7 +442,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains region "West"
     And the model contains node "node_r" in region "West"
     And the model contains data file "Capacity" at "profiles/capacity.csv" with hourly values "100, 100, 100"
-    And the model contains generator "filecap" with "node=node_r, Max Capacity=file:Capacity, Pump Efficiency=70"
+    And the model contains generator "filecap" with "node=node_r, Max Capacity=file:Capacity, Pump Load=100, Pump Efficiency=70"
     And the model is saved as "inputs/filecap.xml"
     When I run translate against "inputs/filecap.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
     Then the PyPSA network "outputs/network.nc" has 0 storage units
@@ -451,7 +452,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_s" in region "West"
-    And the model contains pumped storage "phs_neg" on node "node_s" with max_capacity 500 pump_efficiency 64 head "phs_neg_head" tail "phs_neg_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_neg" on node "node_s" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_neg_head" tail "phs_neg_tail" max_volume 3000 initial_volume 1500
     And generator "phs_neg" has property "Units" -1
     And the model is saved as "inputs/phs_neg.xml"
     When I run translate against "inputs/phs_neg.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
@@ -484,7 +485,9 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_sizeless" attribute "state_of_charge_initial" is 0.0
     And the file "decisions.md" contains "PLEXOS states no reservoir capacity; storage_capacity uses the translator's one-hour default"
 
-  Scenario: a turbine with both reservoirs and no Pump Efficiency is still pumped storage
+  Scenario: a turbine with both reservoirs and no Pump Load generates and does not pump
+    PLEXOS has no pumped-storage class. A unit pumps only when it states a Pump Load, so a
+    unit with a head and a tail Storage and no Pump Load is reservoir hydro.
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_x" in region "West"
@@ -492,16 +495,61 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And storage "phs_nopump_head" has property "Max Volume" 3000
     And the model is saved as "inputs/phs_nopump.xml"
     When I run translate against "inputs/phs_nopump.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
-    Then the PyPSA network "outputs/network.nc" storage unit "phs_nopump" has carrier "PHS"
-    And the PyPSA network "outputs/network.nc" storage unit "phs_nopump" attribute "p_min_pu" is -1.0
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_nopump" has carrier "hydro"
+    And the PyPSA network "outputs/network.nc" storage unit "phs_nopump" attribute "p_min_pu" is 0.0
     And the PyPSA network "outputs/network.nc" storage unit "phs_nopump" attribute "efficiency_store" is 1.0
-    And the PyPSA network "outputs/network.nc" storage unit "phs_nopump" is cyclic
+    And the PyPSA network "outputs/network.nc" storage unit "phs_nopump" is not cyclic
+
+  Scenario: a pumped-storage plant pumps at its Pump Load, not at the power of its turbine
+    PLEXOS states the most that one unit draws in pump mode as its Pump Load. A plant with a
+    300 MW turbine and a Pump Load of 200 MW pumps at 200 MW at most, which PyPSA states as
+    a p_min_pu of -200 / 300.
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_l" in region "West"
+    And the model contains pumped storage "phs_pump" on node "node_l" with max_capacity 300 pump_load 200 pump_efficiency 64 head "pump_head" tail "pump_tail" max_volume 3000 initial_volume 1500
+    And the model is saved as "inputs/pump_load.xml"
+    When I run translate against "inputs/pump_load.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "phs_pump" has carrier "PHS"
+    And the PyPSA network "outputs/network.nc" storage unit "phs_pump" attribute "p_nom" is 300.0
+    And the PyPSA network "outputs/network.nc" storage unit "phs_pump" attribute "p_min_pu" is -0.666667
+    And the PyPSA network "outputs/network.nc" storage unit "phs_pump" attribute "p_max_pu" is 1.0
+    And the file "decisions.md" contains "`plexos.Generator.phs_pump.Pump Load` = 200.0 MW<br>`plexos.Generator.phs_pump.Max Capacity` = 300.0 MW | `sienna.EnergyReservoirStorage.phs_pump.input_active_power_limits.max` = 0.6666666666666666 | Pump Load / Max Capacity |"
+
+  Scenario: a turbine that states a Pump Efficiency but no Pump Load does not pump, and the efficiency is not mapped
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_v" in region "West"
+    And the model contains turbine "hydro_eff" on node "node_v" with max_capacity 500 head "eff_head" tail "eff_tail"
+    And generator "hydro_eff" has property "Pump Efficiency" 70
+    And the model is saved as "inputs/hydro_eff.xml"
+    When I run translate against "inputs/hydro_eff.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "hydro_eff" has carrier "hydro"
+    And the PyPSA network "outputs/network.nc" storage unit "hydro_eff" attribute "p_min_pu" is 0.0
+    And the PyPSA network "outputs/network.nc" storage unit "hydro_eff" attribute "efficiency_store" is 1.0
+    And the decisions report contains "| `plexos.Generator.hydro_eff.Pump Efficiency` = 70.0 % |  |  | this Generator states no Pump Load above 0 MW, so it does not pump, and its Pump Efficiency is dropped | $source_leg$ | $source_storage_step$ |"
+    And the log contains "1 Generator(s) state a Pump Efficiency but no Pump Load, so each one generates and does not pump. Each one: hydro_eff"
+
+  Scenario: a turbine that states a Pump Load but has no tail to pump from does not pump
+    Given a Plexos model
+    And the model contains region "West"
+    And the model contains node "node_t" in region "West"
+    And the model contains turbine "hydro_tailless" on node "node_t" with max_capacity 500 head "tailless_head"
+    And generator "hydro_tailless" has property "Pump Load" 200
+    And generator "hydro_tailless" has property "Pump Efficiency" 70
+    And the model is saved as "inputs/hydro_tailless.xml"
+    When I run translate against "inputs/hydro_tailless.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "hydro_tailless" has carrier "hydro"
+    And the PyPSA network "outputs/network.nc" storage unit "hydro_tailless" attribute "p_min_pu" is 0.0
+    And the decisions report contains "| `plexos.Generator.hydro_tailless.Pump Load` = 200.0 MW |  |  | this Generator has no Tail Storage to pump from, so it does not pump, and its Pump Load is dropped | $source_leg$ | $source_storage_step$ |"
+    And the decisions report contains "| `plexos.Generator.hydro_tailless.Pump Efficiency` = 70.0 % |  |  | this Generator has no Tail Storage to pump from, so it does not pump, and its Pump Efficiency is dropped | $source_leg$ | $source_storage_step$ |"
+    And the log contains "1 Generator(s) state a Pump Load but have no Tail Storage, so each one generates and does not pump. Each one: hydro_tailless"
 
   Scenario: a turbine sizes itself on its head reservoir, never its tail
     Given a Plexos model
     And the model contains region "West"
     And the model contains node "node_y" in region "West"
-    And the model contains pumped storage "phs_sized" on node "node_y" with max_capacity 500 pump_efficiency 64 head "phs_sized_head" tail "phs_sized_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_sized" on node "node_y" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_sized_head" tail "phs_sized_tail" max_volume 3000 initial_volume 1500
     And storage "phs_sized_tail" has property "Max Volume" 500
     And storage "phs_sized_tail" has property "Initial Volume" 250
     And the model is saved as "inputs/phs_sized.xml"
@@ -519,7 +567,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the model contains battery "bat_dropped" on node "node_u" with max_power 100 capacity 200 charge_efficiency 81 initial_soc 50
     And battery "bat_dropped" has property "Min SoC" 10
     And battery "bat_dropped" has property "Discharge Efficiency" 95
-    And the model contains pumped storage "phs_dropped" on node "node_u" with max_capacity 500 pump_efficiency 64 head "phs_dropped_head" tail "phs_dropped_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_dropped" on node "node_u" with max_capacity 500 pump_load 500 pump_efficiency 64 head "phs_dropped_head" tail "phs_dropped_tail" max_volume 3000 initial_volume 1500
     And storage "phs_dropped_head" has property "Natural Inflow" 40
     And storage "phs_dropped_tail" has property "Max Volume" 2500
     And the model is saved as "inputs/dropped.xml"
@@ -583,7 +631,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "East"
     And the model contains node "node_p" in region "East"
-    And the model contains pumped storage "phs_grow" on node "node_p" with max_capacity 100 pump_efficiency 64 head "grow_head" tail "grow_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_grow" on node "node_p" with max_capacity 100 pump_load 100 pump_efficiency 64 head "grow_head" tail "grow_tail" max_volume 3000 initial_volume 1500
     And generator "phs_grow" has property "Units" 2
     And generator "phs_grow" has property "Max Units Built" 1
     And generator "phs_grow" has property "Build Cost" 1500000
@@ -601,7 +649,7 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     Given a Plexos model
     And the model contains region "East"
     And the model contains node "node_n" in region "East"
-    And the model contains pumped storage "phs_new" on node "node_n" with max_capacity 100 pump_efficiency 64 head "new_head" tail "new_tail" max_volume 3000 initial_volume 1500
+    And the model contains pumped storage "phs_new" on node "node_n" with max_capacity 100 pump_load 100 pump_efficiency 64 head "new_head" tail "new_tail" max_volume 3000 initial_volume 1500
     And generator "phs_new" has property "Units" 0
     And generator "phs_new" has property "Max Units Built" 3
     And generator "phs_new" has property "Build Cost" 1500000
@@ -629,3 +677,18 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_running" is not extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
     And the log contains "1 Battery(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"
+
+  Scenario: a tail Storage that is the head of the next turbine keeps its volumes
+    The turbine below reads the Storage as its head reservoir, so no value of the Storage is
+    absorbed into the turbine above it.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains turbine "Upper_U" on node "North_Node" with max_capacity 150 head "Upper" tail "Middle"
+    And storage "Upper" has property "Max Volume" 900
+    And the model contains reservoir hydro "Lower_U" on node "North_Node" with max_capacity 100 head "Middle" max_volume 300 initial_volume 150
+    And the model is saved as "inputs/cascade.xml"
+    And a project-local pipeline "plexos-to-pypsa-direct" that maps PLEXOS straight to PyPSA
+    When I run translate against "inputs/cascade.xml" pipeline "plexos-to-pypsa-direct" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "Lower_U" attribute "max_hours" is 3.0
+    And the file "decisions.md" does not contain "the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped"

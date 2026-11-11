@@ -17,16 +17,24 @@ from interop.core.pipeline import StagedSource, State
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.extensions_sidecar import StagesExtensionsSidecar
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
     SIENNA_SOURCE_AREAS_SCHEMA,
+    SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA,
     SIENNA_SOURCE_BUSES_SCHEMA,
+    SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA,
+    SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA,
     InfraStoreSidecar,
     SiennaACBusCol,
     SiennaArcCol,
     SiennaAreaCol,
+    SiennaAttributeAssociationCol,
     SiennaComponent,
     SiennaGeneratorCol,
     SiennaLineCol,
     SiennaSchemasSystem,
+    SiennaServiceAssociationCol,
+    SiennaStagedAssociationCol,
     SiennaTable,
     SiennaUnitSystem,
     TimeSeriesAssociationCol,
@@ -50,11 +58,29 @@ _GENERATOR_TYPES = (
     SiennaComponent.RENEWABLE_DISPATCH,
     SiennaComponent.RENEWABLE_NON_DISPATCH,
     SiennaComponent.HYDRO_DISPATCH,
+    SiennaComponent.HYDRO_TURBINE,
 )
 _STORAGE_TYPES = (SiennaComponent.ENERGY_RESERVOIR_STORAGE,)
 _LOAD_TYPES = (SiennaComponent.POWER_LOAD, SiennaComponent.INTERRUPTIBLE_POWER_LOAD)
 _LINE_TYPES = (SiennaComponent.LINE, SiennaComponent.MONITORED_LINE)
 _LINK_TYPES = (SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE,)
+_RESERVOIR_TYPES = (SiennaComponent.HYDRO_RESERVOIR,)
+# A reservoir series is a level or a flow, not a share of a capacity, so it stays as stated.
+_STATED_UNIT_OWNER_TYPES = frozenset(_RESERVOIR_TYPES)
+# The types that a table above holds, or that staging folds into another row.
+_HELD_TYPES = frozenset(
+    {
+        SiennaComponent.AREA,
+        SiennaComponent.AC_BUS,
+        SiennaComponent.ARC,
+        *_GENERATOR_TYPES,
+        *_STORAGE_TYPES,
+        *_LOAD_TYPES,
+        *_LINE_TYPES,
+        *_LINK_TYPES,
+        *_RESERVOIR_TYPES,
+    }
+)
 
 
 class StageSiennaSystemJsonParams(BaseModel):
@@ -123,10 +149,7 @@ def stage_system(system: dict[str, Any], h5_file: IO[bytes], staging_dir: Path) 
 def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.LazyFrame]:
     components = system.get(SiennaSchemasSystem.COMPONENTS, {})
 
-    area_name_by_id = {
-        area[SiennaAreaCol.ID]: area[SiennaAreaCol.NAME]
-        for area in components.get(SiennaComponent.AREA, [])
-    }
+    area_name_by_id = _build_name_by_id(components, SiennaComponent.AREA)
 
     frames: dict[str, pl.LazyFrame] = {}
     area_rows = [
@@ -135,7 +158,10 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
     ]
     _stage_table(area_rows, SIENNA_SOURCE_AREAS_SCHEMA, SiennaTable.AREAS, staging_dir, frames)
 
-    bus_rows = [_bus_row(c, area_name_by_id) for c in components.get(SiennaComponent.AC_BUS, [])]
+    bus_groups = _BusGroupNames(
+        area_name_by_id, _build_name_by_id(components, SiennaComponent.LOAD_ZONE)
+    )
+    bus_rows = [_bus_row(c, bus_groups) for c in components.get(SiennaComponent.AC_BUS, [])]
     _stage_table(bus_rows, SIENNA_SOURCE_BUSES_SCHEMA, SiennaTable.BUSES, staging_dir, frames)
 
     generator_rows = [
@@ -176,7 +202,98 @@ def stage_topology(system: dict[str, Any], staging_dir: Path) -> dict[str, pl.La
         for c in components.get(sienna_type, [])
     ]
     _stage_table(link_rows, None, SiennaTable.LINKS, staging_dir, frames)
+
+    reservoir_rows = [
+        _component_row(c, sienna_type)
+        for sienna_type in _RESERVOIR_TYPES
+        for c in components.get(sienna_type, [])
+    ]
+    _stage_table(reservoir_rows, None, SiennaTable.RESERVOIRS, staging_dir, frames)
+    _stage_unheld(system, staging_dir, frames)
     return frames
+
+
+def _stage_unheld(
+    system: dict[str, Any], staging_dir: Path, frames: dict[str, pl.LazyFrame]
+) -> None:
+    """Stage by name each component, service member and attribute that no table above holds."""
+    components = system.get(SiennaSchemasSystem.COMPONENTS, {})
+    owner_by_id = {
+        component[SIENNA_ID_COLUMN]: (sienna_type, component.get(SIENNA_NAME_COLUMN))
+        for sienna_type, rows in components.items()
+        for component in rows
+    }
+    other_rows = [
+        {
+            SiennaGeneratorCol.SIENNA_TYPE: sienna_type,
+            SIENNA_ID_COLUMN: component[SIENNA_ID_COLUMN],
+            SIENNA_NAME_COLUMN: component.get(SIENNA_NAME_COLUMN),
+        }
+        for sienna_type, rows in components.items()
+        if sienna_type not in _HELD_TYPES
+        for component in rows
+    ]
+    _stage_table(
+        other_rows,
+        SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA,
+        SiennaTable.OTHER_COMPONENTS,
+        staging_dir,
+        frames,
+    )
+    _stage_table(
+        _build_service_member_rows(system, owner_by_id),
+        SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA,
+        SiennaTable.SERVICE_MEMBERS,
+        staging_dir,
+        frames,
+    )
+    _stage_table(
+        _build_attribute_owner_rows(system, owner_by_id),
+        SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA,
+        SiennaTable.ATTRIBUTE_OWNERS,
+        staging_dir,
+        frames,
+    )
+
+
+def _build_service_member_rows(
+    system: dict[str, Any], owner_by_id: dict[int, tuple[str, str | None]]
+) -> list[dict[str, Any]]:
+    """Each service association whose service and member are both kept, by type and name."""
+    rows: list[dict[str, Any]] = []
+    for association in system.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS, []):
+        service = owner_by_id.get(association[SiennaServiceAssociationCol.SERVICE_ID])
+        member = owner_by_id.get(association[SiennaServiceAssociationCol.ENTITY_ID])
+        if service is not None and member is not None:
+            rows.append(
+                {
+                    SiennaStagedAssociationCol.SERVICE_TYPE: service[0],
+                    SiennaStagedAssociationCol.SERVICE_NAME: service[1],
+                    SiennaStagedAssociationCol.COMPONENT_TYPE: member[0],
+                    SiennaStagedAssociationCol.COMPONENT_NAME: member[1],
+                }
+            )
+    return rows
+
+
+def _build_attribute_owner_rows(
+    system: dict[str, Any], owner_by_id: dict[int, tuple[str, str | None]]
+) -> list[dict[str, Any]]:
+    """Each supplemental attribute association whose component is kept, by component name."""
+    rows: list[dict[str, Any]] = []
+    for association in system.get(SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS, []):
+        owner = owner_by_id.get(association[SiennaAttributeAssociationCol.COMPONENT_ID])
+        if owner is not None:
+            rows.append(
+                {
+                    SiennaStagedAssociationCol.ATTRIBUTE_TYPE: association[
+                        SiennaAttributeAssociationCol.ATTRIBUTE_TYPE
+                    ],
+                    SiennaStagedAssociationCol.COMPONENT_TYPE: owner[0],
+                    SiennaStagedAssociationCol.COMPONENT_NAME: owner[1],
+                }
+            )
+    return rows
 
 
 def _line_row(
@@ -191,9 +308,31 @@ def _line_row(
     return row
 
 
-def _bus_row(component: dict[str, Any], area_name_by_id: dict[int, str]) -> dict[str, Any]:
-    area_id = component.get(SiennaACBusCol.AREA)
-    area_name = area_name_by_id.get(area_id) if area_id is not None else None
+def _build_name_by_id(components: dict[str, Any], sienna_type: str) -> dict[int, str]:
+    return {
+        component[SIENNA_ID_COLUMN]: component[SIENNA_NAME_COLUMN]
+        for component in components.get(sienna_type, [])
+    }
+
+
+class _BusGroupNames(NamedTuple):
+    """The names of the areas and the load zones that a bus refers to by id."""
+
+    area_name_by_id: dict[int, str]
+    load_zone_name_by_id: dict[int, str]
+
+    def find_area_name(self, component: dict[str, Any]) -> str | None:
+        return _find_name(self.area_name_by_id, component.get(SiennaACBusCol.AREA))
+
+    def find_load_zone_name(self, component: dict[str, Any]) -> str | None:
+        return _find_name(self.load_zone_name_by_id, component.get(SiennaACBusCol.LOAD_ZONE))
+
+
+def _find_name(name_by_id: dict[int, str], component_id: int | None) -> str | None:
+    return None if component_id is None else name_by_id.get(component_id)
+
+
+def _bus_row(component: dict[str, Any], groups: _BusGroupNames) -> dict[str, Any]:
     return {
         SiennaACBusCol.ID: component[SiennaACBusCol.ID],
         SiennaACBusCol.NAME: component[SiennaACBusCol.NAME],
@@ -204,8 +343,8 @@ def _bus_row(component: dict[str, Any], area_name_by_id: dict[int, str]) -> dict
         SiennaACBusCol.MAGNITUDE: component.get(SiennaACBusCol.MAGNITUDE),
         SiennaACBusCol.VOLTAGE_LIMITS: component.get(SiennaACBusCol.VOLTAGE_LIMITS),
         SiennaACBusCol.BASE_VOLTAGE: float(component[SiennaACBusCol.BASE_VOLTAGE]),
-        SiennaACBusCol.AREA: area_name,
-        SiennaACBusCol.LOAD_ZONE: component.get(SiennaACBusCol.LOAD_ZONE),
+        SiennaACBusCol.AREA: groups.find_area_name(component),
+        SiennaACBusCol.LOAD_ZONE: groups.find_load_zone_name(component),
     }
 
 
@@ -232,7 +371,8 @@ def _stage_table(
         return
     out = staging_dir / "topology" / f"{name}.parquet"
     out.parent.mkdir(parents=True, exist_ok=True)
-    pl.DataFrame(rows, schema=schema).write_parquet(out)
+    # Polars otherwise reads the columns from the first 100 rows and drops a later field.
+    pl.DataFrame(rows, schema=schema, infer_schema_length=None).write_parquet(out)
     frames[name] = pl.scan_parquet(out)
 
 
@@ -289,6 +429,13 @@ def _is_natural_units(association: dict[str, Any]) -> bool:
     return association.get(TimeSeriesAssociationCol.UNIT_SYSTEM) == SiennaUnitSystem.NATURAL_UNITS
 
 
+def _is_per_unit_shape(association: dict[str, Any]) -> bool:
+    """Whether a natural-units row stands for a share of its owner's capacity."""
+    return _is_natural_units(association) and (
+        association[TimeSeriesAssociationCol.OWNER_TYPE] not in _STATED_UNIT_OWNER_TYPES
+    )
+
+
 def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep the rows that can be staged, and warn once about the natural-units rows that cannot.
 
@@ -299,7 +446,7 @@ def _drop_unconvertible(associations: list[dict[str, Any]]) -> list[dict[str, An
     left_out: list[str] = []
     for association in associations:
         owner_type = association[TimeSeriesAssociationCol.OWNER_TYPE]
-        if _is_natural_units(association) and not has_series_capacity(owner_type):
+        if _is_per_unit_shape(association) and not has_series_capacity(owner_type):
             left_out.append(f"{owner_type} {association[TimeSeriesAssociationCol.NAME]}")
         else:
             kept.append(association)
@@ -360,7 +507,7 @@ def _capacity_by_owner(
             association[TimeSeriesAssociationCol.OWNER_ID],
         )
         for association in associations
-        if _is_natural_units(association)
+        if _is_per_unit_shape(association)
     }
     return build_capacity_by_owner(owners, system.get(SiennaSchemasSystem.COMPONENTS, {}))
 

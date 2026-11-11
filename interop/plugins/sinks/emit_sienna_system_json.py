@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import polars as pl
 from pydantic import BaseModel, Field
 
 from interop.core.pipeline import Sink, State
 from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
+    SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE,
+    SYSTEM_ATTRIBUTES_TABLE,
     SiennaACBusCol,
     SiennaArcCol,
-    SiennaAreaCol,
     SiennaComponent,
     SiennaEnergyReservoirStorageCol,
     SiennaHydroGeneratorCol,
@@ -19,8 +22,45 @@ from interop.plugins.shared.sienna_constants import (
     SiennaSchemasSystem,
     SiennaThermalGeneratorCol,
 )
-from interop.plugins.sinks._sienna_files import serialise_system_document, validate_refs
+from interop.plugins.sinks._sienna_files import (
+    build_system_contents,
+    serialise_system_document,
+    validate_refs,
+)
 from interop.ports.outbound.filesystem import FilesystemPort, Location
+
+# A service names no bus, so its row reaches the document as the step wrote it.
+_SERVICE_TYPES: tuple[SiennaComponent, ...] = (
+    SiennaComponent.ONLINE_RESERVE,
+    SiennaComponent.OFFLINE_RESERVE,
+)
+
+
+def _list_rows(table: pl.DataFrame | None) -> list[dict[str, Any]]:
+    return [] if table is None else table.to_dicts()
+
+
+class _BusReference(NamedTuple):
+    """One bus column that names another component, the id of each name, and the check label."""
+
+    column: str
+    ids: dict[str, int]
+    context: str
+
+
+class _BusReferences(NamedTuple):
+    """The two components a bus names: its area and its load zone. A bus can name neither."""
+
+    area: _BusReference
+    load_zone: _BusReference
+
+    def build_bus_component(self, row: dict[str, Any]) -> dict[str, Any]:
+        """The bus as the document states it, with its area and load zone names as ids."""
+        component = dict(row)
+        for reference in self:
+            name = row[reference.column]
+            component[reference.column] = reference.ids[name] if name else None
+        return component
 
 
 class EmitSiennaSystemJsonParams(BaseModel):
@@ -43,17 +83,24 @@ class EmitSiennaSystemJson(Sink):
             )
         payload = self.build_payload(state)
         serialised = serialise_system_document(
-            payload[SiennaSchemasSystem.COMPONENTS], [], None, params.indent
+            build_system_contents(payload, []), None, params.indent
         )
         self._fs.write_bytes(params.output_path, serialised)
 
     @staticmethod
     def build_payload(state: State) -> dict[str, Any]:
-        area_components, area_ids = EmitSiennaSystemJson._build_area_components(
+        area_components, area_ids = EmitSiennaSystemJson._build_named_components(
             state.destination_tables.get(SiennaComponent.AREA)
         )
+        load_zone_components, load_zone_ids = EmitSiennaSystemJson._build_named_components(
+            state.destination_tables.get(SiennaComponent.LOAD_ZONE)
+        )
         bus_components, bus_ids = EmitSiennaSystemJson._build_bus_components(
-            state.destination_tables.get(SiennaComponent.AC_BUS), area_ids
+            state.destination_tables.get(SiennaComponent.AC_BUS),
+            _BusReferences(
+                _BusReference(SiennaACBusCol.AREA, area_ids, "buses -> areas"),
+                _BusReference(SiennaACBusCol.LOAD_ZONE, load_zone_ids, "buses -> load zones"),
+            ),
         )
         load_components = EmitSiennaSystemJson._build_bus_attached_components(
             state.destination_tables.get(SiennaComponent.POWER_LOAD),
@@ -97,6 +144,16 @@ class EmitSiennaSystemJson(Sink):
             SiennaHydroGeneratorCol.BUS,
             "hydro -> buses",
         )
+        turbine_components = EmitSiennaSystemJson._build_bus_attached_components(
+            state.destination_tables.get(SiennaComponent.HYDRO_TURBINE),
+            bus_ids,
+            SiennaHydroGeneratorCol.BUS_NAME,
+            SiennaHydroGeneratorCol.BUS,
+            "hydro turbines -> buses",
+        )
+        reservoir_components = EmitSiennaSystemJson._build_plain_components(
+            state.destination_tables.get(SiennaComponent.HYDRO_RESERVOIR)
+        )
         storage_components = EmitSiennaSystemJson._build_bus_attached_components(
             state.destination_tables.get(SiennaComponent.ENERGY_RESERVOIR_STORAGE),
             bus_ids,
@@ -118,6 +175,8 @@ class EmitSiennaSystemJson(Sink):
         components: dict[str, Any] = {}
         if area_components:
             components[SiennaComponent.AREA] = area_components
+        if load_zone_components:
+            components[SiennaComponent.LOAD_ZONE] = load_zone_components
         if bus_components:
             components[SiennaComponent.AC_BUS] = bus_components
         if arc_components:
@@ -134,50 +193,59 @@ class EmitSiennaSystemJson(Sink):
             components[SiennaComponent.RENEWABLE_NON_DISPATCH] = renewable_nd_components
         if hydro_components:
             components[SiennaComponent.HYDRO_DISPATCH] = hydro_components
+        if turbine_components:
+            components[SiennaComponent.HYDRO_TURBINE] = turbine_components
+        if reservoir_components:
+            components[SiennaComponent.HYDRO_RESERVOIR] = reservoir_components
         if storage_components:
             components[SiennaComponent.ENERGY_RESERVOIR_STORAGE] = storage_components
         if line_components:
             components[SiennaComponent.LINE] = line_components
         if hvdc_components:
             components[SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE] = hvdc_components
-
+        for service_type in _SERVICE_TYPES:
+            service_components = _list_rows(state.destination_tables.get(service_type))
+            if service_components:
+                components[service_type] = service_components
         return {
             SiennaSchemasSystem.COMPONENTS: components,
+            SiennaSchemasSystem.SERVICE_ASSOCIATIONS: _list_rows(
+                state.destination_tables.get(SiennaSchemasSystem.SERVICE_ASSOCIATIONS)
+            ),
+            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: _list_rows(
+                state.destination_tables.get(SYSTEM_ATTRIBUTES_TABLE)
+            ),
+            SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: _list_rows(
+                state.destination_tables.get(SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE)
+            ),
         }
 
     @staticmethod
-    def _build_area_components(
-        areas_df: pl.DataFrame | None,
+    def _build_named_components(
+        table: pl.DataFrame | None,
     ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-        if areas_df is None:
+        """Each row as a component, and each component id by name, for a table buses name."""
+        if table is None:
             return [], {}
-        components: list[dict[str, Any]] = []
-        area_ids: dict[str, int] = {}
-        for row in areas_df.iter_rows(named=True):
-            name: str = row[SiennaAreaCol.NAME]
-            area_id: int = row[SiennaAreaCol.ID]
-            area_ids[name] = area_id
-            components.append(dict(row))
-        return components, area_ids
+        components = [dict(row) for row in table.iter_rows(named=True)]
+        ids = {row[SIENNA_NAME_COLUMN]: row[SIENNA_ID_COLUMN] for row in components}
+        return components, ids
 
     @staticmethod
     def _build_bus_components(
         buses_df: pl.DataFrame | None,
-        area_ids: dict[str, int],
+        references: _BusReferences,
     ) -> tuple[list[dict[str, Any]], dict[str, int]]:
         if buses_df is None:
             return [], {}
-        referenced_areas = buses_df[SiennaACBusCol.AREA].drop_nulls().unique().to_list()
-        validate_refs(SiennaACBusCol.AREA, referenced_areas, set(area_ids), "buses -> areas")
+        for reference in references:
+            referenced = buses_df[reference.column].drop_nulls().unique().to_list()
+            validate_refs(reference.column, referenced, set(reference.ids), reference.context)
         components: list[dict[str, Any]] = []
         bus_ids: dict[str, int] = {}
         for row in buses_df.iter_rows(named=True):
-            name: str = row[SiennaACBusCol.NAME]
-            bus_ids[name] = row[SiennaACBusCol.ID]
-            area_name: str | None = row[SiennaACBusCol.AREA]
-            component: dict[str, Any] = {k: v for k, v in row.items() if k != SiennaACBusCol.AREA}
-            component["area"] = area_ids[area_name] if area_name else None
-            components.append(component)
+            bus_ids[row[SiennaACBusCol.NAME]] = row[SiennaACBusCol.ID]
+            components.append(references.build_bus_component(row))
         return components, bus_ids
 
     @staticmethod
@@ -202,6 +270,11 @@ class EmitSiennaSystemJson(Sink):
             component[ref_col] = bus_ids[row[name_col]]
             components.append(component)
         return components
+
+    @staticmethod
+    def _build_plain_components(df: pl.DataFrame | None) -> list[dict[str, Any]]:
+        """A component that names no bus, written as its table holds it."""
+        return [] if df is None else [dict(row) for row in df.iter_rows(named=True)]
 
     @staticmethod
     def _build_arc_components(

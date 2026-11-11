@@ -1,9 +1,10 @@
 """PLEXOS Load -> Sienna PowerLoad translation.
 
-PLEXOS states demand in two places. A Region states a ``Load``, which becomes one load on
+PLEXOS states demand in three places. A Region states a ``Load``, which becomes one load on
 the single Node that Region contains; a Node states its own ``Load``, which becomes a load
-of the Node's name. Either one may state a number or name a data file, and a file-backed
-Load becomes a time series the sink streams from the PLEXOS frame.
+of the Node's name; an object of the Load class states a ``Load`` and joins one Node, and
+becomes a load of its own name on that Node. Each may state a number or name a data file,
+and a file-backed Load becomes a time series the sink streams from the PLEXOS frame.
 
 Two readings leave a Region's demand out. A Region spread over several Nodes has no one
 bus to sit on. Region Loads that are each in (0, 1] and sum to one across the model are
@@ -14,6 +15,7 @@ megawatts would give a network with one megawatt of demand.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 import polars as pl
@@ -21,7 +23,7 @@ import polars as pl
 from interop.core.extensions import LoadExtension
 from interop.core.pipeline import State
 from interop.core.reporting import ScopedRecorder
-from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW
+from interop.plugins.shared.constants import UNIT_DOLLARS_PER_MWH, UNIT_MW, Framework
 from interop.plugins.shared.plexos_constants import (
     PlexosClass,
     PlexosCollection,
@@ -34,6 +36,7 @@ from interop.plugins.shared.plexos_pypsa_translations._shared import (
     relate_child,
 )
 from interop.plugins.shared.plexos_sienna_translations._shared import (
+    ID_NOTE,
     dropped,
     plexos_field,
     record,
@@ -62,11 +65,18 @@ from interop.plugins.shared.sienna_events import (
 from interop.plugins.shared.sienna_time_series import (
     UNSCALABLE_LOAD_SERIES_NOTE,
     TimeSeriesInfo,
+    build_ts_info,
     is_unscalable_load_series,
     warn_unscalable_load_series,
 )
 from interop.plugins.shared.staged_samples import choose_reference_sample, filter_to_sample
-from interop.plugins.shared.translation_runner import Translation, express_document_id
+from interop.plugins.shared.translation_runner import (
+    SkipReport,
+    SkipRule,
+    Translation,
+    drop_skipped,
+    express_document_id,
+)
 
 log = logging.getLogger(__name__)
 
@@ -94,6 +104,8 @@ _SOURCE_SCHEMA: dict[str, Any] = {
 # The frames stage_plexos_xml keys a file-backed Load by, one per owning class.
 REGION_LOAD_SERIES_KEY = (PlexosClass.REGION, PlexosProperty.LOAD)
 NODE_LOAD_SERIES_KEY = (PlexosClass.NODE, PlexosProperty.LOAD)
+LOAD_OBJECT_SERIES_KEY = (PlexosClass.LOAD, PlexosProperty.LOAD)
+LOAD_SERIES_KEYS = (REGION_LOAD_SERIES_KEY, NODE_LOAD_SERIES_KEY, LOAD_OBJECT_SERIES_KEY)
 
 # A Sienna load states its rating in MVA, and a zero rating divides nothing, so a load with
 # no demand still takes a floor.
@@ -107,7 +119,6 @@ _PARTICIPATION_FRACTION_SUM = 1.0
 _PARTICIPATION_FRACTION_TOLERANCE = 1e-6
 _PARTICIPATION_REGIONS_MINIMUM = 2
 
-_ID_NOTE = "assigned by row position in the PowerLoad table, after the ids of earlier components"
 _AVAILABLE_NOTE = "PLEXOS states no Load availability; every load is available"
 _BUS_NAME_NOTE = "bus string name; the sink resolves it to an ACBus id"
 _REACTIVE_POWER_NOTE = "PLEXOS states no reactive demand; reactive_power defaults to 0.0"
@@ -116,8 +127,10 @@ _CONFORMITY_NOTE = "PLEXOS has no load conformity concept"
 _BASE_POWER_DERIVATION = f"max(max_active_power, {MIN_BASE_POWER_MVA}) MVA"
 _NAME_DERIVATION = "<Region>_load"
 _NODE_NAME_DERIVATION = "the Node's own name"
+_LOAD_OBJECT_NAME_DERIVATION = "the Load object's own name"
 _BUS_DERIVATION = "the Node the Region contains -> bus"
 _NODE_BUS_DERIVATION = "the Node stating the Load -> bus"
+_LOAD_OBJECT_BUS_DERIVATION = "the Node the Load object joins -> bus"
 _ACTIVE_POWER_DERIVATION = "the Load"
 _ACTIVE_POWER_PROFILE_DERIVATION = "the Load profile at its first snapshot"
 _ACTIVE_POWER_NOTE = "the object carries no scalar Load; active_power defaults to 0.0"
@@ -131,6 +144,53 @@ _MISSING_PROFILE_NOTE = (
 )
 _BUSLESS_NOTE = "Region contains no Node, so its demand has no bus"
 _NODE_BUSLESS_NOTE = "the Node was not translated to a bus, so its demand has no home"
+_LOAD_OBJECT_SCHEMA: dict[str, Any] = {
+    LOAD_NAME: pl.Utf8,
+    LOAD_BUS: pl.Utf8,
+    LOAD_DEMAND: pl.Float64,
+}
+_LOAD_OBJECT_BUSLESS_REPORT = SkipReport(
+    pipeline=Framework.PLEXOS,
+    framework=Framework.PLEXOS,
+    component=PlexosClass.LOAD,
+    name_col=LOAD_NAME,
+    reason="join no Node that became a bus",
+    counted_noun="Load object(s)",
+    note="the Load object joins no Node that became a bus, so its demand has no home",
+    attribute_col=LOAD_DEMAND,
+    attribute_name=PlexosProperty.LOAD,
+)
+_LOAD_OBJECT_DUPLICATE_REPORT = SkipReport(
+    pipeline=Framework.PLEXOS,
+    framework=Framework.PLEXOS,
+    component=PlexosClass.LOAD,
+    name_col=LOAD_NAME,
+    reason="share a name with another load",
+    counted_noun="Load object(s)",
+    note=(
+        "another load already takes the name of this Load object, and Sienna names each "
+        "PowerLoad once"
+    ),
+    attribute_col=LOAD_DEMAND,
+    attribute_name=PlexosProperty.LOAD,
+)
+
+# What each owner class names a load after, and the membership that gives it its bus.
+_NAME_DERIVATIONS = {
+    PlexosClass.REGION: _NAME_DERIVATION,
+    PlexosClass.NODE: _NODE_NAME_DERIVATION,
+    PlexosClass.LOAD: _LOAD_OBJECT_NAME_DERIVATION,
+}
+_BUS_DERIVATIONS = {
+    PlexosClass.REGION: _BUS_DERIVATION,
+    PlexosClass.NODE: _NODE_BUS_DERIVATION,
+    PlexosClass.LOAD: _LOAD_OBJECT_BUS_DERIVATION,
+}
+_BUS_COLLECTIONS = {
+    PlexosClass.REGION: PlexosCollection.NODES,
+    PlexosClass.NODE: PlexosCollection.NODES,
+    PlexosClass.LOAD: PlexosCollection.NODE,
+}
 _PARTICIPATION_SHARE_NOTE = (
     "the Region Loads are participation shares of a system-wide profile, not MW, and "
     "translating shares is not supported"
@@ -152,7 +212,8 @@ def load_name_for(region: str) -> str:
 def build_loads_source_table(state: State, recorder: ScopedRecorder) -> pl.DataFrame:
     """One row per load the model states, in PLEXOS words, sorted so ids are stable."""
     _record_dropped_region_prices(state, recorder)
-    rows = _region_load_rows(state, recorder) + _node_load_rows(state, recorder)
+    rows = _build_region_load_rows(state, recorder) + _build_node_load_rows(state, recorder)
+    rows += _build_load_object_rows(state, recorder, {row[LOAD_NAME] for row in rows})
     _report_unscalable_profiles(rows, recorder)
     return pl.DataFrame(rows, schema=_SOURCE_SCHEMA)
 
@@ -221,7 +282,7 @@ def _record_dropped_region_prices(state: State, recorder: ScopedRecorder) -> Non
             )
 
 
-def _region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
+def _build_region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     demand_by_region = _drop_participation_shares(
         _demand_by_object(properties, PlexosClass.REGION), recorder
@@ -252,7 +313,7 @@ def _region_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, 
     return rows
 
 
-def _node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
+def _build_node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, Any]]:
     properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
     demand_by_node = _demand_by_object(properties, PlexosClass.NODE)
     profile_nodes = _staged_profile_owners(
@@ -276,6 +337,51 @@ def _node_load_rows(state: State, recorder: ScopedRecorder) -> list[dict[str, An
             )
         )
     return rows
+
+
+def _build_load_object_rows(
+    state: State, recorder: ScopedRecorder, taken_names: set[str]
+) -> list[dict[str, Any]]:
+    """One row per Load object that joins a bus and whose name no other load takes."""
+    properties = state.source_topology[PlexosResolvedTable.PROPERTIES]
+    demand_by_load = _demand_by_object(properties, PlexosClass.LOAD)
+    profile_loads = _staged_profile_owners(
+        state, properties, recorder, PlexosClass.LOAD, LOAD_OBJECT_SERIES_KEY
+    )
+    candidates = _build_load_object_table(state, demand_by_load, profile_loads)
+    rules = (
+        SkipRule(pl.col(LOAD_BUS).is_in(sorted(_bus_names(state))), _LOAD_OBJECT_BUSLESS_REPORT),
+        SkipRule(~pl.col(LOAD_NAME).is_in(sorted(taken_names)), _LOAD_OBJECT_DUPLICATE_REPORT),
+    )
+    kept = drop_skipped(candidates, rules, recorder)
+    stats = _series_stats(state, LOAD_OBJECT_SERIES_KEY)
+    return [
+        _load_row(
+            name=row[LOAD_NAME],
+            owner=row[LOAD_NAME],
+            owner_class=PlexosClass.LOAD,
+            bus=row[LOAD_BUS],
+            demand=row[LOAD_DEMAND],
+            stats=stats.get(row[LOAD_NAME]) if row[LOAD_NAME] in profile_loads else None,
+        )
+        for row in kept.iter_rows(named=True)
+    ]
+
+
+def _build_load_object_table(
+    state: State, demand_by_load: dict[str, float], profile_loads: set[str]
+) -> pl.DataFrame:
+    """Every Load object that states a demand, with the Node it joins, sorted by name."""
+    node_by_load = relate_child(
+        state.source_topology[PlexosResolvedTable.MEMBERSHIPS],
+        PlexosClass.LOAD,
+        PlexosCollection.NODE,
+    )
+    rows = [
+        {LOAD_NAME: name, LOAD_BUS: node_by_load.get(name), LOAD_DEMAND: demand_by_load.get(name)}
+        for name in sorted(set(demand_by_load) | profile_loads)
+    ]
+    return pl.DataFrame(rows, schema=_LOAD_OBJECT_SCHEMA)
 
 
 def _load_row(
@@ -484,14 +590,15 @@ def _record_busless_node(recorder: ScopedRecorder, node: str, demand: float | No
 
 
 def build_load_ts_associations(
-    source: pl.DataFrame, destination: pl.DataFrame, ts_info: TimeSeriesInfo
+    source: pl.DataFrame, destination: pl.DataFrame, ts_info_by_owner: Mapping[str, TimeSeriesInfo]
 ) -> pl.DataFrame:
     """One association row per load whose Load is file-backed.
 
     The sink streams straight from the PLEXOS frame, so the row names the PLEXOS owner
     class and the PLEXOS property rather than anything Sienna states. The absolute MW
     profile is stored as a per-unit shape: ``scaling_factor`` carries the peak the sink
-    divides by, and ``get_max_active_power`` reverses it on read.
+    divides by, and ``get_max_active_power`` reverses it on read. Each row takes the start,
+    step and length of its own owner's series, since two data files can start on different days.
     """
     with_series = [
         row
@@ -507,28 +614,35 @@ def build_load_ts_associations(
             strict=True,
         )
     )
-    col = SiennaTimeSeriesAssociationCol
+    no_series = build_ts_info(0, None, None)
     rows = [
-        {
-            col.INITIAL_TIMESTAMP: (
-                ts_info.initial_timestamp.isoformat()
-                if ts_info.initial_timestamp is not None
-                else None
-            ),
-            col.RESOLUTION: ts_info.resolution,
-            col.LENGTH: ts_info.length,
-            col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
-            col.OWNER_ID: id_by_name[row[LOAD_NAME]],
-            col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
-            col.COMPONENT_NAME: row[LOAD_OWNER],
-            col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
-            col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,
-            # An all-zero profile has peak 0.0; divide by 1.0 to keep the stored zeros.
-            col.SCALING_FACTOR: row[LOAD_PEAK] or 1.0,
-        }
+        _build_load_association(
+            row, id_by_name[row[LOAD_NAME]], ts_info_by_owner.get(row[LOAD_OWNER], no_series)
+        )
         for row in with_series
     ]
     return pl.DataFrame(rows, schema=TIME_SERIES_ASSOCIATION_SCHEMA)
+
+
+def _build_load_association(
+    row: dict[str, Any], owner_id: int, ts_info: TimeSeriesInfo
+) -> dict[str, Any]:
+    col = SiennaTimeSeriesAssociationCol
+    return {
+        col.INITIAL_TIMESTAMP: (
+            ts_info.initial_timestamp.isoformat() if ts_info.initial_timestamp is not None else None
+        ),
+        col.RESOLUTION: ts_info.resolution,
+        col.LENGTH: ts_info.length,
+        col.NAME: SiennaLoadCol.MAX_ACTIVE_POWER,
+        col.OWNER_ID: owner_id,
+        col.OWNER_TYPE: SiennaComponent.POWER_LOAD,
+        col.COMPONENT_NAME: row[LOAD_OWNER],
+        col.SOURCE_TABLE: row[LOAD_OWNER_CLASS],
+        col.SOURCE_ATTRIBUTE: PlexosProperty.LOAD,
+        # An all-zero profile has peak 0.0; divide by 1.0 to keep the stored zeros.
+        col.SCALING_FACTOR: row[LOAD_PEAK] or 1.0,
+    }
 
 
 # --- Translation constants ---
@@ -541,7 +655,7 @@ def _load_dest(name: str, attribute: str, value: Any = None, unit: str | None = 
 LOAD_ID = Translation(
     exprs=[express_document_id().alias(SiennaLoadCol.ID)],
     make_events=lambda old, new: build_defaulted(
-        [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], _ID_NOTE
+        [_load_dest(new[LOAD_NAME], SiennaLoadCol.ID, new[SiennaLoadCol.ID])], ID_NOTE
     ),
 )
 
@@ -561,11 +675,7 @@ LOAD_NAME_TRANSLATION = Translation(
             )
         ],
         [_load_dest(new[SiennaLoadCol.NAME], SiennaLoadCol.NAME, new[SiennaLoadCol.NAME])],
-        (
-            _NAME_DERIVATION
-            if old[LOAD_OWNER_CLASS] == PlexosClass.REGION
-            else _NODE_NAME_DERIVATION
-        ),
+        _NAME_DERIVATIONS[old[LOAD_OWNER_CLASS]],
     ),
 )
 
@@ -584,12 +694,12 @@ LOAD_BUS_NAME = Translation(
             plexos_field(
                 old[LOAD_OWNER_CLASS],
                 old[LOAD_OWNER],
-                PlexosCollection.NODES,
+                _BUS_COLLECTIONS[old[LOAD_OWNER_CLASS]],
                 old[LOAD_BUS],
             )
         ],
         [_load_dest(new[LOAD_NAME], SiennaLoadCol.BUS_NAME, new[SiennaLoadCol.BUS_NAME])],
-        (_BUS_DERIVATION if old[LOAD_OWNER_CLASS] == PlexosClass.REGION else _NODE_BUS_DERIVATION),
+        _BUS_DERIVATIONS[old[LOAD_OWNER_CLASS]],
     ),
 )
 

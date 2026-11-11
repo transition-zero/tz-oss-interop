@@ -12,9 +12,9 @@ from interop.core.pipeline import State, TranslationStep
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.plexos_sienna_translations import (
     LOAD_BASE_POWER_TRANSLATIONS,
+    LOAD_OWNER_CLASS,
+    LOAD_SERIES_KEYS,
     LOAD_TRANSLATIONS,
-    NODE_LOAD_SERIES_KEY,
-    REGION_LOAD_SERIES_KEY,
     build_load_extensions,
     build_load_ts_associations,
     build_loads_source_table,
@@ -23,7 +23,7 @@ from interop.plugins.shared.sienna_constants import (
     LOADS_DESTINATION_SCHEMA,
     SiennaComponent,
 )
-from interop.plugins.shared.sienna_time_series import collect_ts_info
+from interop.plugins.shared.sienna_time_series import build_ts_info_by_component
 from interop.plugins.shared.translation_runner import (
     apply_translations,
     enrich_first_id,
@@ -32,7 +32,7 @@ from interop.plugins.shared.translation_runner import (
 
 
 class PlexosToSiennaMapLoads(TranslationStep):
-    """Writes one Sienna PowerLoad per Region Load and per Node Load."""
+    """Writes one Sienna PowerLoad per Region Load, per Node Load and per Load object."""
 
     name: ClassVar[str] = "plexos_to_sienna_map_loads"
     params_schema: ClassVar[type[BaseModel] | None] = None
@@ -61,13 +61,24 @@ class PlexosToSiennaMapLoads(TranslationStep):
 
     def _append_associations(self, state: State, source: pl.DataFrame, loads: pl.DataFrame) -> None:
         """The sink streams a file-backed Load straight from the PLEXOS frame it was staged in."""
-        frame = state.source_time_series.get(REGION_LOAD_SERIES_KEY)
-        if frame is None:
-            frame = state.source_time_series.get(NODE_LOAD_SERIES_KEY)
-        associations = build_load_ts_associations(source, loads, collect_ts_info(frame))
-        if associations.height == 0:
+        parts = _build_associations_by_owner_class(state, source, loads)
+        associations = pl.concat(parts) if parts else None
+        if associations is None or associations.height == 0:
             return
         existing = state.destination_tables.get(SiennaComponent.TIME_SERIES_ASSOCIATION)
         state.destination_tables[SiennaComponent.TIME_SERIES_ASSOCIATION] = (
             associations if existing is None else pl.concat([existing, associations])
         )
+
+
+def _build_associations_by_owner_class(
+    state: State, source: pl.DataFrame, loads: pl.DataFrame
+) -> list[pl.DataFrame]:
+    """Each load takes its timing from its own series, since two files can start apart."""
+    parts: list[pl.DataFrame] = []
+    for key in LOAD_SERIES_KEYS:
+        owned = source.filter(pl.col(LOAD_OWNER_CLASS) == key[0])
+        if owned.height:
+            ts_info_by_owner = build_ts_info_by_component(state.source_time_series.get(key))
+            parts.append(build_load_ts_associations(owned, loads, ts_info_by_owner))
+    return parts

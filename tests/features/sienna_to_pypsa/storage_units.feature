@@ -6,7 +6,7 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
   p_max_pu, and (for PHS) storage_capacity -> max_hours, output limit ->
   p_max_pu, negated input limit -> p_min_pu, efficiency.in/out ->
   efficiency_store/dispatch. The hydro_budget series is inverted to an inflow
-  series (efficiency_dispatch is not carried and is assumed 1.0).
+  series. A HydroTurbine divides it by its efficiency, and a HydroDispatch states none.
 
   Scenario: a HydroDispatch becomes a PyPSA StorageUnit with carrier hydro and an inflow series
     Given a Sienna system
@@ -80,6 +80,77 @@ Feature: Sienna to PyPSA Pipeline translates Sienna hydro and storage to PyPSA S
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.state_of_charge_initial` = 0.0 |  | HydroDispatch carries no reservoir level; state_of_charge_initial defaults to 0.0 | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.cyclic_state_of_charge` = False |  | HydroDispatch carries no energy_shortage_cost; cyclic_state_of_charge defaults to False | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
     And the file "decisions.md" contains "| `pypsa.StorageUnit.hydro_1.p_nom_extendable` = False |  | no ext.p_nom_extendable; p_nom_extendable defaults to False | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
+  Scenario: a HydroTurbine becomes a PyPSA hydro StorageUnit, as a HydroDispatch does
+    A HydroTurbine states every field a HydroDispatch states. A system with no sidecar gives
+    no reservoir to this hop, so the storage fields take the PyPSA defaults, and the
+    decisions name the HydroTurbine as their source.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the system is saved as "inputs/hydro_turbine.json"
+    When I run translate against "inputs/hydro_turbine.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 storage unit
+    And the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "p_nom" is 100.0
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.max_hours` = 1.0 |  | a HydroTurbine keeps its reservoir on a HydroReservoir, which this hop does not read, and the storage record states no max_hours; max_hours uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "`sienna.HydroTurbine.turbine_1.base_power` = 100.0 MVA | `pypsa.StorageUnit.turbine_1.p_nom` = 100.0 MW"
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.efficiency_dispatch` = 1.0 |  | the HydroTurbine states no efficiency and does not pump, so efficiency_store and efficiency_dispatch use the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+    And the file "decisions.md" does not contain "HydroTurbine carries no round-trip efficiency"
+    And the log does not contain "which a PyPSA StorageUnit does not hold"
+
+  Scenario: the efficiency of a HydroTurbine becomes the dispatch efficiency of its StorageUnit
+    A turbine turns water into power and does not pump, so its efficiency is the dispatch
+    efficiency, and the store efficiency keeps the PyPSA default.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroTurbine "turbine_1" states "efficiency" set to 0.9
+    And the system is saved as "inputs/turbine_efficiency.json"
+    When I run translate against "inputs/turbine_efficiency.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "efficiency_dispatch" is 0.9
+    And the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "efficiency_store" is 1.0
+    And the file "decisions.md" contains "| `sienna.HydroTurbine.turbine_1.efficiency` = 0.9 | `pypsa.StorageUnit.turbine_1.efficiency_dispatch` = 0.9 | efficiency -> efficiency_dispatch |  | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "| `pypsa.StorageUnit.turbine_1.efficiency_store` = 1.0 |  | a HydroTurbine does not pump, so efficiency_store uses the PyPSA storage default | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+
+  Scenario: a HydroTurbine hydro_budget becomes an inflow that its efficiency covers
+    PyPSA multiplies what leaves the store by efficiency_dispatch, so the inflow is the
+    budget in MW divided by the turbine efficiency.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroTurbine "turbine_1" states "efficiency" set to 0.9
+    And the HydroTurbine "turbine_1" has a hydro_budget series 0.18 0.36 0.27
+    And the system is saved as "inputs/turbine_budget.json"
+    When I run translate against "inputs/turbine_budget.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "turbine_1" has an inflow time series 20.0 40.0 30.0
+
+  Scenario: a HydroTurbine after a hundred other hydro units keeps its efficiency
+    The source reads the fields of every generator row, so a field that only the last
+    row states still reaches the StorageUnit.
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains 100 HydroDispatch units on bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroTurbine "turbine_1" states "efficiency" set to 0.9
+    And the system is saved as "inputs/turbine_efficiency_late.json"
+    When I run translate against "inputs/turbine_efficiency_late.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 101 storage units
+    And the PyPSA network "outputs/network.nc" storage unit "turbine_1" attribute "efficiency_dispatch" is 0.9
+
+  Scenario: each turbine field that a PyPSA StorageUnit cannot hold is reported, and the run completes
+    Given a Sienna system
+    And the system contains a bus "node_a"
+    And the system contains a HydroTurbine "turbine_1" on bus "node_a" with base_power 100.0 rating 100 active_power_min 10.0 active_power_max 100.0 marginal_cost 5.0
+    And the HydroTurbine "turbine_1" states "conversion_factor" set to 0.5
+    And the HydroTurbine "turbine_1" states "outflow_limits" set to {"min": 0.0, "max": 300.0}
+    And the system is saved as "inputs/turbine_fields.json"
+    When I run translate against "inputs/turbine_fields.json" pipeline "sienna-to-pypsa" writing PyPSA to "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" has 1 storage unit
+    And the file "decisions.md" contains "| `sienna.HydroTurbine.turbine_1.conversion_factor` = 0.5 |  |  | a PyPSA StorageUnit has no field for the conversion_factor of a HydroTurbine, so the network does not hold it | sienna-to-pypsa | sienna_to_pypsa_map_storage_units |"
+    And the file "decisions.md" contains "| `sienna.HydroTurbine.turbine_1.outflow_limits` = "
+    And the file "decisions.md" contains "a PyPSA StorageUnit has no field for the outflow_limits of a HydroTurbine, so the network does not hold it"
+    And the log contains "sienna-to-pypsa: 1 HydroTurbine(s) state conversion_factor, which a PyPSA StorageUnit does not hold, so it is left out: turbine_1"
+    And the log contains "sienna-to-pypsa: 1 HydroTurbine(s) state outflow_limits, which a PyPSA StorageUnit does not hold, so it is left out: turbine_1"
 
   Scenario: an EnergyReservoirStorage without ext p_nom_extendable records a translator default
     Given a Sienna system

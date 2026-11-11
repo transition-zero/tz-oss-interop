@@ -11,6 +11,7 @@ from interop.plugins.shared.plexos_sienna_translations._buses import (
     BUS_TRANSLATIONS,
     build_bus_extensions,
     build_buses_source_table,
+    report_unstaged_node_values,
 )
 from interop.plugins.shared.plexos_sienna_translations._carriers import (
     CarrierTarget,
@@ -24,13 +25,21 @@ from interop.plugins.shared.plexos_sienna_translations._generators import (
 )
 from interop.plugins.shared.plexos_sienna_translations._loads import (
     LOAD_BASE_POWER_TRANSLATIONS,
+    LOAD_OWNER_CLASS,
+    LOAD_SERIES_KEYS,
     LOAD_TRANSLATIONS,
-    NODE_LOAD_SERIES_KEY,
-    REGION_LOAD_SERIES_KEY,
     build_load_extensions,
     build_load_ts_associations,
     build_loads_source_table,
 )
+from interop.plugins.shared.plexos_sienna_translations._outages import (
+    map_forced_outages,
+)
+from interop.plugins.shared.plexos_sienna_translations._reserves import (
+    TranslatedServices,
+    map_reserve_services,
+)
+from interop.plugins.shared.plexos_sienna_translations._reservoirs import TranslatedReservoirs
 from interop.plugins.shared.plexos_sienna_translations._storage import (
     map_storage,
 )
@@ -42,6 +51,8 @@ from interop.plugins.shared.plexos_sienna_translations._window import (
 )
 
 __all__ = [
+    "TranslatedServices",
+    "map_reserve_services",
     "BUS_TRANSLATIONS",
     "CarrierTarget",
     "CarrierTargets",
@@ -49,15 +60,18 @@ __all__ = [
     "generator_schema",
     "generator_types",
     "map_generators",
+    "map_forced_outages",
     "drop_profiles_off_the_window",
     "map_storage",
+    "TranslatedReservoirs",
     "map_transmission",
     "LOAD_BASE_POWER_TRANSLATIONS",
     "LOAD_TRANSLATIONS",
-    "NODE_LOAD_SERIES_KEY",
-    "REGION_LOAD_SERIES_KEY",
+    "LOAD_OWNER_CLASS",
+    "LOAD_SERIES_KEYS",
     "build_bus_extensions",
     "build_buses_source_table",
+    "report_unstaged_node_values",
     "build_load_extensions",
     "build_load_ts_associations",
     "build_loads_source_table",

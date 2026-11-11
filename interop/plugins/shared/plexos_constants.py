@@ -21,6 +21,7 @@ class PlexosClass(StrEnum):
     NODE = "Node"
     REGION = "Region"
     ZONE = "Zone"
+    LOAD = "Load"
     LINE = "Line"
     TRANSFORMER = "Transformer"
     INTERFACE = "Interface"
@@ -35,8 +36,12 @@ class PlexosClass(StrEnum):
     CONSTRAINT = "Constraint"
     DECISION_VARIABLE = "Decision Variable"
     DATA_FILE = "Data File"
+    TIMESLICE = "Timeslice"
     MODEL = "Model"
     SCENARIO = "Scenario"
+    VARIABLE = "Variable"
+    # The class of the one object that every top-level membership hangs from.
+    SYSTEM = "System"
 
 
 class PlexosResolvedTable:
@@ -94,6 +99,10 @@ class PlexosPropertyCol:
     UNIT = "unit"
     DATA_FILE = "data_file"
     SCALING = "scaling"
+    # The name a data file gives this value's rows: the Variable it reads through, else the object.
+    ROW_NAME = "row_name"
+    # The Variable whose profile escalates a value that a data file states, else null.
+    ESCALATOR = "escalator"
 
 
 class PlexosDatedPropertyCol(PlexosPropertyCol):
@@ -109,6 +118,23 @@ class PlexosDatedPropertyCol(PlexosPropertyCol):
     DATE_TO = "date_to"
 
 
+class PlexosCsvCol:
+    """Headers of a PLEXOS data file, in the spelling that the source reads them in.
+
+    PLEXOS reads a header without letter case, so the source normalises each header that it
+    knows to this spelling before it reads the file.
+    """
+
+    NAME = "Name"
+    YEAR = "Year"
+    MONTH = "Month"
+    DAY = "Day"
+    PERIOD = "Period"
+    VALUE = "Value"
+    DATETIME = "DateTime"
+    PATTERN = "Pattern"
+
+
 class PlexosCollection(StrEnum):
     """PLEXOS collection names, the relationship kind on a ``memberships`` row.
 
@@ -122,7 +148,11 @@ class PlexosCollection(StrEnum):
     REGIONS = "Regions"
     # A Node's membership to its containing Region uses the singular collection name.
     REGION = "Region"
+    # A Load object's membership to its Node uses the singular collection name too.
+    NODE = "Node"
     ZONES = "Zones"
+    # A Node names the Zone it sits in through the singular collection.
+    ZONE = "Zone"
     GENERATORS = "Generators"
     FUELS = "Fuels"
     START_FUELS = "Start Fuels"
@@ -131,6 +161,8 @@ class PlexosCollection(StrEnum):
     NODE_TO = "Node To"
     HEAD_STORAGE = "Head Storage"
     TAIL_STORAGE = "Tail Storage"
+    STORAGE_FROM = "Storage From"
+    STORAGE_TO = "Storage To"
     LINES = "Lines"
     BATTERIES = "Batteries"
     STORAGES = "Storages"
@@ -165,6 +197,8 @@ class PlexosProperty(StrEnum):
     RATING_FACTOR = "Rating Factor"
     OUTAGE_FACTOR = "Outage Factor"
     OUTAGE_RATING = "Outage Rating"
+    FORCED_OUTAGE_RATE = "Forced Outage Rate"
+    MEAN_TIME_TO_REPAIR = "Mean Time to Repair"
     HEAT_RATE = "Heat Rate"
     HEAT_RATE_BASE = "Heat Rate Base"
     HEAT_RATE_INCR = "Heat Rate Incr"
@@ -176,6 +210,7 @@ class PlexosProperty(StrEnum):
     MIN_UP_TIME = "Min Up Time"
     MIN_DOWN_TIME = "Min Down Time"
     PUMP_EFFICIENCY = "Pump Efficiency"
+    PUMP_LOAD = "Pump Load"
     # Expansion, which a Generator and a Battery state alike
     BUILD_COST = "Build Cost"
     MAX_UNITS_BUILT = "Max Units Built"
@@ -194,6 +229,7 @@ class PlexosProperty(StrEnum):
     DURATION = "Duration"
     # Storage (hydro reservoir)
     MAX_VOLUME = "Max Volume"
+    MIN_VOLUME = "Min Volume"
     INITIAL_VOLUME = "Initial Volume"
     NATURAL_INFLOW = "Natural Inflow"
     END_EFFECTS_METHOD = "End Effects Method"
@@ -225,6 +261,11 @@ class PlexosProperty(StrEnum):
     RHS_WEEK = "RHS Week"
     RHS_MONTH = "RHS Month"
     RHS_YEAR = "RHS Year"
+    INCLUDE = "Include"
+    # Data File, Variable
+    FILENAME = "Filename"
+    PROFILE = "Profile"
+    EFFICIENCY_INCR = "Efficiency Incr"
     INCLUDE_IN_LT_PLAN = "Include in LT Plan"
 
 

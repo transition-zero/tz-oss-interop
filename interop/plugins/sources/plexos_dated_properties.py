@@ -68,7 +68,8 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     """Narrow dated properties to one window: the value in force, and the steps within it.
 
     The value in force is the one the window opens on. Only a property that takes more
-    than one value inside the window contributes stepped rows.
+    than one value inside the window contributes stepped rows, or a property whose value a
+    Variable escalates, since only a series can carry the escalation.
     """
     by_property: dict[tuple[Any, ...], list[DatedRow]] = {}
     for dated in resolved:
@@ -78,9 +79,17 @@ def apply_window(resolved: list[DatedRow], window: Window) -> tuple[Rows, Rows]:
     for read_dated_rows in by_property.values():
         steps = _steps_within(sorted(read_dated_rows, key=opens_at), window)
         in_force.append(steps[0].row)
-        if len(steps) > 1:
+        if len(steps) > 1 or _is_escalated_value(steps[0].row):
             stepped.extend({**step.row, StagedTimeSeriesCol.SNAPSHOT: step.at} for step in steps)
     return in_force, stepped
+
+
+def _is_escalated_value(row: dict[str, Any]) -> bool:
+    """Whether a Variable escalates a value that the row states, not one a data file states."""
+    return (
+        row[PlexosPropertyCol.DATA_FILE] is None
+        and row.get(PlexosPropertyCol.ESCALATOR) is not None
+    )
 
 
 def read_dated_rows(resolved: list[DatedRow]) -> Rows:
@@ -172,20 +181,27 @@ def _to_datetime(value: Any) -> datetime | None:
         return None
 
 
-def stepped_series_parts(
-    stepped: Rows, staged: dict[tuple[str, str], pl.LazyFrame]
-) -> dict[tuple[str, str], list[pl.LazyFrame]]:
+def build_stepped_series(stepped: Rows) -> dict[tuple[str, str], pl.LazyFrame]:
     """A frame per (owner class, property) for each property whose value steps in the window.
 
-    A property already read from a Data File keeps the file's values, which state the shape
-    at the file's own resolution rather than at the coarser one a date band can express.
+    A step row whose property reads a Data File is left out, since the file states the values.
     """
     rows_by_key: dict[tuple[str, str], Rows] = {}
     for row in stepped:
         key = (row[PlexosMembershipCol.CHILD_CLASS], row[PlexosPropertyCol.PROPERTY])
-        if row[PlexosPropertyCol.DATA_FILE] is None and key not in staged:
+        if row[PlexosPropertyCol.DATA_FILE] is None:
             rows_by_key.setdefault(key, []).append(row)
-    return {key: [_stepped_frame(rows)] for key, rows in rows_by_key.items()}
+    return {key: _stepped_frame(rows) for key, rows in rows_by_key.items()}
+
+
+def drop_file_components(steps: pl.LazyFrame, file_series: pl.LazyFrame) -> pl.LazyFrame:
+    """The steps of each component that the file series of the same property does not hold.
+
+    A component that reads a Data File keeps the file's values, which state the shape at the
+    file's own resolution rather than at the coarser one a date band can express.
+    """
+    file_components = file_series.select(StagedTimeSeriesCol.COMPONENT).unique()
+    return steps.join(file_components, on=StagedTimeSeriesCol.COMPONENT, how="anti")
 
 
 def _stepped_frame(rows: Rows) -> pl.LazyFrame:

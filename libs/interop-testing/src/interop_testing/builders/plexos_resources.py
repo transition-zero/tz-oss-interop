@@ -7,6 +7,8 @@ apart keeps the topology and the resources readable on their own.
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from interop_testing.builders.plexos_generator_specs import GeneratorSpec
 from interop_testing.builders.plexos_tables import (
     ConstraintTerm,
@@ -50,6 +52,7 @@ from interop_testing.builders.plexos_vocabulary import (
     NODES_COLLECTION,
     OFFTAKE_AT_START_PROPERTY,
     PUMP_EFFICIENCY_PROPERTY,
+    PUMP_LOAD_PROPERTY,
     REACTANCE_PROPERTY,
     RESERVE_CLASS,
     RESERVE_TYPE_PROPERTY,
@@ -57,10 +60,21 @@ from interop_testing.builders.plexos_vocabulary import (
     RESISTANCE_PROPERTY,
     START_FUELS_COLLECTION,
     STORAGE_CLASS,
+    STORAGE_FROM_COLLECTION,
+    STORAGE_TO_COLLECTION,
     STORAGES_COLLECTION,
     TAIL_STORAGE_COLLECTION,
     VALUE_OF_RESERVE_SHORTAGE_PROPERTY,
+    WATERWAY_CLASS,
+    WATERWAYS_COLLECTION,
 )
+
+
+class PumpSpec(NamedTuple):
+    """The most MW one pumped-storage unit draws in pump mode, and its round-trip percentage."""
+
+    load: float
+    efficiency: float
 
 
 class ResourceBuilder(PlexosTables):
@@ -132,6 +146,16 @@ class ResourceBuilder(PlexosTables):
                 variable=variable,
                 data_file=data_file,
             )
+
+    def add_reserve_battery(self, name: str, battery: str) -> None:
+        """A battery that can supply the reserve, through the reserve's Batteries collection."""
+        self._check_not_saved(f"battery {battery!r} of reserve {name!r}")
+        self._membership_id(RESERVE_CLASS, name, BATTERY_CLASS, battery, BATTERIES_COLLECTION)
+
+    def add_reserve_property(self, name: str, property_name: str, value: float) -> None:
+        """Any other Reserve property, named as PLEXOS spells it."""
+        self._check_not_saved(f"property {property_name!r} of reserve {name!r}")
+        self._add_system_property(RESERVE_CLASS, name, RESERVES_COLLECTION, property_name, value)
 
     def price_reserve_shortage(self, name: str, price: float) -> None:
         """What a megawatt of unmet requirement costs, PLEXOS's VoRS."""
@@ -251,12 +275,28 @@ class ResourceBuilder(PlexosTables):
         self._check_not_saved(f"property {property_name!r} of storage {name!r}")
         self._add_system_property(STORAGE_CLASS, name, STORAGES_COLLECTION, property_name, value)
 
+    def add_waterway(self, name: str, storage_from: str, storage_to: str | None = None) -> None:
+        """A Waterway that carries water out of one Storage and, where named, into another."""
+        self._check_not_saved(f"waterway {name!r}")
+        self._add_system_object(WATERWAY_CLASS, name, WATERWAYS_COLLECTION)
+        self._membership_id(
+            WATERWAY_CLASS, name, STORAGE_CLASS, storage_from, STORAGE_FROM_COLLECTION
+        )
+        if storage_to is not None:
+            self._membership_id(
+                WATERWAY_CLASS, name, STORAGE_CLASS, storage_to, STORAGE_TO_COLLECTION
+            )
+
+    def add_waterway_property(self, name: str, property_name: str, value: float) -> None:
+        self._check_not_saved(f"property {property_name!r} of waterway {name!r}")
+        self._add_system_property(WATERWAY_CLASS, name, WATERWAYS_COLLECTION, property_name, value)
+
     def add_pumped_storage(
         self,
         name: str,
         node: str,
         max_capacity: float,
-        pump_efficiency: float,
+        pump: PumpSpec,
         head: str,
         tail: str,
         max_volume: float,
@@ -266,7 +306,8 @@ class ResourceBuilder(PlexosTables):
         self._add_reservoir_generator(name, node, max_capacity, head, max_volume, initial_volume)
         self._add_storage(tail)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, tail, TAIL_STORAGE_COLLECTION)
-        self.add_generator_property(name, PUMP_EFFICIENCY_PROPERTY, pump_efficiency)
+        self.add_generator_property(name, PUMP_LOAD_PROPERTY, pump.load)
+        self.add_generator_property(name, PUMP_EFFICIENCY_PROPERTY, pump.efficiency)
 
     def add_generator_property(
         self, name: str, property_name: str, value: float, variable: str | None = None
@@ -298,10 +339,10 @@ class ResourceBuilder(PlexosTables):
         self._add_storage(head)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, head, HEAD_STORAGE_COLLECTION)
 
-    def add_bare_pumped_storage(
+    def add_bare_turbine_with_tail(
         self, name: str, node: str, max_capacity: float, head: str, tail: str
     ) -> None:
-        """A turbine with both reservoirs and no Pump Efficiency, so membership alone classifies."""
+        """A turbine with both reservoirs and no pump property, so it states no Pump Load."""
         self.add_bare_turbine(name, node, head, max_capacity)
         self._add_storage(tail)
         self._membership_id(GENERATOR_CLASS, name, STORAGE_CLASS, tail, TAIL_STORAGE_COLLECTION)
@@ -381,6 +422,15 @@ class ResourceBuilder(PlexosTables):
         self._check_not_saved(f"property {property_name!r} on line {name!r}")
         self._add_line_property(name, property_name, value)
 
+    def add_line_property_from_data_file(
+        self, name: str, property_name: str, placeholder: float, data_file: str
+    ) -> None:
+        """A Line property whose value reads a data file, beside the placeholder the XML holds."""
+        self._check_not_saved(f"property {property_name!r} on line {name!r}")
+        self._add_system_property(
+            LINE_CLASS, name, LINES_COLLECTION, property_name, placeholder, data_file=data_file
+        )
+
     def add_storage_property_from_data_file(
         self, name: str, property_name: str, data_file: str
     ) -> None:
@@ -394,13 +444,59 @@ class ResourceBuilder(PlexosTables):
             data_file=data_file,
         )
 
+    def add_generator_property_from_data_file(
+        self, name: str, property_name: str, data_file: str
+    ) -> None:
+        """A Generator property whose value a Data File holds; the XML states the placeholder 0."""
+        self._check_not_saved(f"property {property_name!r} of generator {name!r}")
+        self._add_system_property(
+            GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, 0, data_file=data_file
+        )
+
+    def add_escalated_generator_property_from_data_file(
+        self, name: str, property_name: str, data_file: str, variable: str
+    ) -> None:
+        """A Generator property that a Data File holds and that a Variable's profile escalates."""
+        self._check_not_saved(f"escalated property {property_name!r} of generator {name!r}")
+        self._add_system_property(
+            GENERATOR_CLASS,
+            name,
+            GENERATORS_COLLECTION,
+            property_name,
+            0,
+            data_file=data_file,
+            variable=variable,
+        )
+
+    def add_reserve_generator_property_from_data_file(
+        self, reserve: str, generator: str, property_name: str, data_file: str
+    ) -> None:
+        """A property of a Reserve's membership with a Generator, which a Data File holds."""
+        self._check_not_saved(f"property {property_name!r} of {reserve!r} for {generator!r}")
+        self._add_property(
+            RESERVE_CLASS,
+            reserve,
+            GENERATOR_CLASS,
+            generator,
+            GENERATORS_COLLECTION,
+            property_name,
+            0,
+            data_file=data_file,
+        )
+
     def date_generator_property(
-        self, name: str, property_name: str, value: float, dates: DateBand
+        self, name: str, property_name: str, value: float, dates: DateBand, band: int | None = None
     ) -> None:
         """State a Generator property for one span of dates rather than for all of time."""
         self._check_not_saved(f"dated property {property_name!r} of generator {name!r}")
         self._add_system_property(
-            GENERATOR_CLASS, name, GENERATORS_COLLECTION, property_name, value, dates=dates
+            GENERATOR_CLASS,
+            name,
+            GENERATORS_COLLECTION,
+            property_name,
+            value,
+            band=band,
+            dates=dates,
         )
 
     def _add_line_property(
@@ -415,6 +511,14 @@ class ResourceBuilder(PlexosTables):
         self._add_system_object(LINE_CLASS, name, LINES_COLLECTION)
         self._membership_id(LINE_CLASS, name, NODE_CLASS, endpoints.node_from, NODE_FROM_COLLECTION)
         self._membership_id(LINE_CLASS, name, NODE_CLASS, endpoints.node_to, NODE_TO_COLLECTION)
+
+    def add_head_storage(self, generator: str, storage: str, max_volume: float) -> None:
+        """A Storage of this volume that an existing Generator names as its head."""
+        self._check_not_saved(f"head storage {storage!r} of generator {generator!r}")
+        self._add_storage(storage, max_volume=max_volume)
+        self._membership_id(
+            GENERATOR_CLASS, generator, STORAGE_CLASS, storage, HEAD_STORAGE_COLLECTION
+        )
 
     def _add_reservoir_generator(
         self,

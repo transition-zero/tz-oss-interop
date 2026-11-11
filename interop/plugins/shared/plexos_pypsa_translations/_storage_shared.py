@@ -8,8 +8,10 @@ recorded as skipped rather than written half-formed.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from math import sqrt
+from typing import NamedTuple
 
 import polars as pl
 
@@ -57,6 +59,7 @@ from interop.plugins.shared.plexos_pypsa_translations.constants import (
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     holds,
@@ -84,9 +87,14 @@ CHARGE_NOTE = "full rated power available for charging (negative dispatch is cha
 
 CARRIER_NOTE = "PLEXOS carries no carrier; the object's class names it"
 
+PUMP_LIMIT_DERIVATION = "Pump Load / Max Capacity"
+
 _SOC_NOTE = "PLEXOS states no initial level; state_of_charge_initial defaults to empty"
 _ORPHAN_STORAGE_NOTE = "no Generator names this Storage as a head or tail, so it cannot dispatch"
 _NO_NODE_NOTE = "this object is on no Node, so it has no bus to connect to"
+_ORPHAN_STORAGE_GROUP = SkipGroup(
+    "Storage(s)", "are the head or tail of no Generator", "so each cannot dispatch and is left out"
+)
 
 # Stands in for the value of a file-backed property, which PLEXOS states as a path.
 _DATA_FILE = "data file"
@@ -195,6 +203,13 @@ class ClassLookups:
     lifespans: dict[str, Lifespan]
 
 
+class Route(NamedTuple):
+    """The Storage a Waterway leaves and the Storage it reaches, where it names one."""
+
+    leaves: str | None
+    reaches: str | None
+
+
 @dataclass(frozen=True)
 class StorageLookups:
     """The per-object properties and memberships the three storage paths read.
@@ -209,6 +224,8 @@ class StorageLookups:
     head_by_generator: dict[str, str]
     tail_by_generator: dict[str, str]
     storages_with_inflow_profile: set[str]
+    # Each Waterway, by name, and the two Storages it joins.
+    routes: dict[str, Route]
 
     def read_properties_of(self, plexos_class: PlexosClass) -> ObjectProperties:
         return self.by_class[plexos_class].properties
@@ -224,9 +241,6 @@ class StorageLookups:
             lifespan=one.lifespans.get(name, NO_LIFESPAN),
         )
 
-    def has_head_and_tail(self, generator: str) -> bool:
-        return self.has_head(generator) and self.has_tail(generator)
-
     def has_head(self, generator: str) -> bool:
         return generator in self.head_by_generator
 
@@ -236,6 +250,18 @@ class StorageLookups:
     def turbine_fed_storages(self) -> set[str]:
         """The Storages some Generator names as its head or its tail."""
         return set(self.head_by_generator.values()) | set(self.tail_by_generator.values())
+
+    def build_storages_of(self, generators: Iterable[str]) -> frozenset[str]:
+        """The head and the tail Storage of each of these Generators."""
+        return frozenset(
+            storage
+            for generator in generators
+            for storage in (
+                self.head_by_generator.get(generator),
+                self.tail_by_generator.get(generator),
+            )
+            if storage is not None
+        )
 
     def head_of(self, generator: str) -> HeadReservoir | None:
         storage = self.head_by_generator.get(generator)
@@ -309,7 +335,16 @@ def build_lookups(state: State) -> StorageLookups:
             memberships, PlexosClass.GENERATOR, PlexosCollection.TAIL_STORAGE
         ),
         storages_with_inflow_profile=_storages_with_inflow_profile(state),
+        routes=_read_routes(state, memberships),
     )
+
+
+def _read_routes(state: State, memberships: pl.LazyFrame) -> dict[str, Route]:
+    """Each Waterway, and the Storage it leaves and the Storage it reaches, where it names one."""
+    leaves = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_FROM)
+    reaches = relate_child(memberships, PlexosClass.WATERWAY, PlexosCollection.STORAGE_TO)
+    names = read_object_names(state, PlexosClass.WATERWAY)
+    return {name: Route(leaves.get(name), reaches.get(name)) for name in names}
 
 
 def _read_class(
@@ -333,10 +368,93 @@ def _storages_with_inflow_profile(state: State) -> set[str]:
     return set() if frame is None else set(series_components(frame))
 
 
+# --- the hydro cascade ---------------------------------------------------------
+
+
+class Turbine(NamedTuple):
+    """One turbine the system writes, and its id."""
+
+    name: str
+    turbine_id: int
+
+
+@dataclass(frozen=True)
+class Cascade:
+    """The Storages that the turbines and the Waterways join to each other.
+
+    ``storages`` leaves out each Storage in ``held_by_storage_units``, because a
+    pumped-storage unit holds that water itself.
+    """
+
+    turbines_by_storage: dict[str, list[Turbine]]
+    tail_turbines_by_storage: dict[str, list[Turbine]]
+    routes: dict[str, Route]
+    held_by_storage_units: frozenset[str]
+    storages: list[str]
+
+    def list_routes_to_storage_units(self) -> list[str]:
+        """Each Waterway that joins a Storage of the cascade to one a pumped-storage unit holds."""
+        cascade = set(self.storages)
+        held = self.held_by_storage_units
+        return sorted(
+            waterway
+            for waterway, route in self.routes.items()
+            if (route.leaves in cascade and route.reaches in held)
+            or (route.reaches in cascade and route.leaves in held)
+        )
+
+
+def build_cascade(
+    lookups: StorageLookups, turbines: dict[str, int], storage_units: Iterable[str]
+) -> Cascade:
+    """The cascade of these turbines, which leaves out the Storages these storage units hold."""
+    held = lookups.build_storages_of(storage_units)
+    heads = _group_turbines(turbines, lookups.head_by_generator)
+    tails = _group_turbines(turbines, lookups.tail_by_generator)
+    start = (set(heads) | set(tails)) - held
+    return Cascade(heads, tails, lookups.routes, held, _list_joined(start, lookups.routes, held))
+
+
+def _group_turbines(
+    turbines: dict[str, int], storage_by_turbine: dict[str, str]
+) -> dict[str, list[Turbine]]:
+    """The turbines that name each Storage in one collection, with their ids."""
+    by_storage: dict[str, list[Turbine]] = {}
+    for turbine, turbine_id in sorted(turbines.items()):
+        storage = storage_by_turbine.get(turbine)
+        if storage is not None:
+            by_storage.setdefault(storage, []).append(Turbine(turbine, turbine_id))
+    return by_storage
+
+
+def _list_joined(start: set[str], routes: dict[str, Route], held: Collection[str]) -> list[str]:
+    """Each Storage in ``start``, and each Storage a Waterway joins to one of them, step by step.
+
+    A Storage in ``held`` never joins.
+    """
+    found = set(start)
+    is_growing = True
+    while is_growing:
+        joined = {
+            end
+            for route in routes.values()
+            if route.leaves in found or route.reaches in found
+            for end in route
+            if end is not None and end not in held
+        }
+        is_growing = not joined <= found
+        found |= joined
+    return sorted(found)
+
+
 def orphan_storage_skips(names: list[str], lookups: StorageLookups) -> list[SkippedComponent]:
     turbine_fed = lookups.turbine_fed_storages()
     return [
-        SkippedComponent(SourceValue(PlexosClass.STORAGE, name, None, None), _ORPHAN_STORAGE_NOTE)
+        SkippedComponent(
+            SourceValue(PlexosClass.STORAGE, name, None, None),
+            _ORPHAN_STORAGE_NOTE,
+            _ORPHAN_STORAGE_GROUP,
+        )
         for name in names
         if name not in turbine_fed
     ]
@@ -397,7 +515,7 @@ class RatedObject:
 def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | SkippedComponent:
     """The object with its rated power, or the recorded reason it cannot become a unit."""
     if staged.node is None:
-        return skip_object(rating.plexos_class, staged.name, PlexosCollection.NODES, _NO_NODE_NOTE)
+        return _skipped_off_node(rating, staged.name)
     if rating.capacity_property in staged.file_backed:
         return _skipped_file_backed(rating, staged.name)
     if rating.capacity_property not in staged.properties:
@@ -418,10 +536,12 @@ def rate_object(staged: StagedObject, rating: RatedPower) -> RatedObject | Skipp
     return RatedObject(staged.node, p_nom, candidate, staged.lifespan)
 
 
-def skip_object(
-    plexos_class: PlexosClass, name: str, attribute: str | None, note: str
-) -> SkippedComponent:
-    return SkippedComponent(SourceValue(plexos_class, name, attribute, None), note)
+def _skipped_off_node(rating: RatedPower, name: str) -> SkippedComponent:
+    source = SourceValue(rating.plexos_class, name, PlexosCollection.NODES, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)", "sit on no Node", "so each has no bus and is left out"
+    )
+    return SkippedComponent(source, _NO_NODE_NOTE, group)
 
 
 def _skipped_file_backed(rating: RatedPower, name: str) -> SkippedComponent:
@@ -430,7 +550,10 @@ def _skipped_file_backed(rating: RatedPower, name: str) -> SkippedComponent:
         "unit has no rated power to size it"
     )
     source = SourceValue(rating.plexos_class, name, rating.capacity_property, _DATA_FILE, UNIT_MW)
-    return SkippedComponent(source, note)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)", f"read {rating.capacity_property} from a data file"
+    )
+    return SkippedComponent(source, note, group)
 
 
 def _skipped_without_capacity(rating: RatedPower, name: str) -> SkippedComponent:
@@ -438,13 +561,25 @@ def _skipped_without_capacity(rating: RatedPower, name: str) -> SkippedComponent
         f"PLEXOS states no {rating.capacity_property}, so the object states no rated "
         "power, which the storage mapping cannot default"
     )
-    return skip_object(rating.plexos_class, name, rating.capacity_property, note)
+    source = SourceValue(rating.plexos_class, name, rating.capacity_property, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)",
+        f"state no {rating.capacity_property}",
+        "so each has no rated power and is left out",
+    )
+    return SkippedComponent(source, note, group)
 
 
 def _skipped_zero_p_nom(rating: RatedPower, name: str, p_nom: float) -> SkippedComponent:
     """The rated power goes in the note, not on the capacity property, which may be positive."""
     note = f"rated power works out to {p_nom} MW, so this unit cannot dispatch"
-    return skip_object(rating.plexos_class, name, None, note)
+    source = SourceValue(rating.plexos_class, name, None, None)
+    group = SkipGroup(
+        f"{rating.plexos_class}(s)",
+        "have a rated power of 0 MW or less",
+        "so each cannot dispatch and is left out",
+    )
+    return SkippedComponent(source, note, group)
 
 
 # --- shared across every variant ---------------------------------------------

@@ -1,15 +1,17 @@
-"""Event factories every PLEXOS to Sienna translation uses.
+"""Event factories and the unit lookup that every PLEXOS to Sienna translation uses.
 
 A ``Translation`` states a Polars expression and a factory that turns one row into
 ``TranslationEvent``s. The factories here hold the framework names and the event shape, so
-a component module states only what it reads and what it writes.
+a component module states only what it reads and what it writes. ``build_translated_units``
+gives the Sienna component that each unit became, for a step that runs after the units.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
+from interop.core.pipeline import State
 from interop.core.reporting import EventRecorder, ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.framework_reporting import DestinationReporter
@@ -20,11 +22,47 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     SourceValue,
     mapped_fields,
 )
+from interop.plugins.shared.sienna_constants import (
+    SIENNA_ID_COLUMN,
+    SIENNA_NAME_COLUMN,
+    SiennaComponent,
+)
 from interop.ports.outbound.reporting import (
     EventKind,
     SourceField,
     TranslationEvent,
 )
+
+# The Sienna types that a PLEXOS unit can become, in the order a lookup by name tries them.
+UNIT_TYPES: tuple[SiennaComponent, ...] = (
+    SiennaComponent.THERMAL_STANDARD,
+    SiennaComponent.RENEWABLE_DISPATCH,
+    SiennaComponent.RENEWABLE_NON_DISPATCH,
+    SiennaComponent.HYDRO_DISPATCH,
+    SiennaComponent.HYDRO_TURBINE,
+    SiennaComponent.ENERGY_RESERVOIR_STORAGE,
+)
+
+ID_NOTE = "assigned by row position in the component's table, after the ids of earlier components"
+
+
+class TranslatedUnit(NamedTuple):
+    """One Sienna component that a PLEXOS unit became: its type and its id."""
+
+    sienna_type: SiennaComponent
+    sienna_id: int
+
+
+def build_translated_units(state: State) -> dict[str, list[TranslatedUnit]]:
+    """Each Sienna component of a unit type, by name, in the order of ``UNIT_TYPES``."""
+    units: dict[str, list[TranslatedUnit]] = {}
+    for sienna_type in UNIT_TYPES:
+        table = state.destination_tables.get(sienna_type)
+        if table is None:
+            continue
+        for name, sienna_id in table.select(SIENNA_NAME_COLUMN, SIENNA_ID_COLUMN).iter_rows():
+            units.setdefault(name, []).append(TranslatedUnit(sienna_type, sienna_id))
+    return units
 
 
 def plexos_field(
@@ -90,7 +128,7 @@ class SiennaComponentReporter(SiennaSourceReporter):
         for mapped, decision in mapped_fields(mapping):
             self.record(name, mapped, decision)
 
-    def record_id(self, name: str, column: str, value: int, note: str) -> None:
+    def record_id(self, name: str, column: str, value: int, note: str = ID_NOTE) -> None:
         """The 1-based row position the component takes, which its row order fixes."""
         self.record(name, MappedColumns((column,)), Decision.default(value, note))
 

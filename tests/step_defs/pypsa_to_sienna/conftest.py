@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from interop_testing import write_pipeline, write_project_plugin
 from pytest_bdd import given, parsers, when
 
 from tests.step_defs.conftest import (
@@ -68,3 +69,45 @@ def run_translate_with_sidecar(
         source_extensions_json_path=str(Path(extensions_path)),
         sink_0_output_system_json_file_path=sink_output,
     )
+
+
+_ADD_AREA_FIELD_STEP_PY = """\
+from typing import ClassVar
+
+import polars as pl
+from pydantic import BaseModel
+
+from interop.core.pipeline import State, TranslationStep
+
+
+class AddAreaField(TranslationStep):
+    name: ClassVar[str] = "add_area_field"
+    params_schema: ClassVar[type[BaseModel] | None] = None
+
+    def run(self, state: State, params: BaseModel | None) -> State:
+        areas = state.destination_tables["Area"]
+        state.destination_tables["Area"] = areas.with_columns(pl.lit(1.0).alias("{field}"))
+        return state
+"""
+
+_DRIFTED_PIPELINE_YAML = """\
+source_framework: pypsa
+destination_framework: sienna
+source:
+  name: stage_pypsa_network_file
+steps:
+  - name: pypsa_to_sienna_map_components
+  - name: sienna_relate_components
+  - name: add_area_field
+sinks:
+  - name: emit_sienna_files
+    params:
+      output_system_json_file_path: outputs/system.json
+"""
+
+
+@given(parsers.parse('a pipeline "{name}" whose last step adds the field "{field}" to each Area'))
+def given_pipeline_adding_area_field(name: str, field: str) -> None:
+    step_source = _ADD_AREA_FIELD_STEP_PY.replace("{field}", field)
+    write_project_plugin("steps", "add_area_field", step_source)
+    write_pipeline(name, _DRIFTED_PIPELINE_YAML)

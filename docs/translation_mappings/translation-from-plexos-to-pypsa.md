@@ -387,8 +387,10 @@ capacity it may build as its `p_nom`, and the translator writes it. Refer to
 
 ## Pumped storage → `StorageUnit`
 
-The turbine, its head reservoir and its tail reservoir become **one** `StorageUnit`. The
-name of the turbine is the name of that `StorageUnit`.
+PLEXOS has no pumped-storage class. A unit is pumped storage when it has a `Head Storage`,
+a `Tail Storage` and a `Pump Load` above 0 MW. `Pump Load` is the most MW that one unit
+draws in pump mode. The turbine, its head reservoir and its tail reservoir become **one**
+`StorageUnit`. The name of the turbine is the name of that `StorageUnit`.
 
 | PyPSA field | Unit | From | Mapping |
 | --- | --- | --- | --- |
@@ -397,7 +399,8 @@ name of the turbine is the name of that `StorageUnit`.
 | `carrier` | | `PHS` | `default` |
 | `p_nom` | MW | `Max Capacity × Units`. Where the turbine runs no units yet, `Max Capacity × Max Units Built` | `derived` |
 | `max_hours` | h | The `Max Volume` of the head reservoir divided by `p_nom`, if the model gives that volume in MWh | `derived` |
-| `p_max_pu` / `p_min_pu` | | `1.0` / `-1.0` | `default` |
+| `p_max_pu` | | `1.0` | `default` |
+| `p_min_pu` | | `-Pump Load ÷ Max Capacity`. This is `-(Pump Load × Units) ÷ p_nom`. The translator keeps a `Pump Load` above `Max Capacity` as the model states it. | `derived` |
 | `efficiency_store` / `efficiency_dispatch` | | `√(Pump Efficiency)` for each | `derived` |
 | `state_of_charge_initial` | MWh | The `Initial Volume` of the head reservoir, if the model gives it in MWh. The translator holds the value between 0 and the energy of the units the turbine already runs. | `derived` |
 | `cyclic_state_of_charge` | | `True` if `End Effects Method` is `RECYCLE` | `derived` |
@@ -432,7 +435,10 @@ which is why it drops `Min SoC` and `Max SoC`.
 
 | Your unit | Becomes |
 | --- | --- |
-| It has a `Head Storage` membership | A `StorageUnit` with the carrier `hydro` |
+| It has a `Head Storage` membership and states no `Pump Load` | A `StorageUnit` with the carrier `hydro` |
+| It has a `Head Storage` and a `Tail Storage`, and states a `Pump Load` | [Pumped storage](#pumped-storage--storageunit) |
+| It states a `Pump Load` and has a `Head Storage` but no `Tail Storage` | A `StorageUnit` with the carrier `hydro`. It has no tail to pump from, so its `Pump Load` and its `Pump Efficiency` are `dropped`, and the report and the log name the unit. |
+| It states a `Pump Efficiency` and no `Pump Load` | A `StorageUnit` with the carrier `hydro`. Its `Pump Efficiency` is `dropped`, and the report and the log name the unit. |
 | It has an inflow profile and no reservoir | Version 1 does not translate it |
 | It has no storage, and its output follows a profile | A `Generator` with the carrier its `Fuel` or category names |
 
@@ -803,6 +809,10 @@ the model has:
 | Neither property, but the model has outage data | None. This is a full outage. |
 | The model has no outage data | The full capacity |
 
+A generator that states `Units Out` takes no derate from these properties. `Units Out`
+says when its units are out, so the capacity during an outage belongs to those units and
+not to the units that run.
+
 `Units Out` gives the quantity of units that are not available at each snapshot. Thus it
 becomes a derate of `1 - Units Out / Units`. It applies to generators and to batteries. On
 a battery, it limits the discharge. A generator can also have a `Rating` profile or a
@@ -908,7 +918,7 @@ the translator does not rescale the profile. It gives a warning instead.
 | Fuel `Price` | currency/GJ |
 | Fuel `Production Rate` | kg/GJ |
 | Emission `Price` | currency/tonne |
-| `Max Capacity`, `Rating`, `Min Stable Level`, `Max Flow`, `Min Flow` | MW |
+| `Max Capacity`, `Rating`, `Min Stable Level`, `Pump Load`, `Max Flow`, `Min Flow` | MW |
 | `Max Ramp Up`, `Max Ramp Down` | MW/min |
 | `Min Up Time`, `Min Down Time` | h |
 | `VO&M Charge`, `Wheeling Charge` | currency/MWh |
@@ -963,8 +973,8 @@ If a storage has no node, its bus comes from its generator. A turbine finds its 
 through its `Head Storage` membership and its `Tail Storage` membership. The translator
 never compares the names of the reservoirs. Thus a head reservoir and a tail reservoir need
 no name convention. If no generator names a `Storage`, the translator does not write it and
-it makes a `COMPONENT_SKIPPED` event. It does the same for a turbine that has a tail
-reservoir and no head reservoir.
+it makes a `COMPONENT_SKIPPED` event. It does the same for a turbine that has no head
+reservoir, but has a tail reservoir or states a `Pump Load`.
 
 ---
 

@@ -81,7 +81,7 @@ _RESERVE_TYPES: dict[int, tuple[ReserveDirection, ReserveKind]] = {
 _MUTUALLY_EXCLUSIVE_AUTO = 0.0
 _MUTUALLY_EXCLUSIVE_YES = 1.0
 
-_CARRIED_NOTE = (
+CARRIED_NOTE = (
     "reserve carried to the extensions sidecar; the network file itself has no reserve component"
 )
 _MEGAWATTS_NOTE = (
@@ -142,8 +142,8 @@ class _Reserve:
     stated_provision: float | None
 
 
-def map_reserves(state: State, recorder: ScopedRecorder) -> None:
-    """Carry every PLEXOS reserve into the extensions sidecar."""
+def map_reserves(state: State, recorder: ScopedRecorder, carried_note: str = CARRIED_NOTE) -> None:
+    """Carry every PLEXOS reserve into the extensions sidecar, and say why in ``carried_note``."""
     reserves = _read_reserves(state)
     if not reserves:
         return
@@ -151,7 +151,7 @@ def map_reserves(state: State, recorder: ScopedRecorder) -> None:
     stated = {reserve.name: _read_provision(reserve, load_profiles) for reserve in reserves}
     staged = _stage_requirement_series(state, [name for name, p in stated.items() if _varies(p)])
     provisions = {name: _settle(provision, name in staged) for name, provision in stated.items()}
-    _record_decisions(reserves, provisions, recorder)
+    _record_decisions(reserves, provisions, recorder, carried_note)
     records = [_extension_record(reserve, provisions[reserve.name]) for reserve in reserves]
     append_extensions(state.destination_extensions, ExtensionKind.RESERVE, records)
 
@@ -349,10 +349,11 @@ def _record_decisions(
     reserves: list[_Reserve],
     provisions: dict[str, _Provision],
     recorder: ScopedRecorder,
+    carried_note: str,
 ) -> None:
     reporter = SourceReporter(recorder)
     for reserve in reserves:
-        reporter.record_dropped(_provision_source(reserve.name, None), _CARRIED_NOTE)
+        reporter.record_dropped(_provision_source(reserve.name, None), carried_note)
         _record_provision(reporter, reserve, provisions[reserve.name])
 
 

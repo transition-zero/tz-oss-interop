@@ -216,6 +216,11 @@ def assert_load_p_set_series(path: str, name: str, series: str) -> None:
     WrittenComponent(path, LOAD, name).assert_series("p_set", series)
 
 
+@then(parsers.parse('the PyPSA network "{path}" load "{name}" has no p_set time series'))
+def assert_load_has_no_p_set_series(path: str, name: str) -> None:
+    WrittenComponent(path, LOAD, name).assert_no_series("p_set")
+
+
 # ---------- Lines ----------
 
 

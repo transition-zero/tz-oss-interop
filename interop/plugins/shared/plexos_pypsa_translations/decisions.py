@@ -17,11 +17,15 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, fields
 from enum import Enum, auto
 from operator import itemgetter
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 from interop.core.reporting import ScopedRecorder
 from interop.plugins.shared.constants import Framework
 from interop.plugins.shared.framework_reporting import DestinationReporter
+from interop.plugins.shared.plexos_pypsa_translations.constants import (
+    FILE_BACKED_VALUE,
+    UNSTAGED_PLACEHOLDER_NOTE,
+)
 from interop.plugins.shared.warning_text import name_a_few
 from interop.ports.outbound.reporting import SourceField
 
@@ -78,13 +82,42 @@ class SkipGroup(NamedTuple):
 class SkippedComponent:
     """A PLEXOS object the mapping deliberately did not translate, and why.
 
-    ``warn_with`` is set where one warning speaks for every object a reading left out, and
-    left unset where the object gets a line of its own.
+    ``note`` goes in the report for this one object. ``warn_with`` is the warning that
+    speaks for every object that the same reading left out.
     """
 
     source: SourceValue
     note: str
-    warn_with: SkipGroup | None = None
+    warn_with: SkipGroup
+
+
+class DroppedValueRecorder(Protocol):
+    """A reporter that records a source value its destination survives without."""
+
+    def record_dropped(self, source: SourceValue, note: str) -> None: ...
+
+
+def report_unstaged_placeholders(
+    reporter: DroppedValueRecorder, plexos_class: str, unstaged: dict[str, list[str]]
+) -> None:
+    """Record each placeholder a mapping left out, and warn once for each property."""
+    names_by_property: dict[str, list[str]] = {}
+    for name, property_names in sorted(unstaged.items()):
+        for property_name in property_names:
+            reporter.record_dropped(
+                SourceValue(plexos_class, name, property_name, FILE_BACKED_VALUE),
+                UNSTAGED_PLACEHOLDER_NOTE.format(property=property_name),
+            )
+            names_by_property.setdefault(property_name, []).append(name)
+    for property_name, names in sorted(names_by_property.items()):
+        log.warning(
+            "plexos: %d %s(s) read %s from a data file that did not stage, so the translator "
+            "default stands in for it. Each one: %s",
+            len(names),
+            plexos_class,
+            property_name,
+            name_a_few(names),
+        )
 
 
 def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
@@ -103,14 +136,7 @@ def warn_about_groups(named: Iterable[tuple[SkipGroup, str]]) -> None:
 
 
 def warn_about_skips(skipped: Sequence[SkippedComponent]) -> None:
-    for one in skipped:
-        if one.warn_with is None:
-            log.warning(
-                "plexos: dropping %s %r: %s", one.source.component, one.source.name, one.note
-            )
-    warn_about_groups(
-        (one.warn_with, one.source.name) for one in skipped if one.warn_with is not None
-    )
+    warn_about_groups((one.warn_with, one.source.name) for one in skipped)
 
 
 class DecisionKind(Enum):

@@ -23,7 +23,7 @@ import numpy as np
 from infrastore import OwnerCategory, SingleTimeSeries, Store
 
 from interop.plugins.shared.sienna_constants import SiennaSchemasSystem
-from interop.plugins.sinks._sienna_files import serialise_system_document
+from interop.plugins.sinks._sienna_files import build_system_contents, serialise_system_document
 from interop_testing.files import read_json
 
 TIME_SERIES_RESOLUTION_SECONDS = 3600
@@ -32,6 +32,9 @@ TIME_SERIES_INITIAL_TIME = "2020-01-01T00:00:00"
 _SYSTEM_FILENAME = "system.json"
 
 _AREAS = "areas"
+_LOAD_ZONES = "load_zones"
+_FORCED_OUTAGES = "forced_outages"
+_FORCED_OUTAGE_TYPE = "GeometricDistributionForcedOutage"
 _BUSES = "buses"
 _GENERATORS = "generators"
 _STORAGE = "storage"
@@ -39,6 +42,9 @@ _LOADS = "loads"
 _ARCS = "arcs"
 _LINES = "lines"
 _LINKS = "links"
+_SERVICES = "services"
+_SERVICE_MEMBERS = "service_members"
+_RESERVOIRS = "reservoirs"
 _TIME_SERIES = "time_series"
 _EXT = "ext"
 _UNKNOWN = "unknown"
@@ -60,7 +66,7 @@ def write_sienna_system(
     storage_file = sienna_h5_filename(path)
     write_system_document(
         path,
-        components,
+        _build_payload(components, sections, id_by_owner),
         _build_associations(
             sections.get(_TIME_SERIES, []), id_by_owner, components, path.parent / storage_file
         ),
@@ -73,14 +79,43 @@ def write_sienna_system(
     )
 
 
+def _build_payload(
+    components: dict[str, Any],
+    sections: dict[str, list[dict[str, Any]]],
+    id_by_owner: dict[tuple[str, str], int],
+) -> dict[str, Any]:
+    """The components, each forced outage and its association, and each service association."""
+    forced_outages = sections.get(_FORCED_OUTAGES, [])
+    return {
+        SiennaSchemasSystem.COMPONENTS: components,
+        SiennaSchemasSystem.SERVICE_ASSOCIATIONS: [
+            {
+                "service_id": id_by_owner[(row["service_type"], row["service_name"])],
+                "entity_id": id_by_owner[(row["owner_type"], row["owner_name"])],
+            }
+            for row in sections.get(_SERVICE_MEMBERS, [])
+        ],
+        SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTES: [row["attribute"] for row in forced_outages],
+        SiennaSchemasSystem.SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS: [
+            {
+                "component_id": id_by_owner[(row["owner_type"], row["owner_name"])],
+                "component_type": row["owner_type"],
+                "attribute_id": row["attribute"]["id"],
+                "attribute_type": _FORCED_OUTAGE_TYPE,
+            }
+            for row in forced_outages
+        ],
+    }
+
+
 def write_system_document(
     path: Path,
-    components: dict[str, Any],
+    payload: dict[str, Any],
     time_series_associations: Sequence[dict[str, Any]] = (),
     *,
     schema_version: str | None = None,
 ) -> None:
-    """Write ``components`` and association rows as a SiennaSchemas system document.
+    """Write ``payload`` and association rows as a SiennaSchemas system document.
 
     The sink serialises the rows, so each association row is SDK-validated. ``schema_version``
     replaces the SDK's own version in the written file.
@@ -88,7 +123,9 @@ def write_system_document(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
         serialise_system_document(
-            components, list(time_series_associations), sienna_h5_filename(path), 2
+            build_system_contents(payload, list(time_series_associations)),
+            sienna_h5_filename(path),
+            2,
         )
     )
     if schema_version is not None:
@@ -156,11 +193,23 @@ def _build_container(
     for area in sections.get(_AREAS, []):
         components.setdefault("Area", []).append(area)
 
+    for load_zone in sections.get(_LOAD_ZONES, []):
+        components.setdefault("LoadZone", []).append(load_zone)
+
     for bus in sections.get(_BUSES, []):
         components.setdefault("ACBus", []).append(_build_bus(bus))
         id_by_owner[("ACBus", bus["name"])] = bus["id"]
 
-    for section in (_GENERATORS, _STORAGE, _LOADS, _LINES, _LINKS, _UNKNOWN):
+    for section in (
+        _GENERATORS,
+        _STORAGE,
+        _RESERVOIRS,
+        _LOADS,
+        _LINES,
+        _LINKS,
+        _SERVICES,
+        _UNKNOWN,
+    ):
         for source in sections.get(section, []):
             components.setdefault(source["sienna_type"], []).append(_build_injector(source))
             id_by_owner[(source["sienna_type"], source["name"])] = source["id"]
@@ -184,7 +233,7 @@ def _build_bus(bus: dict[str, Any]) -> dict[str, Any]:
         "voltage_limits": bus.get("voltage_limits"),
         "base_voltage": bus["base_voltage"],
         "area": bus.get("area"),
-        "load_zone": None,
+        "load_zone": bus.get("load_zone"),
     }
 
 
@@ -234,6 +283,16 @@ def _build_single_time_series(
     values = np.asarray(series["values"], dtype="float64")
     if series.get("is_per_unit"):
         return SingleTimeSeries(initial_time, resolution, values, series["name"])
+    if "stated_units" in series:
+        return SingleTimeSeries(
+            initial_time,
+            resolution,
+            values,
+            series["name"],
+            units=series["stated_units"],
+            quantity_kind=series["quantity_kind"],
+            unit_system="natural_units",
+        )
     return SingleTimeSeries(
         initial_time,
         resolution,
@@ -331,14 +390,18 @@ def storage_cost(discharge_marginal_cost: float, *, cyclic: bool) -> dict[str, A
 
 
 def single_time_series(
-    owner_type: str, owner_name: str, name: str, values: list[float]
+    owner_type: str,
+    owner_name: str,
+    name: str,
+    values: list[float],
+    initial_time: str = TIME_SERIES_INITIAL_TIME,
 ) -> dict[str, Any]:
     return {
         "owner_type": owner_type,
         "owner_name": owner_name,
         "name": name,
         "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
-        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "initial_time": initial_time,
         "values": values,
     }
 
@@ -355,6 +418,22 @@ def per_unit_time_series(
         "initial_time": TIME_SERIES_INITIAL_TIME,
         "values": values,
         "is_per_unit": True,
+    }
+
+
+def stated_unit_time_series(
+    owner_type: str, owner_id: int, name: str, values: list[float], units: str
+) -> dict[str, Any]:
+    """An inflow series stored in natural units as stated, on an owner given by its id."""
+    return {
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "name": name,
+        "resolution_seconds": TIME_SERIES_RESOLUTION_SECONDS,
+        "initial_time": TIME_SERIES_INITIAL_TIME,
+        "values": values,
+        "stated_units": units,
+        "quantity_kind": "Inflow",
     }
 
 
@@ -426,13 +505,22 @@ def read_store_values(
 def portfolio_attributes_for(
     data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
 ) -> list[dict[str, Any]]:
+    """The supplemental attributes of one type describing one component of a portfolio.
+
+    An attribute may describe a component of the base system rather than of the portfolio,
+    which is why the id is the argument.
+    """
+    return list_attributes_for(data, attribute_type, component_type, component_id)
+
+
+def list_attributes_for(
+    data: dict[str, Any], attribute_type: str, component_type: str, component_id: int
+) -> list[dict[str, Any]]:
     """The supplemental attributes of one type describing one component, by id.
 
     The document links the two through `supplemental_attribute_associations`, so this walks
     the same route a consumer does: the association carrying the component id and the
-    attribute type, then the attribute of that id in the flat array. An attribute may
-    describe a component of the base system rather than of the portfolio, which is why the
-    id is the argument.
+    attribute type, then the attribute of that id in the flat array.
     """
     attribute_ids = {
         row["attribute_id"]

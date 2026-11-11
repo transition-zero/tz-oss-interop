@@ -20,6 +20,12 @@ class SiennaTable:
     STORAGE = "storage"
     LINES = "lines"
     LINKS = "links"
+    RESERVOIRS = "reservoirs"
+    # Each component of a type that no table above holds, by type and name.
+    OTHER_COMPONENTS = "other_components"
+    # Each service association and each supplemental attribute association, by name.
+    SERVICE_MEMBERS = "service_members"
+    ATTRIBUTE_OWNERS = "attribute_owners"
 
 
 class SiennaSchemasSystem:
@@ -33,6 +39,9 @@ class SiennaSchemasSystem:
     SCHEMA_VERSION = "schema_version"
     COMPONENTS = "components"
     TIME_SERIES_ASSOCIATIONS = "time_series_associations"
+    SERVICE_ASSOCIATIONS = "service_associations"
+    SUPPLEMENTAL_ATTRIBUTES = "supplemental_attributes"
+    SUPPLEMENTAL_ATTRIBUTE_ASSOCIATIONS = "supplemental_attribute_associations"
 
 
 class SiennaCompanionFilename(StrEnum):
@@ -71,11 +80,14 @@ class InfraStoreSeriesLabel:
     UNIT_SYSTEM_COMPONENT_BASE = "component_base"
     UNITS_POWER = UNIT_MW
     QUANTITY_ACTIVE_POWER = "ActivePower"
+    UNITS_FLOW = "m3/s"
+    QUANTITY_INFLOW = "Inflow"
 
 
 class SiennaComponent(StrEnum):
     AC_BUS = "ACBus"
     AREA = "Area"
+    LOAD_ZONE = "LoadZone"
     ARC = "Arc"
     POWER_LOAD = "PowerLoad"
     INTERRUPTIBLE_POWER_LOAD = "InterruptiblePowerLoad"
@@ -84,10 +96,14 @@ class SiennaComponent(StrEnum):
     RENEWABLE_DISPATCH = "RenewableDispatch"
     RENEWABLE_NON_DISPATCH = "RenewableNonDispatch"
     HYDRO_DISPATCH = "HydroDispatch"
+    HYDRO_TURBINE = "HydroTurbine"
+    HYDRO_RESERVOIR = "HydroReservoir"
     ENERGY_RESERVOIR_STORAGE = "EnergyReservoirStorage"
     LINE = "Line"
     MONITORED_LINE = "MonitoredLine"
     TWO_TERMINAL_GENERIC_HVDC_LINE = "TwoTerminalGenericHVDCLine"
+    ONLINE_RESERVE = "OnlineReserve"
+    OFFLINE_RESERVE = "OfflineReserve"
 
 
 SIENNA_TYPE_ATTRIBUTE = "type"
@@ -136,6 +152,82 @@ class SiennaAreaCol:
 
     ID = "id"
     NAME = "name"
+
+
+class SiennaReserveCol:
+    """Sienna OnlineReserve and OfflineReserve column names. An OfflineReserve has no direction."""
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    TIME_FRAME = "time_frame"
+    REQUIREMENT = "requirement"
+    SUSTAINED_TIME = "sustained_time"
+    MAX_OUTPUT_FRACTION = "max_output_fraction"
+    MAX_PARTICIPATION_FACTOR = "max_participation_factor"
+    DEPLOYED_FRACTION = "deployed_fraction"
+    RESERVE_DIRECTION = "reserve_direction"
+
+
+class SiennaReserveDirection(StrEnum):
+    """Sienna ``ReserveDirection`` (source: ``power_openapi_models.operations.models``)."""
+
+    UP = "UP"
+    DOWN = "DOWN"
+    SYMMETRIC = "SYMMETRIC"
+
+
+class SiennaServiceAssociationCol:
+    """One row of the ``service_associations`` list: a unit that contributes to a service."""
+
+    SERVICE_ID = "service_id"
+    ENTITY_ID = "entity_id"
+
+
+class SiennaStagedAssociationCol:
+    """Columns of a staged table that joins a service or an attribute to a component by name."""
+
+    SERVICE_TYPE = "service_type"
+    SERVICE_NAME = "service_name"
+    ATTRIBUTE_TYPE = "attribute_type"
+    COMPONENT_TYPE = "component_type"
+    COMPONENT_NAME = "component_name"
+
+
+class SiennaLoadZoneCol:
+    """Sienna LoadZone destination table column names."""
+
+    ID = "id"
+    NAME = "name"
+    PEAK_ACTIVE_POWER = "peak_active_power"
+    PEAK_REACTIVE_POWER = "peak_reactive_power"
+    BASE_POWER = "base_power"
+    POWER_UNITS = "power_units"
+
+
+class SiennaSupplementalAttribute(StrEnum):
+    """The SiennaSchemas supplemental attribute types the translator writes."""
+
+    GEOMETRIC_DISTRIBUTION_FORCED_OUTAGE = "GeometricDistributionForcedOutage"
+
+
+class SiennaForcedOutageCol:
+    """Columns of a GeometricDistributionForcedOutage attribute table."""
+
+    ID = "id"
+    MEAN_TIME_TO_RECOVERY = "mean_time_to_recovery"
+    OUTAGE_TRANSITION_PROBABILITY = "outage_transition_probability"
+    MONITORED_COMPONENTS = "monitored_components"
+    IDENTIFIER = "identifier"
+
+
+class SiennaAttributeAssociationCol:
+    """Columns of a SiennaSchemas ``SupplementalAttributeAssociation`` row."""
+
+    COMPONENT_ID = "component_id"
+    COMPONENT_TYPE = "component_type"
+    ATTRIBUTE_ID = "attribute_id"
+    ATTRIBUTE_TYPE = "attribute_type"
 
 
 class SiennaLoadCol:
@@ -313,6 +405,9 @@ class SiennaStructField:
     VOM_COST = "vom_cost"
     ENERGY_SHORTAGE_COST = "energy_shortage_cost"
     ENERGY_SURPLUS_COST = "energy_surplus_cost"
+    LEVEL_SHORTAGE_COST = "level_shortage_cost"
+    LEVEL_SURPLUS_COST = "level_surplus_cost"
+    SPILLAGE_COST = "spillage_cost"
     # operation cost top-level discriminator / scalar fields
     COST_TYPE = "cost_type"
     VARIABLE_COST_TYPE = "variable_cost_type"
@@ -358,6 +453,9 @@ class SiennaTimeSeriesAssociationCol:
     FEATURES = "features"
     # Optional: the basis of a series whose owner has no capacity rule. COMPONENT_BASE if absent.
     UNIT_SYSTEM = "unit_system"
+    # Optional: the unit and the quantity a series states, where it is not active power.
+    UNITS = "units"
+    QUANTITY_KIND = "quantity_kind"
 
 
 SiennaTimeSeriesMetadataCol = SiennaTimeSeriesAssociationCol  # backwards-compat alias
@@ -368,6 +466,7 @@ class SiennaSeriesName(StrEnum):
 
     MAX_ACTIVE_POWER = "max_active_power"
     HYDRO_BUDGET = "hydro_budget"
+    INFLOW = "inflow"
 
 
 class LoadConformity(StrEnum):
@@ -543,6 +642,41 @@ class SiennaHydroGeneratorCol:
     OPERATION_COST = "operation_cost"
 
 
+class SiennaHydroTurbineCol(SiennaHydroGeneratorCol):
+    """Sienna HydroTurbine destination table column names: the HydroDispatch ones and its own."""
+
+    CONVERSION_FACTOR = "conversion_factor"
+    EFFICIENCY = "efficiency"
+
+
+class SiennaHydroReservoirCol:
+    """Sienna HydroReservoir destination table column names."""
+
+    ID = "id"
+    NAME = "name"
+    AVAILABLE = "available"
+    STORAGE_LEVEL_LIMITS = "storage_level_limits"
+    INITIAL_LEVEL = "initial_level"
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
+    INTAKE_ELEVATION = "intake_elevation"
+    HEAD_TO_VOLUME_FACTOR = "head_to_volume_factor"
+    UPSTREAM_TURBINES = "upstream_turbines"
+    DOWNSTREAM_TURBINES = "downstream_turbines"
+    UPSTREAM_RESERVOIRS = "upstream_reservoirs"
+    OPERATION_COST = "operation_cost"
+    LEVEL_DATA_TYPE = "level_data_type"
+
+
+class SiennaLevelDataType(StrEnum):
+    """Sienna ``LevelDataType``: what a HydroReservoir level measures, and so its units."""
+
+    USABLE_VOLUME = "USABLE_VOLUME"
+    TOTAL_VOLUME = "TOTAL_VOLUME"
+    HEAD = "HEAD"
+    ENERGY = "ENERGY"
+
+
 class SiennaPrimeMovers(StrEnum):
     """Sienna ``PrimeMovers`` enum (source: ``SiennaSchemas/Core/common.json``)."""
 
@@ -616,6 +750,7 @@ class SiennaCostType(StrEnum):
     THERMAL = "THERMAL"
     RENEWABLE = "RENEWABLE"
     HYDRO_GEN = "HYDRO_GEN"
+    HYDRO_RES = "HYDRO_RES"
     STORAGE = "STORAGE"
     LOAD = "LOAD"
 
@@ -777,6 +912,56 @@ AREAS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.BASE_POWER: pl.Float64,
 }
 
+OFFLINE_RESERVE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaReserveCol.ID: pl.Int64,
+    SiennaReserveCol.NAME: pl.Utf8,
+    SiennaReserveCol.AVAILABLE: pl.Boolean,
+    SiennaReserveCol.TIME_FRAME: pl.Float64,
+    SiennaReserveCol.REQUIREMENT: pl.Float64,
+    SiennaReserveCol.SUSTAINED_TIME: pl.Float64,
+    SiennaReserveCol.MAX_OUTPUT_FRACTION: pl.Float64,
+    SiennaReserveCol.MAX_PARTICIPATION_FACTOR: pl.Float64,
+    SiennaReserveCol.DEPLOYED_FRACTION: pl.Float64,
+}
+
+ONLINE_RESERVE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **OFFLINE_RESERVE_DESTINATION_SCHEMA,
+    SiennaReserveCol.RESERVE_DIRECTION: pl.Utf8,
+}
+
+SERVICE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaServiceAssociationCol.SERVICE_ID: pl.Int64,
+    SiennaServiceAssociationCol.ENTITY_ID: pl.Int64,
+}
+
+LOAD_ZONES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaLoadZoneCol.ID: pl.Int64,
+    SiennaLoadZoneCol.NAME: pl.Utf8,
+    SiennaLoadZoneCol.PEAK_ACTIVE_POWER: pl.Float64,
+    SiennaLoadZoneCol.PEAK_REACTIVE_POWER: pl.Float64,
+    SiennaLoadZoneCol.BASE_POWER: pl.Float64,
+    SiennaLoadZoneCol.POWER_UNITS: UNIT_SYSTEM_DTYPE,
+}
+
+FORCED_OUTAGES_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaForcedOutageCol.ID: pl.Int64,
+    SiennaForcedOutageCol.MEAN_TIME_TO_RECOVERY: pl.Float64,
+    SiennaForcedOutageCol.OUTAGE_TRANSITION_PROBABILITY: pl.Float64,
+    SiennaForcedOutageCol.MONITORED_COMPONENTS: pl.List(pl.Int64),
+    SiennaForcedOutageCol.IDENTIFIER: pl.Utf8,
+}
+
+ATTRIBUTE_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaAttributeAssociationCol.COMPONENT_ID: pl.Int64,
+    SiennaAttributeAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaAttributeAssociationCol.ATTRIBUTE_ID: pl.Int64,
+    SiennaAttributeAssociationCol.ATTRIBUTE_TYPE: pl.Utf8,
+}
+
+# The portfolio keeps its own association table, so the system lists take keys of their own.
+SYSTEM_ATTRIBUTES_TABLE = "system_supplemental_attributes"
+SYSTEM_ATTRIBUTE_ASSOCIATIONS_TABLE = "system_supplemental_attribute_associations"
+
 LOADS_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaLoadCol.ID: pl.Int64,
     SiennaLoadCol.NAME: pl.Utf8,
@@ -804,6 +989,9 @@ TIME_SERIES_ASSOCIATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaTimeSeriesAssociationCol.SOURCE_TABLE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SOURCE_ATTRIBUTE: pl.Utf8,
     SiennaTimeSeriesAssociationCol.SCALING_FACTOR: pl.Float64,
+    SiennaTimeSeriesAssociationCol.UNIT_SYSTEM: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.UNITS: pl.Utf8,
+    SiennaTimeSeriesAssociationCol.QUANTITY_KIND: pl.Utf8,
 }
 
 TIME_SERIES_METADATA_SCHEMA = TIME_SERIES_ASSOCIATION_SCHEMA  # backwards-compat alias
@@ -943,6 +1131,38 @@ HYDRO_DISPATCH_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = 
     SiennaHydroGeneratorCol.OPERATION_COST: HYDRO_GENERATION_COST_DTYPE,
 }
 
+# A HydroTurbine states every field a HydroDispatch states, and the energy its water gives.
+HYDRO_TURBINE_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    **HYDRO_DISPATCH_DESTINATION_SCHEMA,
+    SiennaHydroTurbineCol.CONVERSION_FACTOR: pl.Float64,
+}
+
+HYDRO_RESERVOIR_COST_DTYPE: pl.DataType = pl.Struct(
+    {
+        SiennaStructField.COST_TYPE: COST_TYPE_DTYPE,
+        SiennaStructField.LEVEL_SHORTAGE_COST: pl.Float64,
+        SiennaStructField.LEVEL_SURPLUS_COST: pl.Float64,
+        SiennaStructField.SPILLAGE_COST: pl.Float64,
+    }
+)
+
+HYDRO_RESERVOIR_DESTINATION_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaHydroReservoirCol.ID: pl.Int64,
+    SiennaHydroReservoirCol.NAME: pl.Utf8,
+    SiennaHydroReservoirCol.AVAILABLE: pl.Boolean,
+    SiennaHydroReservoirCol.STORAGE_LEVEL_LIMITS: MIN_MAX_DTYPE,
+    SiennaHydroReservoirCol.INITIAL_LEVEL: pl.Float64,
+    SiennaHydroReservoirCol.INFLOW: pl.Float64,
+    SiennaHydroReservoirCol.OUTFLOW: pl.Float64,
+    SiennaHydroReservoirCol.INTAKE_ELEVATION: pl.Float64,
+    SiennaHydroReservoirCol.HEAD_TO_VOLUME_FACTOR: LINEAR_FUNC_DTYPE,
+    SiennaHydroReservoirCol.UPSTREAM_TURBINES: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.DOWNSTREAM_TURBINES: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.UPSTREAM_RESERVOIRS: pl.List(pl.Int64),
+    SiennaHydroReservoirCol.OPERATION_COST: HYDRO_RESERVOIR_COST_DTYPE,
+    SiennaHydroReservoirCol.LEVEL_DATA_TYPE: pl.Utf8,
+}
+
 # EnergyReservoirStorage (PHS) dtypes and schema.
 EFFICIENCY_DTYPE: pl.DataType = pl.Struct(
     {SiennaStructField.IN: pl.Float64, SiennaStructField.OUT: pl.Float64}
@@ -1028,3 +1248,25 @@ SIENNA_SOURCE_AREAS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
     SiennaAreaCol.NAME: pl.Utf8,
 }
 """An Area as a reverse pipeline stages it: the id a portfolio names it by, and its name."""
+
+SIENNA_SOURCE_OTHER_COMPONENTS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaGeneratorCol.SIENNA_TYPE: pl.Utf8,
+    SIENNA_ID_COLUMN: pl.Int64,
+    SIENNA_NAME_COLUMN: pl.Utf8,
+}
+"""A component of a type that no other reverse table holds: its type, its id and its name."""
+
+SIENNA_SOURCE_SERVICE_MEMBERS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaStagedAssociationCol.SERVICE_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.SERVICE_NAME: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_NAME: pl.Utf8,
+}
+"""A service association as a reverse pipeline stages it: the service and its member, by name."""
+
+SIENNA_SOURCE_ATTRIBUTE_OWNERS_SCHEMA: dict[str, pl.DataType | type[pl.DataType]] = {
+    SiennaStagedAssociationCol.ATTRIBUTE_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_TYPE: pl.Utf8,
+    SiennaStagedAssociationCol.COMPONENT_NAME: pl.Utf8,
+}
+"""A supplemental attribute association as a reverse pipeline stages it, by component name."""

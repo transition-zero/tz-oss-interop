@@ -1,8 +1,9 @@
 """The Sienna type each PLEXOS carrier becomes, read from the user's mappings file.
 
 A generator takes the name of its Fuel where it burns one, and its PLEXOS category where it
-does not. A Battery, a pumped-storage plant and a reservoir hydro take a carrier the
-translator writes instead, which a ``storage_kind`` row may override.
+does not. A generator burns a Fuel where it names one and states a heat rate. A Battery, a
+pumped-storage plant and a reservoir hydro take a carrier the translator writes instead,
+which a ``storage_kind`` row may override.
 
 A Fuel and a generator category of one name give one carrier, so two rows naming one
 carrier must state one target. The rule comes from PyPSA, which holds one carrier per name.
@@ -14,6 +15,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from interop.core.pipeline import State
+from interop.plugins.shared.plexos_constants import (
+    PlexosClass,
+    PlexosCollection,
+    PlexosObjectCol,
+    PlexosResolvedTable,
+)
+from interop.plugins.shared.plexos_pypsa_translations._generator_derivation import build_carrier
+from interop.plugins.shared.plexos_pypsa_translations._shared import (
+    collapse_properties_by_object,
+    relate_children,
+)
+from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import (
+    storage_turbine_names,
+)
 from interop.plugins.shared.plexos_sienna_user_mappings import (
     CARRIER_BY_STORAGE_KIND,
     DEFAULT_TARGET_BY_STORAGE_KIND,
@@ -82,3 +98,43 @@ def _carrier_for(concept: PlexosConcept, plexos_name: str) -> str:
     if concept is PlexosConcept.STORAGE_KIND:
         return CARRIER_BY_STORAGE_KIND[PlexosStorageKind(plexos_name)]
     return plexos_name
+
+
+def build_thermal_store_users(state: State, targets: CarrierTargets) -> frozenset[str]:
+    """The units that draw on a Storage, but whose own carrier the user's file names as thermal.
+
+    A model can state a fuel supply as a Storage. The user's file says the unit burns a fuel,
+    so its Storage holds that fuel, and the unit is a generator rather than a turbine.
+    """
+    turbines = storage_turbine_names(state)
+    table = state.source_topology.get(PlexosClass.GENERATOR)
+    if not turbines or table is None:
+        return frozenset()
+    memberships = state.source_topology[PlexosResolvedTable.MEMBERSHIPS]
+    fuels = relate_children(memberships, PlexosClass.GENERATOR, PlexosCollection.FUELS)
+    properties = collapse_properties_by_object(
+        state.source_topology[PlexosResolvedTable.PROPERTIES], PlexosClass.GENERATOR
+    )
+    generators = table.collect()
+    category_by_name = dict(
+        zip(
+            generators[PlexosObjectCol.NAME].to_list(),
+            generators[PlexosObjectCol.CATEGORY].to_list(),
+            strict=True,
+        )
+    )
+    return frozenset(
+        name
+        for name in turbines
+        if _is_thermal(
+            targets,
+            build_carrier(
+                fuels.get(name, []), properties.get(name, {}), category_by_name.get(name) or ""
+            ),
+        )
+    )
+
+
+def _is_thermal(targets: CarrierTargets, carrier: str) -> bool:
+    target = targets.find(carrier)
+    return target is not None and target.sienna_type == SiennaComponent.THERMAL_STANDARD

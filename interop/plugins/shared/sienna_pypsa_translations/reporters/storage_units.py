@@ -7,6 +7,7 @@ from interop.plugins.shared.pypsa_constants import PyPSACarrier, PyPSAComponent,
 from interop.plugins.shared.sienna_constants import (
     PrimeMover,
     SiennaComponent,
+    SiennaHydroTurbineCol,
     SiennaStorageCol,
     SiennaStructField,
 )
@@ -23,17 +24,33 @@ _INPUT_LIMITS_MAX = f"{SiennaStorageCol.INPUT_ACTIVE_POWER_LIMITS}.{SiennaStruct
 _EFFICIENCY_DERIVATION = "efficiency.in -> efficiency_store; efficiency.out -> efficiency_dispatch"
 _INFLOW_DEFAULT = "the unit states no inflow, so it refills at nothing"
 _HYDRO_MAX_HOURS_DEFAULT = (
-    "HydroDispatch carries no storage capacity; max_hours uses the PyPSA storage default"
+    "{sienna_type} carries no storage capacity; max_hours uses the PyPSA storage default"
 )
 _HYDRO_EFFICIENCY_DEFAULT = (
-    "HydroDispatch carries no round-trip efficiency; "
+    "{sienna_type} carries no round-trip efficiency; "
     "efficiency_store/efficiency_dispatch use the PyPSA storage default"
 )
 _HYDRO_STATE_OF_CHARGE_DEFAULT = (
-    "HydroDispatch carries no reservoir level; state_of_charge_initial defaults to 0.0"
+    "{sienna_type} carries no reservoir level; state_of_charge_initial defaults to 0.0"
 )
 _HYDRO_CYCLIC_DEFAULT = (
-    "HydroDispatch carries no energy_shortage_cost; cyclic_state_of_charge defaults to False"
+    "{sienna_type} carries no energy_shortage_cost; cyclic_state_of_charge defaults to False"
+)
+_TURBINE_EFFICIENCY_DEFAULT = (
+    "the HydroTurbine states no efficiency and does not pump, so efficiency_store and "
+    "efficiency_dispatch use the PyPSA storage default"
+)
+_TURBINE_EFFICIENCY_DERIVATION = "efficiency -> efficiency_dispatch"
+_TURBINE_STORE_DEFAULT = (
+    "a HydroTurbine does not pump, so efficiency_store uses the PyPSA storage default"
+)
+_TURBINE_FIELD_NOTE = (
+    "a PyPSA StorageUnit has no field for the {field} of a HydroTurbine, so the network does "
+    "not hold it"
+)
+_TURBINE_RESERVOIR_DEFAULT = (
+    "a HydroTurbine keeps its reservoir on a HydroReservoir, which this hop does not read, and "
+    "the storage record states no {column}; {column} uses the PyPSA storage default"
 )
 
 
@@ -101,12 +118,12 @@ class StorageUnitReporter(SiennaToPypsaReporter):
         )
 
     def record_p_min_pu_from_active_power_limits(
-        self, name: str, active_power_min: float, p_min_pu: float
+        self, sienna_type: SiennaComponent, name: str, active_power_min: float, p_min_pu: float
     ) -> None:
         self._derived(
             sources=[
                 self._source(
-                    SiennaComponent.HYDRO_DISPATCH,
+                    sienna_type,
                     name,
                     ACTIVE_POWER_LIMITS_MIN,
                     active_power_min,
@@ -235,33 +252,92 @@ class StorageUnitReporter(SiennaToPypsaReporter):
             note=P_NOM_EXTENDABLE_DEFAULT,
         )
 
-    def record_max_hours_default(self, name: str, max_hours: float) -> None:
+    def record_max_hours_default(
+        self, sienna_type: SiennaComponent, name: str, max_hours: float
+    ) -> None:
         self._default_applied(
             destinations=[self._destination(name, PyPSAStorageUnitCol.MAX_HOURS, max_hours)],
-            note=_HYDRO_MAX_HOURS_DEFAULT,
+            note=_build_reservoir_note(
+                sienna_type, PyPSAStorageUnitCol.MAX_HOURS, _HYDRO_MAX_HOURS_DEFAULT
+            ),
         )
 
-    def record_efficiency_default(self, name: str, efficiency: float) -> None:
+    def record_efficiency_default(
+        self, sienna_type: SiennaComponent, name: str, efficiency: float
+    ) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_STORE, efficiency),
                 self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, efficiency),
             ],
-            note=_HYDRO_EFFICIENCY_DEFAULT,
+            note=_build_efficiency_note(sienna_type),
         )
 
-    def record_state_of_charge_initial_default(self, name: str) -> None:
+    def record_turbine_efficiency(self, name: str, efficiency: float) -> None:
+        """The efficiency of a HydroTurbine, as the dispatch efficiency of its StorageUnit."""
+        self._derived(
+            sources=[
+                self._source(
+                    SiennaComponent.HYDRO_TURBINE,
+                    name,
+                    SiennaHydroTurbineCol.EFFICIENCY,
+                    efficiency,
+                )
+            ],
+            destinations=[
+                self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_DISPATCH, efficiency)
+            ],
+            derivation=_TURBINE_EFFICIENCY_DERIVATION,
+        )
+
+    def record_turbine_store_efficiency_default(self, name: str, efficiency: float) -> None:
+        """The store efficiency of a HydroTurbine, which does not pump."""
+        self._default_applied(
+            destinations=[
+                self._destination(name, PyPSAStorageUnitCol.EFFICIENCY_STORE, efficiency)
+            ],
+            note=_TURBINE_STORE_DEFAULT,
+        )
+
+    def record_turbine_field_not_mapped(self, name: str, field: str, value: object) -> None:
+        """A field of a HydroTurbine that a PyPSA StorageUnit cannot hold."""
+        self._not_mapped(
+            sources=[self._source(SiennaComponent.HYDRO_TURBINE, name, field, value)],
+            note=_TURBINE_FIELD_NOTE.format(field=field),
+        )
+
+    def record_state_of_charge_initial_default(
+        self, sienna_type: SiennaComponent, name: str
+    ) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL, 0.0)
             ],
-            note=_HYDRO_STATE_OF_CHARGE_DEFAULT,
+            note=_build_reservoir_note(
+                sienna_type,
+                PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL,
+                _HYDRO_STATE_OF_CHARGE_DEFAULT,
+            ),
         )
 
-    def record_cyclic_default(self, name: str) -> None:
+    def record_cyclic_default(self, sienna_type: SiennaComponent, name: str) -> None:
         self._default_applied(
             destinations=[
                 self._destination(name, PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE, False)
             ],
-            note=_HYDRO_CYCLIC_DEFAULT,
+            note=_HYDRO_CYCLIC_DEFAULT.format(sienna_type=sienna_type),
         )
+
+
+def _build_efficiency_note(sienna_type: SiennaComponent) -> str:
+    """Why a hydro unit takes the PyPSA default for both of its efficiencies."""
+    if sienna_type == SiennaComponent.HYDRO_TURBINE:
+        return _TURBINE_EFFICIENCY_DEFAULT
+    return _HYDRO_EFFICIENCY_DEFAULT.format(sienna_type=sienna_type)
+
+
+def _build_reservoir_note(sienna_type: SiennaComponent, column: str, template: str) -> str:
+    """Why a hydro unit takes the PyPSA default for one column of its reservoir."""
+    if sienna_type == SiennaComponent.HYDRO_TURBINE:
+        return _TURBINE_RESERVOIR_DEFAULT.format(column=column)
+    return template.format(sienna_type=sienna_type)

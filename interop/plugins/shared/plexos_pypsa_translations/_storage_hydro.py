@@ -1,8 +1,9 @@
 """PLEXOS pumped storage and reservoir hydro -> PyPSA StorageUnit.
 
-Both are a turbine ``Generator`` linked to a head ``Storage``; pumped storage also has a
-tail. The head reservoir says how much energy the unit holds and what refills it, so the
-two paths differ only in whether the unit can pump and whether its level has to cycle.
+Both are a turbine ``Generator`` linked to a head ``Storage``. Pumped storage also has a
+tail, and it states a Pump Load. The head reservoir says how much energy the unit holds and
+what refills it, so the two paths differ only in whether the unit can pump and whether its
+level has to cycle.
 """
 
 from __future__ import annotations
@@ -29,11 +30,11 @@ from interop.plugins.shared.plexos_pypsa_translations._lifespan import (
 )
 from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     CARRIER_NOTE,
-    CHARGE_NOTE,
     EFFICIENCY_NOTE,
     FULL_DISCHARGE_NOTE,
     MAX_HOURS_NOTE,
     NO_RESERVOIR_INFLOW_NOTE,
+    PUMP_LIMIT_DERIVATION,
     HeadReservoir,
     MappedOrSkipped,
     RatedObject,
@@ -46,20 +47,20 @@ from interop.plugins.shared.plexos_pypsa_translations._storage_shared import (
     derive_round_trip_efficiency,
     derive_state_of_charge_initial,
     rate_object,
-    skip_object,
 )
+from interop.plugins.shared.plexos_pypsa_translations._storage_turbines import can_pump
 from interop.plugins.shared.plexos_pypsa_translations.constants import (
     DEFAULT_INFLOW,
     DEFAULT_ROUND_TRIP_EFFICIENCY,
     HYDRO_CYCLIC,
     PUMPED_STORAGE_CYCLIC,
-    STORAGE_FULL_CHARGE_PU,
     STORAGE_FULL_DISCHARGE_PU,
     STORAGE_GENERATE_ONLY_PU,
     STORAGE_MARGINAL_COST,
 )
 from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     Decision,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
 )
@@ -108,9 +109,11 @@ def record_reservoir_inflows(state: State, mappings: list[StorageUnitMapping]) -
 
 
 _GENERATE_ONLY_NOTE = "conventional hydro generates but does not pump"
-_HEADLESS_TURBINE_NOTE = (
-    "this Generator has a Tail Storage but no Head Storage and no Pump Efficiency, "
-    "so it has no reservoir to draw from"
+_HEADLESS_TURBINE_NOTE = "this Generator has no Head Storage, so it has no reservoir to draw from"
+_HEADLESS_TURBINE_GROUP = SkipGroup(
+    "Generator(s)",
+    "have no Head Storage",
+    "so each has no reservoir to draw from and is left out",
 )
 _HYDRO_CYCLIC_NOTE = "hydro follows inflow, so the level need not cycle"
 _HYDRO_EFFICIENCY_NOTE = "conventional hydro has no charge side; efficiency is unity"
@@ -142,8 +145,7 @@ class _GeneratorStorageVariant:
     """What separates a pumped-storage turbine from a reservoir-hydro one."""
 
     carrier: PyPSACarrier
-    p_min_pu: float
-    p_min_pu_note: str
+    can_pump: bool
     cyclic: bool
     cyclic_note: str
     efficiency_note: str
@@ -151,8 +153,7 @@ class _GeneratorStorageVariant:
 
 _PUMPED_STORAGE = _GeneratorStorageVariant(
     carrier=PyPSACarrier.PHS,
-    p_min_pu=STORAGE_FULL_CHARGE_PU,
-    p_min_pu_note=CHARGE_NOTE,
+    can_pump=True,
     cyclic=PUMPED_STORAGE_CYCLIC,
     cyclic_note=_PUMPED_STORAGE_CYCLIC_NOTE,
     efficiency_note=EFFICIENCY_NOTE,
@@ -160,8 +161,7 @@ _PUMPED_STORAGE = _GeneratorStorageVariant(
 
 _RESERVOIR_HYDRO = _GeneratorStorageVariant(
     carrier=PyPSACarrier.HYDRO,
-    p_min_pu=STORAGE_GENERATE_ONLY_PU,
-    p_min_pu_note=_GENERATE_ONLY_NOTE,
+    can_pump=False,
     cyclic=HYDRO_CYCLIC,
     cyclic_note=_HYDRO_CYCLIC_NOTE,
     efficiency_note=_HYDRO_EFFICIENCY_NOTE,
@@ -170,27 +170,32 @@ _RESERVOIR_HYDRO = _GeneratorStorageVariant(
 
 def map_turbine(name: str, lookups: StorageLookups) -> MappedOrSkipped:
     staged = lookups.read_staged(PlexosClass.GENERATOR, name)
-    variant = _classify_turbine(staged, lookups)
-    if variant is None:
-        return skip_object(
-            PlexosClass.GENERATOR, name, PlexosCollection.HEAD_STORAGE, _HEADLESS_TURBINE_NOTE
-        )
     rated = rate_object(staged, _GENERATOR_POWER)
     if isinstance(rated, SkippedComponent):
         return rated
+    variant = _classify_turbine(staged, lookups)
+    if variant is None:
+        return SkippedComponent(
+            SourceValue(PlexosClass.GENERATOR, name, PlexosCollection.HEAD_STORAGE, None),
+            _HEADLESS_TURBINE_NOTE,
+            _HEADLESS_TURBINE_GROUP,
+        )
     return _derive_turbine(rated, variant, lookups.head_of(name))
 
 
 def _classify_turbine(
     staged: StagedObject, lookups: StorageLookups
 ) -> _GeneratorStorageVariant | None:
-    """Which storage variant a Generator is, or None when it has no reservoir to draw from."""
-    pumps = PlexosProperty.PUMP_EFFICIENCY in staged.properties
-    if lookups.has_head_and_tail(staged.name) or pumps:
+    """Which storage variant a Generator is, or None when it has no reservoir to draw from.
+
+    PLEXOS has no pumped-storage class, so a unit pumps only when it states a Pump Load and
+    has a tail Storage to pump from. Every other unit on a head Storage only generates.
+    """
+    if not lookups.has_head(staged.name):
+        return None
+    if can_pump(staged.properties) and lookups.has_tail(staged.name):
         return _PUMPED_STORAGE
-    if lookups.has_head(staged.name):
-        return _RESERVOIR_HYDRO
-    return None
+    return _RESERVOIR_HYDRO
 
 
 _GENERATOR_POWER = RatedPower(PlexosClass.GENERATOR, PlexosProperty.MAX_CAPACITY)
@@ -211,7 +216,7 @@ def _derive_turbine(
         bus=derive_bus(PlexosClass.GENERATOR, rated.name, rated.node),
         carrier=Decision.default(variant.carrier, CARRIER_NOTE),
         p_nom=rated.p_nom,
-        p_min_pu=Decision.default(variant.p_min_pu, variant.p_min_pu_note),
+        p_min_pu=_derive_pump_limit(rated, variant),
         p_max_pu=Decision.default(STORAGE_FULL_DISCHARGE_PU, FULL_DISCHARGE_NOTE),
         max_hours=max_hours,
         efficiency=_turbine_efficiency(rated, variant),
@@ -224,6 +229,25 @@ def _derive_turbine(
         lifespan=derive_lifespan(PlexosClass.GENERATOR, rated.name, rated.lifespan),
         expansion=expansion,
         inflow_storage=_inflow_storage(head),
+    )
+
+
+def _derive_pump_limit(rated: RatedObject, variant: _GeneratorStorageVariant) -> Decision:
+    """``p_min_pu``: the most a unit draws to pump, per unit of its rated power, as a negative.
+
+    Pump Load and Max Capacity both state one unit, so their ratio is also
+    ``-(Pump Load * Units) / p_nom``, and it stays right for a candidate that runs no units.
+    """
+    if not variant.can_pump:
+        return Decision.default(STORAGE_GENERATE_ONLY_PU, _GENERATE_ONLY_NOTE)
+    pump_load = rated.properties[PlexosProperty.PUMP_LOAD]
+    stated = SourceValue(
+        PlexosClass.GENERATOR, rated.name, PlexosProperty.PUMP_LOAD, pump_load, UNIT_MW
+    )
+    return Decision.derived(
+        -pump_load / rated.unit_size.value,
+        [stated, *rated.unit_size.sources],
+        f"-{PUMP_LIMIT_DERIVATION}",
     )
 
 

@@ -40,11 +40,46 @@ def given_model_contains_node(
     plexos_model_builder.add_node(name, region=region)
 
 
+@given(parsers.parse('the model contains zone "{name}" holding nodes "{nodes}"'))
+def given_model_contains_zone(
+    plexos_model_builder: PlexosModelBuilder, name: str, nodes: str
+) -> None:
+    plexos_model_builder.add_zone(name, [node.strip() for node in nodes.split(",")])
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g}'))
 def given_model_contains_load(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float
 ) -> None:
     plexos_model_builder.add_load(node, peak=peak)
+
+
+@given(
+    parsers.parse('the model contains a Load object "{name}" on node "{node}" with peak {peak:g}')
+)
+def given_model_contains_load_object(
+    plexos_model_builder: PlexosModelBuilder, name: str, node: str, peak: float
+) -> None:
+    plexos_model_builder.add_load_object(name, node, peak)
+
+
+@given(
+    parsers.parse(
+        'the model contains a Load object "{name}" on node "{node}"'
+        ' with peak {peak:g} from data file "{data_file}"'
+    )
+)
+def given_model_contains_load_object_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, node: str, peak: float, data_file: str
+) -> None:
+    plexos_model_builder.add_load_object(name, node, peak, data_file)
+
+
+@given(parsers.parse('the model contains a Load object "{name}" on no node with peak {peak:g}'))
+def given_model_contains_nodeless_load_object(
+    plexos_model_builder: PlexosModelBuilder, name: str, peak: float
+) -> None:
+    plexos_model_builder.add_load_object(name, None, peak)
 
 
 @given(
@@ -203,6 +238,55 @@ def given_model_contains_data_file(
     )
 
 
+@given(parsers.parse('the model contains data file "{name}" at "{path}" with rows:'))
+def given_model_contains_data_file_with_rows(
+    plexos_model_builder: PlexosModelBuilder, name: str, path: str, datatable: list[list[str]]
+) -> None:
+    plexos_model_builder.add_data_file_with_rows(name, path, datatable)
+
+
+@given(parsers.parse('the model contains timeslice "{name}" read from data file "{data_file}"'))
+def given_model_contains_timeslice_from_data_file(
+    plexos_model_builder: PlexosModelBuilder, name: str, data_file: str
+) -> None:
+    plexos_model_builder.add_timeslice_from_data_file(name, data_file)
+
+
+@given(parsers.parse('the model contains timeslice "{name}" with pattern "{pattern}"'))
+def given_model_contains_timeslice_with_pattern(
+    plexos_model_builder: PlexosModelBuilder, name: str, pattern: str
+) -> None:
+    plexos_model_builder.add_timeslice_with_pattern(name, pattern)
+
+
+@given(parsers.parse('scenario "{scenario}" gives timeslice "{name}" the pattern "{pattern}"'))
+def given_scenario_gives_timeslice_pattern(
+    plexos_model_builder: PlexosModelBuilder, scenario: str, name: str, pattern: str
+) -> None:
+    plexos_model_builder.add_timeslice_with_pattern(name, pattern, scenarios=[scenario])
+
+
+@given(
+    parsers.parse(
+        'the model contains load "{node}" with peak {peak:g} from data file "{name}" '
+        'escalated by variable "{variable}"'
+    )
+)
+def given_model_contains_escalated_load(
+    plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str, variable: str
+) -> None:
+    plexos_model_builder.add_escalated_load(node, peak, name, variable)
+
+
+@given(
+    parsers.parse('the model contains load "{node}" with share {share:g} of variable "{variable}"')
+)
+def given_model_contains_load_share(
+    plexos_model_builder: PlexosModelBuilder, node: str, share: float, variable: str
+) -> None:
+    plexos_model_builder.add_load_share(node, share, variable)
+
+
 @given(parsers.parse('the model contains load "{node}" with peak {peak:g} from data file "{name}"'))
 def given_model_contains_load_from_data_file(
     plexos_model_builder: PlexosModelBuilder, node: str, peak: float, name: str
@@ -285,6 +369,20 @@ def given_reserve_prices_shortage(
     plexos_model_builder: PlexosModelBuilder, name: str, price: float
 ) -> None:
     plexos_model_builder.price_reserve_shortage(name, price)
+
+
+@given(parsers.parse('reserve "{name}" draws on battery "{battery}"'))
+def given_reserve_draws_on_battery(
+    plexos_model_builder: PlexosModelBuilder, name: str, battery: str
+) -> None:
+    plexos_model_builder.add_reserve_battery(name, battery)
+
+
+@given(parsers.parse('reserve "{name}" has property "{property_name}" {value:g}'))
+def given_reserve_has_property(
+    plexos_model_builder: PlexosModelBuilder, name: str, property_name: str, value: float
+) -> None:
+    plexos_model_builder.add_reserve_property(name, property_name, value)
 
 
 @given(parsers.parse('reserve "{name}" is mutually exclusive'))

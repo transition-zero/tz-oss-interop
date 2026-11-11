@@ -13,6 +13,8 @@ import re
 from typing import Any, NamedTuple
 
 from interop.plugins.shared.constants import (
+    UNIT_CUBIC_METRES,
+    UNIT_CUBIC_METRES_PER_SECOND,
     UNIT_DOLLARS,
     UNIT_DOLLARS_PER_GJ,
     UNIT_DOLLARS_PER_MW,
@@ -51,12 +53,20 @@ _GJ_PER_MWH_THERMAL = 3.6
 _MINUTES_PER_HOUR = 60.0
 _HOURS_PER_DAY = 24.0
 _SECONDS_PER_HOUR = 3600.0
+_SECONDS_PER_DAY = _SECONDS_PER_HOUR * _HOURS_PER_DAY
 _THOUSAND = 1000.0
 _MILLION = 1_000_000.0
 _KM_PER_MILE = 1.609344
 
 # One unit written two ways, so the conversion table states each of them once.
-_SPELLINGS = {"MMBtu": "MMBTU", "hr": "h", "year": "yr", "years": "yr", "yrs": "yr"}
+_SPELLINGS = {
+    "MMBtu": "MMBTU",
+    "hr": "h",
+    "year": "yr",
+    "years": "yr",
+    "yrs": "yr",
+    "m³": "m3",
+}
 
 # The unit each property is converted into as it stages, which is the one every mapping
 # reading it already assumes. A property absent here stages as the model wrote it.
@@ -76,6 +86,7 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.FUELS, PlexosProperty.PRODUCTION_RATE): UNIT_KG_PER_GJ,
     (PlexosCollection.EMISSIONS, PlexosProperty.PRICE): UNIT_DOLLARS_PER_TONNE,
     (PlexosCollection.GENERATORS, PlexosProperty.MIN_PUMP_LOAD): UNIT_MW,
+    (PlexosCollection.GENERATORS, PlexosProperty.PUMP_LOAD): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.LOAD_POINT): UNIT_MW,
     (PlexosCollection.GENERATORS, PlexosProperty.START_COST): UNIT_DOLLARS,
     (PlexosCollection.GENERATORS, PlexosProperty.BUILD_COST): UNIT_DOLLARS_PER_MW,
@@ -99,6 +110,7 @@ CANONICAL_UNIT: dict[tuple[str, str], str] = {
     (PlexosCollection.BATTERIES, PlexosProperty.ECONOMIC_LIFE): UNIT_YEARS,
     (PlexosCollection.BATTERIES, PlexosProperty.TECHNICAL_LIFE): UNIT_YEARS,
     (PlexosCollection.STORAGES, PlexosProperty.MAX_VOLUME): UNIT_MWH,
+    (PlexosCollection.STORAGES, PlexosProperty.MIN_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.INITIAL_VOLUME): UNIT_MWH,
     (PlexosCollection.STORAGES, PlexosProperty.NATURAL_INFLOW): UNIT_MW,
 }
@@ -165,6 +177,9 @@ _FACTOR_TO_CANONICAL: dict[str, dict[str, float]] = {
         "day": _HOURS_PER_DAY,
     },
     UNIT_MWH: {UNIT_MWH: 1.0, "kWh": 1.0 / _THOUSAND, "GWh": _THOUSAND},
+    # A CMD is one cubic metre per second held for one day.
+    UNIT_CUBIC_METRES: {UNIT_CUBIC_METRES: 1.0, "CMD": _SECONDS_PER_DAY},
+    UNIT_CUBIC_METRES_PER_SECOND: {UNIT_CUBIC_METRES_PER_SECOND: 1.0, "cumec": 1.0},
     UNIT_KV: {UNIT_KV: 1.0, "V": 1.0 / _THOUSAND, "MV": _THOUSAND},
     UNIT_KM: {UNIT_KM: 1.0, "m": 1.0 / _THOUSAND, "mile": _KM_PER_MILE},
     UNIT_DOLLARS: {UNIT_DOLLARS: 1.0, "$000": _THOUSAND},

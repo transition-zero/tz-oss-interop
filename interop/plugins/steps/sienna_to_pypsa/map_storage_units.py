@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from itertools import groupby
+from operator import attrgetter
 from typing import Any, ClassVar
 
 import polars as pl
@@ -34,20 +37,26 @@ from interop.plugins.shared.sienna_constants import (
     PrimeMover,
     SiennaComponent,
     SiennaGeneratorCol,
+    SiennaHydroTurbineCol,
     SiennaSeriesName,
     SiennaStorageCol,
     SiennaStructField,
     SiennaTable,
     SiennaUnitSystem,
 )
+from interop.plugins.shared.sienna_hydro_turbine import (
+    TURBINE_ONLY_FIELDS,
+    UnreadTurbineField,
+    list_stated_turbine_fields,
+)
 from interop.plugins.shared.sienna_pypsa_translations.companion_series import (
     CompanionColumn,
     stage_companion_columns,
 )
 from interop.plugins.shared.sienna_pypsa_translations.constants import (
-    ASSUMED_HYDRO_EFFICIENCY_DISPATCH,
     DEFAULT_HYDRO_MAX_HOURS,
     DEFAULT_STORAGE_EFFICIENCY,
+    SIENNA_TO_PYPSA,
     pypsa_carrier,
 )
 from interop.plugins.shared.sienna_pypsa_translations.mapped_fields import (
@@ -86,10 +95,25 @@ from interop.plugins.shared.sienna_pypsa_translations.relay import (
 )
 from interop.plugins.shared.sienna_pypsa_translations.reporters import StorageUnitReporter
 from interop.plugins.shared.translation_runner import filter_component
+from interop.plugins.shared.warning_text import name_a_few
+
+log = logging.getLogger(__name__)
 
 _OUTPUT_LIMITS_MAX = f"{SiennaStorageCol.OUTPUT_ACTIVE_POWER_LIMITS}.{SiennaStructField.MAX}"
 # PyPSA's own state_of_charge_initial: a reservoir that starts empty.
 _EMPTY_RESERVOIR = PYPSA_STORAGE_UNIT_DEFAULTS[PyPSAStorageUnitCol.STATE_OF_CHARGE_INITIAL]
+
+# The Sienna types a hydro StorageUnit comes from. A HydroTurbine reads like a HydroDispatch,
+# and the extensions sidecar carries its reservoir for this hop.
+_HYDRO_TYPES = (SiennaComponent.HYDRO_DISPATCH, SiennaComponent.HYDRO_TURBINE)
+# The fields of a HydroTurbine that a PyPSA StorageUnit has no column for.
+_UNMAPPED_TURBINE_FIELDS = tuple(
+    field for field in TURBINE_ONLY_FIELDS if field != SiennaHydroTurbineCol.EFFICIENCY
+)
+_UNMAPPED_TURBINE_WARNING = (
+    f"{SIENNA_TO_PYPSA}: %d HydroTurbine(s) state %s, which a PyPSA StorageUnit does not "
+    "hold, so it is left out: %s"
+)
 
 # What the storage companion parquet holds. Sienna names no field for an inflow or for a
 # rating that changes, so both arrive beside the sidecar rather than in the system file.
@@ -119,15 +143,14 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         bus_names = bus_id_to_name(state)
         reporter = StorageUnitReporter(self._recorder)
         rows: list[dict[str, Any]] = []
-        hydro_base_power: dict[str, float] = {}
+        inflow_scales: dict[str, float] = {}
+        unread_turbine_fields: list[UnreadTurbineField] = []
 
         generators = state.source_topology.get(SiennaTable.GENERATORS)
         if generators is not None:
             hydro_supported, _ = filter_component(
                 generators.collect(),
-                express_power_units_kept(
-                    SiennaUnitSystem.NATURAL_UNITS, [SiennaComponent.HYDRO_DISPATCH]
-                ),
+                express_power_units_kept(SiennaUnitSystem.NATURAL_UNITS, list(_HYDRO_TYPES)),
                 build_power_units_skip_report(
                     "Hydro generator",
                     "hydro generators",
@@ -137,13 +160,13 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 self._recorder,
             )
             for row in hydro_supported.iter_rows(named=True):
-                if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) is (
-                    SiennaComponent.HYDRO_DISPATCH
-                ):
+                if SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE]) in _HYDRO_TYPES:
                     hydro = _derive_hydro(row, bus_names, self._extensions)
                     _record_hydro(reporter, hydro)
                     rows.append(_hydro_row(hydro))
-                    hydro_base_power[hydro.name] = hydro.base_power
+                    inflow_scales[hydro.name] = _derive_inflow_scale(hydro)
+                    unread_turbine_fields.extend(hydro.unread_turbine_fields)
+            report_unread_turbine_fields(reporter, unread_turbine_fields)
 
         storage = state.source_topology.get(SiennaTable.STORAGE)
         unpriced: list[UnpricedCost] = []
@@ -177,7 +200,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
             state.destination_tables[PyPSADestinationTable.STORAGE_UNITS] = pl.DataFrame(
                 rows, schema=STORAGE_UNITS_DESTINATION_SCHEMA
             )
-            self._record_hydro_inflow(state, hydro_base_power)
+            self._record_hydro_inflow(state, inflow_scales)
             stage_companion_columns(
                 state,
                 ExtensionKind.STORAGE,
@@ -185,7 +208,7 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
                 dict.fromkeys((row[PyPSAStorageUnitCol.NAME] for row in rows), UNSCALED),
             )
             self._carry_on(
-                state, [row[PyPSAStorageUnitCol.NAME] for row in rows], list(hydro_base_power)
+                state, [row[PyPSAStorageUnitCol.NAME] for row in rows], list(inflow_scales)
             )
         return state
 
@@ -196,33 +219,54 @@ class SiennaToPypsaMapStorageUnits(TranslationStep):
         generators = self._extensions.read(GeneratorExtension)
         relay_records(state, generators, hydro_names, self._recorder)
 
-    def _record_hydro_inflow(self, state: State, hydro_base_power: dict[str, float]) -> None:
-        frame = state.source_time_series.get(
-            (SiennaComponent.HYDRO_DISPATCH, SiennaSeriesName.HYDRO_BUDGET)
-        )
-        if frame is None:
-            return
-        timing = series_timing(frame)
+    def _record_hydro_inflow(self, state: State, inflow_scales: dict[str, float]) -> None:
         metadata_rows: list[dict[str, Any]] = []
-        # A hydro generator left out above has no base_power, so its series stays out with it.
-        written = [name for name in series_components(frame) if name in hydro_base_power]
-        for component in written:
-            base_power = hydro_base_power[component]
-            # efficiency_dispatch is assumed unity (folded into hydro_budget and lost), so the
-            # division is documentary and its operator mutation is a no-op.
-            scaling_factor = base_power / ASSUMED_HYDRO_EFFICIENCY_DISPATCH  # pragma: no mutate
-            metadata_rows.append(
-                metadata_row(
-                    component_table=PyPSADestinationTable.STORAGE_UNITS,
-                    component_name=component,
-                    attribute=PyPSAStorageUnitCol.INFLOW,
-                    source_owner_type=SiennaComponent.HYDRO_DISPATCH,
-                    source_series_name=SiennaSeriesName.HYDRO_BUDGET,
-                    scaling_factor=scaling_factor,
-                    timing=timing,
-                )
-            )
+        for owner_type in _HYDRO_TYPES:
+            frame = state.source_time_series.get((owner_type, SiennaSeriesName.HYDRO_BUDGET))
+            if frame is not None:
+                metadata_rows.extend(_build_inflow_rows(frame, owner_type, inflow_scales))
         append_metadata(state, metadata_rows)
+
+
+def _derive_inflow_scale(hydro: _HydroMapping) -> float:
+    """The MW of inflow that one per-unit of hydro_budget needs, after the dispatch efficiency.
+
+    A HydroDispatch states no efficiency, so its efficiency_dispatch is the assumed unity.
+    """
+    return hydro.base_power / hydro.efficiency_dispatch
+
+
+def _build_inflow_rows(
+    frame: pl.LazyFrame, owner_type: SiennaComponent, inflow_scales: dict[str, float]
+) -> list[dict[str, Any]]:
+    """One inflow metadata row for each written unit of ``owner_type`` that owns a budget."""
+    timing = series_timing(frame)
+    # A hydro generator left out above has no scale, so its series stays out with it.
+    return [
+        metadata_row(
+            component_table=PyPSADestinationTable.STORAGE_UNITS,
+            component_name=component,
+            attribute=PyPSAStorageUnitCol.INFLOW,
+            source_owner_type=owner_type,
+            source_series_name=SiennaSeriesName.HYDRO_BUDGET,
+            scaling_factor=inflow_scales[component],
+            timing=timing,
+        )
+        for component in series_components(frame)
+        if component in inflow_scales
+    ]
+
+
+def report_unread_turbine_fields(
+    reporter: StorageUnitReporter, unread: list[UnreadTurbineField]
+) -> None:
+    """Record each turbine field that the network cannot hold, and warn once for each field."""
+    for one in unread:
+        reporter.record_turbine_field_not_mapped(one.turbine, one.field, one.value)
+    by_field = attrgetter("field")
+    for field, group in groupby(sorted(unread, key=by_field), key=by_field):
+        names = sorted({one.turbine for one in group})
+        log.warning(_UNMAPPED_TURBINE_WARNING, len(names), field, name_a_few(names))
 
 
 def _record_inflow(
@@ -237,9 +281,10 @@ def _record_inflow(
 
 @dataclass(frozen=True)
 class _HydroMapping:
-    """Values derived from one Sienna HydroDispatch row, before events and the output row."""
+    """Values derived from one Sienna HydroDispatch or HydroTurbine row, before the events."""
 
     name: str
+    sienna_type: SiennaComponent
     bus_id: int
     bus_name: str
     prime_mover: PrimeMover
@@ -250,9 +295,13 @@ class _HydroMapping:
     active_power_min: float
     p_min_pu: float
     marginal_cost: float
-    # Sienna's HydroDispatch states no reservoir, so the storage record of the unit states it.
+    # The storage record of the unit states its reservoir, whichever hydro type the row is.
     ext: StorageExtension
     inflow_mw: float
+    # Only a HydroTurbine states an efficiency, and it does not pump.
+    efficiency_dispatch: float
+    is_efficiency_stated: bool
+    unread_turbine_fields: list[UnreadTurbineField]
 
 
 def _derive_hydro(
@@ -265,12 +314,16 @@ def _derive_hydro(
     active_power_min = float(row[SiennaGeneratorCol.ACTIVE_POWER_LIMITS][SiennaStructField.MIN])
     prime_mover = PrimeMover(row[SiennaGeneratorCol.PRIME_MOVER_TYPE])
     bus_id = row[SiennaGeneratorCol.BUS]
+    sienna_type = SiennaComponent(row[SiennaGeneratorCol.SIENNA_TYPE])
+    turbine_fields = _build_turbine_fields(row, sienna_type)
+    efficiency = turbine_fields.get(SiennaHydroTurbineCol.EFFICIENCY)
     return _HydroMapping(
         name=row[SiennaGeneratorCol.NAME],
+        sienna_type=sienna_type,
         bus_id=bus_id,
         bus_name=bus_names[bus_id],
         prime_mover=prime_mover,
-        carrier=pypsa_carrier(SiennaComponent.HYDRO_DISPATCH, prime_mover, None),
+        carrier=pypsa_carrier(sienna_type, prime_mover, None),
         base_power=base_power,
         rating=float(row[SiennaGeneratorCol.RATING]),
         p_max_pu=rated_per_unit(float(row[SiennaGeneratorCol.RATING]), base_power),
@@ -281,7 +334,19 @@ def _derive_hydro(
         ),
         ext=carried,
         inflow_mw=float(carried.inflow_mw or 0.0),
+        efficiency_dispatch=DEFAULT_STORAGE_EFFICIENCY if efficiency is None else float(efficiency),
+        is_efficiency_stated=efficiency is not None,
+        unread_turbine_fields=list_stated_turbine_fields(
+            turbine_fields, row[SiennaGeneratorCol.NAME], _UNMAPPED_TURBINE_FIELDS
+        ),
     )
+
+
+def _build_turbine_fields(row: dict[str, Any], sienna_type: SiennaComponent) -> dict[str, Any]:
+    """The turbine-only fields of a HydroTurbine row; a HydroDispatch states none of them."""
+    if sienna_type is not SiennaComponent.HYDRO_TURBINE:
+        return {}
+    return {field: row.get(field) for field in TURBINE_ONLY_FIELDS}
 
 
 def _fill_hydro_defaults(carried: dict[str, object]) -> dict[str, object]:
@@ -296,26 +361,36 @@ def _fill_hydro_defaults(carried: dict[str, object]) -> dict[str, object]:
 
 
 def _record_hydro(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
-    sienna_type = SiennaComponent.HYDRO_DISPATCH
+    sienna_type = m.sienna_type
     reporter.record_bus(sienna_type, m.name, m.bus_id, m.bus_name)
     reporter.record_p_nom(sienna_type, m.name, m.base_power)
     reporter.record_p_max_pu(
         sienna_type, m.name, SiennaGeneratorCol.RATING, m.rating, m.p_max_pu, "rating / base_power"
     )
-    reporter.record_p_min_pu_from_active_power_limits(m.name, m.active_power_min, m.p_min_pu)
+    reporter.record_p_min_pu_from_active_power_limits(
+        sienna_type, m.name, m.active_power_min, m.p_min_pu
+    )
     reporter.record_marginal_cost(sienna_type, m.name, m.marginal_cost)
     reporter.record_carrier_from_prime_mover(sienna_type, m.name, m.prime_mover, m.carrier)
     record_carried_fields(reporter, sienna_type, m.ext, HYDRO_CARRIED)
-    # Sienna states no reservoir for a HydroDispatch, so a field the storage record does not
-    # state falls back to a PyPSA default. Lossy.
+    # A field the storage record does not state falls back to a PyPSA default. Lossy.
     if m.ext.max_hours is None:
-        reporter.record_max_hours_default(m.name, DEFAULT_HYDRO_MAX_HOURS)
+        reporter.record_max_hours_default(sienna_type, m.name, DEFAULT_HYDRO_MAX_HOURS)
     if m.ext.state_of_charge_initial is None:
-        reporter.record_state_of_charge_initial_default(m.name)
-    reporter.record_efficiency_default(m.name, DEFAULT_STORAGE_EFFICIENCY)
-    reporter.record_cyclic_default(m.name)
+        reporter.record_state_of_charge_initial_default(sienna_type, m.name)
+    _record_hydro_efficiency(reporter, m)
+    reporter.record_cyclic_default(sienna_type, m.name)
     reporter.record_p_nom_extendable_default(m.name)
-    _record_inflow(reporter, SiennaComponent.HYDRO_DISPATCH, m.name, m.inflow_mw)
+    _record_inflow(reporter, sienna_type, m.name, m.inflow_mw)
+
+
+def _record_hydro_efficiency(reporter: StorageUnitReporter, m: _HydroMapping) -> None:
+    """A turbine that states an efficiency dispatches at it; the rest take the PyPSA default."""
+    if not m.is_efficiency_stated:
+        reporter.record_efficiency_default(m.sienna_type, m.name, DEFAULT_STORAGE_EFFICIENCY)
+        return
+    reporter.record_turbine_efficiency(m.name, m.efficiency_dispatch)
+    reporter.record_turbine_store_efficiency_default(m.name, DEFAULT_STORAGE_EFFICIENCY)
 
 
 def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
@@ -328,7 +403,7 @@ def _hydro_row(m: _HydroMapping) -> dict[str, Any]:
         PyPSAStorageUnitCol.P_MAX_PU: m.p_max_pu,
         **_fill_hydro_defaults(build_carried_values(m.ext, HYDRO_CARRIED)),
         PyPSAStorageUnitCol.EFFICIENCY_STORE: DEFAULT_STORAGE_EFFICIENCY,
-        PyPSAStorageUnitCol.EFFICIENCY_DISPATCH: DEFAULT_STORAGE_EFFICIENCY,
+        PyPSAStorageUnitCol.EFFICIENCY_DISPATCH: m.efficiency_dispatch,
         PyPSAStorageUnitCol.MARGINAL_COST: m.marginal_cost,
         PyPSAStorageUnitCol.INFLOW: m.inflow_mw,
         PyPSAStorageUnitCol.CYCLIC_STATE_OF_CHARGE: False,

@@ -10,17 +10,19 @@ import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.sienna_constants import (
+    InfraStoreSeriesLabel,
     SiennaACBusCol,
     SiennaComponent,
     SiennaHydroGeneratorCol,
     SiennaLoadCol,
     SiennaRenewableGeneratorCol,
+    SiennaReserveCol,
     SiennaStructField,
     SiennaThermalGeneratorCol,
     SiennaTimeSeriesAssociationCol,
@@ -39,6 +41,11 @@ _RESOLUTION_MAP: dict[int, str] = {
 
 DEFAULT_RESOLUTION: str = "PT1H"
 DEFAULT_RESOLUTION_MINUTES: float = 60.0
+
+# The columns of the per-component aggregate that build_ts_info_by_component reads.
+_LENGTH = "length"
+_FIRST = "first_snapshot"
+_SECOND = "second_snapshot"
 
 
 @dataclass
@@ -59,12 +66,7 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
     ``length`` is 0.
     """
     if frame is None:
-        return TimeSeriesInfo(
-            length=0,
-            resolution=DEFAULT_RESOLUTION,
-            initial_timestamp=None,
-            resolution_minutes=DEFAULT_RESOLUTION_MINUTES,
-        )
+        return build_ts_info(0, None, None)
 
     # A row with no snapshot is at no point in time and sorts first, so it would set the start.
     snapshots = (
@@ -75,18 +77,45 @@ def collect_ts_info(frame: pl.LazyFrame | None) -> TimeSeriesInfo:
         .collect(engine="streaming")[StagedTimeSeriesCol.SNAPSHOT]
     )
     length = snapshots.len()
-    if length >= 2:
-        delta_seconds = int(snapshots.head(2).diff().drop_nulls().dt.total_seconds()[0])
+    return build_ts_info(
+        length, snapshots[0] if length else None, snapshots[1] if length >= 2 else None
+    )
+
+
+def build_ts_info_by_component(frame: pl.LazyFrame | None) -> dict[str, TimeSeriesInfo]:
+    """The snapshot metadata of each component's own series, from one aggregate of the frame."""
+    if frame is None:
+        return {}
+    snapshot = pl.col(StagedTimeSeriesCol.SNAPSHOT)
+    per_component = (
+        frame.select(StagedTimeSeriesCol.COMPONENT, StagedTimeSeriesCol.SNAPSHOT)
+        .drop_nulls()
+        .group_by(StagedTimeSeriesCol.COMPONENT)
+        .agg(
+            snapshot.n_unique().alias(_LENGTH),
+            snapshot.min().alias(_FIRST),
+            snapshot.filter(snapshot > snapshot.min()).min().alias(_SECOND),
+        )
+        .collect(engine="streaming")
+    )
+    return {
+        row[StagedTimeSeriesCol.COMPONENT]: build_ts_info(row[_LENGTH], row[_FIRST], row[_SECOND])
+        for row in per_component.iter_rows(named=True)
+    }
+
+
+def build_ts_info(length: int, first: datetime | None, second: datetime | None) -> TimeSeriesInfo:
+    """The metadata of a series of ``length`` snapshots, stepped by its first two snapshots."""
+    if first is None or second is None:
+        resolution, resolution_minutes = DEFAULT_RESOLUTION, DEFAULT_RESOLUTION_MINUTES
+    else:
+        delta_seconds = int((second - first).total_seconds())
         resolution = _RESOLUTION_MAP.get(delta_seconds, f"PT{delta_seconds}S")
         resolution_minutes = delta_seconds / 60.0
-    else:
-        resolution = DEFAULT_RESOLUTION
-        resolution_minutes = DEFAULT_RESOLUTION_MINUTES
-
     return TimeSeriesInfo(
         length=length,
         resolution=resolution,
-        initial_timestamp=snapshots[0] if length else None,
+        initial_timestamp=first,
         resolution_minutes=resolution_minutes,
     )
 
@@ -108,6 +137,10 @@ def _hydro_capacity(component: Mapping[str, Any]) -> float:
     return float(component[SiennaHydroGeneratorCol.BASE_POWER])
 
 
+def _reserve_capacity(component: Mapping[str, Any]) -> float:
+    return float(component[SiennaReserveCol.REQUIREMENT])
+
+
 _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.THERMAL_STANDARD: _thermal_capacity,
     SiennaComponent.RENEWABLE_DISPATCH: _renewable_capacity,
@@ -115,7 +148,22 @@ _CAPACITY_BY_OWNER_TYPE: dict[str, Callable[[Mapping[str, Any]], float]] = {
     SiennaComponent.POWER_LOAD: _load_capacity,
     SiennaComponent.INTERRUPTIBLE_POWER_LOAD: _load_capacity,
     SiennaComponent.HYDRO_DISPATCH: _hydro_capacity,
+    SiennaComponent.ONLINE_RESERVE: _reserve_capacity,
+    SiennaComponent.OFFLINE_RESERVE: _reserve_capacity,
+    SiennaComponent.HYDRO_TURBINE: _hydro_capacity,
 }
+
+
+class SeriesLabels(NamedTuple):
+    """What a stored series states about its values: their unit and what they measure."""
+
+    units: str
+    quantity_kind: str
+
+
+POWER_LABELS = SeriesLabels(
+    InfraStoreSeriesLabel.UNITS_POWER, InfraStoreSeriesLabel.QUANTITY_ACTIVE_POWER
+)
 
 
 def has_series_capacity(owner_type: str) -> bool:

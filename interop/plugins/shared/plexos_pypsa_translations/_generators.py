@@ -59,6 +59,7 @@ from interop.plugins.shared.plexos_pypsa_translations.decisions import (
     ComponentReporter,
     Decision,
     MappedColumns,
+    SkipGroup,
     SkippedComponent,
     SourceValue,
     destination_row,
@@ -89,6 +90,21 @@ _FILE_BACKED_NOTE = (
 )
 _RETIRED_NOTE = "Units = 0 and no Max Units Built marks a retired generator"
 _CATEGORY_DERIVATION = "a PyPSA generator carries one carrier, so the category travels beside it"
+NO_NODE_GROUP = SkipGroup("Generator(s)", "sit on no Node", "so each has no bus and is left out")
+FILE_BACKED_GROUP = SkipGroup("Generator(s)", "read Max Capacity from a data file")
+RETIRED_GROUP = SkipGroup(
+    "Generator(s)", "state Units = 0 and no Max Units Built", "so each is retired and left out"
+)
+NO_CAPACITY_GROUP = SkipGroup(
+    "Generator(s)",
+    "have a rated capacity of 0 MW or less",
+    "so each can never dispatch and is left out",
+)
+INFEASIBLE_GROUP = SkipGroup(
+    "Generator(s)",
+    "state a minimum output above the most they can reach",
+    "so no dispatch meets it and each is left out",
+)
 _PROFILE_NOT_STAGED_NOTE = (
     "the source staged no series for this profile, so the rating keeps the static "
     "availability instead"
@@ -180,18 +196,25 @@ def _map_one(
     name = generator[PlexosObjectCol.NAME]
     node = lookups.gen_to_node.get(name)
     if node is None:
-        return SkippedComponent(_source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE)
+        return SkippedComponent(
+            _source(name, PlexosCollection.NODES, None), _NO_BUS_NOTE, NO_NODE_GROUP
+        )
     if PlexosProperty.MAX_CAPACITY in lookups.file_backed_properties.get(name, []):
         return SkippedComponent(
-            _source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW), _FILE_BACKED_NOTE
+            _source(name, PlexosProperty.MAX_CAPACITY, _DATA_FILE, UNIT_MW),
+            _FILE_BACKED_NOTE,
+            FILE_BACKED_GROUP,
         )
     source = read_source(generator, name, lookups)
     if source.units == 0.0 and not source.is_candidate:
-        return SkippedComponent(_source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE)
+        return SkippedComponent(
+            _source(name, PlexosProperty.UNITS, source.units), _RETIRED_NOTE, RETIRED_GROUP
+        )
     if source.p_nom <= 0.0:
         return SkippedComponent(
             _source(name, PlexosProperty.MAX_CAPACITY, None, UNIT_MW),
             f"generator dropped: p_nom is {source.p_nom} MW, so it can never dispatch",
+            NO_CAPACITY_GROUP,
         )
     blocked = find_blocked_candidate(source.candidate)
     if blocked is not None:
@@ -211,6 +234,7 @@ def _infeasible_dispatch_range(mapping: GeneratorMapping) -> SkippedComponent:
         _source(mapping.name, mapping.minimum.source_property, mapping.minimum.source_value),
         f"p_min_pu {p_min_pu} sits above p_max_pu {p_max_pu}, which PyPSA cannot dispatch, "
         "so the generator is dropped",
+        INFEASIBLE_GROUP,
     )
 
 
