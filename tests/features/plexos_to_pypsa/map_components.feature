@@ -320,6 +320,20 @@ Feature: plexos_to_pypsa maps PLEXOS Nodes, Loads, and Lines onto a PyPSA networ
     Then the file "outputs/network.nc" exists
     And the log contains "profiles/load.csv holds 1 row(s) whose date cannot be read as a point in time, so each is left out"
 
+  Scenario: a trace that states one period twice gives the first row, and says so
+    A trace file can state the same period twice with two values. The first row in the file
+    wins, so the run gives the same series each time.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains data file "Load" at "profiles/load.csv" with hourly values "100, 200, 300"
+    And the model contains load "North_Node" with peak 300 from data file "Load"
+    And the model is saved as "inputs/repeated.xml"
+    And the trace file "inputs/profiles/load.csv" also holds the row "2026,1,1,2,999"
+    When I run translate against "inputs/repeated.xml" pipeline "plexos-to-pypsa" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" load "North_Node" has a p_set time series 100 200 300
+    And the log contains "profiles/load.csv states 1 date(s) more than once, with different values, so the first row in the file is used"
+
   Scenario: a Region VoLL is reported as dropped, because Sienna has no home for one
     Given a Plexos model
     And the model contains region "Grid" with VoLL 2000

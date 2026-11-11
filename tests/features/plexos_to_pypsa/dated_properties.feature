@@ -203,6 +203,25 @@ Feature: a PLEXOS property dated to a period is read for the year being translat
     Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 80
     And the PyPSA network "outputs/network.nc" generator "Park" attribute "p_nom" is 30
 
+  Scenario: a data file that dates one object twice on the same date gives the first row
+    A file can state one object twice for the same date with two values. The first row in
+    the file wins, and the warning names the object.
+    Given a Plexos model
+    And the model contains region "Grid"
+    And the model contains node "Grid_Node" in region "Grid"
+    And the model contains generator "Farm" with "node=Grid_Node, category=Wind, Max Capacity=0"
+    And the model contains data file "Capacities" at "Gen_MaxCapacity.csv" with rows:
+      | NAME | YEAR | MONTH | DAY | VALUE |
+      | Farm | 2026 | 1     | 1   | 80    |
+      | Farm | 2026 | 1     | 1   | 120   |
+    And generator "Farm" has property "Max Capacity" from data file "Capacities"
+    And the model contains model "Plan"
+    And the model contains horizon "H1" on model "Plan" starting "2026-01-01" spanning 2 days at 24 periods per day
+    And the model is saved as "inputs/model.xml"
+    When I run translate against "inputs/model.xml" pipeline "plexos-to-pypsa" for model "Plan" year 2026 sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" generator "Farm" attribute "p_nom" is 80
+    And the log contains "Gen_MaxCapacity.csv states 1 object(s) more than once for the same date, with different values, so the first row in the file is used: Farm"
+
   Scenario: a value that a data file changes within the year becomes a series of steps
     Given a Plexos model
     And the model contains region "Grid"

@@ -22,6 +22,7 @@ import polars as pl
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.plexos_constants import PlexosCsvCol, PlexosPropertyCol
 from interop.plugins.sources.plexos_patterns import PatternCalendar
+from interop.plugins.sources.plexos_repeated_rows import drop_repeated_rows, warn_repeated_rows
 
 log = logging.getLogger(__name__)
 
@@ -237,7 +238,8 @@ def reshape_for_file(
     scan: pl.LazyFrame, relative: str, owners: Rows, context: LayoutContext
 ) -> pl.LazyFrame | None:
     """Reshape one Data File CSV once, whatever its PLEXOS layout, then scale and restrict it
-    to the objects in ``owners`` that read it.
+    to the objects in ``owners`` that read it. A key that the file states twice keeps its
+    first row, with a warning.
 
     Returns None when no layout recognises the header (the layout-support check already
     filtered most of these), and when the matching layout cannot read this file's value
@@ -249,7 +251,10 @@ def reshape_for_file(
         return None
     owner_names = {row[PlexosPropertyCol.CHILD_OBJECT] for row in owners}
     frame = shape.reshape(_CsvToReshape(scan, relative, columns, owner_names, context))
-    return None if frame is None else _attach_owners(frame, _owner_table(owners))
+    if frame is None:
+        return None
+    warn_repeated_rows(frame, relative, {_build_row_key(row) for row in owners})
+    return _attach_owners(drop_repeated_rows(frame), _owner_table(owners))
 
 
 def _generic_value_columns(

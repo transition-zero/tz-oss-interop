@@ -24,6 +24,7 @@ from interop.plugins.shared.plexos_dates import DateBand
 from interop.plugins.shared.plexos_units import StatedValue, UnitConversions
 from interop.plugins.sources.plexos_dated_properties import DatedRow
 from interop.plugins.sources.plexos_profiles import list_row_names
+from interop.plugins.sources.plexos_repeated_rows import warn_repeated_objects
 
 log = logging.getLogger(__name__)
 
@@ -155,20 +156,39 @@ def _is_dated_by_name(scan: pl.LazyFrame) -> bool:
 
 def _read_values_by_name(scan: pl.LazyFrame, relative: str) -> _ValuesByName:
     """Each object's values, earliest first. The file is one row per object per date, so it is
-    component-scale and safe to collect.
+    component-scale and safe to collect. Where a file states one object twice for one date,
+    the first row in the file wins, with a warning.
     """
-    rows = scan.select(_DATED_BY_NAME_COLUMNS).collect()
-    dated: dict[str, list[tuple[datetime, float]]] = {}
+    readings = _build_readings(scan.select(_DATED_BY_NAME_COLUMNS).collect())
+    _warn_unreadable(relative, readings.unreadable_count)
+    warn_repeated_objects(relative, readings.repeated_names)
+    return {
+        name: _build_bands(sorted(by_date.items())) for name, by_date in readings.by_name.items()
+    }
+
+
+class _Readings(NamedTuple):
+    """The first value of each object on each date, and the rows that the file cannot give."""
+
+    by_name: dict[str, dict[datetime, float]]
+    repeated_names: list[str]
+    unreadable_count: int
+
+
+def _build_readings(rows: pl.DataFrame) -> _Readings:
+    by_name: dict[str, dict[datetime, float]] = {}
+    repeated: set[str] = set()
     unreadable_count = 0
     for name, year, month, day, value in rows.iter_rows():
         try:
-            pair = (_parse_date(year, month, day), _parse_number(value))
+            moment, number = _parse_date(year, month, day), _parse_number(value)
         except ValueError:
             unreadable_count += 1
             continue
-        dated.setdefault(str(name).lower(), []).append(pair)
-    _warn_unreadable(relative, unreadable_count)
-    return {name: _build_bands(sorted(pairs)) for name, pairs in dated.items()}
+        stated = by_name.setdefault(str(name).lower(), {})
+        if stated.setdefault(moment, number) != number:
+            repeated.add(str(name))
+    return _Readings(by_name, sorted(repeated), unreadable_count)
 
 
 def _build_bands(ordered: list[tuple[datetime, float]]) -> list[DatedValue]:
