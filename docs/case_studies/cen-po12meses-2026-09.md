@@ -229,6 +229,7 @@ of this model.
 | A generator that states `Units Out` takes its outage from `Units Out` alone. | 102 thermal units that the old rule gave a ceiling of 0 |
 | A thermal unit that draws on a `Storage` stays thermal, and the `Storage` is a fuel store. | 506 gas units that were turbines before |
 | A unit pumps only when it states a `Pump Load` above 0 MW. A unit with a head and a tail `Storage` and no `Pump Load` is a turbine. | The model states no `Pump Load`, so its 41 units with a head and a tail are turbines. |
+| A data file that states one object twice for the same date gives the first row in the file, with a warning. | `Var_GenRatingRoR.csv` states `SAN_ANDRES` twice for the first four weeks. The unit takes 3.79, 4.15, 3.85 and 3.65 MW, and each run gives the same series. |
 | A unit written `m³` is the same unit as `m3`. | The `Efficiency Incr` of the 58 turbines, in `MW/m³/s`, gives their `conversion_factor`. |
 | Every `Storage` of a cascade is a reservoir. | 67 reservoirs, joined by their turbines and routes |
 
