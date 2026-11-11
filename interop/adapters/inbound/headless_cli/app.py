@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from typing import ClassVar
 
 from dishka import Container
+from pydantic import TypeAdapter, ValidationError
 
 from interop.adapters.inbound.base import Launcher
 from interop.adapters.inbound.headless_cli.overrides import (
@@ -26,24 +27,29 @@ log = logging.getLogger(__name__)
 PIPELINE_ENV_VAR = "INTEROP_PIPELINE"
 USER_MAPPINGS_PATH_ENV_VAR = "INTEROP_USER_MAPPINGS_PATH"
 KEEP_STAGING_ENV_VAR = "INTEROP_KEEP_STAGING"
-_KEEP_STAGING_TRUTHY = {"1", "true", "yes", "y", "on"}
+KEEP_STAGING_FLAG_VALUE = "true"
 
 
 def _parse_bool_env(value: str) -> bool:
-    return value.strip().lower() in _KEEP_STAGING_TRUTHY
+    return TypeAdapter(bool).validate_python(value.strip())
 
 
-def _build_arg_parser() -> argparse.ArgumentParser:
+def _build_arg_parser(env: Mapping[str, str]) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="interop headless_cli",
         description="Run a single translate pipeline non-interactively (no prompts, no menu).",
     )
-    parser.add_argument("--pipeline", default=None)
+    parser.add_argument("--pipeline", default=env.get(PIPELINE_ENV_VAR))
     parser.add_argument(
         "--override", action="append", default=[], dest="overrides", metavar="KEY=VALUE"
     )
-    parser.add_argument("--user-mappings-path", default=None)
-    parser.add_argument("--keep-staging", action="store_true", default=False)
+    parser.add_argument("--user-mappings-path", default=env.get(USER_MAPPINGS_PATH_ENV_VAR))
+    parser.add_argument(
+        "--keep-staging",
+        action="store_const",
+        const=KEEP_STAGING_FLAG_VALUE,
+        default=env.get(KEEP_STAGING_ENV_VAR),
+    )
     return parser
 
 
@@ -54,9 +60,9 @@ def run_headless(container: Container, argv: Sequence[str], env: Mapping[str, st
     --override/INTEROP_OVERRIDE_*, env and flags are merged field-by-field with
     flag-sourced entries winning on collision.
     """
-    args = _build_arg_parser().parse_args(argv)
+    args = _build_arg_parser(env).parse_args(argv)
 
-    pipeline_name = args.pipeline or env.get(PIPELINE_ENV_VAR)
+    pipeline_name = args.pipeline
     if not pipeline_name:
         log.error("headless: --pipeline (or %s) is required", PIPELINE_ENV_VAR)
         return 1
@@ -67,14 +73,17 @@ def run_headless(container: Container, argv: Sequence[str], env: Mapping[str, st
         log.error("headless: %s", exc)
         return 1
 
-    raw_user_mappings_path = args.user_mappings_path or env.get(USER_MAPPINGS_PATH_ENV_VAR)
+    raw_user_mappings_path = args.user_mappings_path
     user_mappings_path = to_location(raw_user_mappings_path) if raw_user_mappings_path else None
-    if args.keep_staging:
-        keep_staging = True
-    elif KEEP_STAGING_ENV_VAR in env:
-        keep_staging = _parse_bool_env(env[KEEP_STAGING_ENV_VAR])
-    else:
-        keep_staging = False
+    try:
+        keep_staging = args.keep_staging is not None and _parse_bool_env(args.keep_staging)
+    except ValidationError:
+        log.error(
+            "headless: %s=%r is not a boolean; use one of true, false, yes, no, 1, 0",
+            KEEP_STAGING_ENV_VAR,
+            args.keep_staging,
+        )
+        return 1
 
     with container() as scope:
         try:
