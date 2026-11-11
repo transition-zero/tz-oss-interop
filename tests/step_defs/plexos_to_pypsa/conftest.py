@@ -460,6 +460,26 @@ def given_plexos_resolve_ensemble_time_series_pipeline(name: str, model: str, ye
     write_pipeline(name, yaml.replace("name: stage_plexos_xml", "name: stage_plexos_xml_ensemble"))
 
 
+_DIRECT_PIPELINE_YAML = """\
+source_framework: plexos
+destination_framework: pypsa
+source:
+  name: stage_plexos_xml
+steps:
+  - name: plexos_to_pypsa_map_components
+sinks:
+  - name: emit_pypsa_network
+  - name: emit_extensions_json
+    params:
+      output_path: outputs/extensions.json
+"""
+
+
+@given(parsers.parse('a project-local pipeline "{name}" that maps PLEXOS straight to PyPSA'))
+def given_direct_plexos_to_pypsa_pipeline(name: str) -> None:
+    write_pipeline(name, _DIRECT_PIPELINE_YAML)
+
+
 @given('a step plugin "dump_table" that writes a source_topology table to JSON')
 def given_dump_table_step_plugin() -> None:
     write_project_plugin("steps", "dump_table", _DUMP_TABLE_STEP_PY)

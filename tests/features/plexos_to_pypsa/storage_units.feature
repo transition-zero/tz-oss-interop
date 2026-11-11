@@ -677,3 +677,18 @@ Feature: PLEXOS to PyPSA Pipeline translates batteries, pumped storage, and hydr
     And the PyPSA network "outputs/network.nc" storage unit "bat_running" is not extendable
     And the file "decisions.md" contains "a candidate with no Build Cost prices building nothing, so an expansion would take it for free; the object keeps the capacity it runs and only its build is left out"
     And the log contains "1 Battery(s) that already run state no Build Cost, so each keeps the capacity it runs and none of the build it may make"
+
+  Scenario: a tail Storage that is the head of the next turbine keeps its volumes
+    The turbine below reads the Storage as its head reservoir, so no value of the Storage is
+    absorbed into the turbine above it.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North"
+    And the model contains turbine "Upper_U" on node "North_Node" with max_capacity 150 head "Upper" tail "Middle"
+    And storage "Upper" has property "Max Volume" 900
+    And the model contains reservoir hydro "Lower_U" on node "North_Node" with max_capacity 100 head "Middle" max_volume 300 initial_volume 150
+    And the model is saved as "inputs/cascade.xml"
+    And a project-local pipeline "plexos-to-pypsa-direct" that maps PLEXOS straight to PyPSA
+    When I run translate against "inputs/cascade.xml" pipeline "plexos-to-pypsa-direct" sink output "outputs/network.nc"
+    Then the PyPSA network "outputs/network.nc" storage unit "Lower_U" attribute "max_hours" is 3.0
+    And the file "decisions.md" does not contain "the tail reservoir is absorbed into the head's storage unit, so its Max Volume is dropped"

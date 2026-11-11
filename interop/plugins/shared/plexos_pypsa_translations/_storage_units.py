@@ -317,8 +317,9 @@ def _dropped_values(
     A Storage in ``held_storages`` keeps its volumes and its inflow, so only the properties
     that no component reads are dropped from it.
     """
-    tails = sorted(set(lookups.tail_by_generator.values()) - set(held_storages))
     heads = set(lookups.head_by_generator.values())
+    # A tail that is also a head stays the head reservoir of the turbine below it.
+    tails = sorted(set(lookups.tail_by_generator.values()) - set(held_storages) - heads)
     storages = read_object_names(state, PlexosClass.STORAGE)
     return [
         *_dropped_from(
