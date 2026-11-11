@@ -86,6 +86,11 @@ from interop.plugins.sources.plexos_profiles import (
     build_row_name,
     build_scaling,
 )
+from interop.plugins.sources.plexos_repeated_rows import (
+    NO_REPEATED_ROWS,
+    RepeatedRows,
+    warn_repeated_rows,
+)
 from interop.plugins.sources.plexos_scenarios import (
     Priority,
     ScenarioOverlay,
@@ -319,13 +324,8 @@ class StagePlexosXml(StagedSource):
             if not is_supported_layout(scan, context):
                 warn_unstageable_layout(scan, relative, context)
                 continue
-            for key, owners in _group_by_series_key(rows).items():
-                frame = reshape_for_file(scan, relative, owners, context)
-                if frame is None:
-                    warn_no_series(relative, owners)
-                    continue
-                warn_undated_rows(frame, relative)
-                parts.setdefault(key, []).append(drop_undated_rows(frame))
+            for key, frame in _reshape_by_series_key(scan, relative, rows, context).items():
+                parts.setdefault(key, []).append(frame)
         _warn_missing_data_files(missing)
         staged = {
             key: self._sink_series(key, frames, staging_dir / _TIME_SERIES_SUBDIR, chronology.index)
@@ -652,6 +652,30 @@ def _group_by_data_file(properties: _Rows) -> dict[str, _Rows]:
         if relative is not None and not is_timeslice_include(row):
             rows_by_file.setdefault(relative, []).append(row)
     return rows_by_file
+
+
+def _reshape_by_series_key(
+    scan: pl.LazyFrame, relative: str, rows: _Rows, context: LayoutContext
+) -> dict[tuple[str, str], pl.LazyFrame]:
+    """The dated series that one Data File gives each (owner class, property) that reads it.
+
+    Each key reshapes the file again, so the warnings about the file come once, after them.
+    """
+    frames: dict[tuple[str, str], pl.LazyFrame] = {}
+    repeated = NO_REPEATED_ROWS
+    for key, owners in _group_by_series_key(rows).items():
+        reshaped = reshape_for_file(scan, relative, owners, context)
+        if reshaped is None:
+            warn_no_series(relative, owners)
+            continue
+        warn_undated_rows(reshaped.frame, relative)
+        frames[key] = drop_undated_rows(reshaped.frame)
+        repeated = RepeatedRows(
+            repeated.names | reshaped.repeated.names,
+            max(repeated.date_count, reshaped.repeated.date_count),
+        )
+    warn_repeated_rows(relative, repeated)
+    return frames
 
 
 def _group_by_series_key(rows: _Rows) -> dict[tuple[str, str], _Rows]:

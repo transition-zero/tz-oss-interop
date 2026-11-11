@@ -6,6 +6,7 @@ The first row in the file wins, as where two patterns cover one snapshot.
 from __future__ import annotations
 
 import logging
+from typing import NamedTuple
 
 import polars as pl
 
@@ -30,18 +31,33 @@ def drop_repeated_rows(frame: pl.LazyFrame) -> pl.LazyFrame:
     return frame.unique(subset=list_row_keys(frame), keep="first", maintain_order=True)
 
 
-def warn_repeated_rows(frame: pl.LazyFrame, relative: str, read_names: set[str]) -> None:
-    """Say where a reshaped file states one key twice with two values.
+class RepeatedRows(NamedTuple):
+    """The objects that a file states twice for one date, or the dates of a shared series."""
+
+    names: frozenset[str]
+    date_count: int
+
+
+NO_REPEATED_ROWS = RepeatedRows(frozenset(), 0)
+
+
+def build_repeated_rows(frame: pl.LazyFrame, read_names: set[str]) -> RepeatedRows:
+    """What a reshaped file states twice with two values.
 
     ``read_names`` holds the lower-case row names that the model reads from the file, so the
-    warning names no object that nothing reads.
+    result names no object that nothing reads.
     """
     conflicts = _express_conflicts(frame)
     if StagedTimeSeriesCol.COMPONENT not in list_row_keys(frame):
-        warn_repeated_dates(relative, _count_rows(conflicts))
-        return
+        return RepeatedRows(frozenset(), _count_rows(conflicts))
     names = _list_conflicting_names(conflicts)
-    warn_repeated_objects(relative, [name for name in names if name.lower() in read_names])
+    return RepeatedRows(frozenset(name for name in names if name.lower() in read_names), 0)
+
+
+def warn_repeated_rows(relative: str, repeated: RepeatedRows) -> None:
+    """One warning for the objects, and one for the dates, that a file states twice."""
+    warn_repeated_objects(relative, sorted(repeated.names))
+    warn_repeated_dates(relative, repeated.date_count)
 
 
 def warn_repeated_objects(relative: str, names: list[str]) -> None:

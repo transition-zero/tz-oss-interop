@@ -15,14 +15,18 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, NamedTuple
 
 import polars as pl
 
 from interop.plugins.shared.constants import StagedTimeSeriesCol
 from interop.plugins.shared.plexos_constants import PlexosCsvCol, PlexosPropertyCol
 from interop.plugins.sources.plexos_patterns import PatternCalendar
-from interop.plugins.sources.plexos_repeated_rows import drop_repeated_rows, warn_repeated_rows
+from interop.plugins.sources.plexos_repeated_rows import (
+    RepeatedRows,
+    build_repeated_rows,
+    drop_repeated_rows,
+)
 
 log = logging.getLogger(__name__)
 
@@ -234,12 +238,19 @@ def _has_values_by_day(header: set[str]) -> bool:
     return bool(header - set(_DAY_KEY))
 
 
+class ReshapedFile(NamedTuple):
+    """The series of one Data File for its owners, and the keys that the file states twice."""
+
+    frame: pl.LazyFrame
+    repeated: RepeatedRows
+
+
 def reshape_for_file(
     scan: pl.LazyFrame, relative: str, owners: Rows, context: LayoutContext
-) -> pl.LazyFrame | None:
+) -> ReshapedFile | None:
     """Reshape one Data File CSV once, whatever its PLEXOS layout, then scale and restrict it
     to the objects in ``owners`` that read it. A key that the file states twice keeps its
-    first row, with a warning.
+    first row, and the result says which keys repeat.
 
     Returns None when no layout recognises the header (the layout-support check already
     filtered most of these), and when the matching layout cannot read this file's value
@@ -253,8 +264,10 @@ def reshape_for_file(
     frame = shape.reshape(_CsvToReshape(scan, relative, columns, owner_names, context))
     if frame is None:
         return None
-    warn_repeated_rows(frame, relative, {_build_row_key(row) for row in owners})
-    return _attach_owners(drop_repeated_rows(frame), _owner_table(owners))
+    return ReshapedFile(
+        _attach_owners(drop_repeated_rows(frame), _owner_table(owners)),
+        build_repeated_rows(frame, {_build_row_key(row) for row in owners}),
+    )
 
 
 def _generic_value_columns(
