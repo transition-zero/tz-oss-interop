@@ -253,7 +253,7 @@ evidence for the rows that it already holds, from three other models.
 
 | What the model states | Why Sienna has no home | Seen in this model |
 | --- | --- | --- |
-| `Constraint` | Refer to [the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#the-object-level-for-a-dispatch). 441 of them reach `extensions.json`. | 509 objects |
+| `Constraint` | Refer to [the gap analysis](../translation_mappings/plexos-to-sienna-gap-analysis.md#the-object-level-for-a-dispatch). 441 of them reach `extensions.json`. [The custom constraints of the CEN model](cen-po12meses-2026-09-constraints.md) classifies each one. | 509 objects |
 | `Decision Variable` | The same section of the gap analysis | 46 objects |
 | `Timeslice` | The same section. The values that a pattern gives against a `Timeslice` do reach the system, as time series. | 101 objects |
 | `Company` | The same section | 143 objects |
