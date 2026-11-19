@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,6 +14,31 @@ scenarios(str(FEATURE))
 REPOSITORY = Path(__file__).resolve().parents[2]
 
 smoke_wheel = load_script("smoke_wheel", REPOSITORY / ".github" / "scripts" / "smoke_wheel.py")
+
+
+# A rename of a distribution breaks `importlib.metadata.version` silently: the import
+# package keeps working and only the lookup fails, deep inside a pipeline run.
+DISTRIBUTIONS_LOOKED_UP = ("tz-oss-interop",)
+
+
+@given("the distribution names the code looks up at run time", target_fixture="distributions")
+def given_looked_up_distributions() -> tuple[str, ...]:
+    return DISTRIBUTIONS_LOOKED_UP
+
+
+@when("each one is read from the installed metadata", target_fixture="refusal")
+def when_read_distribution_metadata(distributions: tuple[str, ...]) -> str:
+    for name in distributions:
+        try:
+            version(name)
+        except PackageNotFoundError:
+            return f"no installed distribution is named {name!r}"
+    return ""
+
+
+@then("each one reports a version")
+def then_each_distribution_reports_a_version(refusal: str) -> None:
+    assert not refusal, refusal
 
 
 @given("the templates the release smoke names", target_fixture="named_templates")

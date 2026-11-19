@@ -11,7 +11,9 @@ from interop.plugins.shared.results_constants import RESULTS_TABLE_KEY
 from interop.plugins.shared.results_manifest import ResultsFramework, ResultsManifest
 from interop.ports.outbound.filesystem import FilesystemPort
 
-_PACKAGE_NAME = "interop"
+# The distribution on PyPI, which `importlib.metadata.version` takes. It is not the
+# import package, which is `interop`.
+_DISTRIBUTION_NAME = "tz-oss-interop"
 _MANIFEST_FILENAME = "manifest.json"
 _PARQUET_SUFFIX = ".parquet"
 
@@ -53,7 +55,7 @@ class EmitResultsParquet(Sink):
             framework=params.framework,
             label=params.label,
             timezone=params.timezone,
-            translator_version=version(_PACKAGE_NAME),
+            translator_version=version(_DISTRIBUTION_NAME),
             source_artifact=params.source_artifact,
         )
         with self._fs.open_write(

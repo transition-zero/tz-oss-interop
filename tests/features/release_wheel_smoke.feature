@@ -29,6 +29,11 @@ Feature: the release smoke proves the built wheel before it reaches PyPI
       | distribution           | expected |
       | tz-oss-interop         | 99.0.0   |
 
+  Scenario: every distribution name the code looks up at run time is installed
+    Given the distribution names the code looks up at run time
+    When each one is read from the installed metadata
+    Then each one reports a version
+
   Scenario: the installed version passes against itself
     Given the installed version of "tz-oss-interop"
     When the release smoke compares it with the same version
