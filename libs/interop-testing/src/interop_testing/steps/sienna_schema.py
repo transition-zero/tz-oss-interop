@@ -7,6 +7,8 @@ compares each row with the fields of its class.
 
 A pydantic class takes a null on an optional field and the strict JSON Schema bundle does
 not, so a whole document also goes through the bundle, which is what the Sienna stack reads.
+The SDK leaves ``BUNDLE_DIR`` and ``validate_source`` out of the ``__all__`` of its
+``document`` module, so the import of the two needs the ignore that stands on it.
 
 "The written Sienna system" is ``outputs/system.json`` and "the written Sienna portfolio"
 is ``outputs/portfolio.json``, the paths every pipeline writes by default.
@@ -20,7 +22,7 @@ from functools import cache
 from importlib.resources import files
 from typing import Any
 
-from power_openapi_models.document import (
+from power_openapi_models.document import (  # type: ignore[attr-defined]
     BUNDLE_DIR,
     PortfolioDocument,
     SystemDocument,
