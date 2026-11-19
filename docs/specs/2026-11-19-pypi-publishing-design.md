@@ -121,11 +121,18 @@ on the library.
 ### The rehearsal
 
 There is no TestPyPI job. The rehearsal is a pre-release tag, `v0.1.0rc1`, to real PyPI.
-hatch-vcs makes the version `0.1.0rc1`, which PEP 440 calls a pre-release, and neither uv
-nor pip resolves a pre-release unless a consumer asks for one. The rehearsal costs one
-unused version string, and it proves the real pending publisher, the real environment and
-the real metadata. TestPyPI needs its own registration and its own pending publisher, and
-it proves none of those three.
+hatch-vcs makes the version `0.1.0rc1`, which PEP 440 calls a pre-release. The rehearsal
+proves the real pending publisher, the real environment and the real metadata. TestPyPI
+needs its own registration and its own pending publisher, and it proves none of those
+three.
+
+A resolver passes over a pre-release while a stable release satisfies the request, so a
+rehearsal of a later release costs one unused version string. **The first rehearsal of a
+distribution is the exception, and it is installable by anyone.** A resolver takes a
+pre-release when the distribution has no stable release at all, so between the rehearsal
+tag and the release tag an ordinary `uv add tz-oss-interop` installs the rehearsal. That
+window is short, and neither distribution is on PyPI yet, so this does not change the
+decision. `docs/developer_documentation/release.md` carries the warning for the reader.
 
 ### The release documentation
 
