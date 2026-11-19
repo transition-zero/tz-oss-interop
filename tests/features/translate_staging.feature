@@ -41,6 +41,23 @@ Feature: the Source owns a per-run staging directory available to plugins
     Then the headless exit code is 0
     And the directory recorded in "outputs/staging-path.txt" does not exist
 
+  Scenario: a misspelt keep-staging environment variable stops the run and names itself
+    Given a staging probe step plugin
+    And a pipeline "staging-test" running steps "staging_probe"
+    And the environment variable "INTEROP_KEEP_STAGING" is set to "ture"
+    When I run interop with argv "headless_cli --pipeline staging-test --override step[0].out=outputs/staging-path.txt"
+    Then the headless exit code is 1
+    And the log contains "INTEROP_KEEP_STAGING"
+    And the log contains "ture"
+
+  Scenario: --keep-staging wins over a misspelt keep-staging environment variable
+    Given a staging probe step plugin
+    And a pipeline "staging-test" running steps "staging_probe"
+    And the environment variable "INTEROP_KEEP_STAGING" is set to "ture"
+    When I run interop with argv "headless_cli --pipeline staging-test --keep-staging --override step[0].out=outputs/staging-path.txt"
+    Then the headless exit code is 0
+    And the directory recorded in "outputs/staging-path.txt" exists
+
   Scenario: validate cleans up the staging directory once its validators have run
     Given a staging probe validator plugin
     And a pipeline "staging-validate" running validators "staging_probe_validator"
