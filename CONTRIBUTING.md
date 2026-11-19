@@ -189,7 +189,7 @@ in `tests/step_defs/`; step files drive the REPL through the helpers in
 scenario through the user surface, wait until that surface exists rather than
 adding a unit test underneath it.
 
-Source fixtures come from the builders in the `interop-testing` package
+Source fixtures come from the builders in the `tz-oss-interop-testing` package
 (`libs/interop-testing/`), one module per framework, not from helpers written
 inline. That package is also what a downstream project uses to test its own
 pipelines, so it holds nothing specific to this repository's pipelines.

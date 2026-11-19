@@ -77,12 +77,18 @@ This creates `.venv/`, installs runtime and dev dependencies, and registers the 
 To get `interop` as a command that runs from any directory, install it as a uv tool instead:
 
 ```bash
-uv tool install git+https://github.com/transition-zero/tz-oss-interop
+uv tool install tz-oss-interop
 ```
 
 If your shell does not find `interop`, run `uv tool update-shell`. Then open a new terminal.
 
-The tool install is a copy of the repository at the time you install it. Run `uv tool upgrade interop` to get a newer version. Run `uv tool uninstall interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on tz-oss-interop itself.
+The distribution on PyPI is `tz-oss-interop`, and the command and the import package are both `interop`. Run `uv tool upgrade tz-oss-interop` to get a newer release. Run `uv tool uninstall tz-oss-interop` to remove it. The tool install does not give you the dev dependencies, so use `uv sync` to work on tz-oss-interop itself.
+
+To install the unreleased code on `main` instead, name the repository:
+
+```bash
+uv tool install git+https://github.com/transition-zero/tz-oss-interop
+```
 
 ## Quickstart
 
@@ -162,10 +168,10 @@ Two limits apply to the figures of the three PLEXOS models. The first limit also
 ## Testing your pipelines
 
 ```bash
-uv add --group dev "interop" "interop-testing"
+uv add --group dev "tz-oss-interop" "tz-oss-interop-testing"
 ```
 
-`interop-testing` is a separate, optional package (`libs/interop-testing/`) publishing the harness that tz-oss-interop tests itself with: fixture builders for every framework it reads, assertion vocabulary for every one it writes, project scaffolding, and an in-process pipeline driver, wrapped in a pytest-bdd step vocabulary. It depends on `interop`, never the reverse, so it never becomes a runtime dependency of anything. A project writes BDD scenarios against its own pipelines without copying any of it. Nothing registers itself on install; `docs/developer_documentation/extending.md` covers the one line that registers the steps, then the full vocabulary.
+`tz-oss-interop-testing` is a separate, optional package (`libs/interop-testing/`) publishing the harness that tz-oss-interop tests itself with: fixture builders for every framework it reads, assertion vocabulary for every one it writes, project scaffolding, and an in-process pipeline driver, wrapped in a pytest-bdd step vocabulary. It depends on `tz-oss-interop`, never the reverse, so it never becomes a runtime dependency of anything. The two release from one git tag, and the harness requires the library at that same version. A project writes BDD scenarios against its own pipelines without copying any of it. Nothing registers itself on install; `docs/developer_documentation/extending.md` covers the one line that registers the steps, then the full vocabulary.
 
 ## Headless invocation
 
@@ -376,6 +382,7 @@ Use cases live under `interop/core/use_cases/`, each implementing a Protocol por
 - `docs/translation_mappings/translation-from-plexos-to-sienna-investments.md` states what a PLEXOS expansion plan becomes in a Sienna investments portfolio, which `plexos-to-sienna-investments` writes beside the base system.
 - `docs/translation_mappings/translation-from-osemosys-to-sienna.md` states what each part of an OSeMOSYS model becomes in a Sienna system, and `translation-from-osemosys-to-sienna-investments.md` states the same for a Sienna investments portfolio. `osemosys-to-sienna-gap-analysis.md` beside them names each thing that the translation and the solves lose, and its effect.
 - `docs/developer_documentation/mutation-testing.md` covers the mutmut workflow.
+- `docs/developer_documentation/release.md` covers cutting a release: what the tag does, how the version reaches each artefact, and how to yank a bad release.
 - `docs/developer_documentation/routines.md` covers the nightly and PR steward agents that run on this repository as Conductor routines.
 - `tests/features/README.md` explains the in-process REPL-driven BDD harness and when subprocess is needed.
 
