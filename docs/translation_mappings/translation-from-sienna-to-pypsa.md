@@ -860,7 +860,7 @@ name one.
 | `Line.rating_b` and `.rating_c` | Nothing applies the emergency ratings. The dispatch can use the normal rating only. |
 | Everything a `MonitoredLine` adds to a `Line` | A `MonitoredLine` translates as an ordinary line. |
 | Both reactive power limits of a `TwoTerminalGenericHVDCLine` | A PyPSA link has no reactive power limit. The ratings and `operational_flow_limit` give the link's bounds. Refer to [`TwoTerminalGenericHVDCLine` → `Link`](#twoterminalgenerichvdcline--link). |
-| A transformer of any type | The translator does not carry a transformer. A branch whose two ends are at different voltages needs one. |
+| A transformer of any type | The translator does not carry a transformer, so a `TwoWindingTransformer` and its `TransformerCircuit` are lost. The PLEXOS to Sienna leg writes both for a line that steps voltage, so a transformer does not survive a round trip. |
 | Every result field, such as `active_power_flow` | These are outputs of a solve, not model data. |
 
 ### Parts that the report names

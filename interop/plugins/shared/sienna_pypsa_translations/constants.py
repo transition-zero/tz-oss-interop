@@ -111,6 +111,8 @@ def pypsa_carrier(
             | SiennaComponent.LINE
             | SiennaComponent.MONITORED_LINE
             | SiennaComponent.TWO_TERMINAL_GENERIC_HVDC_LINE
+            | SiennaComponent.TWO_WINDING_TRANSFORMER
+            | SiennaComponent.TRANSFORMER_CIRCUIT
             | SiennaComponent.ONLINE_RESERVE
             | SiennaComponent.OFFLINE_RESERVE
             | SiennaComponent.HYDRO_RESERVOIR

@@ -87,6 +87,74 @@ Feature: PLEXOS to Sienna, in one hop
     And the file "decisions.md" contains "Max Rating is in a data file that did not stage"
     And the log contains "1 Line(s) read Reactance from a data file that did not stage"
 
+  Scenario: a line between two Nodes of different voltage becomes a transformer
+    PowerSystems.jl refuses a Line whose two endpoint buses hold different base voltages, and
+    says the data looks like transformer data. So a PLEXOS Line that states impedance between
+    two Nodes of different voltage becomes a TwoWindingTransformer and the TransformerCircuit
+    that holds its electrical data. The impedance converts against the from-Node voltage, which
+    base_voltage_primary states.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "High_Node" in region "North" with voltage 220
+    And the model contains node "Low_Node" in region "North" with voltage 110
+    And the model contains line "Step" from "High_Node" to "Low_Node" with no flow limits
+    And the model states line "Step" property "Resistance" as 4.84
+    And the model states line "Step" property "Reactance" as 48.4
+    And the model states line "Step" property "Max Rating" as 200
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "TwoWindingTransformer"
+    And the file "outputs/system.json" parses as JSON with 1 component of type "TransformerCircuit"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "Line"
+    And the written Sienna transformer "Step" names a circuit with "base_voltage_primary" set to 220.0
+    And the written Sienna transformer "Step" names a circuit with "base_voltage_secondary" set to 110.0
+    And the written Sienna transformer "Step" names a circuit with "r" set to 0.01
+    And the written Sienna transformer "Step" names a circuit with "x" set to 0.1
+    And the written Sienna transformer "Step" names a circuit with "rating" set to 2.0
+    And the written Sienna transformer "Step" names a circuit with "tap" set to 1.0
+    And the written Sienna transformer "Step" names a circuit with "power_units" set to "COMPONENT_BASE"
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+    And the component ids in the written Sienna system are unique
+    And the file "decisions.md" contains "the stated Voltage of each endpoint Node"
+
+  Scenario: a line between two Nodes of one voltage stays a Line
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North" with voltage 220
+    And the model contains node "South_Node" in region "North" with voltage 220
+    And the model contains line "NS" from "North_Node" to "South_Node" with no flow limits
+    And the model states line "NS" property "Resistance" as 4.84
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "Line"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "TwoWindingTransformer"
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+
+  Scenario: a line whose endpoint Node states no voltage stays a Line
+    A Node that states no Voltage takes the Sienna default of 1.0 kV. A 220 kV Node joined to
+    such a Node would read as a 220 to 1 transformer, which the model never stated, so the
+    line stays a Line.
+    Given a Plexos model
+    And the model contains region "North"
+    And the model contains node "North_Node" in region "North" with voltage 220
+    And the model contains node "Quiet_Node" in region "North"
+    And the model contains line "NQ" from "North_Node" to "Quiet_Node" with no flow limits
+    And the model states line "NQ" property "Resistance" as 4.84
+    And the model is saved as "inputs/model.xml"
+    And a PLEXOS mappings file:
+      | plexos_concept | plexos_name | sienna_component_type | sienna_fuel_type | sienna_prime_mover_type |
+      | fuel           | Natural Gas | ThermalStandard       | NATURAL_GAS      | CC                      |
+    When I run the plexos-to-sienna chain against "inputs/model.xml" writing "outputs/system.json"
+    Then the file "outputs/system.json" parses as JSON with 1 component of type "Line"
+    And the file "outputs/system.json" parses as JSON with 0 components of type "TwoWindingTransformer"
+    And the written Sienna system is a valid SiennaSchemas 0.2 document
+
   Scenario: a node voltage in a data file that did not stage is left out, not guessed
     Given a Plexos model
     And the model contains region "North"

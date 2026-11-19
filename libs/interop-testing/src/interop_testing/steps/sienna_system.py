@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from pytest_bdd import given, parsers, then
 
+from interop.plugins.shared.sienna_constants import SiennaComponent
 from interop_testing.builders.sienna_documents import (
     find_sienna_component,
     list_attributes_for,
@@ -875,6 +876,27 @@ def assert_sienna_component_field_close(
     actual = navigate_json(component, field_path, f"{path}[{sienna_type}:{name}]")
     assert actual == pytest.approx(value), (
         f"expected [{sienna_type}:{name}].{field_path!r} ≈ {value!r} in {path}, got {actual!r}"
+    )
+
+
+@then(
+    parsers.parse(
+        'the written Sienna transformer "{name}" names a circuit with "{field_path}" set to {value}'
+    )
+)
+def assert_sienna_transformer_circuit(name: str, field_path: str, value: str) -> None:
+    """A TwoWindingTransformer holds its name alone; its circuit holds the electrical data."""
+    document = read_json(SYSTEM_PATH)
+    transformer = find_sienna_component(document, SiennaComponent.TWO_WINDING_TRANSFORMER, name)
+    circuits = sienna_components_of_type(document, SiennaComponent.TRANSFORMER_CIRCUIT)
+    circuit = next((row for row in circuits if row["id"] == transformer["circuit"]), None)
+    assert circuit is not None, (
+        f"transformer {name!r} names circuit {transformer['circuit']!r}, "
+        f"and the document holds circuits {[row['id'] for row in circuits]}"
+    )
+    actual = navigate_json(circuit, field_path, f"{SYSTEM_PATH}[circuit of {name}]")
+    assert actual == json.loads(value), (
+        f"expected the circuit of {name!r} to state {field_path!r} = {value}, got {actual!r}"
     )
 
 
